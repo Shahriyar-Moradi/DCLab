@@ -1,0 +1,56 @@
+# Conversion Probability Layer — explores feature/model space for ONE question:
+# P(opportunity converts). This is not the decision policy.
+layer: conversion_probability
+version: conversion_v2
+target: converted
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+
+feature_groups:
+  economic:
+    - deal_size
+  pipeline:
+    - stage_encoded
+  acquisition:
+    - source_encoded
+  engagement:
+    - engagement_score
+    - num_interactions
+    - last_contact_days_ago
+  temporal:
+    - opportunity_age_days
+  sales_ops:
+    - sales_rep_available
+
+# Explicit short list (9 candidates) so we evaluate ~8–12, not 100.
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [economic, pipeline, acquisition, engagement, temporal, sales_ops]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [economic, pipeline, acquisition, engagement, temporal, sales_ops]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [economic, pipeline, acquisition, engagement, temporal, sales_ops]
+  - id: gb_engagement_pipeline
+    algorithm: gradient_boosting
+    groups: [engagement, pipeline]
+  - id: lr_engagement_pipeline
+    algorithm: logistic_regression
+    groups: [engagement, pipeline]
+  - id: gb_economic_temporal
+    algorithm: gradient_boosting
+    groups: [economic, temporal]
+  - id: gb_engagement_economic
+    algorithm: gradient_boosting
+    groups: [engagement, economic]
+  - id: lr_pipeline_acquisition
+    algorithm: logistic_regression
+    groups: [pipeline, acquisition]
+  - id: rf_engagement_ops
+    algorithm: random_forest
+    groups: [engagement, sales_ops]

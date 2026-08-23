@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Environment
+.env
+
+# Model artifacts (keep the folder, ignore trained files)
+*.joblib
+models/revenue_prediction/*
+!models/revenue_prediction/.gitkeep
+
+# OS
+.DS_Store

@@ -1,0 +1,22 @@
+version: opportunity_prioritization_v1
+
+objective:
+  maximize: expected_revenue
+
+constraints:
+  minimum_probability: 0.35
+  max_contacts_per_customer_per_week: 3
+
+actions:
+  - contact_today
+  - schedule_followup
+  - send_email
+  - no_action
+
+# Placeholder uplift until real treatment-effect data exists (later milestone).
+# Interpreted as expected incremental conversion lift relative to no_action.
+action_uplift:
+  contact_today: 0.08
+  schedule_followup: 0.04
+  send_email: 0.02
+  no_action: 0.0
