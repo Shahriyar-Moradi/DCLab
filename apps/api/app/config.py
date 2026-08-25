@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     model_dir: Path = REPO_ROOT / "models" / "revenue_prediction"
     policy_path: Path = REPO_ROOT / "configs" / "policies" / "opportunity_prioritization.yaml"
     layer_path: Path = REPO_ROOT / "configs" / "layers" / "conversion_probability.yaml"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
 
 @lru_cache

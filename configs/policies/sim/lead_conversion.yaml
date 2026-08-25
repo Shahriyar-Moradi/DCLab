@@ -1,0 +1,67 @@
+version: lead_conversion_sim_v1
+kind: simulation
+uplift_is_simulated: true
+objective:
+  maximize: expected_net_value
+  direction: good
+value_column: deal_amount
+true_p0_column: true_p0_converted
+constraints:
+  minimum_probability: 0.0
+actions:
+  - do_nothing
+  - sales_call
+  - send_email
+  - linkedin_outreach
+  - book_demo
+  - offer_discount
+  - nurture
+action_uplift:
+  do_nothing: 0.0
+  sales_call: 0.03
+  send_email: 0.01
+  linkedin_outreach: 0.015
+  book_demo: 0.04
+  offer_discount: 0.05
+  nurture: 0.005
+action_cost:
+  do_nothing: 0
+  sales_call: 40
+  send_email: 2
+  linkedin_outreach: 8
+  book_demo: 25
+  offer_discount: 400
+  nurture: 3
+action_uplift_by_entity:
+  L-A:
+    do_nothing: 0.0
+    sales_call: 0.03
+    send_email: 0.01
+    linkedin_outreach: 0.015
+    book_demo: 0.04
+    offer_discount: 0.05
+    nurture: 0.005
+  L-B:
+    do_nothing: 0.0
+    sales_call: 0.01
+    send_email: 0.02
+    linkedin_outreach: 0.01
+    book_demo: 0.015
+    offer_discount: 0.02
+    nurture: 0.005
+  L-C:
+    do_nothing: 0.0
+    sales_call: 0.04
+    send_email: 0.03
+    linkedin_outreach: 0.03
+    book_demo: 0.05
+    offer_discount: 0.06
+    nurture: 0.02
+  L-D:
+    do_nothing: 0.0
+    sales_call: 0.03
+    send_email: 0.02
+    linkedin_outreach: 0.02
+    book_demo: 0.04
+    offer_discount: 0.04
+    nurture: 0.01

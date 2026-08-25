@@ -28,23 +28,46 @@ from app.ml.selection import greedy_diverse_selection
 SAMPLE_CSV = REPO_ROOT / "data" / "sample" / "opportunities.csv"
 
 
-def _load_labeled_frame(path: Path) -> pd.DataFrame:
+def _load_labeled_frame(path: Path, target: str = "converted") -> pd.DataFrame:
     frame = pd.read_csv(path)
-    frame = frame.dropna(subset=["converted"])
-    frame["converted"] = frame["converted"].astype(int)
-    frame = frame[frame["converted"].isin([0, 1])]
+    if target not in frame.columns:
+        raise ValueError(f"Training CSV is missing target column {target!r}")
+    frame = frame.dropna(subset=[target])
+    frame[target] = frame[target].astype(int)
+    frame = frame[frame[target].isin([0, 1])]
     return frame.reset_index(drop=True)
 
 
-def _feature_table(frame: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
+def _opportunity_feature_table(frame: pd.DataFrame, target: str) -> tuple[pd.DataFrame, np.ndarray]:
     rows = []
     labels = []
     for _, row in frame.iterrows():
         feats = build_features(row.to_dict())
         feats.pop("defaulted", None)
         rows.append(feats)
-        labels.append(int(row["converted"]))
+        labels.append(int(row[target]))
     return pd.DataFrame(rows), np.asarray(labels, dtype=int)
+
+
+def _generic_feature_table(frame: pd.DataFrame, config: dict, target: str) -> tuple[pd.DataFrame, np.ndarray]:
+    from app.ml.feature_groups import features_for_groups
+
+    group_names = list((config.get("feature_groups") or {}).keys())
+    columns = features_for_groups(config, group_names)
+    missing = [col for col in columns if col not in frame.columns]
+    if missing:
+        raise ValueError(f"Training frame missing feature columns: {missing}")
+    table = frame[columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    labels = frame[target].astype(int).to_numpy()
+    return table, labels
+
+
+def _feature_table(
+    frame: pd.DataFrame, config: dict, target: str
+) -> tuple[pd.DataFrame, np.ndarray]:
+    if config.get("kind") == "simulation":
+        return _generic_feature_table(frame, config, target)
+    return _opportunity_feature_table(frame, target)
 
 
 def _evaluate(y_true, probability) -> dict[str, float]:
@@ -63,7 +86,7 @@ def _evaluate(y_true, probability) -> dict[str, float]:
     }
 
 
-def _split(frame: pd.DataFrame):
+def _split(frame: pd.DataFrame, target: str = "converted"):
     if "created_at" in frame.columns:
         dated = frame.copy()
         dated["_created"] = pd.to_datetime(dated["created_at"], errors="coerce")
@@ -72,10 +95,10 @@ def _split(frame: pd.DataFrame):
             cut = int(len(dated) * 0.8)
             train_df = dated.iloc[:cut].drop(columns=["_created"])
             test_df = dated.iloc[cut:].drop(columns=["_created"])
-            if test_df["converted"].nunique() == 2 and train_df["converted"].nunique() == 2:
+            if test_df[target].nunique() == 2 and train_df[target].nunique() == 2:
                 return train_df, test_df, "time"
     train_df, test_df = train_test_split(
-        frame, test_size=0.2, random_state=42, stratify=frame["converted"]
+        frame, test_size=0.2, random_state=42, stratify=frame[target]
     )
     return train_df, test_df, "stratified"
 
@@ -89,6 +112,7 @@ def train_and_save(
     csv_path: Path | None = None,
     model_dir: Path | None = None,
     layer_path: Path | None = None,
+    target_col: str | None = None,
 ) -> dict:
     csv_path = csv_path or SAMPLE_CSV
     settings = get_settings()
@@ -98,22 +122,24 @@ def train_and_save(
     members_dir.mkdir(parents=True, exist_ok=True)
 
     config = load_layer_config(layer_path)
+    target = target_col or str(config.get("target") or "converted")
     specs = build_candidate_specs(config)
     min_auc = float(config.get("min_roc_auc", 0.55))
     retain_min = int(config.get("retain_min", 3))
     retain_max = int(config.get("retain_max", 7))
     max_corr = float(config.get("max_abs_correlation", 0.95))
 
-    frame = _load_labeled_frame(csv_path)
-    train_df, test_df, split_kind = _split(frame)
-    x_train, y_train = _feature_table(train_df)
-    x_test, y_test = _feature_table(test_df)
+    frame = _load_labeled_frame(csv_path, target)
+    train_df, test_df, split_kind = _split(frame, target)
+    x_train, y_train = _feature_table(train_df, config, target)
+    x_test, y_test = _feature_table(test_df, config, target)
 
     fitted: dict[str, object] = {}
     metrics: dict[str, dict] = {}
     test_probas: dict[str, np.ndarray] = {}
 
-    print(f"Evaluating {len(specs)} conversion-layer candidates")
+    layer_name = str(config.get("layer", "conversion_probability"))
+    print(f"Evaluating {len(specs)} {layer_name} candidates")
     for spec in specs:
         model = make_estimator(spec)
         train_x = _slice_matrix(x_train, spec)
@@ -224,6 +250,11 @@ def train_and_save(
         "feature_list": list(dict.fromkeys(feat for row in member_meta for feat in row["features"])),
         "diversity": {"max_abs_correlation": max_corr, "pairwise_abs_corr": correlations},
         "artifact": "model.joblib",
+        "target": target,
+        "kind": config.get("kind"),
+        "test_external_ids": (
+            [str(x) for x in test_df["external_id"].tolist()] if "external_id" in test_df.columns else []
+        ),
     }
     (model_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     print(

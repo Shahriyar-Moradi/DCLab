@@ -1,0 +1,43 @@
+# Simulated treatment effects for the churn case study. NOT causal estimates.
+version: churn_sim_v1
+kind: simulation
+uplift_is_simulated: true
+objective:
+  maximize: expected_net_value
+  direction: harm
+value_column: remaining_arr
+true_p0_column: true_p0_churn
+constraints:
+  minimum_probability: 0.0
+actions:
+  - do_nothing
+  - send_email
+  - call_customer
+  - offer_discount
+  - offer_training
+  - assign_csm
+  - send_product_tutorial
+action_uplift:
+  do_nothing: 0.0
+  send_email: -0.08
+  call_customer: -0.18
+  offer_discount: -0.14
+  offer_training: -0.26
+  assign_csm: -0.33
+  send_product_tutorial: -0.10
+action_cost:
+  do_nothing: 0
+  send_email: 2
+  call_customer: 40
+  offer_discount: 80
+  offer_training: 50
+  assign_csm: 100
+  send_product_tutorial: 8
+action_risk:
+  do_nothing: 0
+  send_email: 0
+  call_customer: 0
+  offer_discount: 0
+  offer_training: 0
+  assign_csm: 0
+  send_product_tutorial: 0

@@ -81,3 +81,17 @@ class Decision(Base):
 
     opportunity: Mapped[Opportunity] = relationship(back_populates="decisions")
     prediction: Mapped[Prediction] = relationship(back_populates="decisions")
+
+
+class SimulationRun(Base):
+    __tablename__ = "simulation_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    use_case: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    fusion: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

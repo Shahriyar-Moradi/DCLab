@@ -1,0 +1,78 @@
+layer: lead_conversion
+kind: simulation
+version: lead_conversion_sim_v1
+target: converted
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: deal_amount
+true_p0_column: true_p0_converted
+direction: good
+
+feature_groups:
+  firmographic:
+    - company_size
+    - industry
+    - country
+    - number_of_employees
+  behavioral:
+    - website_visits
+    - pricing_page_visits
+    - demo_request
+  engagement:
+    - email_opens
+    - email_clicks
+    - campaign_engagement
+  sales:
+    - sales_calls
+    - days_since_contact
+    - previous_interactions
+    - historical_call
+  marketing:
+    - lead_source
+    - campaign_engagement
+    - email_clicks
+  temporal:
+    - days_since_contact
+    - previous_interactions
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [firmographic, behavioral, engagement, sales, marketing, temporal]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [firmographic, behavioral, engagement, sales, marketing, temporal]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [firmographic, behavioral, engagement, sales, marketing, temporal]
+  - id: gb_behavioral_sales
+    algorithm: gradient_boosting
+    groups: [behavioral, sales]
+  - id: lr_behavioral_sales
+    algorithm: logistic_regression
+    groups: [behavioral, sales]
+  - id: gb_firmographic_engagement
+    algorithm: gradient_boosting
+    groups: [firmographic, engagement]
+  - id: gb_marketing_behavioral
+    algorithm: gradient_boosting
+    groups: [marketing, behavioral]
+  - id: lr_temporal_sales
+    algorithm: logistic_regression
+    groups: [temporal, sales]
+  - id: rf_engagement_marketing
+    algorithm: random_forest
+    groups: [engagement, marketing]
+  - id: gb_sales
+    algorithm: gradient_boosting
+    groups: [sales]
+  - id: rf_firmographic
+    algorithm: random_forest
+    groups: [firmographic]
+  - id: lr_engagement_temporal
+    algorithm: logistic_regression
+    groups: [engagement, temporal]

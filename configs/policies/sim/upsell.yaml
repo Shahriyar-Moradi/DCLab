@@ -1,0 +1,39 @@
+version: upsell_sim_v1
+kind: simulation
+uplift_is_simulated: true
+objective:
+  maximize: expected_net_value
+  direction: good
+value_column: upgrade_arpu
+true_p0_column: true_p0_upsell
+risk_value_column: remaining_arr
+constraints:
+  minimum_probability: 0.0
+actions:
+  - do_nothing
+  - send_email
+  - sales_call
+  - free_trial
+  - additional_feature
+  - upgrade_offer
+action_uplift:
+  do_nothing: 0.0
+  send_email: 0.03
+  sales_call: 0.07
+  free_trial: 0.05
+  additional_feature: 0.04
+  upgrade_offer: 0.06
+action_cost:
+  do_nothing: 0
+  send_email: 2
+  sales_call: 40
+  free_trial: 15
+  additional_feature: 10
+  upgrade_offer: 8
+action_risk:
+  do_nothing: 0.0
+  send_email: 0.01
+  sales_call: 0.09
+  free_trial: 0.02
+  additional_feature: 0.015
+  upgrade_offer: 0.03

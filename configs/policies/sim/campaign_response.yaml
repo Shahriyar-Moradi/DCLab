@@ -1,0 +1,55 @@
+version: campaign_response_sim_v1
+kind: simulation
+uplift_is_simulated: true
+objective:
+  maximize: expected_net_value
+  direction: good
+value_column: incremental_margin
+true_p0_column: true_p0_response
+constraints:
+  minimum_probability: 0.0
+actions:
+  - do_nothing
+  - send_email
+  - sms
+  - push_notification
+  - retarget
+action_uplift:
+  do_nothing: 0.0
+  send_email: 0.08
+  sms: 0.10
+  push_notification: 0.07
+  retarget: 0.06
+# Channel preference overrides applied in decide for campaign heroes via action_uplift_column maps.
+action_cost:
+  do_nothing: 0
+  send_email: 4
+  sms: 8
+  push_notification: 3
+  retarget: 6
+action_risk:
+  do_nothing: 0
+  send_email: 0
+  sms: 0
+  push_notification: 0
+  retarget: 0
+# Hero-specific planted channel lifts (used when columns exist).
+action_uplift_by_entity:
+  C-CAMP-A:
+    send_email: 0.31
+    sms: 0.20
+    push_notification: 0.27
+    retarget: 0.18
+    do_nothing: 0.0
+  C-CAMP-B:
+    send_email: 0.05
+    sms: 0.47
+    push_notification: 0.13
+    retarget: 0.10
+    do_nothing: 0.0
+  C-CAMP-C:
+    send_email: 0.03
+    sms: 0.01
+    push_notification: 0.05
+    do_nothing: 0.0
+    retarget: 0.02

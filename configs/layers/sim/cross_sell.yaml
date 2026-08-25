@@ -1,0 +1,74 @@
+layer: cross_sell
+kind: simulation
+version: cross_sell_sim_v1
+target: bought_ancillary
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: offer_value
+true_p0_column: true_p0_ancillary
+direction: good
+
+feature_groups:
+  trip:
+    - trip_length
+    - party_size
+    - booking_lead_days
+    - fare_class
+  history:
+    - past_hotels
+    - past_cars
+    - past_activities
+  search:
+    - search_hotel
+    - search_activity
+  loyalty:
+    - loyalty_tier
+    - fare_class
+  marketing:
+    - email_clicks
+    - loyalty_tier
+  temporal:
+    - booking_lead_days
+    - trip_length
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [trip, history, search, loyalty, marketing, temporal]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [trip, history, search, loyalty, marketing, temporal]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [trip, history, search, loyalty, marketing, temporal]
+  - id: gb_history_search
+    algorithm: gradient_boosting
+    groups: [history, search]
+  - id: lr_history_search
+    algorithm: logistic_regression
+    groups: [history, search]
+  - id: gb_trip_loyalty
+    algorithm: gradient_boosting
+    groups: [trip, loyalty]
+  - id: gb_search_marketing
+    algorithm: gradient_boosting
+    groups: [search, marketing]
+  - id: lr_temporal_trip
+    algorithm: logistic_regression
+    groups: [temporal, trip]
+  - id: rf_history_trip
+    algorithm: random_forest
+    groups: [history, trip]
+  - id: gb_search
+    algorithm: gradient_boosting
+    groups: [search]
+  - id: rf_loyalty
+    algorithm: random_forest
+    groups: [loyalty]
+  - id: lr_marketing_history
+    algorithm: logistic_regression
+    groups: [marketing, history]

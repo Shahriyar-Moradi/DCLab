@@ -49,8 +49,13 @@ def build_candidate_specs(config: dict) -> list[CandidateSpec]:
         )
     if not specs:
         raise ValueError("Layer config has no candidates")
-    if len(specs) > 12:
-        raise ValueError(f"Refusing to evaluate {len(specs)} candidates; cap is 12 for this slice")
+    cap = int(config.get("max_candidates") or 12)
+    if config.get("kind") != "simulation":
+        cap = min(cap, 12)
+    else:
+        cap = min(cap, 20)
+    if len(specs) > cap:
+        raise ValueError(f"Refusing to evaluate {len(specs)} candidates; cap is {cap}")
     return specs
 
 

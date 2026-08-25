@@ -1,0 +1,82 @@
+layer: purchase
+kind: simulation
+version: purchase_sim_v1
+target: purchased_7d
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: expected_margin
+true_p0_column: true_p0_purchase
+direction: good
+
+feature_groups:
+  behavioral:
+    - product_views_7d
+    - website_sessions
+    - mobile_sessions
+    - cart_additions
+    - cart_abandonments
+  transaction:
+    - orders_30d
+    - orders_90d
+    - average_order_value
+    - days_since_last_purchase
+  engagement:
+    - email_clicks
+    - campaign_exposure
+  temporal:
+    - days_since_last_purchase
+    - orders_30d
+  product:
+    - category_preferences
+    - cart_additions
+  marketing:
+    - email_clicks
+    - campaign_exposure
+    - discount_usage
+    - historical_discount
+  price:
+    - price_sensitivity
+    - average_order_value
+    - discount_usage
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [behavioral, transaction, engagement, temporal, product, marketing, price]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [behavioral, transaction, engagement, temporal, product, marketing, price]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [behavioral, transaction, engagement, temporal, product, marketing, price]
+  - id: gb_behavioral_transaction
+    algorithm: gradient_boosting
+    groups: [behavioral, transaction]
+  - id: lr_behavioral_transaction
+    algorithm: logistic_regression
+    groups: [behavioral, transaction]
+  - id: gb_engagement_marketing
+    algorithm: gradient_boosting
+    groups: [engagement, marketing]
+  - id: gb_price_transaction
+    algorithm: gradient_boosting
+    groups: [price, transaction]
+  - id: lr_temporal_product
+    algorithm: logistic_regression
+    groups: [temporal, product]
+  - id: rf_behavioral_price
+    algorithm: random_forest
+    groups: [behavioral, price]
+  - id: gb_marketing_price
+    algorithm: gradient_boosting
+    groups: [marketing, price]
+  - id: rf_transaction
+    algorithm: random_forest
+    groups: [transaction]
+  - id: lr_engagement_temporal
+    algorithm: logistic_regression
+    groups: [engagement, temporal]

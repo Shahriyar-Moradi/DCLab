@@ -1,0 +1,83 @@
+# Simulation layer — P(customer churns). Not a production product.
+layer: churn
+kind: simulation
+version: churn_sim_v1
+target: churned
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: remaining_arr
+true_p0_column: true_p0_churn
+direction: harm
+
+feature_groups:
+  behavioral:
+    - logins_30d
+    - logins_prev_30d
+    - login_frequency_change
+    - last_login_days
+  product:
+    - features_used
+    - previous_features_used
+    - feature_usage_change
+  crm:
+    - account_age_months
+    - number_of_users
+    - days_until_renewal
+  financial:
+    - monthly_revenue
+    - payment_failures
+    - historical_discount
+  support:
+    - support_tickets
+    - negative_support
+    - support_ticket_growth
+  engagement:
+    - emails_opened
+    - emails_clicked
+    - email_engagement
+  temporal:
+    - account_age_months
+    - days_until_renewal
+    - last_login_days
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [behavioral, product, crm, financial, support, engagement, temporal]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [behavioral, product, crm, financial, support, engagement, temporal]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [behavioral, product, crm, financial, support, engagement, temporal]
+  - id: gb_behavioral_product
+    algorithm: gradient_boosting
+    groups: [behavioral, product]
+  - id: lr_behavioral_product
+    algorithm: logistic_regression
+    groups: [behavioral, product]
+  - id: gb_financial_temporal
+    algorithm: gradient_boosting
+    groups: [financial, temporal]
+  - id: gb_behavioral_financial
+    algorithm: gradient_boosting
+    groups: [behavioral, financial]
+  - id: lr_crm_engagement
+    algorithm: logistic_regression
+    groups: [crm, engagement]
+  - id: rf_support_behavioral
+    algorithm: random_forest
+    groups: [support, behavioral]
+  - id: gb_engagement_product
+    algorithm: gradient_boosting
+    groups: [engagement, product]
+  - id: rf_financial
+    algorithm: random_forest
+    groups: [financial]
+  - id: lr_temporal_crm
+    algorithm: logistic_regression
+    groups: [temporal, crm]

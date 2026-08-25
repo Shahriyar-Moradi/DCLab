@@ -1,0 +1,76 @@
+layer: campaign_response
+kind: simulation
+version: campaign_response_sim_v1
+target: responded
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: incremental_margin
+true_p0_column: true_p0_response
+direction: good
+
+feature_groups:
+  engagement:
+    - email_engagement
+    - emails_opened
+    - emails_clicked
+  lifecycle:
+    - account_age_months
+    - days_until_renewal
+    - last_login_days
+  purchase:
+    - monthly_revenue
+    - remaining_arr
+    - historical_discount
+  channel:
+    - emails_opened
+    - emails_clicked
+    - number_of_users
+  price:
+    - historical_discount
+    - monthly_revenue
+  behavior:
+    - logins_30d
+    - last_login_days
+    - feature_usage_change
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [engagement, lifecycle, purchase, channel, price, behavior]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [engagement, lifecycle, purchase, channel, price, behavior]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [engagement, lifecycle, purchase, channel, price, behavior]
+  - id: gb_engagement_behavior
+    algorithm: gradient_boosting
+    groups: [engagement, behavior]
+  - id: lr_engagement_behavior
+    algorithm: logistic_regression
+    groups: [engagement, behavior]
+  - id: gb_lifecycle_purchase
+    algorithm: gradient_boosting
+    groups: [lifecycle, purchase]
+  - id: gb_channel_price
+    algorithm: gradient_boosting
+    groups: [channel, price]
+  - id: lr_lifecycle_engagement
+    algorithm: logistic_regression
+    groups: [lifecycle, engagement]
+  - id: rf_behavior_purchase
+    algorithm: random_forest
+    groups: [behavior, purchase]
+  - id: gb_engagement
+    algorithm: gradient_boosting
+    groups: [engagement]
+  - id: rf_channel
+    algorithm: random_forest
+    groups: [channel]
+  - id: lr_price_lifecycle
+    algorithm: logistic_regression
+    groups: [price, lifecycle]

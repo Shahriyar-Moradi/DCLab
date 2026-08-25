@@ -1,0 +1,74 @@
+layer: custom_support
+kind: simulation
+version: custom_support_sim_v1
+target: support_30d
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: avoided_support_cost
+true_p0_column: true_p0_support
+direction: harm
+
+feature_groups:
+  support:
+    - support_tickets
+    - negative_support
+    - support_ticket_growth
+  usage:
+    - logins_30d
+    - features_used
+    - last_login_days
+  account:
+    - account_age_months
+    - number_of_users
+    - monthly_revenue
+  engagement:
+    - email_engagement
+    - emails_clicked
+  financial:
+    - payment_failures
+    - remaining_arr
+  temporal:
+    - last_login_days
+    - days_until_renewal
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [support, usage, account, engagement, financial, temporal]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [support, usage, account, engagement, financial, temporal]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [support, usage, account, engagement, financial, temporal]
+  - id: gb_support_usage
+    algorithm: gradient_boosting
+    groups: [support, usage]
+  - id: lr_support_usage
+    algorithm: logistic_regression
+    groups: [support, usage]
+  - id: gb_account_financial
+    algorithm: gradient_boosting
+    groups: [account, financial]
+  - id: gb_support_engagement
+    algorithm: gradient_boosting
+    groups: [support, engagement]
+  - id: lr_temporal_usage
+    algorithm: logistic_regression
+    groups: [temporal, usage]
+  - id: rf_support_account
+    algorithm: random_forest
+    groups: [support, account]
+  - id: gb_support
+    algorithm: gradient_boosting
+    groups: [support]
+  - id: rf_usage
+    algorithm: random_forest
+    groups: [usage]
+  - id: lr_engagement_financial
+    algorithm: logistic_regression
+    groups: [engagement, financial]

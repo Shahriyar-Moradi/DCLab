@@ -1,0 +1,59 @@
+version: cross_sell_sim_v1
+kind: simulation
+uplift_is_simulated: true
+objective:
+  maximize: expected_net_value
+  direction: good
+value_column: offer_value
+true_p0_column: true_p0_ancillary
+constraints:
+  minimum_probability: 0.0
+actions:
+  - do_nothing
+  - offer_hotel
+  - offer_activity
+  - offer_car
+  - offer_insurance
+  - offer_bundle
+action_probability_column:
+  do_nothing: true_p0_ancillary
+  offer_hotel: true_p_hotel
+  offer_activity: true_p_activity
+  offer_car: true_p_car
+  offer_insurance: true_p_insurance
+  offer_bundle: true_p_bundle
+action_scale:
+  do_nothing: 0.0
+  offer_hotel: 1.0
+  offer_activity: 0.87
+  offer_car: 0.50
+  offer_insurance: 0.29
+  offer_bundle: 0.77
+action_value:
+  do_nothing: 0
+  offer_hotel: 120
+  offer_activity: 35
+  offer_car: 55
+  offer_insurance: 22
+  offer_bundle: 170
+action_uplift:
+  do_nothing: 0.0
+  offer_hotel: 0.0
+  offer_activity: 0.0
+  offer_car: 0.0
+  offer_insurance: 0.0
+  offer_bundle: 0.0
+action_cost:
+  do_nothing: 0
+  offer_hotel: 2
+  offer_activity: 1
+  offer_car: 2
+  offer_insurance: 1
+  offer_bundle: 4
+action_risk:
+  do_nothing: 0
+  offer_hotel: 0
+  offer_activity: 0
+  offer_car: 0
+  offer_insurance: 0
+  offer_bundle: 0

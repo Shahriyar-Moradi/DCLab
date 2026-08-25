@@ -57,7 +57,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
     finally:
         session.close()
         with test_engine.begin() as conn:
-            conn.execute(text("TRUNCATE TABLE decisions, predictions, opportunities RESTART IDENTITY CASCADE"))
+            conn.execute(text("TRUNCATE TABLE simulation_runs, decisions, predictions, opportunities RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture()

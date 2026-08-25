@@ -17,8 +17,7 @@ from app.config import get_settings
 from app.ml.ensemble import blend_probabilities
 from app.ml.features import build_features, feature_vector
 
-_bundle: dict[str, Any] | None = None
-_metadata: dict[str, Any] | None = None
+_cache: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
 
 
 class ModelNotTrainedError(RuntimeError):
@@ -26,9 +25,7 @@ class ModelNotTrainedError(RuntimeError):
 
 
 def reset_model_cache() -> None:
-    global _bundle, _metadata
-    _bundle = None
-    _metadata = None
+    _cache.clear()
 
 
 def _artifact_paths(model_dir: Path | None = None) -> tuple[Path, Path]:
@@ -37,24 +34,25 @@ def _artifact_paths(model_dir: Path | None = None) -> tuple[Path, Path]:
 
 
 def load_model(model_dir: Path | None = None):
-    global _bundle, _metadata
-    if _bundle is not None and _metadata is not None:
-        return _bundle, _metadata
+    directory = Path(model_dir or get_settings().model_dir)
+    key = str(directory.resolve())
+    cached = _cache.get(key)
+    if cached is not None:
+        return cached
 
-    artifact, meta_path = _artifact_paths(model_dir)
+    artifact, meta_path = _artifact_paths(directory)
     if not artifact.exists() or not meta_path.exists():
         raise ModelNotTrainedError(
             f"No trained model found at {artifact}. Run `python -m app.ml.train` first."
         )
     recipe = joblib.load(artifact)
     metadata = json.loads(meta_path.read_text())
-    directory = artifact.parent
     members = {}
     member_meta = metadata.get("members") or recipe.get("members") or []
     if member_meta:
         for row in member_meta:
             members[row["id"]] = joblib.load(directory / row["artifact"])
-        _bundle = {
+        bundle = {
             "kind": "factory",
             "fusion": metadata.get("fusion") or recipe.get("fusion"),
             "weights": metadata.get("weights") or recipe.get("weights") or {},
@@ -62,9 +60,9 @@ def load_model(model_dir: Path | None = None):
             "member_meta": member_meta,
         }
     else:
-        _bundle = {"kind": "sklearn", "model": recipe, "members": {}, "member_meta": []}
-    _metadata = metadata
-    return _bundle, _metadata
+        bundle = {"kind": "sklearn", "model": recipe, "members": {}, "member_meta": []}
+    _cache[key] = (bundle, metadata)
+    return bundle, metadata
 
 
 def _member_probability(model, opportunity: Any, features: list[str]) -> float:

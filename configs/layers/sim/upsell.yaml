@@ -1,0 +1,76 @@
+layer: upsell
+kind: simulation
+version: upsell_sim_v1
+target: upgraded
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: upgrade_arpu
+true_p0_column: true_p0_upsell
+direction: good
+
+feature_groups:
+  usage:
+    - features_used
+    - previous_features_used
+    - feature_usage_change
+    - logins_30d
+  plan:
+    - monthly_revenue
+    - number_of_users
+    - account_age_months
+  support:
+    - support_tickets
+    - negative_support
+  temporal:
+    - account_age_months
+    - days_until_renewal
+  financial:
+    - monthly_revenue
+    - remaining_arr
+    - historical_discount
+  engagement:
+    - email_engagement
+    - logins_30d
+    - last_login_days
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [usage, plan, support, temporal, financial, engagement]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [usage, plan, support, temporal, financial, engagement]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [usage, plan, support, temporal, financial, engagement]
+  - id: gb_usage_plan
+    algorithm: gradient_boosting
+    groups: [usage, plan]
+  - id: lr_usage_plan
+    algorithm: logistic_regression
+    groups: [usage, plan]
+  - id: gb_financial_temporal
+    algorithm: gradient_boosting
+    groups: [financial, temporal]
+  - id: gb_usage_engagement
+    algorithm: gradient_boosting
+    groups: [usage, engagement]
+  - id: lr_support_plan
+    algorithm: logistic_regression
+    groups: [support, plan]
+  - id: rf_usage_financial
+    algorithm: random_forest
+    groups: [usage, financial]
+  - id: gb_plan
+    algorithm: gradient_boosting
+    groups: [plan]
+  - id: rf_engagement
+    algorithm: random_forest
+    groups: [engagement]
+  - id: lr_temporal_financial
+    algorithm: logistic_regression
+    groups: [temporal, financial]

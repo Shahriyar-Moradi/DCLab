@@ -1,0 +1,75 @@
+layer: customer_value
+kind: simulation
+version: customer_value_sim_v1
+target: high_ltv
+primary_metric: roc_auc
+min_roc_auc: 0.55
+max_abs_correlation: 0.95
+retain_min: 3
+retain_max: 7
+max_candidates: 20
+value_column: expected_contribution
+true_p0_column: true_p0_high_ltv
+direction: good
+
+feature_groups:
+  revenue:
+    - monthly_revenue
+    - remaining_arr
+    - expected_contribution
+  retention:
+    - last_login_days
+    - logins_30d
+    - days_until_renewal
+  usage:
+    - features_used
+    - number_of_users
+    - user_activity_variance
+  cost:
+    - support_tickets
+    - negative_support
+    - payment_failures
+  engagement:
+    - email_engagement
+    - emails_clicked
+  temporal:
+    - account_age_months
+    - days_until_renewal
+
+candidates:
+  - id: gb_all
+    algorithm: gradient_boosting
+    groups: [revenue, retention, usage, cost, engagement, temporal]
+  - id: lr_all
+    algorithm: logistic_regression
+    groups: [revenue, retention, usage, cost, engagement, temporal]
+  - id: rf_all
+    algorithm: random_forest
+    groups: [revenue, retention, usage, cost, engagement, temporal]
+  - id: gb_revenue_retention
+    algorithm: gradient_boosting
+    groups: [revenue, retention]
+  - id: lr_revenue_retention
+    algorithm: logistic_regression
+    groups: [revenue, retention]
+  - id: gb_usage_engagement
+    algorithm: gradient_boosting
+    groups: [usage, engagement]
+  - id: gb_cost_revenue
+    algorithm: gradient_boosting
+    groups: [cost, revenue]
+  - id: lr_temporal_retention
+    algorithm: logistic_regression
+    groups: [temporal, retention]
+  - id: rf_usage_revenue
+    algorithm: random_forest
+    groups: [usage, revenue]
+  - id: gb_retention
+    algorithm: gradient_boosting
+    groups: [retention]
+  - id: rf_cost
+    algorithm: random_forest
+    groups: [cost]
+  - id: lr_engagement_temporal
+    algorithm: logistic_regression
+    groups: [engagement, temporal]

@@ -25,6 +25,16 @@ def test_upload_happy_and_list_paginated(client, sample_csv_bytes):
     assert payload["total"] == 3
     assert len(payload["items"]) == 2
 
+    sorted_amount = client.get("/opportunities?sort=amount&order=desc")
+    assert sorted_amount.status_code == 200
+    amounts = [row["amount"] for row in sorted_amount.json()["items"]]
+    assert amounts == sorted(amounts, reverse=True)
+
+    filtered = client.get("/opportunities?stage=proposal")
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["external_id"] == "opp_1"
+
     detail = client.get("/opportunities/opp_1")
     assert detail.status_code == 200
     assert detail.json()["external_id"] == "opp_1"
@@ -154,7 +164,23 @@ def test_generate_happy_path_and_no_duplicate(client, sample_csv_bytes, tmp_path
     assert detail.status_code == 200
     assert detail.json()["model_version"] == body["model_version"]
     assert detail.json()["policy_version"] == body["policy_version"]
+
+    by_action = client.get(f"/decisions?action={body['recommended_action']}")
+    assert by_action.status_code == 200
+    assert by_action.json()["total"] == 1
+    by_external = client.get("/decisions?opportunity_id=opp_1")
+    assert by_external.json()["total"] == 1
+    by_uuid = client.get(f"/decisions?opportunity_id={listed.json()['items'][0]['opportunity_id']}")
+    assert by_uuid.json()["total"] == 1
+    missing = client.get("/decisions?opportunity_id=does-not-exist")
+    assert missing.json()["total"] == 0
     reset_model_cache()
+
+
+def test_cors_allows_local_frontend(client):
+    response = client.get("/health", headers={"Origin": "http://localhost:3000"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
 
 def test_get_decision_missing(client):

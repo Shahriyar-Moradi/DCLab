@@ -1,0 +1,42 @@
+version: purchase_sim_v1
+kind: simulation
+uplift_is_simulated: true
+objective:
+  maximize: expected_net_value
+  direction: good
+value_column: expected_margin
+true_p0_column: true_p0_purchase
+constraints:
+  minimum_probability: 0.0
+actions:
+  - do_nothing
+  - send_email
+  - push_notification
+  - offer_discount
+  - product_recommendation
+  - sms
+  - retarget
+action_uplift:
+  do_nothing: 0.0
+  send_email: 0.02
+  push_notification: 0.03
+  offer_discount: 0.09
+  product_recommendation: 0.06
+  sms: 0.025
+  retarget: 0.04
+action_cost:
+  do_nothing: 0
+  send_email: 0.4
+  push_notification: 0.3
+  offer_discount: 12
+  product_recommendation: 1
+  sms: 0.8
+  retarget: 2.5
+action_risk:
+  do_nothing: 0
+  send_email: 0
+  push_notification: 0
+  offer_discount: 0
+  product_recommendation: 0
+  sms: 0
+  retarget: 0

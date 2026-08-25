@@ -25,10 +25,11 @@ def load_layer_config(path: Path | None = None) -> dict[str, Any]:
 
 def group_features(config: dict[str, Any]) -> dict[str, list[str]]:
     groups = dict(config.get("feature_groups") or {})
-    for name, columns in groups.items():
-        unknown = [col for col in columns if col not in FEATURE_NAMES]
-        if unknown:
-            raise ValueError(f"Feature group {name!r} references unknown features: {unknown}")
+    if config.get("kind") != "simulation":
+        for name, columns in groups.items():
+            unknown = [col for col in columns if col not in FEATURE_NAMES]
+            if unknown:
+                raise ValueError(f"Feature group {name!r} references unknown features: {unknown}")
     return {name: list(cols) for name, cols in groups.items()}
 
 

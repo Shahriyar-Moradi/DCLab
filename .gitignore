@@ -10,11 +10,15 @@ htmlcov/
 
 # Environment
 .env
+.env.local
 
 # Model artifacts (keep the folder, ignore trained files)
 *.joblib
 models/revenue_prediction/*
 !models/revenue_prediction/.gitkeep
+models/sim/**
+!models/sim/.gitkeep
+!models/sim/**/.gitkeep
 
 # OS
 .DS_Store
