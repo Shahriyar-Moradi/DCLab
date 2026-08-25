@@ -1,0 +1,40 @@
+"use client";
+
+import { ErrorState } from "@/app/components/ui/ErrorState";
+import { Skeleton } from "@/app/components/ui/Skeleton";
+import { PageIntro, WorkspaceShell } from "@/app/components/workspace/PageIntro";
+import { useLabExperiments } from "@/lib/application";
+import Link from "next/link";
+
+export default function LabExperimentsPage() {
+  const query = useLabExperiments();
+  if (query.isPending) {
+    return (
+      <WorkspaceShell>
+        <Skeleton className="h-64" />
+      </WorkspaceShell>
+    );
+  }
+  if (query.isError) {
+    return (
+      <WorkspaceShell>
+        <ErrorState body="Could not load experiments." onRetry={() => void query.refetch()} />
+      </WorkspaceShell>
+    );
+  }
+  return (
+    <WorkspaceShell>
+      <PageIntro eyebrow="Experimentation lab" title="Experiments" />
+      <ul className="mt-8 divide-y divide-hairline rounded-2xl bg-white shadow-sm ring-1 ring-hairline">
+        {(query.data ?? []).map((row) => (
+          <li key={row.id} className="px-4 py-3">
+            <Link className="font-mono text-data text-brand underline-offset-2 hover:underline" href={`/lab/experiments/${row.id}`}>
+              {row.id}
+            </Link>
+            <p className="font-body text-body text-ink-muted">{row.status}</p>
+          </li>
+        ))}
+      </ul>
+    </WorkspaceShell>
+  );
+}

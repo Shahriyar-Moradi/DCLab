@@ -95,3 +95,125 @@ class SimulationRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class Environment(Base):
+    __tablename__ = "environments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[str] = mapped_column(String(64), nullable=False, default="dclab", index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    datasets: Mapped[list["Dataset"]] = relationship(back_populates="environment")
+    tasks: Mapped[list["PredictionTask"]] = relationship(back_populates="environment")
+
+
+class Dataset(Base):
+    __tablename__ = "datasets"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    environment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("environments.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="csv")
+    location: Mapped[str] = mapped_column(String(512), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
+    schema_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    environment: Mapped[Environment] = relationship(back_populates="datasets")
+    profiles: Mapped[list["DatasetProfile"]] = relationship(back_populates="dataset")
+    experiments: Mapped[list["Experiment"]] = relationship(back_populates="dataset")
+
+
+class DatasetProfile(Base):
+    __tablename__ = "dataset_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False, index=True
+    )
+    stats: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    dataset: Mapped[Dataset] = relationship(back_populates="profiles")
+
+
+class PredictionTask(Base):
+    __tablename__ = "prediction_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    environment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("environments.id"), nullable=False, index=True
+    )
+    slug: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    description: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False, default="binary")
+    spec: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    config_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    environment: Mapped[Environment] = relationship(back_populates="tasks")
+    experiments: Mapped[list["Experiment"]] = relationship(back_populates="task")
+
+
+class Experiment(Base):
+    __tablename__ = "experiments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    environment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("environments.id"), nullable=False, index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prediction_tasks.id"), nullable=False, index=True
+    )
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED", index=True)
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    artifact_dir: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    seed: Mapped[int] = mapped_column(Integer, nullable=False, default=42)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    dataset: Mapped[Dataset] = relationship(back_populates="experiments")
+    task: Mapped[PredictionTask] = relationship(back_populates="experiments")
+    candidates: Mapped[list["ExperimentCandidate"]] = relationship(back_populates="experiment")
+
+
+class ExperimentCandidate(Base):
+    __tablename__ = "experiment_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiments.id"), nullable=False, index=True
+    )
+    candidate_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="generated")
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    experiment: Mapped[Experiment] = relationship(back_populates="candidates")
+

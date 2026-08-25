@@ -1,31 +1,24 @@
 # Quickstart
 
-## 1. Create environment
+Native Postgres + venv (not Docker) is the daily path.
 
 ```bash
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+cp .env.example .env
+make db
+make migrate
+make train
+make run
 ```
 
-## 2. Start infrastructure
+In another terminal:
 
 ```bash
-docker compose up -d
+make web
+make seed
+dclab experiment run --dataset synthetic --task purchase_prediction
 ```
 
-## 3. Start API
-
-```bash
-uvicorn app.main:app --reload
-```
-
-## 4. Check
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-## 5. Next implementation
-
-Build the purchase_probability vertical slice in `docs/FIRST_EXPERIMENT.md` before expanding the platform.
+Docker (`make up`) is behind Compose profile `docker` and does not run migrations automatically yet.

@@ -12,6 +12,18 @@ htmlcov/
 .env
 .env.local
 
+# Experiment artifacts and large datasets
+artifacts/**
+!artifacts/.gitkeep
+data/uploads/
+data/synthetic/
+data/olist/raw/**
+!data/olist/raw/.gitkeep
+data/olist/cleaned/**
+!data/olist/cleaned/.gitkeep
+data/olist/analytical/**
+!data/olist/analytical/.gitkeep
+
 # Model artifacts (keep the folder, ignore trained files)
 *.joblib
 models/revenue_prediction/*

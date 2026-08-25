@@ -24,7 +24,7 @@ export function DecisionLedgerEntry({
   return (
     <article
       className={cn(
-        "rounded bg-paper-raised p-6",
+        "rounded-2xl bg-paper-raised p-6 shadow-sm ring-1 ring-hairline",
         animate && "animate-fade-up",
         className,
       )}
@@ -64,7 +64,7 @@ export function DecisionLedgerEntry({
         {decision.createdAt ? <p>Generated {formatTimestamp(decision.createdAt)}</p> : null}
         {decision.id ? (
           <p className="mt-2">
-            <Link className="text-navy underline-offset-2 hover:underline" href={`/decisions/${decision.id}`}>
+            <Link className="text-brand underline-offset-2 hover:underline" href={`/decisions/${decision.id}`}>
               Open full decision
             </Link>
           </p>

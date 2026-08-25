@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.decisions import router as decisions_router
+from app.api.lab import router as lab_router
 from app.api.opportunities import router as opportunities_router
 from app.api.simulations import router as simulations_router
 from app.config import get_settings
@@ -19,6 +20,7 @@ app.add_middleware(
 app.include_router(opportunities_router)
 app.include_router(decisions_router)
 app.include_router(simulations_router)
+app.include_router(lab_router)
 
 
 @app.get("/health")

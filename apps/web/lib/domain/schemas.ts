@@ -126,3 +126,60 @@ export function generateToView(row: DecisionGenerate): DecisionView {
     conversionProbability: row.conversion_probability,
   };
 }
+
+export const LabEnvironmentSchema = z.object({
+  id: z.uuid(),
+  org_id: z.string(),
+  name: z.string(),
+});
+export const LabDatasetSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  source_type: z.string(),
+  location: z.string(),
+  version: z.string(),
+  row_count: z.number(),
+  column_count: z.number(),
+  schema_json: z.unknown().nullable().optional(),
+});
+export const LabTaskSchema = z.object({
+  id: z.uuid(),
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  task_type: z.string(),
+  spec: z.unknown(),
+});
+export const LabExperimentSchema = z.object({
+  id: z.uuid(),
+  status: z.string(),
+  seed: z.number(),
+  git_commit: z.string().nullable().optional(),
+  artifact_dir: z.string().nullable().optional(),
+  result: z.unknown().nullable().optional(),
+  config: z.unknown(),
+  task_id: z.uuid(),
+  dataset_id: z.uuid(),
+});
+export const LabReportSchema = z.object({
+  markdown: z.string().nullable().optional(),
+  result: z.unknown().nullable().optional(),
+});
+export const LabCandidateSchema = z
+  .object({
+    candidate_id: z.string().optional(),
+    model_family: z.string().optional(),
+    status: z.string().optional(),
+    score: z.number().nullable().optional(),
+    feature_groups: z.array(z.string()).optional(),
+  })
+  .passthrough();
+export const LabComparisonSchema = z
+  .object({
+    fusion: z.string().nullable().optional(),
+    test_metrics: z.unknown().optional(),
+    best_single: z.unknown().optional(),
+    baselines: z.unknown().optional(),
+    weights: z.unknown().optional(),
+  })
+  .passthrough();

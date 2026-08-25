@@ -1,8 +1,6 @@
 .PHONY: db migrate train seed test run web up down sim
 
 # Local toolchain (no Docker). Uses the project venv when present.
-
-# Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
 ifeq ($(PYTHON),)
 PYTHON := python3
@@ -33,6 +31,9 @@ sim:
 	$(PYTHON) -m app.sim.generate
 	$(PYTHON) -m app.sim.run all
 
+web:
+	npm --prefix apps/web run dev
+
 seed:
 	curl -s -F "file=@data/sample/opportunities.csv" http://localhost:8000/opportunities/upload
 
@@ -41,9 +42,6 @@ test:
 
 run:
 	$(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port 8000
-
-web:
-	npm --prefix apps/web run dev
 
 # Future: full containerized stack. Not used for day-to-day local development.
 # Stop native Postgres first if port 5432 is already taken: brew services stop postgresql@16

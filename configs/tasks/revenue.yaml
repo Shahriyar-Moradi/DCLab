@@ -1,0 +1,30 @@
+id: revenue_prediction
+name: Revenue Prediction
+description: Future spend in the next 60 days after as_of_date.
+task_type: regression
+target: revenue_60d
+entity_id: entity_id
+prediction_time_column: as_of_date
+prediction_horizon_days: 60
+evaluation_metric: mae
+validation_strategy: time
+feature_groups:
+  customer:
+    - order_count
+    - total_spend
+    - lifetime_days
+  transaction:
+    - avg_order_value
+    - item_count
+  temporal:
+    - days_since_last_order
+  product:
+    - unique_products
+    - avg_price
+  reviews:
+    - avg_review_score
+    - review_count
+search:
+  strategy: progressive
+  max_candidates: 20
+  max_feature_group_combinations: 12

@@ -1,0 +1,20 @@
+id: marketing_response
+name: Marketing Response
+description: >
+  MQL conversion where first_contact_date is the prediction time and won/closed
+  happens later. Only valid on the Olist marketing subset (or a synthetic analog).
+task_type: binary
+target: target
+entity_id: entity_id
+prediction_time_column: as_of_date
+prediction_horizon_days: 90
+evaluation_metric: pr_auc
+validation_strategy: time
+feature_groups:
+  marketing:
+    - origin_code
+    - has_landing_page
+search:
+  strategy: limited
+  max_candidates: 8
+  max_feature_group_combinations: 4

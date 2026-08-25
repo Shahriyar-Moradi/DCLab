@@ -1,0 +1,25 @@
+id: next_purchase
+name: Next Purchase Time
+description: Days until the next purchase after as_of_date (regression stand-in for survival).
+task_type: regression
+target: days_to_next_purchase
+entity_id: entity_id
+prediction_time_column: as_of_date
+prediction_horizon_days: 365
+evaluation_metric: mae
+validation_strategy: time
+feature_groups:
+  customer:
+    - order_count
+    - total_spend
+    - lifetime_days
+  temporal:
+    - days_since_last_order
+  transaction:
+    - avg_order_value
+  behavior:
+    - marketing_interactions
+search:
+  strategy: progressive
+  max_candidates: 16
+  max_feature_group_combinations: 10

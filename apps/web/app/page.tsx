@@ -1,94 +1,91 @@
 "use client";
 
-import { ActionChart } from "@/app/components/overview/ActionChart";
-import { DecisionLedgerEntry } from "@/app/components/decisions/DecisionLedgerEntry";
-import { EmptyState } from "@/app/components/ui/EmptyState";
-import { ErrorState } from "@/app/components/ui/ErrorState";
-import { Skeleton } from "@/app/components/ui/Skeleton";
-import { useOverviewSnapshot } from "@/lib/application";
-import { decisionToView } from "@/lib/domain";
+import { CaseStudySection, GetStartedCTA, IntegrationsSection, WhyUsSection } from "@/app/components/marketing/sections";
+import { ArrowRight, ChevronDown, Sparkles, TrendingUp } from "lucide-react";
+import Link from "next/link";
 
-export default function OverviewPage() {
-  const snapshot = useOverviewSnapshot();
-
-  if (snapshot.isPending) {
-    return (
-      <div>
-        <h1 className="font-display text-title text-ink">Overview</h1>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-        <Skeleton className="mt-8 h-64" />
-      </div>
-    );
-  }
-
-  if (snapshot.isError) {
-    return (
-      <ErrorState
-        body="Could not load overview numbers from the backend. Check that the API is running."
-        onRetry={() => void snapshot.refetch()}
-      />
-    );
-  }
-
-  const data = snapshot.data;
-  if (!data || (data.opportunityTotal === 0 && data.decisionTotal === 0)) {
-    return (
-      <EmptyState
-        title="No opportunities yet"
-        body="Upload a CSV of historical sales opportunities to score them and see recommended actions."
-        actionLabel="Upload opportunities"
-        actionHref="/opportunities/upload"
-      />
-    );
-  }
-
-  const counts: Record<string, number> = {};
-  for (const row of data.decisions) {
-    counts[row.recommended_action] = (counts[row.recommended_action] ?? 0) + 1;
-  }
-  const topAction =
-    Object.entries(counts).sort((left, right) => right[1] - left[1])[0]?.[0]?.replaceAll("_", " ") ?? "—";
-  const recent = data.decisions.slice(0, 5);
-
+export default function HomePage() {
   return (
     <div>
-      <h1 className="font-display text-title text-ink">Overview</h1>
-      <p className="mt-2 font-body text-body text-ink-muted">
-        What the decision layer has scored, and which actions it is recommending.
-      </p>
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        <StatCard label="Opportunities" value={String(data.opportunityTotal)} />
-        <StatCard label="Decisions generated" value={String(data.decisionTotal)} />
-        <StatCard label="Most common action" value={topAction} />
-      </div>
-      {data.truncated ? (
-        <p className="mt-4 font-body text-body text-ink-muted">
-          Action breakdown uses the 500 most recent decisions (API page size is 100).
+      <section className="bg-orb relative overflow-hidden">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-2 lg:px-8 lg:py-24">
+          <div>
+            <p className="flex items-center gap-2 text-eyebrow uppercase text-brand">
+              <Sparkles size={14} strokeWidth={1.75} /> The AI Decision Intelligence Company
+            </p>
+            <h1 className="mt-4 text-4xl font-bold tracking-tight text-ink lg:text-6xl">
+              We Build AI That <span className="text-brand-gradient">Grows Businesses.</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-base leading-7 text-ink-muted">
+              We build autonomous AI systems that continuously improve marketing, sales, pricing, and customer success
+              through predictive intelligence and machine learning.
+            </p>
+            <p className="mt-3 max-w-xl text-base leading-7 text-ink-muted">
+              Instead of replacing your team, our AI becomes a decision-making partner that learns from your business
+              every day.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/opportunities/upload"
+                className="bg-brand-gradient shadow-brand inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white"
+              >
+                Book a Demo <ArrowRight size={16} />
+              </Link>
+              <Link
+                href="/platform"
+                className="inline-flex items-center rounded-full border border-hairline bg-white px-6 py-3 text-sm font-semibold text-ink"
+              >
+                See Platform
+              </Link>
+            </div>
+          </div>
+          <div className="rounded-3xl bg-white p-6 shadow-xl ring-1 ring-hairline">
+            <div className="flex items-center justify-between">
+              <p className="flex items-center gap-2 font-semibold text-ink">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white">
+                  <Sparkles size={16} strokeWidth={1.75} />
+                </span>
+                AI Decision Engine
+              </p>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                <span className="h-2 w-2 rounded-full bg-green" /> Live
+              </span>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-hairline p-4">
+                <p className="text-xs text-ink-muted">Marketing Data</p>
+                <p className="mt-1 text-xl font-bold text-ink">12,480 signals</p>
+              </div>
+              <div className="rounded-2xl border border-hairline p-4">
+                <p className="text-xs text-ink-muted">Revenue Forecast</p>
+                <p className="mt-1 text-xl font-bold text-brand">+$2.4M</p>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between text-sm">
+              <span className="text-ink">Campaign Agent</span>
+              <span className="font-semibold text-brand">Analyzing...</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-sm">
+              <span className="text-ink">Prediction Model</span>
+              <span className="font-semibold text-cyan">96% confidence</span>
+            </div>
+            <div className="bg-brand-gradient mt-5 flex items-center gap-3 rounded-2xl px-5 py-4 text-white">
+              <TrendingUp strokeWidth={1.75} />
+              <div>
+                <p className="text-lg font-bold">+32% Growth Opportunity</p>
+                <p className="text-sm text-white/80">Predicted across 3 channels</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="pb-8 text-center text-xs font-semibold uppercase tracking-[0.2em] text-ink-muted">
+          Scroll <ChevronDown className="mx-auto mt-1" size={16} />
         </p>
-      ) : null}
-      <h2 className="mt-12 font-display text-section text-ink">Recommended actions</h2>
-      <div className="mt-4 h-64 rounded bg-paper-raised p-4">
-        <ActionChart counts={counts} />
-      </div>
-      <h2 className="mt-12 font-display text-section text-ink">Recent decisions</h2>
-      <div className="mt-4 grid gap-4">
-        {recent.map((row) => (
-          <DecisionLedgerEntry key={row.id} decision={decisionToView(row)} variant="compact" />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded bg-paper-raised p-6">
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">{label}</p>
-      <p className="mt-2 font-mono text-title text-ink">{value}</p>
+      </section>
+      <WhyUsSection />
+      <IntegrationsSection />
+      <CaseStudySection />
+      <GetStartedCTA />
     </div>
   );
 }

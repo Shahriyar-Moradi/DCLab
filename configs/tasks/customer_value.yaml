@@ -1,0 +1,28 @@
+id: customer_value
+name: Customer Value
+description: Expected revenue generated in the next 90 days. Historical spend is a feature, not the target.
+task_type: regression
+target: customer_value_90d
+entity_id: entity_id
+prediction_time_column: as_of_date
+prediction_horizon_days: 90
+evaluation_metric: mae
+validation_strategy: time
+feature_groups:
+  customer:
+    - order_count
+    - total_spend
+    - lifetime_days
+  transaction:
+    - avg_order_value
+  temporal:
+    - days_since_last_order
+  behavior:
+    - marketing_interactions
+    - review_count
+  reviews:
+    - avg_review_score
+search:
+  strategy: progressive
+  max_candidates: 20
+  max_feature_group_combinations: 12

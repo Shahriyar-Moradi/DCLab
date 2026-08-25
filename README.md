@@ -1,31 +1,17 @@
-# Decision.ai — Milestone 1: Decision Engine Foundation
+# DCLab — Decision layer + Experimentation Platform v0.1
 
-An AI-native **decision layer**, not AutoML, not a CRM, and not an agent platform.
-Given historical sales-opportunity data it answers: which opportunities to act on,
-what to do, expected value, and why — with a persisted audit trail.
+DCLab is two slices in one monorepo:
 
-This milestone is the smallest complete slice: CSV ingest → conversion probability →
-policy-backed recommended action → ledger UI.
+1. **Milestone 1 decision ledger** — ingest sales opportunities, score conversion, recommend an action, persist why.
+2. **Lab experiment engine** — ingest a tabular dataset, define a prediction task, search feature-group × model candidates, detect leakage, validate temporally, select a diverse set, compare ensemble vs best single vs baselines, and write a report.
 
-## What you get
+It is **not** AutoML-for-its-own-sake, not a CRM, and not the Horizontal Intelligence layer (out of scope).
 
-- FastAPI in `apps/api`: upload opportunities, generate decisions, list the ledger
-- Next.js 14 app in `apps/web`: overview, opportunities, decisions, CSV upload
-- One served conversion probability (factory trains several sklearn candidates and
-  keeps a blend only if it beats the best single model)
-- YAML policy for action choice (`configs/policies/opportunity_prioritization.yaml`)
-- Isolated case-study simulation pack (`apps/api/app/sim/`, `make sim`) — not part
-  of the generate JSON contract
-
-`action_uplift` in the policy is an explicit **placeholder**, not a causal treatment effect.
+`action_uplift` in the M1 policy is still a **placeholder**, not a causal treatment effect.
 
 ## Local development (no Docker)
 
-Postgres is a native Homebrew service on `localhost:5432`. Docker files stay in the
-repo for a later containerized deploy.
-
 ```bash
-# one-time
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -36,113 +22,58 @@ make migrate
 make train
 cd apps/web && npm install && cp .env.example .env.local && cd ../..
 
-# every day — two terminals
 make run    # API  http://127.0.0.1:8000
 make web    # UI   http://localhost:3000
 ```
 
-Then seed and open the UI:
+M1 UI: opportunities, decisions, upload.
+Lab UI: http://localhost:3000/lab
 
 ```bash
 make seed
-open http://localhost:3000
+dclab env seed-dogfood
+dclab experiment run --dataset synthetic --task purchase_prediction
 ```
 
-Generate from an opportunity page, or:
+Olist (manual benchmark, not CI):
 
 ```bash
-curl -s localhost:8000/health
-curl -s -X POST localhost:8000/decisions/generate \
-  -H "Content-Type: application/json" \
-  -d '{"opportunity_id": "opp_1"}'
+python scripts/fetch_olist.py
+dclab experiment run --dataset olist --task purchase_prediction
+dclab experiment run --dataset olist --task revenue_prediction
+dclab experiment run --dataset olist --task customer_value
+dclab experiment run --dataset olist --task next_purchase
+dclab experiment run --dataset olist --task marketing_response
 ```
 
-`.env` / `.env.example`:
+`.env`:
 
 ```
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/decisionai
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
-`apps/web/.env.local`:
-
-```
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
 ## Layout
 
 ```
-apps/api/          FastAPI — thin HTTP adapters over domain + services
-  app/api/         routes
-  app/domain/      DTOs and errors
-  app/services/    ingest, query, generate, policy decide
-  app/db/          SQLAlchemy + Alembic
-  app/ml/          conversion factory / serve
-  app/sim/         case-study simulations (isolated from generate)
-apps/web/          Next.js App Router
-  app/             pages (thin)
-  app/components/  UI, including DecisionLedgerEntry
-  lib/domain/      Zod schemas, formatters, action tones
-  lib/application/ TanStack Query hooks
-  lib/infrastructure/  API client
-configs/           conversion layer + policies (+ configs/*/sim)
-data/sample/       M1 opportunities CSV
-data/sim/          simulation CSVs
+apps/api/app/engine/   generic experiment engine (no dataset if-branches)
+apps/api/app/ml/       M1 factory facade over the engine
+apps/api/app/sim/      isolated case-study pack
+apps/api/app/cli/      dclab CLI
+apps/web/app/lab/      internal Lab UI
+configs/tasks/         purchase, revenue, customer_value, next_purchase, marketing_response
 ```
 
-The UI does not add Next.js API routes or a second database. Generate responses stay
-exactly eight keys: `opportunity_id`, `conversion_probability`, `expected_revenue`,
-`recommended_action`, `confidence`, `reasoning`, `model_version`, `policy_version`.
-
-## Example commands
+## Tests
 
 ```bash
-curl -F "file=@data/sample/opportunities.csv" localhost:8000/opportunities/upload
-curl -s "localhost:8000/opportunities?limit=5&sort=amount&order=desc"
-curl -s "localhost:8000/opportunities?stage=proposal"
-curl -s -X POST localhost:8000/decisions/generate \
-  -H "Content-Type: application/json" \
-  -d '{"opportunity_id": "opp_1"}'
-curl -s "localhost:8000/decisions?limit=10&action=CONTACT_TODAY"
 make test
 ```
 
-## Make targets
+CI uses synthetic data only. Olist is optional and gitignored under `data/olist/raw/`.
 
-| Target         | Purpose                                              |
-| -------------- | ---------------------------------------------------- |
-| `make db`      | Start native Postgres and create local databases     |
-| `make migrate` | Apply Alembic migrations                             |
-| `make train`   | Train the conversion model                           |
-| `make run`     | Run the API locally with autoreload                  |
-| `make web`     | Run the Next.js UI (`apps/web`, port 3000)           |
-| `make seed`    | Upload `data/sample/opportunities.csv`               |
-| `make sim`     | Generate simulation CSVs and run the case-study pack |
-| `make test`    | Run pytest with coverage                             |
-| `make up`      | Future: Docker Compose stack (`--profile docker`)    |
-| `make down`    | Future: stop the Docker stack                        |
+## Out of scope
 
-## Docker (later)
+Horizontal Intelligence, CRM integrations, SSO, billing, Kubernetes, causal platform, distributed GPU training.
 
-`Dockerfile` and `docker-compose.yml` are kept for a future one-command deploy.
-They are behind Compose profile `docker`, so they will not start during normal
-local work and will not steal port 5432 from Homebrew Postgres.
-
-When you want them:
-
-```bash
-brew services stop postgresql@16   # free port 5432
-make up
-```
-
-## What's not in this milestone
-
-- Human approve/reject workflow
-- Auth / login
-- Action execution / CRM write-back
-- Outcome tracking / business-impact measurement
-- Experimentation / control vs treatment
-- CRM or marketing-platform integration
-- LLM or agent usage
-- Causal uplift (policy uplifts are placeholders)
+See `docs/` for architecture, experimentation, leakage, and reporting.

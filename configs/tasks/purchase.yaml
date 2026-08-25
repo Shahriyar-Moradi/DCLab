@@ -1,0 +1,41 @@
+id: purchase_prediction
+name: Purchase Prediction
+description: Will the customer purchase again within 60 days after as_of_date?
+task_type: binary
+target: purchase_within_60d
+entity_id: entity_id
+prediction_time_column: as_of_date
+prediction_horizon_days: 60
+evaluation_metric: pr_auc
+validation_strategy: time
+feature_groups:
+  customer:
+    - order_count
+    - total_spend
+    - lifetime_days
+    - customer_age
+  transaction:
+    - avg_order_value
+    - order_count
+    - item_count
+  behavior:
+    - marketing_interactions
+    - review_score
+    - review_count
+  temporal:
+    - days_since_last_order
+  marketing:
+    - marketing_interactions
+  product:
+    - unique_products
+    - unique_sellers
+    - avg_price
+    - category_count
+  reviews:
+    - avg_review_score
+    - latest_review_score
+    - review_count
+search:
+  strategy: progressive
+  max_candidates: 24
+  max_feature_group_combinations: 16

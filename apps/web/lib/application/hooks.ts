@@ -1,12 +1,20 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import { apiGet, apiPost, uploadFile } from "@/lib/infrastructure/api-client";
 import {
   DecisionGenerateSchema,
   DecisionListSchema,
   DecisionSchema,
   HealthSchema,
+  LabCandidateSchema,
+  LabComparisonSchema,
+  LabDatasetSchema,
+  LabEnvironmentSchema,
+  LabExperimentSchema,
+  LabReportSchema,
+  LabTaskSchema,
   OpportunityListSchema,
   OpportunitySchema,
   UploadResultSchema,
@@ -138,5 +146,65 @@ export function useUploadOpportunities(): ReturnType<
       void queryClient.invalidateQueries({ queryKey: ["opportunities"] });
       void queryClient.invalidateQueries({ queryKey: ["overview-snapshot"] });
     },
+  });
+}
+
+export function useLabEnvironments() {
+  return useQuery({
+    queryKey: ["lab", "environments"],
+    queryFn: () => apiGet("/lab/environments", z.array(LabEnvironmentSchema)),
+  });
+}
+
+export function useLabDatasets() {
+  return useQuery({
+    queryKey: ["lab", "datasets"],
+    queryFn: () => apiGet("/lab/datasets", z.array(LabDatasetSchema)),
+  });
+}
+
+export function useLabTasks() {
+  return useQuery({
+    queryKey: ["lab", "tasks"],
+    queryFn: () => apiGet("/lab/tasks", z.array(LabTaskSchema)),
+  });
+}
+
+export function useLabExperiments() {
+  return useQuery({
+    queryKey: ["lab", "experiments"],
+    queryFn: () => apiGet("/lab/experiments", z.array(LabExperimentSchema)),
+  });
+}
+
+export function useLabExperiment(id: string | undefined) {
+  return useQuery({
+    queryKey: ["lab", "experiments", id],
+    queryFn: () => apiGet(`/lab/experiments/${id}`, LabExperimentSchema),
+    enabled: Boolean(id),
+  });
+}
+
+export function useLabReport(id: string | undefined) {
+  return useQuery({
+    queryKey: ["lab", "report", id],
+    queryFn: () => apiGet(`/lab/experiments/${id}/report`, LabReportSchema),
+    enabled: Boolean(id),
+  });
+}
+
+export function useLabCandidates(id: string | undefined) {
+  return useQuery({
+    queryKey: ["lab", "candidates", id],
+    queryFn: () => apiGet(`/lab/experiments/${id}/candidates`, z.array(LabCandidateSchema)),
+    enabled: Boolean(id),
+  });
+}
+
+export function useLabComparison(id: string | undefined) {
+  return useQuery({
+    queryKey: ["lab", "comparison", id],
+    queryFn: () => apiGet(`/lab/experiments/${id}/comparison`, LabComparisonSchema),
+    enabled: Boolean(id),
   });
 }
