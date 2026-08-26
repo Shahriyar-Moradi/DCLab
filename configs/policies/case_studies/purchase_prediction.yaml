@@ -1,0 +1,30 @@
+version: purchase_prediction_v1
+objective: maximize expected revenue from outreach this week
+score_basis: probability
+
+default_action: no_action
+actions: [contact_today, schedule_followup, send_email, no_action]
+
+# Thresholds are the 90th/80th percentile of predicted probabilities on the
+# Step 1 baseline's validation set (positive rate itself is ~0.3%, far below
+# any of these — a fixed 0.35 floor like the M1 opportunity policy would
+# never fire for this task, so thresholds are derived from the model's own
+# score distribution instead: "contact the top ~10%, follow up the next ~10%").
+action_thresholds:
+  contact_today: 0.0064   # ~p90 of validation predicted probability
+  schedule_followup: 0.0049   # ~p80
+  send_email: 0.0042   # ~p50 (median)
+
+value_column: avg_order_value
+action_uplift:
+  contact_today: 0.08
+  schedule_followup: 0.04
+  send_email: 0.02
+  no_action: 0.0
+
+notes: >
+  Reuses the M1 opportunity policy's action set and uplift placeholders
+  (configs/policies/opportunity_prioritization.yaml) since this is the same
+  underlying "contact this customer" decision, just re-thresholded for a
+  data source where positive-class prevalence is far rarer than the M1
+  synthetic opportunities the original 0.35 floor was tuned for.

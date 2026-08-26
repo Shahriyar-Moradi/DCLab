@@ -9,6 +9,27 @@ from app.db.base import Base
 
 DEFAULT_ORG_ID = "default"
 
+# Well-known workspace every pre-existing row is backfilled to, and the workspace
+# used when a request omits X-Workspace-Id. Fixed (not random) so migrations and
+# app code can agree on it without a lookup.
+DEFAULT_WORKSPACE_SLUG = "default"
+DEFAULT_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    opportunities: Mapped[list["Opportunity"]] = relationship(back_populates="workspace")
+    predictions: Mapped[list["Prediction"]] = relationship(back_populates="workspace")
+    decisions: Mapped[list["Decision"]] = relationship(back_populates="workspace")
+
 
 class Opportunity(Base):
     __tablename__ = "opportunities"
@@ -16,6 +37,14 @@ class Opportunity(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id: Mapped[str] = mapped_column(
         String(64), nullable=False, default=DEFAULT_ORG_ID, server_default=DEFAULT_ORG_ID
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        default=DEFAULT_WORKSPACE_ID,
+        server_default=str(DEFAULT_WORKSPACE_ID),
+        index=True,
     )
     external_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     customer_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -37,12 +66,21 @@ class Opportunity(Base):
 
     predictions: Mapped[list["Prediction"]] = relationship(back_populates="opportunity")
     decisions: Mapped[list["Decision"]] = relationship(back_populates="opportunity")
+    workspace: Mapped[Workspace] = relationship(back_populates="opportunities")
 
 
 class Prediction(Base):
     __tablename__ = "predictions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        default=DEFAULT_WORKSPACE_ID,
+        server_default=str(DEFAULT_WORKSPACE_ID),
+        index=True,
+    )
     opportunity_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("opportunities.id"), nullable=False, index=True
     )
@@ -55,12 +93,21 @@ class Prediction(Base):
 
     opportunity: Mapped[Opportunity] = relationship(back_populates="predictions")
     decisions: Mapped[list["Decision"]] = relationship(back_populates="prediction")
+    workspace: Mapped[Workspace] = relationship(back_populates="predictions")
 
 
 class Decision(Base):
     __tablename__ = "decisions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        default=DEFAULT_WORKSPACE_ID,
+        server_default=str(DEFAULT_WORKSPACE_ID),
+        index=True,
+    )
     opportunity_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("opportunities.id"), nullable=False, unique=True, index=True
     )
@@ -81,6 +128,7 @@ class Decision(Base):
 
     opportunity: Mapped[Opportunity] = relationship(back_populates="decisions")
     prediction: Mapped[Prediction] = relationship(back_populates="decisions")
+    workspace: Mapped[Workspace] = relationship(back_populates="decisions")
 
 
 class SimulationRun(Base):

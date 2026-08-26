@@ -1,0 +1,27 @@
+version: customer_value_v1
+objective: maximize expected 90-day revenue captured by prioritizing high-value customers
+score_basis: predicted_value
+
+default_action: no_action
+actions: [prioritize_high_value, standard_nurture, no_action]
+
+# Raw dollar thresholds = p90 / p50 of the Step 1 baseline's predicted
+# customer_value_90d on its validation set. Most customers predict near $0
+# (repeat purchase within 90 days is rare in Olist, same dynamic as
+# purchase_prediction/reactivation), so this is "prioritize the top ~10% by
+# predicted value, nurture everyone else above the median, ignore the rest."
+action_thresholds:
+  prioritize_high_value: 1.43   # ~p90 predicted value
+  standard_nurture: 0.88   # ~p50 (median) predicted value
+
+value_column: null   # unused for regression: predicted_value is already the dollar baseline
+action_uplift:
+  prioritize_high_value: 0.05
+  standard_nurture: 0.02
+  no_action: 0.0
+
+notes: >
+  Regression policy: score_basis=predicted_value means the model's raw
+  prediction is both the eligibility score and the dollar baseline (no
+  probability multiplier). action_uplift values are placeholders, same
+  caveat as every other case study's policy.

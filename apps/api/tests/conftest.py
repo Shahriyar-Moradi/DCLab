@@ -40,10 +40,19 @@ def test_engine():
     get_engine.__globals__  # engine is lazy via get_settings
     from app.db import models  # noqa: F401
     from app.db.base import Base
+    from app.db.models import DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_SLUG
 
     engine = create_engine(TEST_URL, pool_pre_ping=True)
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    # create_all doesn't run data migrations, so seed the same well-known default
+    # workspace the 0005_workspaces migration creates in real environments — every
+    # Opportunity/Prediction/Decision row defaults its workspace_id FK to this row.
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO workspaces (id, slug, name) VALUES (:id, :slug, :name)"),
+            {"id": DEFAULT_WORKSPACE_ID, "slug": DEFAULT_WORKSPACE_SLUG, "name": "Default"},
+        )
     yield engine
     engine.dispose()
 
@@ -56,12 +65,20 @@ def db_session(test_engine) -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+        from app.db.models import DEFAULT_WORKSPACE_ID
+
         with test_engine.begin() as conn:
             conn.execute(text(
                 "TRUNCATE TABLE experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, decisions, "
                 "predictions, opportunities RESTART IDENTITY CASCADE"
             ))
+            # Keep the well-known default workspace; drop any extra workspaces a
+            # test created so slugs don't collide across test functions.
+            conn.execute(
+                text("DELETE FROM workspaces WHERE id != :default_id"),
+                {"default_id": DEFAULT_WORKSPACE_ID},
+            )
 
 
 @pytest.fixture()

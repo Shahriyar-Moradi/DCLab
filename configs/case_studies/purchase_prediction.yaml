@@ -1,0 +1,76 @@
+# CS1 — Purchase prediction (real Olist data).
+# Already scoped in the DCLab milestone as configs/tasks/purchase.yaml; this
+# file restates it under the case-study schema so the benchmark harness has
+# one consistent config shape across all 6 case studies.
+id: purchase_prediction
+name: Purchase Prediction
+business_problem: >
+  Will this customer place another order within 60 days of the snapshot date?
+  The canonical "will they buy again" prediction that a revenue-focused
+  decision layer needs to prioritize outreach.
+
+data_source:
+  kind: olist
+  as_of_dates:
+    - "2017-09-01"
+    - "2017-12-01"
+    - "2018-03-01"
+    - "2018-06-01"
+
+target:
+  entity_id: entity_id
+  prediction_time_column: as_of_date
+  horizon_days: 60
+  target_column: purchase_within_60d
+  task_type: binary
+  evaluation_metric: pr_auc
+
+feature_groups:
+  customer:
+    - order_count
+    - total_spend
+    - lifetime_days
+    - customer_age
+  transaction:
+    - avg_order_value
+    - order_count
+    - item_count
+  behavior:
+    - marketing_interactions
+    - review_score
+    - review_count
+  temporal:
+    - days_since_last_order
+  marketing:
+    - marketing_interactions
+  product:
+    - unique_products
+    - unique_sellers
+    - avg_price
+    - category_count
+  reviews:
+    - avg_review_score
+    - latest_review_score
+    - review_count
+
+validation_strategy: time
+
+decision_actions:
+  - contact_today
+  - schedule_followup
+  - send_email
+  - no_action
+
+# Two segments (Step 5): geography (customer_state_code, literal column) and
+# purchase frequency (order_count_band — derived by
+# benchmarks/segment_comparison.py from order_count via tercile cut into
+# Low/Medium/High). Frequency is the natural second cut for a "will they buy
+# again" case study: it tests whether either model's advantage is
+# concentrated among frequent repeat buyers (an easier population) rather
+# than holding for the harder, low-frequency segment outreach actually needs
+# to prioritize.
+segment_columns:
+  - customer_state_code
+  - order_count_band
+
+search_overrides: {}

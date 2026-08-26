@@ -1,0 +1,48 @@
+# CS6 — Campaign response (synthetic, with ground truth).
+# Per the DCLab brief's own instruction: if real data can't defensibly
+# support a target, build a controlled synthetic benchmark and say so. Olist
+# has no campaign-send/response event stream. Generator built in Step 1,
+# benchmarks/case_studies/synthetic_generators.py::campaign_response_v1.
+id: campaign_response
+name: Campaign Response
+business_problem: >
+  Will this customer respond (open/click/convert) to a marketing campaign
+  sent on the snapshot date, within a 14-day response window? Feeds a
+  send/suppress decision for the next campaign wave.
+
+data_source:
+  kind: synthetic
+  generator: campaign_response_v1
+  n_entities: 4000
+  seed: 42
+
+target:
+  entity_id: entity_id
+  prediction_time_column: as_of_date
+  horizon_days: 14
+  target_column: responded
+  task_type: binary
+  evaluation_metric: pr_auc
+
+feature_groups:
+  channel:
+    - channel
+  engagement:
+    - past_response_rate
+    - prior_response_count
+  recency:
+    - days_since_last_campaign
+  segment:
+    - customer_segment
+
+validation_strategy: time
+
+decision_actions:
+  - send
+  - suppress
+
+segment_columns:
+  - channel
+  - customer_segment
+
+search_overrides: {}

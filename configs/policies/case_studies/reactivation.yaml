@@ -1,0 +1,24 @@
+version: reactivation_v1
+objective: maximize expected revenue recovered from win-back offers
+score_basis: probability
+
+default_action: no_action
+actions: [send_win_back_offer, no_action]
+
+# ~p80 of validation predicted probability among the dormant (90+ day)
+# population this case study already scopes itself to (see
+# configs/case_studies/reactivation.yaml entity_filter).
+action_thresholds:
+  send_win_back_offer: 0.0044
+
+value_column: avg_order_value
+action_uplift:
+  send_win_back_offer: 0.10
+  no_action: 0.0
+
+notes: >
+  Single-action policy: a dormant customer either gets one win-back offer or
+  nothing this cycle. Higher uplift placeholder than purchase_prediction's
+  contact_today (0.08) on the assumption a win-back offer is a stronger,
+  more targeted intervention than a generic contact — still a placeholder,
+  not measured treatment effect.

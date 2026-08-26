@@ -1,0 +1,28 @@
+version: upsell_crosssell_v1
+objective: maximize expected incremental spend from upsell/cross-sell offers this cycle
+score_basis: probability
+
+default_action: no_action
+actions: [offer_upsell, offer_cross_sell, no_action]
+
+# The model predicts one combined upsell/cross-sell-acceptance probability
+# (there is no signal in the data to separately predict which of the two a
+# customer would prefer) — so this policy makes the bigger ask
+# (offer_upsell) of the top ~20% by predicted probability and the smaller
+# ask (offer_cross_sell) of the next tier down to the median. Documented as
+# an assumption: a real deployment would need a second, offer-type-specific
+# signal to choose between the two properly.
+action_thresholds:
+  offer_upsell: 0.74   # ~p80
+  offer_cross_sell: 0.55   # ~p50 (median)
+
+value_column: current_spend
+action_uplift:
+  offer_upsell: 0.12
+  offer_cross_sell: 0.06
+  no_action: 0.0
+
+notes: >
+  offer_upsell's uplift is double offer_cross_sell's, consistent with it
+  being reserved for higher-propensity customers and typically a larger
+  basket increase — a placeholder assumption, not a measured effect.

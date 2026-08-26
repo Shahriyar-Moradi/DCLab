@@ -15,13 +15,13 @@ export function EmptyState({
   actionHref?: string;
 }) {
   return (
-    <div className="rounded-2xl bg-paper-raised px-8 py-16 text-center shadow-sm ring-1 ring-hairline">
+    <div className="rounded bg-paper-raised px-8 py-16 text-center">
       <h2 className="font-display text-section text-ink">{title}</h2>
       <p className="mx-auto mt-3 max-w-md font-body text-body text-ink-muted">{body}</p>
       {actionHref ? (
         <Link
           href={actionHref}
-          className="bg-brand-gradient shadow-brand mt-6 inline-flex items-center justify-center rounded-full px-5 py-2.5 font-body text-body font-semibold text-white"
+          className="mt-6 inline-flex items-center justify-center rounded bg-navy px-4 py-2 font-body text-body font-medium text-paper-raised hover:bg-navy/90"
         >
           {actionLabel}
         </Link>

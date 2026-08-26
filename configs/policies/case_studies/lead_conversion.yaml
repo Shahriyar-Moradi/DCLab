@@ -1,0 +1,25 @@
+version: lead_conversion_v1
+objective: maximize expected pipeline value from sales follow-up this cycle
+score_basis: probability
+
+default_action: no_action
+actions: [contact_today, nurture, no_action]
+
+# ~p80 / p50 of the Step 1 baseline's predicted probability on its
+# validation set: "contact the hottest ~20% of leads today, nurture anyone
+# above the median, ignore the bottom half."
+action_thresholds:
+  contact_today: 0.60   # ~p80
+  nurture: 0.40   # ~p50 (median)
+
+value_column: amount
+action_uplift:
+  contact_today: 0.15
+  nurture: 0.05
+  no_action: 0.0
+
+notes: >
+  Higher uplift placeholders than the Olist case studies (0.15 vs 0.08) on
+  the assumption a live sales follow-up on a warm inbound lead converts more
+  incremental value than a marketing contact to an anonymous customer —
+  still a placeholder, not a measured treatment effect.

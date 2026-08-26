@@ -1,0 +1,55 @@
+# CS4 — Lead conversion (synthetic, with ground truth).
+# Olist has no lead/funnel data, so this uses a controlled synthetic
+# generator with a documented true latent conversion function (built in
+# Step 1, benchmarks/case_studies/synthetic_generators.py::lead_conversion_v1).
+# The true probability is kept in a ground-truth sidecar, never fed to
+# training — same pattern as the Lab environment's synthetic company data.
+id: lead_conversion
+name: Lead Conversion
+business_problem: >
+  Will this sales lead convert (close won) within 30 days of first contact?
+  Feeds the same contact-prioritization decision the M1 opportunity ledger
+  already makes, but on a controlled synthetic benchmark with known ground
+  truth so the comparison isn't confounded by label noise.
+
+data_source:
+  kind: synthetic
+  generator: lead_conversion_v1
+  n_entities: 4000
+  seed: 42
+
+target:
+  entity_id: entity_id
+  prediction_time_column: as_of_date
+  horizon_days: 30
+  target_column: converted
+  task_type: binary
+  evaluation_metric: pr_auc
+
+feature_groups:
+  engagement:
+    - engagement_score
+    - num_interactions
+  recency:
+    - last_contact_days_ago
+  deal:
+    - amount
+  source:
+    - source
+  rep:
+    - sales_rep_available
+  industry:
+    - industry
+
+validation_strategy: time
+
+decision_actions:
+  - contact_today
+  - nurture
+  - no_action
+
+segment_columns:
+  - industry
+  - deal_size_band
+
+search_overrides: {}

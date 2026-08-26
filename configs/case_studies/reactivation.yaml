@@ -1,0 +1,80 @@
+# CS2 — Reactivation / repeat-purchase proxy (real Olist data).
+#
+# HONESTY NOTE (also carried in the `honesty_note` field below, and required
+# by Step 0's Definition of Done to be rendered into every report this case
+# study produces): Olist is a single-purchase-heavy marketplace dataset with
+# no subscription, so there is no real "churn" event to predict. This case
+# study is a *repeat-purchase proxy* for reactivation/win-back: among
+# customers who have gone quiet (no order in the 90 days before the snapshot
+# date), will they place another order in the next 60 days? Never call this
+# "real churn" in any report.
+id: reactivation
+name: Reactivation (Repeat-Purchase Proxy)
+business_problem: >
+  Among customers who have gone quiet (no order in the 90 days before the
+  snapshot date), will they place another order within the next 60 days?
+  A proxy for win-back / reactivation targeting, not real subscription churn.
+
+data_source:
+  kind: olist
+  as_of_dates:
+    - "2017-09-01"
+    - "2017-12-01"
+    - "2018-03-01"
+    - "2018-06-01"
+  entity_filter: "customers with days_since_last_order >= 90 as of as_of_date"
+
+target:
+  entity_id: entity_id
+  prediction_time_column: as_of_date
+  horizon_days: 60
+  target_column: purchase_within_60d
+  task_type: binary
+  evaluation_metric: pr_auc
+
+feature_groups:
+  customer:
+    - order_count
+    - total_spend
+    - lifetime_days
+    - customer_age
+  transaction:
+    - avg_order_value
+    - item_count
+  behavior:
+    - marketing_interactions
+    - review_score
+    - review_count
+  temporal:
+    - days_since_last_order
+  reviews:
+    - avg_review_score
+    - latest_review_score
+    - review_count
+
+validation_strategy: time
+
+honesty_note: >
+  Olist has no subscription/contract relationship, so there is no real churn
+  event in this data. This case study is a repeat-purchase proxy: it scores
+  already-dormant customers (no order in 90+ days) on whether they return
+  within 60 days. Treat every result here as evidence about win-back
+  targeting on a proxy label, not as a validated churn model.
+
+decision_actions:
+  - send_win_back_offer
+  - no_action
+
+# Two segments (Step 5): geography (customer_state_code, literal column) and
+# dormancy depth (dormancy_band — derived by benchmarks/segment_comparison.py
+# from days_since_last_order via tercile cut into
+# Recently dormant / Moderately dormant / Long dormant). Dormancy depth is the
+# single most meaningful cut for a win-back case study: it directly tests
+# whether the "reactivation" signal degrades for customers dormant the
+# longest, which is exactly the population a win-back campaign spends the
+# most money trying to reach.
+segment_columns:
+  - customer_state_code
+  - dormancy_band
+
+search_overrides: {}

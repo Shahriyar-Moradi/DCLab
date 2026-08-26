@@ -1,0 +1,28 @@
+version: campaign_response_v1
+objective: maximize expected campaign responses while suppressing unlikely responders
+score_basis: probability
+
+default_action: suppress
+actions: [send, suppress]
+
+# ~p50 (median) of the Step 1 baseline's predicted probability: send to
+# anyone more likely than average to respond, suppress everyone else.
+action_thresholds:
+  send: 0.56
+
+# Campaign response has no natural per-entity dollar figure in this
+# synthetic case study, unlike the others (no deal size, no order value) —
+# flat_value is a nominal placeholder $ value per response, used only so
+# realized/expected value is reportable in the same $-shaped units as every
+# other case study. Treat CS6's dollar figures as illustrative, not real.
+value_column: null
+flat_value: 50.0
+action_uplift:
+  send: 0.20
+  suppress: 0.0
+
+notes: >
+  flat_value=$50 is an illustrative placeholder, not a real campaign
+  economics figure — CS6 is a controlled synthetic benchmark per the case
+  study registry, and this policy inherits that same "controlled, not real"
+  framing for its dollar figures.

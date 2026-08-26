@@ -4,7 +4,6 @@ import { EmptyState } from "@/app/components/ui/EmptyState";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
-import { fieldControlClass, PageIntro, Pager, WorkspaceShell } from "@/app/components/workspace/PageIntro";
 import { useOpportunities } from "@/lib/application";
 import { formatMoney, formatTimestamp } from "@/lib/domain";
 import Link from "next/link";
@@ -32,61 +31,54 @@ export default function OpportunitiesPage() {
 
   if (query.isPending) {
     return (
-      <WorkspaceShell>
-        <PageIntro eyebrow="Workspace" title="Opportunities" />
+      <div>
+        <h1 className="font-display text-title text-ink">Opportunities</h1>
         <Skeleton className="mt-8 h-96" />
-      </WorkspaceShell>
+      </div>
     );
   }
   if (query.isError) {
-    return (
-      <WorkspaceShell>
-        <ErrorState body="Could not load opportunities." onRetry={() => void query.refetch()} />
-      </WorkspaceShell>
-    );
+    return <ErrorState body="Could not load opportunities." onRetry={() => void query.refetch()} />;
   }
   const payload = query.data;
   if (!payload || (payload.total === 0 && !stage)) {
     return (
-      <WorkspaceShell>
-        <EmptyState
-          title="No opportunities yet"
-          body="Upload a CSV to get started. The decision engine scores each row and recommends an action."
-          actionLabel="Upload opportunities"
-          actionHref="/opportunities/upload"
-        />
-      </WorkspaceShell>
+      <EmptyState
+        title="No opportunities yet"
+        body="Upload a CSV to get started. The decision engine scores each row and recommends an action."
+        actionLabel="Upload opportunities"
+        actionHref="/opportunities/upload"
+      />
     );
   }
 
   return (
-    <WorkspaceShell>
-      <PageIntro
-        eyebrow="Workspace"
-        title="Opportunities"
-        subtitle={`${payload.total} in the pipeline`}
-        actions={
-          <label className="font-body text-body text-ink">
-            Stage
-            <select
-              className={fieldControlClass}
-              value={stage}
-              onChange={(event) => {
-                setStage(event.target.value);
-                setOffset(0);
-              }}
-            >
-              <option value="">All</option>
-              {stages.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-        }
-      />
-      <div className="mt-8 rounded-2xl bg-white p-2 shadow-sm ring-1 ring-hairline md:p-4">
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-title text-ink">Opportunities</h1>
+          <p className="mt-2 font-body text-body text-ink-muted">{payload.total} in the pipeline</p>
+        </div>
+        <label className="font-body text-body text-ink">
+          Stage
+          <select
+            className="ml-2 rounded border border-hairline bg-paper-raised px-3 py-2"
+            value={stage}
+            onChange={(event) => {
+              setStage(event.target.value);
+              setOffset(0);
+            }}
+          >
+            <option value="">All</option>
+            {stages.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="mt-8 rounded bg-paper-raised p-2 md:p-4">
         <Table>
           <thead>
             <tr>
@@ -106,12 +98,14 @@ export default function OpportunitiesPage() {
             {payload.items.map((row) => (
               <tr key={row.id} className="hover:bg-navy-soft/60">
                 <Td mono>
-                  <Link className="text-brand underline-offset-2 hover:underline" href={`/opportunities/${row.external_id}`}>
+                  <Link className="text-navy underline-offset-2 hover:underline" href={`/opportunities/${row.external_id}`}>
                     {row.external_id}
                   </Link>
                 </Td>
                 <Td mono>{row.customer_id}</Td>
-                <Td mono>{formatMoney(row.amount, row.currency)}</Td>
+                <Td mono>
+                  {formatMoney(row.amount, row.currency)}
+                </Td>
                 <Td>{row.stage}</Td>
                 <Td>{row.source}</Td>
                 <Td mono>{formatTimestamp(row.created_at)}</Td>
@@ -120,13 +114,27 @@ export default function OpportunitiesPage() {
           </tbody>
         </Table>
       </div>
-      <Pager
-        offset={offset}
-        pageSize={PAGE_SIZE}
-        total={payload.total}
-        onPrev={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}
-        onNext={() => setOffset((value) => value + PAGE_SIZE)}
-      />
-    </WorkspaceShell>
+      <div className="mt-6 flex items-center justify-between font-body text-body text-ink">
+        <button
+          type="button"
+          className="rounded px-3 py-2 hover:bg-navy-soft disabled:opacity-40"
+          disabled={offset === 0}
+          onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}
+        >
+          Previous
+        </button>
+        <p className="font-mono text-data">
+          {offset + 1}–{Math.min(offset + PAGE_SIZE, payload.total)} of {payload.total}
+        </p>
+        <button
+          type="button"
+          className="rounded px-3 py-2 hover:bg-navy-soft disabled:opacity-40"
+          disabled={offset + PAGE_SIZE >= payload.total}
+          onClick={() => setOffset((value) => value + PAGE_SIZE)}
+        >
+          Next
+        </button>
+      </div>
+    </div>
   );
 }

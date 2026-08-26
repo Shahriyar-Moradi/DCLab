@@ -2,7 +2,6 @@
 
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { WorkspaceShell } from "@/app/components/workspace/PageIntro";
 import { apiGet } from "@/lib/infrastructure";
 import { LabDatasetSchema } from "@/lib/domain";
 import { useQuery } from "@tanstack/react-query";
@@ -20,23 +19,13 @@ export default function DatasetDetailPage() {
     queryFn: () => apiGet(`/lab/datasets/${params.id}/profile`, z.object({ id: z.string(), stats: z.unknown() })),
     retry: 0,
   });
-  if (dataset.isPending) {
-    return (
-      <WorkspaceShell>
-        <Skeleton className="h-64" />
-      </WorkspaceShell>
-    );
-  }
+  if (dataset.isPending) return <Skeleton className="h-64" />;
   if (dataset.isError || !dataset.data) {
-    return (
-      <WorkspaceShell>
-        <ErrorState body="Dataset not found." onRetry={() => void dataset.refetch()} />
-      </WorkspaceShell>
-    );
+    return <ErrorState body="Dataset not found." onRetry={() => void dataset.refetch()} />;
   }
   const stats = profile.data?.stats as { columns?: Array<{ name: string; missing_pct: number; dtype: string }>; row_count?: number } | undefined;
   return (
-    <WorkspaceShell>
+    <div>
       <h1 className="font-display text-title text-ink">{dataset.data.name}</h1>
       <p className="mt-2 font-mono text-data text-ink-muted">
         {dataset.data.row_count} rows · {dataset.data.column_count} columns · {dataset.data.version}
@@ -45,7 +34,7 @@ export default function DatasetDetailPage() {
       {profile.isError ? (
         <p className="mt-2 font-body text-body text-ink-muted">No profile yet. Run `dclab dataset profile`.</p>
       ) : (
-        <ul className="mt-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-hairline">
+        <ul className="mt-4 rounded bg-paper-raised p-4">
           {(stats?.columns ?? []).slice(0, 40).map((col) => (
             <li key={col.name} className="border-t border-hairline py-2 font-mono text-data text-ink">
               {col.name} · {col.dtype} · missing {Math.round((col.missing_pct ?? 0) * 100)}%
@@ -53,6 +42,6 @@ export default function DatasetDetailPage() {
           ))}
         </ul>
       )}
-    </WorkspaceShell>
+    </div>
   );
 }

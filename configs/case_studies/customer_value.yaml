@@ -1,0 +1,60 @@
+# CS3 — Customer value / revenue prediction (real Olist data).
+# Already scoped in the DCLab milestone as configs/tasks/customer_value.yaml;
+# restated under the case-study schema for the benchmark harness.
+id: customer_value
+name: Customer Value
+business_problem: >
+  How much revenue will this customer generate in the next 90 days?
+  Historical spend is a feature, not the target — this predicts forward
+  value, the number a decision layer needs to size an investment in a
+  customer (outreach cost vs. expected return).
+
+data_source:
+  kind: olist
+  as_of_dates:
+    - "2017-09-01"
+    - "2017-12-01"
+    - "2018-03-01"
+    - "2018-06-01"
+
+target:
+  entity_id: entity_id
+  prediction_time_column: as_of_date
+  horizon_days: 90
+  target_column: customer_value_90d
+  task_type: regression
+  evaluation_metric: mae
+
+feature_groups:
+  customer:
+    - order_count
+    - total_spend
+    - lifetime_days
+  transaction:
+    - avg_order_value
+  temporal:
+    - days_since_last_order
+  behavior:
+    - marketing_interactions
+    - review_count
+  reviews:
+    - avg_review_score
+
+validation_strategy: time
+
+decision_actions:
+  - prioritize_high_value
+  - standard_nurture
+  - no_action
+
+# Two segments (Step 5): geography (customer_state_code, literal column) and
+# basket size (order_value_band — derived by benchmarks/segment_comparison.py
+# from avg_order_value via tercile cut into Low/Medium/High value). Basket
+# size is the natural cut for a revenue-forecasting case study: it tests
+# whether the model (either model) is actually differentiating high-value
+# customers, or just predicting near the population mean regardless of band.
+segment_columns:
+  - customer_state_code
+  - order_value_band
+
+search_overrides: {}

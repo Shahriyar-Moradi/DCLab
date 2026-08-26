@@ -10,7 +10,7 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div role="alert" className="rounded-2xl bg-paper-raised px-8 py-12 shadow-sm ring-1 ring-hairline">
+    <div role="alert" className="rounded bg-paper-raised px-8 py-12">
       <h2 className="font-display text-section text-ink">{title}</h2>
       <p className="mt-3 font-body text-body text-ink-muted">{body}</p>
       {onRetry ? (

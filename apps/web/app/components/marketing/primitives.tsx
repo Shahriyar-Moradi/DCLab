@@ -2,16 +2,8 @@ import { cn } from "@/lib/cn";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-export function Eyebrow({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <p className={cn("text-eyebrow uppercase text-brand", className)}>{children}</p>
-  );
+export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
+  return <p className={cn("text-eyebrow uppercase text-brand", className)}>{children}</p>;
 }
 
 export function PageHero({
@@ -38,18 +30,10 @@ export function PageHero({
   );
 }
 
-export function FeatureCard({
-  icon: Icon,
-  title,
-  body,
-}: {
-  icon: LucideIcon;
-  title: string;
-  body: string;
-}) {
+export function FeatureCard({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
   return (
-    <article className="rounded-2xl bg-[#F4F7FB] p-6">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-brand shadow-sm">
+    <article className="rounded-2xl bg-paper-raised p-6 shadow-sm ring-1 ring-hairline transition hover:shadow-md hover:ring-navy/20">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy-soft text-brand">
         <Icon size={20} strokeWidth={1.75} />
       </div>
       <h3 className="mt-4 text-base font-semibold text-ink">{title}</h3>
@@ -58,12 +42,6 @@ export function FeatureCard({
   );
 }
 
-export function MarketingShell({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return <div className={cn("pb-20", className)}>{children}</div>;
+export function MarketingShell({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={className}>{children}</div>;
 }

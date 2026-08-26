@@ -1,0 +1,60 @@
+# CS5 — Upsell / cross-sell probability (synthetic, with ground truth).
+# Kept as a clean, controlled synthetic benchmark rather than a weak Olist
+# proxy, per the build doc — Olist's single-purchase-heavy pattern doesn't
+# support a defensible upsell/cross-sell label. Generator built in Step 1,
+# benchmarks/case_studies/synthetic_generators.py::upsell_crosssell_v1.
+id: upsell_crosssell
+name: Upsell / Cross-sell Probability
+business_problem: >
+  Will this existing customer accept an upsell/cross-sell offer within 60
+  days of the snapshot date? Feeds an expansion-revenue decision layer for
+  an existing customer base rather than a net-new pipeline.
+
+data_source:
+  kind: synthetic
+  generator: upsell_crosssell_v1
+  n_entities: 4000
+  seed: 42
+
+target:
+  entity_id: entity_id
+  prediction_time_column: as_of_date
+  horizon_days: 60
+  target_column: upsell_converted
+  task_type: binary
+  evaluation_metric: pr_auc
+
+feature_groups:
+  tenure:
+    - tenure_days
+  usage:
+    - usage_score
+    - product_breadth
+  support:
+    - support_ticket_count
+  recency:
+    - last_purchase_days_ago
+  value:
+    - current_spend
+
+validation_strategy: time
+
+decision_actions:
+  - offer_upsell
+  - offer_cross_sell
+  - no_action
+
+# Two segments (Step 5): tenure_band (literal column from the generator) and
+# usage intensity (usage_score_band — derived by
+# benchmarks/segment_comparison.py from usage_score via tercile cut into
+# Low/Medium/High usage). Usage intensity is the natural second cut for an
+# upsell case study: product usage is the classic upsell-readiness signal,
+# so this tests whether either model's edge holds specifically among
+# low-usage accounts (the harder, more valuable-to-get-right segment for an
+# expansion-revenue decision layer) rather than only among obviously
+# high-usage accounts.
+segment_columns:
+  - tenure_band
+  - usage_score_band
+
+search_overrides: {}

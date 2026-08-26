@@ -3,20 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --color-paper: #f8fafc;
+  /* Light blue + white dominate; dark navy is reserved as a deliberate third,
+     accent color for hero/CTA/footer bands and a small number of contrast cards. */
+  --color-paper: #f4f8fd;
   --color-paper-raised: #ffffff;
-  --color-ink: #0b1930;
-  --color-ink-muted: #6b7280;
-  --color-navy: #0b1930;
-  --color-navy-soft: #e8eef8;
+  --color-ink: #0f1b33;
+  --color-ink-muted: #5b6b85;
+  --color-navy: #2563eb;
+  --color-navy-soft: #e7eefc;
   --color-green: #16a34a;
   --color-amber: #d97706;
-  --color-oxblood: #b42318;
-  --color-hairline: #e5e7eb;
+  --color-oxblood: #dc2626;
+  --color-hairline: #dfe7f5;
+  --color-midnight: #0b1220;
   --color-brand: #2563eb;
   --color-cyan: #38bdf8;
-  --color-midnight: #050a14;
-  --radius: 16px;
+  --radius: 6px;
 }
 
 html,
@@ -31,30 +33,21 @@ body {
   .text-balance {
     text-wrap: balance;
   }
-  .bg-brand-gradient {
-    background-image: linear-gradient(90deg, #2563eb 0%, #38bdf8 100%);
-  }
-  .text-brand-gradient {
-    background-image: linear-gradient(90deg, #2563eb 0%, #38bdf8 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .shadow-brand {
-    box-shadow: 0 10px 28px rgba(37, 99, 235, 0.28);
-  }
-  .bg-orb {
-    background:
-      radial-gradient(circle at 15% 20%, rgba(56, 189, 248, 0.18), transparent 32%),
-      radial-gradient(circle at 85% 10%, rgba(37, 99, 235, 0.12), transparent 28%),
-      #f8fafc;
-  }
-  .bg-midnight-glow {
-    background:
-      radial-gradient(circle at 50% 18%, rgba(37, 99, 235, 0.28), transparent 42%),
-      radial-gradient(circle at 80% 80%, rgba(56, 189, 248, 0.12), transparent 36%),
-      #050a14;
-  }
+}
+
+.bg-brand-gradient {
+  background-image: linear-gradient(135deg, var(--color-brand), var(--color-cyan));
+}
+
+.text-brand-gradient {
+  background-image: linear-gradient(135deg, var(--color-brand), var(--color-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.shadow-brand {
+  box-shadow: 0 20px 45px -18px rgba(37, 99, 235, 0.45);
 }
 
 @keyframes fade-up {
@@ -73,7 +66,7 @@ body {
 }
 
 *:focus-visible {
-  outline: 2px solid var(--color-brand);
+  outline: 2px solid var(--color-navy);
   outline-offset: 2px;
 }
 

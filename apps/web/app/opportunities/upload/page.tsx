@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/app/components/ui/Button";
-import { PageIntro, WorkspaceShell } from "@/app/components/workspace/PageIntro";
 import { useUploadOpportunities } from "@/lib/application";
 import Link from "next/link";
 import { useState } from "react";
@@ -17,15 +16,13 @@ export default function UploadPage() {
   }
 
   return (
-    <WorkspaceShell>
-    <div className="mx-auto max-w-xl">
-      <PageIntro
-        eyebrow="Workspace"
-        title="Upload opportunities"
-        subtitle="CSV with at least external_id, customer_id, amount, currency, stage, source, owner_id."
-      />
+    <div className="max-w-xl">
+      <h1 className="font-display text-title text-ink">Upload opportunities</h1>
+      <p className="mt-2 font-body text-body text-ink-muted">
+        CSV with at least external_id, customer_id, amount, currency, stage, source, owner_id.
+      </p>
       <label
-        className={`mt-8 block cursor-pointer rounded-2xl border border-dashed border-hairline bg-paper-raised px-8 py-16 text-center shadow-sm ring-1 ring-hairline ${drag ? "bg-navy-soft" : ""}`}
+        className={`mt-8 block cursor-pointer rounded border border-hairline bg-paper-raised px-8 py-16 text-center ${drag ? "bg-navy-soft" : ""}`}
         onDragOver={(event) => {
           event.preventDefault();
           setDrag(true);
@@ -54,7 +51,7 @@ export default function UploadPage() {
       ) : null}
       {upload.isError ? <p className="mt-4 font-body text-body text-oxblood">{upload.error.message}</p> : null}
       {upload.data ? (
-        <div className="mt-8 rounded-2xl bg-paper-raised p-6 shadow-sm ring-1 ring-hairline">
+        <div className="mt-8 rounded bg-paper-raised p-6">
           <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">Result</p>
           <p className="mt-2 font-mono text-title text-ink">{upload.data.inserted} inserted</p>
           <p className="mt-1 font-mono text-data text-ink-muted">{upload.data.rejected} rejected</p>
@@ -67,15 +64,19 @@ export default function UploadPage() {
               ))}
             </ul>
           ) : null}
-          <Link className="mt-6 inline-block font-body text-body text-brand underline-offset-2 hover:underline" href="/opportunities">
+          <Link className="mt-6 inline-block font-body text-body text-navy underline-offset-2 hover:underline" href="/opportunities">
             Open opportunities
           </Link>
         </div>
       ) : null}
-      <Button className="mt-6" variant="secondary" disabled={upload.isPending} onClick={() => upload.reset()}>
+      <Button
+        className="mt-6"
+        variant="secondary"
+        disabled={upload.isPending}
+        onClick={() => upload.reset()}
+      >
         Clear result
       </Button>
     </div>
-    </WorkspaceShell>
   );
 }

@@ -1,104 +1,160 @@
 "use client";
 
+import { ActionChart } from "@/app/components/overview/ActionChart";
 import { DecisionLedgerEntry } from "@/app/components/decisions/DecisionLedgerEntry";
-import { PageHero } from "@/app/components/marketing/primitives";
-import { RevenueForecastChart } from "@/app/components/overview/RevenueForecastChart";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { ErrorState } from "@/app/components/ui/ErrorState";
-import { WorkspaceShell } from "@/app/components/workspace/PageIntro";
+import { Skeleton } from "@/app/components/ui/Skeleton";
 import { useOverviewSnapshot } from "@/lib/application";
-import { decisionToView } from "@/lib/domain";
+import { confidenceBand, decisionToView, formatMoney, formatPercent } from "@/lib/domain";
 import {
-  Activity,
   AlertTriangle,
-  DollarSign,
+  CircleDollarSign,
   Gauge,
   Heart,
   Sparkles,
   Target,
   Users,
-  type LucideIcon,
 } from "lucide-react";
-import Link from "next/link";
-
-const KPIS: { icon: LucideIcon; label: string; value: string; hint: string; tone: "blue" | "green" | "amber" }[] = [
-  { icon: DollarSign, label: "Revenue Forecast", value: "+$2.4M", hint: "Confidence 96%", tone: "blue" },
-  { icon: Gauge, label: "Campaign ROI", value: "8.9x", hint: "Above target", tone: "green" },
-  { icon: Target, label: "Lead Score", value: "91%", hint: "High priority", tone: "blue" },
-  { icon: Heart, label: "Customer Health", value: "87%", hint: "Stable", tone: "green" },
-  { icon: Users, label: "Pipeline Value", value: "$4.8M", hint: "+12% WoW", tone: "blue" },
-  { icon: AlertTriangle, label: "Churn Risk", value: "11%", hint: "2 accounts", tone: "amber" },
-];
-
-const RECS = [
-  "Shift 15% budget to top-performing channels",
-  "3 leads ready for sales outreach",
-  "Adjust pricing on premium tier",
-];
-
-const MODELS = [
-  { name: "Revenue Model", value: 94 },
-  { name: "Churn Model", value: 88 },
-  { name: "Conversion Model", value: 91 },
-];
 
 export default function DashboardsPage() {
   const snapshot = useOverviewSnapshot();
+
+  if (snapshot.isPending) {
+    return (
+      <div>
+        <div className="bg-midnight">
+          <DashboardHero />
+        </div>
+        <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (snapshot.isError) {
+    return (
+      <div>
+        <div className="bg-midnight">
+          <DashboardHero />
+        </div>
+        <div className="mx-auto max-w-3xl px-5 py-12">
+          <ErrorState
+            body="Could not load overview numbers from the backend. Check that the API is running."
+            onRetry={() => void snapshot.refetch()}
+          />
+        </div>
+      </div>
+    );
+  }
+
   const data = snapshot.data;
-  const recent = data?.decisions.slice(0, 3) ?? [];
-  const empty = !data || (data.opportunityTotal === 0 && data.decisionTotal === 0);
+  if (!data || (data.opportunityTotal === 0 && data.decisionTotal === 0)) {
+    return (
+      <div>
+        <div className="bg-midnight">
+          <DashboardHero />
+        </div>
+        <div className="mx-auto max-w-3xl px-5 py-12">
+          <EmptyState
+            title="No opportunities yet"
+            body="Upload a CSV of historical sales opportunities to score them and see recommended actions."
+            actionLabel="Upload opportunities"
+            actionHref="/opportunities/upload"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const counts: Record<string, number> = {};
+  for (const row of data.decisions) {
+    counts[row.recommended_action] = (counts[row.recommended_action] ?? 0) + 1;
+  }
+  const topAction =
+    Object.entries(counts).sort((left, right) => right[1] - left[1])[0]?.[0]?.replaceAll("_", " ") ?? "—";
+  const recent = data.decisions.slice(0, 5);
+  const avgConfidence =
+    data.decisions.length > 0
+      ? data.decisions.reduce((sum, row) => sum + row.confidence, 0) / data.decisions.length
+      : 0;
+  const expectedSum = data.decisions.reduce((sum, row) => sum + row.expected_revenue, 0);
+  const highConf = data.decisions.filter((row) => row.confidence >= 0.75).length;
+  const bands = { High: 0, Medium: 0, Low: 0 };
+  for (const row of data.decisions) {
+    bands[confidenceBand(row.confidence)] += 1;
+  }
+  const denom = Math.max(data.decisions.length, 1);
 
   return (
     <div>
-      <PageHero
-        eyebrow="Dashboard"
-        title="Your Business, in Real Time."
-        subtitle="Every metric that matters, predicted before it happens."
-      />
-      <WorkspaceShell>
-        <div className="bg-midnight-glow rounded-3xl p-5 text-white ring-1 ring-hairline lg:p-8">
+      <div className="bg-midnight">
+        <DashboardHero />
+        <div className="mx-auto max-w-7xl px-5 pb-16 lg:px-8">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {KPIS.map((item) => (
-              <Metric key={item.label} {...item} />
-            ))}
+            <Metric icon={CircleDollarSign} label="Opportunities" value={String(data.opportunityTotal)} hint="In the pipeline" />
+            <Metric icon={Gauge} label="Decisions" value={String(data.decisionTotal)} hint="Generated" />
+            <Metric icon={Target} label="Top action" value={topAction} hint="Most recommended" />
+            <Metric icon={Heart} label="Avg confidence" value={formatPercent(avgConfidence)} hint={confidenceBand(avgConfidence)} />
+            <Metric icon={Users} label="Expected value" value={formatMoney(expectedSum)} hint="From loaded decisions" />
+            <Metric
+              icon={AlertTriangle}
+              label="High confidence"
+              value={String(highConf)}
+              hint={`${highConf} of ${data.decisions.length}`}
+              warn
+            />
           </div>
+
+          {data.truncated ? (
+            <p className="mt-4 text-sm text-white/50">Action breakdown uses the 500 most recent decisions (API page size is 100).</p>
+          ) : null}
+
           <div className="mt-8 grid gap-6 lg:grid-cols-3">
-            <div className="rounded-2xl bg-black/30 p-5 lg:col-span-2">
+            <div className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10 lg:col-span-2">
               <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-white">Revenue Forecast</h2>
+                <h2 className="font-semibold text-white">Recommended actions</h2>
                 <p className="flex items-center gap-1.5 text-xs font-semibold text-cyan">
-                  <Sparkles size={14} strokeWidth={1.75} /> AI Predicted
+                  <Sparkles size={14} /> AI Predicted
                 </p>
               </div>
               <div className="mt-4 h-64">
-                <RevenueForecastChart />
+                <ActionChart counts={counts} />
               </div>
             </div>
             <div className="space-y-6">
-              <div className="rounded-2xl bg-black/30 p-5">
-                <h2 className="flex items-center gap-2 font-semibold text-white">
-                  <Activity size={16} className="text-cyan" strokeWidth={1.75} />
-                  AI Recommendations
-                </h2>
-                <ul className="mt-4 space-y-3 text-sm text-white/80">
-                  {RECS.map((line) => (
-                    <li key={line} className="flex gap-2">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
-                      {line}
-                    </li>
-                  ))}
+              <div className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
+                <h2 className="font-semibold text-white">AI Recommendations</h2>
+                <ul className="mt-4 space-y-3 text-sm text-white/70">
+                  {Object.entries(counts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([action, count]) => (
+                      <li key={action} className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
+                        {count}× {action.replaceAll("_", " ")}
+                      </li>
+                    ))}
                 </ul>
               </div>
-              <div className="rounded-2xl bg-black/30 p-5">
-                <h2 className="font-semibold text-white">Model Accuracy</h2>
-                {MODELS.map((model) => (
-                  <div key={model.name} className="mt-3">
+              <div className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
+                <h2 className="font-semibold text-white">Decision Confidence</h2>
+                {(["High", "Medium", "Low"] as const).map((band) => (
+                  <div key={band} className="mt-3">
                     <div className="flex justify-between text-xs text-white/60">
-                      <span>{model.name}</span>
-                      <span>{model.value}%</span>
+                      <span>{band}</span>
+                      <span>{Math.round((bands[band] / denom) * 100)}%</span>
                     </div>
                     <div className="mt-1 h-2 rounded-full bg-white/10">
-                      <div className="h-2 rounded-full bg-brand-gradient" style={{ width: `${model.value}%` }} />
+                      <div
+                        className="h-2 rounded-full bg-gradient-to-r from-brand to-cyan"
+                        style={{ width: `${(bands[band] / denom) * 100}%` }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -106,55 +162,29 @@ export default function DashboardsPage() {
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="mt-12">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-eyebrow uppercase text-brand">Workspace</p>
-              <h2 className="mt-1 text-2xl font-bold text-ink">Live pipeline</h2>
-            </div>
-            <Link href="/opportunities" className="text-sm font-semibold text-brand">
-              Open opportunities →
-            </Link>
-          </div>
-          {snapshot.isError ? (
-            <div className="mt-4">
-              <ErrorState
-                body="Could not load overview numbers from the backend. Check that the API is running."
-                onRetry={() => void snapshot.refetch()}
-              />
-            </div>
-          ) : empty && !snapshot.isPending ? (
-            <div className="mt-4">
-              <EmptyState
-                title="No opportunities yet"
-                body="Upload a CSV of historical sales opportunities to score them and see recommended actions."
-                actionLabel="Upload opportunities"
-                actionHref="/opportunities/upload"
-              />
-            </div>
-          ) : (
-            <>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-hairline">
-                  <p className="text-xs text-ink-muted">Opportunities</p>
-                  <p className="mt-1 text-2xl font-bold text-ink">{data?.opportunityTotal ?? "—"}</p>
-                </div>
-                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-hairline">
-                  <p className="text-xs text-ink-muted">Decisions generated</p>
-                  <p className="mt-1 text-2xl font-bold text-ink">{data?.decisionTotal ?? "—"}</p>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-4">
-                {recent.map((row) => (
-                  <DecisionLedgerEntry key={row.id} decision={decisionToView(row)} variant="compact" />
-                ))}
-              </div>
-            </>
-          )}
+      <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8 lg:py-16">
+        <h2 className="text-2xl font-bold text-ink">Recent decisions</h2>
+        <div className="mt-4 grid gap-4">
+          {recent.map((row) => (
+            <DecisionLedgerEntry key={row.id} decision={decisionToView(row)} variant="compact" />
+          ))}
         </div>
-      </WorkspaceShell>
+      </div>
     </div>
+  );
+}
+
+function DashboardHero() {
+  return (
+    <section className="px-5 pb-10 pt-16 text-center lg:px-8 lg:pt-20">
+      <p className="text-eyebrow uppercase text-cyan">Dashboard</p>
+      <h1 className="mt-4 text-4xl font-bold text-white lg:text-5xl">Your Business, in Real Time.</h1>
+      <p className="mx-auto mt-3 max-w-2xl text-white/65">
+        Every metric that matters, from the opportunities and decisions in this workspace.
+      </p>
+    </section>
   );
 }
 
@@ -163,21 +193,20 @@ function Metric({
   label,
   value,
   hint,
-  tone,
+  warn,
 }: {
-  icon: LucideIcon;
+  icon: typeof CircleDollarSign;
   label: string;
   value: string;
   hint: string;
-  tone: "blue" | "green" | "amber";
+  warn?: boolean;
 }) {
-  const color = tone === "green" ? "text-green" : tone === "amber" ? "text-amber" : "text-cyan";
   return (
-    <div className="rounded-2xl bg-black/30 p-4 ring-1 ring-white/5">
-      <Icon size={16} className={color} strokeWidth={1.75} />
+    <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+      <Icon size={16} className={warn ? "text-amber" : "text-cyan"} />
       <p className="mt-3 text-xs text-white/50">{label}</p>
       <p className="mt-1 truncate text-xl font-bold text-white">{value}</p>
-      <p className={`mt-1 text-xs ${color}`}>{hint}</p>
+      <p className={`mt-1 text-xs ${warn ? "text-amber" : "text-cyan"}`}>{hint}</p>
     </div>
   );
 }
