@@ -18,7 +18,14 @@ class Settings(BaseSettings):
     model_dir: Path = REPO_ROOT / "models" / "revenue_prediction"
     policy_path: Path = REPO_ROOT / "configs" / "policies" / "opportunity_prioritization.yaml"
     layer_path: Path = REPO_ROOT / "configs" / "layers" / "conversion_probability.yaml"
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origins: str = "http://localhost:3001,http://127.0.0.1:3001"
+    api_port: int = 8001
+    web_port: int = 3001
+    # Override in .env for any deployed environment; the default only exists so
+    # local dev and the test suite run without extra setup.
+    jwt_secret: str = "dev-only-insecure-secret-change-me"
+    # Long-lived so a browser stays signed in until the person clicks Sign out.
+    access_token_minutes: int = 60 * 24 * 30
 
 
 @lru_cache

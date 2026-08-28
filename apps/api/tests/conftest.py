@@ -70,8 +70,9 @@ def db_session(test_engine) -> Generator[Session, None, None]:
         with test_engine.begin() as conn:
             conn.execute(text(
                 "TRUNCATE TABLE experiment_candidates, experiments, dataset_profiles, "
-                "prediction_tasks, datasets, environments, simulation_runs, decisions, "
-                "predictions, opportunities RESTART IDENTITY CASCADE"
+                "prediction_tasks, datasets, environments, simulation_runs, "
+                "client_lab_run_audits, client_lab_runs, client_lab_uploads, "
+                "decisions, predictions, opportunities, users RESTART IDENTITY CASCADE"
             ))
             # Keep the well-known default workspace; drop any extra workspaces a
             # test created so slugs don't collide across test functions.
@@ -93,6 +94,87 @@ def client(test_engine, db_session: Session) -> Generator[TestClient, None, None
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+ADMIN_PASSWORD = "admin-pass-123"
+CLIENT_PASSWORD = "client-pass-123"
+
+
+@pytest.fixture()
+def admin_user(db_session: Session):
+    from app.db.models import UserRole
+    from app.services.auth_service import create_user
+
+    user = create_user(
+        db_session,
+        email="admin@dclab.test",
+        password=ADMIN_PASSWORD,
+        role=UserRole.DCLAB_ADMIN,
+        full_name="DCLab Admin",
+    )
+    db_session.commit()
+    return user
+
+
+@pytest.fixture()
+def client_user(db_session: Session):
+    from app.db.models import DEFAULT_WORKSPACE_ID, UserRole
+    from app.services.auth_service import create_user
+
+    user = create_user(
+        db_session,
+        email="user@client.test",
+        password=CLIENT_PASSWORD,
+        role=UserRole.CLIENT_USER,
+        full_name="Client User",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    db_session.commit()
+    return user
+
+
+@pytest.fixture()
+def admin_token(admin_user) -> str:
+    from app.services.auth_service import create_access_token
+
+    return create_access_token(admin_user)
+
+
+@pytest.fixture()
+def client_token(client_user) -> str:
+    from app.services.auth_service import create_access_token
+
+    return create_access_token(client_user)
+
+
+def _authed_client(db_session: Session, token: str) -> Generator[TestClient, None, None]:
+    """Its own TestClient instance (not the shared `client` fixture) so that a
+    single test can hold an `auth_client` and an `admin_client` at the same time
+    without one's Authorization header clobbering the other's — they used to
+    share one TestClient and mutate the same headers dict in place."""
+    from app.db.session import get_db
+    from app.main import app
+
+    def _override() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override
+    with TestClient(app) as test_client:
+        test_client.headers.update({"Authorization": f"Bearer {token}"})
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def auth_client(db_session, client_token) -> Generator[TestClient, None, None]:
+    """TestClient authenticated as a client_user, for the /app tree."""
+    yield from _authed_client(db_session, client_token)
+
+
+@pytest.fixture()
+def admin_client(db_session, admin_token) -> Generator[TestClient, None, None]:
+    """TestClient authenticated as a dclab_admin, for the /admin tree."""
+    yield from _authed_client(db_session, admin_token)
 
 
 @pytest.fixture()

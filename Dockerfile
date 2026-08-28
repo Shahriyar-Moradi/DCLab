@@ -12,7 +12,7 @@ COPY apps ./apps
 
 RUN pip install --no-cache-dir -e .
 
-EXPOSE 8000
+EXPOSE 8001
 
 # Step 9 will finalize this with automatic migrations via an entrypoint.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -1,8 +1,16 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.api.admin_client_uploads import router as admin_client_uploads_router
+from app.api.admin_model_registry import router as admin_model_registry_router
+from app.api.admin_monitoring import router as admin_monitoring_router
+from app.api.admin_organizations import router as admin_organizations_router
+from app.api.auth import router as auth_router
+from app.api.client_labs import router as client_labs_router
 from app.api.decisions import router as decisions_router
+from app.api.deps import require_admin, require_client
+from app.api.insights import router as insights_router
 from app.api.lab import router as lab_router
 from app.api.opportunities import router as opportunities_router
 from app.api.simulations import router as simulations_router
@@ -17,10 +25,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(opportunities_router)
-app.include_router(decisions_router)
-app.include_router(simulations_router)
-app.include_router(lab_router)
+
+# Two route trees, separated by role rather than by convention. The guard lives on
+# the parent router, so every route mounted underneath inherits it — a new admin
+# endpoint cannot be added without the admin check, and the Step 0 audit asserts
+# this by enumerating the live route table rather than a hand-maintained list.
+admin_api = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
+client_api = APIRouter(prefix="/app", dependencies=[Depends(require_client)])
+
+# Admin surface: full, unrestricted ML detail for the DCLab team. `simulations`
+# lives here (not on /app) because it retrains models on demand and returns raw
+# metrics/candidate/fusion detail by design — it is an internal engine harness,
+# not a client insight. Step 5 (Client Labs) builds the bounded, translated
+# client-facing equivalent on top of the same engine.
+admin_api.include_router(lab_router)
+admin_api.include_router(simulations_router)
+admin_api.include_router(admin_organizations_router)
+admin_api.include_router(admin_model_registry_router)
+admin_api.include_router(admin_monitoring_router)
+admin_api.include_router(admin_client_uploads_router)
+
+# Client surface: business objects only, always through app.translation.
+client_api.include_router(opportunities_router)
+client_api.include_router(decisions_router)
+client_api.include_router(insights_router)
+client_api.include_router(client_labs_router)
+
+app.include_router(auth_router)
+app.include_router(admin_api)
+app.include_router(client_api)
 
 
 @app.get("/health")

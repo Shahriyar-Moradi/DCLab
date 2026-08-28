@@ -1,7 +1,19 @@
+import enum
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,6 +41,51 @@ class Workspace(Base):
     opportunities: Mapped[list["Opportunity"]] = relationship(back_populates="workspace")
     predictions: Mapped[list["Prediction"]] = relationship(back_populates="workspace")
     decisions: Mapped[list["Decision"]] = relationship(back_populates="workspace")
+    users: Mapped[list["User"]] = relationship(back_populates="workspace")
+
+
+class UserRole(str, enum.Enum):
+    """Who a caller is. Drives the /admin vs /app split at the router level."""
+
+    DCLAB_ADMIN = "dclab_admin"
+    CLIENT_USER = "client_user"
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('dclab_admin', 'client_user')",
+            name="ck_users_role_valid",
+        ),
+        # A client user is always scoped to exactly one workspace; DCLab admins are
+        # not tied to a client account, so their workspace_id stays NULL.
+        CheckConstraint(
+            "role <> 'client_user' OR workspace_id IS NOT NULL",
+            name="ck_users_client_requires_workspace",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace | None] = relationship(back_populates="users")
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == UserRole.DCLAB_ADMIN.value
 
 
 class Opportunity(Base):
@@ -117,6 +174,9 @@ class Decision(Base):
     recommended_action: Mapped[str] = mapped_column(String(64), nullable=False)
     expected_revenue: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    incremental_value: Mapped[float] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     reasoning: Mapped[list] = mapped_column(JSONB, nullable=False)
     policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(
@@ -140,6 +200,100 @@ class SimulationRun(Base):
     policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
     fusion: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ClientLabRun(Base):
+    """Step 5 — one bounded, client-triggered trial run. `insights` stores only the
+    already-translated `ClientFacingInsight` payloads (never raw model/metric
+    detail) — a trial prospect is exactly the audience the translation layer
+    exists to protect, so nothing raw is persisted here even at rest."""
+
+    __tablename__ = "client_lab_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        default=DEFAULT_WORKSPACE_ID,
+        server_default=str(DEFAULT_WORKSPACE_ID),
+        index=True,
+    )
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    use_case: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    data_source: Mapped[str] = mapped_column(String(16), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    insights: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ClientLabRunAudit(Base):
+    """Step 7 — admin-only. The full, raw `run_use_case` output for a completed
+    Client Labs trial — exactly what `ClientLabRun.insights` deliberately leaves
+    out. One-to-one with the `ClientLabRun` it audits, so an admin can trace a
+    client-triggered "custom prediction" request back to its unrestricted ML
+    detail (Admin Model Registry / Monitoring), the same way an admin-run
+    simulation already is."""
+
+    __tablename__ = "client_lab_run_audits"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_lab_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("client_lab_runs.id"), nullable=False, unique=True, index=True
+    )
+    use_case: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    client_lab_run: Mapped[ClientLabRun] = relationship()
+
+
+class ClientLabUpload(Base):
+    """Open ingest for Client Labs: the file is saved as-is. Structuring it
+    (language tools + DCLab's reading pipeline) is not implemented yet."""
+
+    __tablename__ = "client_lab_uploads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        default=DEFAULT_WORKSPACE_ID,
+        server_default=str(DEFAULT_WORKSPACE_ID),
+        index=True,
+    )
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    category: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    record_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    fields_noticed: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    has_named_fields: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Simple-case auto-train (admin-only; see docs/LABS_DATA_UNDERSTANDING.md).
+    # not_applicable | queued | running | completed | skipped | failed
+    pipeline_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="not_applicable", server_default="not_applicable", index=True
+    )
+    pipeline_log: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiments.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

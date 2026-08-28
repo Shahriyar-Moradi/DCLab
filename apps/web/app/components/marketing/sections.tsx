@@ -86,15 +86,15 @@ export const INTEGRATIONS = [
 ];
 
 export const PLATFORM_PILLS: { icon: LucideIcon; label: string; href: string }[] = [
-  { icon: BarChart3, label: "Dashboard", href: "/dashboards" },
+  { icon: BarChart3, label: "Dashboard", href: "/app/dashboards" },
   { icon: LineChart, label: "Marketing", href: "/solutions" },
-  { icon: User, label: "Sales", href: "/opportunities" },
+  { icon: User, label: "Sales", href: "/app/opportunities" },
   { icon: CircleDollarSign, label: "Pricing", href: "/pricing" },
   { icon: Heart, label: "Customer", href: "/solutions" },
   { icon: Hexagon, label: "Machine Learning", href: "/solutions" },
   { icon: Bot, label: "Agents", href: "/platform" },
   { icon: FileText, label: "Reports", href: "/resources" },
-  { icon: Sparkles, label: "Lab", href: "/lab" },
+  { icon: Sparkles, label: "Lab", href: "/admin/lab" },
 ];
 
 export const INDUSTRIES = [
@@ -372,7 +372,7 @@ export function PricingGrid() {
         blurb="For small teams getting started with AI."
         features={["3 AI Agents", "5 Integrations", "Weekly Reports", "Standard ML Models", "Email Support"]}
         cta="Start Free Trial →"
-        href="/opportunities/upload"
+        href="/app/opportunities/upload"
         variant="light"
       />
       <PriceCard

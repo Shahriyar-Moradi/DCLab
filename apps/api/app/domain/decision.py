@@ -3,17 +3,19 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from app.translation.models import ConfidenceBand
+
 
 class DecisionGenerateResponse(BaseModel):
-    """Exact Milestone 1 generate-response shape."""
+    """Client-facing decision output. Everything here has passed through
+    `app.translation` — there is deliberately no field for the raw conversion
+    probability or the model that produced it."""
 
     opportunity_id: str
-    conversion_probability: float
-    expected_revenue: float
     recommended_action: str
-    confidence: float
+    confidence_band: ConfidenceBand
+    expected_revenue: float
     reasoning: list[str]
-    model_version: str
     policy_version: str
 
 
@@ -22,17 +24,14 @@ class DecisionRead(BaseModel):
 
     id: UUID
     opportunity_id: UUID
-    prediction_id: UUID
+    external_id: str | None = None
     recommended_action: str
     expected_revenue: float
-    confidence: float
+    confidence_band: ConfidenceBand
     reasoning: list[str]
     policy_version: str
     status: str
     created_at: datetime
-    conversion_probability: float | None = None
-    model_version: str | None = None
-    external_id: str | None = None
 
 
 class GenerateDecisionsRequest(BaseModel):

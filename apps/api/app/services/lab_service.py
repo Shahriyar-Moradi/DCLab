@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from dataclasses import fields
 from datetime import datetime, timezone
@@ -19,6 +20,8 @@ from app.engine.experiments.runner import run_experiment
 from app.engine.schema.profiler import profile_frame
 from app.engine.serving.artifacts import experiment_dir
 from app.engine.types import SearchConfig, TaskSpec
+
+logger = logging.getLogger(__name__)
 
 DOGFOOD_ORG = "dclab"
 DOGFOOD_NAME = "DCLab Internal Dogfood"
@@ -182,11 +185,32 @@ def execute_experiment(db: Session, experiment: Experiment) -> Experiment:
     db.commit()
     artifacts = experiment_dir(str(experiment.id))
     experiment.artifact_dir = str(artifacts)
-    frame = load_table(dataset.location)
-    result = run_experiment(frame, spec, cfg, artifact_dir=artifacts, dataset_version=dataset.version)
+    logger.info(
+        "lab experiment %s starting task=%s dataset=%s",
+        experiment.id,
+        task_row.slug,
+        dataset.name,
+    )
+    try:
+        frame = load_table(dataset.location)
+        result = run_experiment(frame, spec, cfg, artifact_dir=artifacts, dataset_version=dataset.version)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("lab experiment %s failed before completion", experiment.id)
+        experiment.status = "FAILED"
+        experiment.result = {"status": "FAILED", "error": str(exc)}
+        experiment.ended_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(experiment)
+        return experiment
     experiment.result = result
     experiment.status = result.get("status") or "COMPLETED"
     experiment.ended_at = datetime.now(timezone.utc)
+    logger.info(
+        "lab experiment %s finished status=%s trained=%s",
+        experiment.id,
+        experiment.status,
+        (result.get("funnel") or {}).get("trained"),
+    )
     db.query(ExperimentCandidate).filter(ExperimentCandidate.experiment_id == experiment.id).delete()
     for row in result.get("candidates") or []:
         db.add(

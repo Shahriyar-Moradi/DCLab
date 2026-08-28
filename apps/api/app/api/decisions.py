@@ -21,6 +21,15 @@ router = APIRouter(prefix="/decisions", tags=["decisions"])
 MAX_LIMIT = 100
 
 
+def _normalize_action_filter(value: str | None) -> str | None:
+    """Accepts either the internal action key style (CONTACT_TODAY) or the
+    translated label shown to the client (Contact today) and normalizes both to
+    the form stored in the database."""
+    if not value:
+        return value
+    return value.strip().upper().replace(" ", "_")
+
+
 @router.post("/generate")
 def generate_decisions_endpoint(
     payload: GenerateDecisionsRequest | None = None,
@@ -54,7 +63,7 @@ def list_decisions_endpoint(
         limit=limit,
         offset=offset,
         status=status,
-        recommended_action=recommended_action,
+        recommended_action=_normalize_action_filter(recommended_action),
         opportunity_id=opportunity_id,
     )
 

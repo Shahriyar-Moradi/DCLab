@@ -28,6 +28,65 @@ def _session():
     return get_session_factory()()
 
 
+def cmd_user_create(args: argparse.Namespace) -> int:
+    from app.db.models import DEFAULT_WORKSPACE_ID, User, UserRole
+    from app.services.auth_service import create_user
+
+    db = _session()
+    role = UserRole(args.role)
+    existing = db.query(User).filter(User.email == args.email.strip().lower()).one_or_none()
+    if existing is not None:
+        print(json.dumps({"error": "email already exists", "email": existing.email}))
+        db.close()
+        return 1
+    workspace_id = DEFAULT_WORKSPACE_ID if role is UserRole.CLIENT_USER else None
+    user = create_user(
+        db,
+        email=args.email,
+        password=args.password,
+        role=role,
+        full_name=args.name or "",
+        workspace_id=workspace_id,
+    )
+    db.commit()
+    print(json.dumps({"id": str(user.id), "email": user.email, "role": user.role}))
+    db.close()
+    return 0
+
+
+def cmd_user_seed(_args: argparse.Namespace) -> int:
+    from app.services.auth_service import (
+        DEMO_ADMIN_EMAIL,
+        DEMO_ADMIN_NAME,
+        DEMO_ADMIN_PASSWORD,
+        DEMO_CLIENT_EMAIL,
+        DEMO_CLIENT_NAME,
+        DEMO_CLIENT_PASSWORD,
+        ensure_demo_users,
+    )
+
+    db = _session()
+    users = ensure_demo_users(db)
+    db.commit()
+    accounts = [
+        {"email": DEMO_ADMIN_EMAIL, "password": DEMO_ADMIN_PASSWORD, "role": "dclab_admin", "name": DEMO_ADMIN_NAME},
+        {"email": DEMO_CLIENT_EMAIL, "password": DEMO_CLIENT_PASSWORD, "role": "client_user", "name": DEMO_CLIENT_NAME},
+    ]
+    print(
+        json.dumps(
+            {
+                "users": [
+                    {"id": str(row.id), "email": row.email, "role": row.role, "full_name": row.full_name}
+                    for row in users
+                ],
+                "logins": accounts,
+            }
+        )
+    )
+    db.close()
+    return 0
+
+
 def cmd_env_seed(_args: argparse.Namespace) -> int:
     db = _session()
     env = seed_dogfood(db)
@@ -179,6 +238,17 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dclab")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    user = sub.add_parser("user")
+    user_sub = user.add_subparsers(dest="user_cmd", required=True)
+    user_create = user_sub.add_parser("create")
+    user_create.add_argument("--email", required=True)
+    user_create.add_argument("--password", required=True)
+    user_create.add_argument("--role", required=True, choices=["dclab_admin", "client_user"])
+    user_create.add_argument("--name", default="")
+    user_create.set_defaults(func=cmd_user_create)
+    user_seed = user_sub.add_parser("seed")
+    user_seed.set_defaults(func=cmd_user_seed)
 
     env = sub.add_parser("env")
     env_sub = env.add_subparsers(dest="env_cmd", required=True)

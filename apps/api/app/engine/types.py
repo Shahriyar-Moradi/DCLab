@@ -69,6 +69,10 @@ class TaskSpec:
     event_time_column: str | None = None
     event_value_column: str | None = None
     config_path: str | None = None
+    # Only set for the "open_ingest" search strategy: numeric vs categorical
+    # column roles the ColumnTransformer preprocessor needs. Empty for every
+    # other task — this does not change how admin /admin/lab tasks behave.
+    column_roles: dict[str, list[str]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

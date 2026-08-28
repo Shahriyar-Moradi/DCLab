@@ -1,187 +1,231 @@
-# How to Use the Platform — Step by Step
+# How to start and use the platform (beginner)
 
-This is a plain walkthrough of the actual app, in the order you'd normally click
-through it. Both servers are already running for you right now:
-
-- **Backend (API):** http://127.0.0.1:8000 — confirmed healthy
-- **Website/app (frontend):** http://127.0.0.1:3000 — confirmed loading
-
-Just open **http://localhost:3000** in your browser to follow along.
+This is the current, working walkthrough. Older notes that mention `/dashboards` or
+`/lab` without `/app` or `/admin` are out of date — those URLs moved after the
+login/role split.
 
 ---
 
-## Step 0 — If the servers aren't running
+## What you need
 
-You won't need this right now, but for next time, from the project folder:
+- This project folder: `decision_ai`
+- Python virtualenv at `.venv` (already created on this machine)
+- Postgres 16 running locally (Homebrew)
+- Two terminals (or let an agent start the servers for you)
+
+You do **not** need Docker for daily use.
+
+**Ports (configured, not hardcoded in one place):**
+
+| App | Port | Config |
+|---|---|---|
+| Backend (API) | **8001** | `API_PORT` in repo-root `.env`; `make run` |
+| Frontend (website) | **3001** | `WEB_PORT` in `.env`; `NEXT_PUBLIC_API_URL` in `apps/web/.env.local` |
+
+The website calls `http://localhost:8001` for every API request. The API allows
+that website origin via `CORS_ORIGINS`. Copy `.env.example` → `.env` and
+`apps/web/.env.example` → `apps/web/.env.local` if those files are missing.
+
+---
+
+## 1. Start the machines (first time on a new computer)
+
+From the project root:
 
 ```bash
-# Terminal 1 — backend
+cd /Users/shahriar/Downloads/decision_ai
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+cp -n .env.example .env
+make db
+make migrate
+make train
+```
+
+`make train` only needs to run once (or after you change the M1 training data).
+It writes files under `models/revenue_prediction/`.
+
+Create the two demo logins (skip if they already exist):
+
+```bash
+source .venv/bin/activate
+dclab user create --email demo@client.io --password 'ClientPass123!' --role client_user --name Demo
+dclab user create --email admin@dclab.io --password 'AdminPass123!' --role dclab_admin --name Admin
+```
+
+If it says the email already exists, you are fine — use the passwords below.
+
+---
+
+## 2. Start the backend (API)
+
+**Terminal 1**, from the project root:
+
+```bash
+cd /Users/shahriar/Downloads/decision_ai
 source .venv/bin/activate
 make run
+```
 
-# Terminal 2 — frontend
+Wait until you see something like `Uvicorn running on http://127.0.0.1:8001`.
+
+Check: open http://127.0.0.1:8001/health — you should see
+`{"status":"ok","db":"connected"}`.
+
+Leave this terminal running.
+
+---
+
+## 3. Start the website (frontend)
+
+**Terminal 2**, from the project root:
+
+```bash
+cd /Users/shahriar/Downloads/decision_ai
 make web
 ```
 
-Then visit http://localhost:3000.
+That runs `npm --prefix apps/web run dev`. Wait until it says it is ready on
+port 3001.
+
+Check: open http://localhost:3001/login — you should see the Sign in form.
+
+Leave this terminal running too.
+
+If port 3001 is already in use, either use the site that is already there, or
+stop the old process and run `make web` again.
 
 ---
 
-## Step 1 — The homepage
+## 4. Open the app and sign in
 
-Go to **http://localhost:3000**. This is the public marketing homepage — it explains
-what the product does. The top navigation bar has two groups of links:
+Go to **http://localhost:3001/login**.
 
-- **Marketing pages** (Company, Solutions, Platform, Industries, Resources,
-  Dashboards, Pricing) — informational pages.
-- **Workspace** (Opportunities, Decisions, Upload, Experimentation Lab) — this is the
-  actual working app. This is where you'll spend your time.
+Use **one** of these accounts (not both at the same time in the same browser
+unless you use a private window for the second):
 
-Click **"Sign In"** in the top right — in this build it takes you straight into
-**Dashboards** (there's no real login system yet, this is a single-workspace demo).
+| Who | Email | Password | Lands on |
+|---|---|---|---|
+| **Begin here (customer)** | `demo@client.io` | `ClientPass123!` | `/app/dashboards` |
+| DCLab staff | `admin@dclab.io` | `AdminPass123!` | `/admin/lab` |
 
----
-
-## Step 2 — Dashboards
-
-**http://localhost:3000/dashboards**
-
-This is the home base once you're "in" the app. It shows real, live numbers pulled
-from the database: how many opportunities exist, how many decisions have been made,
-and a breakdown of which actions are being recommended most. Nothing here is
-placeholder — it's querying the same API you'll use in every other step.
+Click **Sign in**. If it fails, the API is not running — go back to step 2.
 
 ---
 
-## Step 3 — Upload some opportunities (deals/leads)
+## 5. Use it as a customer (the simple path)
 
-**http://localhost:3000/opportunities/upload**
+After login as `demo@client.io`, the top **Workspace** links are:
 
-This is where you'd feed the system real sales data.
+Dashboard → Insights → Opportunities → Decisions → Upload → Labs
 
-1. Click the upload box and choose a CSV file. There's a ready-made sample at
-   `data/sample/opportunities.csv` in the project folder — use that one for a first
-   try.
-2. Click upload. You'll see a progress bar, then a result: how many rows were
-   inserted successfully, and how many were rejected (with the reason for each
-   rejected row, e.g. missing a required field).
-3. Behind the scenes this calls `POST /opportunities/upload` on the backend, which
-   parses the CSV and writes valid rows into the database.
+Do them in this order the first time.
 
----
+### 5.1 Dashboard — `/app/dashboards`
 
-## Step 4 — Browse opportunities
+Your home base. Live counts of opportunities and decisions, plus a recent
+decisions feed in business language (High / Medium / Low confidence, not raw
+model scores).
 
-**http://localhost:3000/opportunities**
+### 5.2 Insights — `/app/insights`
 
-This is the list of every opportunity in the system (including whatever you just
-uploaded). You can:
+Recommendations grouped by business function (Marketing, Sales, Revenue,
+Churn & Retention, …). Empty groups are normal if that simulation has not been
+run yet.
 
-- Sort by creation date or deal amount
-- Filter by stage
-- Page through results (20 per page)
+### 5.3 Upload (optional) — `/app/opportunities/upload`
 
-Click any row to open it.
+This database already has sample deals (~520). You can skip upload the first
+time.
 
----
+To try it: choose `data/sample/opportunities.csv` from the project folder and
+upload. You will get a count of inserted vs rejected rows.
 
-## Step 5 — Open one opportunity and generate a decision
+### 5.4 Opportunities — `/app/opportunities`
 
-**http://localhost:3000/opportunities/[id]** (click into any row from Step 4)
+The list of deals. Sort, filter, click a row.
 
-This is the core "predict → decide" moment of the product. On this page:
+### 5.5 Generate a decision — `/app/opportunities/[id]`
 
-1. You see the opportunity's details (customer, deal size, engagement score, etc.).
-2. If no decision exists yet for it, click **"Generate Decision."**
-3. The backend (`POST /decisions/generate`) runs the trained model on this specific
-   opportunity, gets a conversion probability, applies the business policy (thresholds
-   + expected value), and returns a recommended action — e.g. "contact today," "send
-   email," or "no action" — along with the reasoning behind it.
-4. That decision is now saved permanently and will show up in Step 6.
+This is the core product moment:
 
----
+1. Open any opportunity.
+2. Click **Generate Decision** (if it does not already have one).
+3. The API scores the deal and returns a recommended action such as
+   **Contact today**, **Send an email**, or **No action needed**, with a
+   confidence band and short reasons.
 
-## Step 6 — Browse and review decisions
+### 5.6 Decisions — `/app/decisions`
 
-**http://localhost:3000/decisions**
+The ledger of every recommendation. Click a row for the full reasoning.
 
-This is the ledger of every decision the system has ever made — one row per
-opportunity it scored. You can filter by status or by recommended action. Click into
-any row to see the full reasoning trail for that one decision (probability, expected
-revenue, confidence, and the plain-English reasoning behind the recommendation).
+### 5.7 Client Labs — `/app/labs`
 
----
+A bounded trial: pick a problem (for example retention), run with **sample
+data** (easiest) or a small CSV that matches that problem. You get the same
+style of insights. Limits: max 3 runs per problem, max 500 uploaded rows,
+~30 second budget.
 
-## Step 7 — The Experimentation Lab (the advanced part)
-
-**http://localhost:3000/lab**
-
-This is a separate, more advanced tool for training and comparing prediction models
-on any dataset — not just opportunities. The Lab overview page shows four sections,
-each with its own page:
-
-### 7a. Datasets — `/lab/datasets`
-Every dataset that's been loaded into the Lab (including, right now, the real Olist
-e-commerce data and the synthetic benchmark datasets from the case-study work).
-Click one to see its row/column counts and a data-quality profile (missing values,
-column types) if one has been generated.
-
-### 7b. Tasks — `/lab/tasks`
-A "task" is a prediction problem definition — what to predict, from what data, over
-what time horizon. `/lab/tasks/create` lets you load a new task from a YAML config
-file already in the repo (e.g. `configs/tasks/purchase.yaml`).
-
-### 7c. Experiments — `/lab/experiments`
-Every model-search run that's actually been executed. Click one to open its full
-report: which candidate models were tried, which were selected into the final
-ensemble, their scores, and a downloadable-style markdown report explaining the whole
-run.
-
-### 7d. Running a new experiment
-Right now, starting a brand-new experiment run is done from the command line (there's
-no "Run" button in the UI yet):
-
-```bash
-source .venv/bin/activate
-python -m app.cli.main experiment run --dataset <dataset-name> --task <task-slug>
-```
-
-It will then appear in `/lab/experiments` in the browser like any other run.
+Above each category there is also a **No template required** box. Drop any usual
+data file (spreadsheet, JSON, table file, Excel, or a raw log) — we do **not**
+require particular field names. That save does not run a trial. Turning messy
+files into a usable table is not built yet (`docs/LABS_DATA_UNDERSTANDING.md`).
 
 ---
 
-## Step 8 — The benchmark harness (for you, not for customers)
+## 6. Use it as an admin (optional, second browser)
 
-This part has no web page — it's a research tool that already produced its final
-report. If you want to see the "single model vs. multi-model" comparison:
+Log out, or open a private window, and sign in as `admin@dclab.io`.
 
-- Open `reports/case_study_scorecard.md` for the summary table.
-- Open `docs/case-study-findings.md` for the full plain-language write-up.
+You will see the client Workspace **plus** admin links:
 
-To regenerate the scorecard yourself:
-
-```bash
-source .venv/bin/activate
-python -m benchmarks.scorecard --out reports/case_study_scorecard.md
-cat reports/case_study_scorecard.md
-```
-
----
-
-## Quick map of what you just used
-
-| Page | What it does | API it calls |
+| Page | URL | What you see |
 |---|---|---|
-| `/dashboards` | Live summary numbers | `GET /opportunities`, `GET /decisions` |
-| `/opportunities/upload` | Upload a CSV of leads/deals | `POST /opportunities/upload` |
-| `/opportunities` | Browse/filter/sort all opportunities | `GET /opportunities` |
-| `/opportunities/[id]` | View one + generate its decision | `GET /opportunities/{id}`, `POST /decisions/generate` |
-| `/decisions` | Browse/filter all decisions made | `GET /decisions` |
-| `/decisions/[id]` | Full reasoning for one decision | `GET /decisions/{id}` |
-| `/lab` | Lab overview | `GET /lab/environments`, `/lab/datasets`, `/lab/tasks`, `/lab/experiments` |
-| `/lab/datasets` , `/lab/datasets/[id]` | Browse datasets + profile | `GET /lab/datasets`, `GET /lab/datasets/{id}/profile` |
-| `/lab/tasks` , `/lab/tasks/create` | Browse/create prediction tasks | `GET /lab/tasks`, `POST /lab/tasks/from-config` |
-| `/lab/experiments` , `/lab/experiments/[id]` | Browse model-search runs + full report | `GET /lab/experiments`, `.../report`, `.../candidates`, `.../comparison` |
+| Labs & Experiments | `/admin/lab` | Datasets, tasks, experiments — full ML detail |
+| Organizations | `/admin/organizations` | Workspaces and counts |
+| Registry | `/admin/models` | Models from experiments, simulations, client trials |
+| Monitoring | `/admin/monitoring` | Retrain events and dataset health |
 
-Every one of these was individually checked today with live requests against the
-running backend — all wired correctly, no broken connections.
+If you run a Client Labs trial as the customer, then log in as admin, that run
+can appear on Registry as a **client trial** with the raw payload the customer
+never saw.
+
+A customer who types `/admin/lab` gets **403 Forbidden**. That is intended.
+
+---
+
+## 7. Stop the servers
+
+In each terminal: `Ctrl+C`.
+
+Postgres can stay running (`brew services` keeps it in the background).
+
+---
+
+## If something is broken
+
+| Symptom | Fix |
+|---|---|
+| Login page loads but Sign in fails | API is down. `make run` in terminal 1. Check http://127.0.0.1:8001/health |
+| `connection refused` on :8001 | Same — start `make run` |
+| `database "decisionai" does not exist` | `make db` then `make migrate` |
+| Generate decision errors about a missing model | `make train` |
+| Website blank / old pages | Stop `make web`, from `apps/web` run `rm -rf .next`, then `make web` again |
+| Port 3001 already in use | You already have a frontend. Use it, or quit that Node process and restart |
+| `alembic` “No script_location” | Run `make migrate` from the **project root**, not from `apps/api` |
+
+---
+
+## Quick URL map (after login)
+
+| You want to… | Open |
+|---|---|
+| Sign in | http://localhost:3001/login |
+| Customer home | http://localhost:3001/app/dashboards |
+| Deals | http://localhost:3001/app/opportunities |
+| Recommendations | http://localhost:3001/app/decisions |
+| Try a problem | http://localhost:3001/app/labs |
+| Staff lab | http://localhost:3001/admin/lab |
+| API health | http://127.0.0.1:8001/health |
+| API docs (staff/debug) | http://127.0.0.1:8001/docs |

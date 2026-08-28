@@ -22,12 +22,12 @@ make migrate
 make train
 cd apps/web && npm install && cp .env.example .env.local && cd ../..
 
-make run    # API  http://127.0.0.1:8000
-make web    # UI   http://localhost:3000
+make run    # API  http://127.0.0.1:8001
+make web    # UI   http://localhost:3001
 ```
 
 M1 UI: opportunities, decisions, upload.
-Lab UI: http://localhost:3000/lab
+Lab UI: http://localhost:3001/admin/lab
 
 ```bash
 make seed
@@ -50,7 +50,9 @@ dclab experiment run --dataset olist --task marketing_response
 
 ```
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/decisionai
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+API_PORT=8001
+WEB_PORT=3001
+CORS_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
 ```
 
 ## Layout

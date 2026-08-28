@@ -20,18 +20,18 @@ export function SiteFooter() {
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-cyan">Platform</p>
           <ul className="mt-3 space-y-2 text-sm text-white/70">
             <li><Link href="/platform">How it works</Link></li>
-            <li><Link href="/dashboards">Dashboard</Link></li>
-            <li><Link href="/lab">Experimentation Lab</Link></li>
+            <li><Link href="/app/dashboards">Dashboard</Link></li>
+            <li><Link href="/admin/lab">Experimentation Lab</Link></li>
             <li><Link href="/resources">Integrations &amp; benchmarks</Link></li>
           </ul>
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-cyan">Workspace</p>
           <ul className="mt-3 space-y-2 text-sm text-white/70">
-            <li><Link href="/opportunities">Opportunities</Link></li>
-            <li><Link href="/decisions">Decisions</Link></li>
-            <li><Link href="/opportunities/upload">Upload opportunities</Link></li>
-            <li><Link href="/lab">Experimentation Lab</Link></li>
+            <li><Link href="/app/opportunities">Opportunities</Link></li>
+            <li><Link href="/app/decisions">Decisions</Link></li>
+            <li><Link href="/app/opportunities/upload">Upload opportunities</Link></li>
+            <li><Link href="/admin/lab">Experimentation Lab</Link></li>
           </ul>
         </div>
         <div>

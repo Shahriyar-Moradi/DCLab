@@ -10,22 +10,31 @@ from sqlalchemy.orm import Session, selectinload
 from app.db.models import Decision
 from app.domain.decision import DecisionListResponse, DecisionRead
 from app.services.opportunity_query import get_opportunity
+from app.translation.decisions import translate_opportunity_decision
 
 
 def serialize_decision(row: Decision) -> DecisionRead:
+    conversion_probability = row.prediction.conversion_probability if row.prediction else 0.5
+    insight = translate_opportunity_decision(
+        row.opportunity,
+        conversion_probability=conversion_probability,
+        decision_result={
+            "recommended_action": row.recommended_action,
+            "expected_revenue": float(row.expected_revenue),
+            "incremental_value": float(row.incremental_value),
+        },
+        generated_at=row.created_at,
+    )
     return DecisionRead(
         id=row.id,
         opportunity_id=row.opportunity_id,
-        prediction_id=row.prediction_id,
-        recommended_action=row.recommended_action,
-        expected_revenue=float(row.expected_revenue),
-        confidence=row.confidence,
-        reasoning=list(row.reasoning),
+        recommended_action=insight.recommended_action,
+        expected_revenue=insight.expected_value,
+        confidence_band=insight.confidence_band,
+        reasoning=insight.reasoning,
         policy_version=row.policy_version,
         status=row.status,
         created_at=row.created_at,
-        conversion_probability=row.prediction.conversion_probability if row.prediction else None,
-        model_version=row.prediction.model_version if row.prediction else None,
         external_id=row.opportunity.external_id if row.opportunity else None,
     )
 

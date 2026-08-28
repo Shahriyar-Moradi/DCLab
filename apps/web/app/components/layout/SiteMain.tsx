@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 // Marketing pages manage their own full-bleed sections and inner max-width
 // containers. Workspace pages (opportunities, decisions, lab, upload) render a
 // bare page body and rely on the shell for consistent padding.
-const FULL_BLEED_ROUTES = ["/company", "/solutions", "/platform", "/industries", "/resources", "/pricing", "/dashboards"];
+const FULL_BLEED_ROUTES = ["/company", "/solutions", "/platform", "/industries", "/resources", "/pricing", "/app/dashboards"];
 
 function isFullBleed(pathname: string) {
   if (pathname === "/") return true;

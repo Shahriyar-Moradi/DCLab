@@ -1,6 +1,8 @@
 import type { ZodType } from "zod";
+import { clearToken, readToken } from "./session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** Browser origin for FastAPI. Set in `apps/web/.env.local` as NEXT_PUBLIC_API_URL. */
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -35,6 +37,11 @@ async function parseJson(response: Response): Promise<unknown> {
   }
 }
 
+function authHeaders(): Record<string, string> {
+  const token = readToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(
   path: string,
   schema: ZodType<T>,
@@ -46,11 +53,15 @@ async function request<T>(
     headers: {
       Accept: "application/json",
       ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...authHeaders(),
       ...init?.headers,
     },
   });
   const body = await parseJson(response);
   if (!response.ok) {
+    // An expired or revoked token should drop the session rather than leave the
+    // user clicking through screens that will keep failing.
+    if (response.status === 401) clearToken();
     const detail =
       typeof body === "object" && body && "detail" in body ? String((body as { detail: unknown }).detail) : response.statusText;
     throw new ApiError(response.status, body, detail || `Request failed (${response.status})`);
@@ -74,16 +85,23 @@ export function apiPost<T>(path: string, schema: ZodType<T>, json: unknown): Pro
   return request(path, schema, { method: "POST", body: JSON.stringify(json) });
 }
 
+export function apiPostForm<T>(path: string, schema: ZodType<T>, form: FormData): Promise<T> {
+  return request(path, schema, { method: "POST", body: form });
+}
+
 export function uploadFile<T>(
   path: string,
   schema: ZodType<T>,
   file: File,
   onProgress?: (percent: number) => void,
+  params?: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", buildUrl(path));
+    xhr.open("POST", buildUrl(path, params));
     xhr.responseType = "text";
+    const token = readToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.upload.onprogress = (event) => {
       if (!onProgress || !event.lengthComputable) return;
       onProgress(Math.round((event.loaded / event.total) * 100));

@@ -19,6 +19,12 @@ export function confidenceBand(confidence: number): "High" | "Medium" | "Low" {
   return "Low";
 }
 
+export function toneFromConfidenceBand(band: "High" | "Medium" | "Low"): SignalTone {
+  if (band === "High") return "green";
+  if (band === "Medium") return "amber";
+  return "oxblood";
+}
+
 export function actionLabel(action: string): string {
   return action.replaceAll("_", " ");
 }

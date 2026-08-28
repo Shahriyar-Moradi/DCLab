@@ -1,0 +1,134 @@
+name: CI
+
+# Everything in DCLab's access-model split funnels through this one workflow:
+# unit tests, the static banned-terms scan (Step 1), and the two live,
+# not-sampled regression crawls (Step 8) that boot the real API + web app and
+# assert the client surface is clean and the admin surface rejects a client
+# token. None of this is meant to be run manually once and trusted forever —
+# that's the whole point of putting it here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/decisionai
+  JWT_SECRET: dev-only-insecure-secret-change-me
+  DCLAB_ADMIN_EMAIL: admin@dclab.io
+  DCLAB_ADMIN_PASSWORD: AdminPass123!
+  DCLAB_CLIENT_EMAIL: demo@client.io
+  DCLAB_CLIENT_PASSWORD: ClientPass123!
+  CORS_ORIGINS: http://localhost:3001,http://127.0.0.1:3001
+  DCLAB_API_URL: http://127.0.0.1:8001
+  DCLAB_WEB_URL: http://127.0.0.1:3001
+  NEXT_PUBLIC_API_URL: http://127.0.0.1:8001
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend
+        run: pip install -e .
+
+      - name: Create databases
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE decisionai;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE decisionai_test;"
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      # --- Unit / integration tests -------------------------------------------------
+      # Includes the access-control sweep (every /admin endpoint x every role) and
+      # the translation-layer suite (every use case's real policy actions, banned
+      # terms, dashboard/insight isolation from ML-ops events).
+      - name: Backend test suite
+        run: pytest
+
+      # --- Step 1 guardrail: static scan of schemas + frontend source ---------------
+      - name: Banned-terms static scan
+        run: python -m scripts.scan_banned_terms
+
+      - name: Install frontend
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: apps/web
+        run: npx tsc --noEmit
+
+      - name: Frontend lint
+        working-directory: apps/web
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: apps/web
+        run: npm run build
+
+      - name: Seed demo accounts (admin + client)
+        run: |
+          dclab user create --email "$DCLAB_ADMIN_EMAIL" --password "$DCLAB_ADMIN_PASSWORD" --role dclab_admin
+          dclab user create --email "$DCLAB_CLIENT_EMAIL" --password "$DCLAB_CLIENT_PASSWORD" --role client_user
+
+      - name: Start API server
+        run: |
+          nohup uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port 8001 > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8001/health && exit 0
+            sleep 1
+          done
+          echo "API server did not become healthy"; cat /tmp/api.log; exit 1
+
+      - name: Start web server (production build, not dev — no React Refresh noise)
+        working-directory: apps/web
+        run: |
+          nohup npx next start -p 3001 > /tmp/web.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3001/login && exit 0
+            sleep 1
+          done
+          echo "web server did not become healthy"; cat /tmp/web.log; exit 1
+
+      # --- Step 8: full regression audit, live, not sampled --------------------------
+      - name: Admin surface rejects a client-role token (100% of /admin, not sampled)
+        run: python -m scripts.audit_admin_surface --role client
+
+      - name: Admin surface accepts an admin-role token
+        run: python -m scripts.audit_admin_surface --role admin
+
+      - name: Admin surface rejects an anonymous caller
+        run: python -m scripts.audit_admin_surface --role anonymous
+
+      - name: Client surface is clean — live API responses + pages (100%, not sampled)
+        run: python -m scripts.audit_client_surface --role client
+
+      - name: Server logs (always, for debugging a failed step above)
+        if: always()
+        run: |
+          echo "--- API ---"; tail -n 200 /tmp/api.log || true
+          echo "--- WEB ---"; tail -n 200 /tmp/web.log || true

@@ -2,12 +2,21 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { apiGet, apiPost, uploadFile } from "@/lib/infrastructure/api-client";
+import { apiGet, apiPost, apiPostForm, uploadFile } from "@/lib/infrastructure/api-client";
+import { type SessionUser } from "@/lib/infrastructure/session";
+import { useSession } from "./session-provider";
 import {
+  AdminClientUploadDetailSchema,
+  AdminClientUploadSummarySchema,
+  ClientLabProblemSchema,
+  ClientLabQuotaSchema,
+  ClientLabRunSchema,
+  ClientLabUploadSchema,
   DecisionGenerateSchema,
   DecisionListSchema,
   DecisionSchema,
   HealthSchema,
+  InsightListSchema,
   LabCandidateSchema,
   LabComparisonSchema,
   LabDatasetSchema,
@@ -15,15 +24,33 @@ import {
   LabExperimentSchema,
   LabReportSchema,
   LabTaskSchema,
+  LabUseCasePlanSchema,
+  ClientTrialAuditDetailSchema,
+  MonitoringOverviewSchema,
   OpportunityListSchema,
   OpportunitySchema,
+  OrganizationDetailSchema,
+  OrganizationSummarySchema,
+  RegisteredModelSchema,
   UploadResultSchema,
+  type AdminClientUploadDetail,
+  type AdminClientUploadSummary,
+  type ClientLabProblem,
+  type ClientLabQuota,
+  type ClientLabRun,
+  type ClientLabUpload,
+  type ClientTrialAuditDetail,
   type Decision,
   type DecisionGenerate,
   type DecisionList,
   type Health,
+  type InsightList,
+  type MonitoringOverview,
   type Opportunity,
   type OpportunityList,
+  type OrganizationDetail,
+  type OrganizationSummary,
+  type RegisteredModel,
   type UploadResult,
 } from "@/lib/domain/schemas";
 
@@ -43,6 +70,29 @@ export type DecisionQuery = {
   opportunity_id?: string;
 };
 
+const LoginResponseSchema = z.object({
+  access_token: z.string(),
+  token_type: z.string(),
+  user: z.object({
+    id: z.string(),
+    email: z.string(),
+    role: z.enum(["dclab_admin", "client_user"]),
+    full_name: z.string(),
+    workspace_id: z.string().nullable(),
+  }),
+});
+
+export function useLogin() {
+  const { signIn } = useSession();
+  return useMutation({
+    mutationFn: (credentials: { email: string; password: string }) =>
+      apiPost("/auth/login", LoginResponseSchema, credentials),
+    onSuccess: (data) => {
+      signIn(data.access_token, data.user as SessionUser);
+    },
+  });
+}
+
 export function useHealth(): ReturnType<typeof useQuery<Health>> {
   return useQuery({
     queryKey: ["health"],
@@ -56,7 +106,7 @@ export function useOpportunities(params: OpportunityQuery = {}): ReturnType<type
   return useQuery({
     queryKey: ["opportunities", params],
     queryFn: () =>
-      apiGet("/opportunities", OpportunityListSchema, {
+      apiGet("/app/opportunities", OpportunityListSchema, {
         limit: params.limit ?? 20,
         offset: params.offset ?? 0,
         stage: params.stage,
@@ -69,7 +119,7 @@ export function useOpportunities(params: OpportunityQuery = {}): ReturnType<type
 export function useOpportunity(id: string | undefined): ReturnType<typeof useQuery<Opportunity>> {
   return useQuery({
     queryKey: ["opportunities", id],
-    queryFn: () => apiGet(`/opportunities/${id}`, OpportunitySchema),
+    queryFn: () => apiGet(`/app/opportunities/${id}`, OpportunitySchema),
     enabled: Boolean(id),
   });
 }
@@ -78,7 +128,7 @@ export function useDecisions(params: DecisionQuery = {}): ReturnType<typeof useQ
   return useQuery({
     queryKey: ["decisions", params],
     queryFn: () =>
-      apiGet("/decisions", DecisionListSchema, {
+      apiGet("/app/decisions", DecisionListSchema, {
         limit: params.limit ?? 20,
         offset: params.offset ?? 0,
         status: params.status,
@@ -91,7 +141,7 @@ export function useDecisions(params: DecisionQuery = {}): ReturnType<typeof useQ
 export function useDecision(id: string | undefined): ReturnType<typeof useQuery<Decision>> {
   return useQuery({
     queryKey: ["decisions", id],
-    queryFn: () => apiGet(`/decisions/${id}`, DecisionSchema),
+    queryFn: () => apiGet(`/app/decisions/${id}`, DecisionSchema),
     enabled: Boolean(id),
   });
 }
@@ -102,7 +152,7 @@ export function useGenerateDecision(): ReturnType<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (opportunity_id: string) =>
-      apiPost("/decisions/generate", DecisionGenerateSchema, { opportunity_id }),
+      apiPost("/app/decisions/generate", DecisionGenerateSchema, { opportunity_id }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["decisions"] });
       void queryClient.invalidateQueries({ queryKey: ["opportunities"] });
@@ -117,12 +167,12 @@ export function useOverviewSnapshot(): ReturnType<
   return useQuery({
     queryKey: ["overview-snapshot"],
     queryFn: async () => {
-      const opportunities = await apiGet("/opportunities", OpportunityListSchema, { limit: 1, offset: 0 });
-      const first = await apiGet("/decisions", DecisionListSchema, { limit: 100, offset: 0 });
+      const opportunities = await apiGet("/app/opportunities", OpportunityListSchema, { limit: 1, offset: 0 });
+      const first = await apiGet("/app/decisions", DecisionListSchema, { limit: 100, offset: 0 });
       const items = [...first.items];
       let offset = 100;
       while (offset < first.total && offset < 500) {
-        const page = await apiGet("/decisions", DecisionListSchema, { limit: 100, offset });
+        const page = await apiGet("/app/decisions", DecisionListSchema, { limit: 100, offset });
         items.push(...page.items);
         offset += 100;
       }
@@ -136,12 +186,91 @@ export function useOverviewSnapshot(): ReturnType<
   });
 }
 
+export function useInsights(): ReturnType<typeof useQuery<InsightList>> {
+  return useQuery({
+    queryKey: ["insights"],
+    queryFn: () => apiGet("/app/insights", InsightListSchema),
+  });
+}
+
+export function useLabProblems(): ReturnType<typeof useQuery<ClientLabProblem[]>> {
+  return useQuery({
+    queryKey: ["client-labs", "problems"],
+    queryFn: () => apiGet("/app/labs/problems", z.array(ClientLabProblemSchema)),
+  });
+}
+
+export function useLabQuota(useCase: string | undefined): ReturnType<typeof useQuery<ClientLabQuota>> {
+  return useQuery({
+    queryKey: ["client-labs", "quota", useCase],
+    queryFn: () => apiGet(`/app/labs/problems/${useCase}/quota`, ClientLabQuotaSchema),
+    enabled: Boolean(useCase),
+  });
+}
+
+export function useLabRuns(useCase?: string): ReturnType<typeof useQuery<ClientLabRun[]>> {
+  return useQuery({
+    queryKey: ["client-labs", "runs", useCase ?? "all"],
+    queryFn: () => apiGet("/app/labs/runs", z.array(ClientLabRunSchema), { use_case: useCase }),
+  });
+}
+
+export function useLabRun(id: string | undefined): ReturnType<typeof useQuery<ClientLabRun>> {
+  return useQuery({
+    queryKey: ["client-labs", "runs", "detail", id],
+    queryFn: () => apiGet(`/app/labs/runs/${id}`, ClientLabRunSchema),
+    enabled: Boolean(id),
+  });
+}
+
+export function useRunLabTrial(): ReturnType<
+  typeof useMutation<ClientLabRun, Error, { useCase: string; file?: File | null }>
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ useCase, file }) => {
+      const form = new FormData();
+      form.append("use_case", useCase);
+      if (file) form.append("file", file);
+      return apiPostForm("/app/labs/runs", ClientLabRunSchema, form);
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["client-labs", "runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["client-labs", "quota", variables.useCase] });
+    },
+  });
+}
+
+export function useLabUploads(category: string): ReturnType<typeof useQuery<ClientLabUpload[]>> {
+  return useQuery({
+    queryKey: ["client-labs", "uploads", category],
+    queryFn: () => apiGet("/app/labs/uploads", z.array(ClientLabUploadSchema), { category }),
+  });
+}
+
+export function useUploadLabFile(): ReturnType<
+  typeof useMutation<ClientLabUpload, Error, { category: string; file: File }>
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ category, file }) => {
+      const form = new FormData();
+      form.append("category", category);
+      form.append("file", file);
+      return apiPostForm("/app/labs/uploads", ClientLabUploadSchema, form);
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["client-labs", "uploads", variables.category] });
+    },
+  });
+}
+
 export function useUploadOpportunities(): ReturnType<
   typeof useMutation<UploadResult, Error, { file: File; onProgress?: (percent: number) => void }>
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, onProgress }) => uploadFile("/opportunities/upload", UploadResultSchema, file, onProgress),
+    mutationFn: ({ file, onProgress }) => uploadFile("/app/opportunities/upload", UploadResultSchema, file, onProgress),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["opportunities"] });
       void queryClient.invalidateQueries({ queryKey: ["overview-snapshot"] });
@@ -152,35 +281,80 @@ export function useUploadOpportunities(): ReturnType<
 export function useLabEnvironments() {
   return useQuery({
     queryKey: ["lab", "environments"],
-    queryFn: () => apiGet("/lab/environments", z.array(LabEnvironmentSchema)),
+    queryFn: () => apiGet("/admin/environments", z.array(LabEnvironmentSchema)),
   });
 }
 
 export function useLabDatasets() {
   return useQuery({
     queryKey: ["lab", "datasets"],
-    queryFn: () => apiGet("/lab/datasets", z.array(LabDatasetSchema)),
+    queryFn: () => apiGet("/admin/datasets", z.array(LabDatasetSchema)),
+  });
+}
+
+export function useUploadLabDataset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, onProgress }: { file: File; onProgress?: (percent: number) => void }) => {
+      const name = file.name.replace(/\.[^.]+$/, "") || "dataset";
+      return uploadFile("/admin/datasets/upload", LabDatasetSchema, file, onProgress, { name });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["lab", "datasets"] });
+    },
+  });
+}
+
+export function useCreateLabWorkbook() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost("/admin/datasets/sample-workbook", LabDatasetSchema, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["lab", "datasets"] });
+    },
+  });
+}
+
+export function useLabUseCasePlan(datasetId: string | undefined) {
+  return useQuery({
+    queryKey: ["lab", "use-cases", datasetId],
+    queryFn: () => apiGet(`/admin/datasets/${datasetId}/use-cases`, LabUseCasePlanSchema),
+    enabled: Boolean(datasetId),
+  });
+}
+
+export function useTrainLabUseCase(datasetId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) =>
+      apiPost(`/admin/datasets/${datasetId}/use-cases/${slug}/train`, LabExperimentSchema, { max_models: 5 }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["lab", "use-cases", datasetId] });
+      void queryClient.invalidateQueries({ queryKey: ["lab", "experiments"] });
+      void queryClient.invalidateQueries({ queryKey: ["lab", "tasks"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "models"] });
+    },
   });
 }
 
 export function useLabTasks() {
   return useQuery({
     queryKey: ["lab", "tasks"],
-    queryFn: () => apiGet("/lab/tasks", z.array(LabTaskSchema)),
+    queryFn: () => apiGet("/admin/tasks", z.array(LabTaskSchema)),
   });
 }
 
 export function useLabExperiments() {
   return useQuery({
     queryKey: ["lab", "experiments"],
-    queryFn: () => apiGet("/lab/experiments", z.array(LabExperimentSchema)),
+    queryFn: () => apiGet("/admin/experiments", z.array(LabExperimentSchema)),
   });
 }
 
 export function useLabExperiment(id: string | undefined) {
   return useQuery({
     queryKey: ["lab", "experiments", id],
-    queryFn: () => apiGet(`/lab/experiments/${id}`, LabExperimentSchema),
+    queryFn: () => apiGet(`/admin/experiments/${id}`, LabExperimentSchema),
     enabled: Boolean(id),
   });
 }
@@ -188,7 +362,7 @@ export function useLabExperiment(id: string | undefined) {
 export function useLabReport(id: string | undefined) {
   return useQuery({
     queryKey: ["lab", "report", id],
-    queryFn: () => apiGet(`/lab/experiments/${id}/report`, LabReportSchema),
+    queryFn: () => apiGet(`/admin/experiments/${id}/report`, LabReportSchema),
     enabled: Boolean(id),
   });
 }
@@ -196,7 +370,7 @@ export function useLabReport(id: string | undefined) {
 export function useLabCandidates(id: string | undefined) {
   return useQuery({
     queryKey: ["lab", "candidates", id],
-    queryFn: () => apiGet(`/lab/experiments/${id}/candidates`, z.array(LabCandidateSchema)),
+    queryFn: () => apiGet(`/admin/experiments/${id}/candidates`, z.array(LabCandidateSchema)),
     enabled: Boolean(id),
   });
 }
@@ -204,7 +378,65 @@ export function useLabCandidates(id: string | undefined) {
 export function useLabComparison(id: string | undefined) {
   return useQuery({
     queryKey: ["lab", "comparison", id],
-    queryFn: () => apiGet(`/lab/experiments/${id}/comparison`, LabComparisonSchema),
+    queryFn: () => apiGet(`/admin/experiments/${id}/comparison`, LabComparisonSchema),
     enabled: Boolean(id),
+  });
+}
+
+export function useAdminOrganizations(): ReturnType<typeof useQuery<OrganizationSummary[]>> {
+  return useQuery({
+    queryKey: ["admin", "organizations"],
+    queryFn: () => apiGet("/admin/organizations", z.array(OrganizationSummarySchema)),
+  });
+}
+
+export function useAdminOrganization(id: string | undefined): ReturnType<typeof useQuery<OrganizationDetail>> {
+  return useQuery({
+    queryKey: ["admin", "organizations", id],
+    queryFn: () => apiGet(`/admin/organizations/${id}`, OrganizationDetailSchema),
+    enabled: Boolean(id),
+  });
+}
+
+export function useAdminModelRegistry(): ReturnType<typeof useQuery<RegisteredModel[]>> {
+  return useQuery({
+    queryKey: ["admin", "models"],
+    queryFn: () => apiGet("/admin/models", z.array(RegisteredModelSchema)),
+  });
+}
+
+export function useAdminMonitoring(): ReturnType<typeof useQuery<MonitoringOverview>> {
+  return useQuery({
+    queryKey: ["admin", "monitoring"],
+    queryFn: () => apiGet("/admin/monitoring", MonitoringOverviewSchema),
+  });
+}
+
+export function useAdminClientUploads(): ReturnType<typeof useQuery<AdminClientUploadSummary[]>> {
+  return useQuery({
+    queryKey: ["admin", "client-uploads"],
+    queryFn: () => apiGet("/admin/client-uploads", z.array(AdminClientUploadSummarySchema)),
+  });
+}
+
+export function useAdminClientUpload(
+  id: string | undefined,
+): ReturnType<typeof useQuery<AdminClientUploadDetail>> {
+  return useQuery({
+    queryKey: ["admin", "client-uploads", id],
+    queryFn: () => apiGet(`/admin/client-uploads/${id}`, AdminClientUploadDetailSchema),
+    enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data && ["queued", "running"].includes(query.state.data.pipeline_status) ? 3000 : false,
+  });
+}
+
+export function useAdminClientTrialAudit(
+  auditId: string | undefined,
+): ReturnType<typeof useQuery<ClientTrialAuditDetail>> {
+  return useQuery({
+    queryKey: ["admin", "models", "client-trials", auditId],
+    queryFn: () => apiGet(`/admin/models/client-trials/${auditId}`, ClientTrialAuditDetailSchema),
+    enabled: Boolean(auditId),
   });
 }

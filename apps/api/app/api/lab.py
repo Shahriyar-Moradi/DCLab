@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,8 +21,19 @@ from app.services.lab_service import (
     task_from_yaml,
     upsert_task,
 )
+from app.services.lab_training_service import (
+    experiment_payload,
+    ingest_sample_workbook,
+    plan_dataset_use_cases,
+    train_dataset_use_case,
+    train_dataset_use_cases,
+)
 
-router = APIRouter(prefix="/lab", tags=["lab"])
+# Mounted under the admin tree in app.main, giving /admin/experiments,
+# /admin/datasets, /admin/tasks and /admin/environments. No prefix here so the
+# admin router owns the full path.
+router = APIRouter(tags=["lab"])
+logger = logging.getLogger(__name__)
 
 
 class EnvironmentRead(BaseModel):
@@ -64,6 +76,40 @@ class ExperimentRead(BaseModel):
     config: dict
     task_id: UUID
     dataset_id: UUID
+    task_slug: str | None = None
+    task_name: str | None = None
+    dataset_name: str | None = None
+    use_case: str | None = None
+
+
+class UseCasePlanItem(BaseModel):
+    slug: str
+    name: str
+    description: str
+    task_type: str
+    trainable: bool
+    target_column: str | None = None
+    skip_reason: str | None = None
+    feature_groups: dict[str, list[str]]
+    model_families: list[str]
+    latest_experiment_id: str | None = None
+    latest_status: str | None = None
+
+
+class UseCasePlanRead(BaseModel):
+    dataset_id: str
+    dataset_name: str
+    row_count: int
+    columns: list[str]
+    entity_column: str | None = None
+    time_column: str | None = None
+    use_cases: list[UseCasePlanItem]
+    trainable_count: int
+
+
+class TrainRequest(BaseModel):
+    max_models: int = 5
+    use_cases: list[str] | None = None
 
 
 class RunRequest(BaseModel):
@@ -99,18 +145,73 @@ def get_dataset(dataset_id: UUID, db: Session = Depends(get_db)) -> Dataset:
 
 @router.post("/datasets/upload", response_model=DatasetRead)
 async def upload_dataset(
-    name: str,
     file: UploadFile = File(...),
+    name: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> Dataset:
     env = seed_dogfood(db)
     dest_dir = REPO_ROOT / "data" / "uploads"
     dest_dir.mkdir(parents=True, exist_ok=True)
+    stem = name or Path(file.filename or "dataset").stem or "dataset"
     suffix = Path(file.filename or "upload.csv").suffix or ".csv"
-    dest = dest_dir / f"{name}{suffix}"
+    dest = dest_dir / f"{stem}_{uuid4().hex[:8]}{suffix}"
     dest.write_bytes(await file.read())
     source = "parquet" if suffix in {".parquet", ".pq"} else "csv"
-    return ingest_dataset(db, environment=env, name=name, location=str(dest), source_type=source)
+    logger.info("lab upload name=%s path=%s", stem, dest)
+    dataset = ingest_dataset(db, environment=env, name=stem, location=str(dest), source_type=source)
+    profile_dataset(db, dataset)
+    return dataset
+
+
+@router.post("/datasets/sample-workbook", response_model=DatasetRead)
+def create_sample_workbook(db: Session = Depends(get_db)) -> Dataset:
+    return ingest_sample_workbook(db)
+
+
+@router.get("/datasets/{dataset_id}/use-cases", response_model=UseCasePlanRead)
+def dataset_use_cases(dataset_id: UUID, db: Session = Depends(get_db)) -> dict:
+    dataset = db.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(404, "dataset not found")
+    return plan_dataset_use_cases(db, dataset)
+
+
+@router.post("/datasets/{dataset_id}/use-cases/{slug}/train", response_model=ExperimentRead)
+def train_one_use_case(
+    dataset_id: UUID,
+    slug: str,
+    payload: TrainRequest = TrainRequest(),
+    db: Session = Depends(get_db),
+) -> dict:
+    dataset = db.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(404, "dataset not found")
+    try:
+        experiment = train_dataset_use_case(db, dataset, slug, max_models=payload.max_models or 5)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return experiment_payload(db, experiment)
+
+
+@router.post("/datasets/{dataset_id}/train", response_model=list[ExperimentRead])
+def train_all_use_cases(
+    dataset_id: UUID,
+    payload: TrainRequest = TrainRequest(),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    dataset = db.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(404, "dataset not found")
+    try:
+        runs = train_dataset_use_cases(
+            db,
+            dataset,
+            slugs=payload.use_cases,
+            max_models=payload.max_models or 5,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return [experiment_payload(db, row) for row in runs]
 
 
 @router.post("/datasets/{dataset_id}/profile")
@@ -156,16 +257,17 @@ def create_task_from_config(path: str = Query(...), db: Session = Depends(get_db
 
 
 @router.get("/experiments", response_model=list[ExperimentRead])
-def list_experiments(db: Session = Depends(get_db)) -> list[Experiment]:
-    return list(db.query(Experiment).order_by(Experiment.created_at.desc()).limit(50).all())
+def list_experiments(db: Session = Depends(get_db)) -> list[dict]:
+    rows = db.query(Experiment).order_by(Experiment.created_at.desc()).limit(50).all()
+    return [experiment_payload(db, row) for row in rows]
 
 
 @router.get("/experiments/{experiment_id}", response_model=ExperimentRead)
-def get_experiment(experiment_id: UUID, db: Session = Depends(get_db)) -> Experiment:
+def get_experiment(experiment_id: UUID, db: Session = Depends(get_db)) -> dict:
     row = db.get(Experiment, experiment_id)
     if row is None:
         raise HTTPException(404, "experiment not found")
-    return row
+    return experiment_payload(db, row)
 
 
 @router.get("/experiments/{experiment_id}/candidates")
@@ -298,12 +400,14 @@ def create_and_optionally_run(
         yaml_search,
         overrides={"max_candidates": payload.max_candidates} if payload.max_candidates else None,
     )
-    return create_experiment(db, environment=env, dataset=dataset, task=task, config=cfg)
+    created = create_experiment(db, environment=env, dataset=dataset, task=task, config=cfg)
+    return experiment_payload(db, created)
 
 
 @router.post("/experiments/{experiment_id}/run", response_model=ExperimentRead)
-def run_existing(experiment_id: UUID, db: Session = Depends(get_db)) -> Experiment:
+def run_existing(experiment_id: UUID, db: Session = Depends(get_db)) -> dict:
     row = db.get(Experiment, experiment_id)
     if row is None:
         raise HTTPException(404, "experiment not found")
-    return execute_experiment(db, row)
+    executed = execute_experiment(db, row)
+    return experiment_payload(db, executed)

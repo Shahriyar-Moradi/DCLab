@@ -13,19 +13,19 @@ const STEPS = [
     icon: Upload,
     title: "Upload opportunities",
     body: "Drop in a CSV of historical sales opportunities — external ID, amount, stage, source, owner.",
-    href: "/opportunities/upload",
+    href: "/app/opportunities/upload",
   },
   {
     icon: ScanSearch,
     title: "Score & decide",
     body: "The decision engine scores each row and returns a recommended action with confidence and reasoning.",
-    href: "/decisions",
+    href: "/app/decisions",
   },
   {
     icon: Beaker,
     title: "Experiment in the Lab",
     body: "Profile new datasets, define prediction tasks, and run a budgeted candidate search to beat the baseline.",
-    href: "/lab",
+    href: "/admin/lab",
   },
 ];
 
@@ -50,7 +50,10 @@ function Hero() {
     for (const row of data.decisions) counts[row.recommended_action] = (counts[row.recommended_action] ?? 0) + 1;
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]?.replaceAll("_", " ") ?? "—";
   })();
-  const avgConfidence = data && data.decisions.length > 0 ? data.decisions.reduce((sum, row) => sum + row.confidence, 0) / data.decisions.length : 0;
+  const highConfidenceShare =
+    data && data.decisions.length > 0
+      ? data.decisions.filter((row) => row.confidence_band === "High").length / data.decisions.length
+      : 0;
   const expectedSum = data ? data.decisions.reduce((sum, row) => sum + row.expected_revenue, 0) : 0;
 
   return (
@@ -108,9 +111,9 @@ function Hero() {
             </div>
             <div className="mt-2 flex items-center justify-between rounded-xl bg-navy-soft px-4 py-3 text-sm">
               <span className="flex items-center gap-2 font-medium text-ink">
-                <TrendingUp size={14} className="text-brand" /> Prediction model
+                <TrendingUp size={14} className="text-brand" /> High-confidence share
               </span>
-              <span className="font-semibold text-ink">{snapshot.isPending ? "…" : formatPercent(avgConfidence)} confidence</span>
+              <span className="font-semibold text-ink">{snapshot.isPending ? "…" : formatPercent(highConfidenceShare)}</span>
             </div>
             <div className="mt-4 rounded-2xl bg-brand-gradient p-4">
               <p className="text-sm font-semibold text-white">Expected value in view</p>

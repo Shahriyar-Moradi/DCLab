@@ -115,7 +115,7 @@ def test_sim_factory_trains_and_fuses(tmp_path):
     reset_model_cache()
 
 
-def test_simulation_api_persists_and_returns_uplift_flag(client, db_session):
+def test_simulation_api_persists_and_returns_uplift_flag(admin_client, db_session):
     payload = {
         "use_case": "churn",
         "company": "Northstar SaaS",
@@ -170,15 +170,15 @@ def test_simulation_api_persists_and_returns_uplift_flag(client, db_session):
     db_session.add(row)
     db_session.commit()
 
-    listed = client.get("/simulations/runs")
+    listed = admin_client.get("/admin/simulations/runs")
     assert listed.status_code == 200
     assert listed.json()["total"] >= 1
 
-    detail = client.get(f"/simulations/runs/{row.id}")
+    detail = admin_client.get(f"/admin/simulations/runs/{row.id}")
     assert detail.status_code == 200
     assert detail.json()["use_case"] == "churn"
 
-    decision = client.get(f"/simulations/runs/{row.id}/decisions/C-92831")
+    decision = admin_client.get(f"/admin/simulations/runs/{row.id}/decisions/C-92831")
     assert decision.status_code == 200
     body = decision.json()
     assert body["uplift_is_simulated"] is True
@@ -195,7 +195,7 @@ def test_simulation_api_persists_and_returns_uplift_flag(client, db_session):
     assert body["recommended_action"] == "ASSIGN_CSM"
 
 
-def test_simulation_run_endpoint_uses_engine(client, monkeypatch, db_session):
+def test_simulation_run_endpoint_uses_engine(admin_client, monkeypatch, db_session):
     def _fake_run(name: str):
         return {
             "use_case": name,
@@ -219,7 +219,7 @@ def test_simulation_run_endpoint_uses_engine(client, monkeypatch, db_session):
         }
 
     monkeypatch.setattr("app.api.simulations.run_use_case", _fake_run)
-    response = client.post("/simulations/run", json={"use_case": "churn"})
+    response = admin_client.post("/admin/simulations/run", json={"use_case": "churn"})
     assert response.status_code == 200
     body = response.json()
     assert body["use_case"] == "churn"

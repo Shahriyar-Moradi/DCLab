@@ -37,7 +37,11 @@ def profile_frame(frame: pd.DataFrame) -> dict[str, Any]:
             "identifier_like": _is_identifier(str(name), series),
             "datetime": bool(pd.api.types.is_datetime64_any_dtype(series) or "date" in str(name).lower()),
         }
-        if pd.api.types.is_numeric_dtype(series):
+        if pd.api.types.is_bool_dtype(series):
+            info["categorical_distribution"] = {
+                str(key).lower(): int(value) for key, value in series.value_counts(dropna=True).items()
+            }
+        elif pd.api.types.is_numeric_dtype(series):
             clean = pd.to_numeric(series, errors="coerce")
             info.update(
                 {

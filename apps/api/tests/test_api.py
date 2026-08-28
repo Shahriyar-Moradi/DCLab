@@ -11,43 +11,43 @@ def test_health_ok(client):
     assert response.json() == {"status": "ok", "db": "connected"}
 
 
-def test_upload_happy_and_list_paginated(client, sample_csv_bytes):
-    response = client.post("/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
+def test_upload_happy_and_list_paginated(auth_client, sample_csv_bytes):
+    response = auth_client.post("/app/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
     assert response.status_code == 200
     body = response.json()
     assert body["inserted"] == 3
     assert body["rejected"] == 0
 
-    listed = client.get("/opportunities?limit=2")
+    listed = auth_client.get("/app/opportunities?limit=2")
     assert listed.status_code == 200
     payload = listed.json()
     assert payload["limit"] == 2
     assert payload["total"] == 3
     assert len(payload["items"]) == 2
 
-    sorted_amount = client.get("/opportunities?sort=amount&order=desc")
+    sorted_amount = auth_client.get("/app/opportunities?sort=amount&order=desc")
     assert sorted_amount.status_code == 200
     amounts = [row["amount"] for row in sorted_amount.json()["items"]]
     assert amounts == sorted(amounts, reverse=True)
 
-    filtered = client.get("/opportunities?stage=proposal")
+    filtered = auth_client.get("/app/opportunities?stage=proposal")
     assert filtered.status_code == 200
     assert filtered.json()["total"] == 1
     assert filtered.json()["items"][0]["external_id"] == "opp_1"
 
-    detail = client.get("/opportunities/opp_1")
+    detail = auth_client.get("/app/opportunities/opp_1")
     assert detail.status_code == 200
     assert detail.json()["external_id"] == "opp_1"
 
 
-def test_upload_rejects_invalid_rows(client):
+def test_upload_rejects_invalid_rows(auth_client):
     csv = (
         "external_id,customer_id,amount,currency,stage,source,owner_id,created_at,converted\n"
         "opp_ok,cust_1,1000,AED,proposal,inbound,rep_1,2026-01-01,1\n"
         "opp_neg,cust_2,-25,AED,proposal,inbound,rep_1,2026-01-01,0\n"
         "opp_date,cust_3,1000,AED,proposal,inbound,rep_1,32/13/2026,0\n"
     ).encode()
-    response = client.post("/opportunities/upload", files={"file": ("bad.csv", csv, "text/csv")})
+    response = auth_client.post("/app/opportunities/upload", files={"file": ("bad.csv", csv, "text/csv")})
     assert response.status_code == 200
     body = response.json()
     assert body["inserted"] == 1
@@ -55,67 +55,67 @@ def test_upload_rejects_invalid_rows(client):
     assert len(body["errors"]) == 2
 
 
-def test_reupload_does_not_duplicate(client, sample_csv_bytes):
-    client.post("/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
-    again = client.post("/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
+def test_reupload_does_not_duplicate(auth_client, sample_csv_bytes):
+    auth_client.post("/app/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
+    again = auth_client.post("/app/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
     assert again.status_code == 200
-    listed = client.get("/opportunities?limit=50")
+    listed = auth_client.get("/app/opportunities?limit=50")
     assert listed.json()["total"] == 3
 
 
-def test_empty_csv_upload(client):
-    response = client.post("/opportunities/upload", files={"file": ("empty.csv", b"", "text/csv")})
+def test_empty_csv_upload(auth_client):
+    response = auth_client.post("/app/opportunities/upload", files={"file": ("empty.csv", b"", "text/csv")})
     assert response.status_code == 200
     assert response.json()["rejected"] == 1
 
 
-def test_all_invalid_csv_upload(client):
+def test_all_invalid_csv_upload(auth_client):
     csv = (
         "external_id,customer_id,amount,currency,stage,source,owner_id,created_at\n"
         ",cust_1,1000,AED,proposal,inbound,rep_1,2026-01-01\n"
         "opp_x,cust_2,-1,AED,proposal,inbound,rep_1,2026-01-01\n"
     ).encode()
-    response = client.post("/opportunities/upload", files={"file": ("bad.csv", csv, "text/csv")})
+    response = auth_client.post("/app/opportunities/upload", files={"file": ("bad.csv", csv, "text/csv")})
     assert response.status_code == 200
     body = response.json()
     assert body["inserted"] == 0
     assert body["rejected"] == 2
 
 
-def test_get_opportunity_missing(client):
-    response = client.get("/opportunities/does-not-exist")
+def test_get_opportunity_missing(auth_client):
+    response = auth_client.get("/app/opportunities/does-not-exist")
     assert response.status_code == 404
 
 
-def test_optional_fields_accepted(client):
+def test_optional_fields_accepted(auth_client):
     csv = (
         "external_id,customer_id,amount,currency,stage,source,owner_id\n"
         "opp_sparse,cust_9,1500,AED,qualification,website,rep_9\n"
     ).encode()
-    response = client.post("/opportunities/upload", files={"file": ("sparse.csv", csv, "text/csv")})
+    response = auth_client.post("/app/opportunities/upload", files={"file": ("sparse.csv", csv, "text/csv")})
     assert response.status_code == 200
     assert response.json()["inserted"] == 1
-    detail = client.get("/opportunities/opp_sparse")
+    detail = auth_client.get("/app/opportunities/opp_sparse")
     assert detail.status_code == 200
     assert detail.json()["converted"] is None
 
 
-def test_generate_unknown_opportunity_404(client):
-    response = client.post("/decisions/generate", json={"opportunity_id": "missing"})
+def test_generate_unknown_opportunity_404(auth_client):
+    response = auth_client.post("/app/decisions/generate", json={"opportunity_id": "missing"})
     assert response.status_code == 404
 
 
-def test_generate_without_model_is_503_not_500(client, sample_csv_bytes, tmp_path, monkeypatch):
-    client.post("/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
+def test_generate_without_model_is_503_not_500(auth_client, sample_csv_bytes, tmp_path, monkeypatch):
+    auth_client.post("/app/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
     settings = get_settings()
     monkeypatch.setattr(settings, "model_dir", tmp_path / "missing-model")
     reset_model_cache()
-    response = client.post("/decisions/generate", json={"opportunity_id": "opp_1"})
+    response = auth_client.post("/app/decisions/generate", json={"opportunity_id": "opp_1"})
     assert response.status_code == 503
     reset_model_cache()
 
 
-def test_generate_happy_path_and_no_duplicate(client, sample_csv_bytes, tmp_path, monkeypatch):
+def test_generate_happy_path_and_no_duplicate(auth_client, sample_csv_bytes, tmp_path, monkeypatch):
     csv_path = tmp_path / "train.csv"
     csv_path.write_bytes(sample_csv_bytes)
     # Tiny set is enough for a fitted model in tests if we expand it.
@@ -133,58 +133,55 @@ def test_generate_happy_path_and_no_duplicate(client, sample_csv_bytes, tmp_path
     monkeypatch.setattr(settings, "model_dir", tmp_path)
     reset_model_cache()
 
-    client.post("/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
-    first = client.post("/decisions/generate", json={"opportunity_id": "opp_1"})
+    auth_client.post("/app/opportunities/upload", files={"file": ("opp.csv", sample_csv_bytes, "text/csv")})
+    first = auth_client.post("/app/decisions/generate", json={"opportunity_id": "opp_1"})
     assert first.status_code == 200
     body = first.json()
     assert set(body.keys()) == {
         "opportunity_id",
-        "conversion_probability",
         "expected_revenue",
         "recommended_action",
-        "confidence",
+        "confidence_band",
         "reasoning",
-        "model_version",
         "policy_version",
     }
     assert body["opportunity_id"] == "opp_1"
-    assert 0.0 <= body["conversion_probability"] <= 1.0
-    assert body["model_version"]
+    assert body["confidence_band"] in {"High", "Medium", "Low"}
     assert body["policy_version"]
     assert body["reasoning"]
 
-    second = client.post("/decisions/generate", json={"opportunity_id": "opp_1"})
+    second = auth_client.post("/app/decisions/generate", json={"opportunity_id": "opp_1"})
     assert second.status_code == 200
-    listed = client.get("/decisions")
+    listed = auth_client.get("/app/decisions")
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
 
     decision_id = listed.json()["items"][0]["id"]
-    detail = client.get(f"/decisions/{decision_id}")
+    detail = auth_client.get(f"/app/decisions/{decision_id}")
     assert detail.status_code == 200
-    assert detail.json()["model_version"] == body["model_version"]
+    assert detail.json()["confidence_band"] in {"High", "Medium", "Low"}
     assert detail.json()["policy_version"] == body["policy_version"]
 
-    by_action = client.get(f"/decisions?action={body['recommended_action']}")
+    by_action = auth_client.get(f"/app/decisions?action={body['recommended_action']}")
     assert by_action.status_code == 200
     assert by_action.json()["total"] == 1
-    by_external = client.get("/decisions?opportunity_id=opp_1")
+    by_external = auth_client.get("/app/decisions?opportunity_id=opp_1")
     assert by_external.json()["total"] == 1
-    by_uuid = client.get(f"/decisions?opportunity_id={listed.json()['items'][0]['opportunity_id']}")
+    by_uuid = auth_client.get(f"/app/decisions?opportunity_id={listed.json()['items'][0]['opportunity_id']}")
     assert by_uuid.json()["total"] == 1
-    missing = client.get("/decisions?opportunity_id=does-not-exist")
+    missing = auth_client.get("/app/decisions?opportunity_id=does-not-exist")
     assert missing.json()["total"] == 0
     reset_model_cache()
 
 
 def test_cors_allows_local_frontend(client):
-    response = client.get("/health", headers={"Origin": "http://localhost:3000"})
+    response = client.get("/health", headers={"Origin": "http://localhost:3001"})
     assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3001"
 
 
-def test_get_decision_missing(client):
-    response = client.get("/decisions/00000000-0000-0000-0000-000000000001")
+def test_get_decision_missing(auth_client):
+    response = auth_client.get("/app/decisions/00000000-0000-0000-0000-000000000001")
     assert response.status_code == 404
 
 

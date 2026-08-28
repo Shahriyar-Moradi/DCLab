@@ -16,6 +16,7 @@ htmlcov/
 artifacts/**
 !artifacts/.gitkeep
 data/uploads/
+data/client_lab_datasets/
 data/synthetic/
 data/olist/raw/**
 !data/olist/raw/.gitkeep

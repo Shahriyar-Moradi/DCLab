@@ -15,19 +15,27 @@ from app.domain.errors import InvalidGenerateRequestError, OpportunityNotFoundEr
 from app.ml.predict import predict_with_evidence
 from app.services.decision_service import decide, load_policy
 from app.services.opportunity_query import get_opportunity
+from app.translation.decisions import translate_opportunity_decision
 
 
 def to_generate_response(
     opportunity: Opportunity, prediction: Prediction, decision: Decision
 ) -> DecisionGenerateResponse:
+    insight = translate_opportunity_decision(
+        opportunity,
+        conversion_probability=prediction.conversion_probability,
+        decision_result={
+            "recommended_action": decision.recommended_action,
+            "expected_revenue": float(decision.expected_revenue),
+            "incremental_value": float(decision.incremental_value),
+        },
+    )
     return DecisionGenerateResponse(
         opportunity_id=opportunity.external_id,
-        conversion_probability=prediction.conversion_probability,
-        expected_revenue=float(decision.expected_revenue),
-        recommended_action=decision.recommended_action,
-        confidence=decision.confidence,
-        reasoning=list(decision.reasoning),
-        model_version=prediction.model_version,
+        recommended_action=insight.recommended_action,
+        confidence_band=insight.confidence_band,
+        expected_revenue=insight.expected_value,
+        reasoning=insight.reasoning,
         policy_version=decision.policy_version,
     )
 
@@ -56,6 +64,7 @@ def generate_one(db: Session, opportunity: Opportunity) -> DecisionGenerateRespo
             recommended_action=result["recommended_action"],
             expected_revenue=result["expected_revenue"],
             confidence=result["confidence"],
+            incremental_value=result["incremental_value"],
             reasoning=result["reasoning"],
             policy_version=result["policy_version"],
             status="pending_review",
@@ -66,6 +75,7 @@ def generate_one(db: Session, opportunity: Opportunity) -> DecisionGenerateRespo
         existing.recommended_action = result["recommended_action"]
         existing.expected_revenue = result["expected_revenue"]
         existing.confidence = result["confidence"]
+        existing.incremental_value = result["incremental_value"]
         existing.reasoning = result["reasoning"]
         existing.policy_version = result["policy_version"]
 

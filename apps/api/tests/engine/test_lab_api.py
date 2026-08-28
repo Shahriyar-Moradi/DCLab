@@ -10,7 +10,7 @@ from app.services.lab_service import (
 )
 
 
-def test_lab_api_synthetic_experiment(client, db_session, tmp_path, monkeypatch):
+def test_lab_api_synthetic_experiment(admin_client, db_session, tmp_path, monkeypatch):
     env = seed_dogfood(db_session)
     dataset = ingest_synthetic(db_session, env, n=400)
     profile = profile_dataset(db_session, dataset)
@@ -27,11 +27,11 @@ def test_lab_api_synthetic_experiment(client, db_session, tmp_path, monkeypatch)
         validation_strategy="time",
     )
     task = upsert_task(db_session, env, spec)
-    created = client.post(
-        "/lab/environments/dogfood",
+    created = admin_client.post(
+        "/admin/environments/dogfood",
     )
     assert created.status_code == 200
-    listed = client.get("/lab/datasets")
+    listed = admin_client.get("/admin/datasets")
     assert listed.status_code == 200
     assert listed.json()[0]["name"] == "synthetic"
     experiment = create_experiment(
@@ -43,12 +43,12 @@ def test_lab_api_synthetic_experiment(client, db_session, tmp_path, monkeypatch)
     )
     executed = execute_experiment(db_session, experiment)
     assert executed.status == "COMPLETED"
-    body = client.get(f"/lab/experiments/{executed.id}").json()
+    body = admin_client.get(f"/admin/experiments/{executed.id}").json()
     assert body["status"] == "COMPLETED"
-    metrics = client.get(f"/lab/experiments/{executed.id}/metrics").json()
+    metrics = admin_client.get(f"/admin/experiments/{executed.id}/metrics").json()
     assert metrics["funnel"]["trained"] >= 1
-    report = client.get(f"/lab/experiments/{executed.id}/report").json()
+    report = admin_client.get(f"/admin/experiments/{executed.id}/report").json()
     assert "markdown" in report
-    comparison = client.get(f"/lab/experiments/{executed.id}/comparison")
+    comparison = admin_client.get(f"/admin/experiments/{executed.id}/comparison")
     assert comparison.status_code == 200
     assert "best_single" in comparison.json()

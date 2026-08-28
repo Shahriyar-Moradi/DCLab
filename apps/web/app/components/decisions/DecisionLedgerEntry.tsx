@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { Badge } from "@/app/components/ui/Badge";
-import { ConfidenceBar } from "@/app/components/ui/ConfidenceBar";
 import { cn } from "@/lib/cn";
-import { actionLabel, actionTone, confidenceTone, formatMoney, formatPercent, formatTimestamp, type DecisionView } from "@/lib/domain";
+import { actionLabel, actionTone, formatMoney, formatTimestamp, toneFromConfidenceBand, type DecisionView } from "@/lib/domain";
 
 export function DecisionLedgerEntry({
   decision,
@@ -18,7 +17,7 @@ export function DecisionLedgerEntry({
   animate?: boolean;
 }) {
   const tone = actionTone(decision.recommendedAction);
-  const confTone = confidenceTone(decision.confidence);
+  const confTone = toneFromConfidenceBand(decision.confidenceBand);
   const compact = variant === "compact";
 
   return (
@@ -39,12 +38,9 @@ export function DecisionLedgerEntry({
       <p className={cn("mt-1 font-mono text-ink", compact ? "text-data font-medium" : "text-title")}>
         {formatMoney(decision.expectedRevenue)}
       </p>
-      {decision.conversionProbability != null ? (
-        <p className="mt-1 font-mono text-data text-ink-muted">P(convert) {formatPercent(decision.conversionProbability)}</p>
-      ) : null}
       <div className="mt-4">
         <p className="mb-2 font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">Confidence</p>
-        <ConfidenceBar value={decision.confidence} tone={confTone} />
+        <Badge tone={confTone}>{decision.confidenceBand}</Badge>
       </div>
       {!compact ? (
         <ul className="mt-6">
@@ -58,13 +54,11 @@ export function DecisionLedgerEntry({
         <p className="mt-4 font-body text-body text-ink-muted">{decision.reasoning[0]}</p>
       )}
       <div className="mt-4 border-t border-hairline pt-3 font-mono text-data text-ink-muted">
-        <p>
-          {decision.modelVersion} · {decision.policyVersion}
-        </p>
+        <p>Policy {decision.policyVersion}</p>
         {decision.createdAt ? <p>Generated {formatTimestamp(decision.createdAt)}</p> : null}
         {decision.id ? (
           <p className="mt-2">
-            <Link className="text-navy underline-offset-2 hover:underline" href={`/decisions/${decision.id}`}>
+            <Link className="text-navy underline-offset-2 hover:underline" href={`/app/decisions/${decision.id}`}>
               Open full decision
             </Link>
           </p>
