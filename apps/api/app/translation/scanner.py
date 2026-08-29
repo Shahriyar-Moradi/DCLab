@@ -37,6 +37,7 @@ WEB_ROOT = REPO_ROOT / "apps" / "web"
 # leaked prediction result.
 CLIENT_SCAN_DIRS: tuple[Path, ...] = (
     WEB_ROOT / "app" / "app",
+    WEB_ROOT / "app" / "lab",
     WEB_ROOT / "app" / "login",
     WEB_ROOT / "app" / "components" / "ui",
     WEB_ROOT / "app" / "components" / "layout",

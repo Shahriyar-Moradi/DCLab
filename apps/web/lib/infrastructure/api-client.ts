@@ -81,6 +81,25 @@ export function apiGet<T>(
   return request(path, schema, { method: "GET" }, params);
 }
 
+export async function apiDownload(path: string): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(buildUrl(path), {
+    headers: {
+      Accept: "text/csv",
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    if (response.status === 401) clearToken();
+    throw new ApiError(response.status, null, response.statusText || `Request failed (${response.status})`);
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return {
+    blob: await response.blob(),
+    filename: match?.[1] || "predictions.csv",
+  };
+}
+
 export function apiPost<T>(path: string, schema: ZodType<T>, json: unknown): Promise<T> {
   return request(path, schema, { method: "POST", body: JSON.stringify(json) });
 }

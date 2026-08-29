@@ -30,6 +30,37 @@ def coerce_binary_target(series: pd.Series) -> pd.Series:
     return series.map(_one)
 
 
+def encode_datetime_columns(frame: pd.DataFrame, columns: list[str]) -> tuple[pd.DataFrame, list[str]]:
+    """Convert datetime (and date-named parseable) columns to unix seconds.
+
+    Missing timestamps stay NA so the numeric imputer handles them. This is the
+    deterministic date transform used by open-ingest; it does not factorize
+    categoricals (ColumnTransformer one-hot needs the original strings).
+    """
+    out = frame.copy()
+    converted: list[str] = []
+    for name in columns:
+        if name not in out.columns:
+            continue
+        series = out[name]
+        if pd.api.types.is_bool_dtype(series) or pd.api.types.is_numeric_dtype(series):
+            continue
+        parsed: pd.Series | None = None
+        if pd.api.types.is_datetime64_any_dtype(series):
+            parsed = pd.to_datetime(series, errors="coerce")
+        else:
+            looks_like_time = any(token in name.lower() for token in ("date", "time", "timestamp"))
+            if looks_like_time:
+                candidate = pd.to_datetime(series, errors="coerce")
+                if float(candidate.notna().mean()) >= 0.8:
+                    parsed = candidate
+        if parsed is None:
+            continue
+        out[name] = parsed.map(lambda value: value.timestamp() if pd.notna(value) else np.nan)
+        converted.append(name)
+    return out, converted
+
+
 def encode_feature_columns(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     """Bools → 0/1, dates → unix seconds, other objects → factor codes.
 

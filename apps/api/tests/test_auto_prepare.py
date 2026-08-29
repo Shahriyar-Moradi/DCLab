@@ -9,7 +9,9 @@ import pandas as pd
 
 from app.engine.lab.auto_prepare import (
     build_preprocessor,
+    clean_frame,
     coerce_numeric_like,
+    engineer_features,
     pick_target_heuristic,
     plan_missing_values,
     split_column_roles,
@@ -41,6 +43,7 @@ def test_pick_target_prefers_known_alias_over_generic_binary_column():
     choice = pick_target_heuristic(frame, list(frame.columns))
     assert choice.column == "churn"
     assert "churn" in choice.reason
+    assert choice.task_type == "binary"
 
 
 def test_pick_target_falls_back_to_only_binary_column():
@@ -64,6 +67,20 @@ def test_pick_target_fails_cleanly_when_nothing_matches():
     choice = pick_target_heuristic(frame, list(frame.columns))
     assert choice.column is None
     assert "no label column found" in choice.reason
+
+
+def test_pick_target_matches_regression_alias_from_use_case_catalog():
+    frame = pd.DataFrame(
+        {
+            "customer_id": ["a", "b", "c", "d"],
+            "tenure": [1, 2, 3, 4],
+            "revenue_60d": [10.5, 20.0, 8.25, 40.0],
+        }
+    )
+    choice = pick_target_heuristic(frame, list(frame.columns))
+    assert choice.column == "revenue_60d"
+    assert choice.task_type == "regression"
+    assert choice.evaluation_metric == "mae"
 
 
 def test_pick_target_ignores_high_cardinality_identifier_columns():
@@ -143,6 +160,50 @@ def test_build_preprocessor_produces_expected_output_shape():
         }
     )
     preprocessor = build_preprocessor(["tenure", "MonthlyCharges"], ["gender", "contract"])
+    numeric = next(trans for name, trans, _cols in preprocessor.transformers if name == "num")
+    assert numeric.named_steps["imputer"].strategy == "median"
+    categorical = next(trans for name, trans, _cols in preprocessor.transformers if name == "cat")
+    assert categorical.named_steps["imputer"].strategy == "most_frequent"
+    assert categorical.named_steps["onehot"].handle_unknown == "ignore"
     transformed = preprocessor.fit_transform(frame)
     assert transformed.shape[0] == len(frame)
     assert not np.isnan(transformed).any()
+    unseen = frame.copy()
+    unseen.loc[0, "gender"] = "Nonbinary"
+    unseen.loc[0, "contract"] = "Week-to-week"
+    out = preprocessor.transform(unseen)
+    assert out.shape[0] == len(unseen)
+    assert not np.isnan(out).any()
+
+
+def test_clean_frame_drops_duplicates_sentinels_constants_and_sparse_columns():
+    frame = pd.DataFrame(
+        {
+            "tenure": [1.0, 1.0, np.inf, 4.0, 5.0, 6.0],
+            "notes": [None, None, None, None, None, "x"],
+            "gender": ["Male", "Male", "?", "Female", "NA", "Male"],
+            "constant_col": [1, 1, 1, 1, 1, 1],
+            "churn": ["Yes", "Yes", "No", "No", "Yes", "No"],
+        }
+    )
+    frame = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+    cleaned, log = clean_frame(frame, target="churn")
+    assert "notes" not in cleaned.columns
+    assert "constant_col" not in cleaned.columns
+    assert cleaned["tenure"].isna().sum() >= 1
+    assert "?" not in set(cleaned["gender"].dropna().astype(str))
+    assert log["duplicate_rows_removed"] >= 1
+    assert any(step["step"] == "drop_high_missing_columns" for step in log["transformations"])
+
+
+def test_engineer_features_converts_datetime_columns():
+    frame = pd.DataFrame(
+        {
+            "signup_date": pd.to_datetime(["2024-01-01", "2024-06-15", "2024-12-31"]),
+            "tenure": [1, 2, 3],
+        }
+    )
+    out, transformations = engineer_features(frame, ["signup_date", "tenure"])
+    assert pd.api.types.is_numeric_dtype(out["signup_date"])
+    assert transformations[0]["step"] == "datetime_to_unix_seconds"
+    assert "signup_date" in transformations[0]["columns"]

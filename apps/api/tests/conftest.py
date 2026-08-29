@@ -71,7 +71,8 @@ def db_session(test_engine) -> Generator[Session, None, None]:
             conn.execute(text(
                 "TRUNCATE TABLE experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
-                "client_lab_run_audits, client_lab_runs, client_lab_uploads, "
+                "lab_decision_records, client_lab_run_audits, client_lab_runs, "
+                "client_lab_uploads, "
                 "decisions, predictions, opportunities, users RESTART IDENTITY CASCADE"
             ))
             # Keep the well-known default workspace; drop any extra workspaces a

@@ -193,8 +193,50 @@ export const ClientLabQuotaSchema = z.object({
 });
 export type ClientLabQuota = z.infer<typeof ClientLabQuotaSchema>;
 
+export const LabRunStepStateSchema = z.enum(["done", "current", "pending"]);
+export const LabRunStepSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  state: LabRunStepStateSchema,
+});
+export type LabRunStep = z.infer<typeof LabRunStepSchema>;
+
+export const LabRunStatusSchema = z.enum(["queued", "processing", "completed", "failed"]);
+export type LabRunStatus = z.infer<typeof LabRunStatusSchema>;
+
+export const LabRunPredictionSchema = z.object({
+  prediction: z.string(),
+  probability: z.number().nullable(),
+});
+export type LabRunPrediction = z.infer<typeof LabRunPredictionSchema>;
+
+export const LabRunOutcomeSchema = z.object({
+  dataset_name: z.string(),
+  record_count: z.number(),
+  feature_count: z.number(),
+  target_label: z.string(),
+  task_kind: z.string(),
+  method_label: z.string(),
+  performance_percent: z.number(),
+  performance_summary: z.string(),
+  prediction_count: z.number(),
+  title: z.string(),
+  summary: z.string(),
+  records_line: z.string(),
+  target_line: z.string(),
+  predictions: z.array(LabRunPredictionSchema),
+  download_available: z.boolean(),
+});
+export type LabRunOutcome = z.infer<typeof LabRunOutcomeSchema>;
+
 export const ClientLabUploadSchema = z.object({
   id: z.uuid(),
+  run_id: z.uuid(),
+  dataset_id: z.uuid().nullable(),
+  status: LabRunStatusSchema,
+  stage: z.string(),
+  headline: z.string(),
+  steps: z.array(LabRunStepSchema),
   category: InsightCategorySchema,
   filename: z.string(),
   kind: z.string(),
@@ -202,7 +244,10 @@ export const ClientLabUploadSchema = z.object({
   fields_noticed: z.array(z.string()),
   has_named_fields: z.boolean(),
   structured: z.boolean(),
+  progress: z.enum(["looking", "ready", "saved"]),
   message: z.string(),
+  insights: z.array(ClientInsightSchema),
+  outcome: LabRunOutcomeSchema.nullable(),
   created_at: z.string(),
 });
 export type ClientLabUpload = z.infer<typeof ClientLabUploadSchema>;
@@ -348,13 +393,109 @@ export const AdminClientUploadSummarySchema = z.object({
   experiment_id: z.uuid().nullable(),
   created_at: z.string(),
 });
+export const AdminLabDecisionRecordSchema = z.object({
+  id: z.uuid(),
+  column: z.string(),
+  source: z.string(),
+  rule_decision: z.string(),
+  final_decision: z.string(),
+  fill_value: z.unknown().nullable(),
+  validator_verdict: z.string(),
+  prompt_version: z.string(),
+  evidence_snapshot: z.record(z.string(), z.unknown()),
+  raw_llm_output: z.record(z.string(), z.unknown()).nullable(),
+  created_at: z.string(),
+});
+export const AdminCleaningStepSchema = z.object({
+  column: z.string(),
+  problem: z.string(),
+  action: z.string(),
+  result: z.string(),
+});
+export const AdminDataAnalysisSchema = z.object({
+  rows: z.number().nullable(),
+  columns: z.number().nullable(),
+  numerical_columns: z.array(z.string()),
+  categorical_columns: z.array(z.string()),
+  missing_values: z.number().nullable(),
+  duplicates: z.number().nullable(),
+  constant_columns: z.array(z.string()),
+  high_cardinality_columns: z.array(z.string()),
+});
+export const AdminFeatureEngineeringSchema = z.object({
+  original_features: z.array(z.string()),
+  generated_features: z.array(z.string()),
+  removed_features: z.array(z.string()),
+  transformations: z.array(z.record(z.string(), z.unknown())),
+});
+export const AdminValidationSchema = z.object({
+  train_rows: z.number().nullable(),
+  test_rows: z.number().nullable(),
+  cv_strategy: z.string().nullable(),
+  n_folds: z.number().nullable(),
+  random_state: z.number().nullable(),
+});
+export const AdminModelComparisonRowSchema = z.object({
+  name: z.string(),
+  model_family: z.string(),
+  cv_auc: z.number().nullable(),
+  test_auc: z.number().nullable(),
+  cv_metrics: z.record(z.string(), z.unknown()),
+  test_metrics: z.record(z.string(), z.unknown()).nullable(),
+  selected: z.boolean(),
+  status: z.string(),
+});
+export const AdminFinalModelSchema = z.object({
+  selected_model: z.string().nullable(),
+  model_family: z.string().nullable(),
+  cv_metrics: z.record(z.string(), z.unknown()),
+  test_metrics: z.record(z.string(), z.unknown()),
+});
+export const AdminPredictionsSchema = z.object({
+  count: z.number(),
+  distribution: z.record(z.string(), z.number()),
+  download_available: z.boolean(),
+});
+export const AdminProcessingSummarySchema = z.object({
+  cleaning_completed: z.boolean(),
+  feature_engineering_completed: z.boolean(),
+  preprocessing_completed: z.boolean(),
+  train_test_split: z.string().nullable(),
+  cross_validation: z.string().nullable(),
+  training_completed: z.boolean(),
+  evaluation_completed: z.boolean(),
+  predictions_completed: z.boolean(),
+});
+export const AdminMlRunSchema = z.object({
+  run_id: z.uuid(),
+  dataset: z.string(),
+  dataset_id: z.uuid().nullable(),
+  status: z.string(),
+  target: z.string().nullable().optional(),
+  task_type: z.string().nullable().optional(),
+  started_at: z.string().nullable(),
+  completed_at: z.string().nullable(),
+  duration_seconds: z.number().nullable(),
+  analysis: AdminDataAnalysisSchema,
+  processing_summary: AdminProcessingSummarySchema.optional(),
+  cleaning: z.array(AdminCleaningStepSchema),
+  feature_engineering: AdminFeatureEngineeringSchema,
+  validation: AdminValidationSchema,
+  model_comparison: z.array(AdminModelComparisonRowSchema),
+  final_model: AdminFinalModelSchema.nullable(),
+  predictions: AdminPredictionsSchema,
+});
 export const AdminClientUploadDetailSchema = AdminClientUploadSummarySchema.extend({
   stored_path: z.string(),
   fields_noticed: z.array(z.string()),
   pipeline_log: z.record(z.string(), z.unknown()).nullable(),
+  decision_records: z.array(AdminLabDecisionRecordSchema).default([]),
+  ml_run: AdminMlRunSchema.nullable().optional(),
 });
 export type AdminClientUploadSummary = z.infer<typeof AdminClientUploadSummarySchema>;
+export type AdminLabDecisionRecord = z.infer<typeof AdminLabDecisionRecordSchema>;
 export type AdminClientUploadDetail = z.infer<typeof AdminClientUploadDetailSchema>;
+export type AdminMlRun = z.infer<typeof AdminMlRunSchema>;
 
 export const MetricDeltaSchema = z.object({
   previous: z.number(),

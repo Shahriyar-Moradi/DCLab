@@ -128,6 +128,37 @@ def _group_split(
     return train.reset_index(drop=True), val.reset_index(drop=True), test.reset_index(drop=True), meta
 
 
+def split_train_test_holdout(
+    frame: pd.DataFrame,
+    *,
+    target: str,
+    test_size: float = 0.2,
+    seed: int = 42,
+    stratify: bool = True,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """80/20 train/test split. Validation is empty; test stays unused until final predict."""
+    use_stratify = stratify and target in frame.columns
+    strat = frame[target] if use_stratify else None
+    try:
+        train, test = train_test_split(
+            frame, test_size=test_size, random_state=seed, stratify=strat
+        )
+    except ValueError:
+        train, test = train_test_split(frame, test_size=test_size, random_state=seed, stratify=None)
+        use_stratify = False
+    val = frame.iloc[0:0].copy()
+    meta = {
+        "strategy": "train_test_split",
+        "test_size": test_size,
+        "random_state": seed,
+        "stratify": use_stratify,
+        "n_train": int(len(train)),
+        "n_val": 0,
+        "n_test": int(len(test)),
+    }
+    return train.reset_index(drop=True), val.reset_index(drop=True), test.reset_index(drop=True), meta
+
+
 def assert_temporal_order(split_meta: dict[str, Any]) -> None:
     train_max = split_meta.get("train_max")
     val_min = split_meta.get("val_min")

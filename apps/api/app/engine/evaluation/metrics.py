@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
+    accuracy_score,
     average_precision_score,
     brier_score_loss,
     confusion_matrix,
@@ -46,6 +47,7 @@ def classification_metrics(y_true, scores, *, threshold: float = 0.5) -> dict[st
     if not np.isfinite(pr):
         pr = float(y.mean()) if len(y) else 0.0
     return {
+        "accuracy": float(accuracy_score(y, pred)),
         "roc_auc": roc,
         "pr_auc": pr,
         "precision": float(precision_score(y, pred, zero_division=0)),
@@ -115,3 +117,28 @@ def robustness_stats(scores: list[float]) -> dict[str, float]:
         "max": float(arr.max()),
         "range": float(arr.max() - arr.min()),
     }
+
+
+def aggregate_fold_metrics(fold_metrics: list[dict[str, Any]]) -> tuple[dict[str, float], dict[str, float]]:
+    """Mean and standard deviation of scalar metrics across CV folds."""
+    if not fold_metrics:
+        return {}, {}
+    keys = [
+        key
+        for key, value in fold_metrics[0].items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    ]
+    means: dict[str, float] = {}
+    stds: dict[str, float] = {}
+    for key in keys:
+        values = [
+            float(row[key])
+            for row in fold_metrics
+            if key in row and isinstance(row[key], (int, float)) and not isinstance(row[key], bool)
+        ]
+        if not values:
+            continue
+        arr = np.asarray(values, dtype=float)
+        means[key] = float(arr.mean())
+        stds[key] = float(arr.std())
+    return means, stds

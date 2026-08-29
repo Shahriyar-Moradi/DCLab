@@ -40,6 +40,9 @@ const ADMIN = [
 const BOOK_A_DEMO_HREF = "mailto:hello@decision.ai?subject=Book%20a%20demo";
 
 function isActive(pathname: string, href: string) {
+  if (href === "/app/labs") {
+    return pathname.startsWith("/app/labs") || pathname.startsWith("/lab/runs");
+  }
   if (href === "/app/opportunities") {
     return pathname.startsWith("/app/opportunities") && !pathname.startsWith("/app/opportunities/upload");
   }

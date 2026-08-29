@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { apiGet, apiPost, apiPostForm, uploadFile } from "@/lib/infrastructure/api-client";
+import { apiGet, apiPost, apiPostForm, uploadFile, apiDownload } from "@/lib/infrastructure/api-client";
 import { type SessionUser } from "@/lib/infrastructure/session";
 import { useSession } from "./session-provider";
 import {
@@ -248,6 +248,39 @@ export function useLabUploads(category: string): ReturnType<typeof useQuery<Clie
   });
 }
 
+export function useLabUpload(id: string | undefined): ReturnType<typeof useQuery<ClientLabUpload>> {
+  return useQuery({
+    queryKey: ["client-labs", "uploads", "detail", id],
+    queryFn: () => apiGet(`/app/labs/uploads/${id}`, ClientLabUploadSchema),
+    enabled: Boolean(id),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "queued" || status === "processing") return 1000;
+      return query.state.data?.progress === "looking" ? 1000 : false;
+    },
+  });
+}
+
+export async function downloadLabPredictions(runId: string): Promise<void> {
+  await saveDownloadedCsv(`/app/labs/uploads/${runId}/predictions.csv`);
+}
+
+export async function downloadAdminRunPredictions(runId: string): Promise<void> {
+  await saveDownloadedCsv(`/admin/client-uploads/${runId}/predictions.csv`);
+}
+
+async function saveDownloadedCsv(path: string): Promise<void> {
+  const { blob, filename } = await apiDownload(path);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function useUploadLabFile(): ReturnType<
   typeof useMutation<ClientLabUpload, Error, { category: string; file: File }>
 > {
@@ -426,8 +459,29 @@ export function useAdminClientUpload(
     queryKey: ["admin", "client-uploads", id],
     queryFn: () => apiGet(`/admin/client-uploads/${id}`, AdminClientUploadDetailSchema),
     enabled: Boolean(id),
-    refetchInterval: (query) =>
-      query.state.data && ["queued", "running"].includes(query.state.data.pipeline_status) ? 3000 : false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.pipeline_status;
+      if (!status) return false;
+      if (
+        [
+          "queued",
+          "running",
+          "ingesting",
+          "analyzing",
+          "cleaning",
+          "feature_engineering",
+          "preprocessing",
+          "splitting",
+          "cross_validation",
+          "training",
+          "evaluating",
+          "predicting",
+        ].includes(status)
+      ) {
+        return 1000;
+      }
+      return false;
+    },
   });
 }
 

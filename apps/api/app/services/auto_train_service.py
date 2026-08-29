@@ -25,9 +25,21 @@ from sqlalchemy.orm import Session
 from app.config import REPO_ROOT
 from app.db.models import ClientLabUpload
 from app.db.session import get_session_factory
+from app.domain.lab_run_stages import (
+    ANALYZING,
+    CLEANING,
+    COMPLETED,
+    FAILED,
+    FEATURE_ENGINEERING,
+    INGESTING,
+    PREPROCESSING,
+    SKIPPED,
+)
 from app.engine.data.quality import quality_report
 from app.engine.lab.auto_prepare import (
+    clean_frame,
     coerce_numeric_like,
+    engineer_features,
     pick_target_heuristic,
     plan_missing_values,
     split_column_roles,
@@ -36,6 +48,7 @@ from app.engine.lab.column_map import MIN_TRAIN_ROWS
 from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
 from app.engine.types import SearchConfig, TaskSpec
+from app.services.lab_decision_ledger import record_missing_value_decisions
 from app.services.lab_service import create_experiment, execute_experiment, ingest_dataset, seed_dogfood, upsert_task
 
 logger = logging.getLogger(__name__)
@@ -130,70 +143,88 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             reasons.append("file has no named fields")
         if upload.record_count < MIN_TRAIN_ROWS:
             reasons.append(f"only {upload.record_count} rows (need at least {MIN_TRAIN_ROWS})")
-        _mark(db, upload, status="skipped", log={"reason": "; ".join(reasons) or "not a simple tabular file"})
+        _mark(db, upload, status=SKIPPED, log={"reason": "; ".join(reasons) or "not a simple tabular file"})
         return
 
-    _mark(db, upload, status="running")
+    def _stage(stage: str) -> None:
+        row = db.get(ClientLabUpload, upload_id)
+        if row is not None:
+            _mark(db, row, status=stage)
+
+    _stage(INGESTING)
     try:
         frame = _load_upload_frame(upload.stored_path)
         frame.columns = [str(c) for c in frame.columns]
         columns = list(frame.columns)
         if not columns or frame.empty:
-            _mark(db, upload, status="failed", log={"reason": "the file loaded but had no usable rows or columns"})
+            _mark(db, upload, status=FAILED, log={"reason": "the file loaded but had no usable rows or columns"})
             return
 
+        _stage(ANALYZING)
         profile = profile_frame(frame)
         quality = quality_report(frame)
 
-        frame = coerce_numeric_like(frame, columns)
-        target = pick_target_heuristic(frame, columns)
+        coerced = coerce_numeric_like(frame, columns)
+        target = pick_target_heuristic(coerced, columns)
         if target.column is None:
             _mark(
                 db,
                 upload,
-                status="failed",
+                status=FAILED,
                 log={
                     "reason": target.reason,
+                    "analysis": profile,
                     "eda": {
                         "row_count": profile["row_count"],
                         "column_count": profile["column_count"],
-                        "duplicate_rows": profile["duplicate_rows"],
+                        "duplicate_rows": profile.get("duplicate_rows", profile.get("duplicate_count")),
                     },
                     "quality": quality,
                 },
             )
             return
 
-        frame = frame.dropna(subset=[target.column]).reset_index(drop=True)
+        _stage(CLEANING)
+        feature_columns = [c for c in columns if c != target.column]
+        frame, cleaning_log = clean_frame(frame, target=target.column, feature_columns=feature_columns)
         if len(frame) < MIN_TRAIN_ROWS:
             _mark(
                 db,
                 upload,
-                status="failed",
+                status=FAILED,
                 log={
-                    "reason": f"only {len(frame)} rows left after dropping rows with a missing target",
+                    "reason": f"only {len(frame)} rows left after cleaning",
                     "target": {"column": target.column, "reason": target.reason},
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
                 },
             )
             return
 
-        feature_columns = [c for c in columns if c != target.column]
-        missing_plan = plan_missing_values(frame, feature_columns)
-        kept_columns = [c for c in feature_columns if c not in missing_plan.dropped_columns]
+        kept_columns = [c for c in frame.columns if c != target.column]
+        missing_plan = plan_missing_values(frame, kept_columns)
+        frame = record_missing_value_decisions(db, upload.id, frame, missing_plan, target.column)
+        db.commit()
+        kept_columns = [c for c in kept_columns if c not in missing_plan.dropped_columns and c in frame.columns]
+        _stage(FEATURE_ENGINEERING)
+        frame, fe_transformations = engineer_features(frame, kept_columns)
         num_cols, cat_cols = split_column_roles(frame, kept_columns)
         if not num_cols and not cat_cols:
             _mark(
                 db,
                 upload,
-                status="failed",
+                status=FAILED,
                 log={
                     "reason": "no usable feature columns after removing identifiers, constants, and mostly-empty columns",
                     "target": {"column": target.column, "reason": target.reason},
                     "dropped_columns": missing_plan.dropped_columns,
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
                 },
             )
             return
 
+        _stage(PREPROCESSING)
         dataset_dir = REPO_ROOT / "data" / "client_lab_datasets"
         dataset_dir.mkdir(parents=True, exist_ok=True)
         dataset_path = dataset_dir / f"{upload.id}.csv"
@@ -209,52 +240,100 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             version="v1",
         )
 
+        task_type = target.task_type if target.task_type in {"binary", "regression"} else "binary"
+        metric = target.evaluation_metric if task_type == "regression" else "pr_auc"
         task_spec = TaskSpec(
             id=f"open_ingest_{upload.id.hex[:12]}",
             name=f"Auto-train: {upload.original_filename}",
             description="Automatic training job for a Labs custom-box upload (simple tabular file).",
-            task_type="binary",
+            task_type=task_type,
             target=target.column,
             entity_id=kept_columns[0] if kept_columns else target.column,
             prediction_time_column=None,
-            evaluation_metric="pr_auc",
+            evaluation_metric=metric,
             feature_groups={"features": num_cols + cat_cols},
-            validation_strategy="stratified",
+            validation_strategy="stratified" if task_type == "binary" else "random",
             column_roles={"numerical": num_cols, "categorical": cat_cols},
         )
         task_row = upsert_task(db, env, task_spec)
         experiment = create_experiment(db, environment=env, dataset=dataset, task=task_row, config=_search_config())
-        experiment = execute_experiment(db, experiment)
+        experiment = execute_experiment(db, experiment, on_stage=_stage)
 
-        boost_family_used = "xgboost" if "xgboost" in available_families("binary") else "gradient_boosting"
+        avail = available_families(task_type)
+        boost_family_used = next(
+            (
+                name
+                for name in ("xgboost", "lightgbm", "xgboost_regressor", "lightgbm_regressor")
+                if name in avail
+            ),
+            None,
+        )
+        result = dict(experiment.result or {})
+        result["analysis"] = profile
+        result["cleaning"] = cleaning_log
+        result["feature_engineering"] = {
+            "transformations": fe_transformations,
+            "numerical_cols": num_cols,
+            "categorical_cols": cat_cols,
+        }
+        experiment.result = result
+        db.commit()
+
+        dropped_columns = list(
+            dict.fromkeys(list(cleaning_log.get("dropped_columns") or []) + list(missing_plan.dropped_columns))
+        )
+        cleaning_decisions = {
+            item["column"]: item
+            for item in (cleaning_log.get("missing_value_plan") or {}).get("column_decisions") or []
+        }
+        for item in missing_plan.column_decisions:
+            cleaning_decisions[item.column] = asdict(item)
         log = {
+            "analysis": profile,
             "eda": {
                 "row_count": profile["row_count"],
                 "column_count": profile["column_count"],
-                "duplicate_rows": profile["duplicate_rows"],
+                "duplicate_rows": profile.get("duplicate_rows", profile.get("duplicate_count")),
+                "missing_count": profile.get("missing_count"),
+                "constant_columns": profile.get("constant_columns"),
+                "high_cardinality_columns": profile.get("high_cardinality_columns"),
+                "likely_identifier_columns": profile.get("likely_identifier_columns"),
             },
             "quality": quality,
+            "cleaning": cleaning_log,
+            "feature_engineering": {
+                "transformations": fe_transformations,
+                "numerical_cols": num_cols,
+                "categorical_cols": cat_cols,
+            },
+            "preprocessing": {
+                "numerical": ["imputer:median", "scaler:standard"],
+                "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+            },
             "target": {"column": target.column, "reason": target.reason},
             "missing_value_decisions": {
-                "dropped_columns": missing_plan.dropped_columns,
+                "dropped_columns": dropped_columns,
                 "rows_with_missing": missing_plan.rows_with_missing,
                 "row_missing_fraction": missing_plan.row_missing_fraction,
                 "drop_rows_recommended": missing_plan.drop_rows_recommended,
-                "column_decisions": [asdict(item) for item in missing_plan.column_decisions],
+                "column_decisions": list(cleaning_decisions.values()),
             },
             "numerical_cols": num_cols,
             "categorical_cols": cat_cols,
             "boost_family_used": boost_family_used,
+            "model_families": [row.get("model_family") for row in (result.get("candidates") or [])],
             "experiment_status": experiment.status,
         }
-        status = "completed" if experiment.status == "COMPLETED" else "failed"
-        _mark(db, upload, status=status, log=log, experiment_id=experiment.id)
+        status = COMPLETED if experiment.status == "COMPLETED" else FAILED
+        upload = db.get(ClientLabUpload, upload_id)
+        if upload is not None:
+            _mark(db, upload, status=status, log=log, experiment_id=experiment.id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("auto-train job failed for upload %s", upload_id)
         db.rollback()
         upload = db.get(ClientLabUpload, upload_id)
         if upload is not None:
-            _mark(db, upload, status="failed", log={"reason": f"unexpected error: {exc}"})
+            _mark(db, upload, status=FAILED, log={"reason": f"unexpected error: {exc}"})
 
 
 def enqueue_auto_train(upload_id: UUID) -> None:

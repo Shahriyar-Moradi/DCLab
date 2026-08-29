@@ -9,9 +9,10 @@ import { useLabProblems, useLabQuota, useLabUploads, useRunLabTrial, useUploadLa
 import {
   type ClientLabProblem,
   type ClientLabRun,
-  type ClientLabUpload,
   type InsightCategoryValue,
 } from "@/lib/domain";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 const OPEN_FILE_ACCEPT = [
@@ -128,12 +129,16 @@ function LabsHero() {
   );
 }
 
+function runPath(runId: string): string {
+  return `/lab/runs/${runId}`;
+}
+
 function OpenFileCard({ category }: { category: InsightCategoryValue }) {
   const uploads = useLabUploads(category);
   const saveFile = useUploadLabFile();
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [lastSaved, setLastSaved] = useState<ClientLabUpload | null>(null);
 
   function onPick() {
     const file = fileInputRef.current?.files?.[0];
@@ -142,9 +147,7 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
       { category, file },
       {
         onSuccess: (row) => {
-          setLastSaved(row);
-          setFileName(null);
-          if (fileInputRef.current) fileInputRef.current.value = "";
+          router.push(runPath(row.run_id));
         },
       },
     );
@@ -186,36 +189,24 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
         <p className="mt-3 font-body text-body text-oxblood">Could not load saved files for this category.</p>
       ) : null}
 
-      {lastSaved ? <SavedFileNote upload={lastSaved} /> : null}
-
       {recent.length > 0 ? (
         <ul className="mt-4 space-y-1">
           {recent.slice(0, 3).map((row) => (
-            <li key={row.id} className="font-mono text-data text-ink-muted">
-              {row.filename}
-              {" · "}
-              {KIND_LABELS[row.kind] ?? row.kind}
-              {row.record_count > 0 ? ` · ${row.record_count.toLocaleString()} rows` : null}
+            <li key={row.id}>
+              <Link
+                className="font-mono text-data text-navy underline-offset-2 hover:underline"
+                href={runPath(row.run_id)}
+              >
+                {row.filename}
+                {" · "}
+                {KIND_LABELS[row.kind] ?? row.kind}
+                {row.record_count > 0 ? ` · ${row.record_count.toLocaleString()} rows` : null}
+              </Link>
             </li>
           ))}
         </ul>
       ) : null}
     </article>
-  );
-}
-
-function SavedFileNote({ upload }: { upload: ClientLabUpload }) {
-  return (
-    <div className="mt-5 rounded bg-navy-soft/40 p-4">
-      <p className="font-body text-body text-ink">{upload.message}</p>
-      {upload.has_named_fields && upload.fields_noticed.length > 0 ? (
-        <p className="mt-2 font-mono text-data text-ink-muted">
-          Fields noticed: {upload.fields_noticed.join(", ")}
-        </p>
-      ) : (
-        <p className="mt-2 font-body text-body text-ink-muted">No named fields yet — we still saved the file.</p>
-      )}
-    </div>
   );
 }
 

@@ -13,6 +13,7 @@ def test_classification_metrics_and_primary_score():
     metrics = classification_metrics(y, p)
     assert metrics["roc_auc"] > 0.8
     assert metrics["pr_auc"] > 0.7
+    assert metrics["accuracy"] > 0.7
     assert primary_score(metrics, "pr_auc", "binary") == metrics["pr_auc"]
 
 

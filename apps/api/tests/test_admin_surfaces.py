@@ -138,6 +138,8 @@ class TestAdminClientUploads:
         rng = np.random.default_rng(7)
         tenure = rng.integers(1, 72, n)
         monthly = rng.uniform(20, 120, n)
+        total = tenure * monthly + rng.normal(0, 40, n)
+        total_str = [f"{value:.2f}" if i >= 11 else " " for i, value in enumerate(total)]
         contract = rng.choice(["Month-to-month", "One year", "Two year"], n)
         churn_p = np.where(contract == "Month-to-month", 0.6, 0.15)
         churn = rng.binomial(1, churn_p)
@@ -145,6 +147,7 @@ class TestAdminClientUploads:
             {
                 "tenure": tenure,
                 "MonthlyCharges": monthly,
+                "TotalCharges": total_str,
                 "contract": contract,
                 "churn": np.where(churn == 1, "Yes", "No"),
             }
@@ -196,8 +199,79 @@ class TestAdminClientUploads:
         assert "categorical_cols" in log
         assert log["missing_value_decisions"]
 
+        records = body["decision_records"]
+        feature_columns = [name for name in row.fields_noticed if name != log["target"]["column"]]
+        assert {item["column"] for item in records} == set(feature_columns)
+        for item in records:
+            assert item["source"] in {"rule", "llm", "fallback"}
+            assert item["rule_decision"]
+            assert item["final_decision"]
+            assert item["validator_verdict"]
+            assert item["prompt_version"]
+            assert item["evidence_snapshot"]["column"] == item["column"]
+            assert "missing_count" in item["evidence_snapshot"]
+            assert "missing_fraction" in item["evidence_snapshot"]
+            assert "missingness_cooccurrence" in item["evidence_snapshot"]
+            assert "id" in item
+            if item["source"] == "rule":
+                assert item["raw_llm_output"] is None
+                assert item["rule_decision"] == item["final_decision"]
+
         experiment = admin_client.get(f"/admin/experiments/{row.experiment_id}")
         assert experiment.status_code == 200
+
+        ml = body["ml_run"]
+        assert ml["run_id"] == str(row.id)
+        assert ml["status"] == "completed"
+        assert ml["analysis"]["rows"] == row.record_count
+        assert any(step["action"] == "Median imputation" and step["column"] == "TotalCharges" for step in ml["cleaning"])
+        assert ml["validation"]["cv_strategy"] == "StratifiedKFold"
+        assert ml["validation"]["n_folds"] == 5
+        assert ml["validation"]["random_state"] == 42
+        assert ml["validation"]["train_rows"] + ml["validation"]["test_rows"] == row.record_count
+        families = {item["model_family"] for item in ml["model_comparison"]}
+        assert "logistic_regression" in families
+        assert "random_forest" in families
+        for item in ml["model_comparison"]:
+            assert item["cv_auc"] is not None
+            assert item["test_auc"] is not None
+        selected = next(item for item in ml["model_comparison"] if item["selected"])
+        assert ml["final_model"]["model_family"] == selected["model_family"]
+        assert ml["final_model"]["test_metrics"]["roc_auc"] == selected["test_auc"]
+        assert ml["predictions"]["count"] == ml["validation"]["test_rows"]
+        assert ml["predictions"]["download_available"] is True
+        assert ml["predictions"]["distribution"]
+        assert ml["processing_summary"]["cleaning_completed"] is True
+        assert ml["processing_summary"]["training_completed"] is True
+        assert ml["processing_summary"]["predictions_completed"] is True
+        assert ml["target"] == "churn"
+
+        csv_response = admin_client.get(f"/admin/client-uploads/{row.id}/predictions.csv")
+        assert csv_response.status_code == 200
+        assert "text/csv" in csv_response.headers["content-type"]
+        csv_text = csv_response.content.decode()
+        assert "y_pred" in csv_text
+        assert "y_true" in csv_text
+        assert csv_text.count("\n") >= ml["predictions"]["count"]
+
+    def test_predictions_csv_is_404_when_run_has_no_experiment(self, db_session, admin_client):
+        from app.db.models import DEFAULT_WORKSPACE_ID, ClientLabUpload
+
+        row = ClientLabUpload(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            category="Revenue",
+            original_filename="empty.csv",
+            stored_path="/tmp/missing.csv",
+            kind="spreadsheet",
+            record_count=0,
+            fields_noticed=[],
+            has_named_fields=True,
+            pipeline_status="queued",
+        )
+        db_session.add(row)
+        db_session.commit()
+        response = admin_client.get(f"/admin/client-uploads/{row.id}/predictions.csv")
+        assert response.status_code == 404
 
     def test_unknown_upload_is_404(self, admin_client):
         response = admin_client.get(f"/admin/client-uploads/{uuid4()}")

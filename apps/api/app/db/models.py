@@ -286,14 +286,56 @@ class ClientLabUpload(Base):
     fields_noticed: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     has_named_fields: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Simple-case auto-train (admin-only; see docs/LABS_DATA_UNDERSTANDING.md).
-    # not_applicable | queued | running | completed | skipped | failed
+    # queued | ingesting | analyzing | cleaning | feature_engineering |
+    # preprocessing | splitting | cross_validation | training | evaluating |
+    # predicting | completed | skipped | failed | not_applicable | running
     pipeline_status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="not_applicable", server_default="not_applicable", index=True
+        String(32), nullable=False, default="not_applicable", server_default="not_applicable", index=True
     )
     pipeline_log: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     experiment_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("experiments.id"), nullable=True
     )
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("datasets.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class LabDecisionRecord(Base):
+    """Audit trail for every missing-value decision on a Labs upload.
+
+    One row per feature column, including rule-engine-only calls. `rule_decision`
+    is auto_prepare's original action; `final_decision` is what was applied
+    (`source` is `rule`, `llm`, or `fallback`).
+    """
+
+    __tablename__ = "lab_decision_records"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('rule', 'llm', 'fallback')",
+            name="ck_lab_decision_records_source",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    upload_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("client_lab_uploads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    column: Mapped[str] = mapped_column("column", String(256), nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_llm_output: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    validator_verdict: Mapped[str] = mapped_column(String(1024), nullable=False)
+    rule_decision: Mapped[str] = mapped_column(String(64), nullable=False)
+    final_decision: Mapped[str] = mapped_column(String(64), nullable=False)
+    fill_value: Mapped[object | None] = mapped_column(JSONB, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

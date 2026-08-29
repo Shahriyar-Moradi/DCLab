@@ -234,6 +234,9 @@ def test_open_ingest_accepts_arbitrary_csv_columns(auth_client, db_session):
     assert body["fields_noticed"] == ["channel", "spend"]
     assert body["has_named_fields"] is True
     assert body["structured"] is False
+    assert body["run_id"] == body["id"]
+    assert body["status"] in {"queued", "processing", "completed", "failed"}
+    assert body["dataset_id"]
     assert "stored_path" not in body
     assert find_banned_terms(response.text) == []
 
@@ -242,6 +245,100 @@ def test_open_ingest_accepts_arbitrary_csv_columns(auth_client, db_session):
     assert db_session.query(ClientLabUpload).count() == 1
     stored = db_session.query(ClientLabUpload).one()
     assert stored.stored_path
+    assert stored.dataset_id is not None
+
+
+def test_open_ingest_upload_returns_run_id_and_reload_works(auth_client, db_session):
+    """Upload creates an ML run identity; GET by that id still works after refresh."""
+    created = auth_client.post(
+        "/app/labs/uploads",
+        data={"category": "Revenue"},
+        files={"file": ("orders.csv", b"order_id,churn\n1,0\n2,1\n", "text/csv")},
+    )
+    assert created.status_code == 200, created.text
+    body = created.json()
+    run_id = body["run_id"]
+    assert run_id == body["id"]
+    assert body["status"] in {"queued", "processing"}
+    assert body["dataset_id"]
+    assert find_banned_terms(created.text) == []
+
+    from pathlib import Path
+
+    from app.db.models import ClientLabUpload, Dataset
+
+    upload = db_session.get(ClientLabUpload, run_id)
+    assert upload is not None
+    assert Path(upload.stored_path).is_file()
+    assert upload.dataset_id is not None
+    assert db_session.get(Dataset, upload.dataset_id) is not None
+
+    detail = auth_client.get(f"/app/labs/uploads/{run_id}")
+    assert detail.status_code == 200
+    again = detail.json()
+    assert again["run_id"] == run_id
+    assert again["dataset_id"] == body["dataset_id"]
+    assert again["status"] in {"queued", "processing", "completed", "failed"}
+    assert find_banned_terms(detail.text) == []
+
+
+def test_run_processing_payload_hides_backend_stages(auth_client, db_session, monkeypatch):
+    monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
+    created = auth_client.post(
+        "/app/labs/uploads",
+        data={"category": "Revenue"},
+        files={"file": ("stage.csv", b"tenure,churn\n1,Yes\n2,No\n", "text/csv")},
+    )
+    assert created.status_code == 200, created.text
+    run_id = created.json()["run_id"]
+    queued = created.json()
+    assert queued["status"] == "queued"
+    assert queued["stage"] == "queued"
+    assert queued["pipeline_status"] == "queued"
+    assert queued["headline"] == "Analyzing your data..."
+    assert queued["message"] == "Analyzing your data..."
+    assert queued["steps"] == []
+    assert find_banned_terms(created.text) == []
+
+    from app.db.models import ClientLabUpload
+
+    upload = db_session.get(ClientLabUpload, run_id)
+    assert upload is not None
+    upload.pipeline_status = "analyzing"
+    db_session.commit()
+
+    analyzing = auth_client.get(f"/app/labs/uploads/{run_id}")
+    assert analyzing.status_code == 200
+    body = analyzing.json()
+    assert body["status"] == "processing"
+    assert body["stage"] == "processing"
+    assert body["pipeline_status"] == "processing"
+    assert body["headline"] == "Analyzing your data..."
+    assert body["steps"] == []
+    lowered = analyzing.text.lower()
+    for leak in (
+        "data analysis",
+        "data cleaning",
+        "feature engineering",
+        "cross-validation",
+        "sklearn",
+        '"analyzing"',
+    ):
+        assert leak not in lowered
+    assert find_banned_terms(analyzing.text) == []
+
+    upload.pipeline_status = "training"
+    db_session.commit()
+    training = auth_client.get(f"/app/labs/uploads/{run_id}")
+    assert training.status_code == 200
+    trained = training.json()
+    assert trained["status"] == "processing"
+    assert trained["stage"] == "processing"
+    assert trained["pipeline_status"] == "processing"
+    assert trained["steps"] == []
+    assert trained["headline"] == "Analyzing your data..."
+    assert "training" not in training.text.lower()
+    assert find_banned_terms(training.text) == []
 
 
 def test_open_ingest_accepts_raw_logs_without_headers(auth_client):
@@ -258,6 +355,9 @@ def test_open_ingest_accepts_raw_logs_without_headers(auth_client):
     assert body["has_named_fields"] is False
     assert body["fields_noticed"] == []
     assert body["structured"] is False
+    assert body["run_id"] == body["id"]
+    assert body["dataset_id"] is None
+    assert body["status"] in {"queued", "processing", "completed", "failed"}
     assert find_banned_terms(response.text) == []
 
 
@@ -342,11 +442,35 @@ def test_open_ingest_list_is_workspace_scoped(auth_client, db_session):
     assert mine_id in ids
     assert str(foreign.id) not in ids
 
+    hidden = auth_client.get(f"/app/labs/uploads/{foreign.id}")
+    assert hidden.status_code == 404
+
+
+def test_open_ingest_upload_detail_is_workspace_scoped_and_client_safe(auth_client):
+    created = auth_client.post(
+        "/app/labs/uploads",
+        data={"category": "Revenue"},
+        files={"file": ("detail.csv", b"channel,spend\nemail,40\n", "text/csv")},
+    )
+    assert created.status_code == 200
+    upload_id = created.json()["id"]
+
+    detail = auth_client.get(f"/app/labs/uploads/{upload_id}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["id"] == upload_id
+    assert body["run_id"] == upload_id
+    assert body["status"] in {"queued", "processing", "completed", "failed"}
+    assert body["progress"] in {"looking", "ready", "saved"}
+    assert body["pipeline_status"]
+    assert body["insights"] == []
+    assert find_banned_terms(detail.text) == []
+
 
 def test_open_ingest_upload_stays_free_of_auto_train_pipeline_fields(auth_client, db_session):
     """The simple-case auto-train job (apps/api/app/services/auto_train_service.py)
     runs entirely behind the client response — see docs/LABS_DATA_UNDERSTANDING.md.
-    A client must never see pipeline_status/pipeline_log/experiment_id, even after
+    A client must never see pipeline_log/experiment_id/stored_path, even after
     the job has actually completed for that same upload.
     """
     response = auth_client.post(
@@ -358,6 +482,12 @@ def test_open_ingest_upload_stays_free_of_auto_train_pipeline_fields(auth_client
     body = response.json()
     assert set(body.keys()) == {
         "id",
+        "run_id",
+        "dataset_id",
+        "status",
+        "stage",
+        "headline",
+        "steps",
         "category",
         "filename",
         "kind",
@@ -365,10 +495,16 @@ def test_open_ingest_upload_stays_free_of_auto_train_pipeline_fields(auth_client
         "fields_noticed",
         "has_named_fields",
         "structured",
+        "progress",
         "message",
+        "pipeline_status",
+        "insights",
+        "outcome",
         "created_at",
     }
-    for forbidden in ("pipeline_status", "pipeline_log", "experiment_id", "stored_path"):
+    assert body["progress"] in {"looking", "ready", "saved"}
+    assert body["insights"] == []
+    for forbidden in ("pipeline_log", "experiment_id", "stored_path"):
         assert forbidden not in body
 
     from app.db.models import ClientLabUpload
@@ -378,8 +514,94 @@ def test_open_ingest_upload_stays_free_of_auto_train_pipeline_fields(auth_client
     run_auto_train_job(db_session, upload_id)  # too few rows -> skipped, but exercise the job synchronously
     db_session.refresh(db_session.query(ClientLabUpload).one())
 
+    csv_missing = auth_client.get(f"/app/labs/uploads/{upload_id}/predictions.csv")
+    assert csv_missing.status_code == 404
+
     listed = auth_client.get("/app/labs/uploads")
     assert listed.status_code == 200
-    for forbidden in ("pipeline_status", "pipeline_log", "experiment_id", "stored_path"):
+    for forbidden in ("pipeline_log", "experiment_id", "stored_path"):
         assert forbidden not in listed.text
     assert find_banned_terms(listed.text) == []
+
+
+def test_upload_shows_real_outcome_once_trained(auth_client, db_session, monkeypatch):
+    """After auto-train completes, GET /app/labs/uploads/{id} returns translated
+    insights — not the canned 'not available yet' copy."""
+    import numpy as np
+    import pandas as pd
+
+    from app.db.models import ClientLabUpload
+    from app.services.auto_train_service import run_auto_train_job
+    from app.services.client_lab_upload_service import SAVED_MESSAGE
+
+    monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
+
+    rng = np.random.default_rng(0)
+    n = 200
+    tenure = rng.integers(1, 72, n)
+    monthly = rng.uniform(20, 120, n)
+    contract = rng.choice(["Month-to-month", "One year", "Two year"], n)
+    churn_p = np.where(contract == "Month-to-month", 0.55, 0.15)
+    churn = np.where(rng.binomial(1, churn_p) == 1, "Yes", "No")
+    frame = pd.DataFrame(
+        {
+            "tenure": tenure,
+            "MonthlyCharges": monthly,
+            "contract": contract,
+            "churn": churn,
+        }
+    )
+    created = auth_client.post(
+        "/app/labs/uploads",
+        data={"category": "Revenue"},
+        files={"file": ("telco.csv", frame.to_csv(index=False).encode(), "text/csv")},
+    )
+    assert created.status_code == 200, created.text
+    upload_id = created.json()["id"]
+    assert created.json()["structured"] is False
+    assert created.json()["insights"] == []
+
+    run_auto_train_job(db_session, db_session.query(ClientLabUpload).one().id)
+    db_session.expire_all()
+
+    detail = auth_client.get(f"/app/labs/uploads/{upload_id}")
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["pipeline_status"] == "completed"
+    assert body["structured"] is True
+    assert body["insights"], "trained upload must return real insights"
+    assert SAVED_MESSAGE not in body["message"]
+    assert "not available yet" not in body["message"].lower()
+    text = detail.text.lower()
+    assert "who is likely to leave" in text or "who may leave" in text
+    assert find_banned_terms(detail.text) == []
+    outcome = body["outcome"]
+    assert outcome is not None
+    assert outcome["title"] == "Analysis complete"
+    assert "we analyzed your dataset" in outcome["summary"].lower()
+    assert outcome["record_count"] >= 40
+    assert outcome["feature_count"] >= 1
+    assert outcome["task_kind"] == "classification"
+    assert outcome["method_label"]
+    assert 0 < outcome["performance_percent"] <= 100
+    assert outcome["prediction_count"] == len(outcome["predictions"])
+    assert outcome["prediction_count"] > 0
+    assert {"prediction", "probability"} <= set(outcome["predictions"][0])
+    assert "columntransformer" not in text
+    assert "simpleimputer" not in text
+    assert "sklearn" not in text
+    assert "fold_metrics" not in text
+    assert "experiment_id" not in body
+
+    csv_response = auth_client.get(f"/app/labs/uploads/{upload_id}/predictions.csv")
+    assert csv_response.status_code == 200
+    assert "text/csv" in csv_response.headers.get("content-type", "")
+    lines = [line for line in csv_response.text.strip().splitlines() if line]
+    assert lines[0].startswith("prediction")
+    assert len(lines) - 1 == outcome["prediction_count"]
+    assert find_banned_terms(csv_response.text) == []
+    listed = auth_client.get("/app/labs/uploads", params={"category": "Revenue"})
+    assert listed.status_code == 200
+    match = next(row for row in listed.json() if row["id"] == upload_id)
+    assert match["insights"]
+    assert match["structured"] is True

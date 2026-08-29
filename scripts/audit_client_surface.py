@@ -81,6 +81,8 @@ KNOWN_CLIENT_OPERATIONS = {
     ("POST", "/app/labs/runs"),
     ("GET", "/app/labs/runs/{run_id}"),
     ("GET", "/app/labs/uploads"),
+    ("GET", "/app/labs/uploads/{upload_id}"),
+    ("GET", "/app/labs/uploads/{upload_id}/predictions.csv"),
     ("POST", "/app/labs/uploads"),
 }
 
@@ -240,6 +242,14 @@ def crawl_api(token: str) -> tuple[dict[str, list[str]], set[tuple[str, str]], d
         hits = find_banned_terms(raw.decode("utf-8", errors="replace"))
         if hits:
             findings["POST /app/labs/uploads"] = hits
+        upload_id = json.loads(raw).get("id")
+        if upload_id:
+            discovered_ids["labs/uploads"] = upload_id
+            get(f"/app/labs/uploads/{upload_id}", "/app/labs/uploads/{upload_id}")
+            get(
+                f"/app/labs/uploads/{upload_id}/predictions.csv",
+                "/app/labs/uploads/{upload_id}/predictions.csv",
+            )
     else:
         print(f"  note: POST /app/labs/uploads -> {status} (unexpected, not scanned)", file=sys.stderr)
     get("/app/labs/uploads", "/app/labs/uploads")
@@ -269,6 +279,11 @@ def _resolve_dynamic_segment(route: str, discovered_ids: dict[str, str]) -> str:
     """`route` looks like /app/opportunities/[id] -- resolve [id] using the ID
     discovered for that specific route prefix (not a single global ID: an
     opportunity ID is not a valid decision ID, so this can't be a flat map)."""
+    if "[run_id]" in route:
+        real_id = discovered_ids.get("labs/uploads")
+        if not real_id:
+            return route
+        return route.replace("[run_id]", real_id)
     if "[id]" not in route:
         return route
     prefix = route.split("/[id]")[0].removeprefix("/app/")
@@ -281,7 +296,8 @@ def _resolve_dynamic_segment(route: str, discovered_ids: dict[str, str]) -> str:
 def crawl_pages(token: str, discovered_ids: dict[str, str]) -> tuple[dict[str, list[str]], list[str]]:
     findings: dict[str, list[str]] = {}
     skipped: list[str] = []
-    for route in discover_pages("app"):
+    routes = discover_pages("app") + discover_pages("lab")
+    for route in routes:
         resolved = _resolve_dynamic_segment(route, discovered_ids)
         if "[" in resolved:
             skipped.append(resolved)
@@ -332,8 +348,8 @@ def main() -> int:
         return 2
     print(f"  {len(covered)}/{len(KNOWN_CLIENT_OPERATIONS)} operations exercised, not sampled.")
 
-    print("\nCrawling every client page.tsx under apps/web/app/app/...")
-    all_pages = discover_pages("app")
+    print("\nCrawling every client page.tsx under apps/web/app/app/ and apps/web/app/lab/...")
+    all_pages = discover_pages("app") + discover_pages("lab")
     page_findings, skipped = crawl_pages(token, discovered_ids)
     print(f"  {len(all_pages) - len(skipped)}/{len(all_pages)} pages resolved and scanned.")
     if skipped:

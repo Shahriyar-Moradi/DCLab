@@ -120,25 +120,83 @@ class TestAutoTrainJob:
         assert "TotalCharges" in log["numerical_cols"]
         assert set(log["categorical_cols"]) >= {"gender", "contract"}
         assert log["missing_value_decisions"]["rows_with_missing"] >= 1
-        assert log["boost_family_used"] in {"xgboost", "gradient_boosting"}
+        assert log["boost_family_used"] in {"xgboost", "lightgbm", None}
+        assert "column_names" in log["analysis"]
+        assert "cleaning" in log
+        assert "feature_engineering" in log
+        assert log["preprocessing"]["numerical"][0] == "imputer:median"
 
         experiment = db_session.get(Experiment, upload.experiment_id)
         assert experiment is not None
         assert experiment.status == "COMPLETED"
         result = experiment.result
         assert result["best_single"]["model_family"] in {
-            "majority",
             "logistic_regression",
             "random_forest",
             "xgboost",
-            "gradient_boosting",
+            "lightgbm",
         }
         families = {row["model_family"] for row in result["candidates"]}
+        assert "logistic_regression" in families
         assert "random_forest" in families
-        assert families & {"xgboost", "gradient_boosting"}
-        # Two competing missing-value variants were trained per family.
-        variants = {row["preprocessing"].get("missing_variant") for row in result["candidates"]}
-        assert variants == {"drop_sparse_rows", "impute_all"}
+        assert all("missing_variant" not in (row.get("preprocessing") or {}) for row in result["candidates"])
+        assert result["split"]["strategy"] == "train_test_split"
+        assert result["split"]["n_val"] == 0
+        trained = [row for row in result["candidates"] if row["status"] == "trained"]
+        assert all(row["n_folds"] == 5 for row in trained)
+        assert all(len(row["fold_metrics"]) == 5 for row in trained)
+        assert "accuracy" in result["test_metrics"]
+        assert "f1" in result["test_metrics"]
+        assert "mae" not in result["test_metrics"]
+        assert result["train_metrics"]
+        assert len(result["test_predictions"]) == result["split"]["n_test"]
+        assert result["test_predictions"][0]["y_true"] in {0, 1}
+        assert result["analysis"]["row_count"] == 200
+        winner_id = result["best_single"]["candidate_id"]
+        winner_cv = result["best_single"]["score"]
+        for row in trained:
+            assert "roc_auc" in row["test_metrics"]
+            if row["candidate_id"] != winner_id:
+                assert row["score"] <= winner_cv + 1e-12
+
+    def test_persists_real_processing_stages_in_order(self, db_session, tmp_path, monkeypatch):
+        from app.services import auto_train_service
+
+        seen: list[str] = []
+        original = auto_train_service._mark
+
+        def tracking(db, upload, *, status, log=None, experiment_id=None):
+            seen.append(status)
+            return original(db, upload, status=status, log=log, experiment_id=experiment_id)
+
+        monkeypatch.setattr(auto_train_service, "_mark", tracking)
+
+        frame = _telco_like_frame(n=200)
+        path = tmp_path / "telco_stages.csv"
+        frame.to_csv(path, index=False)
+        upload = _make_upload(db_session, stored_path=str(path), record_count=len(frame))
+        auto_train_service.run_auto_train_job(db_session, upload.id)
+
+        required = [
+            "ingesting",
+            "analyzing",
+            "cleaning",
+            "feature_engineering",
+            "preprocessing",
+            "splitting",
+            "cross_validation",
+            "training",
+            "evaluating",
+            "predicting",
+            "completed",
+        ]
+        cursor = 0
+        for status in seen:
+            if cursor < len(required) and status == required[cursor]:
+                cursor += 1
+        assert cursor == len(required), seen
+        db_session.refresh(upload)
+        assert upload.pipeline_status == "completed"
 
     def test_drops_column_over_50_percent_missing_and_still_completes(self, db_session, tmp_path):
         frame = _telco_like_frame(n=200)

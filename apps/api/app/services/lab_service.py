@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from collections.abc import Callable
 from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
@@ -170,7 +171,12 @@ def create_experiment(
     return row
 
 
-def execute_experiment(db: Session, experiment: Experiment) -> Experiment:
+def execute_experiment(
+    db: Session,
+    experiment: Experiment,
+    *,
+    on_stage: Callable[[str], None] | None = None,
+) -> Experiment:
     dataset = db.get(Dataset, experiment.dataset_id)
     task_row = db.get(PredictionTask, experiment.task_id)
     if dataset is None or task_row is None:
@@ -193,7 +199,14 @@ def execute_experiment(db: Session, experiment: Experiment) -> Experiment:
     )
     try:
         frame = load_table(dataset.location)
-        result = run_experiment(frame, spec, cfg, artifact_dir=artifacts, dataset_version=dataset.version)
+        result = run_experiment(
+            frame,
+            spec,
+            cfg,
+            artifact_dir=artifacts,
+            dataset_version=dataset.version,
+            on_stage=on_stage,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)
         experiment.status = "FAILED"

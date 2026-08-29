@@ -8,7 +8,31 @@ from app.engine.search.fingerprint import candidate_fingerprint
 from app.engine.types import Candidate, SearchConfig, TaskSpec
 
 DUMMY_FAMILIES = {"majority", "mean"}
-OPEN_INGEST_MISSING_VARIANTS = ("drop_sparse_rows", "impute_all")
+
+OPEN_INGEST_PREPROCESS = {
+    "kind": "column_transformer",
+    "numeric_imputer": "median",
+    "numeric_scaler": "standard",
+    "categorical_imputer": "most_frequent",
+    "categorical_encoder": "onehot",
+}
+
+
+def open_ingest_families(task_type: str) -> list[str]:
+    """Classification: LR, RF, XGBoost, LightGBM if installed.
+    Regression: Linear, RF, XGB/LGBM regressors if installed.
+    """
+    avail = set(available_families(task_type))
+    if task_type == "binary":
+        wanted = ["logistic_regression", "random_forest", "xgboost", "lightgbm"]
+    else:
+        wanted = [
+            "linear_regression",
+            "random_forest_regressor",
+            "xgboost_regressor",
+            "lightgbm_regressor",
+        ]
+    return [name for name in wanted if name in avail]
 
 
 def _fingerprint_payload(
@@ -82,11 +106,11 @@ def _open_ingest_candidates(
     *,
     dataset_version: str,
 ) -> list[Candidate]:
-    """One feature group ("features"), RandomForest/XGBoost + a baseline, each
-    trained under two competing missing-value policies. Runner.py recognises
-    ``preprocessing.kind == "column_transformer"`` and swaps in the sklearn
-    ColumnTransformer + real K-fold path instead of the default `_matrix`
-    fillna(0.0) flow — see docs/LABS_DATA_UNDERSTANDING.md.
+    """One feature group, registry families, a single ColumnTransformer preprocessor.
+
+    Runner.py recognises ``preprocessing.kind == "column_transformer"`` and uses
+    sklearn pipelines + K-fold on the training split only. Default
+    ``use_case`` / ``progressive`` strategies are unchanged.
     """
     groups = list(task.feature_groups.keys())
     if not groups:
@@ -96,36 +120,28 @@ def _open_ingest_candidates(
     if not feats:
         return []
 
-    has_xgb = "xgboost" in available_families(task.task_type)
-    boost_family = "xgboost" if has_xgb else "gradient_boosting"
-    dummy = "majority" if task.task_type == "binary" else "mean"
-    linear = "logistic_regression" if task.task_type == "binary" else "linear_regression"
-    forest = "random_forest" if task.task_type == "binary" else "random_forest_regressor"
-    families = [dummy, linear, forest, boost_family]
-
+    families = open_ingest_families(task.task_type)
     candidates: list[Candidate] = []
-    for variant in OPEN_INGEST_MISSING_VARIANTS:
-        for family in families:
-            if len(candidates) >= config.max_candidates:
-                return candidates
-            payload = _fingerprint_payload(
-                task, features=feats, family=family, seed=config.seed, dataset_version=dataset_version
+    for family in families:
+        if len(candidates) >= config.max_candidates:
+            return candidates
+        payload = _fingerprint_payload(
+            task, features=feats, family=family, seed=config.seed, dataset_version=dataset_version
+        )
+        payload["preprocess"] = "column_transformer"
+        candidates.append(
+            Candidate(
+                candidate_id=family,
+                task_id=task.id,
+                feature_groups=combo,
+                features=feats,
+                model_family=family,
+                random_seed=config.seed,
+                validation_strategy=task.validation_strategy,
+                preprocessing=dict(OPEN_INGEST_PREPROCESS),
+                fingerprint=candidate_fingerprint(payload),
             )
-            payload["preprocess"] = f"column_transformer:{variant}"
-            payload["missing_variant"] = variant
-            candidates.append(
-                Candidate(
-                    candidate_id=f"{family}__{variant}",
-                    task_id=task.id,
-                    feature_groups=combo,
-                    features=feats,
-                    model_family=family,
-                    random_seed=config.seed,
-                    validation_strategy=task.validation_strategy,
-                    preprocessing={"kind": "column_transformer", "missing_variant": variant},
-                    fingerprint=candidate_fingerprint(payload),
-                )
-            )
+        )
     return candidates
 
 

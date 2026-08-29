@@ -1,3 +1,5 @@
+import pandas as pd
+
 from app.engine.datasets.synthetic import make_synthetic_customers
 from app.engine.leakage.detector import detect_leakage
 from app.engine.schema.profiler import profile_frame
@@ -11,7 +13,37 @@ def test_profiler_counts_and_identifiers():
     profile = profile_frame(frame)
     assert profile["row_count"] == 200
     assert "entity_id" in profile["identifier_like_columns"]
+    assert "entity_id" in profile["likely_identifier_columns"]
     assert profile["column_count"] == frame.shape[1]
+    assert profile["column_names"] == list(frame.columns)
+    assert set(profile["dtypes"]) == set(frame.columns)
+    assert "missing_count" in profile
+    assert "missing_percentage" in profile
+    assert "unique_count" in profile
+    assert "duplicate_count" in profile
+    assert "numerical_statistics" in profile
+    assert "categorical_statistics" in profile
+    assert "constant_columns" in profile
+    assert "high_cardinality_columns" in profile
+
+
+def test_profiler_flags_high_cardinality_text_and_identifiers():
+    n = 80
+    frame = pd.DataFrame(
+        {
+            "customer_id": [f"C{i}" for i in range(n)],
+            "note": [f"free text {i}" for i in range(n)],
+            "plan": (["gold", "silver"] * (n // 2)),
+            "amount": list(range(n)),
+        }
+    )
+    profile = profile_frame(frame)
+    assert "note" in profile["high_cardinality_columns"]
+    assert "plan" not in profile["high_cardinality_columns"]
+    assert "amount" not in profile["high_cardinality_columns"]
+    assert "customer_id" in profile["likely_identifier_columns"]
+    assert profile["numerical_statistics"]["amount"]["mean"] is not None
+    assert "plan" in profile["categorical_statistics"]
 
 
 def test_leakage_flags_future_amount():

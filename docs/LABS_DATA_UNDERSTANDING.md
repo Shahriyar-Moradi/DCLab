@@ -42,8 +42,12 @@ Code:
 
 - Preview: `apps/api/app/engine/lab/open_ingest.py`
 - Persist: `apps/api/app/services/client_lab_upload_service.py` → `client_lab_uploads`
-- HTTP: `POST /app/labs/uploads`, `GET /app/labs/uploads`
-- UI: `apps/web/app/app/labs/page.tsx` (`OpenFileCard`)
+- HTTP: `POST /app/labs/uploads`, `GET /app/labs/uploads`, `GET /app/labs/uploads/{id}`
+- UI: `apps/web/app/app/labs/page.tsx` (`OpenFileCard`) — after save, client and
+  admin are sent to `/lab/runs/{run_id}` (the upload id is the run id). The run
+  page polls `GET /app/labs/uploads/{id}` and shows queued / processing /
+  completed / failed from `pipeline_status`. Admins can still open
+  `/admin/models/client-uploads/{id}` from that page.
 
 ---
 
@@ -56,7 +60,11 @@ client sees. It is a plain automatic **training** job for files that are
 
 After `save_upload` persists the file and returns the capability-1 response
 above, it enqueues a background job (`enqueue_auto_train`, its own DB session
-so the upload request is never blocked):
+so the upload request is never blocked). The job writes each real stage onto
+`client_lab_uploads.pipeline_status` (`queued` → `ingesting` → `analyzing` →
+`cleaning` → `feature_engineering` → `preprocessing` → `splitting` →
+`cross_validation` → `training` → `evaluating` → `predicting` → `completed`).
+`/lab/runs/{run_id}` polls that row and renders the checklist from it.
 
 ```mermaid
 flowchart TD

@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # apps/api/app/config.py → repository root
@@ -26,6 +27,14 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-only-insecure-secret-change-me"
     # Long-lived so a browser stays signed in until the person clicks Sign out.
     access_token_minutes: int = 60 * 24 * 30
+    # Lab decision agent (LLM). Off by default so local/dev/CI never call a provider.
+    # DECISION_AGENT_API_KEY (or OPENAI_API_KEY) is required when this is on.
+    decision_agent_enabled: bool = False
+    decision_agent_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("DECISION_AGENT_API_KEY", "OPENAI_API_KEY"),
+    )
+    decision_agent_model: str = "gpt-4o-mini"
 
 
 @lru_cache

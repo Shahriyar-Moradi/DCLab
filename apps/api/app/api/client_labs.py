@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -88,6 +89,32 @@ def list_uploads(
         return client_lab_upload_service.list_uploads(db, user, category)
     except UnknownLabCategoryError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/uploads/{upload_id}", response_model=ClientLabUploadRead)
+def get_upload(
+    upload_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> ClientLabUploadRead:
+    row = client_lab_upload_service.get_upload(db, user, upload_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="file not found")
+    return row
+
+
+@router.get("/uploads/{upload_id}/predictions.csv")
+def download_upload_predictions(
+    upload_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> Response:
+    payload = client_lab_upload_service.predictions_download(db, user, upload_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="predictions are not ready")
+    filename, body = payload
+    safe_name = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in filename)
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
 
 
 @router.get("/runs", response_model=list[ClientLabRunRead])
