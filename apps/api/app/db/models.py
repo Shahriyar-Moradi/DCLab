@@ -12,6 +12,8 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
+    event,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -260,13 +262,59 @@ class ClientLabRunAudit(Base):
     client_lab_run: Mapped[ClientLabRun] = relationship()
 
 
+# Fine-grained pipeline_status values that still mean "the job is running"
+# from the client's point of view. `queued` is listed here for documentation
+# only — coarse status maps it to queued, not processing.
+_PIPELINE_IN_PROGRESS = frozenset(
+    {
+        "queued",
+        "ingesting",
+        "analyzing",
+        "cleaning",
+        "feature_engineering",
+        "preprocessing",
+        "splitting",
+        "cross_validation",
+        "training",
+        "evaluating",
+        "predicting",
+        "running",
+    }
+)
+
+
+def client_status_for(pipeline_status: str) -> str:
+    """Coarse four-state view stored on `ClientLabUpload.client_status`."""
+    if pipeline_status == "queued":
+        return "queued"
+    if pipeline_status == "completed":
+        return "completed"
+    if pipeline_status in _PIPELINE_IN_PROGRESS:
+        return "processing"
+    return "failed"
+
+
 class ClientLabUpload(Base):
     """Open ingest for Client Labs: the file is saved as-is. Structuring it
-    (language tools + DCLab's reading pipeline) is not implemented yet."""
+    (language tools + DCLab's reading pipeline) is not implemented yet.
+
+    `run_id` is the stable ML-run identity (currently equal to `id`).
+    `client_status` is the coarse four-state view a client may see; fine-grained
+    execution lives on `pipeline_status`.
+    """
 
     __tablename__ = "client_lab_uploads"
+    __table_args__ = (
+        CheckConstraint(
+            "client_status IN ('queued', 'processing', 'completed', 'failed')",
+            name="ck_client_lab_uploads_client_status",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, unique=True, index=True
+    )
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id"),
@@ -292,6 +340,10 @@ class ClientLabUpload(Base):
     pipeline_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="not_applicable", server_default="not_applicable", index=True
     )
+    # queued | processing | completed | failed — never a pipeline stage name.
+    client_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="queued", server_default="queued", index=True
+    )
     pipeline_log: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     experiment_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("experiments.id"), nullable=True
@@ -302,6 +354,19 @@ class ClientLabUpload(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+@event.listens_for(ClientLabUpload, "before_insert")
+def _assign_run_id_and_client_status(_mapper, _connection, target: ClientLabUpload) -> None:
+    if target.id is None:
+        target.id = uuid.uuid4()
+    target.run_id = target.id
+    target.client_status = client_status_for(target.pipeline_status)
+
+
+@event.listens_for(ClientLabUpload, "before_update")
+def _sync_client_status(_mapper, _connection, target: ClientLabUpload) -> None:
+    target.client_status = client_status_for(target.pipeline_status)
 
 
 class LabDecisionRecord(Base):
@@ -442,6 +507,7 @@ class Experiment(Base):
     dataset: Mapped[Dataset] = relationship(back_populates="experiments")
     task: Mapped[PredictionTask] = relationship(back_populates="experiments")
     candidates: Mapped[list["ExperimentCandidate"]] = relationship(back_populates="experiment")
+    test_predictions: Mapped[list["ExperimentTestPrediction"]] = relationship(back_populates="experiment")
 
 
 class ExperimentCandidate(Base):
@@ -460,4 +526,35 @@ class ExperimentCandidate(Base):
     )
 
     experiment: Mapped[Experiment] = relationship(back_populates="candidates")
+
+
+class ExperimentTestPrediction(Base):
+    """Holdout-test scores for one Labs experiment. Not opportunity scoring."""
+
+    __tablename__ = "experiment_test_predictions"
+    __table_args__ = (
+        UniqueConstraint(
+            "experiment_id",
+            "row_index",
+            name="uq_experiment_test_predictions_experiment_row",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    row_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    record_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    predicted_value: Mapped[object] = mapped_column(JSONB, nullable=False)
+    probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    y_true: Mapped[object | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    experiment: Mapped[Experiment] = relationship(back_populates="test_predictions")
 

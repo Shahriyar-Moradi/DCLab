@@ -15,13 +15,15 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import get_settings
-from app.engine.lab.evidence import ColumnEvidence
+from app.engine.lab.evidence import ColumnEvidence, ColumnTypeEvidence
+from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION as COLUMN_TYPE_V1
+from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT as COLUMN_TYPE_V1_PROMPT
 from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION as MISSING_VALUE_V1
 from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT as MISSING_VALUE_V1_PROMPT
 
@@ -30,6 +32,7 @@ _REQUEST_TIMEOUT_SECONDS = 20.0
 
 _PROMPTS: dict[str, str] = {
     MISSING_VALUE_V1: MISSING_VALUE_V1_PROMPT,
+    COLUMN_TYPE_V1: COLUMN_TYPE_V1_PROMPT,
 }
 
 Action = Literal[
@@ -48,6 +51,8 @@ EvidenceField = Literal[
     "missingness_cooccurrence",
     "sample_rows",
 ]
+ColumnTypeAction = Literal["numerical", "categorical", "identifier"]
+ColumnTypeEvidenceField = Literal["column", "dtype", "cardinality", "cardinality_ratio", "sample_values"]
 
 _ACTIONS: tuple[str, ...] = (
     "drop_rows",
@@ -64,6 +69,14 @@ _EVIDENCE_FIELDS: tuple[str, ...] = (
     "correlation_with_target",
     "missingness_cooccurrence",
     "sample_rows",
+)
+_COLUMN_TYPE_ACTIONS: tuple[str, ...] = ("numerical", "categorical", "identifier")
+_COLUMN_TYPE_EVIDENCE_FIELDS: tuple[str, ...] = (
+    "column",
+    "dtype",
+    "cardinality",
+    "cardinality_ratio",
+    "sample_values",
 )
 
 _DECISION_JSON_SCHEMA: dict[str, Any] = {
@@ -86,6 +99,20 @@ _DECISION_JSON_SCHEMA: dict[str, Any] = {
     "required": ["action", "evidence_field", "fill_value", "rationale", "confidence"],
 }
 
+_COLUMN_TYPE_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "action": {"type": "string", "enum": list(_COLUMN_TYPE_ACTIONS)},
+        "evidence_field": {"type": "string", "enum": list(_COLUMN_TYPE_EVIDENCE_FIELDS)},
+        "rationale": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    },
+    "required": ["action", "evidence_field", "rationale", "confidence"],
+}
+
+T = TypeVar("T", bound=BaseModel)
+
 
 class DecisionAgentUnavailable(Exception):
     """The decision agent is off, unconfigured, or the provider failed closed."""
@@ -101,8 +128,18 @@ class MissingValueDecision(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
-# In-process cache. See module docstring.
+class ColumnTypeDecision(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    action: ColumnTypeAction
+    evidence_field: ColumnTypeEvidenceField
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+# In-process caches. See module docstring.
 _CACHE: dict[str, MissingValueDecision] = {}
+_COLUMN_TYPE_CACHE: dict[str, ColumnTypeDecision] = {}
 
 
 def request_decision(evidence: ColumnEvidence, prompt_version: str) -> MissingValueDecision:
@@ -131,6 +168,9 @@ def request_decision(evidence: ColumnEvidence, prompt_version: str) -> MissingVa
             evidence=evidence,
             api_key=api_key,
             model=settings.decision_agent_model,
+            schema=_DECISION_JSON_SCHEMA,
+            schema_name="missing_value_decision",
+            result_model=MissingValueDecision,
         )
         _CACHE[cache_key] = decision
         return decision
@@ -140,22 +180,58 @@ def request_decision(evidence: ColumnEvidence, prompt_version: str) -> MissingVa
         raise DecisionAgentUnavailable("decision agent failed") from exc
 
 
-def _cache_key(evidence: ColumnEvidence, prompt_version: str) -> str:
+def request_column_type_decision(evidence: ColumnTypeEvidence, prompt_version: str) -> ColumnTypeDecision:
+    """Return a schema-validated column-type decision, or raise unavailable."""
+    try:
+        settings = get_settings()
+        if not settings.decision_agent_enabled:
+            raise DecisionAgentUnavailable("decision agent is disabled")
+        api_key = (settings.decision_agent_api_key or "").strip()
+        if not api_key:
+            raise DecisionAgentUnavailable("decision agent API key is not configured")
+        system_prompt = _PROMPTS.get(prompt_version)
+        if not system_prompt:
+            raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
+        cache_key = _cache_key(evidence, prompt_version)
+        cached = _COLUMN_TYPE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        decision = _complete_structured(
+            system_prompt=system_prompt,
+            evidence=evidence,
+            api_key=api_key,
+            model=settings.decision_agent_model,
+            schema=_COLUMN_TYPE_JSON_SCHEMA,
+            schema_name="column_type_decision",
+            result_model=ColumnTypeDecision,
+        )
+        _COLUMN_TYPE_CACHE[cache_key] = decision
+        return decision
+    except DecisionAgentUnavailable:
+        raise
+    except Exception as exc:
+        raise DecisionAgentUnavailable("decision agent failed") from exc
+
+
+def _cache_key(evidence: ColumnEvidence | ColumnTypeEvidence, prompt_version: str) -> str:
     blob = _evidence_json(evidence) + "\0" + prompt_version
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _evidence_json(evidence: ColumnEvidence) -> str:
+def _evidence_json(evidence: ColumnEvidence | ColumnTypeEvidence) -> str:
     return json.dumps(asdict(evidence), sort_keys=True, default=str)
 
 
 def _complete_structured(
     *,
     system_prompt: str,
-    evidence: ColumnEvidence,
+    evidence: ColumnEvidence | ColumnTypeEvidence,
     api_key: str,
     model: str,
-) -> MissingValueDecision:
+    schema: dict[str, Any],
+    schema_name: str,
+    result_model: type[T],
+) -> T:
     payload = {
         "model": model,
         "temperature": 0,
@@ -166,9 +242,9 @@ def _complete_structured(
         "response_format": {
             "type": "json_schema",
             "json_schema": {
-                "name": "missing_value_decision",
+                "name": schema_name,
                 "strict": True,
-                "schema": _DECISION_JSON_SCHEMA,
+                "schema": schema,
             },
         },
     }
@@ -197,6 +273,6 @@ def _complete_structured(
 
     try:
         parsed = json.loads(content)
-        return MissingValueDecision.model_validate(parsed)
+        return result_model.model_validate(parsed)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise DecisionAgentUnavailable("decision agent returned JSON that failed the schema") from exc

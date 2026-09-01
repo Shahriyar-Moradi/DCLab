@@ -74,6 +74,9 @@ jobs:
       - name: Banned-terms static scan
         run: python -m scripts.scan_banned_terms
 
+      - name: Client Labs Zod/Pydantic contract
+        run: python -m scripts.check_client_lab_schema_contract
+
       - name: Install frontend
         working-directory: apps/web
         run: npm ci

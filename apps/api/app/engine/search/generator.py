@@ -115,7 +115,13 @@ def _open_ingest_candidates(
     groups = list(task.feature_groups.keys())
     if not groups:
         return []
-    combo = tuple(sorted(groups))
+    combos = generate_group_combinations(
+        groups,
+        strategy="limited",
+        max_combinations=max(1, config.max_feature_group_combinations),
+        seed=config.seed,
+    )
+    combo = combos[0] if combos else tuple(sorted(groups))
     feats = tuple(features_for_groups(task.feature_groups, combo))
     if not feats:
         return []

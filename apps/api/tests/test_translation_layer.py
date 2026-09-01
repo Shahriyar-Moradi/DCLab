@@ -47,8 +47,10 @@ class TestBannedTermsDetector:
         assert is_clean(text)
         assert find_banned_terms(text) == []
 
-    def test_case_insensitive(self):
-        assert "auc" in find_banned_terms("Its AUC improved this run")
+    def test_allows_client_milestone_copy_without_opening_other_model_uses(self):
+        assert find_banned_terms("Building your model") == []
+        assert find_banned_terms("This was scored by our model") == ["model"]
+        assert "model" in find_banned_terms("Building your model. See the model card.")
 
 
 class TestOpportunityDecisionTranslator:

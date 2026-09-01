@@ -62,6 +62,11 @@ BANNED_PHRASES: tuple[str, ...] = (
     "pr-auc",
 )
 
+# Client-facing copy that is allowed to use an otherwise-banned token. Masked
+# before scanning so a Labs milestone can say "Building your model" without
+# opening the door to "the model failed" or "model_family".
+_ALLOWED_LITERALS: tuple[str, ...] = ("building your model",)
+
 # Custom boundary instead of \b: underscores and hyphens must act as separators
 # too, so "model_version" and "best-precision" are caught the same as "model" and
 # "precision" on their own — \b alone treats "_" as a word character and would
@@ -78,10 +83,13 @@ def find_banned_terms(text: str) -> list[str]:
     report can't itself leak surrounding context."""
     if not text:
         return []
+    masked = text
+    for literal in _ALLOWED_LITERALS:
+        masked = re.sub(re.escape(literal), " ", masked, flags=re.IGNORECASE)
     hits: set[str] = set()
-    for match in _WORD_PATTERN.finditer(text):
+    for match in _WORD_PATTERN.finditer(masked):
         hits.add(match.group(1).lower())
-    lowered = text.lower()
+    lowered = masked.lower()
     for phrase in BANNED_PHRASES:
         if phrase in lowered:
             hits.add(phrase)

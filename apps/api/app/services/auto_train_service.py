@@ -33,9 +33,11 @@ from app.domain.lab_run_stages import (
     FEATURE_ENGINEERING,
     INGESTING,
     PREPROCESSING,
+    QUEUED,
     SKIPPED,
 )
 from app.engine.data.quality import quality_report
+from app.engine.features.combinations import features_for_groups, generate_group_combinations
 from app.engine.lab.auto_prepare import (
     clean_frame,
     coerce_numeric_like,
@@ -48,7 +50,7 @@ from app.engine.lab.column_map import MIN_TRAIN_ROWS
 from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
 from app.engine.types import SearchConfig, TaskSpec
-from app.services.lab_decision_ledger import record_missing_value_decisions
+from app.services.lab_decision_ledger import record_column_type_decisions, record_missing_value_decisions
 from app.services.lab_service import create_experiment, execute_experiment, ingest_dataset, seed_dogfood, upsert_task
 
 logger = logging.getLogger(__name__)
@@ -119,9 +121,17 @@ def _mark(
     log: dict[str, Any] | None = None,
     experiment_id: UUID | None = None,
 ) -> None:
-    upload.pipeline_status = status
+    """Commit `pipeline_status` at a real operation boundary (no synthetic delays)."""
+    merged = dict(upload.pipeline_log or {})
     if log is not None:
-        upload.pipeline_log = log
+        merged.update(log)
+    history = list(merged.get("stages") or [])
+    if not history or history[-1] != status:
+        history.append(status)
+    merged["stages"] = history
+    merged["current_stage"] = status
+    upload.pipeline_status = status
+    upload.pipeline_log = merged
     if experiment_id is not None:
         upload.experiment_id = experiment_id
     db.commit()
@@ -146,10 +156,34 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         _mark(db, upload, status=SKIPPED, log={"reason": "; ".join(reasons) or "not a simple tabular file"})
         return
 
+    current_stage = QUEUED
+    trace: list[dict[str, Any]] = []
+
     def _stage(stage: str) -> None:
+        nonlocal current_stage
+        current_stage = stage
         row = db.get(ClientLabUpload, upload_id)
         if row is not None:
             _mark(db, row, status=stage)
+
+    def _trace(step: str, fn: str, **payload: Any) -> None:
+        entry = {"step": step, "fn": fn, **payload}
+        trace.append(entry)
+        logger.info("auto-train %s %s %s", upload_id, step, fn)
+
+    def _fail(
+        reason: str,
+        extra: dict[str, Any] | None = None,
+        experiment_id: UUID | None = None,
+    ) -> None:
+        row = db.get(ClientLabUpload, upload_id)
+        if row is None:
+            return
+        payload = dict(extra or {})
+        payload["reason"] = reason
+        payload["failed_at"] = current_stage
+        payload["pipeline_trace"] = list(trace)
+        _mark(db, row, status=FAILED, log=payload, experiment_id=experiment_id)
 
     _stage(INGESTING)
     try:
@@ -157,22 +191,28 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         frame.columns = [str(c) for c in frame.columns]
         columns = list(frame.columns)
         if not columns or frame.empty:
-            _mark(db, upload, status=FAILED, log={"reason": "the file loaded but had no usable rows or columns"})
+            _fail("the file loaded but had no usable rows or columns")
             return
 
         _stage(ANALYZING)
         profile = profile_frame(frame)
         quality = quality_report(frame)
+        _trace(
+            "profiling",
+            "app.engine.schema.profiler.profile_frame",
+            row_count=profile["row_count"],
+            column_count=profile["column_count"],
+            column_names=list(profile.get("column_names") or []),
+            missing_count=profile.get("missing_count"),
+            duplicate_rows=profile.get("duplicate_rows", profile.get("duplicate_count")),
+        )
 
         coerced = coerce_numeric_like(frame, columns)
         target = pick_target_heuristic(coerced, columns)
         if target.column is None:
-            _mark(
-                db,
-                upload,
-                status=FAILED,
-                log={
-                    "reason": target.reason,
+            _fail(
+                target.reason,
+                extra={
                     "analysis": profile,
                     "eda": {
                         "row_count": profile["row_count"],
@@ -188,12 +228,9 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         feature_columns = [c for c in columns if c != target.column]
         frame, cleaning_log = clean_frame(frame, target=target.column, feature_columns=feature_columns)
         if len(frame) < MIN_TRAIN_ROWS:
-            _mark(
-                db,
-                upload,
-                status=FAILED,
-                log={
-                    "reason": f"only {len(frame)} rows left after cleaning",
+            _fail(
+                f"only {len(frame)} rows left after cleaning",
+                extra={
                     "target": {"column": target.column, "reason": target.reason},
                     "analysis": profile,
                     "cleaning": cleaning_log,
@@ -206,16 +243,29 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         frame = record_missing_value_decisions(db, upload.id, frame, missing_plan, target.column)
         db.commit()
         kept_columns = [c for c in kept_columns if c not in missing_plan.dropped_columns and c in frame.columns]
+        _trace(
+            "cleaning",
+            "app.engine.lab.auto_prepare.plan_missing_values",
+            row_count=int(len(frame)),
+            dropped_columns=list(missing_plan.dropped_columns),
+            rows_with_missing=missing_plan.rows_with_missing,
+            column_decisions=[item.column + ":" + item.action for item in missing_plan.column_decisions],
+        )
         _stage(FEATURE_ENGINEERING)
         frame, fe_transformations = engineer_features(frame, kept_columns)
+        _trace(
+            "feature_engineering_transforms",
+            "app.engine.lab.auto_prepare.engineer_features",
+            transformations=fe_transformations,
+            column_count=int(frame.shape[1]),
+        )
         num_cols, cat_cols = split_column_roles(frame, kept_columns)
+        num_cols, cat_cols = record_column_type_decisions(db, upload.id, frame, num_cols, cat_cols)
+        db.commit()
         if not num_cols and not cat_cols:
-            _mark(
-                db,
-                upload,
-                status=FAILED,
-                log={
-                    "reason": "no usable feature columns after removing identifiers, constants, and mostly-empty columns",
+            _fail(
+                "no usable feature columns after removing identifiers, constants, and mostly-empty columns",
+                extra={
                     "target": {"column": target.column, "reason": target.reason},
                     "dropped_columns": missing_plan.dropped_columns,
                     "analysis": profile,
@@ -223,6 +273,31 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 },
             )
             return
+
+        search = _search_config()
+        groups_map = {"features": num_cols + cat_cols}
+        combos = generate_group_combinations(
+            list(groups_map.keys()),
+            strategy="limited",
+            max_combinations=search.max_feature_group_combinations,
+            seed=search.seed,
+        )
+        combo = combos[0] if combos else tuple(groups_map.keys())
+        modeled_cols = features_for_groups(groups_map, combo)
+        _trace(
+            "feature_engineering",
+            "app.engine.features.combinations.generate_group_combinations",
+            groups=list(groups_map.keys()),
+            combinations=[list(item) for item in combos],
+            selected_group=list(combo),
+            selected_columns=list(modeled_cols),
+        )
+        _trace(
+            "column_roles",
+            "app.engine.lab.auto_prepare.split_column_roles",
+            numerical_cols=list(num_cols),
+            categorical_cols=list(cat_cols),
+        )
 
         _stage(PREPROCESSING)
         dataset_dir = REPO_ROOT / "data" / "client_lab_datasets"
@@ -251,13 +326,18 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             entity_id=kept_columns[0] if kept_columns else target.column,
             prediction_time_column=None,
             evaluation_metric=metric,
-            feature_groups={"features": num_cols + cat_cols},
+            feature_groups={"features": list(modeled_cols)},
             validation_strategy="stratified" if task_type == "binary" else "random",
             column_roles={"numerical": num_cols, "categorical": cat_cols},
         )
         task_row = upsert_task(db, env, task_spec)
-        experiment = create_experiment(db, environment=env, dataset=dataset, task=task_row, config=_search_config())
+        experiment = create_experiment(db, environment=env, dataset=dataset, task=task_row, config=search)
         experiment = execute_experiment(db, experiment, on_stage=_stage)
+        if experiment.status != "COMPLETED":
+            result = dict(experiment.result or {})
+            reason = result.get("error") or f"experiment ended with status {experiment.status}"
+            _fail(str(reason), extra={"experiment_status": experiment.status}, experiment_id=experiment.id)
+            return
 
         avail = available_families(task_type)
         boost_family_used = next(
@@ -275,7 +355,58 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "transformations": fe_transformations,
             "numerical_cols": num_cols,
             "categorical_cols": cat_cols,
+            "group_combinations": [list(item) for item in combos],
         }
+        split_meta = dict(result.get("split") or {})
+        trained = [row for row in (result.get("candidates") or []) if row.get("status") == "trained"]
+        winner = dict(result.get("best_single") or {})
+        _trace(
+            "preprocessing",
+            "app.engine.lab.auto_prepare.build_preprocessor",
+            numerical_cols=list(winner.get("numerical_cols") or num_cols),
+            categorical_cols=list(winner.get("categorical_cols") or cat_cols),
+            kind="column_transformer",
+        )
+        _trace(
+            "splitting",
+            "app.engine.validation.splits.split_train_test_holdout",
+            strategy=split_meta.get("strategy"),
+            n_train=split_meta.get("n_train"),
+            n_test=split_meta.get("n_test"),
+            n_val=split_meta.get("n_val"),
+        )
+        _trace(
+            "cross_validation",
+            "app.engine.experiments.runner._run_open_ingest_candidates",
+            n_folds=(trained[0].get("n_folds") if trained else None),
+            cv_strategy=(trained[0].get("cv_strategy") if trained else None),
+            families=[row.get("model_family") for row in trained],
+        )
+        _trace(
+            "training",
+            "app.engine.models.registry.make_model",
+            winner_family=winner.get("model_family"),
+            winner_id=winner.get("candidate_id"),
+            n_trained=len(trained),
+        )
+        test_metrics = dict(result.get("test_metrics") or {})
+        eval_fn = (
+            "app.engine.evaluation.metrics.classification_metrics"
+            if task_type == "binary"
+            else "app.engine.evaluation.metrics.regression_metrics"
+        )
+        _trace(
+            "evaluating",
+            eval_fn,
+            metric_names=sorted(test_metrics.keys()),
+            n_test=split_meta.get("n_test"),
+        )
+        predictions = list(result.get("test_predictions") or [])
+        _trace(
+            "predicting",
+            "app.engine.experiments.runner._prediction_rows",
+            n_predictions=len(predictions),
+        )
         experiment.result = result
         db.commit()
 
@@ -323,17 +454,15 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "boost_family_used": boost_family_used,
             "model_families": [row.get("model_family") for row in (result.get("candidates") or [])],
             "experiment_status": experiment.status,
+            "pipeline_trace": list(trace),
         }
-        status = COMPLETED if experiment.status == "COMPLETED" else FAILED
         upload = db.get(ClientLabUpload, upload_id)
         if upload is not None:
-            _mark(db, upload, status=status, log=log, experiment_id=experiment.id)
+            _mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("auto-train job failed for upload %s", upload_id)
         db.rollback()
-        upload = db.get(ClientLabUpload, upload_id)
-        if upload is not None:
-            _mark(db, upload, status=FAILED, log={"reason": f"unexpected error: {exc}"})
+        _fail(f"unexpected error: {exc}")
 
 
 def enqueue_auto_train(upload_id: UUID) -> None:

@@ -69,7 +69,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
 
         with test_engine.begin() as conn:
             conn.execute(text(
-                "TRUNCATE TABLE experiment_candidates, experiments, dataset_profiles, "
+                "TRUNCATE TABLE experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
                 "lab_decision_records, client_lab_run_audits, client_lab_runs, "
                 "client_lab_uploads, "

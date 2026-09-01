@@ -341,10 +341,13 @@ class Test6RefreshDuringProcessing:
         assert body["status"] == "processing"
         assert body["pipeline_status"] == "processing"
         assert body["outcome"] is None
-        assert body["steps"] == []
-        assert body["headline"] == "Analyzing your data..."
+        assert body["milestone"] == "Preparing your data"
+        assert body["headline"] == "Preparing your data"
+        assert [row["label"] for row in body["steps"]][2] == "Preparing your data"
+        assert [row["state"] for row in body["steps"]][2] == "current"
         assert "training" not in mid.text.lower()
         assert "data cleaning" not in mid.text.lower()
+        assert "feature_engineering" not in mid.text.lower()
         assert find_banned_terms(mid.text) == []
 
         upload.pipeline_status = "completed"

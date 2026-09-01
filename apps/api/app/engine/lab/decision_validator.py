@@ -1,12 +1,13 @@
-"""Second-line check on a missing-value decision before it can override auto_prepare.
+"""Second-line check on a Lab decision before it can override auto_prepare.
 
 The LLM's structured decision is not trusted on its own. This module re-reads
 the evidence object and accepts the decision only when:
 
-- the action is one of the enum values listed in missing_value_v1.py
+- the action is one of the enum values listed in the matching prompt file
 - every cited evidence field exists on the evidence object
 - the *value* of that field actually supports the claimed action (existence
-  is not enough — an empty co-occurrence list does not justify domain_fill)
+  is not enough — an empty co-occurrence list does not justify domain_fill;
+  a high-cardinality integer does not justify categorical)
 - stated confidence is at least MIN_CONFIDENCE
 
 Anything else is a reject with a reason. The caller then keeps the existing
@@ -18,9 +19,15 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from typing import Any, Literal
 
-from app.engine.lab.auto_prepare import DROP_ROWS_MAX_FRACTION, DROP_ROWS_MIN_ABSOLUTE
-from app.engine.lab.evidence import ColumnEvidence, MissingnessCooccurrence
-from app.engine.lab.llm_client import MissingValueDecision
+from app.engine.lab.auto_prepare import DROP_ROWS_MAX_FRACTION, DROP_ROWS_MIN_ABSOLUTE, MAX_CATEGORICAL_CARDINALITY
+from app.engine.lab.evidence import (
+    COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN,
+    ColumnEvidence,
+    ColumnTypeEvidence,
+    MissingnessCooccurrence,
+)
+from app.engine.lab.llm_client import ColumnTypeDecision, MissingValueDecision
+from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT as COLUMN_TYPE_PROMPT
 from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT
 
 # Reject below this. 0.7 means the model has to be at least reasonably sure;
@@ -44,6 +51,20 @@ def _allowed_actions() -> frozenset[str]:
 
 
 ALLOWED_ACTIONS = _allowed_actions()
+
+
+def _allowed_column_type_actions() -> frozenset[str]:
+    for line in COLUMN_TYPE_PROMPT.splitlines():
+        if "|" not in line:
+            continue
+        parts = tuple(part.strip() for part in line.split("|") if part.strip())
+        if len(parts) >= 2 and all(all(char.islower() or char == "_" for char in part) for part in parts):
+            return frozenset(parts)
+    raise RuntimeError("column_type_v1 prompt does not list an action enum")
+
+
+ALLOWED_COLUMN_TYPE_ACTIONS = _allowed_column_type_actions()
+_COLUMN_TYPE_FIELD_NAMES = {item.name for item in fields(ColumnTypeEvidence)}
 
 
 @dataclass(frozen=True)
@@ -71,6 +92,33 @@ def validate_decision(evidence: ColumnEvidence, decision: MissingValueDecision) 
         return _reject(f"cited field {cited!r} does not exist on the evidence object")
 
     support_reason = _claim_unsupported(evidence, decision, action, cited)
+    if support_reason:
+        return _reject(support_reason)
+
+    return ValidationResult(verdict="accept", reason="")
+
+
+def validate_column_type_decision(
+    evidence: ColumnTypeEvidence, decision: ColumnTypeDecision
+) -> ValidationResult:
+    """Accept a column-type decision only if evidence actually backs the claim."""
+    action = getattr(decision, "action", None)
+    if action not in ALLOWED_COLUMN_TYPE_ACTIONS:
+        return _reject(f"action {action!r} is not in the column_type_v1 enum")
+
+    confidence = getattr(decision, "confidence", None)
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return _reject("decision did not state a numeric confidence")
+    if float(confidence) < MIN_CONFIDENCE:
+        return _reject(
+            f"confidence {float(confidence)} is below MIN_CONFIDENCE={MIN_CONFIDENCE}"
+        )
+
+    cited = getattr(decision, "evidence_field", None)
+    if not isinstance(cited, str) or cited not in _COLUMN_TYPE_FIELD_NAMES:
+        return _reject(f"cited field {cited!r} does not exist on the evidence object")
+
+    support_reason = _column_type_unsupported(evidence, action, cited)
     if support_reason:
         return _reject(support_reason)
 
@@ -253,3 +301,117 @@ def _hashable(value: Any) -> Any:
         return value
     except TypeError:
         return repr(value)
+
+
+def _column_type_unsupported(evidence: ColumnTypeEvidence, action: str, cited: str) -> str | None:
+    value = getattr(evidence, cited)
+    if action == "categorical":
+        return _categorical_unsupported(evidence, cited, value)
+    if action == "identifier":
+        return _identifier_unsupported(evidence, cited, value)
+    if action == "numerical":
+        return _numerical_role_unsupported(evidence, cited, value)
+    return f"action {action!r} has no evidence check"
+
+
+def _categorical_unsupported(evidence: ColumnTypeEvidence, cited: str, value: Any) -> str | None:
+    if cited == "cardinality":
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or int(value) < 2:
+            return "cardinality does not support categorical: need at least 2 distinct values"
+        if int(value) > MAX_CATEGORICAL_CARDINALITY:
+            return (
+                f"cardinality {int(value)} is above {MAX_CATEGORICAL_CARDINALITY} "
+                "and does not support categorical"
+            )
+        return None
+    if cited == "cardinality_ratio":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return "cardinality_ratio is not numeric"
+        if evidence.cardinality < 2 or evidence.cardinality > MAX_CATEGORICAL_CARDINALITY:
+            return "cardinality_ratio does not support categorical: distinct count is not in the code range"
+        if float(value) >= COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN:
+            return "cardinality_ratio is too high to support categorical"
+        return None
+    if cited == "sample_values":
+        rows = value if isinstance(value, list) else []
+        distinct = {_hashable(item) for item in rows}
+        if len(distinct) < 2 or len(distinct) > MAX_CATEGORICAL_CARDINALITY:
+            return "sample_values do not show a small set of repeated codes"
+        if evidence.cardinality > MAX_CATEGORICAL_CARDINALITY:
+            return "sample_values do not support categorical when cardinality is high"
+        return None
+    if cited == "dtype":
+        if _is_numeric_dtype(str(value)):
+            return f"dtype {value!r} is numeric and does not by itself support categorical"
+        return None
+    if cited == "column":
+        if evidence.cardinality < 2 or evidence.cardinality > MAX_CATEGORICAL_CARDINALITY:
+            return "column name does not support categorical without a small distinct count"
+        return None
+    return f"cited field {cited!r} does not support categorical"
+
+
+def _identifier_unsupported(evidence: ColumnTypeEvidence, cited: str, value: Any) -> str | None:
+    if cited == "cardinality_ratio":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return "cardinality_ratio is not numeric"
+        if float(value) < COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN:
+            return (
+                f"cardinality_ratio {float(value)} is below {COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN} "
+                "and does not support identifier"
+            )
+        return None
+    if cited == "cardinality":
+        if evidence.cardinality_ratio < COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN:
+            return "cardinality does not support identifier without a high uniqueness ratio"
+        return None
+    if cited == "column":
+        if not _name_looks_like_identifier(str(value)):
+            return f"column name {value!r} does not look like an identifier"
+        return None
+    if cited == "sample_values":
+        rows = value if isinstance(value, list) else []
+        if not rows:
+            return "sample_values are empty and do not support identifier"
+        distinct = {_hashable(item) for item in rows}
+        if len(distinct) != len(rows) or evidence.cardinality_ratio < COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN:
+            return "sample_values do not support identifier: values repeat or uniqueness is low"
+        return None
+    if cited == "dtype":
+        return f"dtype {value!r} does not by itself support identifier"
+    return f"cited field {cited!r} does not support identifier"
+
+
+def _numerical_role_unsupported(evidence: ColumnTypeEvidence, cited: str, value: Any) -> str | None:
+    if cited == "dtype":
+        if not _is_numeric_dtype(str(value)):
+            return f"dtype {value!r} is not numeric and does not support numerical"
+        return None
+    if cited == "cardinality":
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or int(value) < 2:
+            return "cardinality does not support numerical"
+        return None
+    if cited == "cardinality_ratio":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return "cardinality_ratio is not numeric"
+        if float(value) >= COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN:
+            return "cardinality_ratio is high enough to look like an identifier, not a measurement"
+        return None
+    if cited == "sample_values":
+        rows = value if isinstance(value, list) else []
+        if len(rows) < 2:
+            return "sample_values do not support numerical"
+        return None
+    if cited == "column":
+        if not _is_numeric_dtype(evidence.dtype):
+            return f"column {value!r} dtype is not numeric"
+        return None
+    return f"cited field {cited!r} does not support numerical"
+
+
+def _name_looks_like_identifier(name: str) -> bool:
+    key = name.strip().lower().replace("-", "_")
+    if key.endswith("_id") or key.endswith("_uuid") or key in {"id", "uuid", "guid"}:
+        return True
+    tokens = set(key.split("_"))
+    return bool(tokens & {"zip", "postal", "sku", "ssn", "imei", "guid", "uuid"})

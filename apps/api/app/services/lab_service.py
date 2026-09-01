@@ -14,7 +14,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import REPO_ROOT
-from app.db.models import Dataset, DatasetProfile, Environment, Experiment, ExperimentCandidate, PredictionTask
+from app.db.models import (
+    Dataset,
+    DatasetProfile,
+    Environment,
+    Experiment,
+    ExperimentCandidate,
+    ExperimentTestPrediction,
+    PredictionTask,
+)
 from app.engine.data.loaders import infer_schema, load_table
 from app.engine.datasets.synthetic import make_synthetic_customers
 from app.engine.experiments.runner import run_experiment
@@ -171,6 +179,37 @@ def create_experiment(
     return row
 
 
+def _persist_experiment_test_predictions(db: Session, experiment_id, result: dict) -> None:
+    """Replace holdout rows for this experiment. Opportunity `predictions` are untouched."""
+    db.query(ExperimentTestPrediction).filter(
+        ExperimentTestPrediction.experiment_id == experiment_id
+    ).delete(synchronize_session=False)
+    task = result.get("task") if isinstance(result.get("task"), dict) else {}
+    classifier = str(task.get("task_type") or "") == "binary"
+    for row in result.get("test_predictions") or []:
+        if not isinstance(row, dict):
+            continue
+        probability = None
+        if classifier:
+            raw = row.get("probability", row.get("score"))
+            if raw is not None:
+                probability = float(raw)
+        row_index = int(row.get("row_index", 0))
+        record_id = row.get("record_id")
+        if record_id is None:
+            record_id = row_index
+        db.add(
+            ExperimentTestPrediction(
+                experiment_id=experiment_id,
+                row_index=row_index,
+                record_id=str(record_id),
+                predicted_value=row.get("y_pred"),
+                probability=probability,
+                y_true=row.get("y_true"),
+            )
+        )
+
+
 def execute_experiment(
     db: Session,
     experiment: Experiment,
@@ -235,6 +274,7 @@ def execute_experiment(
                 payload=row,
             )
         )
+    _persist_experiment_test_predictions(db, experiment.id, result)
     db.commit()
     db.refresh(experiment)
     return experiment

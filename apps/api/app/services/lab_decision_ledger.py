@@ -1,13 +1,12 @@
-"""Resolve and persist missing-value decisions during auto-train.
+"""Resolve and persist Lab decisions during auto-train.
 
 After auto_prepare's rule engine runs, ambiguous columns may consult the
 evidence → LLM → validator chain. An accepted decision overrides that
-column's action (and domain_fill is applied to the frame). Disabled,
-unavailable, or rejected agent calls leave auto_prepare's action unchanged.
-Non-ambiguous columns never consult the agent.
-
-Every column still gets a ledger row with both the original rule-engine
-action (`rule_decision`) and whatever was actually applied (`final_decision`).
+column's action or role. Disabled, unavailable, or rejected agent calls
+Every missing-value column still gets a ledger row with both the original
+rule-engine action (`rule_decision`) and whatever was actually applied
+(`final_decision`). Column-type rows are written only for columns the type
+agent actually consulted.
 """
 
 from __future__ import annotations
@@ -24,9 +23,20 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.models import LabDecisionRecord
 from app.engine.lab.auto_prepare import ColumnMissingDecision, MissingValuePlan
-from app.engine.lab.decision_validator import validate_decision
-from app.engine.lab.evidence import ColumnEvidence, build_column_evidence
-from app.engine.lab.llm_client import DecisionAgentUnavailable, request_decision
+from app.engine.lab.decision_validator import validate_column_type_decision, validate_decision
+from app.engine.lab.evidence import (
+    ColumnEvidence,
+    ColumnTypeEvidence,
+    build_column_evidence,
+    build_column_type_evidence,
+    is_ambiguous_column_type,
+)
+from app.engine.lab.llm_client import (
+    DecisionAgentUnavailable,
+    request_column_type_decision,
+    request_decision,
+)
+from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION as COLUMN_TYPE_PROMPT_VERSION
 from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION
 
 logger = logging.getLogger(__name__)
@@ -43,7 +53,7 @@ def _jsonable(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str))
 
 
-def _evidence_snapshot(evidence: ColumnEvidence) -> dict[str, Any]:
+def _evidence_snapshot(evidence: ColumnEvidence | ColumnTypeEvidence) -> dict[str, Any]:
     return _jsonable(asdict(evidence))
 
 
@@ -144,3 +154,95 @@ def record_missing_value_decisions(
         )
     db.flush()
     return frame
+
+
+def _apply_column_type_override(
+    numerical: list[str],
+    categorical: list[str],
+    column: str,
+    action: str,
+) -> tuple[list[str], list[str]]:
+    numerical = [name for name in numerical if name != column]
+    categorical = [name for name in categorical if name != column]
+    if action == "numerical":
+        numerical.append(column)
+    elif action == "categorical":
+        categorical.append(column)
+    return numerical, categorical
+
+
+def record_column_type_decisions(
+    db: Session,
+    upload_id: UUID,
+    frame: pd.DataFrame,
+    numerical_cols: list[str],
+    categorical_cols: list[str],
+) -> tuple[list[str], list[str]]:
+    """Consult the agent on ambiguous numeric columns, apply accepted role overrides.
+
+    Does not delete missing-value ledger rows. Non-ambiguous columns never
+    consult the agent and are not written here. Disabled, unavailable, or
+    rejected calls leave ``split_column_roles`` lists unchanged.
+    """
+    numerical = list(numerical_cols)
+    categorical = list(categorical_cols)
+    consult_agent = _agent_configured()
+    if not consult_agent:
+        return numerical, categorical
+
+    for column in list(numerical):
+        if column not in frame.columns:
+            continue
+        evidence = build_column_type_evidence(frame, column)
+        if not is_ambiguous_column_type(frame, column, evidence):
+            continue
+
+        original = "numerical"
+        final = original
+        source = "rule"
+        verdict = _VERDICT_NOT_RUN
+        raw: dict[str, Any] | None = None
+
+        try:
+            llm_decision = request_column_type_decision(evidence, COLUMN_TYPE_PROMPT_VERSION)
+            raw = llm_decision.model_dump(mode="json")
+            check = validate_column_type_decision(evidence, llm_decision)
+            if check.verdict == "accept":
+                source = "llm"
+                verdict = "accept"
+                numerical, categorical = _apply_column_type_override(
+                    numerical, categorical, column, llm_decision.action
+                )
+                final = llm_decision.action
+            else:
+                source = "fallback"
+                verdict = (f"reject: {check.reason}")[:1024]
+        except DecisionAgentUnavailable as exc:
+            source = "rule"
+            verdict = (f"unavailable: {exc}")[:1024]
+            raw = None
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "column-type agent failed for column %s; keeping the dtype-based role",
+                column,
+            )
+            source = "rule"
+            verdict = "unavailable: unexpected error"
+            raw = None
+
+        db.add(
+            LabDecisionRecord(
+                upload_id=upload_id,
+                column=column,
+                evidence_snapshot=_evidence_snapshot(evidence),
+                prompt_version=COLUMN_TYPE_PROMPT_VERSION,
+                raw_llm_output=raw,
+                validator_verdict=verdict,
+                rule_decision=original,
+                final_decision=final,
+                fill_value=None,
+                source=source,
+            )
+        )
+    db.flush()
+    return numerical, categorical

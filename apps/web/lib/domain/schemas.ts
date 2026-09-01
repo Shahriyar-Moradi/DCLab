@@ -193,7 +193,7 @@ export const ClientLabQuotaSchema = z.object({
 });
 export type ClientLabQuota = z.infer<typeof ClientLabQuotaSchema>;
 
-export const LabRunStepStateSchema = z.enum(["done", "current", "pending"]);
+export const LabRunStepStateSchema = z.enum(["done", "current", "upcoming"]);
 export const LabRunStepSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -205,6 +205,7 @@ export const LabRunStatusSchema = z.enum(["queued", "processing", "completed", "
 export type LabRunStatus = z.infer<typeof LabRunStatusSchema>;
 
 export const LabRunPredictionSchema = z.object({
+  record_id: z.string(),
   prediction: z.string(),
   probability: z.number().nullable(),
 });
@@ -236,6 +237,7 @@ export const ClientLabUploadSchema = z.object({
   status: LabRunStatusSchema,
   stage: z.string(),
   headline: z.string(),
+  milestone: z.string(),
   steps: z.array(LabRunStepSchema),
   category: InsightCategorySchema,
   filename: z.string(),

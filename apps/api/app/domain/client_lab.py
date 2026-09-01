@@ -9,6 +9,7 @@ from app.translation.models import ClientFacingInsight, InsightCategory
 
 
 class ClientLabPredictionRow(BaseModel):
+    record_id: str
     prediction: str
     probability: float | None = None
 
@@ -70,18 +71,28 @@ class ClientLabQuotaRead(BaseModel):
     runs_remaining: int
 
 
+class ClientLabRunStep(BaseModel):
+    """One item on the client run-page checklist."""
+
+    id: str
+    label: str
+    state: str
+
+
 class ClientLabUploadRead(BaseModel):
     """Capability 1: we accepted the file. Structuring it is not done yet.
 
     `progress` is a client-safe view of the behind-the-scenes job: looking /
     ready / saved. Engine internals never appear on this payload.
 
-    `run_id` is this upload's ML-run identity (the same UUID as `id`). `status`,
-    `stage`, and `pipeline_status` are the same four-state view (queued /
-    processing / completed / failed). `headline` is the single processing line
-    while the job is running; `steps` is always empty — the client page is not
-    a stage tracker. When the job has finished, `outcome` holds a plain-language
-    result and the predictions — still free of engine internals.
+    `run_id` is this upload's ML-run identity (persisted on the row, currently
+    the same UUID as `id`). `status` is the stored coarse `client_status`
+    (queued / processing / completed / failed). `stage` and `pipeline_status` on
+    this payload stay that same four-state view. Fine-grained execution lives
+    only on the stored `pipeline_status` column. `milestone` is the current
+    client-safe progress label; `steps` is the five-item checklist. When the
+    job has finished, `outcome` holds a plain-language result and the
+    predictions — still free of engine internals.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -92,7 +103,8 @@ class ClientLabUploadRead(BaseModel):
     status: str
     stage: str
     headline: str = ""
-    steps: list[dict] = Field(default_factory=list)
+    milestone: str = ""
+    steps: list[ClientLabRunStep] = Field(default_factory=list)
     category: InsightCategory
     filename: str
     kind: str

@@ -102,6 +102,8 @@ class TestAutoTrainJob:
         assert upload.pipeline_status == "failed"
         assert upload.experiment_id is None
         assert "no label column found" in upload.pipeline_log["reason"]
+        assert upload.pipeline_log["failed_at"] == "analyzing"
+        assert "analyzing" in (upload.pipeline_log.get("stages") or [])
 
     def test_completes_and_persists_a_real_experiment_for_a_telco_like_csv(self, db_session, tmp_path):
         frame = _telco_like_frame(n=200)
@@ -125,6 +127,52 @@ class TestAutoTrainJob:
         assert "cleaning" in log
         assert "feature_engineering" in log
         assert log["preprocessing"]["numerical"][0] == "imputer:median"
+
+        trace = log["pipeline_trace"]
+        steps = [row["step"] for row in trace]
+        required = [
+            "profiling",
+            "cleaning",
+            "feature_engineering",
+            "column_roles",
+            "preprocessing",
+            "splitting",
+            "cross_validation",
+            "training",
+            "evaluating",
+            "predicting",
+        ]
+        cursor = 0
+        for step in steps:
+            if cursor < len(required) and step == required[cursor]:
+                cursor += 1
+        assert cursor == len(required), steps
+
+        profiling = next(row for row in trace if row["step"] == "profiling")
+        assert profiling["row_count"] == 200
+        assert "churn" in profiling["column_names"]
+        cleaning = next(row for row in trace if row["step"] == "cleaning")
+        assert cleaning["rows_with_missing"] >= 1
+        groups = next(row for row in trace if row["step"] == "feature_engineering")
+        assert groups["combinations"] == [["features"]]
+        assert groups["selected_columns"]
+        roles = next(row for row in trace if row["step"] == "column_roles")
+        assert "TotalCharges" in roles["numerical_cols"]
+        prep = next(row for row in trace if row["step"] == "preprocessing")
+        assert prep["kind"] == "column_transformer"
+        split = next(row for row in trace if row["step"] == "splitting")
+        assert split["strategy"] == "train_test_split"
+        assert split["n_train"] > 0 and split["n_test"] > 0
+        cv = next(row for row in trace if row["step"] == "cross_validation")
+        assert cv["n_folds"] == 5
+        assert "logistic_regression" in cv["families"]
+        trained_step = next(row for row in trace if row["step"] == "training")
+        assert trained_step["winner_family"]
+        assert trained_step["n_trained"] >= 1
+        ev = next(row for row in trace if row["step"] == "evaluating")
+        assert "accuracy" in ev["metric_names"]
+        pred = next(row for row in trace if row["step"] == "predicting")
+        assert pred["n_predictions"] == split["n_test"]
 
         experiment = db_session.get(Experiment, upload.experiment_id)
         assert experiment is not None
@@ -163,11 +211,14 @@ class TestAutoTrainJob:
         from app.services import auto_train_service
 
         seen: list[str] = []
+        persisted: list[str] = []
         original = auto_train_service._mark
 
         def tracking(db, upload, *, status, log=None, experiment_id=None):
+            original(db, upload, status=status, log=log, experiment_id=experiment_id)
+            db.refresh(upload)
             seen.append(status)
-            return original(db, upload, status=status, log=log, experiment_id=experiment_id)
+            persisted.append(upload.pipeline_status)
 
         monkeypatch.setattr(auto_train_service, "_mark", tracking)
 
@@ -195,8 +246,34 @@ class TestAutoTrainJob:
             if cursor < len(required) and status == required[cursor]:
                 cursor += 1
         assert cursor == len(required), seen
+        assert persisted == seen
         db_session.refresh(upload)
         assert upload.pipeline_status == "completed"
+        history = (upload.pipeline_log or {}).get("stages") or []
+        cursor = 0
+        for status in history:
+            if cursor < len(required) and status == required[cursor]:
+                cursor += 1
+        assert cursor == len(required), history
+
+    def test_unexpected_error_records_failed_at_stage(self, db_session, tmp_path, monkeypatch):
+        from app.services import auto_train_service
+
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(auto_train_service, "profile_frame", boom)
+
+        frame = _telco_like_frame(n=80)
+        path = tmp_path / "boom.csv"
+        frame.to_csv(path, index=False)
+        upload = _make_upload(db_session, stored_path=str(path), record_count=len(frame))
+        auto_train_service.run_auto_train_job(db_session, upload.id)
+        db_session.refresh(upload)
+
+        assert upload.pipeline_status == "failed"
+        assert "disk full" in upload.pipeline_log["reason"]
+        assert upload.pipeline_log["failed_at"] == "analyzing"
 
     def test_drops_column_over_50_percent_missing_and_still_completes(self, db_session, tmp_path):
         frame = _telco_like_frame(n=200)

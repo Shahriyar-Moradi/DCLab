@@ -72,7 +72,7 @@ def _seed_experiment(db_session, *, roc_auc: float = 0.84, target: str = "churn"
         status="COMPLETED",
         config={"strategy": "open_ingest"},
         result={
-            "task": {"target": target},
+            "task": {"target": target, "task_type": "binary", "evaluation_metric": "roc_auc"},
             "best_single": {
                 "candidate_id": "random_forest__impute_all",
                 "model_family": "random_forest",
@@ -81,8 +81,8 @@ def _seed_experiment(db_session, *, roc_auc: float = 0.84, target: str = "churn"
             },
             "test_metrics": {"roc_auc": roc_auc, "pr_auc": roc_auc - 0.05},
             "test_predictions": [
-                {"row_index": 0, "y_true": 1, "y_pred": 1, "score": 0.91},
-                {"row_index": 1, "y_true": 0, "y_pred": 0, "score": 0.12},
+                {"row_index": 0, "record_id": "C-100", "y_true": 1, "y_pred": 1, "score": 0.91},
+                {"row_index": 1, "record_id": "C-101", "y_true": 0, "y_pred": 0, "score": 0.12},
             ],
             "analysis": {"row_count": 200, "column_count": 4},
         },
@@ -141,11 +141,13 @@ def test_completed_upload_returns_plain_language_outcome_and_predictions(db_sess
     assert outcome.task_kind == "classification"
     assert outcome.method_label == "Trees"
     assert outcome.performance_percent == 84.6
-    assert "unseen test data" in outcome.performance_summary
+    assert "new records from your file" in outcome.performance_summary
     assert outcome.prediction_count == 2
     assert len(outcome.predictions) == 2
     assert outcome.predictions[0].prediction == "Likely to leave"
     assert outcome.predictions[0].probability == 0.91
+    assert outcome.predictions[0].record_id == "C-100"
+    assert outcome.predictions[1].record_id == "C-101"
     assert outcome.download_available is True
     assert find_banned_terms(outcome.model_dump_json()) == []
     assert "churn" not in outcome.model_dump_json().lower()

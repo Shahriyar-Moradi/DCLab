@@ -1,0 +1,255 @@
+---
+description: Light dashboard canvases — white cards, dark text, run-now hierarchy
+globs: "**/*.canvas.tsx"
+alwaysApply: true
+---
+
+# Canvas light dashboard (all workspaces)
+
+Whenever you **create or edit** a `.canvas.tsx` file — this repo, any other workspace, or a new canvas — use this UI. Do not invent a new palette. Do not use `useHostTheme()` or SDK `Text`/`Stat` theme tones as the only color (they go white-on-white in dark IDE).
+
+Keep the canvas **data** unchanged when restyling. If the canvas uses `useCanvasState`, keep the same state keys so ticks are not lost.
+
+## UI principles
+
+- White/light canvas only. Black/dark text everywhere.
+- Dashboard hierarchy, not a document: **hero → metrics → run-now → tables → future/footer**.
+- Tables are for comparison-heavy information only.
+- Run-now is the primary interaction (commands, checks, or the next action).
+- Future gates stay compact and collapsible.
+- No dark themes, no gradients, no box-shadows, no emojis, no invisible white-on-white text.
+
+## Required imports
+
+Import **only** from `cursor/canvas`. Never import SDK `Text`. Skip `Checkbox` / `useCanvasState` if there are no checks. Add `BarChart` / `LineChart` only when you need a chart. Prefer local `MetricCard` over SDK `Stat`.
+
+```tsx
+import {
+  Callout,
+  Checkbox,
+  Divider,
+  Grid,
+  H1,
+  H2,
+  H3,
+  Pill,
+  Row,
+  Stack,
+  Stat,
+  Table,
+  useCanvasState,
+} from "cursor/canvas";
+```
+
+## Copy into every canvas (tokens + helpers)
+
+```tsx
+const BG = "#F6F7F9";
+const CARD = "#FFFFFF";
+const TEXT = "#111827";
+const TEXT_MUTED = "#5B6472";
+const BORDER = "#E2E6EB";
+const BORDER_SOFT = "#EEF0F3";
+const NAVY = "#172033";
+const GREEN = "#16845B";
+const GREEN_BG = "#EAF7F1";
+const AMBER = "#9A6500";
+const AMBER_BG = "#FFF6DE";
+const RED = "#B42318";
+const RED_BG = "#FFF0EE";
+const BLUE = "#2457D6";
+const BLUE_BG = "#EEF3FF";
+
+const page = {
+  minHeight: "100%",
+  padding: 28,
+  background: BG,
+  color: TEXT,
+  boxSizing: "border-box",
+} as const;
+
+const card = {
+  background: CARD,
+  color: TEXT,
+  border: `1px solid ${BORDER}`,
+  borderRadius: 14,
+  overflow: "hidden",
+  boxSizing: "border-box",
+} as const;
+
+const body = {
+  color: TEXT,
+  background: "transparent",
+  fontSize: 14,
+  lineHeight: 1.5,
+  margin: 0,
+} as const;
+
+const muted = {
+  color: TEXT_MUTED,
+  background: "transparent",
+  fontSize: 12,
+  lineHeight: 1.45,
+  margin: 0,
+} as const;
+
+function Text({
+  children,
+  size = 14,
+  weight = 400,
+  color = TEXT,
+}: {
+  children: string;
+  size?: number;
+  weight?: number;
+  color?: string;
+}) {
+  return (
+    <span
+      style={{
+        color,
+        background: "transparent",
+        fontSize: size,
+        fontWeight: weight,
+        lineHeight: 1.45,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function P({ children, small = false }: { children: string; small?: boolean }) {
+  return <p style={small ? muted : body}>{children}</p>;
+}
+
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: string;
+  tone?: "success" | "warning" | "danger" | "blue" | "neutral";
+}) {
+  const styles = {
+    success: { bg: GREEN_BG, fg: GREEN, border: "#CDEBDD" },
+    warning: { bg: AMBER_BG, fg: AMBER, border: "#F1DE9D" },
+    danger: { bg: RED_BG, fg: RED, border: "#F1C8C3" },
+    blue: { bg: BLUE_BG, fg: BLUE, border: "#D5DFFF" },
+    neutral: { bg: "#F1F3F5", fg: TEXT_MUTED, border: BORDER },
+  }[tone];
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "5px 9px",
+        borderRadius: 999,
+        background: styles.bg,
+        color: styles.fg,
+        border: `1px solid ${styles.border}`,
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function MetricCard({
+  value,
+  label,
+  tone = "neutral",
+}: {
+  value: string;
+  label: string;
+  tone?: "success" | "blue" | "neutral";
+}) {
+  const accent = tone === "success" ? GREEN : tone === "blue" ? BLUE : NAVY;
+  return (
+    <div style={{ ...card, padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <div style={{ width: 7, height: 7, borderRadius: 50, background: accent }} />
+        <Text size={11} weight={700} color={TEXT_MUTED}>
+          {label.toUpperCase()}
+        </Text>
+      </div>
+      <Text size={26} weight={750} color={TEXT}>
+        {value}
+      </Text>
+    </div>
+  );
+}
+
+function ComparisonTable({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: string[][];
+}) {
+  return (
+    <Table
+      framed
+      striped
+      stickyHeader
+      style={{ ...card, borderRadius: 12 }}
+      headers={headers.map((h) => (
+        <span
+          style={{
+            color: TEXT,
+            background: "#F8F9FA",
+            fontSize: 12,
+            fontWeight: 750,
+          }}
+        >
+          {h}
+        </span>
+      ))}
+      rows={rows.map((row) =>
+        row.map((cell) => (
+          <span
+            style={{
+              color: TEXT,
+              background: CARD,
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            {cell}
+          </span>
+        )),
+      )}
+    />
+  );
+}
+```
+
+Wrap the default export in `<div style={page}>`. Surfaces use `style={card}`. `H1`/`H2`/`H3` always get `style={{ color: TEXT }}`. H1 may be 30px; metric values 26px.
+
+## Checkbox
+
+`<Checkbox checked={...} onChange={...} />` — **no `label` prop**. Put the label in local `Text` beside it. Stop propagation on the checkbox wrapper. Do not pass `key` onto custom components that reject it — wrap in `<div key=…>`.
+
+## Layout
+
+1. **Hero** — white card: badges, `H1`, one `P`, optional overall progress.
+2. **Metrics** — `Grid columns={4}` of `MetricCard`.
+3. **Run now** — the only group that should be actively used today (commands or `CheckList`).
+4. **ComparisonTable** — routes, decisions, scorecards. Not a wall of paragraphs.
+5. **Future** — after `Divider`, compact collapsible `+`/`−` groups.
+6. **Footer** — short confirmation / next step on `#FBFCFD`.
+
+Optional: `ProgressBar`, `CheckList`, `GroupCard`, `CompactFutureGate` as in the Milestone 01 QA canvas. Copy those patterns when the canvas has checks; do not copy that canvas’s TripSource QA items into unrelated canvases.
+
+## Forbidden
+
+- `useHostTheme()`, `canvasTokensLight` as the only text color, SDK `Text tone="secondary"`.
+- Dark page backgrounds or light-gray-on-dark body text.
+- Document-only walls of paragraphs when a metric + table would do.
+- Emojis, gradients, box-shadows.
+- Checkbox `label` prop.

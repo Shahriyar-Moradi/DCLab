@@ -64,6 +64,11 @@ async def create_upload(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ClientLabUploadRead:
+    """Accept a file and return dataset_id, run_id, and status=queued immediately.
+
+    Training is enqueued after this response is built, so the client never waits
+    on the ML job to learn the run identity.
+    """
     data = await file.read()
     try:
         return client_lab_upload_service.save_upload(

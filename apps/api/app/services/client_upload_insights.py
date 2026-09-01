@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.db.models import ClientLabUpload, Experiment
+from app.db.models import ClientLabUpload, Dataset, Experiment, ExperimentTestPrediction
 from app.domain.client_lab import ClientLabPredictionRow, ClientLabRunOutcome
 from app.domain.lab_use_cases import LAB_USE_CASES
 from app.engine.lab.column_map import normalize
@@ -124,7 +124,7 @@ def _translate_completed(db: Session, upload: ClientLabUpload) -> list[ClientFac
     if not best:
         return []
 
-    score = _primary_score(result, best)
+    score = _holdout_primary_score(result, best)
     if score is None:
         return []
 
@@ -166,19 +166,31 @@ def _translate_completed(db: Session, upload: ClientLabUpload) -> list[ClientFac
     return insights[:2]
 
 
-def _primary_score(result: dict[str, Any], best: dict[str, Any]) -> float | None:
-    metrics = {}
+def _holdout_metrics(result: dict[str, Any], best: dict[str, Any]) -> dict[str, Any]:
+    """Test-set metrics only. CV fold scores live on best['metrics'] / best['score']."""
+    metrics: dict[str, Any] = {}
     if isinstance(result.get("test_metrics"), dict):
         metrics.update(result["test_metrics"])
-    if isinstance(best.get("metrics"), dict):
-        metrics.update(best["metrics"])
-    for key in ("accuracy", "roc_auc", "pr_auc"):
-        raw = metrics.get(key)
-        if isinstance(raw, (int, float)):
+    if isinstance(best.get("test_metrics"), dict):
+        metrics.update(best["test_metrics"])
+    return metrics
+
+
+def _holdout_primary_score(result: dict[str, Any], best: dict[str, Any]) -> float | None:
+    """Selected model's primary metric on the held-out test set — never CV."""
+    metrics = _holdout_metrics(result, best)
+    if not metrics:
+        return None
+    task = result.get("task") if isinstance(result.get("task"), dict) else {}
+    name = task.get("evaluation_metric")
+    if isinstance(name, str):
+        raw = metrics.get(name)
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
             return _unit_interval(float(raw))
-    raw = best.get("score")
-    if isinstance(raw, (int, float)):
-        return _unit_interval(float(raw))
+    for key in ("roc_auc", "pr_auc", "accuracy", "r2"):
+        raw = metrics.get(key)
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            return _unit_interval(float(raw))
     return None
 
 
@@ -190,21 +202,6 @@ def _unit_interval(value: float) -> float:
 
 def _as_percent(score: float) -> int:
     return int(round(_unit_interval(score) * 100))
-
-
-def _outcome_score(result: dict[str, Any], best: dict[str, Any]) -> float | None:
-    metrics: dict[str, Any] = {}
-    if isinstance(result.get("test_metrics"), dict):
-        metrics.update(result["test_metrics"])
-    if isinstance(best.get("test_metrics"), dict):
-        metrics.update(best["test_metrics"])
-    if isinstance(best.get("metrics"), dict):
-        metrics.update(best["metrics"])
-    for key in ("roc_auc", "accuracy", "pr_auc", "r2"):
-        raw = metrics.get(key)
-        if isinstance(raw, (int, float)):
-            return _unit_interval(float(raw))
-    return _primary_score(result, best)
 
 
 def _target_column(upload: ClientLabUpload, result: dict[str, Any]) -> str | None:
@@ -259,7 +256,7 @@ def outcome_for_upload(
     best = result.get("best_single") if isinstance(result.get("best_single"), dict) else None
     if not best:
         return None
-    score = _outcome_score(result, best)
+    score = _holdout_primary_score(result, best)
     if score is None:
         return None
 
@@ -272,9 +269,8 @@ def outcome_for_upload(
     percent = _as_percent_tenths(score)
     record_count = _record_count(upload, result)
     feature_count = _feature_count(upload, result, best)
-    dataset_name = Path(upload.original_filename or "dataset").stem or "dataset"
-    raw_predictions = result.get("test_predictions") if isinstance(result.get("test_predictions"), list) else []
-    prediction_count = len(raw_predictions)
+    dataset_name = _dataset_name(db, upload)
+    prediction_count, raw_predictions = _persisted_predictions(db, experiment, result)
     rows: list[ClientLabPredictionRow] = []
     if include_predictions:
         rows = _prediction_rows(raw_predictions, slug, task_kind)
@@ -284,7 +280,7 @@ def outcome_for_upload(
     records_line = f"We analyzed {record_count:,} records."
     target_line = f"This run was set up to tell {safe_target}."
     summary = f"We analyzed your dataset to tell {safe_target}."
-    performance_summary = f"{percent}% on unseen test data."
+    performance_summary = f"{percent}% on new records from your file."
     outcome = ClientLabRunOutcome(
         dataset_name=_clean_text(dataset_name, "dataset"),
         record_count=record_count,
@@ -314,16 +310,59 @@ def predictions_csv_text(outcome: ClientLabRunOutcome) -> str:
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["prediction", "probability"])
+    writer.writerow(["record", "prediction", "probability"])
     for row in outcome.predictions:
         writer.writerow(
-            [row.prediction, "" if row.probability is None else f"{row.probability:.6f}"]
+            [
+                row.record_id,
+                row.prediction,
+                "" if row.probability is None else f"{row.probability:.6f}",
+            ]
         )
     return buffer.getvalue()
 
 
 def _as_percent_tenths(score: float) -> float:
     return round(_unit_interval(score) * 1000) / 10
+
+
+def _dataset_name(db: Session, upload: ClientLabUpload) -> str:
+    if upload.dataset_id is not None:
+        dataset = db.get(Dataset, upload.dataset_id)
+        if dataset is not None and dataset.name:
+            return str(dataset.name)
+    return Path(upload.original_filename or "dataset").stem or "dataset"
+
+
+def _persisted_predictions(
+    db: Session,
+    experiment: Experiment,
+    result: dict[str, Any],
+) -> tuple[int, list[Any]]:
+    stored = (
+        db.query(ExperimentTestPrediction)
+        .filter(ExperimentTestPrediction.experiment_id == experiment.id)
+        .order_by(ExperimentTestPrediction.row_index)
+        .all()
+    )
+    if stored:
+        raw = [
+            {
+                "record_id": row.record_id,
+                "row_index": row.row_index,
+                "y_pred": row.predicted_value,
+                "score": row.probability,
+                "probability": row.probability,
+            }
+            for row in stored
+        ]
+        return len(stored), raw
+    json_rows = result.get("test_predictions") if isinstance(result.get("test_predictions"), list) else []
+    if json_rows:
+        return len(json_rows), json_rows
+    split = result.get("split") if isinstance(result.get("split"), dict) else {}
+    n_test = split.get("n_test")
+    return (int(n_test) if isinstance(n_test, int) else 0), []
 
 
 def _clean_text(text: str, fallback: str) -> str:
@@ -347,20 +386,20 @@ def _record_count(upload: ClientLabUpload, result: dict[str, Any]) -> int:
 
 
 def _feature_count(upload: ClientLabUpload, result: dict[str, Any], best: dict[str, Any]) -> int:
-    log = upload.pipeline_log if isinstance(upload.pipeline_log, dict) else {}
-    nums = log.get("numerical_cols") if isinstance(log.get("numerical_cols"), list) else []
-    cats = log.get("categorical_cols") if isinstance(log.get("categorical_cols"), list) else []
-    if nums or cats:
-        return len(nums) + len(cats)
-    feats = best.get("features")
-    if isinstance(feats, list) and feats:
-        return len(feats)
     roles = result.get("task") if isinstance(result.get("task"), dict) else {}
     column_roles = roles.get("column_roles") if isinstance(roles.get("column_roles"), dict) else {}
     numerical = column_roles.get("numerical") if isinstance(column_roles.get("numerical"), list) else []
     categorical = column_roles.get("categorical") if isinstance(column_roles.get("categorical"), list) else []
     if numerical or categorical:
         return len(numerical) + len(categorical)
+    feats = best.get("features")
+    if isinstance(feats, list) and feats:
+        return len(feats)
+    log = upload.pipeline_log if isinstance(upload.pipeline_log, dict) else {}
+    nums = log.get("numerical_cols") if isinstance(log.get("numerical_cols"), list) else []
+    cats = log.get("categorical_cols") if isinstance(log.get("categorical_cols"), list) else []
+    if nums or cats:
+        return len(nums) + len(cats)
     return 0
 
 
@@ -372,23 +411,36 @@ def _prediction_rows(
     positive = _POSITIVE_LABEL.get(slug or "", "Yes")
     negative = _NEGATIVE_LABEL.get(slug or "", "No")
     rows: list[ClientLabPredictionRow] = []
-    for item in raw:
+    for index, item in enumerate(raw):
         if not isinstance(item, dict):
             continue
         y_pred = item.get("y_pred")
         score = item.get("score")
+        if score is None:
+            score = item.get("probability")
+        record_raw = item.get("record_id")
+        if record_raw is None:
+            record_raw = item.get("row_index", index)
+        record_id = _clean_text(str(record_raw), str(index))
         if task_kind != "classification":
             label = _clean_text(str(y_pred), "—")
             probability = float(score) if isinstance(score, (int, float)) else (
                 float(y_pred) if isinstance(y_pred, (int, float)) else None
             )
-            rows.append(ClientLabPredictionRow(prediction=label, probability=probability))
+            rows.append(
+                ClientLabPredictionRow(
+                    record_id=record_id,
+                    prediction=label,
+                    probability=probability,
+                )
+            )
             continue
         flag = _positive_flag(y_pred, score)
         label = positive if flag else negative
         probability = float(score) if isinstance(score, (int, float)) else None
         rows.append(
             ClientLabPredictionRow(
+                record_id=record_id,
                 prediction=_clean_text(label, "Yes" if flag else "No"),
                 probability=probability,
             )

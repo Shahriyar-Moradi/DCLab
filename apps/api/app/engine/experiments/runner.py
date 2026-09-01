@@ -94,19 +94,34 @@ def _open_ingest_cv_splitter(
     return KFold(n_splits=splits, shuffle=True, random_state=seed), splits
 
 
-def _prediction_rows(y_true, y_score, *, classifier: bool) -> list[dict[str, Any]]:
+def _prediction_rows(
+    y_true,
+    y_score,
+    *,
+    classifier: bool,
+    test: pd.DataFrame | None = None,
+    entity_col: str | None = None,
+) -> list[dict[str, Any]]:
     y_true_arr = np.asarray(y_true)
     y_score_arr = np.asarray(y_score, dtype=float)
     y_pred = (y_score_arr >= 0.5).astype(int) if classifier else y_score_arr
     rows: list[dict[str, Any]] = []
     for index in range(len(y_true_arr)):
+        record_id = str(index)
+        if test is not None and entity_col and entity_col in test.columns:
+            value = _json_safe(test.iloc[index][entity_col])
+            if value is not None:
+                record_id = str(value)
         item = {
             "row_index": int(index),
+            "record_id": record_id,
             "y_true": _json_safe(y_true_arr[index]),
             "y_pred": _json_safe(y_pred[index]),
         }
         if classifier:
-            item["score"] = _json_safe(y_score_arr[index])
+            score = _json_safe(y_score_arr[index])
+            item["score"] = score
+            item["probability"] = score
         rows.append(item)
     return rows
 
@@ -302,7 +317,13 @@ def _run_open_ingest_candidates(
             and winner_y_test is not None
             and winner_test_pred is not None
         ):
-            test_predictions = _prediction_rows(winner_y_test, winner_test_pred, classifier=classifier)
+            test_predictions = _prediction_rows(
+                winner_y_test,
+                winner_test_pred,
+                classifier=classifier,
+                test=test,
+                entity_col=task.entity_id,
+            )
             joblib.dump(winner_pipeline, members_dir / f"{best_single['candidate_id']}.joblib")
             joblib.dump(
                 {"fusion": None, "members": selected_ids, "weights": {}, "task_id": task.id},
@@ -394,7 +415,12 @@ def run_experiment(
     else:
         work, feature_engineering_log = engineer_features(work, feature_cols)
         role_cols = [c for c in feature_cols if c in work.columns]
-        numerical_cols, categorical_cols = split_column_roles(work, role_cols)
+        roles = task.column_roles or {}
+        if "numerical" in roles or "categorical" in roles:
+            numerical_cols = [c for c in (roles.get("numerical") or []) if c in role_cols]
+            categorical_cols = [c for c in (roles.get("categorical") or []) if c in role_cols]
+        else:
+            numerical_cols, categorical_cols = split_column_roles(work, role_cols)
         modeled = numerical_cols + categorical_cols
         task = TaskSpec(
             **{
@@ -611,6 +637,7 @@ def run_experiment(
     blend_metrics: dict[str, Any] = {}
     best_single: dict[str, Any] | None = None
     test_metrics: dict[str, Any] = {}
+    test_predictions: list[dict[str, Any]] = []
     group_scores: dict[str, float] = {}
 
     if strong:
@@ -655,6 +682,14 @@ def run_experiment(
         test_metrics = (
             classification_metrics(y_test, test_pred) if classifier else regression_metrics(y_test, test_pred)
         )
+        test_predictions = _prediction_rows(
+            y_test,
+            test_pred,
+            classifier=classifier,
+            test=test,
+            entity_col=task.entity_id,
+        )
+        pd.DataFrame(test_predictions).to_csv(artifact_dir / "test_predictions.csv", index=False)
 
         # Feature-group contribution: best score among candidates that used the group.
         for name in task.feature_groups:
@@ -709,6 +744,7 @@ def run_experiment(
         "weights": weights,
         "validation_blend_metrics": blend_metrics,
         "test_metrics": test_metrics,
+        "test_predictions": test_predictions,
         "feature_group_scores": group_scores,
         "combination_table": combo_table,
         "artifact_dir": str(artifact_dir),

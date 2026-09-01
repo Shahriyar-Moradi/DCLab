@@ -1,14 +1,17 @@
 """Per-column evidence for a table already in memory.
 
-Pure functions: given a pandas DataFrame, describe one column (missingness,
-correlation with a label, and where missingness lines up with a specific
-value in another column). No I/O, no LLM, no randomness — the same frame
-always produces the same dataclass.
+Pure functions: given a pandas DataFrame, describe one column. No I/O, no
+LLM, no randomness — the same frame always produces the same dataclass.
 
-The crosstab check is what surfaces patterns like Telco `TotalCharges`
-being empty exactly when `tenure == 0` (a customer who has not been billed
-yet), so an admin (or a later agent) can decide to fill with 0 rather than
-the column mean.
+Two evidence types:
+
+- missingness (``build_column_evidence``): correlation with a label, and
+  where missingness lines up with a specific value in another column. The
+  crosstab check surfaces patterns like Telco ``TotalCharges`` empty exactly
+  when ``tenure == 0``.
+- column type (``build_column_type_evidence``): dtype, cardinality, and a
+  sample of raw values, used when a numeric-looking column might actually be
+  a category code or identifier.
 """
 
 from __future__ import annotations
@@ -23,6 +26,18 @@ import pandas as pd
 # value explain each other at least this strongly.
 _COOCCURRENCE_THRESHOLD = 0.8
 _SAMPLE_LIMIT = 5
+_SAMPLE_VALUES_LIMIT = 10
+
+# Numeric columns with this many or fewer distinct values may be category
+# codes stored as integers (plan codes, 0/1 flags). Kept well below typical
+# continuous unique counts (tenure, charges) so those never reach the LLM.
+# Identifier-like uniqueness is a separate, narrower band below.
+COLUMN_TYPE_AMBIGUOUS_UNIQUE_MAX = 20
+
+# Integer columns in this uniqueness band look like identifiers but are
+# still below auto_prepare's deterministic drop (unique/n > 0.95).
+COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN = 0.93
+COLUMN_TYPE_IDENTIFIER_RATIO = 0.95
 
 
 def _is_missing(series: pd.Series) -> pd.Series:
@@ -98,6 +113,17 @@ class ColumnEvidence:
     sample_rows: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ColumnTypeEvidence:
+    """Dtype / uniqueness snapshot used to classify numerical vs categorical vs identifier."""
+
+    column: str
+    dtype: str
+    cardinality: int
+    cardinality_ratio: float
+    sample_values: list[Any] = field(default_factory=list)
+
+
 def build_column_evidence(
     frame: pd.DataFrame,
     column: str,
@@ -130,6 +156,73 @@ def build_column_evidence(
         missingness_cooccurrence=cooccurrence,
         sample_rows=sample_rows,
     )
+
+
+def build_column_type_evidence(frame: pd.DataFrame, column: str) -> ColumnTypeEvidence:
+    """Describe `column`'s dtype and uniqueness. Does not modify `frame`."""
+    if column not in frame.columns:
+        raise KeyError(f"column {column!r} is not in the frame")
+
+    series = frame[column]
+    n = max(len(frame), 1)
+    cardinality = int(series.nunique(dropna=True))
+    return ColumnTypeEvidence(
+        column=column,
+        dtype=str(series.dtype),
+        cardinality=cardinality,
+        cardinality_ratio=cardinality / n,
+        sample_values=_sample_values(series),
+    )
+
+
+def is_ambiguous_column_type(frame: pd.DataFrame, column: str, evidence: ColumnTypeEvidence) -> bool:
+    """True when the dtype rule is not obviously the only reasonable role.
+
+    Most columns never qualify: continuous numerics (tenure, MonthlyCharges)
+    stay on the rule engine. The traps are a numeric dtype with few distinct
+    values (integer plan codes) or an integer whose uniqueness is high enough
+    to look like an ID but still below the deterministic identifier drop.
+    """
+    if column not in frame.columns:
+        return False
+    series = frame[column]
+    if pd.api.types.is_bool_dtype(series) or not pd.api.types.is_numeric_dtype(series):
+        return False
+    if evidence.cardinality <= 1:
+        return False
+    if evidence.cardinality <= COLUMN_TYPE_AMBIGUOUS_UNIQUE_MAX:
+        return True
+    if pd.api.types.is_float_dtype(series):
+        return False
+    return COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN <= evidence.cardinality_ratio < COLUMN_TYPE_IDENTIFIER_RATIO
+
+
+def _sample_values(series: pd.Series) -> list[Any]:
+    """First distinct non-missing values, in order of appearance."""
+    values: list[Any] = []
+    seen: set[Any] = set()
+    for raw in series.tolist():
+        if len(values) >= _SAMPLE_VALUES_LIMIT:
+            break
+        if raw is None:
+            continue
+        try:
+            if pd.isna(raw):
+                continue
+        except (TypeError, ValueError):
+            pass
+        item = _json_safe(raw)
+        key: Any
+        try:
+            hash(item)
+            key = item
+        except TypeError:
+            key = repr(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        values.append(item)
+    return values
 
 
 def _missingness_cooccurrence(

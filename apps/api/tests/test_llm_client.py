@@ -57,8 +57,10 @@ def _clear_decision_cache():
     from app.engine.lab import llm_client
 
     llm_client._CACHE.clear()
+    llm_client._COLUMN_TYPE_CACHE.clear()
     yield
     llm_client._CACHE.clear()
+    llm_client._COLUMN_TYPE_CACHE.clear()
 
 
 def _valid_payload() -> dict:

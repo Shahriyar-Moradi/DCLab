@@ -20,9 +20,11 @@ from app.domain.errors import OpenLabFileError, UnknownLabCategoryError
 from app.domain.lab_run_stages import (
     IN_PROGRESS_STAGES,
     PROCESSING_HEADLINE,
+    client_error_message,
     client_stage,
     headline,
     lifecycle_status,
+    milestone_for,
     public_pipeline_status,
     steps_for,
 )
@@ -93,20 +95,25 @@ def _to_read(
     insights = list(view.insights)
     progress = _progress(row)
     outcome = outcome_for_upload(db, row, include_predictions=include_predictions)
-    coarse = lifecycle_status(row.pipeline_status)
+    coarse = row.client_status or lifecycle_status(row.pipeline_status)
     if coarse in {"queued", "processing"}:
-        message = PROCESSING_HEADLINE
+        message = headline(row.pipeline_status) or PROCESSING_HEADLINE
+    elif coarse == "failed":
+        log = row.pipeline_log if isinstance(row.pipeline_log, dict) else {}
+        reason = log.get("reason")
+        message = client_error_message(reason if isinstance(reason, str) else None)
     elif outcome is not None:
         message = outcome.title
     else:
         message = view.status
     return ClientLabUploadRead(
         id=row.id,
-        run_id=row.id,
+        run_id=row.run_id,
         dataset_id=row.dataset_id,
-        status=lifecycle_status(row.pipeline_status),
+        status=coarse,
         stage=client_stage(row.pipeline_status),
         headline=headline(row.pipeline_status),
+        milestone=milestone_for(row.pipeline_status),
         steps=steps_for(row.pipeline_status),
         category=InsightCategory(row.category),
         filename=row.original_filename,
@@ -160,15 +167,18 @@ def save_upload(
         fields_noticed=preview.fields_noticed,
         has_named_fields=preview.has_named_fields,
         pipeline_status="queued",
+        client_status="queued",
         dataset_id=dataset_id,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
-    # Simple-case auto-train (admin-only) runs behind the client response so the
-    # upload stays fast — see docs/LABS_DATA_UNDERSTANDING.md.
+    # Build the client payload while the row is still queued. The background job
+    # must not start until this snapshot exists — otherwise POST can return a
+    # later pipeline_status.
+    payload = _to_read(db, row)
     enqueue_auto_train(row.id)
-    return _to_read(db, row)
+    return payload
 
 
 def list_uploads(db: Session, user: User, category: str | None = None) -> list[ClientLabUploadRead]:
@@ -180,17 +190,26 @@ def list_uploads(db: Session, user: User, category: str | None = None) -> list[C
     return [_to_read(db, row) for row in db.scalars(stmt)]
 
 
-def get_upload(db: Session, user: User, upload_id: UUID) -> ClientLabUploadRead | None:
+def _upload_for_workspace(db: Session, user: User, upload_id: UUID) -> ClientLabUpload | None:
     row = db.get(ClientLabUpload, upload_id)
+    if row is None:
+        row = db.scalars(select(ClientLabUpload).where(ClientLabUpload.run_id == upload_id)).first()
     if row is None or row.workspace_id != _workspace_id_for(user):
+        return None
+    return row
+
+
+def get_upload(db: Session, user: User, upload_id: UUID) -> ClientLabUploadRead | None:
+    row = _upload_for_workspace(db, user, upload_id)
+    if row is None:
         return None
     return _to_read(db, row, include_predictions=True)
 
 
 def predictions_download(db: Session, user: User, upload_id: UUID) -> tuple[str, str] | None:
     """Filename and CSV body for the completed run's predictions, or None."""
-    row = db.get(ClientLabUpload, upload_id)
-    if row is None or row.workspace_id != _workspace_id_for(user):
+    row = _upload_for_workspace(db, user, upload_id)
+    if row is None:
         return None
     outcome = outcome_for_upload(db, row, include_predictions=True)
     if outcome is None or not outcome.predictions:
