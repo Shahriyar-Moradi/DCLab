@@ -61,6 +61,7 @@ async def create_run(
 async def create_upload(
     category: str = Form(...),
     file: UploadFile = File(...),
+    target_column: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ClientLabUploadRead:
@@ -77,6 +78,7 @@ async def create_upload(
             category=category,
             filename=file.filename or "upload",
             data=data,
+            target_column=target_column,
         )
     except UnknownLabCategoryError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

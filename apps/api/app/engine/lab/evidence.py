@@ -124,6 +124,30 @@ class ColumnTypeEvidence:
     sample_values: list[Any] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class TargetColumnEvidence:
+    """Compact profile for one eligible target candidate."""
+
+    name: str
+    dtype: str
+    unique_count: int
+    unique_ratio: float
+    missing_ratio: float
+    identifier_likelihood: float
+    probable_task_type: str
+    deterministic_confidence: float
+    sample_values: list[Any] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TargetSelectionEvidence:
+    """Dataset metadata sent to the semantic target ranker (never raw rows)."""
+
+    row_count: int
+    column_count: int
+    columns: list[TargetColumnEvidence] = field(default_factory=list)
+
+
 def build_column_evidence(
     frame: pd.DataFrame,
     column: str,
@@ -172,6 +196,35 @@ def build_column_type_evidence(frame: pd.DataFrame, column: str) -> ColumnTypeEv
         cardinality=cardinality,
         cardinality_ratio=cardinality / n,
         sample_values=_sample_values(series),
+    )
+
+
+def build_target_selection_evidence(
+    row_count: int,
+    column_count: int,
+    candidates: list[Any],
+) -> TargetSelectionEvidence:
+    """Convert deterministic candidates into the compact LLM evidence schema."""
+    columns: list[TargetColumnEvidence] = []
+    for candidate in candidates:
+        snapshot = dict(candidate.evidence)
+        columns.append(
+            TargetColumnEvidence(
+                name=candidate.column,
+                dtype=str(snapshot.get("dtype") or "unknown"),
+                unique_count=int(snapshot.get("unique_count") or 0),
+                unique_ratio=float(snapshot.get("unique_ratio") or 0.0),
+                missing_ratio=float(snapshot.get("missing_ratio") or 0.0),
+                identifier_likelihood=float(snapshot.get("identifier_likelihood") or 0.0),
+                probable_task_type=candidate.probable_task_type,
+                deterministic_confidence=float(candidate.confidence),
+                sample_values=list(snapshot.get("sample_values") or []),
+            )
+        )
+    return TargetSelectionEvidence(
+        row_count=int(row_count),
+        column_count=int(column_count),
+        columns=columns,
     )
 
 

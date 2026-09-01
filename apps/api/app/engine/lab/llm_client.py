@@ -21,11 +21,13 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import get_settings
-from app.engine.lab.evidence import ColumnEvidence, ColumnTypeEvidence
+from app.engine.lab.evidence import ColumnEvidence, ColumnTypeEvidence, TargetSelectionEvidence
 from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION as COLUMN_TYPE_V1
 from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT as COLUMN_TYPE_V1_PROMPT
 from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION as MISSING_VALUE_V1
 from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT as MISSING_VALUE_V1_PROMPT
+from app.engine.lab.prompts.target_selection_v1 import PROMPT_VERSION as TARGET_SELECTION_V1
+from app.engine.lab.prompts.target_selection_v1 import SYSTEM_PROMPT as TARGET_SELECTION_V1_PROMPT
 
 _PROVIDER_URL = "https://api.openai.com/v1/chat/completions"
 _REQUEST_TIMEOUT_SECONDS = 20.0
@@ -33,6 +35,7 @@ _REQUEST_TIMEOUT_SECONDS = 20.0
 _PROMPTS: dict[str, str] = {
     MISSING_VALUE_V1: MISSING_VALUE_V1_PROMPT,
     COLUMN_TYPE_V1: COLUMN_TYPE_V1_PROMPT,
+    TARGET_SELECTION_V1: TARGET_SELECTION_V1_PROMPT,
 }
 
 Action = Literal[
@@ -53,6 +56,7 @@ EvidenceField = Literal[
 ]
 ColumnTypeAction = Literal["numerical", "categorical", "identifier"]
 ColumnTypeEvidenceField = Literal["column", "dtype", "cardinality", "cardinality_ratio", "sample_values"]
+TargetTaskType = Literal["binary", "multiclass", "regression"]
 
 _ACTIONS: tuple[str, ...] = (
     "drop_rows",
@@ -78,6 +82,19 @@ _COLUMN_TYPE_EVIDENCE_FIELDS: tuple[str, ...] = (
     "cardinality_ratio",
     "sample_values",
 )
+
+_TARGET_SELECTION_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "target": {"type": "string"},
+        "task_type": {"type": "string", "enum": ["binary", "multiclass", "regression"]},
+        "evidence_field": {"type": "string", "enum": ["columns"]},
+        "rationale": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    },
+    "required": ["target", "task_type", "evidence_field", "rationale", "confidence"],
+}
 
 _DECISION_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -137,9 +154,20 @@ class ColumnTypeDecision(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class TargetSelectionDecision(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target: str
+    task_type: TargetTaskType
+    evidence_field: Literal["columns"]
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
 # In-process caches. See module docstring.
 _CACHE: dict[str, MissingValueDecision] = {}
 _COLUMN_TYPE_CACHE: dict[str, ColumnTypeDecision] = {}
+_TARGET_SELECTION_CACHE: dict[str, TargetSelectionDecision] = {}
 
 
 def request_decision(evidence: ColumnEvidence, prompt_version: str) -> MissingValueDecision:
@@ -213,19 +241,58 @@ def request_column_type_decision(evidence: ColumnTypeEvidence, prompt_version: s
         raise DecisionAgentUnavailable("decision agent failed") from exc
 
 
-def _cache_key(evidence: ColumnEvidence | ColumnTypeEvidence, prompt_version: str) -> str:
+def request_target_selection_decision(
+    evidence: TargetSelectionEvidence,
+    prompt_version: str,
+) -> TargetSelectionDecision:
+    """Return a schema-validated semantic target decision, or fail closed."""
+    try:
+        settings = get_settings()
+        if not settings.decision_agent_enabled:
+            raise DecisionAgentUnavailable("decision agent is disabled")
+        api_key = (settings.decision_agent_api_key or "").strip()
+        if not api_key:
+            raise DecisionAgentUnavailable("decision agent API key is not configured")
+        system_prompt = _PROMPTS.get(prompt_version)
+        if not system_prompt:
+            raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
+        cache_key = _cache_key(evidence, prompt_version)
+        cached = _TARGET_SELECTION_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        decision = _complete_structured(
+            system_prompt=system_prompt,
+            evidence=evidence,
+            api_key=api_key,
+            model=settings.decision_agent_model,
+            schema=_TARGET_SELECTION_JSON_SCHEMA,
+            schema_name="target_selection_decision",
+            result_model=TargetSelectionDecision,
+        )
+        _TARGET_SELECTION_CACHE[cache_key] = decision
+        return decision
+    except DecisionAgentUnavailable:
+        raise
+    except Exception as exc:
+        raise DecisionAgentUnavailable("decision agent failed") from exc
+
+
+def _cache_key(
+    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence,
+    prompt_version: str,
+) -> str:
     blob = _evidence_json(evidence) + "\0" + prompt_version
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _evidence_json(evidence: ColumnEvidence | ColumnTypeEvidence) -> str:
+def _evidence_json(evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence) -> str:
     return json.dumps(asdict(evidence), sort_keys=True, default=str)
 
 
 def _complete_structured(
     *,
     system_prompt: str,
-    evidence: ColumnEvidence | ColumnTypeEvidence,
+    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence,
     api_key: str,
     model: str,
     schema: dict[str, Any],

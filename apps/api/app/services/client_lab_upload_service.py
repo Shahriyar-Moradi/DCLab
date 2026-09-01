@@ -138,6 +138,7 @@ def save_upload(
     category: str,
     filename: str,
     data: bytes,
+    target_column: str | None = None,
 ) -> ClientLabUploadRead:
     parsed_category = _parse_category(category)
     try:
@@ -166,6 +167,7 @@ def save_upload(
         record_count=preview.record_count,
         fields_noticed=preview.fields_noticed,
         has_named_fields=preview.has_named_fields,
+        explicit_target_column=(target_column or "").strip() or None,
         pipeline_status="queued",
         client_status="queued",
         dataset_id=dataset_id,

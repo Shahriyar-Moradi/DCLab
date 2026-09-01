@@ -12,6 +12,7 @@ from app.engine.lab.auto_prepare import (
     clean_frame,
     coerce_numeric_like,
     engineer_features,
+    infer_column_roles,
     pick_target_heuristic,
     plan_missing_values,
     split_column_roles,
@@ -32,7 +33,7 @@ def test_coerce_numeric_like_leaves_real_text_alone():
     assert not pd.api.types.is_numeric_dtype(out["plan_name"])
 
 
-def test_pick_target_prefers_known_alias_over_generic_binary_column():
+def test_pick_target_uses_generic_evidence_not_business_alias_priority():
     frame = pd.DataFrame(
         {
             "customer_id": ["a", "b", "c", "d"],
@@ -41,8 +42,8 @@ def test_pick_target_prefers_known_alias_over_generic_binary_column():
         }
     )
     choice = pick_target_heuristic(frame, list(frame.columns))
-    assert choice.column == "churn"
-    assert "churn" in choice.reason
+    assert choice.column == "is_active"
+    assert choice.source == "rule"
     assert choice.task_type == "binary"
 
 
@@ -66,10 +67,10 @@ def test_pick_target_fails_cleanly_when_nothing_matches():
     )
     choice = pick_target_heuristic(frame, list(frame.columns))
     assert choice.column is None
-    assert "no label column found" in choice.reason
+    assert "target" in choice.reason
 
 
-def test_pick_target_matches_regression_alias_from_use_case_catalog():
+def test_explicit_target_has_priority_for_an_otherwise_ambiguous_regression():
     frame = pd.DataFrame(
         {
             "customer_id": ["a", "b", "c", "d"],
@@ -77,10 +78,11 @@ def test_pick_target_matches_regression_alias_from_use_case_catalog():
             "revenue_60d": [10.5, 20.0, 8.25, 40.0],
         }
     )
-    choice = pick_target_heuristic(frame, list(frame.columns))
+    choice = pick_target_heuristic(frame, list(frame.columns), explicit_target="revenue_60d")
     assert choice.column == "revenue_60d"
     assert choice.task_type == "regression"
     assert choice.evaluation_metric == "mae"
+    assert choice.source == "explicit"
 
 
 def test_pick_target_ignores_high_cardinality_identifier_columns():
@@ -148,6 +150,26 @@ def test_split_column_roles_keeps_high_cardinality_continuous_numeric_columns():
     numerical, categorical = split_column_roles(frame, list(frame.columns))
     assert numerical == ["monthly_charges"]
     assert categorical == []
+
+
+def test_complete_generic_column_roles_include_boolean_datetime_identifier_and_text():
+    frame = pd.DataFrame(
+        {
+            "transaction_id": [f"T-{i}" for i in range(60)],
+            "amount": np.linspace(1.5, 90.0, 60),
+            "country": (["ae", "uk", "us"] * 20),
+            "active": ([True, False] * 30),
+            "event_time": pd.date_range("2025-01-01", periods=60, freq="h"),
+            "notes": [f"unique free text {i}" for i in range(60)],
+        }
+    )
+    roles = infer_column_roles(frame, list(frame.columns))
+    assert roles.numerical == ["amount"]
+    assert roles.categorical == ["country"]
+    assert roles.boolean == ["active"]
+    assert roles.datetime == ["event_time"]
+    assert roles.identifier == ["transaction_id"]
+    assert roles.ignored_free_text == ["notes"]
 
 
 def test_build_preprocessor_produces_expected_output_shape():

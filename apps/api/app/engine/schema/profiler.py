@@ -7,18 +7,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.engine.lab.schema_inference import looks_like_identifier
+
 # Matches auto_prepare.MAX_CATEGORICAL_CARDINALITY: text above this is not one-hot encoded.
 HIGH_CARDINALITY_UNIQUE = 50
 
 
 def _is_identifier(name: str, series: pd.Series) -> bool:
-    key = name.lower()
-    if key.endswith("_id") or key in {"id", "uuid", "guid"}:
-        return True
-    n = len(series)
-    if n and series.nunique(dropna=True) / n > 0.95 and not pd.api.types.is_float_dtype(series):
-        return True
-    return False
+    return looks_like_identifier(name, series, len(series))
 
 
 def _is_high_cardinality(series: pd.Series, unique: int, n: int) -> bool:

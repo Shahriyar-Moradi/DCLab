@@ -58,9 +58,11 @@ def _clear_decision_cache():
 
     llm_client._CACHE.clear()
     llm_client._COLUMN_TYPE_CACHE.clear()
+    llm_client._TARGET_SELECTION_CACHE.clear()
     yield
     llm_client._CACHE.clear()
     llm_client._COLUMN_TYPE_CACHE.clear()
+    llm_client._TARGET_SELECTION_CACHE.clear()
 
 
 def _valid_payload() -> dict:

@@ -25,16 +25,17 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from app.domain.lab_use_cases import LAB_USE_CASES
 from app.engine.features.encode import encode_datetime_columns
-from app.engine.lab.column_map import normalize
+from app.engine.lab.schema_inference import (
+    TargetChoice,
+    choose_target_deterministically,
+    looks_like_identifier,
+)
 
 DROP_COLUMN_MISSING_THRESHOLD = 0.5
 DROP_ROWS_MAX_FRACTION = 0.05
 DROP_ROWS_MIN_ABSOLUTE = 10
 MAX_CATEGORICAL_CARDINALITY = 50
-
-_BINARY_TOKENS = {"0", "1", "true", "false", "yes", "no", "y", "n"}
 
 # Whole-cell sentinels treated as missing. Compared case-insensitively after strip.
 _INVALID_STRINGS = {
@@ -57,16 +58,11 @@ _INVALID_STRINGS = {
 
 
 def _looks_like_identifier(name: str, series: pd.Series, n: int) -> bool:
-    key = normalize(name)
-    if key.endswith("_id") or key in {"id", "uuid", "guid"} or key.endswith("_uuid"):
-        return True
-    if n and not pd.api.types.is_float_dtype(series) and series.nunique(dropna=True) / n > 0.95:
-        return True
-    return False
+    return looks_like_identifier(name, series, n)
 
 
 def coerce_numeric_like(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
-    """Blank-string numerics (the `TotalCharges` " " case) become real floats.
+    """Numeric-looking strings, including blank sentinels, become real floats.
 
     A column only converts when at least 90% of its non-null values parse as
     numbers — otherwise it stays text (a name, a free-text note, ...).
@@ -86,52 +82,14 @@ def coerce_numeric_like(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame
     return out
 
 
-@dataclass
-class TargetChoice:
-    column: str | None
-    reason: str
-    task_type: str = "binary"
-    evaluation_metric: str = "pr_auc"
-
-
-def pick_target_heuristic(frame: pd.DataFrame, columns: list[str]) -> TargetChoice:
-    """Prefer a column whose name matches a known label alias (churn, converted,
-    purchased, cancelled, ...); else the unique clean binary column that is not
-    an identifier. Never guesses a random column — an admin-visible failure
-    beats a silently wrong target.
-    """
-    by_norm = {normalize(col): col for col in columns if col in frame.columns}
-    for definition in LAB_USE_CASES:
-        for alias in definition.target_aliases:
-            hit = by_norm.get(normalize(alias))
-            if hit:
-                return TargetChoice(
-                    column=hit,
-                    reason=f"column name matches known label '{alias}' (use case: {definition.slug})",
-                    task_type=definition.task_type,
-                    evaluation_metric=definition.evaluation_metric,
-                )
-
-    n = max(len(frame), 1)
-    candidates: list[str] = []
-    for name in columns:
-        if name not in frame.columns:
-            continue
-        series = frame[name]
-        if _looks_like_identifier(name, series, n):
-            continue
-        distinct = set(series.dropna().astype(str).str.strip().str.lower().unique())
-        if len(distinct) == 2 and distinct <= _BINARY_TOKENS:
-            candidates.append(name)
-    if candidates:
-        return TargetChoice(
-            column=candidates[0],
-            reason="only binary (yes/no style) column found besides identifiers",
-        )
-    return TargetChoice(
-        column=None,
-        reason="no label column found: no known label name matched and no clean binary column exists",
-    )
+def pick_target_heuristic(
+    frame: pd.DataFrame,
+    columns: list[str],
+    *,
+    explicit_target: str | None = None,
+) -> TargetChoice:
+    """Compatibility wrapper around the generic target-candidate engine."""
+    return choose_target_deterministically(frame, columns, explicit_target=explicit_target)
 
 
 @dataclass
@@ -343,8 +301,37 @@ def split_column_roles(
     Constant columns and free-text/identifier-like high-cardinality columns are
     dropped from both lists — they are never modeled automatically.
     """
+    roles = infer_column_roles(
+        frame,
+        columns,
+        max_categorical_cardinality=max_categorical_cardinality,
+    )
+    return roles.numerical, roles.categorical + roles.boolean
+
+
+@dataclass(frozen=True)
+class ColumnRoles:
+    numerical: list[str] = field(default_factory=list)
+    categorical: list[str] = field(default_factory=list)
+    boolean: list[str] = field(default_factory=list)
+    datetime: list[str] = field(default_factory=list)
+    identifier: list[str] = field(default_factory=list)
+    ignored_free_text: list[str] = field(default_factory=list)
+
+
+def infer_column_roles(
+    frame: pd.DataFrame,
+    columns: list[str],
+    *,
+    max_categorical_cardinality: int = MAX_CATEGORICAL_CARDINALITY,
+) -> ColumnRoles:
+    """Return the complete deterministic role map used by generic uploads."""
     numerical: list[str] = []
     categorical: list[str] = []
+    boolean: list[str] = []
+    datetime: list[str] = []
+    identifier: list[str] = []
+    ignored: list[str] = []
     n = max(len(frame), 1)
     for name in columns:
         if name not in frame.columns:
@@ -352,17 +339,29 @@ def split_column_roles(
         series = frame[name]
         unique = series.nunique(dropna=True)
         if unique <= 1:
+            ignored.append(name)
             continue
         if _looks_like_identifier(name, series, n):
+            identifier.append(name)
             continue
-        if pd.api.types.is_bool_dtype(series):
-            categorical.append(name)
+        if pd.api.types.is_datetime64_any_dtype(series):
+            datetime.append(name)
+        elif pd.api.types.is_bool_dtype(series):
+            boolean.append(name)
         elif pd.api.types.is_numeric_dtype(series):
             numerical.append(name)
         elif unique <= max_categorical_cardinality:
             categorical.append(name)
-        # else: high-cardinality free text — not modeled automatically.
-    return numerical, categorical
+        else:
+            ignored.append(name)
+    return ColumnRoles(
+        numerical=numerical,
+        categorical=categorical,
+        boolean=boolean,
+        datetime=datetime,
+        identifier=identifier,
+        ignored_free_text=ignored,
+    )
 
 
 def build_preprocessor(numerical_cols: list[str], categorical_cols: list[str]) -> ColumnTransformer:

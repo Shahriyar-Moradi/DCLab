@@ -3,8 +3,7 @@
 Exercises the existing upload → dataset → ML run → analysis → cleaning →
 feature engineering → split → CV → selection → test prediction → client
 result path. No new product features; these tests prove the pipeline that
-already exists (plus the catalog wiring that lets a regression alias use the
-existing open-ingest regression families).
+already exists, including generic regression target inference.
 """
 
 from __future__ import annotations
@@ -85,7 +84,7 @@ def _regression_frame(n: int = 200, seed: int = 5) -> pd.DataFrame:
             "tenure": tenure,
             "MonthlyCharges": monthly,
             "segment": segment,
-            "revenue_60d": revenue,
+            "energy_output": revenue,
         }
     )
 
@@ -320,7 +319,7 @@ class Test5Failure:
         assert body["outcome"] is None
         upload = db_session.get(ClientLabUpload, run_id)
         assert upload.pipeline_status == "failed"
-        assert "no label column found" in (upload.pipeline_log or {}).get("reason", "")
+        assert "target selection is ambiguous" in (upload.pipeline_log or {}).get("reason", "")
         assert find_banned_terms(failed.text) == []
         again = auth_client.get(f"/app/labs/uploads/{run_id}")
         assert again.json()["status"] == "failed"

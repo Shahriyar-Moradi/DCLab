@@ -25,8 +25,9 @@ from app.engine.lab.evidence import (
     ColumnEvidence,
     ColumnTypeEvidence,
     MissingnessCooccurrence,
+    TargetSelectionEvidence,
 )
-from app.engine.lab.llm_client import ColumnTypeDecision, MissingValueDecision
+from app.engine.lab.llm_client import ColumnTypeDecision, MissingValueDecision, TargetSelectionDecision
 from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT as COLUMN_TYPE_PROMPT
 from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT
 
@@ -122,6 +123,33 @@ def validate_column_type_decision(
     if support_reason:
         return _reject(support_reason)
 
+    return ValidationResult(verdict="accept", reason="")
+
+
+def validate_target_selection_decision(
+    evidence: TargetSelectionEvidence,
+    decision: TargetSelectionDecision,
+) -> ValidationResult:
+    """Reject invented columns, unsupported task types, and weak semantic calls."""
+    confidence = getattr(decision, "confidence", None)
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return _reject("decision did not state a numeric confidence")
+    if float(confidence) < MIN_CONFIDENCE:
+        return _reject(f"confidence {float(confidence)} is below MIN_CONFIDENCE={MIN_CONFIDENCE}")
+    if getattr(decision, "evidence_field", None) != "columns":
+        return _reject("target decision must cite the columns evidence field")
+
+    by_name = {item.name: item for item in evidence.columns}
+    candidate = by_name.get(getattr(decision, "target", None))
+    if candidate is None:
+        return _reject(f"target {getattr(decision, 'target', None)!r} is not a real eligible column")
+    if candidate.identifier_likelihood >= 0.8:
+        return _reject(f"target {candidate.name!r} is identifier-like")
+    if decision.task_type != candidate.probable_task_type:
+        return _reject(
+            f"task type {decision.task_type!r} conflicts with deterministic column evidence "
+            f"({candidate.probable_task_type!r})"
+        )
     return ValidationResult(verdict="accept", reason="")
 
 

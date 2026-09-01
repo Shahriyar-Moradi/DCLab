@@ -101,7 +101,7 @@ class TestAutoTrainJob:
         db_session.refresh(upload)
         assert upload.pipeline_status == "failed"
         assert upload.experiment_id is None
-        assert "no label column found" in upload.pipeline_log["reason"]
+        assert "target selection is ambiguous" in upload.pipeline_log["reason"]
         assert upload.pipeline_log["failed_at"] == "analyzing"
         assert "analyzing" in (upload.pipeline_log.get("stages") or [])
 
@@ -295,3 +295,102 @@ class TestAutoTrainJob:
         import uuid
 
         run_auto_train_job(db_session, uuid.uuid4())  # must not raise
+
+    @pytest.mark.parametrize(
+        ("schema", "target", "task_type"),
+        [
+            ("classification", "defaulted", "binary"),
+            ("regression", "energy_output", "regression"),
+        ],
+    )
+    def test_completes_for_unrelated_generic_schemas(
+        self,
+        db_session,
+        tmp_path,
+        schema,
+        target,
+        task_type,
+    ):
+        rng = np.random.default_rng(24)
+        n = 200
+        if schema == "classification":
+            income = rng.uniform(25_000, 150_000, n)
+            region = rng.choice(["north", "south", "west"], n)
+            probability = 1 / (1 + np.exp(-((income - 85_000) / 25_000)))
+            labels = np.where(rng.random(n) < probability, "yes", "no")
+            frame = pd.DataFrame(
+                {
+                    "person_id": [f"P-{index:04d}" for index in range(n)],
+                    "age": rng.integers(18, 80, n),
+                    "income": income,
+                    "region": region,
+                    "defaulted": labels,
+                }
+            )
+        else:
+            temperature = rng.uniform(10, 40, n)
+            humidity = rng.uniform(20, 90, n)
+            pressure = rng.uniform(980, 1035, n)
+            frame = pd.DataFrame(
+                {
+                    "sensor_id": [f"S-{index:04d}" for index in range(n)],
+                    "temperature": temperature,
+                    "humidity": humidity,
+                    "pressure": pressure,
+                    "energy_output": 6.2 * temperature - 1.3 * humidity + 0.4 * pressure + rng.normal(0, 8, n),
+                }
+            )
+
+        path = tmp_path / f"{schema}.csv"
+        frame.to_csv(path, index=False)
+        upload = _make_upload(db_session, stored_path=str(path), record_count=n)
+        run_auto_train_job(db_session, upload.id)
+        db_session.refresh(upload)
+
+        assert upload.pipeline_status == "completed", upload.pipeline_log
+        assert upload.pipeline_log["target"]["column"] == target
+        assert upload.pipeline_log["target"]["task_type"] == task_type
+        assert upload.pipeline_log["target"]["source"] == "rule"
+        assert upload.pipeline_log["entity"]["column"] in {"person_id", "sensor_id"}
+        assert upload.pipeline_log["entity"]["column"] not in (
+            upload.pipeline_log["numerical_cols"] + upload.pipeline_log["categorical_cols"]
+        )
+        assert upload.pipeline_log["entity"]["column"] in upload.pipeline_log["column_roles"]["identifier"]
+
+        experiment = db_session.get(Experiment, upload.experiment_id)
+        assert experiment is not None
+        assert experiment.result["task"]["task_type"] == task_type
+        assert experiment.result["task"]["entity_id"] == upload.pipeline_log["entity"]["column"]
+        if task_type == "regression":
+            assert set(experiment.result["test_metrics"]) >= {"mae", "rmse", "r2"}
+            assert all(row["cv_strategy"] == "KFold" for row in experiment.result["candidates"] if row["status"] == "trained")
+        else:
+            assert "accuracy" in experiment.result["test_metrics"]
+            assert all(row["cv_strategy"] == "StratifiedKFold" for row in experiment.result["candidates"] if row["status"] == "trained")
+
+    def test_explicit_upload_target_overrides_inference(self, db_session, tmp_path):
+        rng = np.random.default_rng(91)
+        n = 160
+        frame = pd.DataFrame(
+            {
+                "feature": rng.normal(size=n),
+                "outcome_x": rng.integers(0, 2, n),
+                "manual_measure": rng.uniform(1, 500, n),
+            }
+        )
+        path = tmp_path / "explicit.csv"
+        frame.to_csv(path, index=False)
+        upload = _make_upload(db_session, stored_path=str(path), record_count=n)
+        upload.explicit_target_column = "manual_measure"
+        db_session.commit()
+
+        run_auto_train_job(db_session, upload.id)
+        db_session.refresh(upload)
+
+        assert upload.pipeline_status == "completed", upload.pipeline_log
+        assert upload.pipeline_log["target"]["column"] == "manual_measure"
+        assert upload.pipeline_log["target"]["task_type"] == "regression"
+        assert upload.pipeline_log["target"]["source"] == "explicit"
+        assert upload.pipeline_log["entity"]["column"] is None
+        experiment = db_session.get(Experiment, upload.experiment_id)
+        assert experiment.result["task"]["entity_id"] is None

@@ -60,7 +60,7 @@ class TaskSpec:
     description: str = ""
     task_type: str = TaskType.BINARY.value
     target: str = "target"
-    entity_id: str = "entity_id"
+    entity_id: str | None = "entity_id"
     prediction_time_column: str | None = "as_of_date"
     prediction_horizon_days: int | None = None
     evaluation_metric: str = "pr_auc"

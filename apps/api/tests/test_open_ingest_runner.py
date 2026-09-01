@@ -213,7 +213,7 @@ def test_open_ingest_does_not_affect_default_use_case_strategy():
         assert candidate.preprocessing == {}
 
 
-def test_target_heuristic_matches_known_churn_alias():
+def test_target_heuristic_finds_a_binary_label_without_catalog_dependency():
     frame = _frame()
     choice = pick_target_heuristic(frame, list(frame.columns))
     assert choice.column == "churn"

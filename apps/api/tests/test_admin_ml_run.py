@@ -91,7 +91,12 @@ def test_build_ml_run_copies_persisted_comparison_and_validation():
                 "numerical_cols": ["tenure", "TotalCharges"],
                 "categorical_cols": ["contract"],
             },
-            "target": {"column": "churn"},
+            "target": {
+                "column": "churn",
+                "source": "rule",
+                "reason": "strong deterministic candidate",
+                "confidence": 0.88,
+            },
             "numerical_cols": ["tenure", "TotalCharges"],
             "categorical_cols": ["contract"],
         },
@@ -167,6 +172,9 @@ def test_build_ml_run_copies_persisted_comparison_and_validation():
     assert run.duration_seconds == 12.5
     assert run.target == "churn"
     assert run.task_type == "binary"
+    assert run.target_source == "rule"
+    assert run.target_reason == "strong deterministic candidate"
+    assert run.target_confidence == 0.88
     assert run.processing_summary.cleaning_completed is True
     assert run.processing_summary.train_test_split == "80 / 20"
     assert run.processing_summary.cross_validation == "StratifiedKFold · 5 folds"

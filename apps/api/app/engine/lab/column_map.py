@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from app.domain.lab_use_cases import (
     ENTITY_ALIASES,
     GROUP_KEYWORDS,
@@ -13,12 +11,12 @@ from app.domain.lab_use_cases import (
     UseCaseDefinition,
     use_case_by_slug,
 )
+from app.engine.lab.schema_inference import MIN_TRAIN_ROWS, normalize_name
 
-MIN_TRAIN_ROWS = 40
 
 
 def normalize(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+    return normalize_name(name)
 
 
 def _lookup(columns: list[str], aliases: tuple[str, ...]) -> str | None:

@@ -333,6 +333,9 @@ class ClientLabUpload(Base):
     record_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     fields_noticed: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     has_named_fields: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Optional generic-upload override. Existing clients omit it and continue
+    # through deterministic/semantic target inference.
+    explicit_target_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
     # Simple-case auto-train (admin-only; see docs/LABS_DATA_UNDERSTANDING.md).
     # queued | ingesting | analyzing | cleaning | feature_engineering |
     # preprocessing | splitting | cross_validation | training | evaluating |
@@ -557,4 +560,3 @@ class ExperimentTestPrediction(Base):
     )
 
     experiment: Mapped[Experiment] = relationship(back_populates="test_predictions")
-

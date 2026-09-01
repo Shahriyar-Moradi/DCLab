@@ -125,6 +125,9 @@ class AdminMlRun(BaseModel):
     status: str
     target: str | None = None
     task_type: str | None = None
+    target_source: str | None = None
+    target_reason: str | None = None
+    target_confidence: float | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     duration_seconds: float | None = None

@@ -2,8 +2,8 @@
 
 After auto_prepare's rule engine runs, ambiguous columns may consult the
 evidence → LLM → validator chain. An accepted decision overrides that
-column's action or role. Disabled, unavailable, or rejected agent calls
-Every missing-value column still gets a ledger row with both the original
+column's action or role. Disabled, unavailable, or rejected agent calls fall
+back safely. Every missing-value column still gets a ledger row with both the original
 rule-engine action (`rule_decision`) and whatever was actually applied
 (`final_decision`). Column-type rows are written only for columns the type
 agent actually consulted.
@@ -23,21 +23,29 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.models import LabDecisionRecord
 from app.engine.lab.auto_prepare import ColumnMissingDecision, MissingValuePlan
-from app.engine.lab.decision_validator import validate_column_type_decision, validate_decision
+from app.engine.lab.decision_validator import (
+    validate_column_type_decision,
+    validate_decision,
+    validate_target_selection_decision,
+)
 from app.engine.lab.evidence import (
     ColumnEvidence,
     ColumnTypeEvidence,
     build_column_evidence,
     build_column_type_evidence,
+    build_target_selection_evidence,
     is_ambiguous_column_type,
 )
 from app.engine.lab.llm_client import (
     DecisionAgentUnavailable,
     request_column_type_decision,
     request_decision,
+    request_target_selection_decision,
 )
 from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION as COLUMN_TYPE_PROMPT_VERSION
 from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION
+from app.engine.lab.prompts.target_selection_v1 import PROMPT_VERSION as TARGET_SELECTION_PROMPT_VERSION
+from app.engine.lab.schema_inference import TargetChoice, choose_target_deterministically, metric_for_task
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +68,53 @@ def _evidence_snapshot(evidence: ColumnEvidence | ColumnTypeEvidence) -> dict[st
 def _agent_configured() -> bool:
     settings = get_settings()
     return bool(settings.decision_agent_enabled and (settings.decision_agent_api_key or "").strip())
+
+
+def resolve_target_selection(
+    frame: pd.DataFrame,
+    columns: list[str],
+    *,
+    explicit_target: str | None = None,
+) -> TargetChoice:
+    """Apply explicit/rule/LLM/fail-closed target precedence to one dataframe."""
+    choice = choose_target_deterministically(frame, columns, explicit_target=explicit_target)
+    if choice.column is not None or explicit_target is not None or not choice.candidates:
+        return choice
+    if not _agent_configured():
+        choice.reason += "; semantic target assistance is disabled or unconfigured"
+        choice.validator_verdict = "not_run"
+        return choice
+
+    evidence = build_target_selection_evidence(len(frame), len(columns), choice.candidates)
+    try:
+        decision = request_target_selection_decision(evidence, TARGET_SELECTION_PROMPT_VERSION)
+        choice.raw_llm_output = decision.model_dump(mode="json")
+        check = validate_target_selection_decision(evidence, decision)
+        choice.validator_verdict = check.verdict if check.verdict == "accept" else f"reject: {check.reason}"
+        if check.verdict != "accept":
+            choice.source = "fallback"
+            choice.reason += f"; semantic decision rejected: {check.reason}"
+            return choice
+        candidate = next(item for item in choice.candidates if item.column == decision.target)
+        choice.column = candidate.column
+        choice.task_type = decision.task_type
+        choice.evaluation_metric = metric_for_task(decision.task_type)
+        choice.confidence = float(decision.confidence)
+        choice.source = "llm"
+        choice.reason = decision.rationale
+        choice.evidence = candidate.evidence
+        return choice
+    except DecisionAgentUnavailable as exc:
+        choice.source = "fallback"
+        choice.validator_verdict = f"unavailable: {exc}"
+        choice.reason += "; semantic target assistance was unavailable"
+        return choice
+    except Exception:  # noqa: BLE001
+        logger.exception("target-selection agent failed; refusing to guess a target")
+        choice.source = "fallback"
+        choice.validator_verdict = "unavailable: unexpected error"
+        choice.reason += "; semantic target assistance failed"
+        return choice
 
 
 def is_ambiguous_column(

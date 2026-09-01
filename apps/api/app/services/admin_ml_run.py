@@ -80,6 +80,7 @@ def build_ml_run(
     result = experiment.result if experiment is not None and isinstance(experiment.result, dict) else {}
     analysis_src = _analysis_source(log, result)
     target = _target_column(log, result)
+    target_audit = _as_dict(log.get("target"))
     cleaning_log = _as_dict(log.get("cleaning") or result.get("cleaning"))
     fe_log = _as_dict(log.get("feature_engineering") or result.get("feature_engineering"))
     split = _as_dict(result.get("split"))
@@ -107,6 +108,9 @@ def build_ml_run(
         status=upload.pipeline_status,
         target=target,
         task_type=_task_type(result),
+        target_source=_str_or_none(target_audit.get("source")),
+        target_reason=_str_or_none(target_audit.get("reason")),
+        target_confidence=_float_or_none(target_audit.get("confidence")),
         started_at=started_at,
         completed_at=completed_at,
         duration_seconds=duration,
@@ -519,6 +523,19 @@ def _int_or_none(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return int(value)
+
+
+def _float_or_none(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _str_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

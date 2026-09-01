@@ -12,6 +12,7 @@ import { useParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 const SOURCE_TONE: Record<string, SignalTone> = {
+  explicit: "green",
   rule: "amber",
   llm: "green",
   fallback: "oxblood",
@@ -52,11 +53,6 @@ function formatDuration(seconds: number | null | undefined): string {
 function formatScore(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "—";
   return value.toFixed(3);
-}
-
-function formatWhen(value: string | null | undefined): string {
-  if (!value) return "—";
-  return formatTimestamp(value) || value;
 }
 
 function numericMetrics(metrics: Record<string, unknown> | null | undefined): [string, number][] {
@@ -169,6 +165,11 @@ export default function ClientUploadAutoTrainPage() {
           <Card label="Features" value={featureCount(run?.analysis)} />
           <Card label="Target" value={run?.target ?? "—"} />
           <Card label="Task" value={taskLabel(run?.task_type)} />
+          <Card label="Target source" value={run?.target_source ?? "—"} />
+          <Card
+            label="Target confidence"
+            value={run?.target_confidence != null ? run.target_confidence.toFixed(2) : "—"}
+          />
           <div className="rounded bg-paper-raised p-6">
             <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">Status</p>
             <p className="mt-2">
@@ -177,6 +178,11 @@ export default function ClientUploadAutoTrainPage() {
           </div>
           <Card label="Duration" value={formatDuration(run?.duration_seconds)} />
         </div>
+        {run?.target_reason ? (
+          <p className="mt-4 rounded bg-paper-raised p-4 font-body text-body text-ink">
+            <span className="font-medium">Target reasoning:</span> {run.target_reason}
+          </p>
+        ) : null}
       </Section>
 
       <Section title="Data Quality">

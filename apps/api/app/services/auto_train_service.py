@@ -42,15 +42,19 @@ from app.engine.lab.auto_prepare import (
     clean_frame,
     coerce_numeric_like,
     engineer_features,
-    pick_target_heuristic,
+    infer_column_roles,
     plan_missing_values,
     split_column_roles,
 )
-from app.engine.lab.column_map import MIN_TRAIN_ROWS
+from app.engine.lab.schema_inference import MIN_TRAIN_ROWS, infer_entity_column
 from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
 from app.engine.types import SearchConfig, TaskSpec
-from app.services.lab_decision_ledger import record_column_type_decisions, record_missing_value_decisions
+from app.services.lab_decision_ledger import (
+    record_column_type_decisions,
+    record_missing_value_decisions,
+    resolve_target_selection,
+)
 from app.services.lab_service import create_experiment, execute_experiment, ingest_dataset, seed_dogfood, upsert_task
 
 logger = logging.getLogger(__name__)
@@ -208,11 +212,16 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         )
 
         coerced = coerce_numeric_like(frame, columns)
-        target = pick_target_heuristic(coerced, columns)
+        target = resolve_target_selection(
+            coerced,
+            columns,
+            explicit_target=upload.explicit_target_column,
+        )
         if target.column is None:
             _fail(
                 target.reason,
                 extra={
+                    "target": target.audit_dict(),
                     "analysis": profile,
                     "eda": {
                         "row_count": profile["row_count"],
@@ -223,15 +232,22 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 },
             )
             return
+        if target.task_type not in {"binary", "regression"}:
+            _fail(
+                f"target {target.column!r} implies unsupported task type {target.task_type!r}",
+                extra={"target": target.audit_dict(), "analysis": profile, "quality": quality},
+            )
+            return
 
         _stage(CLEANING)
         feature_columns = [c for c in columns if c != target.column]
+        entity_column = infer_entity_column(coerced, feature_columns)
         frame, cleaning_log = clean_frame(frame, target=target.column, feature_columns=feature_columns)
         if len(frame) < MIN_TRAIN_ROWS:
             _fail(
                 f"only {len(frame)} rows left after cleaning",
                 extra={
-                    "target": {"column": target.column, "reason": target.reason},
+                    "target": target.audit_dict(),
                     "analysis": profile,
                     "cleaning": cleaning_log,
                 },
@@ -252,6 +268,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             column_decisions=[item.column + ":" + item.action for item in missing_plan.column_decisions],
         )
         _stage(FEATURE_ENGINEERING)
+        initial_roles = infer_column_roles(frame, kept_columns)
         frame, fe_transformations = engineer_features(frame, kept_columns)
         _trace(
             "feature_engineering_transforms",
@@ -262,11 +279,17 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         num_cols, cat_cols = split_column_roles(frame, kept_columns)
         num_cols, cat_cols = record_column_type_decisions(db, upload.id, frame, num_cols, cat_cols)
         db.commit()
+        llm_identifier_cols = [
+            name
+            for name in initial_roles.numerical
+            if name not in num_cols and name not in cat_cols
+        ]
+        identifier_cols = list(dict.fromkeys(initial_roles.identifier + llm_identifier_cols))
         if not num_cols and not cat_cols:
             _fail(
                 "no usable feature columns after removing identifiers, constants, and mostly-empty columns",
                 extra={
-                    "target": {"column": target.column, "reason": target.reason},
+                    "target": target.audit_dict(),
                     "dropped_columns": missing_plan.dropped_columns,
                     "analysis": profile,
                     "cleaning": cleaning_log,
@@ -315,7 +338,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             version="v1",
         )
 
-        task_type = target.task_type if target.task_type in {"binary", "regression"} else "binary"
+        task_type = target.task_type
         metric = target.evaluation_metric if task_type == "regression" else "pr_auc"
         task_spec = TaskSpec(
             id=f"open_ingest_{upload.id.hex[:12]}",
@@ -323,7 +346,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             description="Automatic training job for a Labs custom-box upload (simple tabular file).",
             task_type=task_type,
             target=target.column,
-            entity_id=kept_columns[0] if kept_columns else target.column,
+            entity_id=entity_column if entity_column in frame.columns else None,
             prediction_time_column=None,
             evaluation_metric=metric,
             feature_groups={"features": list(modeled_cols)},
@@ -437,11 +460,28 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 "numerical_cols": num_cols,
                 "categorical_cols": cat_cols,
             },
+            "column_roles": {
+                "numerical": [name for name in num_cols if name not in initial_roles.datetime],
+                "categorical": [name for name in cat_cols if name not in initial_roles.boolean],
+                "boolean": initial_roles.boolean,
+                "datetime": initial_roles.datetime,
+                "identifier": identifier_cols,
+                "ignored_free_text": initial_roles.ignored_free_text,
+            },
             "preprocessing": {
                 "numerical": ["imputer:median", "scaler:standard"],
                 "categorical": ["imputer:most_frequent", "onehot:drop_first"],
             },
-            "target": {"column": target.column, "reason": target.reason},
+            "target": target.audit_dict(),
+            "entity": {
+                "column": entity_column if entity_column in frame.columns else None,
+                "source": "deterministic" if entity_column in frame.columns else "none",
+                "reason": (
+                    "strong identifier evidence"
+                    if entity_column in frame.columns
+                    else "no identifier was inferred; prediction rows use stable held-out row indexes"
+                ),
+            },
             "missing_value_decisions": {
                 "dropped_columns": dropped_columns,
                 "rows_with_missing": missing_plan.rows_with_missing,
