@@ -43,7 +43,13 @@ def test_profiler_flags_high_cardinality_text_and_identifiers():
     assert "amount" not in profile["high_cardinality_columns"]
     assert "customer_id" in profile["likely_identifier_columns"]
     assert profile["numerical_statistics"]["amount"]["mean"] is not None
+    assert profile["numerical_statistics"]["amount"]["skewness"] is not None
+    amount = next(row for row in profile["columns"] if row["name"] == "amount")
+    assert amount["unique_ratio"] == 1.0
     assert "plan" in profile["categorical_statistics"]
+    plan = next(row for row in profile["columns"] if row["name"] == "plan")
+    assert plan["top_values"] == ["gold", "silver"]
+    assert plan["frequencies"] == {"gold": 40, "silver": 40}
 
 
 def test_leakage_flags_future_amount():

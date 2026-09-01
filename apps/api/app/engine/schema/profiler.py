@@ -41,8 +41,10 @@ def profile_frame(frame: pd.DataFrame) -> dict[str, Any]:
             "missing_count": missing,
             "missing_pct": missing / n,
             "missing_percentage": missing / n,
+            "missing_ratio": missing / n,
             "unique": unique,
             "unique_count": unique,
+            "unique_ratio": unique / n,
             "cardinality": unique,
             "constant": unique <= 1,
             "near_constant": unique > 1 and unique / n < 0.01,
@@ -51,9 +53,12 @@ def profile_frame(frame: pd.DataFrame) -> dict[str, Any]:
             "datetime": bool(pd.api.types.is_datetime64_any_dtype(series) or "date" in str(name).lower()),
         }
         if pd.api.types.is_bool_dtype(series):
-            info["categorical_distribution"] = {
+            distribution = {
                 str(key).lower(): int(value) for key, value in series.value_counts(dropna=True).items()
             }
+            info["categorical_distribution"] = distribution
+            info["top_values"] = list(distribution)
+            info["frequencies"] = distribution
         elif pd.api.types.is_numeric_dtype(series):
             clean = pd.to_numeric(series, errors="coerce")
             info.update(
@@ -63,6 +68,7 @@ def profile_frame(frame: pd.DataFrame) -> dict[str, Any]:
                     "mean": _num(clean.mean()),
                     "median": _num(clean.median()),
                     "std": _num(clean.std()),
+                    "skewness": _num(clean.skew()),
                     "quantiles": {
                         "p25": _num(clean.quantile(0.25)),
                         "p50": _num(clean.quantile(0.5)),
@@ -72,14 +78,21 @@ def profile_frame(frame: pd.DataFrame) -> dict[str, Any]:
             )
         else:
             top = series.astype(str).value_counts(dropna=True).head(10)
-            info["categorical_distribution"] = {str(k): int(v) for k, v in top.items()}
+            distribution = {str(k): int(v) for k, v in top.items()}
+            info["categorical_distribution"] = distribution
+            info["top_values"] = list(distribution)
+            info["frequencies"] = distribution
         columns.append(info)
 
     identifier_like = [c["name"] for c in columns if c["identifier_like"]]
     cells = int(len(frame) * max(frame.shape[1], 1))
     total_missing = int(sum(c["missing"] for c in columns))
     numerical_statistics = {
-        c["name"]: {key: c[key] for key in ("min", "max", "mean", "median", "std", "quantiles") if key in c}
+        c["name"]: {
+            key: c[key]
+            for key in ("min", "max", "mean", "median", "std", "quantiles", "skewness")
+            if key in c
+        }
         for c in columns
         if "mean" in c
     }

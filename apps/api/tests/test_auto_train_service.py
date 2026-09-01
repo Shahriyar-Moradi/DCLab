@@ -104,6 +104,13 @@ class TestAutoTrainJob:
         assert "target selection is ambiguous" in upload.pipeline_log["reason"]
         assert upload.pipeline_log["failed_at"] == "analyzing"
         assert "analyzing" in (upload.pipeline_log.get("stages") or [])
+        report = upload.pipeline_log["technical_report"]
+        assert report["run"]["status"] == "failed"
+        assert report["run"]["last_successful_stage"] == "ingesting"
+        assert report["run"]["failed_stage"] == "analyzing"
+        assert "target selection is ambiguous" in report["run"]["failure_reason"]
+        assert report["deterministic_verification"]["overall_status"] == "FAILED"
+        assert report["deterministic_verification"]["missing_evidence"]
 
     def test_completes_and_persists_a_real_experiment_for_a_telco_like_csv(self, db_session, tmp_path):
         frame = _telco_like_frame(n=200)
@@ -132,12 +139,14 @@ class TestAutoTrainJob:
         steps = [row["step"] for row in trace]
         required = [
             "profiling",
-            "cleaning",
+            "splitting",
+            "train_only_modeling_decisions",
+            "feature_engineering_transforms",
             "feature_engineering",
             "column_roles",
             "preprocessing",
-            "splitting",
             "cross_validation",
+            "selection_lock",
             "training",
             "evaluating",
             "predicting",
@@ -151,8 +160,9 @@ class TestAutoTrainJob:
         profiling = next(row for row in trace if row["step"] == "profiling")
         assert profiling["row_count"] == 200
         assert "churn" in profiling["column_names"]
-        cleaning = next(row for row in trace if row["step"] == "cleaning")
+        cleaning = next(row for row in trace if row["step"] == "train_only_modeling_decisions")
         assert cleaning["rows_with_missing"] >= 1
+        assert cleaning["evidence_scope"] == "train_only"
         groups = next(row for row in trace if row["step"] == "feature_engineering")
         assert groups["combinations"] == [["features"]]
         assert groups["selected_columns"]
@@ -203,8 +213,10 @@ class TestAutoTrainJob:
         winner_id = result["best_single"]["candidate_id"]
         winner_cv = result["best_single"]["score"]
         for row in trained:
-            assert "roc_auc" in row["test_metrics"]
-            if row["candidate_id"] != winner_id:
+            if row["candidate_id"] == winner_id:
+                assert "roc_auc" in row["test_metrics"]
+            else:
+                assert row["test_metrics"] is None
                 assert row["score"] <= winner_cv + 1e-12
 
     def test_persists_real_processing_stages_in_order(self, db_session, tmp_path, monkeypatch):
@@ -232,9 +244,9 @@ class TestAutoTrainJob:
             "ingesting",
             "analyzing",
             "cleaning",
+            "splitting",
             "feature_engineering",
             "preprocessing",
-            "splitting",
             "cross_validation",
             "training",
             "evaluating",

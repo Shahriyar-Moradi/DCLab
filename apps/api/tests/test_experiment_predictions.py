@@ -129,5 +129,6 @@ def test_open_ingest_persists_index_when_no_natural_id(db_session, tmp_path):
     assert len(rows) == n_test
     assert len(rows) == len(executed.result["test_predictions"])
     assert {row.record_id for row in rows} == {str(i) for i in range(n_test)}
+    assert {row.source_row_index for row in rows} == set(executed.result["split"]["test_source_rows"])
     assert all(row.probability is not None for row in rows)
     assert all(row.predicted_value in {0, 1} for row in rows)

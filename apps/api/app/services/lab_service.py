@@ -202,6 +202,11 @@ def _persist_experiment_test_predictions(db: Session, experiment_id, result: dic
             ExperimentTestPrediction(
                 experiment_id=experiment_id,
                 row_index=row_index,
+                source_row_index=(
+                    int(row["source_row_index"])
+                    if row.get("source_row_index") is not None
+                    else None
+                ),
                 record_id=str(record_id),
                 predicted_value=row.get("y_pred"),
                 probability=probability,
@@ -238,6 +243,16 @@ def execute_experiment(
     )
     try:
         frame = load_table(dataset.location)
+
+        def _persist_checkpoint(payload: dict) -> None:
+            # Selection is committed before the final holdout evaluator runs.
+            # This makes winner locking an auditable database fact rather than
+            # only an in-memory ordering convention.
+            current = dict(experiment.result or {})
+            current.update(payload)
+            experiment.result = current
+            db.commit()
+
         result = run_experiment(
             frame,
             spec,
@@ -245,6 +260,7 @@ def execute_experiment(
             artifact_dir=artifacts,
             dataset_version=dataset.version,
             on_stage=on_stage,
+            on_checkpoint=_persist_checkpoint,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)

@@ -73,6 +73,9 @@ class TaskSpec:
     # column roles the ColumnTransformer preprocessor needs. Empty for every
     # other task — this does not change how admin /admin/lab tasks behave.
     column_roles: dict[str, list[str]] = field(default_factory=dict)
+    # Open-ingest only: deterministic transformations selected from the locked
+    # training partition and then applied unchanged to train/test.
+    feature_engineering: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -26,9 +26,9 @@ REQUIRED_STAGES = [
     "ingesting",
     "analyzing",
     "cleaning",
+    "splitting",
     "feature_engineering",
     "preprocessing",
-    "splitting",
     "cross_validation",
     "training",
     "evaluating",
@@ -173,6 +173,10 @@ class Test1ClassificationCsv:
             assert row["n_folds"] == 5
             if row["candidate_id"] != winner["candidate_id"]:
                 assert row["score"] <= winner_cv + 1e-12
+                assert row["test_metrics"] is None
+        assert winner["test_metrics"] == result["test_metrics"]
+        assert result["selection"]["selection_source"] == "cross_validation"
+        assert result["final_test_evaluation"]["evaluation_count"] == 1
         assert "roc_auc" in result["test_metrics"]
         assert len(result["test_predictions"]) == result["split"]["n_test"]
 

@@ -551,6 +551,7 @@ class ExperimentTestPrediction(Base):
         index=True,
     )
     row_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_row_index: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     record_id: Mapped[str] = mapped_column(String(512), nullable=False)
     predicted_value: Mapped[object] = mapped_column(JSONB, nullable=False)
     probability: Mapped[float | None] = mapped_column(Float, nullable=True)

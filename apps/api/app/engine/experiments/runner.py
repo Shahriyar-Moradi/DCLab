@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,7 @@ from app.engine.schema.profiler import profile_frame
 from app.engine.search.generator import DUMMY_FAMILIES, assemble_candidates
 from app.engine.selection import greedy_diverse_selection
 from app.engine.types import Candidate, ExperimentStatus, SearchConfig, TaskSpec
-from app.engine.validation.splits import split_frame, split_train_test_holdout
+from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_frame, split_train_test_holdout
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,17 @@ def _metrics(y_true, pred, *, classifier: bool) -> dict[str, Any]:
     return classification_metrics(y_true, pred) if classifier else regression_metrics(y_true, pred)
 
 
+def _timing(stage: str, started_at: datetime, timer: float, *, status: str = "completed") -> dict[str, Any]:
+    ended_at = datetime.now(UTC)
+    return {
+        "stage": stage,
+        "started_at": started_at.isoformat(),
+        "ended_at": ended_at.isoformat(),
+        "duration_ms": max(0.001, (time.perf_counter() - timer) * 1000.0),
+        "status": status,
+    }
+
+
 def _open_ingest_cv_splitter(
     y: np.ndarray,
     *,
@@ -108,12 +120,16 @@ def _prediction_rows(
     rows: list[dict[str, Any]] = []
     for index in range(len(y_true_arr)):
         record_id = str(index)
+        source_row_index = int(index)
+        if test is not None and SOURCE_ROW_COLUMN in test.columns:
+            source_row_index = int(test.iloc[index][SOURCE_ROW_COLUMN])
         if test is not None and entity_col and entity_col in test.columns:
             value = _json_safe(test.iloc[index][entity_col])
             if value is not None:
                 record_id = str(value)
         item = {
             "row_index": int(index),
+            "source_row_index": source_row_index,
             "record_id": record_id,
             "y_true": _json_safe(y_true_arr[index]),
             "y_pred": _json_safe(y_pred[index]),
@@ -140,6 +156,9 @@ def _open_ingest_validation(
         "test_rows": split_meta.get("n_test"),
         "cv_strategy": sample.get("cv_strategy") or default_cv,
         "n_folds": sample.get("n_folds"),
+        "requested_folds": sample.get("requested_folds", 5),
+        "actual_folds": sample.get("actual_folds", sample.get("n_folds")),
+        "adaptation_reason": sample.get("adaptation_reason"),
         "random_state": split_meta.get("random_state", seed),
     }
 
@@ -150,7 +169,17 @@ def _fit_and_score_holdout(
     test: pd.DataFrame,
     task: TaskSpec,
     classifier: bool,
-) -> tuple[Any, dict[str, Any], dict[str, Any], np.ndarray, np.ndarray, int]:
+    on_stage: Callable[[str], None] | None = None,
+) -> tuple[
+    Any,
+    dict[str, Any],
+    dict[str, Any],
+    np.ndarray,
+    np.ndarray,
+    int,
+    dict[str, Any],
+    dict[str, Any],
+]:
     """Fit on the full training pool and score train + untouched test. Not used for ranking."""
     cols = list(row["features"])
     num_cols = list(row["numerical_cols"])
@@ -160,17 +189,64 @@ def _fit_and_score_holdout(
     pipeline = SkPipeline(
         [
             ("prep", build_preprocessor(num_cols, cat_cols)),
-            ("model", make_model(row["model_family"], seed=row["random_seed"])),
+            (
+                "model",
+                make_model(
+                    row["model_family"],
+                    seed=row["random_seed"],
+                    hyperparameters=row.get("hyperparameters"),
+                ),
+            ),
         ]
     )
+    if on_stage:
+        on_stage(TRAINING)
+    fit_started = datetime.now(UTC)
+    fit_timer = time.perf_counter()
     pipeline.fit(X_train, y_train)
     train_pred = _predict(pipeline, X_train, classifier)
     train_metrics = _metrics(y_train, train_pred, classifier=classifier)
+    final_fit = _timing("final_fit", fit_started, fit_timer)
+    final_fit.update(
+        {
+            "candidate_id": row.get("candidate_id"),
+            "fit_row_count": int(len(X_train)),
+            "fit_partition": "full_train",
+            "final_fit_started_at": final_fit["started_at"],
+            "final_fit_completed_at": final_fit["ended_at"],
+            "final_fit_duration_ms": final_fit["duration_ms"],
+        }
+    )
     X_test = test.loc[:, cols]
     y_test = test[task.target].to_numpy()
+    if on_stage:
+        on_stage(EVALUATING)
+    test_started = datetime.now(UTC)
+    test_timer = time.perf_counter()
     test_pred = _predict(pipeline, X_test, classifier)
     test_metrics = _metrics(y_test, test_pred, classifier=classifier)
-    return pipeline, train_metrics, test_metrics, y_test, test_pred, int(len(X_test))
+    test_evaluation = _timing("final_test_evaluation", test_started, test_timer)
+    test_evaluation.update(
+        {
+            "candidate_id": row.get("candidate_id"),
+            "evaluation_count": 1,
+            "test_row_count": int(len(X_test)),
+            "metrics": test_metrics,
+            "test_evaluation_started_at": test_evaluation["started_at"],
+            "test_evaluation_completed_at": test_evaluation["ended_at"],
+            "test_evaluation_duration_ms": test_evaluation["duration_ms"],
+        }
+    )
+    return (
+        pipeline,
+        train_metrics,
+        test_metrics,
+        y_test,
+        test_pred,
+        int(len(X_test)),
+        final_fit,
+        test_evaluation,
+    )
 
 
 def _run_open_ingest_candidates(
@@ -183,6 +259,7 @@ def _run_open_ingest_candidates(
     artifact_dir: Path,
     members_dir: Path,
     on_stage: Callable[[str], None] | None = None,
+    on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """ColumnTransformer + K-fold on train only; test is scored after the winner is locked."""
     classifier = task.task_type == "binary"
@@ -190,9 +267,12 @@ def _run_open_ingest_candidates(
     pool = pd.concat([train, val], ignore_index=True) if len(val) else train
     funnel_updates = {"trained": 0, "failed": 0, "cache_hits": 0}
     records: list[dict[str, Any]] = []
+    stage_timings: list[dict[str, Any]] = []
 
     if on_stage:
         on_stage(CROSS_VALIDATION)
+    cv_started = datetime.now(UTC)
+    cv_timer = time.perf_counter()
 
     for candidate in candidates:
         t0 = time.time()
@@ -212,7 +292,14 @@ def _run_open_ingest_candidates(
                 return SkPipeline(
                     [
                         ("prep", build_preprocessor(num_cols, cat_cols)),
-                        ("model", make_model(candidate.model_family, seed=candidate.random_seed)),
+                        (
+                            "model",
+                            make_model(
+                                candidate.model_family,
+                                seed=candidate.random_seed,
+                                hyperparameters=candidate.hyperparameters,
+                            ),
+                        ),
                     ]
                 )
 
@@ -228,7 +315,10 @@ def _run_open_ingest_candidates(
 
             fold_metrics_list: list[dict[str, Any]] = []
             fold_scores: list[float] = []
-            for fold_train_idx, fold_holdout_idx in split_iter:
+            fold_evidence: list[dict[str, Any]] = []
+            for fold_number, (fold_train_idx, fold_holdout_idx) in enumerate(split_iter, start=1):
+                fold_started = datetime.now(UTC)
+                fold_timer = time.perf_counter()
                 fold_pipeline = _fresh_pipeline()
                 fold_pipeline.fit(X_train.iloc[fold_train_idx], y_train[fold_train_idx])
                 fold_pred = _predict(fold_pipeline, X_train.iloc[fold_holdout_idx], classifier)
@@ -236,27 +326,68 @@ def _run_open_ingest_candidates(
                 fold_metrics = _metrics(fold_y, fold_pred, classifier=classifier)
                 fold_metrics_list.append(fold_metrics)
                 fold_scores.append(primary_score(fold_metrics, task.evaluation_metric, task.task_type))
+                train_provenance = (
+                    pool.iloc[fold_train_idx][SOURCE_ROW_COLUMN].astype(int).tolist()
+                    if SOURCE_ROW_COLUMN in pool.columns
+                    else [int(value) for value in fold_train_idx]
+                )
+                validation_provenance = (
+                    pool.iloc[fold_holdout_idx][SOURCE_ROW_COLUMN].astype(int).tolist()
+                    if SOURCE_ROW_COLUMN in pool.columns
+                    else [int(value) for value in fold_holdout_idx]
+                )
+                fold_evidence.append(
+                    {
+                        "fold_number": fold_number,
+                        "train_provenance": train_provenance,
+                        "validation_provenance": validation_provenance,
+                        "train_row_count": int(len(fold_train_idx)),
+                        "validation_row_count": int(len(fold_holdout_idx)),
+                        "metrics": fold_metrics,
+                        "fit_duration_ms": max(0.001, (time.perf_counter() - fold_timer) * 1000.0),
+                        "started_at": fold_started.isoformat(),
+                        "ended_at": datetime.now(UTC).isoformat(),
+                    }
+                )
 
             cv_mean, cv_std = aggregate_fold_metrics(fold_metrics_list)
             robust = robustness_stats(fold_scores)
+            adaptation_reason = None
+            if n_splits != 5:
+                adaptation_reason = (
+                    "Reduced folds because the training partition cannot support five valid folds."
+                )
             records.append(
                 {
                     **candidate.to_dict(),
+                    "candidate": candidate.candidate_id,
+                    "feature_set": list(candidate.features),
+                    "preprocessing_config": {
+                        "numerical": ["imputer:median", "scaler:standard"],
+                        "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+                    },
                     "status": "trained",
+                    "failure_reason": None,
                     "metrics": cv_mean,
                     "fold_metrics": fold_metrics_list,
+                    "folds": fold_evidence,
                     "cv_mean": cv_mean,
                     "cv_std": cv_std,
                     "cv_score": robust,
                     "score": robust["mean"],
                     "robustness": robust,
                     "train_seconds": time.time() - t0,
+                    "fit_duration_ms": max(0.001, (time.time() - t0) * 1000.0),
                     "stage": "trained",
                     "cv_strategy": type(splitter).__name__,
+                    "requested_folds": 5,
+                    "actual_folds": n_splits,
+                    "adaptation_reason": adaptation_reason,
                     "n_folds": n_splits,
                     "n_train_rows": int(len(X_train)),
                     "numerical_cols": num_cols,
                     "categorical_cols": cat_cols,
+                    "test_metrics": None,
                 }
             )
             funnel_updates["trained"] += 1
@@ -266,12 +397,40 @@ def _run_open_ingest_candidates(
             records.append(
                 {
                     **candidate.to_dict(),
+                    "candidate": candidate.candidate_id,
+                    "feature_set": list(candidate.features),
+                    "preprocessing_config": {
+                        "numerical": ["imputer:median", "scaler:standard"],
+                        "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+                    },
                     "status": "FAILED",
                     "error": str(exc),
+                    "failure_reason": str(exc),
+                    "metrics": None,
+                    "fold_metrics": [],
+                    "folds": [],
+                    "cv_mean": None,
+                    "cv_std": None,
+                    "cv_strategy": "StratifiedKFold" if classifier else "KFold",
+                    "requested_folds": 5,
+                    "actual_folds": None,
+                    "adaptation_reason": None,
                     "train_seconds": time.time() - t0,
+                    "fit_duration_ms": max(0.001, (time.time() - t0) * 1000.0),
+                    "test_metrics": None,
                 }
             )
 
+    stage_timings.append(_timing("cross_validation", cv_started, cv_timer))
+    stage_timings.append(
+        {
+            **stage_timings[-1],
+            "stage": "candidate_training",
+            "candidate_count": len(records),
+        }
+    )
+    selection_started = datetime.now(UTC)
+    selection_timer = time.perf_counter()
     trained = [row for row in records if row.get("status") == "trained"]
     learned = [row for row in trained if row.get("model_family") not in DUMMY_FAMILIES]
     pool_rows = learned or trained
@@ -284,52 +443,67 @@ def _run_open_ingest_candidates(
     train_metrics: dict[str, Any] = {}
     test_metrics: dict[str, Any] = {}
     test_predictions: list[dict[str, Any]] = []
+    selection = {
+        "candidate_id": best_single.get("candidate_id") if best_single else None,
+        "selected_candidate_id": best_single.get("candidate_id") if best_single else None,
+        "selection_metric": task.evaluation_metric,
+        "cv_score": best_single.get("score") if best_single else None,
+        "selection_source": "cross_validation",
+        "selection_policy": "maximum eligible primary CV score",
+        "eligible_candidate_ids": [row.get("candidate_id") for row in pool_rows],
+        "locked": best_single is not None,
+        "locked_at": datetime.now(UTC).isoformat() if best_single else None,
+    }
+    stage_timings.append(_timing("model_selection", selection_started, selection_timer))
+    final_test_evaluation = {
+        "candidate_id": best_single.get("candidate_id") if best_single else None,
+        "evaluation_count": 0,
+        "started_at": None,
+        "ended_at": None,
+        "duration_ms": None,
+        "metrics": {},
+    }
 
-    # Holdout scoring is reporting-only. Ranking already locked on CV `score`.
-    if trained:
-        if on_stage:
-            on_stage(TRAINING)
-        winner_pipeline = None
-        winner_y_test = None
-        winner_test_pred = None
-        for row in trained:
-            pipeline, row_train, row_test, y_test, test_pred, n_test = _fit_and_score_holdout(
-                row, pool, test, task, classifier
-            )
-            row["train_metrics"] = row_train
-            row["test_metrics"] = row_test
-            row["n_test_rows"] = n_test
-            if best_single is not None and row.get("candidate_id") == best_single.get("candidate_id"):
-                row["locked"] = True
-                train_metrics = row_train
-                test_metrics = row_test
-                winner_pipeline = pipeline
-                winner_y_test = y_test
-                winner_test_pred = test_pred
-
-        if on_stage:
-            on_stage(EVALUATING)
+    # Persist the CV-only selection checkpoint before the holdout is touched.
+    if best_single is not None:
+        best_single["locked"] = True
+        if on_checkpoint:
+            on_checkpoint({"selection": selection, "status": "SELECTION_LOCKED"})
+        (
+            winner_pipeline,
+            train_metrics,
+            test_metrics,
+            winner_y_test,
+            winner_test_pred,
+            n_test,
+            final_fit,
+            final_test_evaluation,
+        ) = _fit_and_score_holdout(best_single, pool, test, task, classifier, on_stage=on_stage)
+        stage_timings.extend([final_fit, {key: value for key, value in final_test_evaluation.items() if key != "metrics"}])
+        best_single["train_metrics"] = train_metrics
+        best_single["test_metrics"] = test_metrics
+        best_single["n_test_rows"] = n_test
         if on_stage:
             on_stage(PREDICTING)
-        if (
-            best_single is not None
-            and winner_pipeline is not None
-            and winner_y_test is not None
-            and winner_test_pred is not None
-        ):
-            test_predictions = _prediction_rows(
-                winner_y_test,
-                winner_test_pred,
-                classifier=classifier,
-                test=test,
-                entity_col=task.entity_id,
-            )
-            joblib.dump(winner_pipeline, members_dir / f"{best_single['candidate_id']}.joblib")
-            joblib.dump(
-                {"fusion": None, "members": selected_ids, "weights": {}, "task_id": task.id},
-                artifact_dir / "model.joblib",
-            )
-            pd.DataFrame(test_predictions).to_csv(artifact_dir / "test_predictions.csv", index=False)
+        prediction_started = datetime.now(UTC)
+        prediction_timer = time.perf_counter()
+        test_predictions = _prediction_rows(
+            winner_y_test,
+            winner_test_pred,
+            classifier=classifier,
+            test=test,
+            entity_col=task.entity_id,
+        )
+        stage_timings.append(_timing("prediction_persistence", prediction_started, prediction_timer))
+        artifact_started = datetime.now(UTC)
+        artifact_timer = time.perf_counter()
+        joblib.dump(winner_pipeline, members_dir / f"{best_single['candidate_id']}.joblib")
+        joblib.dump(
+            {"fusion": None, "members": selected_ids, "weights": {}, "task_id": task.id},
+            artifact_dir / "model.joblib",
+        )
+        pd.DataFrame(test_predictions).to_csv(artifact_dir / "test_predictions.csv", index=False)
+        stage_timings.append(_timing("artifact_persistence", artifact_started, artifact_timer))
 
     return {
         "funnel": funnel_updates,
@@ -339,7 +513,187 @@ def _run_open_ingest_candidates(
         "test_metrics": test_metrics,
         "test_predictions": test_predictions,
         "selected_ids": selected_ids,
+        "selection": selection,
+        "final_test_evaluation": final_test_evaluation,
+        "final_fit": final_fit if best_single is not None else {},
+        "stage_timings": stage_timings,
     }
+
+
+def _run_open_ingest_experiment(
+    frame: pd.DataFrame,
+    task: TaskSpec,
+    config: SearchConfig,
+    *,
+    artifact_dir: Path,
+    members_dir: Path,
+    dataset_version: str,
+    started: float,
+    on_stage: Callable[[str], None] | None,
+    on_checkpoint: Callable[[dict[str, Any]], None] | None,
+) -> dict[str, Any]:
+    """Leakage-safe open-ingest experiment with an early locked holdout."""
+    profile = profile_frame(frame)
+    quality = quality_report(frame, task.target)
+    work = frame.copy()
+    if SOURCE_ROW_COLUMN not in work.columns:
+        work[SOURCE_ROW_COLUMN] = work.index.astype(int)
+    if task.target not in work.columns:
+        raise ValueError(f"Frame is missing target {task.target!r}")
+    if task.task_type == "binary":
+        work[task.target] = coerce_binary_target(work[task.target])
+        work = work.dropna(subset=[task.target])
+        work[task.target] = work[task.target].astype(int)
+    else:
+        work[task.target] = pd.to_numeric(work[task.target], errors="coerce")
+        work = work.dropna(subset=[task.target])
+
+    if on_stage:
+        on_stage(SPLITTING)
+    train, val, test, split_meta = split_train_test_holdout(
+        work,
+        target=task.target,
+        test_size=0.2,
+        seed=config.seed,
+        stratify=task.task_type == "binary",
+    )
+
+    # Leakage screening and all feature eligibility evidence use train only.
+    leakage = detect_leakage(
+        train,
+        target=task.target,
+        time_col=task.prediction_time_column,
+        entity_col=task.entity_id,
+    )
+    blocked = set(leakage["high_risk_columns"]) if config.exclude_high_leakage else set()
+    groups = {
+        name: [
+            col
+            for col in cols
+            if col in train.columns
+            and col not in blocked
+            and col != task.target
+            and col != task.prediction_time_column
+            and col != task.entity_id
+        ]
+        for name, cols in task.feature_groups.items()
+    }
+    groups = {name: cols for name, cols in groups.items() if cols}
+    roles = task.column_roles or {}
+    numerical_cols = [c for c in (roles.get("numerical") or []) if any(c in cols for cols in groups.values())]
+    categorical_cols = [c for c in (roles.get("categorical") or []) if any(c in cols for cols in groups.values())]
+    modeled = numerical_cols + categorical_cols
+    if not modeled:
+        raise ValueError("no numeric or categorical columns to model")
+    task = TaskSpec(
+        **{
+            **task.to_dict(),
+            "feature_groups": {"features": modeled},
+            "column_roles": {"numerical": numerical_cols, "categorical": categorical_cols},
+        }
+    )
+
+    candidates = assemble_candidates(task, config, dataset_version=dataset_version)
+    funnel = {
+        "generated": len(candidates),
+        "valid": len(candidates),
+        "leakage_safe": len(modeled),
+        "trained": 0,
+        "robust": 0,
+        "strong": 0,
+        "diverse": 0,
+        "failed": 0,
+        "cache_hits": 0,
+    }
+
+    def _checkpoint(payload: dict[str, Any]) -> None:
+        if on_checkpoint:
+            on_checkpoint({**payload, "split": split_meta, "task": task.to_dict()})
+
+    outcome = _run_open_ingest_candidates(
+        candidates,
+        train,
+        val,
+        test,
+        task,
+        artifact_dir=artifact_dir,
+        members_dir=members_dir,
+        on_stage=on_stage,
+        on_checkpoint=_checkpoint,
+    )
+    funnel.update(outcome["funnel"])
+    records = outcome["records"]
+    best_single = outcome["best_single"]
+    feature_report = dict(task.feature_engineering or {})
+    original_features = list(feature_report.get("original_features") or modeled)
+    feature_report = {
+        "original_features": original_features,
+        "generated_features": list(feature_report.get("generated_features") or []),
+        "transformed_features": list(feature_report.get("transformed_features") or []),
+        "removed_features": list(feature_report.get("removed_features") or []),
+        "feature_engineering_actions": list(feature_report.get("feature_engineering_actions") or []),
+        "transformations": list(feature_report.get("feature_engineering_actions") or []),
+    }
+    result = {
+        "task": task.to_dict(),
+        "config": config.to_dict(),
+        "status": ExperimentStatus.COMPLETED.value if best_single is not None else ExperimentStatus.FAILED.value,
+        "funnel": funnel,
+        "profile": profile,
+        "profile_summary": {
+            "row_count": profile["row_count"],
+            "column_count": profile["column_count"],
+            "duplicate_rows": profile.get("duplicate_rows", profile.get("duplicate_count")),
+        },
+        "quality": quality,
+        "leakage": leakage,
+        "split": split_meta,
+        "validation": _open_ingest_validation(split_meta, records, config.seed, task.task_type),
+        "feature_engineering": feature_report,
+        "preprocessing": {
+            "numeric_columns": numerical_cols,
+            "categorical_columns": categorical_cols,
+            "numeric_imputer_strategy": "median",
+            "numeric_scaler": "StandardScaler",
+            "categorical_imputer_strategy": "most_frequent",
+            "categorical_encoder": "OneHotEncoder",
+            "categorical_encoder_drop": "first",
+            "handle_unknown": "ignore",
+            "numerical": ["imputer:median", "scaler:standard"],
+            "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+            "fit_scope": "cv_fold_train_only_then_full_training_partition",
+            "fit_partition": "fold_train_only_then_full_train_for_locked_winner",
+        },
+        "candidates": records,
+        "expected_candidate_ids": [candidate.candidate_id for candidate in candidates],
+        "selected_ids": outcome["selected_ids"],
+        "selection": outcome["selection"],
+        "best_single": best_single,
+        "fusion": None,
+        "weights": {},
+        "validation_blend_metrics": {},
+        "train_metrics": outcome["train_metrics"],
+        "test_metrics": outcome["test_metrics"],
+        "final_test_evaluation": outcome["final_test_evaluation"],
+        "final_fit": outcome["final_fit"],
+        "test_predictions": outcome["test_predictions"],
+        "execution_stage_timings": outcome["stage_timings"],
+        "feature_group_scores": {},
+        "combination_table": [],
+        "artifact_dir": str(artifact_dir),
+        "duration_seconds": time.time() - started,
+        "baselines": [
+            row
+            for row in records
+            if row.get("model_family") in {"majority", "mean", "logistic_regression", "linear_regression"}
+        ],
+    }
+    result = _json_safe(result)
+    (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")
+    from app.engine.reporting.report import render_markdown
+
+    (artifact_dir / "report.md").write_text(render_markdown(result))
+    return result
 
 
 def run_experiment(
@@ -350,6 +704,7 @@ def run_experiment(
     artifact_dir: Path | None = None,
     dataset_version: str = "v1",
     on_stage: Callable[[str], None] | None = None,
+    on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Train, filter, select, and report. Returns a JSON-serializable result dict."""
     started = time.time()
@@ -358,6 +713,19 @@ def run_experiment(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     members_dir = artifact_dir / "members"
     members_dir.mkdir(parents=True, exist_ok=True)
+
+    if config.strategy == "open_ingest":
+        return _run_open_ingest_experiment(
+            frame,
+            task,
+            config,
+            artifact_dir=artifact_dir,
+            members_dir=members_dir,
+            dataset_version=dataset_version,
+            started=started,
+            on_stage=on_stage,
+            on_checkpoint=on_checkpoint,
+        )
 
     funnel = {
         "generated": 0,

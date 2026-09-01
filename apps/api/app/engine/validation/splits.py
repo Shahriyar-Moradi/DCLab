@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
+
+SOURCE_ROW_COLUMN = "__dclab_source_row__"
 
 
 def split_frame(
@@ -147,6 +150,18 @@ def split_train_test_holdout(
         train, test = train_test_split(frame, test_size=test_size, random_state=seed, stratify=None)
         use_stratify = False
     val = frame.iloc[0:0].copy()
+    train_source = (
+        train[SOURCE_ROW_COLUMN].astype(int).tolist()
+        if SOURCE_ROW_COLUMN in train.columns
+        else [int(value) for value in train.index]
+    )
+    test_source = (
+        test[SOURCE_ROW_COLUMN].astype(int).tolist()
+        if SOURCE_ROW_COLUMN in test.columns
+        else [int(value) for value in test.index]
+    )
+    if set(train_source).intersection(test_source):
+        raise ValueError("train/test provenance overlap detected")
     meta = {
         "strategy": "train_test_split",
         "test_size": test_size,
@@ -155,6 +170,13 @@ def split_train_test_holdout(
         "n_train": int(len(train)),
         "n_val": 0,
         "n_test": int(len(test)),
+        "provenance_column": SOURCE_ROW_COLUMN if SOURCE_ROW_COLUMN in frame.columns else "dataframe_index",
+        "split_at": datetime.now(UTC).isoformat(),
+        "modeling_row_count": int(len(frame)),
+        "all_source_rows": train_source + test_source,
+        "train_source_rows": train_source,
+        "test_source_rows": test_source,
+        "provenance_disjoint": True,
     }
     return train.reset_index(drop=True), val.reset_index(drop=True), test.reset_index(drop=True), meta
 

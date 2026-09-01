@@ -274,13 +274,123 @@ def clean_frame(
     return out, log
 
 
+def structural_clean_frame(
+    frame: pd.DataFrame,
+    *,
+    target: str,
+    feature_columns: list[str],
+    source_row_column: str | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Apply only split-safe structural hygiene.
+
+    These operations do not estimate modeling behavior from the complete
+    dataset. Sparse/constant removal, missing-value policies, semantic role
+    decisions, and feature decisions intentionally happen after the final
+    holdout is locked and use training rows only.
+    """
+    out = frame.copy()
+    transformations: list[dict[str, Any]] = []
+
+    inf_cleared = 0
+    for name in list(out.columns):
+        if not pd.api.types.is_numeric_dtype(out[name]):
+            continue
+        replaced = out[name].replace([np.inf, -np.inf], np.nan)
+        inf_cleared += int(replaced.isna().sum() - out[name].isna().sum())
+        out[name] = replaced
+    if inf_cleared:
+        transformations.append({"step": "replace_infinite", "cells_cleared": inf_cleared})
+
+    string_cleared = 0
+    for name in feature_columns:
+        if name not in out.columns:
+            continue
+        series = out[name]
+        if (
+            pd.api.types.is_numeric_dtype(series)
+            or pd.api.types.is_bool_dtype(series)
+            or pd.api.types.is_datetime64_any_dtype(series)
+        ):
+            continue
+        cleaned, n_cleared = _replace_invalid_strings(series)
+        out[name] = cleaned
+        string_cleared += n_cleared
+    if string_cleared:
+        transformations.append({"step": "replace_invalid_strings", "cells_cleared": string_cleared})
+
+    before_numeric = {c for c in feature_columns if c in out and pd.api.types.is_numeric_dtype(out[c])}
+    out = coerce_numeric_like(out, feature_columns)
+    coerced = [
+        c for c in feature_columns if c in out and c not in before_numeric and pd.api.types.is_numeric_dtype(out[c])
+    ]
+    if coerced:
+        transformations.append({"step": "coerce_numeric", "columns": coerced})
+
+    duplicate_count = int(out.duplicated().sum())
+    if duplicate_count:
+        out = out.drop_duplicates()
+        transformations.append({"step": "drop_duplicate_rows", "rows_removed": duplicate_count})
+
+    missing_target_rows = int(out[target].isna().sum()) if target in out.columns else 0
+    if missing_target_rows:
+        out = out.dropna(subset=[target])
+        transformations.append({"step": "drop_missing_target_rows", "rows_removed": missing_target_rows})
+
+    if source_row_column is not None:
+        # Add provenance only after duplicate detection so the unique source
+        # index does not make otherwise duplicate rows appear distinct.
+        out[source_row_column] = out.index.astype(int)
+    return out.reset_index(drop=True), {
+        "scope": "full_dataset_structural_only",
+        "transformations": transformations,
+        "rows_in": int(len(frame)),
+        "rows_out": int(len(out)),
+        "columns_in": [str(c) for c in frame.columns],
+        "columns_out": [str(c) for c in out.columns if c != source_row_column],
+        "duplicate_rows_removed": duplicate_count,
+        "invalid_string_cells_cleared": string_cleared,
+        "infinite_cells_cleared": inf_cleared,
+        "missing_target_rows_removed": missing_target_rows,
+        "dropped_columns": [],
+    }
+
+
 def engineer_features(frame: pd.DataFrame, columns: list[str]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     """Existing deterministic transforms only — no generated or model-invented features."""
     out, converted = encode_datetime_columns(frame, columns)
     transformations: list[dict[str, Any]] = []
     if converted:
-        transformations.append({"step": "datetime_to_unix_seconds", "columns": converted})
+        transformations.append(
+            {
+                "step": "datetime_to_unix_seconds",
+                "transformation": "datetime_to_epoch",
+                "columns": converted,
+                "input_columns": converted,
+                "output_columns": converted,
+                "reason": "Convert datetime values to the numeric representation supported by the tabular pipeline.",
+                "parameters": {"unit": "seconds", "epoch": "unix"},
+                "learned_from_data": False,
+                "decision_partition": "train",
+            }
+        )
     return out, transformations
+
+
+def apply_feature_engineering_actions(
+    frame: pd.DataFrame,
+    actions: list[dict[str, Any]],
+) -> pd.DataFrame:
+    """Apply a feature plan learned from training rows to another partition."""
+    out = frame.copy()
+    for action in actions:
+        if action.get("step") != "datetime_to_unix_seconds" and action.get("transformation") != "datetime_to_epoch":
+            continue
+        for name in action.get("output_columns") or action.get("columns") or []:
+            if name not in out.columns:
+                continue
+            parsed = pd.to_datetime(out[name], errors="coerce")
+            out[name] = parsed.map(lambda value: value.timestamp() if pd.notna(value) else np.nan)
+    return out
 
 
 def apply_missing_value_variant(frame: pd.DataFrame, columns: list[str], *, variant: str) -> pd.DataFrame:

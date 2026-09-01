@@ -117,7 +117,10 @@ def test_open_ingest_run_experiment_completes_with_real_kfold_and_holdout_test()
     winner_cv = result["best_single"]["score"]
     for row in trained:
         assert "test_metrics" in row
-        assert "roc_auc" in row["test_metrics"]
+        if row["candidate_id"] == result["selection"]["selected_candidate_id"]:
+            assert "roc_auc" in row["test_metrics"]
+        else:
+            assert row["test_metrics"] is None
         assert row["cv_strategy"] == "StratifiedKFold"
         if row["candidate_id"] != winner_id:
             assert row["score"] <= winner_cv + 1e-12

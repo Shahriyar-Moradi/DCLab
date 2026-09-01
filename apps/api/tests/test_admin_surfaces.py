@@ -234,7 +234,10 @@ class TestAdminClientUploads:
         assert "random_forest" in families
         for item in ml["model_comparison"]:
             assert item["cv_auc"] is not None
-            assert item["test_auc"] is not None
+            if item["selected"]:
+                assert item["test_auc"] is not None
+            else:
+                assert item["test_auc"] is None
         selected = next(item for item in ml["model_comparison"] if item["selected"])
         assert ml["final_model"]["model_family"] == selected["model_family"]
         assert ml["final_model"]["test_metrics"]["roc_auc"] == selected["test_auc"]
@@ -253,6 +256,12 @@ class TestAdminClientUploads:
         assert "y_pred" in csv_text
         assert "y_true" in csv_text
         assert csv_text.count("\n") >= ml["predictions"]["count"]
+
+        report_response = admin_client.get(f"/admin/client-uploads/{row.id}/report.docx")
+        assert report_response.status_code == 200
+        assert report_response.content.startswith(b"PK")
+        assert "application/vnd.openxmlformats" in report_response.headers["content-type"]
+        assert 'filename="DCLab ML Run Report.docx"' in report_response.headers["content-disposition"]
 
     def test_predictions_csv_is_404_when_run_has_no_experiment(self, db_session, admin_client):
         from app.db.models import DEFAULT_WORKSPACE_ID, ClientLabUpload

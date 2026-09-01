@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.domain.admin_client_uploads import AdminClientUploadDetail, AdminClientUploadSummary
-from app.services.admin_client_uploads_service import get_client_upload, list_client_uploads, predictions_download
+from app.services.admin_client_uploads_service import (
+    get_client_upload,
+    list_client_uploads,
+    predictions_download,
+    technical_report_download,
+)
 
 router = APIRouter(prefix="/client-uploads", tags=["admin-client-uploads"])
 
@@ -37,4 +42,17 @@ def download_client_upload_predictions(upload_id: UUID, db: Session = Depends(ge
         content=body,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
+@router.get("/{upload_id}/report.docx")
+def download_client_upload_report(upload_id: UUID, db: Session = Depends(get_db)) -> Response:
+    payload = technical_report_download(db, upload_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="technical report is not ready")
+    filename, body = payload
+    return Response(
+        content=body,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
