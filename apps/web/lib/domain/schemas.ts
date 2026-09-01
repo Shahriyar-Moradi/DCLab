@@ -385,7 +385,10 @@ export const ClientTrialAuditDetailSchema = z.object({
 });
 export const AdminClientUploadSummarySchema = z.object({
   id: z.uuid(),
-  workspace_id: z.uuid(),
+  // Local/demo workspaces use a stable sentinel GUID whose version nibble is
+  // zero. It is a valid database identifier but intentionally not an RFC
+  // versioned UUID, so Zod's strict `z.uuid()` rejects it.
+  workspace_id: z.guid(),
   category: z.string(),
   original_filename: z.string(),
   kind: z.string(),

@@ -7,6 +7,7 @@ import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
 import { downloadAdminRunPredictions, useAdminClientUpload } from "@/lib/application";
 import { formatTimestamp, type AdminMlRun, type SignalTone } from "@/lib/domain";
+import { ApiError } from "@/lib/infrastructure/api-client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
@@ -125,7 +126,14 @@ export default function ClientUploadAutoTrainPage() {
 
   if (query.isPending) return <Skeleton className="h-96" />;
   if (query.isError || !query.data) {
-    return <ErrorState body="Client upload not found." onRetry={() => void query.refetch()} />;
+    const notFound = query.error instanceof ApiError && query.error.status === 404;
+    return (
+      <ErrorState
+        title={notFound ? "Client upload not found" : "Could not load client upload"}
+        body={notFound ? "This client upload does not exist." : query.error?.message || "The upload could not be loaded."}
+        onRetry={() => void query.refetch()}
+      />
+    );
   }
 
   const upload = query.data;

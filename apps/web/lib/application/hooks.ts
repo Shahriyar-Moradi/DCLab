@@ -282,14 +282,15 @@ async function saveDownloadedCsv(path: string): Promise<void> {
 }
 
 export function useUploadLabFile(): ReturnType<
-  typeof useMutation<ClientLabUpload, Error, { category: string; file: File }>
+  typeof useMutation<ClientLabUpload, Error, { category: string; file: File; targetColumn?: string }>
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ category, file }) => {
+    mutationFn: ({ category, file, targetColumn }) => {
       const form = new FormData();
       form.append("category", category);
       form.append("file", file);
+      if (targetColumn?.trim()) form.append("target_column", targetColumn.trim());
       return apiPostForm("/app/labs/uploads", ClientLabUploadSchema, form);
     },
     onSuccess: (_data, variables) => {

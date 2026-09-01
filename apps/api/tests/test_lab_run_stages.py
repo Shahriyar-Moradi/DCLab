@@ -123,6 +123,9 @@ def test_in_progress_headline_follows_the_mapped_milestone():
 
 def test_client_error_message_is_plain_language_and_drops_column_dumps():
     assert client_error_message("no label column found") == "We could not find an outcome column to analyze."
+    assert client_error_message("target selection is ambiguous: several candidates tied") == (
+        "Choose the outcome column you want DCLab to predict, then upload the file again."
+    )
     assert "tenure" not in client_error_message("no label column found: dropped columns tenure, notes")
     assert client_error_message("unexpected error: disk full") == "disk full"
     assert find_banned_terms(client_error_message("no label column found")) == []

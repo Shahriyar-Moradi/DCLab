@@ -164,6 +164,8 @@ def client_error_message(reason: str | None) -> str:
     if not text:
         return GENERIC_FAILURE_MESSAGE
     lowered = text.lower()
+    if "target selection is ambiguous" in lowered:
+        return "Choose the outcome column you want DCLab to predict, then upload the file again."
     if "no label column" in lowered or "no target" in lowered:
         return "We could not find an outcome column to analyze."
     if "no usable feature" in lowered:

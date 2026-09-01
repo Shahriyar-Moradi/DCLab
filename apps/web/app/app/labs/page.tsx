@@ -40,6 +40,40 @@ const KIND_LABELS: Record<string, string> = {
   plain_text: "plain text",
 };
 
+function parseDelimitedHeader(text: string, delimiter: string): string[] {
+  const fields: string[] = [];
+  let field = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"') {
+      if (quoted && text[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === delimiter && !quoted) {
+      fields.push(field.trim());
+      field = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      break;
+    } else {
+      field += character;
+    }
+  }
+  fields.push(field.trim());
+  return Array.from(new Set(fields.map((value) => value.replace(/^\uFEFF/, "")).filter(Boolean)));
+}
+
+async function targetOptionsFor(file: File): Promise<string[]> {
+  const suffix = file.name.split(".").pop()?.toLowerCase();
+  if (!suffix || !["csv", "tsv", "tab"].includes(suffix)) return [];
+  const text = await file.slice(0, 64 * 1024).text();
+  return parseDelimitedHeader(text, suffix === "csv" ? "," : "\t");
+}
+
 export default function ClientLabsPage() {
   const problems = useLabProblems();
 
@@ -139,12 +173,23 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [targetColumn, setTargetColumn] = useState("");
+  const [targetOptions, setTargetOptions] = useState<string[]>([]);
+
+  async function onFileChange(file: File | undefined) {
+    setFileName(file?.name ?? null);
+    setTargetColumn("");
+    setTargetOptions([]);
+    if (!file) return;
+    const options = await targetOptionsFor(file);
+    if (fileInputRef.current?.files?.[0] === file) setTargetOptions(options);
+  }
 
   function onPick() {
     const file = fileInputRef.current?.files?.[0];
     if (!file) return;
     saveFile.mutate(
-      { category, file },
+      { category, file, targetColumn: targetColumn || undefined },
       {
         onSuccess: (row) => {
           router.push(runPath(row.run_id));
@@ -172,7 +217,7 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
           type="file"
           accept={OPEN_FILE_ACCEPT}
           className="hidden"
-          onChange={(event) => setFileName(event.target.files?.[0]?.name ?? null)}
+          onChange={(event) => void onFileChange(event.target.files?.[0])}
         />
         <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={saveFile.isPending}>
           {fileName ?? "Choose a file"}
@@ -183,6 +228,37 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
           </Button>
         ) : null}
       </div>
+
+      {fileName ? (
+        <label className="mt-4 block max-w-md font-body text-body text-ink">
+          Outcome column to predict <span className="text-ink-muted">(optional)</span>
+          {targetOptions.length > 0 ? (
+            <select
+              className="mt-2 block w-full rounded border border-hairline bg-paper-raised px-3 py-2"
+              value={targetColumn}
+              onChange={(event) => setTargetColumn(event.target.value)}
+            >
+              <option value="">Let DCLab choose</option>
+              {targetOptions.map((column) => (
+                <option key={column} value={column}>
+                  {column}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="mt-2 block w-full rounded border border-hairline bg-paper-raised px-3 py-2"
+              type="text"
+              value={targetColumn}
+              onChange={(event) => setTargetColumn(event.target.value)}
+              placeholder="Exact column name"
+            />
+          )}
+          <span className="mt-2 block text-ink-muted">
+            Choose this when your file has several possible labels, such as multiple Yes/No columns.
+          </span>
+        </label>
+      ) : null}
 
       {saveFile.isError ? <p className="mt-3 font-body text-body text-oxblood">{saveFile.error.message}</p> : null}
       {uploads.isError ? (
