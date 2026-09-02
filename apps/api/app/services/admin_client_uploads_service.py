@@ -16,7 +16,11 @@ from app.domain.admin_client_uploads import (
 )
 from app.services.admin_ml_run import build_ml_run, predictions_csv_text
 from app.services.ml_run_docx import render_ml_run_report_docx
-from app.services.technical_run_report import persisted_technical_report
+from app.services.pipeline_audit_service import (
+    RunNotFoundError,
+    RunReportNotReadyError,
+    canonical_report_for_run,
+)
 
 
 def list_client_uploads(db: Session) -> list[AdminClientUploadSummary]:
@@ -75,14 +79,8 @@ def predictions_download(db: Session, upload_id: UUID) -> tuple[str, str] | None
 
 def technical_report_download(db: Session, upload_id: UUID) -> tuple[str, bytes] | None:
     """Return the admin DOCX generated only from the persisted canonical report."""
-    row = db.get(ClientLabUpload, upload_id)
-    if row is None:
-        return None
-    experiment = db.get(Experiment, row.experiment_id) if row.experiment_id is not None else None
-    report = persisted_technical_report(experiment)
-    if report is None and isinstance(row.pipeline_log, dict):
-        stored = row.pipeline_log.get("technical_report")
-        report = stored if isinstance(stored, dict) else None
-    if report is None:
+    try:
+        report = canonical_report_for_run(db, upload_id)
+    except (RunNotFoundError, RunReportNotReadyError):
         return None
     return "DCLab ML Run Report.docx", render_ml_run_report_docx(report)

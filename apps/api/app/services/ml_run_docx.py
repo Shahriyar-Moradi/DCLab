@@ -420,7 +420,7 @@ def render_ml_run_report_docx(report: dict[str, Any]) -> bytes:
     )
 
     verification = dict(report.get("deterministic_verification") or {})
-    _add_heading(document, "Pipeline verification")
+    _add_heading(document, "Deterministic Verification")
     _add_key_values(
         document,
         [
@@ -470,6 +470,54 @@ def render_ml_run_report_docx(report: dict[str, Any]) -> bytes:
         ]
         or [("—", "—", "No deterministic verification failures")],
         [2500, 2200, 4660],
+    )
+
+    attempt = dict(report.get("verification_attempt") or {})
+    openai_audit = dict(report.get("openai_audit") or {})
+    _add_heading(document, "OpenAI Pipeline Auditor (Advisory)")
+    _add_key_values(
+        document,
+        [
+            ("Attempt", attempt.get("id")),
+            ("Mode", attempt.get("audit_mode")),
+            ("Provider", attempt.get("provider")),
+            ("Model", attempt.get("model")),
+            ("Attempt status", attempt.get("llm_status", openai_audit.get("status"))),
+            ("Advisory overall status", openai_audit.get("overall_status")),
+            ("Summary", openai_audit.get("summary")),
+            ("Safe error code", openai_audit.get("error")),
+            ("Prompt version", attempt.get("prompt_version")),
+            ("Output schema version", attempt.get("schema_version")),
+            ("Evidence digest", attempt.get("evidence_digest")),
+            ("Redaction summary", attempt.get("redaction_summary")),
+            ("Duration (ms)", attempt.get("duration_ms")),
+        ],
+    )
+    _add_table(
+        document,
+        ["Stage", "Advisory status", "Finding", "Evidence references"],
+        [
+            (
+                item.get("stage"),
+                item.get("status"),
+                item.get("summary"),
+                item.get("evidence_refs"),
+            )
+            for item in (openai_audit.get("stages") or [])
+        ]
+        or [("—", attempt.get("llm_status", "not requested"), "No completed OpenAI audit", "—")],
+        [1800, 1800, 3600, 2160],
+    )
+    _add_table(
+        document,
+        ["Type", "Advisory note"],
+        [
+            *[("Critical issue", value) for value in (openai_audit.get("critical_issues") or [])],
+            *[("Warning", value) for value in (openai_audit.get("warnings") or [])],
+            *[("Recommendation", value) for value in (openai_audit.get("recommendations") or [])],
+        ]
+        or [("—", "No OpenAI advisory notes")],
+        [2200, 7160],
     )
 
     audit = list(report.get("decision_records") or [])

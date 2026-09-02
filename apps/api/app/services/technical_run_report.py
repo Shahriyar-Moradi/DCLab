@@ -99,6 +99,13 @@ def build_technical_run_report(
                 "predictions": f"{artifact_root}/test_predictions.csv" if artifact_root else None,
             },
             "stage_timings": pipeline_log.get("stage_timings") or [],
+            "timing_semantics": {
+                "ml_execution_total": "Job start through persistence of ML artifacts; excludes all verification and report generation.",
+                "deterministic_verification": "One read-only deterministic verification pass; never verifies its own timing.",
+                "report_generation": "Assembly of the canonical technical report after deterministic verification.",
+                "llm_verification": "One requested OpenAI verification attempt, including its bounded provider retry.",
+                "workflow_elapsed": "Job start through the latest completed workflow step represented by this report.",
+            },
             "deterministic_verification": result.get("deterministic_verification") or {},
             "decision_records": [
                 {

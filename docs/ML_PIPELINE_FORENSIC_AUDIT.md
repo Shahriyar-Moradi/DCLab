@@ -157,3 +157,27 @@ Tests must prove:
 13. the DOCX is built from the canonical persisted report;
 14. rejected-candidate holdout metrics cannot appear in the DOCX;
 15. refresh/read endpoints continue to use the same persisted run.
+
+## Verification Phase 2 timing semantics
+
+The pipeline records five non-overlapping meanings and does not ask the
+deterministic verifier to validate its own enclosing duration:
+
+- `ml_execution_total`: background-job start through persistence of the ML
+  artifacts and result evidence. It excludes deterministic verification,
+  report generation, and OpenAI work.
+- `deterministic_verification`: one read-only `PipelineVerifier` pass over the
+  persisted ML evidence. Its invariant checks require only the core ML stages.
+- `report_generation`: assembly of the canonical technical report after the
+  deterministic result exists.
+- `llm_verification`: one requested advisory OpenAI verification attempt,
+  including at most one bounded retry at the provider boundary.
+- `workflow_elapsed`: first workflow start through the latest terminal step
+  represented by the report. When an OpenAI attempt exists, it ends at that
+  attempt's terminal completion time; otherwise it ends after report generation.
+
+OpenAI verification is a separate advisory layer. Each request persists its
+own deterministic snapshot, redaction counts, SHA-256 input digest, provider
+metadata, strict structured result or safe error class, and real timing. A
+reverification overlays the latest attempt when the canonical report is read;
+it does not mutate or retrain the original ML result.

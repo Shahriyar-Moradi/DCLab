@@ -359,6 +359,51 @@ class ClientLabUpload(Base):
     )
 
 
+class MlRunVerification(Base):
+    """One persisted deterministic/OpenAI verification attempt for an ML run."""
+
+    __tablename__ = "ml_run_verifications"
+    __table_args__ = (
+        CheckConstraint(
+            "audit_mode IN ('routine', 'deep')",
+            name="ck_ml_run_verifications_audit_mode",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("client_lab_uploads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    audit_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    deterministic_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    deterministic_checks: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    deterministic_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    llm_provider: Mapped[str] = mapped_column(String(32), nullable=False, default="openai")
+    llm_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    llm_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    redaction_summary: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    llm_report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
+
+
 @event.listens_for(ClientLabUpload, "before_insert")
 def _assign_run_id_and_client_status(_mapper, _connection, target: ClientLabUpload) -> None:
     if target.id is None:

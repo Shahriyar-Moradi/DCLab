@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+from app.services.artifact_store import ArtifactAccess, LocalArtifactAccess
 
 CHECK_PASS = "PASS"
 CHECK_WARN = "WARN"
@@ -32,37 +32,11 @@ def _timestamp(value: Any) -> datetime | None:
         return None
 
 
-def _load_input(path: Path) -> pd.DataFrame:
-    """Read an input artifact using the same generic formats as open ingest."""
-    suffix = path.suffix.lower()
-    if suffix == ".csv":
-        return pd.read_csv(path)
-    if suffix in {".tsv", ".tab"}:
-        return pd.read_csv(path, sep="\t")
-    if suffix in {".parquet", ".pq"}:
-        return pd.read_parquet(path)
-    if suffix in {".xlsx", ".xls"}:
-        return pd.read_excel(path)
-    if suffix in {".json", ".jsonl", ".ndjson"}:
-        text = path.read_text(encoding="utf-8", errors="replace").strip()
-        if not text:
-            return pd.DataFrame()
-        if text[0] != "[" and "\n" in text:
-            return pd.json_normalize([json.loads(line) for line in text.splitlines() if line.strip()])
-        value = json.loads(text)
-        if isinstance(value, list):
-            return pd.json_normalize(value)
-        if isinstance(value, dict):
-            for key in ("records", "data", "rows", "items"):
-                if isinstance(value.get(key), list):
-                    return pd.json_normalize(value[key])
-            return pd.json_normalize([value])
-        raise ValueError("JSON input is not a tabular object or list")
-    return pd.read_csv(path, sep=None, engine="python")
-
-
 class PipelineVerifier:
     """Verify persisted evidence without trusting the run's completion label."""
+
+    def __init__(self, artifacts: ArtifactAccess | None = None) -> None:
+        self.artifacts = artifacts or LocalArtifactAccess()
 
     def verify(self, report: dict[str, Any]) -> dict[str, Any]:
         checks: list[dict[str, Any]] = []
@@ -107,10 +81,10 @@ class PipelineVerifier:
         input_frame: pd.DataFrame | None = None
         if not input_path:
             add("input_artifact_exists", "file_ingestion", CHECK_NOT_VERIFIABLE, "Input artifact path is missing.")
-        elif Path(str(input_path)).is_file():
+        elif self.artifacts.artifact_exists(str(input_path)):
             add("input_artifact_exists", "file_ingestion", CHECK_PASS, "The uploaded input artifact exists.", "artifacts.input")
             try:
-                input_frame = _load_input(Path(str(input_path)))
+                input_frame = self.artifacts.load_table(str(input_path))
             except Exception as exc:  # noqa: BLE001 - evidence must convert loader errors into a check
                 add(
                     "input_artifact_loadable",
@@ -520,9 +494,6 @@ class PipelineVerifier:
             "final_test_evaluation",
             "prediction_persistence",
             "artifact_persistence",
-            "deterministic_verification",
-            "report_generation",
-            "total_run",
         }
         timing_rows = [row for row in _as_list(report.get("stage_timings")) if isinstance(row, dict)]
         timing_by_stage = {str(row.get("stage")): row for row in timing_rows}
@@ -545,7 +516,11 @@ class PipelineVerifier:
 
         artifact_keys = ("model", "result", "predictions")
         missing_artifacts = [key for key in artifact_keys if not artifacts.get(key)]
-        absent_artifacts = [key for key in artifact_keys if artifacts.get(key) and not Path(str(artifacts[key])).is_file()]
+        absent_artifacts = [
+            key
+            for key in artifact_keys
+            if artifacts.get(key) and not self.artifacts.artifact_exists(str(artifacts[key]))
+        ]
         if missing_artifacts:
             add("model_artifacts_persisted", "artifact_persistence", CHECK_NOT_VERIFIABLE, f"Artifact paths are missing: {missing_artifacts}.", "artifacts")
         elif absent_artifacts:

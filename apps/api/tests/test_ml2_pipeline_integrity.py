@@ -214,6 +214,13 @@ def test_stage_timings_feature_truth_and_persisted_report(db_session, tmp_path):
     assert timings
     assert all(item["started_at"] and item["ended_at"] for item in timings)
     assert all(item["duration_ms"] > 0 for item in timings)
+    timing_names = [item["stage"] for item in timings]
+    assert "ml_execution_total" in timing_names
+    assert "deterministic_verification" in timing_names
+    assert "report_generation" in timing_names
+    assert "workflow_elapsed" in timing_names
+    assert "total_run" not in timing_names
+    assert timing_names.count("deterministic_verification") == 1
     report = result["technical_report"]
     assert report["selection"]["selection_source"] == "cross_validation"
     assert report["final_test_evaluation"]["evaluation_count"] == 1

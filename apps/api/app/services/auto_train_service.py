@@ -24,7 +24,7 @@ from uuid import UUID
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.config import REPO_ROOT
+from app.config import REPO_ROOT, get_settings
 from app.db.models import ClientLabUpload, Experiment, LabDecisionRecord
 from app.db.session import get_session_factory
 from app.domain.lab_run_stages import (
@@ -63,6 +63,7 @@ from app.services.lab_decision_ledger import (
 )
 from app.services.lab_service import create_experiment, execute_experiment, ingest_dataset, seed_dogfood, upsert_task
 from app.services.pipeline_verifier import verify_pipeline
+from app.services.pipeline_audit_service import request_pipeline_verification
 from app.services.technical_run_report import build_technical_run_report
 
 logger = logging.getLogger(__name__)
@@ -238,6 +239,15 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         trace.append(entry)
         logger.info("auto-train %s %s %s", upload_id, step, fn)
 
+    def _request_routine_advisory_verification() -> None:
+        """Run only after ML state commits; provider failure cannot fail the job."""
+        if not get_settings().pipeline_llm_verifier_enabled:
+            return
+        try:
+            request_pipeline_verification(db, upload_id)
+        except Exception:  # noqa: BLE001 - advisory isolation is intentional
+            logger.exception("advisory pipeline verification failed for upload %s", upload_id)
+
     def _fail(
         reason: str,
         extra: dict[str, Any] | None = None,
@@ -256,41 +266,64 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         partial_result.setdefault("status", "FAILED")
         partial_result.setdefault("analysis", partial_result.get("analysis") or {})
         partial_result.setdefault("artifact_dir", None)
-        partial_log = {**payload, "stage_timings": [*evidence_stage_timings]}
+        ml_ended_at = datetime.now(UTC)
+        ml_execution_total = {
+            "stage": "ml_execution_total",
+            "started_at": total_started_at.isoformat(),
+            "ended_at": ml_ended_at.isoformat(),
+            "duration_ms": max(0.001, (time.perf_counter() - total_timer) * 1000.0),
+            "status": "failed",
+            "rows_in": int(upload.record_count),
+            "rows_out": current_rows,
+        }
+        partial_timings = [*evidence_stage_timings, ml_execution_total]
+        partial_log = {**payload, "stage_timings": partial_timings}
         experiment = db.get(Experiment, experiment_id) if experiment_id is not None else None
-        report = build_technical_run_report(
+        preliminary_report = build_technical_run_report(
             db,
             upload=row,
             experiment=experiment,
             result=partial_result,
             pipeline_log=partial_log,
         )
-        verification = verify_pipeline(report)
+        verification = verify_pipeline(preliminary_report)
         _evidence_finish(verification_timer)
-        report["deterministic_verification"] = verification
+        partial_result["deterministic_verification"] = verification
+        partial_log["deterministic_verification"] = verification
         report_timer = _evidence_start("report_generation")
-        _evidence_finish(report_timer)
-        evidence_stage_timings.append(
-            {
-                "stage": "total_run",
-                "started_at": total_started_at.isoformat(),
-                "ended_at": datetime.now(UTC).isoformat(),
-                "duration_ms": max(0.001, (time.perf_counter() - total_timer) * 1000.0),
-                "status": "failed",
-                "rows_in": int(upload.record_count),
-                "rows_out": current_rows,
-            }
+        report = build_technical_run_report(
+            db,
+            upload=row,
+            experiment=experiment,
+            result=partial_result,
+            pipeline_log={
+                **partial_log,
+                "stage_timings": [*partial_timings, evidence_stage_timings[-1]],
+            },
         )
-        report["stage_timings"] = list(evidence_stage_timings)
-        payload["stage_timings"] = list(evidence_stage_timings)
+        _evidence_finish(report_timer)
+        workflow_ended_at = datetime.now(UTC)
+        workflow_elapsed = {
+            "stage": "workflow_elapsed",
+            "started_at": total_started_at.isoformat(),
+            "ended_at": workflow_ended_at.isoformat(),
+            "duration_ms": max(0.001, (time.perf_counter() - total_timer) * 1000.0),
+            "status": "failed",
+            "rows_in": int(upload.record_count),
+            "rows_out": current_rows,
+        }
+        final_timings = [*partial_timings, *evidence_stage_timings[-2:], workflow_elapsed]
+        report["stage_timings"] = final_timings
+        payload["stage_timings"] = final_timings
         payload["deterministic_verification"] = verification
         payload["technical_report"] = report
         if experiment is not None:
             partial_result["deterministic_verification"] = verification
             partial_result["technical_report"] = report
-            partial_result["stage_timings"] = list(evidence_stage_timings)
+            partial_result["stage_timings"] = final_timings
             experiment.result = partial_result
         _mark(db, row, status=FAILED, log=payload, experiment_id=experiment_id)
+        _request_routine_advisory_verification()
 
     _stage(INGESTING)
     try:
@@ -831,6 +864,18 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         upload = db.get(ClientLabUpload, upload_id)
         if upload is not None:
             # Persist the completed ML evidence before the read-only verifier runs.
+            ml_ended_at = datetime.now(UTC)
+            ml_execution_total = {
+                "stage": "ml_execution_total",
+                "started_at": total_started_at.isoformat(),
+                "ended_at": ml_ended_at.isoformat(),
+                "duration_ms": max(0.001, (time.perf_counter() - total_timer) * 1000.0),
+                "status": "completed",
+                "rows_in": int(upload.record_count),
+                "rows_out": current_rows,
+            }
+            result["stage_timings"] = [*result["stage_timings"], ml_execution_total]
+            log["stage_timings"] = list(result["stage_timings"])
             experiment.result = result
             db.commit()
             preliminary_report = build_technical_run_report(
@@ -852,38 +897,25 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 upload=upload,
                 experiment=experiment,
                 result=result,
-                pipeline_log={**log, "stage_timings": [*result["stage_timings"], *evidence_stage_timings[-1:]]},
+                pipeline_log={**log, "stage_timings": [*result["stage_timings"], evidence_stage_timings[-1]]},
             )
             _evidence_finish(report_timer)
-            evidence_stage_timings.append(
-                {
-                    "stage": "total_run",
-                    "started_at": total_started_at.isoformat(),
-                    "ended_at": datetime.now(UTC).isoformat(),
-                    "duration_ms": max(0.001, (time.perf_counter() - total_timer) * 1000.0),
-                    "status": "completed",
-                    "rows_in": int(upload.record_count),
-                    "rows_out": current_rows,
-                }
-            )
+            workflow_elapsed = {
+                "stage": "workflow_elapsed",
+                "started_at": total_started_at.isoformat(),
+                "ended_at": datetime.now(UTC).isoformat(),
+                "duration_ms": max(0.001, (time.perf_counter() - total_timer) * 1000.0),
+                "status": "completed",
+                "rows_in": int(upload.record_count),
+                "rows_out": current_rows,
+            }
             result["stage_timings"] = [
-                *[row for row in result["stage_timings"] if row.get("stage") not in {"deterministic_verification", "report_generation", "total_run"}],
-                *[row for row in evidence_stage_timings if row.get("stage") in {"deterministic_verification", "report_generation", "total_run"}],
+                *result["stage_timings"],
+                *evidence_stage_timings[-2:],
+                workflow_elapsed,
             ]
             log["stage_timings"] = list(result["stage_timings"])
-            result["technical_report"] = build_technical_run_report(
-                db,
-                upload=upload,
-                experiment=experiment,
-                result=result,
-                pipeline_log=log,
-            )
-            # Re-run the read-only verifier against the now-complete timing and
-            # report evidence. The recorded verifier timing above is a real
-            # measurement of the same deterministic operation.
-            verification = verify_pipeline(result["technical_report"])
-            result["deterministic_verification"] = verification
-            log["deterministic_verification"] = verification
+            result["technical_report"]["stage_timings"] = list(result["stage_timings"])
             result["technical_report"]["deterministic_verification"] = verification
             (Path(experiment.artifact_dir) / "result.json").write_text(
                 json.dumps(result, default=str, indent=2) + "\n",
@@ -892,6 +924,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             experiment.result = result
             db.commit()
             _mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)
+            _request_routine_advisory_verification()
     except Exception as exc:  # noqa: BLE001
         logger.exception("auto-train job failed for upload %s", upload_id)
         db.rollback()

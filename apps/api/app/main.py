@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from app.api.admin_client_uploads import router as admin_client_uploads_router
 from app.api.admin_model_registry import router as admin_model_registry_router
+from app.api.admin_ml_verifications import router as admin_ml_verifications_router
 from app.api.admin_monitoring import router as admin_monitoring_router
 from app.api.admin_organizations import router as admin_organizations_router
 from app.api.auth import router as auth_router
@@ -44,6 +45,7 @@ admin_api.include_router(admin_organizations_router)
 admin_api.include_router(admin_model_registry_router)
 admin_api.include_router(admin_monitoring_router)
 admin_api.include_router(admin_client_uploads_router)
+admin_api.include_router(admin_ml_verifications_router)
 
 # Client surface: business objects only, always through app.translation.
 client_api.include_router(opportunities_router)

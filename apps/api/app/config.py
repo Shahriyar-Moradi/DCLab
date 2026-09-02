@@ -35,6 +35,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("DECISION_AGENT_API_KEY", "OPENAI_API_KEY"),
     )
     decision_agent_model: str = "gpt-4o-mini"
+    # Advisory pipeline auditor. Deterministic verification remains authoritative.
+    pipeline_llm_verifier_enabled: bool = False
+    pipeline_llm_verifier_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("PIPELINE_LLM_VERIFIER_API_KEY", "OPENAI_API_KEY"),
+    )
+    pipeline_llm_verifier_model: str = "gpt-5.6-luna"
+    pipeline_llm_verifier_deep_model: str = "gpt-5.6-terra"
+    pipeline_llm_timeout_seconds: float = 30.0
 
 
 @lru_cache
