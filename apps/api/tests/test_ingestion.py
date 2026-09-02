@@ -43,7 +43,11 @@ def test_ingest_collects_row_errors(db_session):
         "opp_neg,cust_2,-10,AED,proposal,inbound,rep_1,2026-01-01,0\n"
         "opp_date,cust_3,1000,AED,proposal,inbound,rep_1,not-a-date,0\n"
     ).encode()
-    result = ingest_opportunities_csv(db_session, csv)
+    from app.db.models import DEFAULT_WORKSPACE_ID
+
+    result = ingest_opportunities_csv(
+        db_session, csv, workspace_id=DEFAULT_WORKSPACE_ID
+    )
     assert result.inserted == 1
     assert result.rejected == 2
     assert any("amount" in err.reason for err in result.errors)

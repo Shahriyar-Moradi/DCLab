@@ -6,6 +6,7 @@ import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
 import { downloadLabPredictions, useLabUpload, useSession } from "@/lib/application";
 import type { ClientLabUpload, LabRunOutcome, LabRunStatus, LabRunStep } from "@/lib/domain";
+import { isPlatformRole } from "@/lib/infrastructure/session";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -187,7 +188,7 @@ export default function LabRunPage() {
 
   const run: ClientLabUpload = query.data;
   const inProgress = run.status === "queued" || run.status === "processing";
-  const isAdmin = user?.role === "dclab_admin";
+  const isPlatformMember = user ? isPlatformRole(user.role) : false;
 
   return (
     <div>
@@ -217,7 +218,7 @@ export default function LabRunPage() {
         <Link href="/app/labs">
           <Button variant="secondary">Back to Labs</Button>
         </Link>
-        {isAdmin ? (
+        {isPlatformMember ? (
           <Link href={`/admin/models/client-uploads/${run.id}`}>
             <Button variant="secondary">Admin record</Button>
           </Link>

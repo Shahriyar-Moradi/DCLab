@@ -6,6 +6,8 @@ to status codes; this module does not import FastAPI.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,7 +42,9 @@ def to_generate_response(
     )
 
 
-def generate_one(db: Session, opportunity: Opportunity) -> DecisionGenerateResponse:
+def generate_one(
+    db: Session, opportunity: Opportunity, *, workspace_id: UUID
+) -> DecisionGenerateResponse:
     scored = predict_with_evidence(opportunity)
     probability = scored["probability"]
     model_version = scored["model_version"]
@@ -48,6 +52,7 @@ def generate_one(db: Session, opportunity: Opportunity) -> DecisionGenerateRespo
     result = decide(opportunity, probability, policy)
 
     prediction = Prediction(
+        workspace_id=workspace_id,
         opportunity_id=opportunity.id,
         model_version=model_version,
         conversion_probability=probability,
@@ -59,6 +64,7 @@ def generate_one(db: Session, opportunity: Opportunity) -> DecisionGenerateRespo
     existing = db.scalars(select(Decision).where(Decision.opportunity_id == opportunity.id)).first()
     if existing is None:
         existing = Decision(
+            workspace_id=workspace_id,
             opportunity_id=opportunity.id,
             prediction_id=prediction.id,
             recommended_action=result["recommended_action"],
@@ -86,17 +92,32 @@ def generate_one(db: Session, opportunity: Opportunity) -> DecisionGenerateRespo
 
 
 def generate_decisions(
-    db: Session, payload: GenerateDecisionsRequest
+    db: Session,
+    payload: GenerateDecisionsRequest,
+    *,
+    workspace_id: UUID,
 ) -> DecisionGenerateResponse | list[DecisionGenerateResponse]:
     if payload.opportunity_id:
-        opportunity = get_opportunity(db, payload.opportunity_id)
+        opportunity = get_opportunity(
+            db, payload.opportunity_id, workspace_id=workspace_id
+        )
         if opportunity is None:
             raise OpportunityNotFoundError("opportunity not found")
-        return generate_one(db, opportunity)
+        return generate_one(db, opportunity, workspace_id=workspace_id)
 
     if payload.generate_all:
-        decided_ids = select(Decision.opportunity_id)
-        opportunities = db.scalars(select(Opportunity).where(Opportunity.id.not_in(decided_ids))).all()
-        return [generate_one(db, row) for row in opportunities]
+        decided_ids = select(Decision.opportunity_id).where(
+            Decision.workspace_id == workspace_id
+        )
+        opportunities = db.scalars(
+            select(Opportunity).where(
+                Opportunity.workspace_id == workspace_id,
+                Opportunity.id.not_in(decided_ids),
+            )
+        ).all()
+        return [
+            generate_one(db, row, workspace_id=workspace_id)
+            for row in opportunities
+        ]
 
     raise InvalidGenerateRequestError("provide opportunity_id or set generate_all to true")

@@ -7,7 +7,12 @@ const DEFAULT_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 export type SessionUser = {
   id: string;
   email: string;
-  role: "dclab_admin" | "client_user";
+  role:
+    | "dclab_admin"
+    | "dclab_developer"
+    | "business_admin"
+    | "business_developer"
+    | "client_user";
   full_name: string;
   workspace_id: string | null;
 };
@@ -67,7 +72,18 @@ export function clearToken(): void {
 }
 
 export function roleLabel(role: SessionUser["role"]): string {
-  return role === "dclab_admin" ? "Admin" : "Business Client";
+  const labels: Record<SessionUser["role"], string> = {
+    dclab_admin: "DCLab Admin",
+    dclab_developer: "DCLab Developer",
+    business_admin: "Business Admin",
+    business_developer: "Business Developer",
+    client_user: "Business Client",
+  };
+  return labels[role];
+}
+
+export function isPlatformRole(role: SessionUser["role"]): boolean {
+  return role === "dclab_admin" || role === "dclab_developer";
 }
 
 export function displayName(user: SessionUser): string {
@@ -84,7 +100,17 @@ export function readSessionUser(): SessionUser | null {
     clearToken();
     return null;
   }
-  if (decoded.role !== "dclab_admin" && decoded.role !== "client_user") return null;
+  if (
+    ![
+      "dclab_admin",
+      "dclab_developer",
+      "business_admin",
+      "business_developer",
+      "client_user",
+    ].includes(decoded.role)
+  ) {
+    return null;
+  }
   return {
     id: decoded.sub,
     email: decoded.email,

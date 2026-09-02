@@ -4,6 +4,7 @@ import math
 from io import BytesIO
 from typing import Any
 from uuid import uuid4
+from uuid import UUID
 
 import pandas as pd
 from pydantic import ValidationError
@@ -40,7 +41,12 @@ def _cell(value: Any) -> Any:
     return value
 
 
-def ingest_opportunities_csv(db: Session, content: bytes) -> OpportunityUploadResult:
+def ingest_opportunities_csv(
+    db: Session,
+    content: bytes,
+    *,
+    workspace_id: UUID,
+) -> OpportunityUploadResult:
     """Validate each CSV row independently and upsert valid rows on external_id."""
     try:
         frame = pd.read_csv(BytesIO(content))
@@ -69,6 +75,7 @@ def ingest_opportunities_csv(db: Session, content: bytes) -> OpportunityUploadRe
         payload = parsed.model_dump()
         payload["id"] = uuid4()
         payload["org_id"] = DEFAULT_ORG_ID
+        payload["workspace_id"] = workspace_id
         if payload.get("created_at") is None:
             payload.pop("created_at")
         valid_payloads.append(payload)
@@ -76,7 +83,7 @@ def ingest_opportunities_csv(db: Session, content: bytes) -> OpportunityUploadRe
     if valid_payloads:
         stmt = insert(Opportunity).values(valid_payloads)
         stmt = stmt.on_conflict_do_update(
-            index_elements=["external_id"],
+            index_elements=["workspace_id", "external_id"],
             set_={column: getattr(stmt.excluded, column) for column in UPDATE_COLUMNS},
         )
         db.execute(stmt)

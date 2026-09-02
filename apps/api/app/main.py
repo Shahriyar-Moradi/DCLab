@@ -27,14 +27,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Two route trees, separated by role rather than by convention. The guard lives on
-# the parent router, so every route mounted underneath inherits it — a new admin
-# endpoint cannot be added without the admin check, and the Step 0 audit asserts
-# this by enumerating the live route table rather than a hand-maintained list.
+# Two route trees, separated by membership rather than by convention. The guards
+# live on the parent routers, so every mounted route inherits authentication,
+# read-only enforcement, and (for /app) validated workspace selection.
 admin_api = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 client_api = APIRouter(prefix="/app", dependencies=[Depends(require_client)])
 
-# Admin surface: full, unrestricted ML detail for the DCLab team. `simulations`
+# Platform surface: full ML detail for the DCLab team. Platform developers may
+# inspect it, while method-aware authorization reserves writes for platform admins.
+# `simulations`
 # lives here (not on /app) because it retrains models on demand and returns raw
 # metrics/candidate/fusion detail by design — it is an internal engine harness,
 # not a client insight. Step 5 (Client Labs) builds the bounded, translated

@@ -2,7 +2,7 @@
 
 import { BrandLogo } from "@/app/components/brand/BrandLogo";
 import { useSession } from "@/lib/application";
-import { displayName, roleLabel } from "@/lib/infrastructure/session";
+import { displayName, isPlatformRole, roleLabel } from "@/lib/infrastructure/session";
 import { cn } from "@/lib/cn";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
@@ -55,8 +55,8 @@ export function SiteHeader() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const { user, loaded, signOut } = useSession();
-  const isAdmin = user?.role === "dclab_admin";
-  const workspaceNav = isAdmin ? [...WORKSPACE, ...ADMIN] : WORKSPACE;
+  const isPlatformMember = user ? isPlatformRole(user.role) : false;
+  const workspaceNav = isPlatformMember ? [...WORKSPACE, ...ADMIN] : WORKSPACE;
 
   function handleSignOut() {
     signOut();
@@ -119,7 +119,7 @@ export function SiteHeader() {
       <div className="border-t border-hairline bg-navy-soft/40">
         <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-5 gap-y-2 px-5 py-2 lg:px-8" aria-label="Workspace">
           <span className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-brand">
-            {isAdmin ? "Admin" : "Business Client"}
+            {isPlatformMember ? "DCLab Platform" : "Business Workspace"}
           </span>
           {workspaceNav.map((item) => (
             <Link

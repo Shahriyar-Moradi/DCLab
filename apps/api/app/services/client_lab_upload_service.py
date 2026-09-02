@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import REPO_ROOT
-from app.db.models import DEFAULT_WORKSPACE_ID, ClientLabUpload, User
+from app.db.models import ClientLabUpload, User
 from app.domain.client_lab import ClientLabUploadRead
 from app.domain.errors import OpenLabFileError, UnknownLabCategoryError
 from app.domain.lab_run_stages import (
@@ -50,10 +50,6 @@ def _progress(row: ClientLabUpload) -> str:
     if row.pipeline_status == "completed":
         return "ready"
     return "saved"
-
-
-def _workspace_id_for(user: User) -> UUID:
-    return user.workspace_id or DEFAULT_WORKSPACE_ID
 
 
 def _parse_category(value: str) -> InsightCategory:
@@ -139,6 +135,7 @@ def save_upload(
     filename: str,
     data: bytes,
     target_column: str | None = None,
+    workspace_id: UUID,
 ) -> ClientLabUploadRead:
     parsed_category = _parse_category(category)
     try:
@@ -146,7 +143,6 @@ def save_upload(
     except OpenIngestError as exc:
         raise OpenLabFileError(str(exc)) from exc
 
-    workspace_id = _workspace_id_for(user)
     dest_dir = REPO_ROOT / "data" / "uploads" / "client_labs" / str(workspace_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
     suffix = ""
@@ -183,8 +179,16 @@ def save_upload(
     return payload
 
 
-def list_uploads(db: Session, user: User, category: str | None = None) -> list[ClientLabUploadRead]:
-    stmt = select(ClientLabUpload).where(ClientLabUpload.workspace_id == _workspace_id_for(user))
+def list_uploads(
+    db: Session,
+    user: User,
+    category: str | None = None,
+    *,
+    workspace_id: UUID,
+) -> list[ClientLabUploadRead]:
+    stmt = select(ClientLabUpload).where(
+        ClientLabUpload.workspace_id == workspace_id
+    )
     if category:
         parsed = _parse_category(category)
         stmt = stmt.where(ClientLabUpload.category == parsed.value)
@@ -192,25 +196,47 @@ def list_uploads(db: Session, user: User, category: str | None = None) -> list[C
     return [_to_read(db, row) for row in db.scalars(stmt)]
 
 
-def _upload_for_workspace(db: Session, user: User, upload_id: UUID) -> ClientLabUpload | None:
+def _upload_for_workspace(
+    db: Session,
+    user: User,
+    upload_id: UUID,
+    *,
+    workspace_id: UUID,
+) -> ClientLabUpload | None:
     row = db.get(ClientLabUpload, upload_id)
     if row is None:
         row = db.scalars(select(ClientLabUpload).where(ClientLabUpload.run_id == upload_id)).first()
-    if row is None or row.workspace_id != _workspace_id_for(user):
+    if row is None or row.workspace_id != workspace_id:
         return None
     return row
 
 
-def get_upload(db: Session, user: User, upload_id: UUID) -> ClientLabUploadRead | None:
-    row = _upload_for_workspace(db, user, upload_id)
+def get_upload(
+    db: Session,
+    user: User,
+    upload_id: UUID,
+    *,
+    workspace_id: UUID,
+) -> ClientLabUploadRead | None:
+    row = _upload_for_workspace(
+        db, user, upload_id, workspace_id=workspace_id
+    )
     if row is None:
         return None
     return _to_read(db, row, include_predictions=True)
 
 
-def predictions_download(db: Session, user: User, upload_id: UUID) -> tuple[str, str] | None:
+def predictions_download(
+    db: Session,
+    user: User,
+    upload_id: UUID,
+    *,
+    workspace_id: UUID,
+) -> tuple[str, str] | None:
     """Filename and CSV body for the completed run's predictions, or None."""
-    row = _upload_for_workspace(db, user, upload_id)
+    row = _upload_for_workspace(
+        db, user, upload_id, workspace_id=workspace_id
+    )
     if row is None:
         return None
     outcome = outcome_for_upload(db, row, include_predictions=True)

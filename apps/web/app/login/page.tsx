@@ -2,7 +2,7 @@
 
 import { Button } from "@/app/components/ui/Button";
 import { useLogin, useSession } from "@/lib/application";
-import { displayName, roleLabel } from "@/lib/infrastructure/session";
+import { displayName, isPlatformRole, roleLabel } from "@/lib/infrastructure/session";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
@@ -36,9 +36,10 @@ function LoginForm() {
       {
         onSuccess: (data) => {
           const requested = params.get("next");
-          const fallback = data.user.role === "dclab_admin" ? "/admin/lab" : "/app/dashboards";
+          const platformMember = isPlatformRole(data.user.role);
+          const fallback = platformMember ? "/admin/lab" : "/app/dashboards";
           const allowed =
-            requested && (data.user.role === "dclab_admin" || !requested.startsWith("/admin"));
+            requested && (platformMember || !requested.startsWith("/admin"));
           router.push(allowed && requested ? requested : fallback);
           router.refresh();
         },
@@ -49,7 +50,7 @@ function LoginForm() {
   if (!loaded) return null;
 
   if (user) {
-    const home = user.role === "dclab_admin" ? "/admin/lab" : "/app/dashboards";
+    const home = isPlatformRole(user.role) ? "/admin/lab" : "/app/dashboards";
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-5">
         <h1 className="font-display text-title text-ink">You are signed in</h1>

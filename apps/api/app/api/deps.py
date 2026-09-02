@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.db.models import User, UserRole
+from app.db.models import User
 from app.db.session import get_db
 from app.services.auth_service import AuthError, user_from_token
+from app.services.authorization_service import (
+    AuthorizationError,
+    WorkspaceAccess,
+    can_read_platform,
+    can_write_platform,
+    can_write_workspace,
+    resolve_workspace_access,
+)
 
 
 def _bearer_token(request: Request) -> str:
@@ -32,20 +42,100 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         ) from exc
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
-    """Guard for the /admin tree. Attached at router level so every admin route
-    inherits it — a new endpoint cannot be added without this check."""
-    if user.role != UserRole.DCLAB_ADMIN.value:
+def require_platform_read(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> User:
+    if not can_read_platform(db, user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="this area is restricted to DCLab administrators",
+            detail="this area is restricted to DCLab platform members",
         )
     return user
 
 
-def require_client(user: User = Depends(get_current_user)) -> User:
-    """Guard for the /app tree. Admins are allowed through so DCLab staff can
-    support an account, but a client user can never reach the admin tree."""
-    if user.role not in {UserRole.CLIENT_USER.value, UserRole.DCLAB_ADMIN.value}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not authorized")
+def require_platform_admin(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> User:
+    if not can_write_platform(db, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="platform write access requires dclab_admin",
+        )
     return user
+
+
+def _requested_workspace_id(request: Request) -> uuid.UUID | None:
+    raw = request.headers.get("X-Workspace-Id")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(raw.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Workspace-Id must be a UUID",
+        ) from exc
+
+
+def _workspace_access(request: Request, db: Session, user: User) -> WorkspaceAccess:
+    try:
+        access = resolve_workspace_access(db, user, _requested_workspace_id(request))
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    request.state.workspace_access = access
+    return access
+
+
+def require_workspace_read(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    _workspace_access(request, db, user)
+    return user
+
+
+def require_workspace_admin(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    access = _workspace_access(request, db, user)
+    if not can_write_workspace(db, user, access.workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="workspace write access requires business_admin or dclab_admin",
+        )
+    return user
+
+
+def request_workspace_id(request: Request) -> uuid.UUID:
+    access = getattr(request.state, "workspace_access", None)
+    if not isinstance(access, WorkspaceAccess):
+        raise RuntimeError("workspace authorization dependency was not evaluated")
+    return access.workspace_id
+
+
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def require_admin(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Compatibility name for the method-aware /admin tree guard."""
+    if request.method in _READ_METHODS:
+        return require_platform_read(user, db)
+    return require_platform_admin(user, db)
+
+
+def require_client(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Compatibility name for the method-aware, tenant-aware /app guard."""
+    if request.method in _READ_METHODS:
+        return require_workspace_read(request, user, db)
+    return require_workspace_admin(request, user, db)

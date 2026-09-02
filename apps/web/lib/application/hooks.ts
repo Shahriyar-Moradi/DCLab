@@ -76,7 +76,13 @@ const LoginResponseSchema = z.object({
   user: z.object({
     id: z.string(),
     email: z.string(),
-    role: z.enum(["dclab_admin", "client_user"]),
+    role: z.enum([
+      "dclab_admin",
+      "dclab_developer",
+      "business_admin",
+      "business_developer",
+      "client_user",
+    ]),
     full_name: z.string(),
     workspace_id: z.string().nullable(),
   }),

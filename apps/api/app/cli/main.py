@@ -39,7 +39,12 @@ def cmd_user_create(args: argparse.Namespace) -> int:
         print(json.dumps({"error": "email already exists", "email": existing.email}))
         db.close()
         return 1
-    workspace_id = DEFAULT_WORKSPACE_ID if role is UserRole.CLIENT_USER else None
+    workspace_roles = {
+        UserRole.CLIENT_USER,
+        UserRole.BUSINESS_ADMIN,
+        UserRole.BUSINESS_DEVELOPER,
+    }
+    workspace_id = DEFAULT_WORKSPACE_ID if role in workspace_roles else None
     user = create_user(
         db,
         email=args.email,
@@ -256,7 +261,11 @@ def build_parser() -> argparse.ArgumentParser:
     user_create = user_sub.add_parser("create")
     user_create.add_argument("--email", required=True)
     user_create.add_argument("--password", required=True)
-    user_create.add_argument("--role", required=True, choices=["dclab_admin", "client_user"])
+    user_create.add_argument(
+        "--role",
+        required=True,
+        choices=[role.value for role in UserRole],
+    )
     user_create.add_argument("--name", default="")
     user_create.set_defaults(func=cmd_user_create)
     user_seed = user_sub.add_parser("seed")

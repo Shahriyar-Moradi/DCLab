@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -44,20 +45,47 @@ class Workspace(Base):
     predictions: Mapped[list["Prediction"]] = relationship(back_populates="workspace")
     decisions: Mapped[list["Decision"]] = relationship(back_populates="workspace")
     users: Mapped[list["User"]] = relationship(back_populates="workspace")
+    business_profile: Mapped["BusinessProfile | None"] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", uselist=False
+    )
+    memberships: Mapped[list["WorkspaceMembership"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+    capabilities: Mapped[list["WorkspaceCapability"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
 
 
 class UserRole(str, enum.Enum):
-    """Who a caller is. Drives the /admin vs /app split at the router level."""
+    """Compatibility mirror for identity responses and the legacy users.role column.
+
+    Authorization is derived from membership tables. ``client_user`` remains a
+    supported legacy value during the migration window.
+    """
 
     DCLAB_ADMIN = "dclab_admin"
+    DCLAB_DEVELOPER = "dclab_developer"
+    BUSINESS_ADMIN = "business_admin"
+    BUSINESS_DEVELOPER = "business_developer"
     CLIENT_USER = "client_user"
+
+
+class PlatformRole(str, enum.Enum):
+    DCLAB_ADMIN = "dclab_admin"
+    DCLAB_DEVELOPER = "dclab_developer"
+
+
+class WorkspaceRole(str, enum.Enum):
+    BUSINESS_ADMIN = "business_admin"
+    BUSINESS_DEVELOPER = "business_developer"
 
 
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('dclab_admin', 'client_user')",
+            "role IN ('dclab_admin', 'dclab_developer', 'business_admin', "
+            "'business_developer', 'client_user')",
             name="ck_users_role_valid",
         ),
         # A client user is always scoped to exactly one workspace; DCLab admins are
@@ -84,14 +112,141 @@ class User(Base):
     )
 
     workspace: Mapped[Workspace | None] = relationship(back_populates="users")
+    platform_membership: Mapped["PlatformMembership | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    workspace_memberships: Mapped[list["WorkspaceMembership"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
-    @property
-    def is_admin(self) -> bool:
-        return self.role == UserRole.DCLAB_ADMIN.value
+
+class BusinessProfile(Base):
+    """Business metadata attached to the canonical Workspace tenant."""
+
+    __tablename__ = "business_profiles"
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    legal_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    profile_data: Mapped[dict] = mapped_column(
+        "profile_data", JSONB, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="business_profile")
+
+
+class PlatformMembership(Base):
+    __tablename__ = "platform_memberships"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_platform_memberships_user_id"),
+        CheckConstraint(
+            "role IN ('dclab_admin', 'dclab_developer')",
+            name="ck_platform_memberships_role_valid",
+        ),
+        Index("ix_platform_memberships_role", "role"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="platform_membership")
+
+
+class WorkspaceMembership(Base):
+    __tablename__ = "workspace_memberships"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "user_id",
+            name="uq_workspace_memberships_workspace_user",
+        ),
+        CheckConstraint(
+            "role IN ('business_admin', 'business_developer')",
+            name="ck_workspace_memberships_role_valid",
+        ),
+        Index("ix_workspace_memberships_workspace_id", "workspace_id"),
+        Index("ix_workspace_memberships_user_id", "user_id"),
+        Index("ix_workspace_memberships_role", "role"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="memberships")
+    user: Mapped[User] = relationship(back_populates="workspace_memberships")
+
+
+class WorkspaceCapability(Base):
+    __tablename__ = "workspace_capabilities"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "capability",
+            name="uq_workspace_capabilities_workspace_key",
+        ),
+        Index("ix_workspace_capabilities_workspace_id", "workspace_id"),
+        Index("ix_workspace_capabilities_capability", "capability"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    capability: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    configuration: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="capabilities")
 
 
 class Opportunity(Base):
     __tablename__ = "opportunities"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "external_id",
+            name="uq_opportunities_workspace_external_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id: Mapped[str] = mapped_column(
@@ -105,7 +260,7 @@ class Opportunity(Base):
         server_default=str(DEFAULT_WORKSPACE_ID),
         index=True,
     )
-    external_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     customer_id: Mapped[str] = mapped_column(String(128), nullable=False)
     amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="AED", server_default="AED")

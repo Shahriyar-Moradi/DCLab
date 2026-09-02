@@ -37,7 +37,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import DEFAULT_WORKSPACE_ID, ClientLabRun, ClientLabRunAudit, User
+from app.db.models import ClientLabRun, ClientLabRunAudit, User
 from app.domain.client_lab import ClientLabProblem, ClientLabQuotaRead
 from app.domain.errors import (
     TrialDatasetColumnsError,
@@ -56,10 +56,6 @@ MAX_UPLOAD_ROWS = 500
 MAX_TRIAL_RUNS_PER_PROBLEM = 3
 TRIAL_TIMEOUT_SECONDS = 30
 MAX_INSIGHTS_PER_RUN = 6
-
-
-def _workspace_id_for(user: User) -> UUID:
-    return user.workspace_id or DEFAULT_WORKSPACE_ID
 
 
 def _required_columns(spec: UseCase) -> list[str]:
@@ -117,10 +113,16 @@ def runs_used(db: Session, workspace_id: UUID, use_case_name: str) -> int:
     )
 
 
-def get_quota(db: Session, user: User, use_case_name: str) -> ClientLabQuotaRead:
+def get_quota(
+    db: Session,
+    user: User,
+    use_case_name: str,
+    *,
+    workspace_id: UUID,
+) -> ClientLabQuotaRead:
     if use_case_name not in CATEGORY_BY_USE_CASE:
         raise UnknownLabProblemError(f"{use_case_name!r} is not one of the fixed Labs problems")
-    used = runs_used(db, _workspace_id_for(user), use_case_name)
+    used = runs_used(db, workspace_id, use_case_name)
     return ClientLabQuotaRead(
         use_case=use_case_name,
         max_trial_runs=MAX_TRIAL_RUNS_PER_PROBLEM,
@@ -197,11 +199,11 @@ def run_trial(
     user: User,
     use_case_name: str,
     uploaded_bytes: bytes | None,
+    workspace_id: UUID,
 ) -> ClientLabRun:
     if use_case_name not in CATEGORY_BY_USE_CASE:
         raise UnknownLabProblemError(f"{use_case_name!r} is not one of the fixed Labs problems")
 
-    workspace_id = _workspace_id_for(user)
     used = runs_used(db, workspace_id, use_case_name)
     if used >= MAX_TRIAL_RUNS_PER_PROBLEM:
         raise TrialQuotaExceededError(
@@ -288,16 +290,30 @@ def run_trial(
         shutil.rmtree(tmp_root, ignore_errors=True)
 
 
-def list_runs(db: Session, user: User, use_case_name: str | None = None) -> list[ClientLabRun]:
-    stmt = select(ClientLabRun).where(ClientLabRun.workspace_id == _workspace_id_for(user))
+def list_runs(
+    db: Session,
+    user: User,
+    use_case_name: str | None = None,
+    *,
+    workspace_id: UUID,
+) -> list[ClientLabRun]:
+    stmt = select(ClientLabRun).where(
+        ClientLabRun.workspace_id == workspace_id
+    )
     if use_case_name:
         stmt = stmt.where(ClientLabRun.use_case == use_case_name)
     stmt = stmt.order_by(ClientLabRun.created_at.desc()).limit(50)
     return list(db.scalars(stmt))
 
 
-def get_run(db: Session, user: User, run_id: UUID) -> ClientLabRun | None:
+def get_run(
+    db: Session,
+    user: User,
+    run_id: UUID,
+    *,
+    workspace_id: UUID,
+) -> ClientLabRun | None:
     row = db.get(ClientLabRun, run_id)
-    if row is None or row.workspace_id != _workspace_id_for(user):
+    if row is None or row.workspace_id != workspace_id:
         return None
     return row

@@ -4,7 +4,20 @@ import { NextResponse, type NextRequest } from "next/server";
 const TOKEN_COOKIE = "dclab_token";
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-only-insecure-secret-change-me";
 
-type Role = "dclab_admin" | "client_user";
+type Role =
+  | "dclab_admin"
+  | "dclab_developer"
+  | "business_admin"
+  | "business_developer"
+  | "client_user";
+
+const ROLES: Role[] = [
+  "dclab_admin",
+  "dclab_developer",
+  "business_admin",
+  "business_developer",
+  "client_user",
+];
 
 async function roleFromRequest(request: NextRequest): Promise<Role | null> {
   const token = request.cookies.get(TOKEN_COOKIE)?.value;
@@ -14,7 +27,7 @@ async function roleFromRequest(request: NextRequest): Promise<Role | null> {
     // claiming role=dclab_admin must not get past this point.
     const { payload } = await jwtVerify(token, new TextEncoder().encode(JWT_SECRET));
     const role = payload.role;
-    return role === "dclab_admin" || role === "client_user" ? role : null;
+    return typeof role === "string" && ROLES.includes(role as Role) ? (role as Role) : null;
   } catch {
     return null;
   }
@@ -28,7 +41,7 @@ function forbidden(area: string): NextResponse {
       `<main style="text-align:center;max-width:32rem;padding:2rem">` +
       `<p style="font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;color:#6B7280">403 Forbidden</p>` +
       `<h1 style="font-size:1.5rem;margin:.5rem 0">You do not have access to ${area}</h1>` +
-      `<p style="color:#4B5563">This area is restricted to DCLab administrators.</p>` +
+      `<p style="color:#4B5563">This area is restricted to DCLab platform members.</p>` +
       `<p style="margin-top:1.5rem"><a href="/app/dashboards" style="color:#2563EB">Return to your dashboard</a></p>` +
       `</main></body></html>`,
     { status: 403, headers: { "Content-Type": "text/html; charset=utf-8" } },
@@ -45,9 +58,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  // A client user typing an admin URL directly is blocked with a real 403, not
-  // redirected to a friendlier page — the block has to be visible, not cosmetic.
-  if (pathname.startsWith("/admin") && role !== "dclab_admin") {
+  // A business member typing a platform URL directly is blocked with a real 403.
+  if (
+    pathname.startsWith("/admin") &&
+    role !== "dclab_admin" &&
+    role !== "dclab_developer"
+  ) {
     return forbidden("the admin area");
   }
 

@@ -9,7 +9,14 @@ import jwt
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import User, UserRole
+from app.db.models import (
+    PlatformMembership,
+    PlatformRole,
+    User,
+    UserRole,
+    WorkspaceMembership,
+    WorkspaceRole,
+)
 
 ALGORITHM = "HS256"
 
@@ -99,16 +106,36 @@ def create_user(
     full_name: str = "",
     workspace_id: uuid.UUID | None = None,
 ) -> User:
-    if role is UserRole.CLIENT_USER and workspace_id is None:
-        raise ValueError("client_user requires a workspace_id")
+    workspace_roles = {
+        UserRole.CLIENT_USER: WorkspaceRole.BUSINESS_ADMIN,
+        UserRole.BUSINESS_ADMIN: WorkspaceRole.BUSINESS_ADMIN,
+        UserRole.BUSINESS_DEVELOPER: WorkspaceRole.BUSINESS_DEVELOPER,
+    }
+    platform_roles = {
+        UserRole.DCLAB_ADMIN: PlatformRole.DCLAB_ADMIN,
+        UserRole.DCLAB_DEVELOPER: PlatformRole.DCLAB_DEVELOPER,
+    }
+    if role in workspace_roles and workspace_id is None:
+        raise ValueError(f"{role.value} requires a workspace_id")
     user = User(
         email=email.strip().lower(),
         password_hash=hash_password(password),
         role=role.value,
         full_name=full_name,
-        workspace_id=workspace_id if role is UserRole.CLIENT_USER else None,
+        workspace_id=workspace_id if role in workspace_roles else None,
     )
     db.add(user)
+    db.flush()
+    if role in platform_roles:
+        db.add(PlatformMembership(user_id=user.id, role=platform_roles[role].value))
+    else:
+        db.add(
+            WorkspaceMembership(
+                workspace_id=workspace_id,
+                user_id=user.id,
+                role=workspace_roles[role].value,
+            )
+        )
     db.flush()
     return user
 
@@ -154,6 +181,33 @@ def ensure_demo_users(db: Session) -> list[User]:
         existing.full_name = spec["full_name"]
         existing.workspace_id = spec["workspace_id"]
         existing.is_active = True
+        if spec["role"] is UserRole.DCLAB_ADMIN:
+            membership = db.query(PlatformMembership).filter_by(user_id=existing.id).one_or_none()
+            if membership is None:
+                db.add(
+                    PlatformMembership(
+                        user_id=existing.id,
+                        role=PlatformRole.DCLAB_ADMIN.value,
+                    )
+                )
+            else:
+                membership.role = PlatformRole.DCLAB_ADMIN.value
+        else:
+            membership = (
+                db.query(WorkspaceMembership)
+                .filter_by(user_id=existing.id, workspace_id=spec["workspace_id"])
+                .one_or_none()
+            )
+            if membership is None:
+                db.add(
+                    WorkspaceMembership(
+                        user_id=existing.id,
+                        workspace_id=spec["workspace_id"],
+                        role=WorkspaceRole.BUSINESS_ADMIN.value,
+                    )
+                )
+            else:
+                membership.role = WorkspaceRole.BUSINESS_ADMIN.value
         users.append(existing)
     db.flush()
     return users

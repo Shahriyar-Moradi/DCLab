@@ -11,8 +11,13 @@ from app.db.models import Opportunity
 from app.domain.opportunity import OpportunityListResponse, OpportunityRead
 
 
-def get_opportunity(db: Session, opportunity_id: str) -> Opportunity | None:
-    stmt = select(Opportunity)
+def get_opportunity(
+    db: Session,
+    opportunity_id: str,
+    *,
+    workspace_id: UUID,
+) -> Opportunity | None:
+    stmt = select(Opportunity).where(Opportunity.workspace_id == workspace_id)
     try:
         uid = UUID(opportunity_id)
         stmt = stmt.where(Opportunity.id == uid)
@@ -29,9 +34,14 @@ def list_opportunities(
     stage: str | None,
     sort: str,
     order: str,
+    workspace_id: UUID,
 ) -> OpportunityListResponse:
-    stmt = select(Opportunity)
-    count_stmt = select(func.count()).select_from(Opportunity)
+    stmt = select(Opportunity).where(Opportunity.workspace_id == workspace_id)
+    count_stmt = (
+        select(func.count())
+        .select_from(Opportunity)
+        .where(Opportunity.workspace_id == workspace_id)
+    )
     if stage:
         stmt = stmt.where(Opportunity.stage == stage)
         count_stmt = count_stmt.where(Opportunity.stage == stage)

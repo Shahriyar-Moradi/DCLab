@@ -53,6 +53,13 @@ def test_engine():
             text("INSERT INTO workspaces (id, slug, name) VALUES (:id, :slug, :name)"),
             {"id": DEFAULT_WORKSPACE_ID, "slug": DEFAULT_WORKSPACE_SLUG, "name": "Default"},
         )
+        conn.execute(
+            text(
+                "INSERT INTO business_profiles (workspace_id, legal_name, profile_data) "
+                "VALUES (:id, :name, '{}'::jsonb)"
+            ),
+            {"id": DEFAULT_WORKSPACE_ID, "name": "Default"},
+        )
     yield engine
     engine.dispose()
 
@@ -69,7 +76,8 @@ def db_session(test_engine) -> Generator[Session, None, None]:
 
         with test_engine.begin() as conn:
             conn.execute(text(
-                "TRUNCATE TABLE ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
+                "TRUNCATE TABLE workspace_capabilities, workspace_memberships, platform_memberships, "
+                "ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
                 "lab_decision_records, client_lab_run_audits, client_lab_runs, "
                 "client_lab_uploads, "

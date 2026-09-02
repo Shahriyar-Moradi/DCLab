@@ -77,6 +77,7 @@ class TestAdminOrganizations:
                 b"industry,num_interactions,converted\n"
                 b"org_opp_1,cust_1,50000,AED,proposal,inbound,rep_1,2026-01-15,2026-09-01,5,0.7,true,retail,5,0\n"
             ),
+            workspace_id=DEFAULT_WORKSPACE_ID,
         )
 
         response = admin_client.get("/admin/organizations")

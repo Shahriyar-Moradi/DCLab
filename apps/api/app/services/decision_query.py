@@ -39,11 +39,16 @@ def serialize_decision(row: Decision) -> DecisionRead:
     )
 
 
-def get_decision(db: Session, decision_id: UUID) -> Decision | None:
+def get_decision(
+    db: Session,
+    decision_id: UUID,
+    *,
+    workspace_id: UUID,
+) -> Decision | None:
     return db.scalars(
         select(Decision)
         .options(selectinload(Decision.prediction), selectinload(Decision.opportunity))
-        .where(Decision.id == decision_id)
+        .where(Decision.id == decision_id, Decision.workspace_id == workspace_id)
     ).first()
 
 
@@ -55,11 +60,16 @@ def list_decisions(
     status: str | None,
     recommended_action: str | None,
     opportunity_id: str | None,
+    workspace_id: UUID,
 ) -> DecisionListResponse:
     stmt = select(Decision).options(
         selectinload(Decision.prediction), selectinload(Decision.opportunity)
+    ).where(Decision.workspace_id == workspace_id)
+    count_stmt = (
+        select(func.count())
+        .select_from(Decision)
+        .where(Decision.workspace_id == workspace_id)
     )
-    count_stmt = select(func.count()).select_from(Decision)
     if status:
         stmt = stmt.where(Decision.status == status)
         count_stmt = count_stmt.where(Decision.status == status)
@@ -67,7 +77,7 @@ def list_decisions(
         stmt = stmt.where(Decision.recommended_action == recommended_action)
         count_stmt = count_stmt.where(Decision.recommended_action == recommended_action)
     if opportunity_id:
-        opportunity = get_opportunity(db, opportunity_id)
+        opportunity = get_opportunity(db, opportunity_id, workspace_id=workspace_id)
         if opportunity is None:
             return DecisionListResponse(items=[], total=0, limit=limit, offset=offset)
         stmt = stmt.where(Decision.opportunity_id == opportunity.id)
