@@ -35,6 +35,13 @@ dclab env seed-dogfood
 dclab experiment run --dataset synthetic --task purchase_prediction
 ```
 
+Optional live OpenAI verifier smoke test (synthetic evidence only; it never
+sends an uploaded dataset):
+
+```bash
+OPENAI_API_KEY=... dclab verify-openai-smoke
+```
+
 Olist (manual benchmark, not CI):
 
 ```bash

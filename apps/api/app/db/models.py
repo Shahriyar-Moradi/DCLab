@@ -251,7 +251,7 @@ class ClientLabRunAudit(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     client_lab_run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("client_lab_runs.id"), nullable=False, unique=True, index=True
+        UUID(as_uuid=True), ForeignKey("client_lab_runs.id"), nullable=False, unique=True
     )
     use_case: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)

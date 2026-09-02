@@ -235,6 +235,18 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify_openai_smoke(_args: argparse.Namespace) -> int:
+    """Run exactly one synthetic-only live OpenAI verification request."""
+    from app.services.openai_smoke import OpenAISmokeError, run_openai_verification_smoke
+
+    try:
+        print(json.dumps(run_openai_verification_smoke()))
+    except OpenAISmokeError as exc:
+        print(f"live smoke not executed: {exc.code}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dclab")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -286,6 +298,12 @@ def build_parser() -> argparse.ArgumentParser:
     report = exp_sub.add_parser("report")
     report.add_argument("--id", required=True)
     report.set_defaults(func=cmd_experiment_report)
+
+    smoke = sub.add_parser(
+        "verify-openai-smoke",
+        help="call the production OpenAI verifier once with synthetic bounded evidence",
+    )
+    smoke.set_defaults(func=cmd_verify_openai_smoke)
     return parser
 
 

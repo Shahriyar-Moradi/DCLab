@@ -60,7 +60,7 @@ def _base_report(db: Session, upload: ClientLabUpload) -> dict[str, Any] | None:
     return copy.deepcopy(report) if report is not None else None
 
 
-def _validated_advisory_report(
+def validate_advisory_report(
     value: PipelineAuditReport | dict[str, Any],
     *,
     deterministic_status: str,
@@ -228,7 +228,7 @@ def request_pipeline_verification(
     )
     try:
         advisory = boundary.audit(evidence=package.payload, model=model)
-        validated = _validated_advisory_report(
+        validated = validate_advisory_report(
             advisory,
             deterministic_status=attempt.deterministic_status,
             deterministic_checks=attempt.deterministic_checks,
