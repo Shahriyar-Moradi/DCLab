@@ -165,6 +165,11 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
         "deterministic_verification",
         "report",
         "terminal",
+        "problem_profile",
+        "validation_plan",
+        "metric_plan",
+        "leakage_audit",
+        "model_development_plan",
     } <= stages
 
     def sequence(event_type: str) -> int:
@@ -177,7 +182,35 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
         if row.stage == "holdout_lock" and row.status == "completed"
     )
     assert holdout_sequence < sequence("cv_fold_started")
+    assert holdout_sequence < sequence("problem_profile_completed")
+    assert sequence("problem_profile_completed") < sequence("cv_fold_started")
+    assert sequence("validation_plan_selected") < sequence("cv_fold_started")
+    assert sequence("metric_plan_selected") < sequence("cv_fold_started")
+    assert sequence("leakage_audit_completed") < sequence("cv_fold_started")
+    assert sequence("model_development_plan_locked") < sequence("cv_fold_started")
     assert sequence("winner_locked") < sequence("final_test_started")
+
+    planning_types = {
+        "problem_profile_started",
+        "problem_profile_completed",
+        "validation_plan_selected",
+        "metric_plan_selected",
+        "leakage_audit_started",
+        "leakage_audit_completed",
+        "model_development_plan_locked",
+    }
+    recorded_types = {row.event_type for row in events}
+    assert planning_types <= recorded_types
+    for row in events:
+        if row.event_type not in planning_types and row.event_type not in {
+            "feature_leakage_warning",
+            "feature_excluded_for_leakage",
+        }:
+            continue
+        blob = json.dumps(row.payload)
+        assert "train_source_rows" not in blob
+        assert "test_source_rows" not in blob
+        assert "sample_rows" not in blob
 
     fold_started = [row for row in events if row.event_type == "cv_fold_started"]
     fold_completed = [row for row in events if row.event_type == "cv_fold_completed"]

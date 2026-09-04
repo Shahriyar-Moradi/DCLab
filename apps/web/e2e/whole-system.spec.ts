@@ -164,6 +164,12 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     for (const heading of [
       "Pipeline stage coverage",
       "Preprocessing configuration",
+      "Problem Profile",
+      "Validation Strategy",
+      "Metric Strategy",
+      "Leakage Audit",
+      "Allowed Features",
+      "Excluded Features",
       "Fold-by-fold cross-validation",
       "Candidate comparison",
       "Deterministic verification",

@@ -17,7 +17,12 @@ flowchart TD
   ingest --> target[Lock target and task]
   target --> clean[Structural hygiene]
   clean --> split[Lock 80/20 holdout]
-  split --> trainonly[Train-only decisions]
+  split --> profile[Train-only ProblemProfile]
+  profile --> valplan[ValidationPlan]
+  valplan --> metrics[MetricPlan]
+  metrics --> leak[LeakageAuditor]
+  leak --> mdp[ModelDevelopmentPlan]
+  mdp --> trainonly[Train-only decisions / FE]
   trainonly --> roles[Column roles]
   roles --> feats[Datetime feature actions]
   feats --> prep[ColumnTransformer config]
@@ -106,7 +111,10 @@ flowchart TD
     fingerprint uniquely identify a trial inside a pipeline.
 33. **Isolation.** Each candidate trains independently. A forced family
     failure emits `candidate_failed` and does not hide other candidates.
-34. **CV splitter.** Binary uses `StratifiedKFold`; regression uses `KFold`.
+34. **CV splitter.** Open-ingest uses the Adaptive Model Builder
+    `ValidationPlan`: ordinary binary `StratifiedKFold`, ordinary regression
+    `KFold`, repeated identifier-like entities group-aware CV, strong temporal
+    structure `TimeSeriesSplit`. See [DCLAB_ADAPTIVE_MODEL_BUILDER.md](DCLAB_ADAPTIVE_MODEL_BUILDER.md).
 35. **Adaptive folds.** Too-few training rows reduce fold count; the reason is
     persisted on the candidate.
 36. **Fold provenance.** Each fold stores train/validation source rows and

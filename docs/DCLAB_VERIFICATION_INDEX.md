@@ -14,5 +14,6 @@
 | [DCLAB_PLATFORM_ADMINISTRATION.md](DCLAB_PLATFORM_ADMINISTRATION.md) | Platform plane | Source doc; see report checklists |
 | [DCLAB_DATA_AND_MODEL_LINEAGE.md](DCLAB_DATA_AND_MODEL_LINEAGE.md) | Lineage hierarchy | Source doc; 0027 repair noted in report |
 | [DCLAB_PIPELINE_OBSERVABILITY.md](DCLAB_PIPELINE_OBSERVABILITY.md) | Events and LLM ledger | Source doc; observatory role gate updated |
+| [DCLAB_ADAPTIVE_MODEL_BUILDER.md](DCLAB_ADAPTIVE_MODEL_BUILDER.md) | Phase 1 scientific planning layer | ProblemProfile, ValidationPlan, MetricPlan, LeakageAuditor, verifier, benchmarks |
 
 Evidence artifacts (gitignored): `artifacts/e2e-verification/`.

@@ -315,6 +315,10 @@ provides `admin_user` / `client_user` / isolated `auth_client` and
 | `test_translation_layer.py` | Translators, scanners, dashboard isolation, all real policy actions |
 | `test_client_labs.py` | Bounds, translation, timeouts, workspace isolation, open ingest |
 | `test_open_ingest.py` | Preview any usual file; no required columns |
+| `test_adaptive_modeling_phase1a.py` | ProblemProfile, ValidationPlan, MetricPlan |
+| `test_adaptive_modeling_phase1b.py` | LeakageAuditor and ModelDevelopmentPlan |
+| `test_adaptive_modeling_phase1_verification.py` | Observatory events, E2E A–F, benchmark comparison |
+| `test_pipeline_verifier.py` | Deterministic verifier including Phase 1 invariants |
 | `test_admin_surfaces.py` | Orgs / registry / monitoring |
 | `test_custom_prediction_admin_trail.py` | Client trial → admin audit, client still translated |
 
@@ -548,7 +552,9 @@ Human documentation. Nothing here is imported by the API or the website.
 | `architecture.md` | Engine architecture |
 | `experimentation.md` | How a Lab experiment is defined and run |
 | `model-search.md` | Candidate search |
-| `leakage.md` | Leakage detector |
+| `leakage.md` | Legacy leakage detector (non-open-ingest) |
+| `DCLAB_ADAPTIVE_MODEL_BUILDER.md` | Phase 1 scientific planning, leakage auditor, verifier, benchmarks |
+| `DCLAB_PIPELINE_OBSERVABILITY.md` | Pipeline events and LLM ledger |
 | `validation.md` | Splits |
 | `ensembles.md` | When a blend is allowed |
 | `feature-groups.md` | Named column groups |

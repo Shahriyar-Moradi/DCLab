@@ -148,6 +148,29 @@ class TargetSelectionEvidence:
     columns: list[TargetColumnEvidence] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class LeakageReviewEvidence:
+    """Bounded leakage evidence. Aggregates only — never raw rows or CSV cells."""
+
+    column: str
+    target: str
+    task: str
+    dtype: str
+    cardinality: int
+    related_column_names: list[str] = field(default_factory=list)
+    exact_target_match_fraction: float | None = None
+    single_feature_score: float | None = None
+    single_feature_score_kind: str | None = None
+    suspicious_name_tokens: list[str] = field(default_factory=list)
+    target_name_similarity: float = 0.0
+    datetime_after_fraction: float | None = None
+    identifier_likelihood: float = 0.0
+    unique_ratio: float = 0.0
+    missing_fraction: float = 0.0
+    availability_status: str = "unknown"
+    availability_reason: str = ""
+
+
 def build_column_evidence(
     frame: pd.DataFrame,
     column: str,

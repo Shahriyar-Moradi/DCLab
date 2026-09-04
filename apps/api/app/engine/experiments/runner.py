@@ -13,7 +13,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import KFold, ShuffleSplit, StratifiedKFold
+from sklearn.model_selection import ShuffleSplit
 from sklearn.pipeline import Pipeline as SkPipeline
 
 from app.domain.lab_run_stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
@@ -31,6 +31,15 @@ from app.engine.features.encode import coerce_binary_target, encode_feature_colu
 from app.engine.lab.auto_prepare import build_preprocessor, engineer_features, split_column_roles
 from app.engine.leakage.detector import detect_leakage
 from app.engine.models.registry import make_model
+from app.engine.modeling.leakage_auditor import consult_leakage_llm, leakage_report_from_audit, plan_model_development
+from app.engine.modeling.metric_planner import plan_metrics
+from app.engine.modeling.problem_profile import build_problem_profile
+from app.engine.modeling.validation_planner import (
+    ValidationPlan,
+    ValidationUnsupportedError,
+    iter_validation_folds,
+    plan_validation,
+)
 from app.engine.schema.profiler import profile_frame
 from app.engine.search.generator import DUMMY_FAMILIES, assemble_candidates
 from app.engine.selection import greedy_diverse_selection
@@ -52,6 +61,19 @@ def _emit_event(
 ) -> None:
     if callback is not None:
         callback(event_type, {"stage": stage, "status": status, **payload})
+
+
+def _planning_event_sink(on_event: RunEventCallback | None):
+    if on_event is None:
+        return None
+
+    def sink(event_type: str, payload: dict[str, Any]) -> None:
+        data = dict(payload)
+        stage = str(data.pop("stage", event_type))
+        status = str(data.pop("status", "completed"))
+        _emit_event(on_event, event_type, stage=stage, status=status, **data)
+
+    return sink
 
 
 def _predict(model, X: np.ndarray, classifier: bool) -> np.ndarray:
@@ -99,25 +121,42 @@ def _timing(stage: str, started_at: datetime, timer: float, *, status: str = "co
     }
 
 
-def _open_ingest_cv_splitter(
-    y: np.ndarray,
-    *,
-    classifier: bool,
-    n_samples: int,
+def _open_ingest_validation(
+    split_meta: dict[str, Any],
+    records: list[dict[str, Any]],
     seed: int,
-    n_splits: int = 5,
-):
-    if classifier:
-        counts = pd.Series(y).value_counts()
-        min_class = int(counts.min()) if len(counts) else 0
-        splits = n_splits
-        if min_class < splits:
-            splits = max(2, min(n_splits, min_class)) if min_class >= 2 else 2
-        return StratifiedKFold(n_splits=splits, shuffle=True, random_state=seed), splits
-    splits = n_splits
-    if n_samples < splits * 2:
-        splits = max(2, min(n_splits, max(2, n_samples // 2)))
-    return KFold(n_splits=splits, shuffle=True, random_state=seed), splits
+    task_type: str,
+    plan: ValidationPlan | None = None,
+) -> dict[str, Any]:
+    trained = [row for row in records if row.get("status") == "trained"]
+    sample = trained[0] if trained else {}
+    if plan is not None:
+        return {
+            "train_rows": split_meta.get("n_train"),
+            "test_rows": split_meta.get("n_test"),
+            "cv_strategy": plan.strategy,
+            "n_folds": plan.actual_folds,
+            "requested_folds": plan.requested_folds,
+            "actual_folds": plan.actual_folds,
+            "adaptation_reason": plan.fallback_reason,
+            "shuffle": plan.shuffle,
+            "random_state": plan.random_state,
+            "group_column": plan.group_column,
+            "time_column": plan.time_column,
+            "stratified": plan.stratified,
+            "reason": plan.reason,
+        }
+    default_cv = "StratifiedKFold" if task_type == "binary" else "KFold"
+    return {
+        "train_rows": split_meta.get("n_train"),
+        "test_rows": split_meta.get("n_test"),
+        "cv_strategy": sample.get("cv_strategy") or default_cv,
+        "n_folds": sample.get("n_folds"),
+        "requested_folds": sample.get("requested_folds", 5),
+        "actual_folds": sample.get("actual_folds", sample.get("n_folds")),
+        "adaptation_reason": sample.get("adaptation_reason"),
+        "random_state": split_meta.get("random_state", seed),
+    }
 
 
 def _prediction_rows(
@@ -154,27 +193,6 @@ def _prediction_rows(
             item["probability"] = score
         rows.append(item)
     return rows
-
-
-def _open_ingest_validation(
-    split_meta: dict[str, Any],
-    records: list[dict[str, Any]],
-    seed: int,
-    task_type: str,
-) -> dict[str, Any]:
-    trained = [row for row in records if row.get("status") == "trained"]
-    sample = trained[0] if trained else {}
-    default_cv = "StratifiedKFold" if task_type == "binary" else "KFold"
-    return {
-        "train_rows": split_meta.get("n_train"),
-        "test_rows": split_meta.get("n_test"),
-        "cv_strategy": sample.get("cv_strategy") or default_cv,
-        "n_folds": sample.get("n_folds"),
-        "requested_folds": sample.get("requested_folds", 5),
-        "actual_folds": sample.get("actual_folds", sample.get("n_folds")),
-        "adaptation_reason": sample.get("adaptation_reason"),
-        "random_state": split_meta.get("random_state", seed),
-    }
 
 
 def _fit_and_score_holdout(
@@ -309,14 +327,18 @@ def _run_open_ingest_candidates(
     *,
     artifact_dir: Path,
     members_dir: Path,
+    validation_plan: ValidationPlan,
     on_stage: Callable[[str], None] | None = None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
     on_event: RunEventCallback | None = None,
 ) -> dict[str, Any]:
-    """ColumnTransformer + K-fold on train only; test is scored after the winner is locked."""
+    """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked."""
     classifier = task.task_type == "binary"
     # Val is empty for the 80/20 holdout path; never concatenate test.
     pool = pd.concat([train, val], ignore_index=True) if len(val) else train
+    y_pool = pool[task.target].to_numpy()
+    fold_splits = list(iter_validation_folds(validation_plan, pool, y_pool))
+    n_splits = len(fold_splits)
     funnel_updates = {"trained": 0, "failed": 0, "cache_hits": 0}
     records: list[dict[str, Any]] = []
     stage_timings: list[dict[str, Any]] = []
@@ -346,7 +368,7 @@ def _run_open_ingest_candidates(
                 raise ValueError("not enough training rows")
 
             X_train = pool.loc[:, cols]
-            y_train = pool[task.target].to_numpy()
+            y_train = y_pool
 
             def _fresh_pipeline() -> SkPipeline:
                 return SkPipeline(
@@ -363,20 +385,13 @@ def _run_open_ingest_candidates(
                     ]
                 )
 
-            splitter, n_splits = _open_ingest_cv_splitter(
-                y_train,
-                classifier=classifier,
-                n_samples=len(X_train),
-                seed=candidate.random_seed,
-            )
-            split_iter = (
-                list(splitter.split(X_train, y_train)) if classifier else list(splitter.split(X_train))
-            )
-
             fold_metrics_list: list[dict[str, Any]] = []
             fold_scores: list[float] = []
             fold_evidence: list[dict[str, Any]] = []
-            for fold_number, (fold_train_idx, fold_holdout_idx) in enumerate(split_iter, start=1):
+            for fold in fold_splits:
+                fold_number = fold.fold_number
+                fold_train_idx = fold.train_index
+                fold_holdout_idx = fold.validation_index
                 fold_started = datetime.now(UTC)
                 fold_timer = time.perf_counter()
                 _emit_event(
@@ -406,15 +421,27 @@ def _run_open_ingest_candidates(
                     if SOURCE_ROW_COLUMN in pool.columns
                     else [int(value) for value in fold_holdout_idx]
                 )
+                duration = max(0.001, (time.perf_counter() - fold_timer) * 1000.0)
                 fold_evidence.append(
                     {
+                        "strategy": validation_plan.strategy,
+                        "fold": fold_number,
                         "fold_number": fold_number,
+                        "train_count": fold.train_count,
+                        "validation_count": fold.validation_count,
+                        "train_row_count": fold.train_count,
+                        "validation_row_count": fold.validation_count,
+                        "group_overlap": list(fold.group_overlap),
+                        "group_overlap_count": len(fold.group_overlap),
+                        "train_time_min": fold.train_time_min,
+                        "train_time_max": fold.train_time_max,
+                        "validation_time_min": fold.validation_time_min,
+                        "validation_time_max": fold.validation_time_max,
+                        "metrics": fold_metrics,
+                        "duration": duration,
+                        "fit_duration_ms": duration,
                         "train_provenance": train_provenance,
                         "validation_provenance": validation_provenance,
-                        "train_row_count": int(len(fold_train_idx)),
-                        "validation_row_count": int(len(fold_holdout_idx)),
-                        "metrics": fold_metrics,
-                        "fit_duration_ms": max(0.001, (time.perf_counter() - fold_timer) * 1000.0),
                         "started_at": fold_started.isoformat(),
                         "ended_at": datetime.now(UTC).isoformat(),
                     }
@@ -434,11 +461,6 @@ def _run_open_ingest_candidates(
 
             cv_mean, cv_std = aggregate_fold_metrics(fold_metrics_list)
             robust = robustness_stats(fold_scores)
-            adaptation_reason = None
-            if n_splits != 5:
-                adaptation_reason = (
-                    "Reduced folds because the training partition cannot support five valid folds."
-                )
             records.append(
                 {
                     **candidate.to_dict(),
@@ -461,10 +483,10 @@ def _run_open_ingest_candidates(
                     "train_seconds": time.time() - t0,
                     "fit_duration_ms": max(0.001, (time.time() - t0) * 1000.0),
                     "stage": "trained",
-                    "cv_strategy": type(splitter).__name__,
-                    "requested_folds": 5,
+                    "cv_strategy": validation_plan.strategy,
+                    "requested_folds": validation_plan.requested_folds,
                     "actual_folds": n_splits,
-                    "adaptation_reason": adaptation_reason,
+                    "adaptation_reason": validation_plan.fallback_reason,
                     "n_folds": n_splits,
                     "n_train_rows": int(len(X_train)),
                     "numerical_cols": num_cols,
@@ -504,10 +526,10 @@ def _run_open_ingest_candidates(
                     "folds": [],
                     "cv_mean": None,
                     "cv_std": None,
-                    "cv_strategy": "StratifiedKFold" if classifier else "KFold",
-                    "requested_folds": 5,
+                    "cv_strategy": validation_plan.strategy,
+                    "requested_folds": validation_plan.requested_folds,
                     "actual_folds": None,
-                    "adaptation_reason": None,
+                    "adaptation_reason": validation_plan.fallback_reason,
                     "train_seconds": time.time() - t0,
                     "fit_duration_ms": max(0.001, (time.time() - t0) * 1000.0),
                     "test_metrics": None,
@@ -706,21 +728,35 @@ def _run_open_ingest_experiment(
         seed=config.seed,
         stratify=task.task_type == "binary",
     )
-
-    # Leakage screening and all feature eligibility evidence use train only.
-    leakage = detect_leakage(
+    problem_profile, validation_plan, metric_plan, leakage_audit, development_plan = plan_model_development(
         train,
         target=task.target,
-        time_col=task.prediction_time_column,
-        entity_col=task.entity_id,
+        task_type=task.task_type,
+        requested_folds=5,
+        random_state=config.seed,
+        time_column=task.prediction_time_column,
+        entity_column=task.entity_id,
+        reviewer=consult_leakage_llm,
+        conservative_auto_train=config.exclude_high_leakage,
+        on_event=_planning_event_sink(on_event),
     )
-    blocked = set(leakage["high_risk_columns"]) if config.exclude_high_leakage else set()
+    if validation_plan.strategy == "unsupported" or not validation_plan.actual_folds:
+        raise ValidationUnsupportedError(
+            validation_plan.reason
+            or validation_plan.fallback_reason
+            or "Validation plan is unsupported."
+        )
+    task = TaskSpec(**{**task.to_dict(), "evaluation_metric": metric_plan.primary_metric})
+
+    # Leakage screening and all feature eligibility evidence use train only.
+    leakage = leakage_report_from_audit(leakage_audit)
+    allowed = set(development_plan.allowed_features)
     groups = {
         name: [
             col
             for col in cols
             if col in train.columns
-            and col not in blocked
+            and col in allowed
             and col != task.target
             and col != task.prediction_time_column
             and col != task.entity_id
@@ -729,8 +765,8 @@ def _run_open_ingest_experiment(
     }
     groups = {name: cols for name, cols in groups.items() if cols}
     roles = task.column_roles or {}
-    numerical_cols = [c for c in (roles.get("numerical") or []) if any(c in cols for cols in groups.values())]
-    categorical_cols = [c for c in (roles.get("categorical") or []) if any(c in cols for cols in groups.values())]
+    numerical_cols = [c for c in (roles.get("numerical") or []) if c in allowed and any(c in cols for cols in groups.values())]
+    categorical_cols = [c for c in (roles.get("categorical") or []) if c in allowed and any(c in cols for cols in groups.values())]
     modeled = numerical_cols + categorical_cols
     if not modeled:
         raise ValueError("no numeric or categorical columns to model")
@@ -767,6 +803,7 @@ def _run_open_ingest_experiment(
         task,
         artifact_dir=artifact_dir,
         members_dir=members_dir,
+        validation_plan=validation_plan,
         on_stage=on_stage,
         on_checkpoint=_checkpoint,
         on_event=on_event,
@@ -798,7 +835,13 @@ def _run_open_ingest_experiment(
         "quality": quality,
         "leakage": leakage,
         "split": split_meta,
-        "validation": _open_ingest_validation(split_meta, records, config.seed, task.task_type),
+        "problem_profile": problem_profile.to_dict(),
+        "validation_plan": validation_plan.to_dict(),
+        "metric_plan": metric_plan.to_dict(),
+        "model_development_plan": development_plan.to_dict(),
+        "validation": _open_ingest_validation(
+            split_meta, records, config.seed, task.task_type, plan=validation_plan
+        ),
         "feature_engineering": feature_report,
         "preprocessing": {
             "numeric_columns": numerical_cols,
@@ -989,6 +1032,18 @@ def run_experiment(
         )
 
     if config.strategy == "open_ingest":
+        fallback_profile = build_problem_profile(
+            train,
+            target=task.target,
+            task_type=task.task_type,
+        )
+        fallback_plan = plan_validation(
+            fallback_profile,
+            y=train[task.target],
+            frame=train,
+            requested_folds=5,
+            random_state=config.seed,
+        )
         outcome = _run_open_ingest_candidates(
             candidates,
             train,
@@ -997,6 +1052,7 @@ def run_experiment(
             task,
             artifact_dir=artifact_dir,
             members_dir=members_dir,
+            validation_plan=fallback_plan,
             on_stage=on_stage,
         )
         funnel.update(outcome["funnel"])

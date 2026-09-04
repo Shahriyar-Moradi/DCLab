@@ -276,6 +276,7 @@ def execute_experiment(
     db.commit()
     artifacts = experiment_dir(str(experiment.id))
     experiment.artifact_dir = str(artifacts)
+    db.commit()
     logger.info(
         "lab experiment %s starting task=%s dataset=%s",
         experiment.id,

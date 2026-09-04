@@ -1213,7 +1213,7 @@ class LlmInvocation(Base):
     __table_args__ = (
         CheckConstraint(
             "purpose IN ('semantic_target', 'semantic_missing_value', "
-            "'semantic_column_type', 'pipeline_audit_routine', "
+            "'semantic_column_type', 'semantic_leakage', 'pipeline_audit_routine', "
             "'pipeline_audit_deep')",
             name="ck_llm_invocations_purpose",
         ),

@@ -15,6 +15,8 @@ type TechnicalRow = Record<string, unknown>;
 const STAGES = [
   ["ingestion", "File ingestion"], ["profiling_eda", "EDA / profiling"], ["target_task", "Target / task"],
   ["structural_cleaning", "Structural cleaning"], ["holdout_lock", "Holdout lock"],
+  ["problem_profile", "Problem profile"], ["validation_plan", "Validation plan"], ["metric_plan", "Metric plan"],
+  ["leakage_audit", "Leakage audit"], ["model_development_plan", "Model development plan"],
   ["missing_value_decisions", "Missing-value decisions"], ["column_roles", "Column roles"],
   ["feature_engineering", "Feature engineering"], ["preprocessing_configuration", "Preprocessing"],
   ["model_selection", "Candidate comparison / selection"], ["winner_lock", "Winner lock"],
@@ -66,6 +68,8 @@ export default function PipelineMonitorPage() {
       <ul className="mt-4 space-y-2 rounded bg-navy-soft/50 p-5">{list(monitor.preprocessing.fit_guarantees).map((item) => <li key={String(item)} className="text-body">✓ {String(item)}</li>)}</ul>
     </Panel>
 
+    <ScientificPlan plan={object(monitor.scientific_plan)} />
+
     {capabilities.cv_fold_details ? <Panel title="Fold-by-fold cross-validation" subtitle="Candidate comparison and winner selection use CV evidence only; the final holdout is excluded.">
       <Table><thead><tr><Th>Candidate</Th><Th>Fold</Th><Th>Train rows</Th><Th>Validation rows</Th><Th>Metrics</Th></tr></thead><tbody>{folds.map((row) => { const payload = object(row.payload); return <tr key={`${text(payload.candidate_id)}-${text(payload.fold_number)}-${text(row.sequence)}`}><Td mono>{text(payload.candidate_id)}</Td><Td mono>{text(payload.fold_number)}</Td><Td mono>{text(payload.train_row_count)}</Td><Td mono>{text(payload.validation_row_count)}</Td><Td mono>{JSON.stringify(payload.metrics ?? {})}</Td></tr>; })}</tbody></Table>
       {folds.length === 0 ? <Empty>No completed folds were recorded.</Empty> : null}
@@ -94,6 +98,58 @@ export default function PipelineMonitorPage() {
 }
 
 function LlmTable({ rows }: { rows: TechnicalRow[] }) { return <><Table><thead><tr><Th>LLM used</Th><Th>Purpose</Th><Th>Reason</Th><Th>Provider / model</Th><Th>Prompt</Th><Th>Validator</Th><Th>Final accepted decision</Th></tr></thead><tbody>{rows.map((row) => <tr key={text(row.id)}><Td><Badge tone={row.llm_used === true ? "green" : "amber"}>{row.llm_used === true ? "YES" : "NO"}</Badge></Td><Td mono>{text(row.purpose)}</Td><Td>{text(row.reason)}</Td><Td>{row.llm_used === true ? `${text(row.provider)} / ${text(row.model)}` : "Not used"}</Td><Td mono>{text(row.prompt_version)}</Td><Td>{text(row.validator_verdict)}</Td><Td mono>{JSON.stringify(row.final_decision ?? {})}</Td></tr>)}</tbody></Table>{rows.length === 0 ? <Empty>No invocation was recorded.</Empty> : null}</>; }
+function ScientificPlan({ plan }: { plan: TechnicalRow }) {
+  const profile = object(plan.problem_profile);
+  const validation = object(plan.validation);
+  const metric = object(plan.metric);
+  const leakage = object(plan.leakage);
+  const findings = list(leakage.findings).map(object);
+  const allowed = list(plan.allowed_features).map(String);
+  const excluded = list(plan.excluded_features).map(object);
+  const overlap = validation.group_overlap_count;
+  const overlapLabel = overlap === null || overlap === undefined ? "n/a" : `${text(overlap)}${validation.group_overlap_ok === true ? " ✓" : ""}`;
+  return <>
+    <Panel title="Problem Profile" subtitle="Train-only scientific profile used to choose validation, metrics, and leakage policy.">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Metric label="Task" value={text(profile.task_type)} />
+        <Metric label="Train rows" value={text(profile.row_count)} />
+        <Metric label="Features" value={text(profile.feature_count)} />
+        <Metric label="Imbalance ratio" value={text(profile.imbalance_ratio)} />
+      </div>
+      <p className="mt-4 font-mono text-data text-ink-muted">Identifiers: {text(list(profile.identifier_columns).join(", ") || "none")} · Datetime: {text(list(profile.datetime_columns).join(", ") || "none")}</p>
+    </Panel>
+    <Panel title="Validation Strategy" subtitle="The splitter, grouping, and fold counts actually used for candidate comparison.">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Metric label="Validation Strategy" value={text(validation.strategy)} />
+        <Metric label="Group" value={text(validation.group_column, "none")} />
+        <Metric label="Time column" value={text(validation.time_column, "none")} />
+        <Metric label="Requested folds" value={text(validation.requested_folds)} />
+        <Metric label="Actual folds" value={text(validation.actual_folds)} />
+        <Metric label="Group overlap" value={overlapLabel} />
+      </div>
+      {validation.reason ? <p className="mt-4 text-body text-ink-muted">{text(validation.reason)}</p> : null}
+    </Panel>
+    <Panel title="Metric Strategy" subtitle="Primary selection metric is locked from the ProblemProfile before candidates train.">
+      <div className="grid gap-4 md:grid-cols-2">
+        <Metric label="Primary metric" value={text(metric.primary_metric)} />
+        <Metric label="Secondary metrics" value={text(list(metric.secondary_metrics).join(", ") || "none")} />
+      </div>
+      {metric.reason ? <p className="mt-4 text-body text-ink-muted">{text(metric.reason)}</p> : null}
+    </Panel>
+    <Panel title="Leakage Audit" subtitle="Prediction-time availability and risk. HIGH/CRITICAL features are excluded from estimators.">
+      <p className="mb-4 font-mono text-data text-ink-muted">Overall risk: {text(leakage.overall_risk)} · Partition: {text(leakage.partition, "train")}</p>
+      <Table><thead><tr><Th>Feature</Th><Th>Risk</Th><Th>Prediction-time status</Th><Th>Action</Th></tr></thead><tbody>{findings.map((row, index) => <tr key={`${text(row.column)}-${index}`}><Td mono>{text(row.column)}</Td><Td>{text(row.risk)}</Td><Td mono>{text(row.availability_status)}</Td><Td>{text(row.action)}</Td></tr>)}</tbody></Table>
+      {findings.length === 0 ? <Empty>No leakage findings were recorded.</Empty> : null}
+    </Panel>
+    <Panel title="Allowed Features" subtitle="Features eligible for candidate estimators after the leakage audit.">
+      <p className="font-mono text-data">{allowed.join(", ") || "—"}</p>
+    </Panel>
+    <Panel title="Excluded Features" subtitle="Identifiers and HIGH/CRITICAL leakage features never enter candidate feature sets.">
+      <Table><thead><tr><Th>Feature</Th><Th>Risk</Th><Th>Action</Th><Th>Reason</Th></tr></thead><tbody>{excluded.map((row, index) => <tr key={`${text(row.column)}-${index}`}><Td mono>{text(row.column)}</Td><Td>{text(row.risk)}</Td><Td>{text(row.action)}</Td><Td>{text(row.reason)}</Td></tr>)}</tbody></Table>
+      {excluded.length === 0 ? <Empty>No features were excluded by the leakage audit.</Empty> : null}
+    </Panel>
+  </>;
+}
 function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) { return <section className="mt-12"><h2 className="font-display text-section">{title}</h2>{subtitle ? <p className="mb-4 mt-1 text-body text-ink-muted">{subtitle}</p> : <div className="mb-4" />}{children}</section>; }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded bg-paper-raised p-5"><p className="text-eyebrow uppercase text-ink-muted">{label}</p><p className="mt-2 break-all font-mono text-data">{value}</p></div>; }
 function Flow({ title, steps, footer }: { title: string; steps: string[]; footer?: string }) { return <div className="rounded bg-paper-raised p-6"><p className="text-eyebrow uppercase text-ink-muted">{title}</p><div className="mt-4 flex flex-wrap items-center gap-3">{steps.map((step, index) => <span key={step} className="contents"><span className="rounded bg-navy px-3 py-2 font-mono text-data text-white">{step}</span>{index < steps.length - 1 ? <span>→</span> : null}</span>)}</div>{footer ? <p className="mt-4 font-mono text-data text-ink-muted">{footer}</p> : null}</div>; }

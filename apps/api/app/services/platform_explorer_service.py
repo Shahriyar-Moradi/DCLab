@@ -366,6 +366,114 @@ def _monitor_preprocessing(technical_report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _as_monitor_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_monitor_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _cap_monitor(items: list[Any], limit: int = 40) -> list[Any]:
+    return items[:limit]
+
+
+def _scientific_plan_monitor(result: dict[str, Any], technical_report: dict[str, Any]) -> dict[str, Any]:
+    plan = _as_monitor_dict(technical_report.get("model_development_plan") or result.get("model_development_plan"))
+    profile = _as_monitor_dict(plan.get("problem_profile") or technical_report.get("problem_profile") or result.get("problem_profile"))
+    validation = _as_monitor_dict(plan.get("validation_plan") or technical_report.get("validation_plan") or result.get("validation_plan"))
+    metric = _as_monitor_dict(plan.get("metric_plan") or technical_report.get("metric_plan") or result.get("metric_plan"))
+    leakage = _as_monitor_dict(plan.get("leakage_assessment") or result.get("leakage"))
+    excluded = [row for row in _as_monitor_list(plan.get("excluded_features")) if isinstance(row, dict)]
+    overlap = 0
+    for candidate in _as_monitor_list(result.get("candidates")):
+        if not isinstance(candidate, dict):
+            continue
+        for fold in _as_monitor_list(candidate.get("folds")):
+            if not isinstance(fold, dict):
+                continue
+            count = fold.get("group_overlap_count")
+            if isinstance(count, int):
+                overlap = max(overlap, count)
+            else:
+                overlap = max(overlap, len(_as_monitor_list(fold.get("group_overlap"))))
+    findings = []
+    seen: set[str] = set()
+    for row in excluded:
+        column = str(row.get("column") or "")
+        if not column or column in seen:
+            continue
+        seen.add(column)
+        availability = row.get("availability") if isinstance(row.get("availability"), dict) else {}
+        findings.append(
+            {
+                "column": column,
+                "risk": row.get("risk"),
+                "availability_status": availability.get("status") or "unknown",
+                "action": row.get("action"),
+                "reason": row.get("reason") or "; ".join(_as_monitor_list(row.get("reasons"))),
+            }
+        )
+    for row in _as_monitor_list(leakage.get("findings")):
+        if not isinstance(row, dict):
+            continue
+        column = str(row.get("column") or "")
+        if not column or column in seen:
+            continue
+        seen.add(column)
+        availability = row.get("availability") if isinstance(row.get("availability"), dict) else {}
+        findings.append(
+            {
+                "column": column,
+                "risk": row.get("risk"),
+                "availability_status": availability.get("status") or "unknown",
+                "action": row.get("action"),
+                "reason": "; ".join(_as_monitor_list(row.get("reasons"))) or str(row.get("reason") or ""),
+            }
+        )
+    strategy = str(validation.get("strategy") or "")
+    group_aware = strategy in {"StratifiedGroupKFold", "GroupKFold"}
+    return {
+        "problem_profile": {
+            "task_type": profile.get("task_type"),
+            "row_count": profile.get("row_count"),
+            "feature_count": profile.get("feature_count"),
+            "minority_class_fraction": profile.get("minority_class_fraction"),
+            "imbalance_ratio": profile.get("imbalance_ratio"),
+            "identifier_columns": _cap_monitor(_as_monitor_list(profile.get("identifier_columns"))),
+            "datetime_columns": _cap_monitor(_as_monitor_list(profile.get("datetime_columns"))),
+            "class_distribution": profile.get("class_distribution"),
+            "version": profile.get("version"),
+        },
+        "validation": {
+            "strategy": validation.get("strategy"),
+            "group_column": validation.get("group_column"),
+            "time_column": validation.get("time_column"),
+            "requested_folds": validation.get("requested_folds"),
+            "actual_folds": validation.get("actual_folds"),
+            "stratified": validation.get("stratified"),
+            "reason": validation.get("reason"),
+            "fallback_reason": validation.get("fallback_reason"),
+            "group_overlap_count": overlap if group_aware else None,
+            "group_overlap_ok": overlap == 0 if group_aware else None,
+        },
+        "metric": {
+            "primary_metric": metric.get("primary_metric"),
+            "secondary_metrics": _cap_monitor(_as_monitor_list(metric.get("secondary_metrics"))),
+            "reason": metric.get("reason"),
+        },
+        "leakage": {
+            "overall_risk": leakage.get("risk"),
+            "partition": leakage.get("partition"),
+            "findings": _cap_monitor(findings),
+        },
+        "allowed_features": _cap_monitor(_as_monitor_list(plan.get("allowed_features")), 80),
+        "excluded_features": _cap_monitor(excluded),
+        "plan_version": plan.get("plan_version"),
+        "recommended_model_family_hints": _cap_monitor(_as_monitor_list(plan.get("recommended_model_family_hints"))),
+    }
+
+
 def get_pipeline_monitor(
     db: Session,
     experiment_id: UUID,
@@ -460,6 +568,7 @@ def get_pipeline_monitor(
         "llm_invocations": [{"id": str(row.id), "purpose": row.purpose, "llm_used": row.llm_used, "reason": row.reason, "provider": row.provider, "model": row.model, "mode": row.mode, "prompt_version": row.prompt_version, "schema_version": row.schema_version, "input_evidence_digest": row.input_evidence_digest, "redaction_summary": row.redaction_summary, "status": row.status, "validator_verdict": row.validator_verdict, "safe_output": row.safe_output, "final_decision": row.final_decision, "latency_ms": row.latency_ms, "input_tokens": row.input_tokens, "output_tokens": row.output_tokens, "total_tokens": row.total_tokens, "estimated_cost": row.estimated_cost, "started_at": row.started_at.isoformat(), "completed_at": row.completed_at.isoformat() if row.completed_at else None} for row in invocations],
         "candidates": candidates,
         "preprocessing": _monitor_preprocessing(technical_report),
+        "scientific_plan": _scientific_plan_monitor(result, technical_report),
         "predictions": {"count": len(prediction_rows), "distribution": dict(distribution), "raw_rows_included": False},
         "deterministic_verification": deterministic,
         "openai_audits": [row.safe_output or {"status": row.status, "reason": row.reason} for row in invocations if row.purpose.startswith("pipeline_audit_")],

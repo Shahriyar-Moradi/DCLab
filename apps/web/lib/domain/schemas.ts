@@ -721,6 +721,7 @@ export const PipelineMonitorSchema = z.object({
   openai_audits: z.array(z.record(z.string(), z.unknown())),
   reports: z.record(z.string(), z.unknown()),
   sanitized_evidence: z.record(z.string(), z.unknown()),
+  scientific_plan: z.record(z.string(), z.unknown()),
 });
 
 export type PlatformBusinessSummary = z.infer<typeof PlatformBusinessSummarySchema>;

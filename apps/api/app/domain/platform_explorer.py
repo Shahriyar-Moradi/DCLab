@@ -205,3 +205,4 @@ class PipelineMonitorRead(BaseModel):
     openai_audits: list[dict[str, Any]]
     reports: dict[str, Any]
     sanitized_evidence: dict[str, Any]
+    scientific_plan: dict[str, Any]

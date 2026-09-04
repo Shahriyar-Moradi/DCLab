@@ -129,6 +129,13 @@ def test_platform_hierarchy_fast_replay_multi_pipeline_and_readonly_role(
         "handle_unknown": "ignore",
     }
     assert body["predictions"]["raw_rows_included"] is False
+    plan = body["scientific_plan"]
+    assert plan["validation"]["strategy"] == "StratifiedKFold"
+    assert plan["metric"]["primary_metric"] == "pr_auc"
+    assert plan["problem_profile"]["task_type"] == "binary"
+    assert plan["leakage"]["partition"] == "train"
+    assert "tenure" in plan["allowed_features"] or plan["allowed_features"]
+    assert any(row["event_type"] == "model_development_plan_locked" for row in body["events"])
     assert any(
         row["purpose"].startswith("semantic_") and row["llm_used"] is False
         for row in body["llm_invocations"]

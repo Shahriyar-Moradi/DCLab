@@ -61,6 +61,7 @@ from app.engine.lab.auto_prepare import (
 )
 from app.engine.features.encode import coerce_binary_target
 from app.engine.lab.schema_inference import MIN_TRAIN_ROWS, infer_entity_column
+from app.engine.modeling.leakage_auditor import consult_leakage_llm, plan_model_development
 from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
 from app.engine.types import SearchConfig, TaskSpec
@@ -552,6 +553,28 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         _evidence_finish(evidence_timer)
 
         evidence_timer = _evidence_start("train_only_decisions")
+        (
+            _problem_profile,
+            _validation_plan,
+            _metric_plan,
+            _leakage_audit,
+            development_plan,
+        ) = plan_model_development(
+            locked_train,
+            target=target.column,
+            task_type=target.task_type,
+            requested_folds=5,
+            random_state=42,
+            reviewer=consult_leakage_llm,
+            conservative_auto_train=True,
+        )
+        allowed_predictors = set(development_plan.allowed_features)
+        leakage_excluded = [item["column"] for item in development_plan.excluded_features]
+        leakage_blocked = {
+            item["column"]
+            for item in development_plan.excluded_features
+            if item["risk"] in {"HIGH", "CRITICAL"}
+        }
         decision_columns = [
             c for c in feature_columns if c in locked_train.columns and c != SOURCE_ROW_COLUMN
         ]
@@ -586,8 +609,10 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             for c in decision_columns
             if c not in missing_plan.dropped_columns and c in locked_train.columns
         ]
+        modeled_kept_columns = [c for c in kept_columns if c not in leakage_blocked]
         cleaning_log["decision_scope"] = "locked_training_partition_only"
         cleaning_log["dropped_columns"] = list(missing_plan.dropped_columns)
+        cleaning_log["leakage_excluded_predictors"] = list(leakage_excluded)
         cleaning_log["missing_value_plan"] = {
             "evidence_rows": int(len(locked_train)),
             "decision_partition": "train",
@@ -617,7 +642,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
 
         _stage(FEATURE_ENGINEERING)
         evidence_timer = _evidence_start("feature_engineering")
-        engineered_train, fe_transformations = engineer_features(locked_train, kept_columns)
+        engineered_train, fe_transformations = engineer_features(locked_train, modeled_kept_columns)
         frame = apply_feature_engineering_actions(frame, fe_transformations)
         _evidence_finish(evidence_timer)
         _trace(
@@ -645,6 +670,8 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         ]
         identifier_cols = list(dict.fromkeys(final_roles.identifier + llm_identifier_cols))
         entity_column = infer_entity_column(engineered_train, kept_columns)
+        num_cols = [name for name in num_cols if name in allowed_predictors]
+        cat_cols = [name for name in cat_cols if name in allowed_predictors]
         _evidence_finish(evidence_timer)
         transformed_datetime = {
             str(name)
@@ -676,6 +703,15 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 final_role = "ignored/free_text"
                 source = "rule"
                 reason = "Excluded by the train-only missing-value policy before modeling."
+                confidence = 1.0
+                verdict = "not_run"
+                llm_used = False
+            elif column in {item["column"] for item in development_plan.excluded_features}:
+                exclusion = next(item for item in development_plan.excluded_features if item["column"] == column)
+                identifier_excluded = "identifier_not_a_predictor" in (exclusion.get("reasons") or [])
+                final_role = "identifier" if identifier_excluded else "ignored/free_text"
+                source = "rule"
+                reason = f"Excluded from estimators by the train-only leakage plan: {exclusion.get('reason')}."
                 confidence = 1.0
                 verdict = "not_run"
                 llm_used = False
@@ -786,6 +822,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 list(missing_plan.dropped_columns)
                 + list(identifier_cols)
                 + list(final_roles.ignored_free_text)
+                + list(leakage_excluded)
             )
         )
         feature_report = {
@@ -883,6 +920,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         result = dict(experiment.result or {})
         result["analysis"] = profile
         result["cleaning"] = cleaning_log
+        result.setdefault("model_development_plan", development_plan.to_dict())
         result["feature_engineering"] = {
             **feature_report,
             "transformations": list(fe_transformations),
@@ -1022,6 +1060,10 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "experiment_status": experiment.status,
             "pipeline_trace": list(trace),
             "stage_timings": list(result.get("stage_timings") or []),
+            "problem_profile": result.get("problem_profile") or {},
+            "validation_plan": result.get("validation_plan") or {},
+            "metric_plan": result.get("metric_plan") or {},
+            "model_development_plan": result.get("model_development_plan") or development_plan.to_dict(),
         }
         upload = db.get(ClientLabUpload, upload_id)
         if upload is not None:

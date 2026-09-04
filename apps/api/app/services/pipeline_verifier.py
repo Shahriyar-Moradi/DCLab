@@ -8,12 +8,31 @@ from typing import Any
 import pandas as pd
 
 from app.engine.features.encode import coerce_binary_target
+from app.engine.modeling.validation_planner import (
+    GROUP_KFOLD,
+    KFOLD,
+    STRATIFIED_GROUP_KFOLD,
+    STRATIFIED_KFOLD,
+    TIME_SERIES_SPLIT,
+    UNSUPPORTED,
+)
 from app.services.artifact_store import ArtifactAccess, LocalArtifactAccess
 
 CHECK_PASS = "PASS"
 CHECK_WARN = "WARN"
 CHECK_FAIL = "FAIL"
 CHECK_NOT_VERIFIABLE = "NOT_VERIFIABLE"
+
+GROUP_STRATEGIES = {STRATIFIED_GROUP_KFOLD, GROUP_KFOLD}
+_HOLDOUT_KEYS = {
+    "test_source_rows",
+    "train_source_rows",
+    "all_source_rows",
+    "n_test",
+    "holdout_metrics",
+    "test_metrics",
+    "test_predictions",
+}
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -53,6 +72,437 @@ def _artifact_target_values(frame: pd.DataFrame, column: str, task_type: str) ->
     if task_type == "regression":
         return pd.to_numeric(series, errors="coerce")
     return series
+
+
+def _candidate_feature_names(task: dict[str, Any], candidates: list[Any]) -> set[str]:
+    names: set[str] = set()
+    for values in _as_dict(task.get("feature_groups")).values():
+        names.update(str(item) for item in _as_list(values))
+    for row in candidates:
+        if not isinstance(row, dict):
+            continue
+        names.update(str(item) for item in _as_list(row.get("feature_set") or row.get("features")))
+    return names
+
+
+def _holdout_keys_present(payload: dict[str, Any]) -> list[str]:
+    return sorted(key for key in _HOLDOUT_KEYS if key in payload)
+
+
+def _strategy_matches_task(task_type: str, validation: dict[str, Any]) -> bool:
+    strategy = str(validation.get("strategy") or "")
+    group_column = validation.get("group_column")
+    time_column = validation.get("time_column")
+    if strategy == UNSUPPORTED:
+        return False
+    if group_column and time_column:
+        return False
+    if task_type == "binary":
+        if group_column:
+            return strategy in GROUP_STRATEGIES
+        if time_column:
+            return strategy == TIME_SERIES_SPLIT
+        return strategy == STRATIFIED_KFOLD and validation.get("stratified") is True
+    if task_type == "regression":
+        if group_column:
+            return strategy == GROUP_KFOLD
+        if time_column:
+            return strategy == TIME_SERIES_SPLIT
+        return strategy == KFOLD and validation.get("stratified") is not True
+    return strategy in {STRATIFIED_KFOLD, KFOLD, STRATIFIED_GROUP_KFOLD, GROUP_KFOLD, TIME_SERIES_SPLIT}
+
+
+def _verify_scientific_plan(
+    add,
+    *,
+    report: dict[str, Any],
+    task: dict[str, Any],
+    selection: dict[str, Any],
+    candidates: list[Any],
+    split: dict[str, Any],
+) -> None:
+    plan = _as_dict(report.get("model_development_plan"))
+    profile = _as_dict(report.get("problem_profile")) or _as_dict(plan.get("problem_profile"))
+    validation = _as_dict(report.get("validation_plan")) or _as_dict(plan.get("validation_plan"))
+    metric = _as_dict(report.get("metric_plan")) or _as_dict(plan.get("metric_plan"))
+    audit = _as_dict(plan.get("leakage_assessment")) or _as_dict(report.get("leakage"))
+    trained = [row for row in candidates if isinstance(row, dict) and row.get("status") == "trained"]
+    modeled_features = _candidate_feature_names(task, trained)
+
+    if not plan or not plan.get("plan_version") or "allowed_features" not in plan:
+        add(
+            "model_development_plan_exists",
+            "model_development_plan",
+            CHECK_NOT_VERIFIABLE,
+            "ModelDevelopmentPlan evidence is missing.",
+            "model_development_plan",
+        )
+    else:
+        add(
+            "model_development_plan_exists",
+            "model_development_plan",
+            CHECK_PASS,
+            "A ModelDevelopmentPlan was locked from train-only evidence.",
+            "model_development_plan.plan_version",
+        )
+
+    if not validation or not validation.get("strategy"):
+        add(
+            "validation_plan_exists",
+            "validation_plan",
+            CHECK_NOT_VERIFIABLE,
+            "ValidationPlan evidence is missing.",
+            "validation_plan",
+        )
+    else:
+        add(
+            "validation_plan_exists",
+            "validation_plan",
+            CHECK_PASS,
+            "A ValidationPlan was selected from the train-only ProblemProfile.",
+            "validation_plan.strategy",
+        )
+
+    task_type = str(task.get("task_type") or "")
+    if not validation.get("strategy"):
+        add(
+            "validation_strategy_matches_task",
+            "validation_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Validation strategy cannot be checked without a ValidationPlan.",
+            "validation_plan",
+        )
+    elif not _strategy_matches_task(task_type, validation):
+        add(
+            "validation_strategy_matches_task",
+            "validation_plan",
+            CHECK_FAIL,
+            f"Validation strategy {validation.get('strategy')!r} does not match task {task_type!r}.",
+            "validation_plan",
+            "task.task_type",
+        )
+    else:
+        add(
+            "validation_strategy_matches_task",
+            "validation_plan",
+            CHECK_PASS,
+            "The selected validation strategy matches the profiled task.",
+            "validation_plan.strategy",
+            "task.task_type",
+        )
+
+    plan_actual = validation.get("actual_folds")
+    plan_requested = validation.get("requested_folds")
+    fold_mismatches = []
+    missing_fold_counts = False
+    for row in trained:
+        actual = row.get("actual_folds")
+        requested = row.get("requested_folds")
+        fold_count = len(_as_list(row.get("folds") or row.get("fold_metrics")))
+        if actual is None or requested is None:
+            missing_fold_counts = True
+            continue
+        if actual != plan_actual or requested != plan_requested or fold_count != plan_actual:
+            fold_mismatches.append(str(row.get("candidate_id")))
+        if plan_actual != plan_requested and not (
+            validation.get("fallback_reason") or row.get("adaptation_reason")
+        ):
+            fold_mismatches.append(str(row.get("candidate_id")))
+    if not validation or plan_actual is None or plan_requested is None:
+        add(
+            "validation_fold_count_truthful",
+            "validation_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Requested/actual fold counts are missing from the ValidationPlan.",
+            "validation_plan",
+        )
+    elif missing_fold_counts or not trained:
+        add(
+            "validation_fold_count_truthful",
+            "validation_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Candidate fold counts are missing.",
+            "candidate_models",
+            "validation_plan",
+        )
+    elif fold_mismatches:
+        add(
+            "validation_fold_count_truthful",
+            "validation_plan",
+            CHECK_FAIL,
+            f"Recorded fold counts do not match the ValidationPlan: {sorted(set(fold_mismatches))}.",
+            "validation_plan",
+            "candidate_models",
+        )
+    else:
+        add(
+            "validation_fold_count_truthful",
+            "validation_plan",
+            CHECK_PASS,
+            "Requested and actual fold counts match trained candidate evidence.",
+            "validation_plan.actual_folds",
+        )
+
+    strategy = str(validation.get("strategy") or "")
+    if strategy not in GROUP_STRATEGIES:
+        add(
+            "group_validation_has_zero_group_overlap",
+            "validation_plan",
+            CHECK_PASS,
+            "Group-aware validation was not selected.",
+            "validation_plan.strategy",
+        )
+    else:
+        overlapping = []
+        missing_overlap = False
+        for row in trained:
+            for fold in _as_list(row.get("folds")):
+                if not isinstance(fold, dict):
+                    missing_overlap = True
+                    continue
+                overlap = _as_list(fold.get("group_overlap"))
+                count = fold.get("group_overlap_count")
+                if count is None and "group_overlap" not in fold:
+                    missing_overlap = True
+                    continue
+                if overlap or (isinstance(count, int) and count > 0):
+                    overlapping.append(str(row.get("candidate_id")))
+        if missing_overlap or not trained:
+            add(
+                "group_validation_has_zero_group_overlap",
+                "validation_plan",
+                CHECK_NOT_VERIFIABLE,
+                "Group-overlap evidence is missing from fold records.",
+                "candidate_models.folds",
+            )
+        elif overlapping:
+            add(
+                "group_validation_has_zero_group_overlap",
+                "validation_plan",
+                CHECK_FAIL,
+                f"The same group appears in fold train and validation for: {sorted(set(overlapping))}.",
+                "candidate_models.folds.group_overlap",
+            )
+        else:
+            add(
+                "group_validation_has_zero_group_overlap",
+                "validation_plan",
+                CHECK_PASS,
+                "Group-aware folds have zero group overlap.",
+                "candidate_models.folds.group_overlap_count",
+            )
+
+    if strategy != TIME_SERIES_SPLIT:
+        add(
+            "temporal_validation_respects_order",
+            "validation_plan",
+            CHECK_PASS,
+            "Temporal validation was not selected.",
+            "validation_plan.strategy",
+        )
+    else:
+        leaks = []
+        missing_times = False
+        for row in trained:
+            for fold in _as_list(row.get("folds")):
+                if not isinstance(fold, dict):
+                    missing_times = True
+                    continue
+                train_max = pd.to_datetime(fold.get("train_time_max"), errors="coerce")
+                val_min = pd.to_datetime(fold.get("validation_time_min"), errors="coerce")
+                if pd.isna(train_max) or pd.isna(val_min):
+                    missing_times = True
+                    continue
+                if val_min < train_max:
+                    leaks.append(str(row.get("candidate_id")))
+        if missing_times or not trained:
+            add(
+                "temporal_validation_respects_order",
+                "validation_plan",
+                CHECK_NOT_VERIFIABLE,
+                "Chronological fold timestamps are missing.",
+                "candidate_models.folds",
+            )
+        elif leaks:
+            add(
+                "temporal_validation_respects_order",
+                "validation_plan",
+                CHECK_FAIL,
+                f"Validation timestamps occur before the training period ends for: {sorted(set(leaks))}.",
+                "candidate_models.folds.train_time_max",
+                "candidate_models.folds.validation_time_min",
+            )
+        else:
+            add(
+                "temporal_validation_respects_order",
+                "validation_plan",
+                CHECK_PASS,
+                "TimeSeriesSplit folds respect chronological order.",
+                "candidate_models.folds",
+            )
+
+    primary = metric.get("primary_metric")
+    selected_metric = selection.get("selection_metric")
+    task_metric = task.get("evaluation_metric")
+    if not primary or not selected_metric:
+        add(
+            "primary_metric_matches_selection_metric",
+            "metric_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Primary metric or selection metric evidence is missing.",
+            "metric_plan",
+            "selection",
+        )
+    elif primary != selected_metric or (task_metric and task_metric != primary):
+        add(
+            "primary_metric_matches_selection_metric",
+            "metric_plan",
+            CHECK_FAIL,
+            f"Winner selection used {selected_metric!r} while MetricPlan primary is {primary!r}.",
+            "metric_plan.primary_metric",
+            "selection.selection_metric",
+        )
+    else:
+        add(
+            "primary_metric_matches_selection_metric",
+            "metric_plan",
+            CHECK_PASS,
+            "The locked winner was selected with the MetricPlan primary metric.",
+            "metric_plan.primary_metric",
+            "selection.selection_metric",
+        )
+
+    if not audit or not audit.get("partition"):
+        add(
+            "leakage_audit_exists",
+            "leakage_audit",
+            CHECK_NOT_VERIFIABLE,
+            "Leakage audit evidence is missing.",
+            "model_development_plan.leakage_assessment",
+        )
+    elif audit.get("partition") != "train":
+        add(
+            "leakage_audit_exists",
+            "leakage_audit",
+            CHECK_FAIL,
+            f"Leakage audit partition is {audit.get('partition')!r}, not train.",
+            "model_development_plan.leakage_assessment.partition",
+        )
+    else:
+        add(
+            "leakage_audit_exists",
+            "leakage_audit",
+            CHECK_PASS,
+            "A train-only leakage audit is present.",
+            "model_development_plan.leakage_assessment",
+        )
+
+    excluded_rows = [row for row in _as_list(plan.get("excluded_features")) if isinstance(row, dict)]
+    critical = {
+        str(row.get("column"))
+        for row in excluded_rows
+        if row.get("risk") in {"HIGH", "CRITICAL"} and row.get("column")
+    }
+    leaked = sorted(critical & modeled_features)
+    if not plan:
+        add(
+            "critical_leakage_feature_not_modeled",
+            "leakage_audit",
+            CHECK_NOT_VERIFIABLE,
+            "Excluded leakage features cannot be checked without a ModelDevelopmentPlan.",
+            "model_development_plan",
+        )
+    elif leaked:
+        add(
+            "critical_leakage_feature_not_modeled",
+            "leakage_audit",
+            CHECK_FAIL,
+            f"HIGH/CRITICAL excluded features were still modeled: {leaked}.",
+            "model_development_plan.excluded_features",
+            "candidate_models.feature_set",
+        )
+    else:
+        add(
+            "critical_leakage_feature_not_modeled",
+            "leakage_audit",
+            CHECK_PASS,
+            "HIGH/CRITICAL leakage features are not in candidate feature sets.",
+            "model_development_plan.excluded_features",
+        )
+
+    excluded_names = {
+        str(row.get("column"))
+        for row in excluded_rows
+        if row.get("column")
+        and (row.get("action") == "exclude" or row.get("risk") in {"HIGH", "CRITICAL"})
+    }
+    used_excluded = sorted(excluded_names & modeled_features)
+    if not plan:
+        add(
+            "excluded_features_not_in_candidates",
+            "leakage_audit",
+            CHECK_NOT_VERIFIABLE,
+            "Excluded features cannot be checked without a ModelDevelopmentPlan.",
+            "model_development_plan",
+        )
+    elif used_excluded:
+        add(
+            "excluded_features_not_in_candidates",
+            "leakage_audit",
+            CHECK_FAIL,
+            f"Excluded features appear in candidate feature sets: {used_excluded}.",
+            "model_development_plan.excluded_features",
+            "candidate_models.feature_set",
+        )
+    else:
+        add(
+            "excluded_features_not_in_candidates",
+            "leakage_audit",
+            CHECK_PASS,
+            "Excluded features are absent from candidate feature sets.",
+            "model_development_plan.excluded_features",
+        )
+
+    nested_profile = _as_dict(plan.get("problem_profile"))
+    forbidden = _holdout_keys_present(profile) + _holdout_keys_present(nested_profile) + _holdout_keys_present(audit)
+    profile_rows = profile.get("row_count")
+    n_train = split.get("n_train")
+    n_test = split.get("n_test")
+    contaminated_count = (
+        isinstance(profile_rows, int)
+        and isinstance(n_train, int)
+        and isinstance(n_test, int)
+        and profile_rows == n_train + n_test
+    )
+    mismatched_train = (
+        isinstance(profile_rows, int) and isinstance(n_train, int) and profile_rows != n_train
+    )
+    if not profile:
+        add(
+            "final_test_not_used_in_problem_profile",
+            "problem_profile",
+            CHECK_NOT_VERIFIABLE,
+            "ProblemProfile evidence is missing.",
+            "problem_profile",
+        )
+    elif forbidden or contaminated_count or mismatched_train:
+        add(
+            "final_test_not_used_in_problem_profile",
+            "problem_profile",
+            CHECK_FAIL,
+            "ProblemProfile/model-development evidence includes final-test provenance or statistics.",
+            "problem_profile",
+            "split.n_train",
+        )
+    else:
+        add(
+            "final_test_not_used_in_problem_profile",
+            "problem_profile",
+            CHECK_PASS,
+            "ProblemProfile row counts match the locked training partition only.",
+            "problem_profile.row_count",
+            "split.n_train",
+        )
 
 
 class PipelineVerifier:
@@ -357,7 +807,18 @@ class PipelineVerifier:
         cv_failures: list[str] = []
         cv_missing = False
         trained_candidates = [row for row in candidates if isinstance(row, dict) and row.get("status") == "trained"]
-        expected_cv_strategy = "StratifiedKFold" if task_type == "binary" else "KFold"
+        plan = report.get("validation_plan") if isinstance(report.get("validation_plan"), dict) else {}
+        allowed_cv = {
+            "StratifiedKFold",
+            "KFold",
+            "StratifiedGroupKFold",
+            "GroupKFold",
+            "TimeSeriesSplit",
+        }
+        expected_cv_strategy = str(plan.get("strategy") or "")
+        if expected_cv_strategy not in allowed_cv:
+            expected_cv_strategy = "StratifiedKFold" if task_type == "binary" else "KFold"
+        kfold_covers_train = expected_cv_strategy != "TimeSeriesSplit"
         for candidate in trained_candidates:
             folds = [row for row in _as_list(candidate.get("folds")) if isinstance(row, dict)]
             actual = candidate.get("actual_folds")
@@ -373,22 +834,29 @@ class PipelineVerifier:
                 cv_failures.append(str(candidate.get("candidate_id")))
                 continue
             validation_union: set[Any] = set()
+            failed_candidate = False
             for fold in folds:
                 fold_train = set(_as_list(fold.get("train_provenance")))
                 fold_validation = set(_as_list(fold.get("validation_provenance")))
                 validation_union |= fold_validation
+                covers_fold = (fold_train | fold_validation) == train_set if kfold_covers_train else fold_train | fold_validation <= train_set
                 if (
                     not {"fold_number", "train_row_count", "validation_row_count", "metrics", "fit_duration_ms"}.issubset(fold)
                     or len(fold_train) != fold.get("train_row_count")
                     or len(fold_validation) != fold.get("validation_row_count")
                     or fold.get("fit_duration_ms", 0) <= 0
                     or fold_train & fold_validation
-                    or fold_train | fold_validation != train_set
+                    or not covers_fold
                     or test_set & (fold_train | fold_validation)
                 ):
                     cv_failures.append(str(candidate.get("candidate_id")))
+                    failed_candidate = True
                     break
-            if validation_union != train_set:
+            if failed_candidate:
+                continue
+            if kfold_covers_train and validation_union != train_set:
+                cv_failures.append(str(candidate.get("candidate_id")))
+            elif not kfold_covers_train and (not validation_union or not validation_union <= train_set):
                 cv_failures.append(str(candidate.get("candidate_id")))
         if cv_failures:
             add("cross_validation_provenance", "cross_validation", CHECK_FAIL, f"Invalid fold provenance for candidates: {sorted(set(cv_failures))}.", "candidate_models.folds", "split")
@@ -491,6 +959,15 @@ class PipelineVerifier:
             add("winner_only_final_test", "final_test_evaluation", CHECK_FAIL, f"Rejected candidates have final-test metrics: {rejected_with_test}.", "candidate_models", "final_test_evaluation")
         else:
             add("winner_only_final_test", "final_test_evaluation", CHECK_PASS, "Only the selected winner has final-test metrics and it was evaluated once.", "candidate_models", "final_test_evaluation")
+
+        _verify_scientific_plan(
+            add,
+            report=report,
+            task=task,
+            selection=selection,
+            candidates=candidates,
+            split=split,
+        )
 
         prediction_rows = [row for row in predictions if isinstance(row, dict)]
         prediction_sources = [row.get("source_row_index") for row in prediction_rows]

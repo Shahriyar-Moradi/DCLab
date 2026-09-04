@@ -21,11 +21,12 @@ same rule in application/test paths.
 
 Events are emitted only at real execution boundaries. The current Labs pipeline
 covers ingestion, profiling/EDA, target and task resolution, structural cleaning,
-holdout locking, train-only decisions, missing-value decisions, column roles,
-feature engineering, preprocessing configuration, candidate and CV-fold
-lifecycles, selection, winner lock, final fit, winner-only final test,
-predictions, artifact persistence, deterministic verification, OpenAI audit,
-report generation, and terminal state. A failed candidate produces a failure
+holdout locking, Adaptive Model Builder planning (problem profile, validation
+plan, metric plan, leakage audit, locked model-development plan), train-only
+decisions, missing-value decisions, column roles, feature engineering,
+preprocessing configuration, candidate and CV-fold lifecycles, selection, winner
+lock, final fit, winner-only final test, predictions, artifact persistence,
+deterministic verification, OpenAI audit, report generation, and terminal state. A failed candidate produces a failure
 event without hiding successful candidates; a failed run retains its prior event
 history and terminal failure.
 
@@ -40,8 +41,8 @@ isolated from ML execution.
 `llm_invocations` is the generic, safe LLM observability ledger. Supported
 purposes are deliberately separated:
 
-- Semantic decisions: `semantic_target`, `semantic_missing_value`, and
-  `semantic_column_type`.
+- Semantic decisions: `semantic_target`, `semantic_missing_value`,
+  `semantic_column_type`, and `semantic_leakage`.
 - Advisory pipeline audits: `pipeline_audit_routine` and
   `pipeline_audit_deep`.
 
@@ -93,6 +94,8 @@ returns `404` after workspace authorization.
 ## Behavioral invariants
 
 - Holdout lock precedes every CV event.
+- Problem profile, validation plan, metric plan, leakage audit, and
+  model-development plan events precede CV.
 - Winner lock precedes final-test evaluation.
 - The final test is evaluated once and only for the locked winner.
 - Fold start/completion and candidate failure remain visible.
@@ -100,3 +103,10 @@ returns `404` after workspace authorization.
 - Observability callbacks do not change deterministic ML outputs.
 - Complete datasets, raw rows, row provenance, API keys, and bearer tokens are
   prohibited from event and LLM payloads.
+
+Planning event types: `problem_profile_started`, `problem_profile_completed`,
+`validation_plan_selected`, `metric_plan_selected`, `leakage_audit_started`,
+`feature_leakage_warning`, `feature_excluded_for_leakage`,
+`leakage_audit_completed`, `model_development_plan_locked`.
+
+See [DCLAB_ADAPTIVE_MODEL_BUILDER.md](DCLAB_ADAPTIVE_MODEL_BUILDER.md).

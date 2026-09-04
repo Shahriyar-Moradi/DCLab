@@ -26,7 +26,7 @@ from app.db.session import get_session_factory
 logger = logging.getLogger(__name__)
 
 SEMANTIC_PURPOSES = frozenset(
-    {"semantic_target", "semantic_missing_value", "semantic_column_type"}
+    {"semantic_target", "semantic_missing_value", "semantic_column_type", "semantic_leakage"}
 )
 AUDIT_PURPOSES = frozenset({"pipeline_audit_routine", "pipeline_audit_deep"})
 LLM_PURPOSES = SEMANTIC_PURPOSES | AUDIT_PURPOSES
@@ -56,6 +56,7 @@ _SECRET_PATTERNS = (
     re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
     re.compile(r"\+?\d[\d()\-\s.]{8,}\d"),
 )
+_HEX_DIGEST = re.compile(r"^[0-9a-fA-F]{32,128}$")
 _MAX_STRING = 1000
 _MAX_LIST = 50
 _MAX_KEYS = 100
@@ -113,9 +114,10 @@ def sanitize_observability_payload(value: Any) -> tuple[dict[str, Any], dict[str
             return [clean(entry, depth + 1) for entry in values]
         if isinstance(item, str):
             text = item
-            for pattern in _SECRET_PATTERNS:
-                text, count = pattern.subn("[REDACTED]", text)
-                summary["redacted_strings"] += count
+            if not _HEX_DIGEST.fullmatch(text):
+                for pattern in _SECRET_PATTERNS:
+                    text, count = pattern.subn("[REDACTED]", text)
+                    summary["redacted_strings"] += count
             if len(text) > _MAX_STRING:
                 summary["truncated_strings"] += 1
                 text = text[:_MAX_STRING] + "…"
