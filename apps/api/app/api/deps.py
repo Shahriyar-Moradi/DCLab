@@ -203,3 +203,14 @@ def require_client(
             detail="workspace write access requires business_admin or dclab_admin",
         )
     return user
+
+
+def require_development(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Method-aware guard for the shared /development ML-engineering surface."""
+    if request.method in _READ_METHODS:
+        return require_workspace_read(request, user, db)
+    return require_workspace_ml_execution(request, user, db)
