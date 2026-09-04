@@ -33,13 +33,19 @@ def normalize_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(name).strip().lower()).strip("_")
 
 
+MIN_IDENTIFIER_UNIQUE = 10
+
+
 def identifier_likelihood(name: str, series: pd.Series, row_count: int | None = None) -> float:
     """Return a conservative identifier likelihood without business-name aliases."""
     key = normalize_name(name)
     tokens = set(key.split("_"))
-    if key in {"id", "uuid", "guid"} or key.endswith(("_id", "_uuid", "_guid")):
+    unique = int(series.dropna().nunique())
+    named_id = key in {"id", "uuid", "guid"} or key.endswith(("_id", "_uuid", "_guid"))
+    # Low-cardinality *_id columns are category codes, not row/entity identifiers.
+    if named_id and unique >= MIN_IDENTIFIER_UNIQUE:
         return 1.0
-    if tokens & {"uuid", "guid", "identifier"}:
+    if tokens & {"uuid", "guid", "identifier"} and unique >= MIN_IDENTIFIER_UNIQUE:
         return 0.98
 
     n = max(int(row_count if row_count is not None else len(series)), 1)

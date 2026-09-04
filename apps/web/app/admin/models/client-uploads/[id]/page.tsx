@@ -192,6 +192,11 @@ export default function ClientUploadAutoTrainPage() {
             <span className="font-medium">Target reasoning:</span> {run.target_reason}
           </p>
         ) : null}
+        {run?.failure_reason ? (
+          <p className="mt-4 rounded bg-paper-raised p-4 font-body text-body text-ink">
+            <span className="font-medium">Failure reason:</span> {run.failure_reason}
+          </p>
+        ) : null}
       </Section>
 
       <Section title="Data Quality">

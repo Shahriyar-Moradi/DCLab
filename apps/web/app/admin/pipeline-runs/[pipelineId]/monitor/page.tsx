@@ -14,7 +14,8 @@ type TechnicalRow = Record<string, unknown>;
 
 const STAGES = [
   ["ingestion", "File ingestion"], ["profiling_eda", "EDA / profiling"], ["target_task", "Target / task"],
-  ["structural_cleaning", "Structural cleaning"], ["holdout_lock", "Holdout lock"],
+  ["structural_cleaning", "Structural cleaning"], ["holdout_plan", "Holdout plan"],
+  ["holdout_lock", "Holdout lock"],
   ["problem_profile", "Problem profile"], ["validation_plan", "Validation plan"], ["metric_plan", "Metric plan"],
   ["leakage_audit", "Leakage audit"], ["model_development_plan", "Model development plan"],
   ["missing_value_decisions", "Missing-value decisions"], ["column_roles", "Column roles"],
@@ -102,6 +103,7 @@ function ScientificPlan({ plan }: { plan: TechnicalRow }) {
   const profile = object(plan.problem_profile);
   const validation = object(plan.validation);
   const metric = object(plan.metric);
+  const holdout = object(plan.holdout);
   const leakage = object(plan.leakage);
   const findings = list(leakage.findings).map(object);
   const allowed = list(plan.allowed_features).map(String);
@@ -128,6 +130,19 @@ function ScientificPlan({ plan }: { plan: TechnicalRow }) {
         <Metric label="Group overlap" value={overlapLabel} />
       </div>
       {validation.reason ? <p className="mt-4 text-body text-ink-muted">{text(validation.reason)}</p> : null}
+    </Panel>
+    <Panel title="Final Holdout" subtitle="The locked test partition matches the same grouping or chronology used for CV.">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Metric label="Holdout Strategy" value={text(holdout.strategy)} />
+        <Metric label="Train rows" value={text(holdout.n_train)} />
+        <Metric label="Test rows" value={text(holdout.n_test)} />
+        <Metric label="Group" value={text(holdout.group_column, "none")} />
+        <Metric label="Time column" value={text(holdout.time_column, "none")} />
+        <Metric label="Group overlap" value={text(holdout.group_overlap_count, "n/a")} />
+        <Metric label="train_time_max" value={text(holdout.train_time_max, "n/a")} />
+        <Metric label="test_time_min" value={text(holdout.test_time_min, "n/a")} />
+      </div>
+      {holdout.reason ? <p className="mt-4 text-body text-ink-muted">{text(holdout.reason)}</p> : null}
     </Panel>
     <Panel title="Metric Strategy" subtitle="Primary selection metric is locked from the ProblemProfile before candidates train.">
       <div className="grid gap-4 md:grid-cols-2">

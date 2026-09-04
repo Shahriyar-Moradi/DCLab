@@ -189,6 +189,23 @@ def test_repeated_entity_detection():
     assert evidence["repeated_rows"] == 100
 
 
+def test_low_cardinality_category_id_is_not_a_repeated_entity():
+    rng = np.random.default_rng(11)
+    n = 120
+    start = pd.Timestamp("2024-01-01")
+    frame = pd.DataFrame(
+        {
+            "deliverey_category_id": rng.choice([1, 2, 3], n),
+            "first_created_at": [start + pd.Timedelta(hours=i) for i in range(n)],
+            "amount": rng.normal(50, 10, n),
+            "hyper_ack": rng.integers(0, 2, n),
+        }
+    )
+    profile = build_problem_profile(frame, target="hyper_ack", task_type="binary")
+    names = [item["column"] for item in profile.repeated_entity_candidates]
+    assert "deliverey_category_id" not in names
+
+
 def test_datetime_candidate_detection():
     frame = _temporal_frame()
     profile = build_problem_profile(frame, target="revenue", task_type="regression")

@@ -107,10 +107,12 @@ def build_ml_run(
         dataset_id=(dataset.id if dataset is not None else upload.dataset_id),
         status=upload.pipeline_status,
         target=target,
-        task_type=_task_type(result),
+        task_type=_task_type(result, target_audit),
         target_source=_str_or_none(target_audit.get("source")),
         target_reason=_str_or_none(target_audit.get("reason")),
         target_confidence=_float_or_none(target_audit.get("confidence")),
+        failure_reason=_str_or_none(log.get("reason"))
+        or _str_or_none(getattr(experiment, "failure_reason", None) if experiment is not None else None),
         started_at=started_at,
         completed_at=completed_at,
         duration_seconds=duration,
@@ -283,10 +285,12 @@ def _analysis_source(log: dict[str, Any], result: dict[str, Any]) -> dict[str, A
     return _as_dict(log.get("eda"))
 
 
-def _task_type(result: dict[str, Any]) -> str | None:
+def _task_type(result: dict[str, Any], target_audit: dict[str, Any] | None = None) -> str | None:
     task = result.get("task")
     if isinstance(task, dict) and task.get("task_type"):
         return str(task["task_type"])
+    if target_audit and target_audit.get("task_type"):
+        return str(target_audit["task_type"])
     return None
 
 

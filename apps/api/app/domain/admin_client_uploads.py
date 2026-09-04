@@ -129,6 +129,7 @@ class AdminMlRun(BaseModel):
     target_source: str | None = None
     target_reason: str | None = None
     target_confidence: float | None = None
+    failure_reason: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     duration_seconds: float | None = None

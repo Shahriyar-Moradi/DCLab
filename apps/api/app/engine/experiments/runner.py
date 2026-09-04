@@ -31,9 +31,22 @@ from app.engine.features.encode import coerce_binary_target, encode_feature_colu
 from app.engine.lab.auto_prepare import build_preprocessor, engineer_features, split_column_roles
 from app.engine.leakage.detector import detect_leakage
 from app.engine.models.registry import make_model
-from app.engine.modeling.leakage_auditor import consult_leakage_llm, leakage_report_from_audit, plan_model_development
-from app.engine.modeling.metric_planner import plan_metrics
-from app.engine.modeling.problem_profile import build_problem_profile
+from app.engine.modeling.holdout_planner import (
+    HoldoutPlan,
+    holdout_locked_event_payload,
+    holdout_plan_event_payload,
+    plan_holdout,
+    require_supported_holdout,
+)
+from app.engine.modeling.coerce import from_mapping
+from app.engine.modeling.leakage_auditor import (
+    ModelDevelopmentPlan,
+    consult_leakage_llm,
+    leakage_report_from_audit,
+    plan_model_development,
+)
+from app.engine.modeling.metric_planner import MetricPlan, plan_metrics
+from app.engine.modeling.problem_profile import ProblemProfile, build_problem_profile
 from app.engine.modeling.validation_planner import (
     ValidationPlan,
     ValidationUnsupportedError,
@@ -74,6 +87,197 @@ def _planning_event_sink(on_event: RunEventCallback | None):
         _emit_event(on_event, event_type, stage=stage, status=status, **data)
 
     return sink
+
+
+def _lock_open_ingest_holdout(
+    frame: pd.DataFrame,
+    task: TaskSpec,
+    config: SearchConfig,
+    on_event: RunEventCallback | None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any], HoldoutPlan]:
+    holdout_plan = plan_holdout(
+        frame,
+        target=task.target,
+        task_type=task.task_type,
+        test_size=0.2,
+        random_state=config.seed,
+    )
+    _emit_event(
+        on_event,
+        "holdout_plan_selected",
+        stage="holdout_plan",
+        status="completed",
+        **holdout_plan_event_payload(holdout_plan),
+    )
+    require_supported_holdout(holdout_plan)
+    train, val, test, split_meta = split_train_test_holdout(
+        frame,
+        target=task.target,
+        test_size=holdout_plan.test_size,
+        seed=holdout_plan.random_state,
+        plan=holdout_plan,
+    )
+    _emit_event(
+        on_event,
+        "holdout_locked",
+        stage="holdout_lock",
+        status="completed",
+        **holdout_locked_event_payload(split_meta),
+    )
+    return train, val, test, split_meta, holdout_plan
+
+
+def _as_plan_mapping(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        return payload if isinstance(payload, dict) and payload else None
+    if isinstance(value, dict) and value:
+        return value
+    return None
+
+
+def _overlay_scientific_plans(
+    config: SearchConfig,
+    *,
+    holdout_plan: Any = None,
+    model_development_plan: Any = None,
+) -> SearchConfig:
+    payload = config.to_dict()
+    holdout = _as_plan_mapping(holdout_plan)
+    development = _as_plan_mapping(model_development_plan)
+    if holdout is not None:
+        payload["holdout_plan"] = holdout
+    if development is not None:
+        payload["model_development_plan"] = development
+    payload["holdout_plan"] = _as_plan_mapping(payload.get("holdout_plan"))
+    payload["model_development_plan"] = _as_plan_mapping(payload.get("model_development_plan"))
+    return SearchConfig(**payload)
+
+
+def _split_open_ingest_holdout(
+    frame: pd.DataFrame,
+    task: TaskSpec,
+    config: SearchConfig,
+    on_event: RunEventCallback | None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any], HoldoutPlan, str]:
+    provided = from_mapping(HoldoutPlan, config.holdout_plan)
+    if provided is not None:
+        require_supported_holdout(provided)
+        train, val, test, split_meta = split_train_test_holdout(
+            frame,
+            target=task.target,
+            test_size=provided.test_size,
+            seed=provided.random_state,
+            plan=provided,
+        )
+        return train, val, test, split_meta, provided, "provided"
+    train, val, test, split_meta, holdout_plan = _lock_open_ingest_holdout(
+        frame, task, config, on_event
+    )
+    return train, val, test, split_meta, holdout_plan, "computed"
+
+
+def _resolve_model_development_plan(
+    train: pd.DataFrame,
+    task: TaskSpec,
+    config: SearchConfig,
+    on_event: RunEventCallback | None,
+) -> tuple[ProblemProfile, ValidationPlan, MetricPlan, dict[str, Any], ModelDevelopmentPlan, str]:
+    provided = from_mapping(ModelDevelopmentPlan, config.model_development_plan)
+    if provided is not None:
+        problem_profile = ProblemProfile.from_dict(provided.problem_profile)
+        validation_plan = ValidationPlan.from_dict(provided.validation_plan)
+        metric_plan = MetricPlan.from_dict(provided.metric_plan)
+        leakage = dict(provided.leakage_assessment or {})
+        return problem_profile, validation_plan, metric_plan, leakage, provided, "provided"
+    problem_profile, validation_plan, metric_plan, leakage_audit, development_plan = plan_model_development(
+        train,
+        target=task.target,
+        task_type=task.task_type,
+        requested_folds=5,
+        random_state=config.seed,
+        time_column=task.prediction_time_column,
+        entity_column=task.entity_id,
+        reviewer=consult_leakage_llm,
+        conservative_auto_train=config.exclude_high_leakage,
+        on_event=_planning_event_sink(on_event),
+    )
+    return (
+        problem_profile,
+        validation_plan,
+        metric_plan,
+        leakage_report_from_audit(leakage_audit),
+        development_plan,
+        "computed",
+    )
+
+
+def _align_task_to_development_plan(
+    task: TaskSpec,
+    *,
+    frame: pd.DataFrame,
+    validation_plan: ValidationPlan,
+    metric_plan: MetricPlan,
+    development_plan: ModelDevelopmentPlan,
+) -> TaskSpec:
+    group_column = development_plan.group_column
+    time_column = development_plan.time_column
+    entity_id = (
+        group_column
+        if group_column and group_column in frame.columns
+        else (task.entity_id if task.entity_id and task.entity_id in frame.columns else None)
+    )
+    return TaskSpec(
+        **{
+            **task.to_dict(),
+            "evaluation_metric": metric_plan.primary_metric,
+            "validation_strategy": validation_plan.strategy,
+            "entity_id": entity_id,
+            "prediction_time_column": time_column if time_column and time_column in frame.columns else None,
+        }
+    )
+
+
+def _estimator_columns_from_plan(
+    task: TaskSpec,
+    train: pd.DataFrame,
+    development_plan: ModelDevelopmentPlan,
+) -> tuple[list[str], list[str], dict[str, list[str]]]:
+    allowed = set(development_plan.allowed_features)
+    excluded = {
+        str(item.get("column"))
+        for item in development_plan.excluded_features
+        if isinstance(item, dict) and item.get("column")
+    }
+    reserved = {task.target, SOURCE_ROW_COLUMN}
+    if development_plan.group_column:
+        reserved.add(development_plan.group_column)
+
+    def keep(column: str) -> bool:
+        return (
+            column in train.columns
+            and column in allowed
+            and column not in excluded
+            and column not in reserved
+        )
+
+    groups = {
+        name: [column for column in cols if keep(column)]
+        for name, cols in task.feature_groups.items()
+    }
+    groups = {name: cols for name, cols in groups.items() if cols}
+    roles = task.column_roles or {}
+    numerical_cols = [column for column in (roles.get("numerical") or []) if keep(column) and any(column in cols for cols in groups.values())]
+    categorical_cols = [
+        column for column in (roles.get("categorical") or []) if keep(column) and any(column in cols for cols in groups.values())
+    ]
+    modeled = numerical_cols + categorical_cols
+    if modeled:
+        groups = {"features": modeled}
+    return numerical_cols, categorical_cols, groups
 
 
 def _predict(model, X: np.ndarray, classifier: bool) -> np.ndarray:
@@ -328,12 +532,14 @@ def _run_open_ingest_candidates(
     artifact_dir: Path,
     members_dir: Path,
     validation_plan: ValidationPlan,
+    primary_metric: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
     on_event: RunEventCallback | None = None,
 ) -> dict[str, Any]:
     """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked."""
     classifier = task.task_type == "binary"
+    selection_metric = primary_metric or task.evaluation_metric
     # Val is empty for the 80/20 holdout path; never concatenate test.
     pool = pd.concat([train, val], ignore_index=True) if len(val) else train
     y_pool = pool[task.target].to_numpy()
@@ -410,7 +616,7 @@ def _run_open_ingest_candidates(
                 fold_y = y_train[fold_holdout_idx]
                 fold_metrics = _metrics(fold_y, fold_pred, classifier=classifier)
                 fold_metrics_list.append(fold_metrics)
-                fold_scores.append(primary_score(fold_metrics, task.evaluation_metric, task.task_type))
+                fold_scores.append(primary_score(fold_metrics, selection_metric, task.task_type))
                 train_provenance = (
                     pool.iloc[fold_train_idx][SOURCE_ROW_COLUMN].astype(int).tolist()
                     if SOURCE_ROW_COLUMN in pool.columns
@@ -571,7 +777,7 @@ def _run_open_ingest_candidates(
     selection = {
         "candidate_id": best_single.get("candidate_id") if best_single else None,
         "selected_candidate_id": best_single.get("candidate_id") if best_single else None,
-        "selection_metric": task.evaluation_metric,
+        "selection_metric": selection_metric,
         "cv_score": best_single.get("score") if best_single else None,
         "selection_source": "cross_validation",
         "selection_policy": "maximum eligible primary CV score",
@@ -587,7 +793,7 @@ def _run_open_ingest_candidates(
         status="completed" if best_single is not None else "failed",
         selected_candidate_id=(best_single or {}).get("candidate_id"),
         eligible_candidate_ids=[row.get("candidate_id") for row in pool_rows],
-        selection_metric=task.evaluation_metric,
+        selection_metric=selection_metric,
         duration_ms=stage_timings[-1]["duration_ms"],
     )
     final_test_evaluation = {
@@ -610,7 +816,7 @@ def _run_open_ingest_candidates(
             stage="winner_lock",
             status="completed",
             candidate_id=best_single.get("candidate_id"),
-            selection_metric=task.evaluation_metric,
+            selection_metric=selection_metric,
             cv_score=best_single.get("score"),
         )
         (
@@ -721,64 +927,59 @@ def _run_open_ingest_experiment(
 
     if on_stage:
         on_stage(SPLITTING)
-    train, val, test, split_meta = split_train_test_holdout(
-        work,
-        target=task.target,
-        test_size=0.2,
-        seed=config.seed,
-        stratify=task.task_type == "binary",
+    train, val, test, split_meta, holdout_plan, _holdout_source = _split_open_ingest_holdout(
+        work, task, config, on_event
     )
-    problem_profile, validation_plan, metric_plan, leakage_audit, development_plan = plan_model_development(
-        train,
-        target=task.target,
-        task_type=task.task_type,
-        requested_folds=5,
-        random_state=config.seed,
-        time_column=task.prediction_time_column,
-        entity_column=task.entity_id,
-        reviewer=consult_leakage_llm,
-        conservative_auto_train=config.exclude_high_leakage,
-        on_event=_planning_event_sink(on_event),
-    )
+    (
+        problem_profile,
+        validation_plan,
+        metric_plan,
+        leakage,
+        development_plan,
+        plan_source,
+    ) = _resolve_model_development_plan(train, task, config, on_event)
     if validation_plan.strategy == "unsupported" or not validation_plan.actual_folds:
         raise ValidationUnsupportedError(
             validation_plan.reason
             or validation_plan.fallback_reason
             or "Validation plan is unsupported."
         )
-    task = TaskSpec(**{**task.to_dict(), "evaluation_metric": metric_plan.primary_metric})
-
-    # Leakage screening and all feature eligibility evidence use train only.
-    leakage = leakage_report_from_audit(leakage_audit)
-    allowed = set(development_plan.allowed_features)
-    groups = {
-        name: [
-            col
-            for col in cols
-            if col in train.columns
-            and col in allowed
-            and col != task.target
-            and col != task.prediction_time_column
-            and col != task.entity_id
-        ]
-        for name, cols in task.feature_groups.items()
-    }
-    groups = {name: cols for name, cols in groups.items() if cols}
-    roles = task.column_roles or {}
-    numerical_cols = [c for c in (roles.get("numerical") or []) if c in allowed and any(c in cols for cols in groups.values())]
-    categorical_cols = [c for c in (roles.get("categorical") or []) if c in allowed and any(c in cols for cols in groups.values())]
+    if validation_plan.group_column and validation_plan.group_column not in train.columns:
+        raise ValueError(
+            f"group column {validation_plan.group_column!r} is missing from the training frame"
+        )
+    if validation_plan.time_column and validation_plan.time_column not in train.columns:
+        raise ValueError(
+            f"time column {validation_plan.time_column!r} is missing from the training frame"
+        )
+    task = _align_task_to_development_plan(
+        task,
+        frame=train,
+        validation_plan=validation_plan,
+        metric_plan=metric_plan,
+        development_plan=development_plan,
+    )
+    numerical_cols, categorical_cols, groups = _estimator_columns_from_plan(
+        task, train, development_plan
+    )
     modeled = numerical_cols + categorical_cols
     if not modeled:
         raise ValueError("no numeric or categorical columns to model")
     task = TaskSpec(
         **{
             **task.to_dict(),
-            "feature_groups": {"features": modeled},
+            "feature_groups": groups,
             "column_roles": {"numerical": numerical_cols, "categorical": categorical_cols},
         }
     )
 
-    candidates = assemble_candidates(task, config, dataset_version=dataset_version)
+    candidates = assemble_candidates(
+        task,
+        config,
+        dataset_version=dataset_version,
+        holdout_plan=holdout_plan,
+        development_plan=development_plan,
+    )
     funnel = {
         "generated": len(candidates),
         "valid": len(candidates),
@@ -804,6 +1005,7 @@ def _run_open_ingest_experiment(
         artifact_dir=artifact_dir,
         members_dir=members_dir,
         validation_plan=validation_plan,
+        primary_metric=metric_plan.primary_metric,
         on_stage=on_stage,
         on_checkpoint=_checkpoint,
         on_event=on_event,
@@ -821,6 +1023,8 @@ def _run_open_ingest_experiment(
         "feature_engineering_actions": list(feature_report.get("feature_engineering_actions") or []),
         "transformations": list(feature_report.get("feature_engineering_actions") or []),
     }
+    development_payload = development_plan.to_dict()
+    holdout_payload = holdout_plan.to_dict()
     result = {
         "task": task.to_dict(),
         "config": config.to_dict(),
@@ -833,12 +1037,14 @@ def _run_open_ingest_experiment(
             "duplicate_rows": profile.get("duplicate_rows", profile.get("duplicate_count")),
         },
         "quality": quality,
-        "leakage": leakage,
+        "leakage": leakage or development_payload.get("leakage_assessment") or {},
         "split": split_meta,
-        "problem_profile": problem_profile.to_dict(),
-        "validation_plan": validation_plan.to_dict(),
-        "metric_plan": metric_plan.to_dict(),
-        "model_development_plan": development_plan.to_dict(),
+        "holdout_plan": holdout_payload,
+        "problem_profile": development_payload.get("problem_profile") or problem_profile.to_dict(),
+        "validation_plan": development_payload.get("validation_plan") or validation_plan.to_dict(),
+        "metric_plan": development_payload.get("metric_plan") or metric_plan.to_dict(),
+        "model_development_plan": development_payload,
+        "scientific_plan_source": plan_source,
         "validation": _open_ingest_validation(
             split_meta, records, config.seed, task.task_type, plan=validation_plan
         ),
@@ -899,10 +1105,16 @@ def run_experiment(
     on_stage: Callable[[str], None] | None = None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
     on_event: RunEventCallback | None = None,
+    holdout_plan: Any = None,
+    model_development_plan: Any = None,
 ) -> dict[str, Any]:
     """Train, filter, select, and report. Returns a JSON-serializable result dict."""
     started = time.time()
-    config = config or SearchConfig()
+    config = _overlay_scientific_plans(
+        config or SearchConfig(),
+        holdout_plan=holdout_plan,
+        model_development_plan=model_development_plan,
+    )
     artifact_dir = Path(artifact_dir or ".")
     artifact_dir.mkdir(parents=True, exist_ok=True)
     members_dir = artifact_dir / "members"
@@ -1014,12 +1226,8 @@ def run_experiment(
     if on_stage:
         on_stage(SPLITTING)
     if config.strategy == "open_ingest":
-        train, val, test, split_meta = split_train_test_holdout(
-            work,
-            target=task.target,
-            test_size=0.2,
-            seed=config.seed,
-            stratify=task.task_type == "binary",
+        train, val, test, split_meta, _holdout_plan = _lock_open_ingest_holdout(
+            work, task, config, on_event
         )
     else:
         train, val, test, split_meta = split_frame(

@@ -27,7 +27,8 @@ drops apparent score from 0.94 to 0.84, that is **correction**, not regression.
 ## Open-ingest order
 
 ```
-upload → target/task → structural cleaning → FINAL HOLDOUT LOCK
+upload → target/task → structural cleaning
+      → pre-split structural analysis → HoldoutPlan → FINAL HOLDOUT LOCK
       → train-only ProblemProfile
       → ValidationPlan
       → MetricPlan
@@ -42,11 +43,46 @@ upload → target/task → structural cleaning → FINAL HOLDOUT LOCK
       → OpenAI auditor (advisory)
 ```
 
-Auto-train may compute the plan once before feature engineering so disallowed
-columns never enter FE. The experiment runner computes the plan again on the
-prepared training table and emits Observatory events. Both passes use train
-rows only. The locked holdout is never profiled, audited, or used for metric
-or splitter choice.
+Auto-train creates the one authoritative `ModelDevelopmentPlan` on the locked
+training partition, before missing-value decisions, column roles, and feature
+engineering. Production Labs passes that exact plan (and the `HoldoutPlan`) into
+the experiment runner through `SearchConfig`. The runner consumes it and does
+not call `plan_model_development()` again. Direct `run_experiment()` use may
+still plan autonomously when no plan is supplied. Planning Observatory events
+are emitted once, at the production planning pass.
+
+The locked holdout is never profiled, audited, or used for metric or splitter
+choice. A raw timestamp that caused temporal validation remains
+`time_column` even if feature engineering later stores unix seconds in that
+column. The group column remains on the frame for validation and is never an
+estimator feature.
+
+Open-ingest `TaskSpec.validation_strategy` and `evaluation_metric` are populated
+from the locked ValidationPlan and MetricPlan. They are compatibility fields
+and must not contradict execution.
+
+Pre-split HoldoutPlan may use only column names, dtypes, row/entity structure,
+timestamp structure, the locked target/task, and non-learned structural
+statistics. It must not use predictive performance.
+
+## HoldoutPlan
+
+Built by `apps/api/app/engine/modeling/holdout_planner.py` from the cleaned
+table **before** the final holdout is locked. This is a separate object from
+ValidationPlan; they are not merged.
+
+| Situation | Final holdout |
+| --- | --- |
+| Ordinary binary | `stratified_random` |
+| Ordinary regression | `random` |
+| Repeated identifier-like entity | `group_disjoint` (`train groups ∩ test groups = ∅`) |
+| Strong ordered time structure | `temporal_future` (latest slice; `max(train_time) <= min(test_time)`) |
+| Grouping and strong temporal together | `unsupported` (run fails closed) |
+
+The implementation never silently falls back to a random 80/20 split when
+group or time evidence requires stronger isolation. Split metadata records
+strategy, requested vs actual test size, group overlap count, time ranges,
+and train/test provenance.
 
 ## ProblemProfile
 
@@ -78,7 +114,8 @@ counts reduce folds with an explicit fallback reason. Group folds must have
 zero group overlap. Time folds must be chronological.
 
 Grouping is used only for identifier-like repeated entities, not for ordinary
-low-cardinality categoricals.
+low-cardinality categoricals — including `*_id` codes with few distinct values
+(for example `delivery_category_id` with three levels).
 
 ## MetricPlan
 
@@ -146,15 +183,24 @@ The locked plan contains:
 - `plan_version`
 
 Candidates are assembled from allowed features only. HIGH/CRITICAL excluded
-columns must not appear in `feature_set`.
+columns must not appear in `feature_set`. Open-ingest candidate fingerprints
+include dataset version, feature set, model family, hyperparameters,
+preprocessing config, holdout plan version/strategy, validation plan
+version/strategy, primary metric, and model-development-plan version. They do
+not include evidence payloads. Two scientifically different configurations
+must not share a fingerprint.
 
 ## Observability
 
-Reuse `MlRunEvent`. No second event system. The runner emits bounded technical
-summaries after holdout lock and before CV:
+Reuse `MlRunEvent`. No second event system. Holdout planning is emitted after
+structural cleaning and before CV. Train-only scientific planning is emitted
+once after holdout lock and before missing-value decisions and CV. The runner
+does not emit a second planning pass when Labs already supplied the plan.
 
 | Event | Stage |
 | --- | --- |
+| `holdout_plan_selected` | `holdout_plan` |
+| `holdout_locked` | `holdout_lock` |
 | `problem_profile_started` / `problem_profile_completed` | `problem_profile` |
 | `validation_plan_selected` | `validation_plan` |
 | `metric_plan_selected` | `metric_plan` |
@@ -170,7 +216,8 @@ redacts secrets and provenance keys.
 
 Pipeline Monitor adds compact panels (not a redesign): Problem Profile,
 Validation Strategy (including requested/actual folds and group overlap),
-Metric Strategy, Leakage Audit, Allowed Features, Excluded Features.
+Final Holdout, Metric Strategy, Leakage Audit, Allowed Features, Excluded
+Features.
 
 ## Verifier checks
 
@@ -189,10 +236,26 @@ New deterministic checks:
 - `critical_leakage_feature_not_modeled`
 - `excluded_features_not_in_candidates`
 - `final_test_not_used_in_problem_profile`
+- `holdout_plan_exists`
+- `holdout_strategy_matches_problem_structure`
+- `holdout_train_test_disjoint`
+- `group_holdout_has_zero_group_overlap`
+- `temporal_holdout_respects_order`
+- `single_authoritative_development_plan`
+- `runner_validation_matches_plan`
+- `runner_metric_matches_plan`
+- `candidate_features_match_plan`
+- `task_metric_matches_plan`
+- `candidate_fingerprint_contains_plan_identity`
+
+A group-aware ValidationPlan with a random or stratified final holdout fails.
+A TimeSeriesSplit ValidationPlan with a random final holdout fails.
 
 Missing plan evidence is `NOT_VERIFIABLE`. Present-but-violating evidence is
 `FAIL`. Corruption tests inject group overlap, reverse time, metric mismatch,
-excluded features in candidates, and holdout statistics in ProblemProfile.
+excluded features in candidates, holdout statistics in ProblemProfile, group
+overlap in the final holdout, a reversed temporal holdout, and a group or
+temporal CV paired with a random final holdout.
 
 ## Benchmark methodology
 
@@ -230,6 +293,8 @@ that a regression.
 - Semantic leakage review is optional, fail-closed, and cannot drop columns.
 - Grouping plus strong temporal structure is unsupported rather than given a
   custom splitter.
+- Low-cardinality `*_id` codes (for example a 3-level `delivery_category_id`)
+  are treated as categoricals, not grouping keys.
 - Conservative auto-train treats `requires_review` as excluded; that can drop
   ambiguous-but-legitimate columns.
 - Model-family hints are not a portfolio search.
@@ -251,3 +316,6 @@ approved later, would be a separate capability slice:
 
 Phase 2 must not weaken holdout lock, group isolation, chronological
 validation, MetricPlan selection, or LeakageAuditor exclusions.
+
+Production Labs-path proofs (upload → auto-train → ModelVersion → verifier)
+are recorded in [DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md](DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md).

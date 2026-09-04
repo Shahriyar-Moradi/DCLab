@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold, KFold, StratifiedGroupKFold, StratifiedKFold, TimeSeriesSplit
 
-from app.engine.modeling.problem_profile import ProblemProfile
+from app.engine.modeling.problem_profile import MIN_REPEATED_ENTITY_UNIQUE, ProblemProfile
 
 VALIDATION_PLAN_VERSION = "dclab.validation_plan.v1"
 DEFAULT_FOLDS = 5
@@ -45,6 +45,15 @@ class ValidationPlan:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, payload: Any) -> ValidationPlan:
+        from app.engine.modeling.coerce import from_mapping
+
+        plan = from_mapping(cls, payload)
+        if plan is None:
+            raise ValueError("ValidationPlan evidence is missing.")
+        return plan
+
 
 @dataclass
 class FoldSplit:
@@ -62,7 +71,10 @@ class FoldSplit:
 
 def _top_repeated_entity(profile: ProblemProfile) -> dict[str, Any] | None:
     for item in profile.repeated_entity_candidates:
-        if int(item.get("unique_count") or 0) >= MIN_FOLDS and int(item.get("max_rows_per_entity") or 0) >= 2:
+        unique_count = int(item.get("unique_count") or 0)
+        if unique_count < max(MIN_FOLDS, MIN_REPEATED_ENTITY_UNIQUE):
+            continue
+        if int(item.get("max_rows_per_entity") or 0) >= 2:
             if float(item.get("mean_rows_per_entity") or 0) >= 1.5 or int(item.get("max_rows_per_entity") or 0) >= 3:
                 return item
     return None

@@ -131,6 +131,7 @@ def test_platform_hierarchy_fast_replay_multi_pipeline_and_readonly_role(
     assert body["predictions"]["raw_rows_included"] is False
     plan = body["scientific_plan"]
     assert plan["validation"]["strategy"] == "StratifiedKFold"
+    assert plan["holdout"]["strategy"] == "stratified_random"
     assert plan["metric"]["primary_metric"] == "pr_auc"
     assert plan["problem_profile"]["task_type"] == "binary"
     assert plan["leakage"]["partition"] == "train"

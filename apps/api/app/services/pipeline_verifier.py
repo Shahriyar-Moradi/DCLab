@@ -8,6 +8,14 @@ from typing import Any
 import pandas as pd
 
 from app.engine.features.encode import coerce_binary_target
+from app.engine.modeling.holdout_planner import (
+    GROUP_DISJOINT,
+    GROUP_HOLDOUT_STRATEGIES,
+    RANDOM,
+    STRATIFIED_RANDOM,
+    TEMPORAL_FUTURE,
+    TEMPORAL_HOLDOUT_STRATEGIES,
+)
 from app.engine.modeling.validation_planner import (
     GROUP_KFOLD,
     KFOLD,
@@ -24,6 +32,13 @@ CHECK_FAIL = "FAIL"
 CHECK_NOT_VERIFIABLE = "NOT_VERIFIABLE"
 
 GROUP_STRATEGIES = {STRATIFIED_GROUP_KFOLD, GROUP_KFOLD}
+_CV_TO_HOLDOUT = {
+    STRATIFIED_KFOLD: STRATIFIED_RANDOM,
+    KFOLD: RANDOM,
+    STRATIFIED_GROUP_KFOLD: GROUP_DISJOINT,
+    GROUP_KFOLD: GROUP_DISJOINT,
+    TIME_SERIES_SPLIT: TEMPORAL_FUTURE,
+}
 _HOLDOUT_KEYS = {
     "test_source_rows",
     "train_source_rows",
@@ -85,6 +100,22 @@ def _candidate_feature_names(task: dict[str, Any], candidates: list[Any]) -> set
     return names
 
 
+def _plan_identity(
+    holdout: dict[str, Any],
+    validation: dict[str, Any],
+    metric: dict[str, Any],
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "holdout_plan_version": holdout.get("plan_version"),
+        "holdout_strategy": holdout.get("strategy"),
+        "validation_plan_version": validation.get("version"),
+        "validation_strategy": validation.get("strategy"),
+        "primary_metric": metric.get("primary_metric"),
+        "model_development_plan_version": plan.get("plan_version"),
+    }
+
+
 def _holdout_keys_present(payload: dict[str, Any]) -> list[str]:
     return sorted(key for key in _HOLDOUT_KEYS if key in payload)
 
@@ -112,6 +143,178 @@ def _strategy_matches_task(task_type: str, validation: dict[str, Any]) -> bool:
     return strategy in {STRATIFIED_KFOLD, KFOLD, STRATIFIED_GROUP_KFOLD, GROUP_KFOLD, TIME_SERIES_SPLIT}
 
 
+def _holdout_strategy(holdout: dict[str, Any], split: dict[str, Any]) -> str:
+    return str(holdout.get("strategy") or split.get("strategy") or "")
+
+
+def _verify_holdout_plan(
+    add,
+    *,
+    report: dict[str, Any],
+    split: dict[str, Any],
+    validation: dict[str, Any],
+) -> None:
+    holdout = _as_dict(report.get("holdout_plan"))
+    strategy = _holdout_strategy(holdout, split)
+    if not holdout or not holdout.get("strategy") or not holdout.get("plan_version"):
+        add(
+            "holdout_plan_exists",
+            "holdout_plan",
+            CHECK_NOT_VERIFIABLE,
+            "HoldoutPlan evidence is missing.",
+            "holdout_plan",
+        )
+    else:
+        add(
+            "holdout_plan_exists",
+            "holdout_plan",
+            CHECK_PASS,
+            "A HoldoutPlan was selected from pre-split structural evidence.",
+            "holdout_plan.plan_version",
+        )
+
+    cv_strategy = str(validation.get("strategy") or "")
+    expected = _CV_TO_HOLDOUT.get(cv_strategy)
+    plan_strategy = str(holdout.get("strategy") or "")
+    split_strategy = str(split.get("strategy") or "")
+    if not plan_strategy or not cv_strategy or expected is None:
+        add(
+            "holdout_strategy_matches_problem_structure",
+            "holdout_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Holdout strategy cannot be checked against the problem structure.",
+            "holdout_plan",
+            "validation_plan",
+        )
+    elif plan_strategy != expected or (split_strategy and split_strategy != expected):
+        add(
+            "holdout_strategy_matches_problem_structure",
+            "holdout_plan",
+            CHECK_FAIL,
+            (
+                f"Holdout strategy {plan_strategy or split_strategy!r} does not match "
+                f"validation strategy {cv_strategy!r}."
+            ),
+            "holdout_plan.strategy",
+            "split.strategy",
+            "validation_plan.strategy",
+        )
+    else:
+        add(
+            "holdout_strategy_matches_problem_structure",
+            "holdout_plan",
+            CHECK_PASS,
+            "The final holdout strategy matches the profiled problem structure.",
+            "holdout_plan.strategy",
+            "validation_plan.strategy",
+        )
+
+    train_rows = _as_list(split.get("train_source_rows"))
+    test_rows = _as_list(split.get("test_source_rows"))
+    train_set, test_set = set(train_rows), set(test_rows)
+    if not train_rows or not test_rows:
+        add(
+            "holdout_train_test_disjoint",
+            "splitting",
+            CHECK_NOT_VERIFIABLE,
+            "Train/test provenance is missing for the final holdout.",
+            "split",
+        )
+    elif train_set & test_set:
+        add(
+            "holdout_train_test_disjoint",
+            "splitting",
+            CHECK_FAIL,
+            "Train and final-test provenance overlap.",
+            "split.train_source_rows",
+            "split.test_source_rows",
+        )
+    else:
+        add(
+            "holdout_train_test_disjoint",
+            "splitting",
+            CHECK_PASS,
+            "Final holdout train and test provenance are disjoint.",
+            "split.train_source_rows",
+            "split.test_source_rows",
+        )
+
+    if strategy not in GROUP_HOLDOUT_STRATEGIES:
+        add(
+            "group_holdout_has_zero_group_overlap",
+            "holdout_plan",
+            CHECK_PASS,
+            "Group-disjoint holdout was not selected.",
+            "holdout_plan.strategy",
+        )
+    else:
+        overlap = _as_list(split.get("group_overlap"))
+        count = split.get("group_overlap_count")
+        if count is None and "group_overlap" not in split:
+            add(
+                "group_holdout_has_zero_group_overlap",
+                "holdout_plan",
+                CHECK_NOT_VERIFIABLE,
+                "Group-overlap evidence is missing from the locked holdout.",
+                "split.group_overlap_count",
+            )
+        elif overlap or (isinstance(count, int) and count > 0):
+            add(
+                "group_holdout_has_zero_group_overlap",
+                "holdout_plan",
+                CHECK_FAIL,
+                "The same group appears in the training partition and the final holdout.",
+                "split.group_overlap_count",
+            )
+        else:
+            add(
+                "group_holdout_has_zero_group_overlap",
+                "holdout_plan",
+                CHECK_PASS,
+                "Group-disjoint holdout has zero group overlap.",
+                "split.group_overlap_count",
+            )
+
+    if strategy not in TEMPORAL_HOLDOUT_STRATEGIES:
+        add(
+            "temporal_holdout_respects_order",
+            "holdout_plan",
+            CHECK_PASS,
+            "Temporal holdout was not selected.",
+            "holdout_plan.strategy",
+        )
+    else:
+        train_max = pd.to_datetime(split.get("train_time_max"), errors="coerce")
+        test_min = pd.to_datetime(split.get("test_time_min"), errors="coerce")
+        if pd.isna(train_max) or pd.isna(test_min):
+            add(
+                "temporal_holdout_respects_order",
+                "holdout_plan",
+                CHECK_NOT_VERIFIABLE,
+                "Chronological holdout timestamps are missing.",
+                "split.train_time_max",
+                "split.test_time_min",
+            )
+        elif train_max > test_min:
+            add(
+                "temporal_holdout_respects_order",
+                "holdout_plan",
+                CHECK_FAIL,
+                "The final holdout is not in the future of the training period.",
+                "split.train_time_max",
+                "split.test_time_min",
+            )
+        else:
+            add(
+                "temporal_holdout_respects_order",
+                "holdout_plan",
+                CHECK_PASS,
+                "Temporal holdout uses a future test slice.",
+                "split.train_time_max",
+                "split.test_time_min",
+            )
+
+
 def _verify_scientific_plan(
     add,
     *,
@@ -128,6 +331,7 @@ def _verify_scientific_plan(
     audit = _as_dict(plan.get("leakage_assessment")) or _as_dict(report.get("leakage"))
     trained = [row for row in candidates if isinstance(row, dict) and row.get("status") == "trained"]
     modeled_features = _candidate_feature_names(task, trained)
+    _verify_holdout_plan(add, report=report, split=split, validation=validation)
 
     if not plan or not plan.get("plan_version") or "allowed_features" not in plan:
         add(
@@ -502,6 +706,218 @@ def _verify_scientific_plan(
             "ProblemProfile row counts match the locked training partition only.",
             "problem_profile.row_count",
             "split.n_train",
+        )
+
+    nested_validation = _as_dict(plan.get("validation_plan"))
+    nested_metric = _as_dict(plan.get("metric_plan"))
+    top_validation = _as_dict(report.get("validation_plan"))
+    top_metric = _as_dict(report.get("metric_plan"))
+    if not plan:
+        add(
+            "single_authoritative_development_plan",
+            "model_development_plan",
+            CHECK_NOT_VERIFIABLE,
+            "A single ModelDevelopmentPlan cannot be verified without the locked plan.",
+            "model_development_plan",
+        )
+    elif nested_validation != top_validation or nested_metric != top_metric:
+        add(
+            "single_authoritative_development_plan",
+            "model_development_plan",
+            CHECK_FAIL,
+            "result.validation_plan or result.metric_plan is not the nested ModelDevelopmentPlan payload.",
+            "model_development_plan.validation_plan",
+            "validation_plan",
+            "metric_plan",
+        )
+    else:
+        add(
+            "single_authoritative_development_plan",
+            "model_development_plan",
+            CHECK_PASS,
+            "ValidationPlan and MetricPlan are the nested objects from one ModelDevelopmentPlan.",
+            "model_development_plan",
+        )
+
+    cv_strategy = validation.get("strategy")
+    validation_summary = _as_dict(report.get("validation"))
+    cv_mismatches = [
+        str(row.get("candidate_id"))
+        for row in trained
+        if row.get("cv_strategy") != cv_strategy
+    ]
+    summary_mismatch = bool(
+        validation_summary.get("cv_strategy")
+        and validation_summary.get("cv_strategy") != cv_strategy
+    )
+    if not plan or not cv_strategy:
+        add(
+            "runner_validation_matches_plan",
+            "validation_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Runner validation cannot be checked without a ValidationPlan.",
+            "validation_plan",
+        )
+    elif not trained:
+        add(
+            "runner_validation_matches_plan",
+            "validation_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Trained candidate CV strategy evidence is missing.",
+            "candidate_models",
+        )
+    elif cv_mismatches or summary_mismatch:
+        add(
+            "runner_validation_matches_plan",
+            "validation_plan",
+            CHECK_FAIL,
+            "Candidate CV strategy does not match development_plan.validation_plan.",
+            "validation_plan.strategy",
+            "candidate_models.cv_strategy",
+        )
+    else:
+        add(
+            "runner_validation_matches_plan",
+            "validation_plan",
+            CHECK_PASS,
+            "The runner used the locked ValidationPlan for CV.",
+            "validation_plan.strategy",
+        )
+
+    if not primary or not selected_metric:
+        add(
+            "runner_metric_matches_plan",
+            "metric_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Runner selection metric cannot be checked without MetricPlan evidence.",
+            "metric_plan",
+            "selection",
+        )
+    elif selected_metric != primary:
+        add(
+            "runner_metric_matches_plan",
+            "metric_plan",
+            CHECK_FAIL,
+            f"Runner winner selection used {selected_metric!r} while MetricPlan primary is {primary!r}.",
+            "metric_plan.primary_metric",
+            "selection.selection_metric",
+        )
+    else:
+        add(
+            "runner_metric_matches_plan",
+            "metric_plan",
+            CHECK_PASS,
+            "The runner selected the winner with MetricPlan.primary_metric.",
+            "metric_plan.primary_metric",
+        )
+
+    allowed = {str(name) for name in _as_list(plan.get("allowed_features")) if name}
+    group_column = plan.get("group_column")
+    extra_features = sorted(name for name in modeled_features if allowed and name not in allowed)
+    excluded_used = sorted(modeled_features & excluded_names)
+    group_modeled = group_column in modeled_features if group_column else False
+    if not plan:
+        add(
+            "candidate_features_match_plan",
+            "model_development_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Candidate features cannot be checked without a ModelDevelopmentPlan.",
+            "model_development_plan",
+        )
+    elif extra_features or excluded_used or group_modeled:
+        add(
+            "candidate_features_match_plan",
+            "model_development_plan",
+            CHECK_FAIL,
+            "Candidate features are not a subset of allowed_features or include excluded/group columns.",
+            "model_development_plan.allowed_features",
+            "candidate_models.feature_set",
+        )
+    else:
+        add(
+            "candidate_features_match_plan",
+            "model_development_plan",
+            CHECK_PASS,
+            "Candidate features stay inside the locked allowed feature set.",
+            "model_development_plan.allowed_features",
+        )
+
+    if not primary or not task_metric:
+        add(
+            "task_metric_matches_plan",
+            "metric_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Task evaluation_metric cannot be checked without MetricPlan evidence.",
+            "metric_plan",
+            "task",
+        )
+    elif task_metric != primary:
+        add(
+            "task_metric_matches_plan",
+            "metric_plan",
+            CHECK_FAIL,
+            f"TaskSpec.evaluation_metric is {task_metric!r} while MetricPlan primary is {primary!r}.",
+            "metric_plan.primary_metric",
+            "task.evaluation_metric",
+        )
+    else:
+        add(
+            "task_metric_matches_plan",
+            "metric_plan",
+            CHECK_PASS,
+            "TaskSpec.evaluation_metric matches MetricPlan.primary_metric.",
+            "task.evaluation_metric",
+        )
+
+    holdout = _as_dict(report.get("holdout_plan"))
+    identity = _plan_identity(holdout, validation, metric, plan)
+    fingerprint_rows = [row for row in candidates if isinstance(row, dict)]
+    missing_fingerprint = [
+        str(row.get("candidate_id"))
+        for row in fingerprint_rows
+        if not row.get("fingerprint")
+    ]
+    identity_mismatches = []
+    for row in fingerprint_rows:
+        meta = _as_dict(row.get("metadata"))
+        for key, expected in identity.items():
+            if expected in {None, ""}:
+                continue
+            if meta.get(key) != expected:
+                identity_mismatches.append(str(row.get("candidate_id")))
+                break
+    if not plan:
+        add(
+            "candidate_fingerprint_contains_plan_identity",
+            "model_development_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Candidate fingerprints cannot be checked without a ModelDevelopmentPlan.",
+            "model_development_plan",
+        )
+    elif not fingerprint_rows:
+        add(
+            "candidate_fingerprint_contains_plan_identity",
+            "model_development_plan",
+            CHECK_NOT_VERIFIABLE,
+            "Candidate fingerprint evidence is missing.",
+            "candidate_models",
+        )
+    elif missing_fingerprint or identity_mismatches:
+        add(
+            "candidate_fingerprint_contains_plan_identity",
+            "model_development_plan",
+            CHECK_FAIL,
+            "Candidate fingerprints are missing or do not carry the locked plan identity.",
+            "candidate_models.fingerprint",
+            "candidate_models.metadata",
+        )
+    else:
+        add(
+            "candidate_fingerprint_contains_plan_identity",
+            "model_development_plan",
+            CHECK_PASS,
+            "Candidate fingerprints include holdout, validation, metric, and plan-version identity.",
+            "candidate_models.fingerprint",
         )
 
 

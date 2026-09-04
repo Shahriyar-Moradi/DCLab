@@ -76,6 +76,7 @@ def build_technical_run_report(
             "target_decision": pipeline_log.get("target") or {},
             "task": result.get("task") or {},
             "split": result.get("split") or {},
+            "holdout_plan": result.get("holdout_plan") or {},
             "problem_profile": result.get("problem_profile") or {},
             "validation_plan": result.get("validation_plan") or {},
             "metric_plan": result.get("metric_plan") or {},

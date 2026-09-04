@@ -21,8 +21,8 @@ same rule in application/test paths.
 
 Events are emitted only at real execution boundaries. The current Labs pipeline
 covers ingestion, profiling/EDA, target and task resolution, structural cleaning,
-holdout locking, Adaptive Model Builder planning (problem profile, validation
-plan, metric plan, leakage audit, locked model-development plan), train-only
+holdout planning and locking, Adaptive Model Builder planning (problem profile, validation
+plan, metric plan, leakage audit, locked model-development plan — once per production run), train-only
 decisions, missing-value decisions, column roles, feature engineering,
 preprocessing configuration, candidate and CV-fold lifecycles, selection, winner
 lock, final fit, winner-only final test, predictions, artifact persistence,
@@ -94,8 +94,9 @@ returns `404` after workspace authorization.
 ## Behavioral invariants
 
 - Holdout lock precedes every CV event.
+- Holdout plan selection precedes holdout lock.
 - Problem profile, validation plan, metric plan, leakage audit, and
-  model-development plan events precede CV.
+  model-development plan events precede CV and occur once per production run.
 - Winner lock precedes final-test evaluation.
 - The final test is evaluated once and only for the locked winner.
 - Fold start/completion and candidate failure remain visible.
@@ -104,7 +105,8 @@ returns `404` after workspace authorization.
 - Complete datasets, raw rows, row provenance, API keys, and bearer tokens are
   prohibited from event and LLM payloads.
 
-Planning event types: `problem_profile_started`, `problem_profile_completed`,
+Planning event types: `holdout_plan_selected`, `holdout_locked`,
+`problem_profile_started`, `problem_profile_completed`,
 `validation_plan_selected`, `metric_plan_selected`, `leakage_audit_started`,
 `feature_leakage_warning`, `feature_excluded_for_leakage`,
 `leakage_audit_completed`, `model_development_plan_locked`.

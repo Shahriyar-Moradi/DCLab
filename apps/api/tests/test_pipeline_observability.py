@@ -148,6 +148,7 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
         "profiling_eda",
         "target_task",
         "structural_cleaning",
+        "holdout_plan",
         "holdout_lock",
         "train_only_decisions",
         "missing_value_decisions",
@@ -183,6 +184,8 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     )
     assert holdout_sequence < sequence("cv_fold_started")
     assert holdout_sequence < sequence("problem_profile_completed")
+    assert sequence("holdout_plan_selected") < sequence("holdout_locked")
+    assert sequence("holdout_locked") < sequence("cv_fold_started")
     assert sequence("problem_profile_completed") < sequence("cv_fold_started")
     assert sequence("validation_plan_selected") < sequence("cv_fold_started")
     assert sequence("metric_plan_selected") < sequence("cv_fold_started")
@@ -191,6 +194,8 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     assert sequence("winner_locked") < sequence("final_test_started")
 
     planning_types = {
+        "holdout_plan_selected",
+        "holdout_locked",
         "problem_profile_started",
         "problem_profile_completed",
         "validation_plan_selected",
@@ -201,6 +206,11 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     }
     recorded_types = {row.event_type for row in events}
     assert planning_types <= recorded_types
+    from collections import Counter
+
+    event_counts = Counter(row.event_type for row in events)
+    for name in planning_types:
+        assert event_counts[name] == 1, name
     for row in events:
         if row.event_type not in planning_types and row.event_type not in {
             "feature_leakage_warning",

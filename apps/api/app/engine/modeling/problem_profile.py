@@ -18,6 +18,18 @@ from app.engine.validation.splits import SOURCE_ROW_COLUMN
 
 PROBLEM_PROFILE_VERSION = "dclab.problem_profile.v1"
 HIGH_CARDINALITY_UNIQUE = 50
+MIN_REPEATED_ENTITY_UNIQUE = 10
+CATEGORY_NAME_TOKENS = {
+    "category",
+    "type",
+    "status",
+    "segment",
+    "channel",
+    "region",
+    "gender",
+    "class",
+    "flag",
+}
 HIGH_MISSING_FRACTION = 0.2
 GEO_NAME_LAT = {"lat", "latitude", "y_coord", "ycoord"}
 GEO_NAME_LON = {"lon", "lng", "long", "longitude", "x_coord", "xcoord"}
@@ -121,6 +133,13 @@ def _entity_evidence(series: pd.Series) -> dict[str, Any]:
 
 def _is_entity_like(name: str, series: pd.Series, evidence: dict[str, Any]) -> bool:
     tokens = _tokens(name)
+    unique_count = int(evidence.get("unique_count") or 0)
+    # Ordinary low-cardinality codes (delivery_category_id with 3 levels) are
+    # categoricals, not grouping keys — even when the name ends in _id.
+    if unique_count < MIN_REPEATED_ENTITY_UNIQUE:
+        return False
+    if tokens & CATEGORY_NAME_TOKENS and not (tokens & ENTITY_NAME_TOKENS):
+        return False
     if evidence["identifier_likelihood"] >= 0.8:
         return True
     if looks_like_identifier(name, series, len(series)):
@@ -170,6 +189,15 @@ class ProblemProfile:
 
     def to_dict(self) -> dict[str, Any]:
         return _native(asdict(self))
+
+    @classmethod
+    def from_dict(cls, payload: Any) -> ProblemProfile:
+        from app.engine.modeling.coerce import from_mapping
+
+        profile = from_mapping(cls, payload)
+        if profile is None:
+            raise ValueError("ProblemProfile evidence is missing.")
+        return profile
 
 
 def build_problem_profile(

@@ -52,6 +52,10 @@ Focused suites used during this verification:
 - `apps/api/tests/test_adaptive_modeling_phase1a.py`
 - `apps/api/tests/test_adaptive_modeling_phase1b.py`
 - `apps/api/tests/test_adaptive_modeling_phase1_verification.py`
+- `apps/api/tests/test_adaptive_modeling_holdout.py`
+- `apps/api/tests/test_adaptive_modeling_single_plan.py`
+- `apps/api/tests/test_adaptive_modeling_production_e2e.py`
+- `apps/api/tests/test_platform_explorer.py`
 - `apps/api/tests/test_platform_explorer.py`
 - `apps/api/tests/test_ml2_pipeline_integrity.py`
 

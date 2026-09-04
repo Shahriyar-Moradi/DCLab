@@ -35,6 +35,15 @@ class MetricPlan:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, payload: Any) -> MetricPlan:
+        from app.engine.modeling.coerce import from_mapping
+
+        plan = from_mapping(cls, payload)
+        if plan is None:
+            raise ValueError("MetricPlan evidence is missing.")
+        return plan
+
 
 def _meaningful_imbalance(profile: ProblemProfile) -> bool:
     if profile.imbalance_ratio is not None and profile.imbalance_ratio >= MEANINGFUL_IMBALANCE_RATIO:

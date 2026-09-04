@@ -14,6 +14,7 @@
 | [DCLAB_PLATFORM_ADMINISTRATION.md](DCLAB_PLATFORM_ADMINISTRATION.md) | Platform plane | Source doc; see report checklists |
 | [DCLAB_DATA_AND_MODEL_LINEAGE.md](DCLAB_DATA_AND_MODEL_LINEAGE.md) | Lineage hierarchy | Source doc; 0027 repair noted in report |
 | [DCLAB_PIPELINE_OBSERVABILITY.md](DCLAB_PIPELINE_OBSERVABILITY.md) | Events and LLM ledger | Source doc; observatory role gate updated |
-| [DCLAB_ADAPTIVE_MODEL_BUILDER.md](DCLAB_ADAPTIVE_MODEL_BUILDER.md) | Phase 1 scientific planning layer | ProblemProfile, ValidationPlan, MetricPlan, LeakageAuditor, verifier, benchmarks |
+| [DCLAB_ADAPTIVE_MODEL_BUILDER.md](DCLAB_ADAPTIVE_MODEL_BUILDER.md) | Phase 1 scientific planning layer plus adaptive final holdout | ProblemProfile, HoldoutPlan, ValidationPlan, MetricPlan, LeakageAuditor, verifier, benchmarks |
+| [DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md](DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md) | Production Labs E2E scientific proof (Repairs 1–3) | `/app/labs/uploads` → `run_auto_train_job` → ModelVersion → verifier → monitor |
 
 Evidence artifacts (gitignored): `artifacts/e2e-verification/`.

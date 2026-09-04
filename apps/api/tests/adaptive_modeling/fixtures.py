@@ -26,6 +26,11 @@ def binary_balanced(n: int = 200, seed: int = 1) -> pd.DataFrame:
     )
 
 
+def ordinary_binary(n: int = 200, seed: int = 1) -> pd.DataFrame:
+    """Production Labs ordinary binary probe."""
+    return binary_balanced(n=n, seed=seed)
+
+
 def binary_imbalanced(n: int = 250, seed: int = 2) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     outcome = np.array([1] * 20 + [0] * (n - 20))
@@ -85,6 +90,30 @@ def temporal(n: int = 120, seed: int = 6) -> pd.DataFrame:
     )
 
 
+def grouped_and_temporal(n_entities: int = 20, repeats: int = 5, seed: int = 8) -> pd.DataFrame:
+    frame = repeated_entity(n_entities=n_entities, repeats=repeats, seed=seed)
+    start = pd.Timestamp("2024-01-01")
+    frame = frame.copy()
+    frame["as_of_date"] = [start + pd.Timedelta(days=i) for i in range(len(frame))]
+    return frame
+
+
+def leakage(n: int = 200, seed: int = 12) -> pd.DataFrame:
+    """Safe predictor plus two HIGH/CRITICAL leaks for the production Labs path."""
+    rng = np.random.default_rng(seed)
+    outcome = np.array([0, 1] * (n // 2) + [0] * (n % 2))
+    rng.shuffle(outcome)
+    return pd.DataFrame(
+        {
+            "safe_feature": rng.normal(40, 12, n) + 0.4 * outcome,
+            "region": rng.choice(["N", "S"], n),
+            "post_outcome_feature": outcome.astype(float),
+            "target_proxy": outcome * 100,
+            "outcome": outcome,
+        }
+    )
+
+
 def leakage_fixture(n: int = 200, seed: int = 1) -> pd.DataFrame:
     frame = binary_balanced(n=n, seed=seed)
     frame = frame.copy()
@@ -119,11 +148,13 @@ def name_only_suspicious(n: int = 200, seed: int = 9) -> pd.DataFrame:
 
 def fixture_catalog() -> dict[str, dict[str, Any]]:
     return {
+        "ordinary_binary": {"frame": ordinary_binary(), "target": "outcome", "task_type": "binary"},
         "binary_balanced": {"frame": binary_balanced(), "target": "outcome", "task_type": "binary"},
         "binary_imbalanced": {"frame": binary_imbalanced(), "target": "outcome", "task_type": "binary"},
         "regression": {"frame": regression(), "target": "revenue", "task_type": "regression"},
         "repeated_entity": {"frame": repeated_entity(), "target": "outcome", "task_type": "binary"},
         "temporal": {"frame": temporal(), "target": "revenue", "task_type": "regression"},
+        "leakage": {"frame": leakage(), "target": "outcome", "task_type": "binary"},
         "leakage_fixture": {"frame": leakage_fixture(), "target": "outcome", "task_type": "binary"},
         "datetime_detection": {"frame": datetime_detection(), "target": "revenue", "task_type": "regression"},
         "geo_detection": {"frame": geo_detection(), "target": "outcome", "task_type": "binary"},

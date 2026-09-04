@@ -383,6 +383,8 @@ def _scientific_plan_monitor(result: dict[str, Any], technical_report: dict[str,
     profile = _as_monitor_dict(plan.get("problem_profile") or technical_report.get("problem_profile") or result.get("problem_profile"))
     validation = _as_monitor_dict(plan.get("validation_plan") or technical_report.get("validation_plan") or result.get("validation_plan"))
     metric = _as_monitor_dict(plan.get("metric_plan") or technical_report.get("metric_plan") or result.get("metric_plan"))
+    holdout = _as_monitor_dict(technical_report.get("holdout_plan") or result.get("holdout_plan"))
+    split = _as_monitor_dict(technical_report.get("split") or result.get("split"))
     leakage = _as_monitor_dict(plan.get("leakage_assessment") or result.get("leakage"))
     excluded = [row for row in _as_monitor_list(plan.get("excluded_features")) if isinstance(row, dict)]
     overlap = 0
@@ -461,6 +463,19 @@ def _scientific_plan_monitor(result: dict[str, Any], technical_report: dict[str,
             "primary_metric": metric.get("primary_metric"),
             "secondary_metrics": _cap_monitor(_as_monitor_list(metric.get("secondary_metrics"))),
             "reason": metric.get("reason"),
+        },
+        "holdout": {
+            "strategy": holdout.get("strategy") or split.get("strategy"),
+            "test_size": holdout.get("test_size") or split.get("requested_test_size") or split.get("test_size"),
+            "actual_test_size": split.get("actual_test_size"),
+            "n_train": split.get("n_train"),
+            "n_test": split.get("n_test"),
+            "group_column": holdout.get("group_column") or split.get("group_column"),
+            "time_column": holdout.get("time_column") or split.get("time_column"),
+            "group_overlap_count": split.get("group_overlap_count"),
+            "train_time_max": split.get("train_time_max"),
+            "test_time_min": split.get("test_time_min"),
+            "reason": holdout.get("reason"),
         },
         "leakage": {
             "overall_risk": leakage.get("risk"),

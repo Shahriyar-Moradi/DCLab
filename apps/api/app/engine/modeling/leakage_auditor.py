@@ -172,6 +172,15 @@ class ModelDevelopmentPlan:
     def to_dict(self) -> dict[str, Any]:
         return _native(asdict(self))
 
+    @classmethod
+    def from_dict(cls, payload: Any) -> ModelDevelopmentPlan:
+        from app.engine.modeling.coerce import from_mapping
+
+        plan = from_mapping(cls, payload)
+        if plan is None:
+            raise ValueError("ModelDevelopmentPlan evidence is missing.")
+        return plan
+
 
 @dataclass
 class _ColumnSignals:

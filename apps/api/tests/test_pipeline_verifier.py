@@ -66,6 +66,15 @@ def _valid_report(tmp_path):
         "cv_std": {"pr_auc": 0.0},
         "fit_duration_ms": 2.0,
         "folds": folds,
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaa",
+        "metadata": {
+            "holdout_plan_version": "dclab.holdout_plan.v1",
+            "holdout_strategy": "stratified_random",
+            "validation_plan_version": "dclab.validation_plan.v1",
+            "validation_strategy": "StratifiedKFold",
+            "primary_metric": "pr_auc",
+            "model_development_plan_version": "dclab.model_development_plan.v1",
+        },
     }
     problem_profile = {
         "task_type": "binary",
@@ -183,14 +192,29 @@ def _valid_report(tmp_path):
         },
         "split": {
             "split_at": locked,
-            "strategy": "train_test_split",
+            "strategy": "stratified_random",
             "random_state": 42,
             "stratify": True,
             "n_train": 4,
             "n_test": 2,
+            "test_size": 0.2,
+            "requested_test_size": 0.2,
+            "actual_test_size": 2 / 6,
             "train_source_rows": [0, 1, 2, 3],
             "test_source_rows": [4, 5],
             "all_source_rows": [0, 1, 2, 3, 4, 5],
+            "provenance_disjoint": True,
+        },
+        "holdout_plan": {
+            "strategy": "stratified_random",
+            "test_size": 0.2,
+            "random_state": 42,
+            "stratified": True,
+            "group_column": None,
+            "time_column": None,
+            "reason": "Ordinary binary classification uses a stratified random 80/20 final holdout.",
+            "evidence": {"grouping_needed": False, "temporal_needed": False},
+            "plan_version": "dclab.holdout_plan.v1",
         },
         "problem_profile": problem_profile,
         "validation_plan": validation_plan,
@@ -352,6 +376,17 @@ def test_valid_evidence_is_verified(tmp_path):
         "critical_leakage_feature_not_modeled",
         "excluded_features_not_in_candidates",
         "final_test_not_used_in_problem_profile",
+        "holdout_plan_exists",
+        "holdout_strategy_matches_problem_structure",
+        "holdout_train_test_disjoint",
+        "group_holdout_has_zero_group_overlap",
+        "temporal_holdout_respects_order",
+        "single_authoritative_development_plan",
+        "runner_validation_matches_plan",
+        "runner_metric_matches_plan",
+        "candidate_features_match_plan",
+        "task_metric_matches_plan",
+        "candidate_fingerprint_contains_plan_identity",
     } <= {row["check_id"] for row in result["checks"]}
 
 
@@ -387,6 +422,15 @@ def test_encoded_binary_labels_still_match_the_input_artifact(tmp_path):
         ("leakage_feature_used", "critical_leakage_feature_not_modeled"),
         ("excluded_feature_used", "excluded_features_not_in_candidates"),
         ("holdout_in_profile", "final_test_not_used_in_problem_profile"),
+        ("holdout_group_overlap", "group_holdout_has_zero_group_overlap"),
+        ("reversed_temporal_holdout", "temporal_holdout_respects_order"),
+        ("group_cv_random_holdout", "holdout_strategy_matches_problem_structure"),
+        ("temporal_cv_random_holdout", "holdout_strategy_matches_problem_structure"),
+        ("split_plan_objects", "single_authoritative_development_plan"),
+        ("runner_cv_mismatch", "runner_validation_matches_plan"),
+        ("task_metric_mismatch", "task_metric_matches_plan"),
+        ("features_outside_plan", "candidate_features_match_plan"),
+        ("fingerprint_missing_identity", "candidate_fingerprint_contains_plan_identity"),
     ],
 )
 def test_deliberate_corruption_is_never_verified(tmp_path, case, check_id):
@@ -472,6 +516,67 @@ def test_deliberate_corruption_is_never_verified(tmp_path, case, check_id):
         report["problem_profile"]["row_count"] = 6
         report["problem_profile"]["test_source_rows"] = [4, 5]
         report["model_development_plan"]["problem_profile"] = dict(report["problem_profile"])
+    elif case == "holdout_group_overlap":
+        report["validation_plan"]["strategy"] = "StratifiedGroupKFold"
+        report["validation_plan"]["group_column"] = "customer_id"
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["group_column"] = "customer_id"
+        report["candidate_models"][0]["cv_strategy"] = "StratifiedGroupKFold"
+        report["holdout_plan"]["strategy"] = "group_disjoint"
+        report["holdout_plan"]["group_column"] = "customer_id"
+        report["holdout_plan"]["stratified"] = False
+        report["split"]["strategy"] = "group_disjoint"
+        report["split"]["stratify"] = False
+        report["split"]["group_column"] = "customer_id"
+        report["split"]["group_overlap"] = ["C001"]
+        report["split"]["group_overlap_count"] = 1
+    elif case == "reversed_temporal_holdout":
+        report["validation_plan"]["strategy"] = "TimeSeriesSplit"
+        report["validation_plan"]["time_column"] = "as_of_date"
+        report["validation_plan"]["stratified"] = False
+        report["validation_plan"]["shuffle"] = False
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["time_column"] = "as_of_date"
+        report["candidate_models"][0]["cv_strategy"] = "TimeSeriesSplit"
+        report["holdout_plan"]["strategy"] = "temporal_future"
+        report["holdout_plan"]["time_column"] = "as_of_date"
+        report["holdout_plan"]["stratified"] = False
+        report["split"]["strategy"] = "temporal_future"
+        report["split"]["stratify"] = False
+        report["split"]["time_column"] = "as_of_date"
+        report["split"]["train_time_min"] = "2024-06-01T00:00:00"
+        report["split"]["train_time_max"] = "2024-06-30T00:00:00"
+        report["split"]["test_time_min"] = "2024-05-01T00:00:00"
+        report["split"]["test_time_max"] = "2024-05-15T00:00:00"
+    elif case == "group_cv_random_holdout":
+        report["validation_plan"]["strategy"] = "StratifiedGroupKFold"
+        report["validation_plan"]["group_column"] = "customer_id"
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["group_column"] = "customer_id"
+        report["candidate_models"][0]["cv_strategy"] = "StratifiedGroupKFold"
+        report["holdout_plan"]["strategy"] = "stratified_random"
+        report["split"]["strategy"] = "stratified_random"
+    elif case == "temporal_cv_random_holdout":
+        report["validation_plan"]["strategy"] = "TimeSeriesSplit"
+        report["validation_plan"]["time_column"] = "as_of_date"
+        report["validation_plan"]["stratified"] = False
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["time_column"] = "as_of_date"
+        report["candidate_models"][0]["cv_strategy"] = "TimeSeriesSplit"
+        report["holdout_plan"]["strategy"] = "random"
+        report["split"]["strategy"] = "random"
+        report["split"]["stratify"] = False
+    elif case == "split_plan_objects":
+        report["validation_plan"] = dict(report["validation_plan"])
+        report["validation_plan"]["strategy"] = "KFold"
+    elif case == "runner_cv_mismatch":
+        report["candidate_models"][0]["cv_strategy"] = "KFold"
+    elif case == "task_metric_mismatch":
+        report["task"]["evaluation_metric"] = "accuracy"
+    elif case == "features_outside_plan":
+        report["candidate_models"][0]["feature_set"].append("result_code")
+    elif case == "fingerprint_missing_identity":
+        report["candidate_models"][0]["metadata"] = {}
 
     result = PipelineVerifier().verify(report)
     assert result["overall_status"] in {"FAILED", "NOT_VERIFIABLE"}
@@ -489,3 +594,9 @@ def test_missing_model_development_plan_is_not_verifiable(tmp_path):
     assert _status_for(result, "model_development_plan_exists") == "NOT_VERIFIABLE"
     assert _status_for(result, "validation_plan_exists") == "NOT_VERIFIABLE"
     assert _status_for(result, "leakage_audit_exists") == "NOT_VERIFIABLE"
+    assert _status_for(result, "single_authoritative_development_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "runner_validation_matches_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "candidate_features_match_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "candidate_fingerprint_contains_plan_identity") == "NOT_VERIFIABLE"
+    assert _status_for(result, "task_metric_matches_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "runner_metric_matches_plan") == "NOT_VERIFIABLE"

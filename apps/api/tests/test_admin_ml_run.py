@@ -180,3 +180,30 @@ def test_build_ml_run_copies_persisted_comparison_and_validation():
     assert run.processing_summary.cross_validation == "StratifiedKFold · 5 folds"
     assert run.processing_summary.training_completed is True
     assert run.processing_summary.predictions_completed is True
+    assert run.failure_reason is None
+
+
+def test_build_ml_run_surfaces_holdout_failure_reason():
+    upload = SimpleNamespace(
+        id=uuid4(),
+        original_filename="part1-dataset.csv",
+        pipeline_status="failed",
+        pipeline_log={
+            "reason": "Repeated-entity grouping and strong temporal prediction structure are both present.",
+            "failed_at": "cleaning",
+            "target": {
+                "column": "hyper_ack",
+                "source": "explicit",
+                "reason": "explicit target supplied by user/admin",
+                "confidence": 1.0,
+                "task_type": "binary",
+            },
+            "analysis": {"row_count": 11118, "column_count": 16},
+        },
+        dataset_id=None,
+    )
+    run = build_ml_run(upload, None, None)  # type: ignore[arg-type]
+    assert run.failure_reason.startswith("Repeated-entity grouping")
+    assert run.task_type == "binary"
+    assert run.target == "hyper_ack"
+

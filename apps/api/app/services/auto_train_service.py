@@ -61,6 +61,13 @@ from app.engine.lab.auto_prepare import (
 )
 from app.engine.features.encode import coerce_binary_target
 from app.engine.lab.schema_inference import MIN_TRAIN_ROWS, infer_entity_column
+from app.engine.modeling.holdout_planner import (
+    HoldoutUnsupportedError,
+    holdout_locked_event_payload,
+    holdout_plan_event_payload,
+    plan_holdout,
+    require_supported_holdout,
+)
 from app.engine.modeling.leakage_auditor import consult_leakage_llm, plan_model_development
 from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
@@ -122,7 +129,7 @@ def _load_upload_frame(stored_path: str) -> pd.DataFrame:
     return pd.read_csv(path, sep=None, engine="python")
 
 
-def _search_config() -> SearchConfig:
+def _search_config(*, holdout_plan=None, development_plan=None) -> SearchConfig:
     return SearchConfig(
         strategy="open_ingest",
         max_candidates=8,
@@ -134,6 +141,8 @@ def _search_config() -> SearchConfig:
         retain_min=1,
         retain_max=1,
         seed=42,
+        holdout_plan=None if holdout_plan is None else holdout_plan.to_dict(),
+        model_development_plan=None if development_plan is None else development_plan.to_dict(),
     )
 
 
@@ -239,6 +248,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         "profiling": "profiling_eda",
         "target_task_resolution": "target_task",
         "structural_cleaning": "structural_cleaning",
+        "holdout_plan": "holdout_plan",
         "splitting": "holdout_lock",
         "train_only_decisions": "train_only_decisions",
         "column_roles": "column_roles",
@@ -532,15 +542,59 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             )
             return
 
-        # The final holdout is locked before any modeling decision is derived.
-        _stage(SPLITTING)
-        evidence_timer = _evidence_start("splitting")
-        locked_train, _locked_val, _locked_test, locked_split = split_train_test_holdout(
+        # The final holdout is locked after pre-split structural analysis and
+        # before any modeling decision is derived.
+        holdout_plan = plan_holdout(
             frame,
             target=target.column,
+            task_type=target.task_type,
             test_size=0.2,
-            seed=42,
-            stratify=target.task_type == "binary",
+            random_state=42,
+        )
+        _emit_event(
+            "holdout_plan",
+            "holdout_plan_selected",
+            "completed",
+            holdout_plan_event_payload(holdout_plan),
+        )
+        if holdout_plan.strategy == "unsupported":
+            _fail(
+                holdout_plan.reason,
+                extra={
+                    "target": target_evidence,
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
+                    "holdout_plan": holdout_plan.to_dict(),
+                },
+            )
+            return
+        _stage(SPLITTING)
+        evidence_timer = _evidence_start("splitting")
+        try:
+            require_supported_holdout(holdout_plan)
+            locked_train, _locked_val, _locked_test, locked_split = split_train_test_holdout(
+                frame,
+                target=target.column,
+                test_size=holdout_plan.test_size,
+                seed=holdout_plan.random_state,
+                plan=holdout_plan,
+            )
+        except (HoldoutUnsupportedError, ValueError) as exc:
+            _fail(
+                str(exc),
+                extra={
+                    "target": target_evidence,
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
+                    "holdout_plan": holdout_plan.to_dict(),
+                },
+            )
+            return
+        _emit_event(
+            "holdout_lock",
+            "holdout_locked",
+            "completed",
+            holdout_locked_event_payload(locked_split),
         )
         _trace(
             "splitting",
@@ -549,10 +603,20 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             n_train=locked_split.get("n_train"),
             n_test=locked_split.get("n_test"),
             provenance_disjoint=locked_split.get("provenance_disjoint"),
+            group_column=locked_split.get("group_column"),
+            time_column=locked_split.get("time_column"),
         )
         _evidence_finish(evidence_timer)
 
         evidence_timer = _evidence_start("train_only_decisions")
+
+        def _planning_on_event(event_type: str, payload: dict[str, Any]) -> None:
+            data = dict(payload)
+            stage = str(data.pop("stage", event_type))
+            status = str(data.pop("status", "completed"))
+            duration_ms = data.pop("duration_ms", None)
+            _emit_event(stage, event_type, status, data, duration_ms)
+
         (
             _problem_profile,
             _validation_plan,
@@ -567,7 +631,23 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             random_state=42,
             reviewer=consult_leakage_llm,
             conservative_auto_train=True,
+            on_event=_planning_on_event,
         )
+        if _validation_plan.strategy == "unsupported" or not _validation_plan.actual_folds:
+            _evidence_finish(evidence_timer, status="failed")
+            _fail(
+                _validation_plan.reason
+                or _validation_plan.fallback_reason
+                or "Validation plan is unsupported.",
+                extra={
+                    "target": target_evidence,
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
+                    "holdout_plan": holdout_plan.to_dict(),
+                    "model_development_plan": development_plan.to_dict(),
+                },
+            )
+            return
         allowed_predictors = set(development_plan.allowed_features)
         leakage_excluded = [item["column"] for item in development_plan.excluded_features]
         leakage_blocked = {
@@ -767,7 +847,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             )
             return
 
-        search = _search_config()
+        search = _search_config(holdout_plan=holdout_plan, development_plan=development_plan)
         groups_map = {"features": num_cols + cat_cols}
         combos = generate_group_combinations(
             list(groups_map.keys()),
@@ -811,7 +891,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         )
 
         task_type = target.task_type
-        metric = target.evaluation_metric if task_type == "regression" else "pr_auc"
+        metric = _metric_plan.primary_metric
         transformed_features = [
             str(name)
             for action in fe_transformations
@@ -832,17 +912,23 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "removed_features": removed_features,
             "feature_engineering_actions": list(fe_transformations),
         }
+        group_column = development_plan.group_column
+        time_column = development_plan.time_column
         task_spec = TaskSpec(
             id=f"open_ingest_{upload.id.hex[:12]}",
             name=f"Auto-train: {upload.original_filename}",
             description="Automatic training job for a Labs custom-box upload (simple tabular file).",
             task_type=task_type,
             target=target.column,
-            entity_id=entity_column if entity_column in frame.columns else None,
-            prediction_time_column=None,
+            entity_id=(
+                group_column
+                if group_column and group_column in frame.columns
+                else (entity_column if entity_column in frame.columns else None)
+            ),
+            prediction_time_column=time_column if time_column and time_column in frame.columns else None,
             evaluation_metric=metric,
             feature_groups={"features": list(modeled_cols)},
-            validation_strategy="stratified" if task_type == "binary" else "random",
+            validation_strategy=_validation_plan.strategy,
             column_roles={"numerical": num_cols, "categorical": cat_cols},
             feature_engineering=feature_report,
         )
@@ -920,6 +1006,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         result = dict(experiment.result or {})
         result["analysis"] = profile
         result["cleaning"] = cleaning_log
+        result.setdefault("holdout_plan", holdout_plan.to_dict())
         result.setdefault("model_development_plan", development_plan.to_dict())
         result["feature_engineering"] = {
             **feature_report,
@@ -1061,6 +1148,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "pipeline_trace": list(trace),
             "stage_timings": list(result.get("stage_timings") or []),
             "problem_profile": result.get("problem_profile") or {},
+            "holdout_plan": result.get("holdout_plan") or holdout_plan.to_dict(),
             "validation_plan": result.get("validation_plan") or {},
             "metric_plan": result.get("metric_plan") or {},
             "model_development_plan": result.get("model_development_plan") or development_plan.to_dict(),

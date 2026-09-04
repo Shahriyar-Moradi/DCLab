@@ -68,8 +68,12 @@ flowchart TD
 
 ## 16–30 Split, leakage, and train-only decisions
 
-16. **Holdout lock.** `split_train_test_holdout` uses stratified 80/20 for
-    binary and unstratified 80/20 for regression, seed 42.
+16. **Holdout lock.** After structural cleaning, `plan_holdout` selects one
+    `HoldoutPlan` from pre-split structure (stratified random, random,
+    group-disjoint, temporal future, or unsupported). `split_train_test_holdout`
+    consumes that plan. Group holdout has zero entity overlap. Temporal
+    holdout is the latest chronological slice. Grouping plus strong time
+    structure fails closed. Seed 42, requested test size 0.2.
 17. **Disjoint provenance.** Train and test source-row sets are persisted and
     must not overlap.
 18. **Replay of the split.** Repeating the split after the prepared table is
@@ -108,7 +112,10 @@ flowchart TD
     `available_families` (logistic regression, random forest, and XGBoost when
     installed).
 32. **Candidate identity.** `ExperimentCandidate.candidate_key` plus
-    fingerprint uniquely identify a trial inside a pipeline.
+    fingerprint uniquely identify a trial inside a pipeline. Open-ingest
+    fingerprints include dataset version, feature set, model family,
+    hyperparameters, preprocessing config, holdout/validation plan
+    version and strategy, primary metric, and model-development-plan version.
 33. **Isolation.** Each candidate trains independently. A forced family
     failure emits `candidate_failed` and does not hide other candidates.
 34. **CV splitter.** Open-ingest uses the Adaptive Model Builder
@@ -244,7 +251,7 @@ flowchart TD
 | Orchestration | `run_auto_train_job` |
 | Hygiene / roles / preprocessor | `structural_clean_frame`, `plan_missing_values`, `infer_column_roles`, `build_preprocessor` |
 | CV and winner | `_run_open_ingest_candidates`, `_run_open_ingest_experiment` |
-| Split | `split_train_test_holdout` |
+| Split | `plan_holdout`, `split_train_test_holdout` |
 | Verifier | `PipelineVerifier.verify` |
 | Advisory LLM | `request_pipeline_verification`, `OpenAIPipelineAuditProvider.audit` |
 | Events | `append_ml_run_event`, `create_llm_invocation` |

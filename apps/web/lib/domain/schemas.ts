@@ -482,6 +482,7 @@ export const AdminMlRunSchema = z.object({
   target_source: z.string().nullable().optional(),
   target_reason: z.string().nullable().optional(),
   target_confidence: z.number().nullable().optional(),
+  failure_reason: z.string().nullable().optional(),
   started_at: z.string().nullable(),
   completed_at: z.string().nullable(),
   duration_seconds: z.number().nullable(),
