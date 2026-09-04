@@ -54,6 +54,18 @@ class Workspace(Base):
     capabilities: Mapped[list["WorkspaceCapability"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan"
     )
+    domain_links: Mapped[list["WorkspaceDomain"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+    dataset_assets: Mapped[list["DatasetAsset"]] = relationship(back_populates="workspace")
+    datasets: Mapped[list["Dataset"]] = relationship(back_populates="workspace")
+    ml_workflows: Mapped[list["MlWorkflow"]] = relationship(back_populates="workspace")
+    workflow_runs: Mapped[list["WorkflowRun"]] = relationship(back_populates="workspace")
+    pipeline_runs: Mapped[list["Experiment"]] = relationship(back_populates="workspace")
+    model_assets: Mapped[list["ModelAsset"]] = relationship(back_populates="workspace")
+    model_versions: Mapped[list["ModelVersion"]] = relationship(back_populates="workspace")
+    ml_run_events: Mapped[list["MlRunEvent"]] = relationship(back_populates="workspace")
+    llm_invocations: Mapped[list["LlmInvocation"]] = relationship(back_populates="workspace")
 
 
 class UserRole(str, enum.Enum):
@@ -236,6 +248,76 @@ class WorkspaceCapability(Base):
     )
 
     workspace: Mapped[Workspace] = relationship(back_populates="capabilities")
+
+
+class BusinessDomain(Base):
+    """Configurable catalog entry such as labs, marketing, or sales."""
+
+    __tablename__ = "business_domains"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    default_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    workspace_links: Mapped[list["WorkspaceDomain"]] = relationship(
+        back_populates="business_domain"
+    )
+
+
+class WorkspaceDomain(Base):
+    __tablename__ = "workspace_domains"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "business_domain_id",
+            name="uq_workspace_domains_workspace_domain",
+        ),
+        Index("ix_workspace_domains_workspace_id", "workspace_id"),
+        Index("ix_workspace_domains_business_domain_id", "business_domain_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    business_domain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("business_domains.id"), nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="domain_links")
+    business_domain: Mapped[BusinessDomain] = relationship(back_populates="workspace_links")
+    workflows: Mapped[list["MlWorkflow"]] = relationship(back_populates="workspace_domain")
 
 
 class Opportunity(Base):
@@ -513,6 +595,9 @@ class ClientLabUpload(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    dataset: Mapped["Dataset | None"] = relationship(back_populates="source_uploads")
+    workflow_runs: Mapped[list["WorkflowRun"]] = relationship(back_populates="source_upload")
+
 
 class MlRunVerification(Base):
     """One persisted deterministic/OpenAI verification attempt for an ML run."""
@@ -526,6 +611,13 @@ class MlRunVerification(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    llm_invocation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("llm_invocations.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("client_lab_uploads.id", ondelete="CASCADE"),
@@ -589,6 +681,13 @@ class LabDecisionRecord(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    llm_invocation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("llm_invocations.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     upload_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("client_lab_uploads.id", ondelete="CASCADE"),
@@ -623,10 +722,66 @@ class Environment(Base):
     tasks: Mapped[list["PredictionTask"]] = relationship(back_populates="environment")
 
 
+class DatasetAsset(Base):
+    """Logical dataset whose immutable physical versions live in Dataset."""
+
+    __tablename__ = "dataset_assets"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_dataset_assets_workspace_slug"),
+        Index("ix_dataset_assets_workspace_id", "workspace_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="dataset_assets")
+    datasets: Mapped[list["Dataset"]] = relationship(back_populates="asset")
+
+
 class Dataset(Base):
     __tablename__ = "datasets"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_asset_id", "version", name="uq_datasets_asset_version"
+        ),
+        UniqueConstraint(
+            "dataset_asset_id",
+            "content_digest",
+            name="uq_datasets_asset_content_digest",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        default=DEFAULT_WORKSPACE_ID,
+        server_default=str(DEFAULT_WORKSPACE_ID),
+        index=True,
+    )
+    dataset_asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dataset_assets.id"), nullable=False, index=True
+    )
     environment_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("environments.id"), nullable=False, index=True
     )
@@ -634,6 +789,7 @@ class Dataset(Base):
     source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="csv")
     location: Mapped[str] = mapped_column(String(512), nullable=False)
     version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
+    content_digest: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     schema_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -642,8 +798,13 @@ class Dataset(Base):
     )
 
     environment: Mapped[Environment] = relationship(back_populates="datasets")
+    workspace: Mapped[Workspace] = relationship(back_populates="datasets")
+    asset: Mapped[DatasetAsset] = relationship(back_populates="datasets")
+    source_uploads: Mapped[list[ClientLabUpload]] = relationship(back_populates="dataset")
     profiles: Mapped[list["DatasetProfile"]] = relationship(back_populates="dataset")
     experiments: Mapped[list["Experiment"]] = relationship(back_populates="dataset")
+    workflow_inputs: Mapped[list["WorkflowRunInput"]] = relationship(back_populates="dataset")
+    model_versions: Mapped[list["ModelVersion"]] = relationship(back_populates="dataset")
 
 
 class DatasetProfile(Base):
@@ -682,20 +843,189 @@ class PredictionTask(Base):
     experiments: Mapped[list["Experiment"]] = relationship(back_populates="task")
 
 
+class MlWorkflow(Base):
+    """Reusable business objective and configuration, not an execution."""
+
+    __tablename__ = "ml_workflows"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_ml_workflows_workspace_slug"),
+        Index("ix_ml_workflows_workspace_id", "workspace_id"),
+        Index("ix_ml_workflows_workspace_domain_id", "workspace_domain_id"),
+        Index("ix_ml_workflows_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    workspace_domain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspace_domains.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    business_objective: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="ml_workflows")
+    workspace_domain: Mapped[WorkspaceDomain] = relationship(back_populates="workflows")
+    runs: Mapped[list["WorkflowRun"]] = relationship(back_populates="workflow")
+    model_assets: Mapped[list["ModelAsset"]] = relationship(back_populates="workflow")
+    model_versions: Mapped[list["ModelVersion"]] = relationship(back_populates="workflow")
+
+
+class WorkflowRun(Base):
+    """One invocation of an MlWorkflow."""
+
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        Index("ix_workflow_runs_workspace_id", "workspace_id"),
+        Index("ix_workflow_runs_workflow_id", "workflow_id"),
+        Index("ix_workflow_runs_source_upload_id", "source_upload_id"),
+        Index("ix_workflow_runs_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    workflow_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ml_workflows.id"), nullable=False
+    )
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    trigger_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "client_lab_uploads.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="workflow_runs_source_upload_id_fkey",
+        ),
+        nullable=True,
+    )
+    explicit_target: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    resolved_target: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    task_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    failure_reason: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="workflow_runs")
+    workflow: Mapped[MlWorkflow] = relationship(back_populates="runs")
+    source_upload: Mapped[ClientLabUpload | None] = relationship(back_populates="workflow_runs")
+    inputs: Mapped[list["WorkflowRunInput"]] = relationship(
+        back_populates="workflow_run", cascade="all, delete-orphan"
+    )
+    pipeline_runs: Mapped[list["Experiment"]] = relationship(back_populates="workflow_run")
+    model_versions: Mapped[list["ModelVersion"]] = relationship(back_populates="workflow_run")
+    events: Mapped[list["MlRunEvent"]] = relationship(back_populates="workflow_run")
+    llm_invocations: Mapped[list["LlmInvocation"]] = relationship(
+        back_populates="workflow_run"
+    )
+
+
+class WorkflowRunInput(Base):
+    __tablename__ = "workflow_run_inputs"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_run_id",
+            "dataset_id",
+            "input_role",
+            name="uq_workflow_run_inputs_run_dataset_role",
+        ),
+        Index("ix_workflow_run_inputs_workflow_run_id", "workflow_run_id"),
+        Index("ix_workflow_run_inputs_dataset_id", "dataset_id"),
+        Index("ix_workflow_run_inputs_input_role", "input_role"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False
+    )
+    input_role: Mapped[str] = mapped_column(String(64), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workflow_run: Mapped[WorkflowRun] = relationship(back_populates="inputs")
+    dataset: Mapped[Dataset] = relationship(back_populates="workflow_inputs")
+
+
 class Experiment(Base):
     __tablename__ = "experiments"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_run_id",
+            "pipeline_index",
+            name="uq_experiments_workflow_run_pipeline_index",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        default=DEFAULT_WORKSPACE_ID,
+        server_default=str(DEFAULT_WORKSPACE_ID),
+        index=True,
+    )
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_runs.id"), nullable=True, index=True
+    )
+    pipeline_name: Mapped[str] = mapped_column(
+        String(128), nullable=False, default="deterministic_ml", server_default="deterministic_ml"
+    )
+    pipeline_index: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    pipeline_purpose: Mapped[str] = mapped_column(
+        String(128), nullable=False, default="training", server_default="training"
+    )
     environment_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("environments.id"), nullable=False, index=True
     )
-    task_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("prediction_tasks.id"), nullable=False, index=True
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prediction_tasks.id"), nullable=True, index=True
     )
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False, index=True
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED", index=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     artifact_dir: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -708,9 +1038,18 @@ class Experiment(Base):
     )
 
     dataset: Mapped[Dataset] = relationship(back_populates="experiments")
-    task: Mapped[PredictionTask] = relationship(back_populates="experiments")
+    workspace: Mapped[Workspace] = relationship(back_populates="pipeline_runs")
+    workflow_run: Mapped[WorkflowRun | None] = relationship(back_populates="pipeline_runs")
+    task: Mapped[PredictionTask | None] = relationship(back_populates="experiments")
     candidates: Mapped[list["ExperimentCandidate"]] = relationship(back_populates="experiment")
     test_predictions: Mapped[list["ExperimentTestPrediction"]] = relationship(back_populates="experiment")
+    model_version: Mapped["ModelVersion | None"] = relationship(
+        back_populates="pipeline_run", uselist=False
+    )
+    events: Mapped[list["MlRunEvent"]] = relationship(back_populates="pipeline_run")
+    llm_invocations: Mapped[list["LlmInvocation"]] = relationship(
+        back_populates="pipeline_run"
+    )
 
 
 class ExperimentCandidate(Base):
@@ -729,6 +1068,9 @@ class ExperimentCandidate(Base):
     )
 
     experiment: Mapped[Experiment] = relationship(back_populates="candidates")
+    model_version: Mapped["ModelVersion | None"] = relationship(
+        back_populates="selected_candidate", uselist=False
+    )
 
 
 class ExperimentTestPrediction(Base):
@@ -761,3 +1103,226 @@ class ExperimentTestPrediction(Base):
     )
 
     experiment: Mapped[Experiment] = relationship(back_populates="test_predictions")
+
+
+class ModelAsset(Base):
+    """Logical managed model whose immutable releases are ModelVersion rows."""
+
+    __tablename__ = "model_assets"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_model_assets_workspace_slug"),
+        Index("ix_model_assets_workspace_id", "workspace_id"),
+        Index("ix_model_assets_workflow_id", "workflow_id"),
+        Index("ix_model_assets_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    workflow_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ml_workflows.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="model_assets")
+    workflow: Mapped[MlWorkflow] = relationship(back_populates="model_assets")
+    versions: Mapped[list["ModelVersion"]] = relationship(back_populates="model_asset")
+
+
+class ModelVersion(Base):
+    """Append-only selected model release with complete lineage."""
+
+    __tablename__ = "model_versions"
+    __table_args__ = (
+        UniqueConstraint("model_asset_id", "version", name="uq_model_versions_asset_version"),
+        UniqueConstraint("pipeline_run_id", name="uq_model_versions_pipeline_run_id"),
+        UniqueConstraint(
+            "selected_candidate_id", name="uq_model_versions_selected_candidate_id"
+        ),
+        Index("ix_model_versions_workspace_id", "workspace_id"),
+        Index("ix_model_versions_workflow_id", "workflow_id"),
+        Index("ix_model_versions_workflow_run_id", "workflow_run_id"),
+        Index("ix_model_versions_dataset_id", "dataset_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    model_asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("model_assets.id"), nullable=False
+    )
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    workflow_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ml_workflows.id"), nullable=False
+    )
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_runs.id"), nullable=False
+    )
+    pipeline_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiments.id"), nullable=False
+    )
+    selected_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiment_candidates.id"), nullable=False
+    )
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False
+    )
+    artifact_uri: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    metrics: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    model_asset: Mapped[ModelAsset] = relationship(back_populates="versions")
+    workspace: Mapped[Workspace] = relationship(back_populates="model_versions")
+    workflow: Mapped[MlWorkflow] = relationship(back_populates="model_versions")
+    workflow_run: Mapped[WorkflowRun] = relationship(back_populates="model_versions")
+    pipeline_run: Mapped[Experiment] = relationship(back_populates="model_version")
+    selected_candidate: Mapped[ExperimentCandidate] = relationship(
+        back_populates="model_version"
+    )
+    dataset: Mapped[Dataset] = relationship(back_populates="model_versions")
+
+
+class LlmInvocation(Base):
+    """Generic safe observability record; specialized ledgers remain authoritative."""
+
+    __tablename__ = "llm_invocations"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('semantic_target', 'semantic_missing_value', "
+            "'semantic_column_type', 'pipeline_audit_routine', "
+            "'pipeline_audit_deep')",
+            name="ck_llm_invocations_purpose",
+        ),
+        Index("ix_llm_invocations_workspace_id", "workspace_id"),
+        Index("ix_llm_invocations_workflow_run_id", "workflow_run_id"),
+        Index("ix_llm_invocations_experiment_id", "experiment_id"),
+        Index("ix_llm_invocations_purpose", "purpose"),
+        Index("ix_llm_invocations_status", "status"),
+        Index("ix_llm_invocations_created_at", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    redaction_summary: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    llm_used: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason: Mapped[str] = mapped_column(String(1024), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    validator_verdict: Mapped[str] = mapped_column(String(1024), nullable=False)
+    safe_output: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    final_decision: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="llm_invocations")
+    workflow_run: Mapped[WorkflowRun] = relationship(back_populates="llm_invocations")
+    pipeline_run: Mapped[Experiment] = relationship(back_populates="llm_invocations")
+
+
+class MlRunEvent(Base):
+    """Append-only, bounded event emitted by a real PipelineRun operation."""
+
+    __tablename__ = "ml_run_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "experiment_id", "sequence", name="uq_ml_run_events_experiment_sequence"
+        ),
+        Index("ix_ml_run_events_workspace_id", "workspace_id"),
+        Index("ix_ml_run_events_workflow_run_id", "workflow_run_id"),
+        Index("ix_ml_run_events_experiment_id", "experiment_id"),
+        Index("ix_ml_run_events_stage", "stage"),
+        Index("ix_ml_run_events_timestamp", "timestamp"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    stage: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(back_populates="ml_run_events")
+    workflow_run: Mapped[WorkflowRun] = relationship(back_populates="events")
+    pipeline_run: Mapped[Experiment] = relationship(back_populates="events")
+
+
+@event.listens_for(Dataset, "before_update")
+@event.listens_for(Dataset, "before_delete")
+def _protect_immutable_dataset(_mapper, _connection, _target: Dataset) -> None:
+    raise ValueError("Dataset physical versions are immutable; create a new version")
+
+
+@event.listens_for(ModelVersion, "before_update")
+@event.listens_for(ModelVersion, "before_delete")
+def _protect_immutable_model_version(_mapper, _connection, _target: ModelVersion) -> None:
+    raise ValueError("ModelVersion rows are immutable; publish a new version")
+
+
+@event.listens_for(MlRunEvent, "before_update")
+@event.listens_for(MlRunEvent, "before_delete")
+def _protect_immutable_ml_run_event(_mapper, _connection, _target: MlRunEvent) -> None:
+    raise ValueError("MlRunEvent rows are append-only")

@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import asdict
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -21,7 +23,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import LabDecisionRecord
+from app.db.models import LabDecisionRecord, LlmInvocation
 from app.engine.lab.auto_prepare import ColumnMissingDecision, MissingValuePlan
 from app.engine.lab.decision_validator import (
     validate_column_type_decision,
@@ -56,6 +58,76 @@ _VERDICT_NOT_RUN = "not_run"
 AMBIGUOUS_MISSING_MIN = 0.02
 AMBIGUOUS_MISSING_MAX = 0.40
 
+_DETERMINISTIC_REASON = "LLM used: NO — deterministic evidence was sufficient."
+
+
+def _safe_semantic_output(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep decision metadata, never provider rationale, samples, or fill values."""
+    if not isinstance(value, dict):
+        return None
+    allowed = {
+        "action",
+        "evidence_field",
+        "target",
+        "task_type",
+        "confidence",
+    }
+    return {key: value[key] for key in allowed if key in value}
+
+
+def _target_final_decision(choice: TargetChoice) -> dict[str, Any]:
+    return {
+        "column": choice.column,
+        "task_type": choice.task_type,
+        "evaluation_metric": choice.evaluation_metric,
+        "confidence": choice.confidence,
+        "source": choice.source,
+        "validator_verdict": choice.validator_verdict,
+    }
+
+
+def _observe_semantic_decision(
+    db: Session | None,
+    upload_id: UUID | None,
+    *,
+    purpose: str,
+    prompt_version: str,
+    evidence: Any,
+    llm_used: bool,
+    reason: str,
+    status: str,
+    validator_verdict: str,
+    safe_output: dict[str, Any] | None,
+    final_decision: dict[str, Any],
+    started_at: datetime | None = None,
+    latency_ms: float | None = None,
+) -> LlmInvocation | None:
+    if db is None or upload_id is None:
+        return None
+    from app.services.observability_service import create_llm_invocation
+
+    settings = get_settings()
+    return create_llm_invocation(
+        db,
+        upload_id=upload_id,
+        purpose=purpose,
+        mode="semantic_decision",
+        prompt_version=prompt_version,
+        schema_version=1,
+        evidence=evidence,
+        llm_used=llm_used,
+        reason=reason,
+        status=status,
+        validator_verdict=validator_verdict,
+        provider="openai" if llm_used else None,
+        model=getattr(settings, "decision_agent_model", None) if llm_used else None,
+        safe_output=safe_output,
+        final_decision=final_decision,
+        started_at=started_at,
+        completed_at=datetime.now(UTC),
+        latency_ms=latency_ms,
+    )
+
 
 def _jsonable(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str))
@@ -75,17 +147,53 @@ def resolve_target_selection(
     columns: list[str],
     *,
     explicit_target: str | None = None,
+    db: Session | None = None,
+    upload_id: UUID | None = None,
 ) -> TargetChoice:
     """Apply explicit/rule/LLM/fail-closed target precedence to one dataframe."""
     choice = choose_target_deterministically(frame, columns, explicit_target=explicit_target)
+    evidence_summary = {
+        "column_count": len(columns),
+        "candidate_count": len(choice.candidates),
+        "candidate_columns": [item.column for item in choice.candidates],
+        "explicit_target": explicit_target,
+    }
     if choice.column is not None or explicit_target is not None or not choice.candidates:
+        _observe_semantic_decision(
+            db,
+            upload_id,
+            purpose="semantic_target",
+            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
+            evidence=evidence_summary,
+            llm_used=False,
+            reason=_DETERMINISTIC_REASON,
+            status="not_used",
+            validator_verdict=choice.validator_verdict or "not_run",
+            safe_output=None,
+            final_decision=_target_final_decision(choice),
+        )
         return choice
     if not _agent_configured():
         choice.reason += "; semantic target assistance is disabled or unconfigured"
         choice.validator_verdict = "not_run"
+        _observe_semantic_decision(
+            db,
+            upload_id,
+            purpose="semantic_target",
+            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
+            evidence=evidence_summary,
+            llm_used=False,
+            reason="LLM used: NO — semantic assistance was disabled or unconfigured.",
+            status="not_used",
+            validator_verdict="not_run",
+            safe_output=None,
+            final_decision=_target_final_decision(choice),
+        )
         return choice
 
     evidence = build_target_selection_evidence(len(frame), len(columns), choice.candidates)
+    started_at = datetime.now(UTC)
+    timer = time.perf_counter()
     try:
         decision = request_target_selection_decision(evidence, TARGET_SELECTION_PROMPT_VERSION)
         choice.raw_llm_output = decision.model_dump(mode="json")
@@ -94,6 +202,21 @@ def resolve_target_selection(
         if check.verdict != "accept":
             choice.source = "fallback"
             choice.reason += f"; semantic decision rejected: {check.reason}"
+            _observe_semantic_decision(
+                db,
+                upload_id,
+                purpose="semantic_target",
+                prompt_version=TARGET_SELECTION_PROMPT_VERSION,
+                evidence=asdict(evidence),
+                llm_used=True,
+                reason="LLM used: YES — validator rejected the semantic target response.",
+                status="rejected",
+                validator_verdict=choice.validator_verdict,
+                safe_output=_safe_semantic_output(choice.raw_llm_output),
+                final_decision=_target_final_decision(choice),
+                started_at=started_at,
+                latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
+            )
             return choice
         candidate = next(item for item in choice.candidates if item.column == decision.target)
         choice.column = candidate.column
@@ -103,17 +226,62 @@ def resolve_target_selection(
         choice.source = "llm"
         choice.reason = decision.rationale
         choice.evidence = candidate.evidence
+        _observe_semantic_decision(
+            db,
+            upload_id,
+            purpose="semantic_target",
+            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
+            evidence=asdict(evidence),
+            llm_used=True,
+            reason="LLM used: YES — deterministic target evidence was ambiguous.",
+            status="completed",
+            validator_verdict=choice.validator_verdict,
+            safe_output=_safe_semantic_output(choice.raw_llm_output),
+            final_decision=_target_final_decision(choice),
+            started_at=started_at,
+            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
+        )
         return choice
     except DecisionAgentUnavailable as exc:
         choice.source = "fallback"
         choice.validator_verdict = f"unavailable: {exc}"
         choice.reason += "; semantic target assistance was unavailable"
+        _observe_semantic_decision(
+            db,
+            upload_id,
+            purpose="semantic_target",
+            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
+            evidence=asdict(evidence),
+            llm_used=True,
+            reason="LLM used: YES — provider attempt was unavailable; deterministic fallback retained.",
+            status="unavailable",
+            validator_verdict=choice.validator_verdict,
+            safe_output=None,
+            final_decision=_target_final_decision(choice),
+            started_at=started_at,
+            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
+        )
         return choice
     except Exception:  # noqa: BLE001
         logger.exception("target-selection agent failed; refusing to guess a target")
         choice.source = "fallback"
         choice.validator_verdict = "unavailable: unexpected error"
         choice.reason += "; semantic target assistance failed"
+        _observe_semantic_decision(
+            db,
+            upload_id,
+            purpose="semantic_target",
+            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
+            evidence=asdict(evidence),
+            llm_used=True,
+            reason="LLM used: YES — semantic target processing failed; deterministic fallback retained.",
+            status="failed",
+            validator_verdict=choice.validator_verdict,
+            safe_output=None,
+            final_decision=_target_final_decision(choice),
+            started_at=started_at,
+            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
+        )
         return choice
 
 
@@ -166,6 +334,9 @@ def record_missing_value_decisions(
         raw: dict[str, Any] | None = None
         applied_fill: Any = None
         ambiguous = is_ambiguous_column(rule, evidence, frame)
+        llm_used = consult_agent and ambiguous
+        started_at = datetime.now(UTC) if llm_used else None
+        timer = time.perf_counter() if llm_used else None
 
         if consult_agent and ambiguous:
             try:
@@ -193,8 +364,49 @@ def record_missing_value_decisions(
                 verdict = "unavailable: unexpected error"
                 raw = None
 
+        if not llm_used:
+            invocation_reason = (
+                _DETERMINISTIC_REASON
+                if not ambiguous
+                else "LLM used: NO — semantic assistance was disabled or unconfigured."
+            )
+            invocation_status = "not_used"
+        elif verdict == "accept":
+            invocation_reason = "LLM used: YES — missing-value evidence was ambiguous."
+            invocation_status = "completed"
+        elif verdict.startswith("reject:"):
+            invocation_reason = "LLM used: YES — validator rejected the missing-value response."
+            invocation_status = "rejected"
+        else:
+            invocation_reason = "LLM used: YES — provider attempt was unavailable; rule retained."
+            invocation_status = "unavailable"
+        invocation = _observe_semantic_decision(
+            db,
+            upload_id,
+            purpose="semantic_missing_value",
+            prompt_version=PROMPT_VERSION,
+            evidence=asdict(evidence),
+            llm_used=llm_used,
+            reason=invocation_reason,
+            status=invocation_status,
+            validator_verdict=verdict,
+            safe_output=_safe_semantic_output(raw),
+            final_decision={
+                "column": rule.column,
+                "rule_decision": original_action,
+                "final_decision": rule.action,
+                "source": source,
+            },
+            started_at=started_at,
+            latency_ms=(
+                max(0.001, (time.perf_counter() - timer) * 1000.0)
+                if timer is not None
+                else None
+            ),
+        )
         db.add(
             LabDecisionRecord(
+                llm_invocation_id=invocation.id if invocation is not None else None,
                 upload_id=upload_id,
                 column=rule.column,
                 evidence_snapshot=_evidence_snapshot(evidence),
@@ -242,21 +454,47 @@ def record_column_type_decisions(
     numerical = list(numerical_cols)
     categorical = list(categorical_cols)
     consult_agent = _agent_configured()
-    if not consult_agent:
-        return numerical, categorical
+    original_numerical = set(numerical_cols)
 
-    for column in list(numerical):
+    for column in dict.fromkeys([*numerical_cols, *categorical_cols]):
         if column not in frame.columns:
             continue
         evidence = build_column_type_evidence(frame, column)
-        if not is_ambiguous_column_type(frame, column, evidence):
+        ambiguous = column in original_numerical and is_ambiguous_column_type(
+            frame, column, evidence
+        )
+        original = "numerical" if column in original_numerical else "categorical"
+        if not consult_agent or not ambiguous:
+            _observe_semantic_decision(
+                db,
+                upload_id,
+                purpose="semantic_column_type",
+                prompt_version=COLUMN_TYPE_PROMPT_VERSION,
+                evidence=asdict(evidence),
+                llm_used=False,
+                reason=(
+                    _DETERMINISTIC_REASON
+                    if not ambiguous
+                    else "LLM used: NO — semantic assistance was disabled or unconfigured."
+                ),
+                status="not_used",
+                validator_verdict=_VERDICT_NOT_RUN,
+                safe_output=None,
+                final_decision={
+                    "column": column,
+                    "rule_decision": original,
+                    "final_decision": original,
+                    "source": "rule",
+                },
+            )
             continue
 
-        original = "numerical"
         final = original
         source = "rule"
         verdict = _VERDICT_NOT_RUN
         raw: dict[str, Any] | None = None
+        started_at = datetime.now(UTC)
+        timer = time.perf_counter()
 
         try:
             llm_decision = request_column_type_decision(evidence, COLUMN_TYPE_PROMPT_VERSION)
@@ -285,8 +523,38 @@ def record_column_type_decisions(
             verdict = "unavailable: unexpected error"
             raw = None
 
+        if verdict == "accept":
+            invocation_status = "completed"
+            reason = "LLM used: YES — column-type evidence was ambiguous."
+        elif verdict.startswith("reject:"):
+            invocation_status = "rejected"
+            reason = "LLM used: YES — validator rejected the column-type response."
+        else:
+            invocation_status = "unavailable"
+            reason = "LLM used: YES — provider attempt was unavailable; inferred type retained."
+        invocation = _observe_semantic_decision(
+            db,
+            upload_id,
+            purpose="semantic_column_type",
+            prompt_version=COLUMN_TYPE_PROMPT_VERSION,
+            evidence=asdict(evidence),
+            llm_used=True,
+            reason=reason,
+            status=invocation_status,
+            validator_verdict=verdict,
+            safe_output=_safe_semantic_output(raw),
+            final_decision={
+                "column": column,
+                "rule_decision": original,
+                "final_decision": final,
+                "source": source,
+            },
+            started_at=started_at,
+            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
+        )
         db.add(
             LabDecisionRecord(
+                llm_invocation_id=invocation.id if invocation is not None else None,
                 upload_id=upload_id,
                 column=column,
                 evidence_snapshot=_evidence_snapshot(evidence),

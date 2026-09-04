@@ -4,7 +4,7 @@ import { Button } from "@/app/components/ui/Button";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
-import { useCreateLabWorkbook, useLabDatasets, useUploadLabDataset } from "@/lib/application";
+import { useCreateLabWorkbook, useLabDatasets, useSession, useUploadLabDataset } from "@/lib/application";
 import { ApiError } from "@/lib/infrastructure";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -17,8 +17,11 @@ export default function LabDatasetsPage() {
   const router = useRouter();
   const [progress, setProgress] = useState(0);
   const [drag, setDrag] = useState(false);
+  const { user } = useSession();
+  const canWrite = user?.role === "dclab_admin";
 
   function send(file: File) {
+    if (!canWrite) return;
     setProgress(0);
     upload.mutate(
       { file, onProgress: setProgress },
@@ -39,17 +42,18 @@ export default function LabDatasetsPage() {
       <p className="mt-2 max-w-2xl font-body text-body text-ink-muted">
         A CSV becomes an immutable lab dataset. After upload, open it to train the five use-case models.
       </p>
+      {!canWrite ? <p className="mt-4 rounded bg-navy-soft p-4 text-body text-ink-muted">Read-only platform access. Upload and training actions require DCLab Admin.</p> : null}
       <label
-        className={`mt-8 block cursor-pointer rounded border border-hairline bg-paper-raised px-8 py-12 text-center ${drag ? "bg-navy-soft" : ""}`}
+        className={`mt-8 block rounded border border-hairline bg-paper-raised px-8 py-12 text-center ${canWrite ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${drag ? "bg-navy-soft" : ""}`}
         onDragOver={(event) => {
           event.preventDefault();
-          setDrag(true);
+          if (canWrite) setDrag(true);
         }}
         onDragLeave={() => setDrag(false)}
         onDrop={(event) => {
           event.preventDefault();
           setDrag(false);
-          const file = event.dataTransfer.files[0];
+          const file = canWrite ? event.dataTransfer.files[0] : undefined;
           if (file) send(file);
         }}
       >
@@ -57,6 +61,7 @@ export default function LabDatasetsPage() {
           type="file"
           accept=".csv,.parquet,.pq,text/csv"
           className="sr-only"
+          disabled={!canWrite}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) send(file);
@@ -73,7 +78,7 @@ export default function LabDatasetsPage() {
       <p className="mt-4">
         <Button
           variant="secondary"
-          disabled={sample.isPending}
+          disabled={!canWrite || sample.isPending}
           onClick={() =>
             sample.mutate(undefined, {
               onSuccess: (dataset) => router.push(`/admin/lab/datasets/${dataset.id}`),

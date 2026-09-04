@@ -7,7 +7,7 @@ import io
 import pandas as pd
 import pytest
 
-from app.engine.lab.open_ingest import MAX_RECORDS, MAX_UPLOAD_BYTES, OpenIngestError, preview_upload
+from app.engine.lab.open_ingest import OpenIngestError, preview_upload, preview_upload_path
 
 
 def test_csv_with_arbitrary_columns_is_accepted():
@@ -52,9 +52,9 @@ def test_empty_file_is_rejected():
         preview_upload("blank.csv", b"   \n")
 
 
-def test_oversized_file_is_rejected():
-    with pytest.raises(OpenIngestError, match="MB"):
-        preview_upload("huge.csv", b"x" * (MAX_UPLOAD_BYTES + 1))
+def test_legacy_row_count_ceiling_is_not_applied():
+    preview = preview_upload("wide.csv", b"feature,target\n" + b"x,1\n" * 501)
+    assert preview.record_count == 501
 
 
 def test_unsupported_type_is_rejected():
@@ -62,7 +62,12 @@ def test_unsupported_type_is_rejected():
         preview_upload("photo.png", b"\x89PNG\r\n" + b"x" * 20)
 
 
-def test_too_many_rows_are_rejected():
-    lines = ["a,b"] + [f"{i},x" for i in range(MAX_RECORDS + 1)]
-    with pytest.raises(OpenIngestError, match=str(MAX_RECORDS)):
-        preview_upload("wide.csv", "\n".join(lines).encode())
+def test_path_preview_streams_more_than_the_legacy_row_and_file_size_limits(tmp_path):
+    path = tmp_path / "millionish.csv"
+    path.write_bytes(b"a,b\n" + b"1,x\n" * 600_000)
+
+    preview = preview_upload_path("millionish.csv", path)
+
+    assert path.stat().st_size > 2 * 1024 * 1024
+    assert preview.record_count == 600_000
+    assert preview.fields_noticed == ["a", "b"]

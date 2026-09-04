@@ -25,6 +25,7 @@ class AdminClientUploadSummary(BaseModel):
     has_named_fields: bool
     pipeline_status: str
     experiment_id: UUID | None
+    workflow_run_id: UUID | None = None
     created_at: datetime
 
 

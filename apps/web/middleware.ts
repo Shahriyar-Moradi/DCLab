@@ -67,9 +67,19 @@ export async function middleware(request: NextRequest) {
     return forbidden("the admin area");
   }
 
+  if (
+    pathname.startsWith("/business") &&
+    role !== "dclab_admin" &&
+    role !== "dclab_developer" &&
+    role !== "business_admin" &&
+    role !== "business_developer"
+  ) {
+    return forbidden("the business administration area");
+  }
+
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/app/:path*", "/lab/:path*"],
+  matcher: ["/admin/:path*", "/business/:path*", "/app/:path*", "/lab/:path*"],
 };

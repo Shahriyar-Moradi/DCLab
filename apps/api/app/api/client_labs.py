@@ -19,6 +19,11 @@ from app.domain.errors import (
     UnknownLabProblemError,
 )
 from app.services import client_lab_service, client_lab_upload_service
+from app.services.authorization_service import AuthorizationError
+from app.services.workspace_capability_service import (
+    PREDICTION_DOWNLOAD,
+    require_modern_business_capability,
+)
 
 router = APIRouter(prefix="/labs", tags=["client-labs"])
 
@@ -86,14 +91,13 @@ async def create_upload(
     Training is enqueued after this response is built, so the client never waits
     on the ML job to learn the run identity.
     """
-    data = await file.read()
     try:
         return client_lab_upload_service.save_upload(
             db,
             user=user,
             category=category,
             filename=file.filename or "upload",
-            data=data,
+            upload_stream=file.file,
             target_column=target_column,
             workspace_id=request_workspace_id(request),
         )
@@ -146,11 +150,18 @@ def download_upload_predictions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
+    workspace_id = request_workspace_id(request)
+    try:
+        require_modern_business_capability(
+            db, user, workspace_id, PREDICTION_DOWNLOAD
+        )
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     payload = client_lab_upload_service.predictions_download(
         db,
         user,
         upload_id,
-        workspace_id=request_workspace_id(request),
+        workspace_id=workspace_id,
     )
     if payload is None:
         raise HTTPException(status_code=404, detail="predictions are not ready")

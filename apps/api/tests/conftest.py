@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import Generator
 
 import pytest
@@ -72,11 +73,21 @@ def db_session(test_engine) -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+        # Upload endpoints intentionally launch daemon workers. Wait for any job
+        # started by this test before taking PostgreSQL ACCESS EXCLUSIVE locks for
+        # cleanup; otherwise teardown can deadlock with a worker committing an
+        # observability event on a related table.
+        for thread in list(threading.enumerate()):
+            if thread.name.startswith("auto-train-") and thread.is_alive():
+                thread.join()
         from app.db.models import DEFAULT_WORKSPACE_ID
 
         with test_engine.begin() as conn:
             conn.execute(text(
-                "TRUNCATE TABLE workspace_capabilities, workspace_memberships, platform_memberships, "
+                "TRUNCATE TABLE ml_run_events, llm_invocations, model_versions, model_assets, "
+                "workflow_run_inputs, workflow_runs, "
+                "ml_workflows, workspace_domains, business_domains, dataset_assets, "
+                "workspace_capabilities, workspace_memberships, platform_memberships, "
                 "ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
                 "lab_decision_records, client_lab_run_audits, client_lab_runs, "

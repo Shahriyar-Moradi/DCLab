@@ -5,13 +5,14 @@ import { CATEGORY_META, CATEGORY_ORDER } from "@/app/components/insights/categor
 import { Button } from "@/app/components/ui/Button";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { useLabProblems, useLabQuota, useLabUploads, useRunLabTrial, useUploadLabFile } from "@/lib/application";
+import { useLabProblems, useLabQuota, useLabUploads, useRunLabTrial, useSession, useUploadLabFile } from "@/lib/application";
 import {
   type ClientLabProblem,
   type ClientLabRun,
   type InsightCategoryValue,
 } from "@/lib/domain";
 import Link from "next/link";
+import { isPlatformRole } from "@/lib/infrastructure/session";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -175,6 +176,9 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [targetColumn, setTargetColumn] = useState("");
   const [targetOptions, setTargetOptions] = useState<string[]>([]);
+  const { user } = useSession();
+  const isPlatformMember = user ? isPlatformRole(user.role) : false;
+  const canWrite = user?.role !== "dclab_developer" && user?.role !== "business_developer";
 
   async function onFileChange(file: File | undefined) {
     setFileName(file?.name ?? null);
@@ -192,7 +196,7 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
       { category, file, targetColumn: targetColumn || undefined },
       {
         onSuccess: (row) => {
-          router.push(runPath(row.run_id));
+          router.push(isPlatformMember ? `/admin/models/client-uploads/${row.id}` : runPath(row.run_id));
         },
       },
     );
@@ -209,7 +213,7 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
         Reading messy files into a usable table is coming next. To run a trial on a problem below, use that card&apos;s
         sample data or a matching CSV.
       </p>
-      <p className="mt-3 font-mono text-data text-ink-muted">up to 500 rows · 2 MB</p>
+      <p className="mt-3 font-mono text-data text-ink-muted">No DCLab row, column, or file-size cap</p>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <input
@@ -217,17 +221,19 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
           type="file"
           accept={OPEN_FILE_ACCEPT}
           className="hidden"
+          disabled={!canWrite}
           onChange={(event) => void onFileChange(event.target.files?.[0])}
         />
-        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={saveFile.isPending}>
+        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={!canWrite || saveFile.isPending}>
           {fileName ?? "Choose a file"}
         </Button>
         {fileName ? (
-          <Button onClick={onPick} disabled={saveFile.isPending}>
+          <Button onClick={onPick} disabled={!canWrite || saveFile.isPending}>
             {saveFile.isPending ? "Saving…" : "Save file"}
           </Button>
         ) : null}
       </div>
+      {!canWrite ? <p className="mt-3 text-body text-ink-muted">Read-only access. Uploading and running analyses require an administrator.</p> : null}
 
       {fileName ? (
         <label className="mt-4 block max-w-md font-body text-body text-ink">
@@ -271,7 +277,7 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
             <li key={row.id}>
               <Link
                 className="font-mono text-data text-navy underline-offset-2 hover:underline"
-                href={runPath(row.run_id)}
+                href={isPlatformMember ? `/admin/models/client-uploads/${row.id}` : runPath(row.run_id)}
               >
                 {row.filename}
                 {" · "}
@@ -292,6 +298,8 @@ function LabProblemCard({ problem }: { problem: ClientLabProblem }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<ClientLabRun | null>(null);
+  const { user } = useSession();
+  const canWrite = user?.role !== "dclab_developer" && user?.role !== "business_developer";
 
   const remaining = quota.data?.runs_remaining ?? problem.max_trial_runs;
   const exhausted = remaining <= 0;
@@ -318,7 +326,7 @@ function LabProblemCard({ problem }: { problem: ClientLabProblem }) {
       </p>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <Button onClick={runWithSample} disabled={exhausted || runTrial.isPending}>
+        <Button onClick={runWithSample} disabled={!canWrite || exhausted || runTrial.isPending}>
           {runTrial.isPending ? "Running…" : "Run with sample data"}
         </Button>
         <input
@@ -326,13 +334,14 @@ function LabProblemCard({ problem }: { problem: ClientLabProblem }) {
           type="file"
           accept=".csv"
           className="hidden"
+          disabled={!canWrite}
           onChange={(event) => setFileName(event.target.files?.[0]?.name ?? null)}
         />
-        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={exhausted}>
+        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={!canWrite || exhausted}>
           {fileName ?? "Choose CSV"}
         </Button>
         {fileName ? (
-          <Button variant="secondary" onClick={runWithUpload} disabled={exhausted || runTrial.isPending}>
+          <Button variant="secondary" onClick={runWithUpload} disabled={!canWrite || exhausted || runTrial.isPending}>
             Run with my file
           </Button>
         ) : null}

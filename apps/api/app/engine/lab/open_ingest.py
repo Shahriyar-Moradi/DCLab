@@ -17,9 +17,6 @@ import pandas as pd
 
 from app.translation.banned_terms import find_banned_terms
 
-MAX_UPLOAD_BYTES = 2 * 1024 * 1024
-MAX_RECORDS = 500
-
 SPREADSHEET_SUFFIXES = {".csv", ".tsv", ".tab"}
 JSON_SUFFIXES = {".json", ".jsonl", ".ndjson"}
 TABLE_SUFFIXES = {".parquet", ".pq"}
@@ -116,14 +113,128 @@ def _read_plain_lines(data: bytes) -> OpenIngestPreview:
     )
 
 
+def _from_columns(*, kind: str, record_count: int, columns: list[str]) -> OpenIngestPreview:
+    named = not all(str(col).startswith("Unnamed") or str(col).isdigit() for col in columns)
+    fields = [_safe_field(str(col), index) for index, col in enumerate(columns)]
+    return OpenIngestPreview(
+        kind=kind,
+        record_count=record_count,
+        fields_noticed=fields if named else [],
+        has_named_fields=named,
+    )
+
+
+def _csv_preview_from_path(path: Path, *, suffix: str) -> OpenIngestPreview:
+    """Read CSV/TSV metadata without materialising every row in memory."""
+    with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+        sample = handle.read(64 * 1024)
+        handle.seek(0)
+        if suffix in {".tsv", ".tab"}:
+            delimiter = "\t"
+        else:
+            try:
+                delimiter = csv.Sniffer().sniff(sample, delimiters=",\t|;").delimiter
+            except csv.Error:
+                delimiter = ","
+        reader = csv.reader(handle, delimiter=delimiter)
+        header = next(reader, [])
+        if len(header) <= 1 and suffix in {"", ".csv"} and not any(
+            separator in sample for separator in (",", "\t", "|")
+        ):
+            return _plain_text_preview_from_path(path)
+        record_count = sum(1 for row in reader if row and any(value.strip() for value in row))
+    return _from_columns(
+        kind="spreadsheet", record_count=record_count, columns=[str(value) for value in header]
+    )
+
+
+def _plain_text_preview_from_path(path: Path) -> OpenIngestPreview:
+    with path.open("r", encoding="utf-8-sig", errors="replace") as handle:
+        record_count = sum(1 for line in handle if line.strip())
+    return OpenIngestPreview(
+        kind="plain_text",
+        record_count=record_count,
+        fields_noticed=[],
+        has_named_fields=False,
+    )
+
+
+def _json_lines_preview_from_path(path: Path) -> OpenIngestPreview:
+    first_record: object | None = None
+    record_count = 0
+    with path.open("r", encoding="utf-8-sig", errors="replace") as handle:
+        for line in handle:
+            value = line.strip()
+            if not value:
+                continue
+            parsed = json.loads(value)
+            if first_record is None:
+                first_record = parsed
+            record_count += 1
+    columns = list(first_record.keys()) if isinstance(first_record, dict) else []
+    return _from_columns(kind="json", record_count=record_count, columns=columns)
+
+
+def _has_non_whitespace_bytes(path: Path) -> bool:
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            if chunk.strip():
+                return True
+    return False
+
+
+def preview_upload_path(filename: str, path: Path) -> OpenIngestPreview:
+    """Inspect a persisted upload with no application file-, row-, or column cap.
+
+    CSV/TSV and line-delimited JSON are scanned incrementally so files with
+    millions of rows do not need a second in-memory copy just to establish basic
+    metadata. The training worker still has its own compute requirements.
+    """
+    if not path.is_file() or path.stat().st_size == 0 or not _has_non_whitespace_bytes(path):
+        raise OpenIngestError("This file is empty.")
+
+    suffix = Path(filename or "upload").suffix.lower()
+    if suffix and suffix not in SUPPORTED_SUFFIXES:
+        raise OpenIngestError(
+            "This file type is not supported yet. Try a spreadsheet, JSON, Parquet, Excel, or a plain text log."
+        )
+    try:
+        if suffix in SPREADSHEET_SUFFIXES or not suffix:
+            return _csv_preview_from_path(path, suffix=suffix or ".csv")
+        if suffix in TEXT_SUFFIXES:
+            with path.open("r", encoding="utf-8-sig", errors="replace") as handle:
+                sample = handle.read(2000)
+            if not any(separator in sample for separator in (",", "\t", "|")):
+                return _plain_text_preview_from_path(path)
+            return _csv_preview_from_path(path, suffix=".csv")
+        if suffix in {".jsonl", ".ndjson"}:
+            return _json_lines_preview_from_path(path)
+        if suffix in TABLE_SUFFIXES:
+            import pyarrow.parquet as pq
+
+            parquet = pq.ParquetFile(path)
+            return _from_columns(
+                kind="table_file",
+                record_count=int(parquet.metadata.num_rows if parquet.metadata else 0),
+                columns=list(parquet.schema.names),
+            )
+
+        # JSON arrays and Excel workbooks have no universally available
+        # incremental reader in the current dependency set. They are still not
+        # size-limited; this preserves the existing parser for those formats.
+        return preview_upload(filename, path.read_bytes())
+    except OpenIngestError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise OpenIngestError(
+            "We could not read this file. Try a spreadsheet, JSON, Parquet, Excel, or a plain text log."
+        ) from exc
+
+
 def preview_upload(filename: str, data: bytes) -> OpenIngestPreview:
     """Inspect a file without requiring any particular field names."""
     if not data or not data.strip():
         raise OpenIngestError("This file is empty.")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise OpenIngestError(
-            f"This upload accepts files up to {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
-        )
 
     suffix = Path(filename or "upload").suffix.lower()
     if suffix and suffix not in SUPPORTED_SUFFIXES:
@@ -175,8 +286,4 @@ def preview_upload(filename: str, data: bytes) -> OpenIngestPreview:
             "We could not read this file. Try a spreadsheet, JSON, Parquet, Excel, or a plain text log."
         ) from exc
 
-    if preview.record_count > MAX_RECORDS:
-        raise OpenIngestError(
-            f"This upload notices at most {MAX_RECORDS} rows; the uploaded file has {preview.record_count}."
-        )
     return preview

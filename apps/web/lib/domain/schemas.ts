@@ -396,6 +396,7 @@ export const AdminClientUploadSummarySchema = z.object({
   has_named_fields: z.boolean(),
   pipeline_status: z.string(),
   experiment_id: z.uuid().nullable(),
+  workflow_run_id: z.uuid().nullable().optional(),
   created_at: z.string(),
 });
 export const AdminLabDecisionRecordSchema = z.object({
@@ -540,3 +541,196 @@ export type RegisteredModel = z.infer<typeof RegisteredModelSchema>;
 export type ClientTrialAuditDetail = z.infer<typeof ClientTrialAuditDetailSchema>;
 export type RetrainEvent = z.infer<typeof RetrainEventSchema>;
 export type MonitoringOverview = z.infer<typeof MonitoringOverviewSchema>;
+
+export const PlatformBusinessSummarySchema = z.object({
+  id: z.guid(),
+  slug: z.string(),
+  name: z.string(),
+  legal_name: z.string().nullable(),
+  industry: z.string().nullable(),
+  created_at: z.string(),
+  domain_count: z.number(),
+  workflow_count: z.number(),
+  run_count: z.number(),
+  pipeline_count: z.number(),
+  model_count: z.number(),
+  membership_count: z.number(),
+});
+export const PlatformDomainSchema = z.object({
+  id: z.uuid(),
+  business_domain_id: z.uuid(),
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  enabled: z.boolean(),
+  config: z.record(z.string(), z.unknown()),
+  workflow_count: z.number(),
+  run_count: z.number(),
+});
+export const PlatformWorkflowSchema = z.object({
+  id: z.uuid(),
+  workspace_id: z.guid(),
+  workspace_domain_id: z.uuid(),
+  domain_slug: z.string(),
+  domain_name: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string(),
+  business_objective: z.string(),
+  status: z.string(),
+  config: z.record(z.string(), z.unknown()),
+  run_count: z.number(),
+  model_count: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export const PlatformWorkflowRunSchema = z.object({
+  id: z.uuid(),
+  workspace_id: z.guid(),
+  workflow_id: z.uuid(),
+  workflow_name: z.string(),
+  workspace_domain_id: z.uuid(),
+  domain_slug: z.string(),
+  domain_name: z.string(),
+  trigger_type: z.string(),
+  source_type: z.string(),
+  source_upload_id: z.uuid().nullable(),
+  source_filename: z.string().nullable(),
+  explicit_target: z.string().nullable(),
+  resolved_target: z.string().nullable(),
+  task_type: z.string().nullable(),
+  status: z.string(),
+  failure_reason: z.string().nullable(),
+  pipeline_count: z.number(),
+  model_version_count: z.number(),
+  started_at: z.string().nullable(),
+  completed_at: z.string().nullable(),
+  created_at: z.string(),
+});
+export const PlatformModelVersionSchema = z.object({
+  id: z.uuid(),
+  version: z.string(),
+  workflow_run_id: z.uuid(),
+  pipeline_run_id: z.uuid(),
+  selected_candidate_id: z.uuid(),
+  dataset_id: z.uuid(),
+  content_digest: z.string(),
+  metrics: z.record(z.string(), z.unknown()),
+  created_at: z.string(),
+});
+export const PlatformModelSchema = z.object({
+  id: z.uuid(),
+  workspace_id: z.guid(),
+  workflow_id: z.uuid(),
+  workflow_name: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string(),
+  status: z.string(),
+  versions: z.array(PlatformModelVersionSchema),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export const PlatformMembershipSchema = z.object({
+  id: z.uuid(),
+  user_id: z.uuid(),
+  email: z.string(),
+  full_name: z.string(),
+  role: z.string(),
+  is_active: z.boolean(),
+  created_at: z.string(),
+});
+export const PlatformBusinessDetailSchema = PlatformBusinessSummarySchema.extend({
+  profile_data: z.record(z.string(), z.unknown()),
+  domains: z.array(PlatformDomainSchema),
+  workflows: z.array(PlatformWorkflowSchema),
+  models: z.array(PlatformModelSchema),
+  runs: z.array(PlatformWorkflowRunSchema),
+  memberships: z.array(PlatformMembershipSchema),
+});
+export const BusinessWorkspaceSummarySchema = PlatformBusinessSummarySchema.extend({
+  role: z.string(),
+  can_write: z.boolean(),
+  capabilities: z.record(z.string(), z.boolean()),
+});
+export const BusinessWorkspaceDetailSchema = PlatformBusinessDetailSchema.extend({
+  role: z.string(),
+  can_write: z.boolean(),
+  capabilities: z.record(z.string(), z.boolean()),
+});
+export const PlatformDomainDetailSchema = PlatformDomainSchema.extend({
+  workspace_id: z.guid(),
+  business_name: z.string(),
+  workflows: z.array(PlatformWorkflowSchema),
+  runs: z.array(PlatformWorkflowRunSchema),
+});
+export const PlatformWorkflowDetailSchema = PlatformWorkflowSchema.extend({
+  business_name: z.string(),
+  runs: z.array(PlatformWorkflowRunSchema),
+  models: z.array(PlatformModelSchema),
+});
+export const PlatformPipelineSchema = z.object({
+  id: z.uuid(),
+  workspace_id: z.guid(),
+  workflow_run_id: z.uuid(),
+  pipeline_name: z.string(),
+  pipeline_index: z.number(),
+  pipeline_purpose: z.string(),
+  status: z.string(),
+  failure_reason: z.string().nullable(),
+  task_type: z.string().nullable(),
+  dataset_id: z.uuid(),
+  dataset_name: z.string(),
+  candidate_count: z.number(),
+  event_count: z.number(),
+  latest_sequence: z.number(),
+  model_version_id: z.uuid().nullable(),
+  model_asset_id: z.uuid().nullable(),
+  model_name: z.string().nullable(),
+  model_version: z.string().nullable(),
+  started_at: z.string().nullable(),
+  ended_at: z.string().nullable(),
+});
+export const PlatformWorkflowRunDetailSchema = PlatformWorkflowRunSchema.extend({
+  business_name: z.string(),
+  pipelines: z.array(PlatformPipelineSchema),
+});
+export const BusinessWorkflowRunDetailSchema = PlatformWorkflowRunDetailSchema.extend({
+  capabilities: z.record(z.string(), z.boolean()),
+  can_write: z.boolean(),
+});
+export const PlatformModelDetailSchema = PlatformModelSchema.extend({
+  business_name: z.string(),
+  domain_slug: z.string(),
+  domain_name: z.string(),
+});
+export const BusinessModelDetailSchema = PlatformModelDetailSchema.extend({
+  capabilities: z.record(z.string(), z.boolean()),
+  can_write: z.boolean(),
+});
+export const PipelineMonitorSchema = z.object({
+  capabilities: z.record(z.string(), z.boolean()),
+  hierarchy: z.record(z.string(), z.unknown()),
+  summary: PlatformPipelineSchema,
+  events: z.array(z.record(z.string(), z.unknown())),
+  llm_invocations: z.array(z.record(z.string(), z.unknown())),
+  candidates: z.array(z.record(z.string(), z.unknown())),
+  preprocessing: z.record(z.string(), z.unknown()),
+  predictions: z.record(z.string(), z.unknown()),
+  deterministic_verification: z.record(z.string(), z.unknown()),
+  openai_audits: z.array(z.record(z.string(), z.unknown())),
+  reports: z.record(z.string(), z.unknown()),
+  sanitized_evidence: z.record(z.string(), z.unknown()),
+});
+
+export type PlatformBusinessSummary = z.infer<typeof PlatformBusinessSummarySchema>;
+export type PlatformBusinessDetail = z.infer<typeof PlatformBusinessDetailSchema>;
+export type BusinessWorkspaceSummary = z.infer<typeof BusinessWorkspaceSummarySchema>;
+export type BusinessWorkspaceDetail = z.infer<typeof BusinessWorkspaceDetailSchema>;
+export type PlatformDomainDetail = z.infer<typeof PlatformDomainDetailSchema>;
+export type PlatformWorkflowDetail = z.infer<typeof PlatformWorkflowDetailSchema>;
+export type PlatformWorkflowRunDetail = z.infer<typeof PlatformWorkflowRunDetailSchema>;
+export type BusinessWorkflowRunDetail = z.infer<typeof BusinessWorkflowRunDetailSchema>;
+export type PlatformModelDetail = z.infer<typeof PlatformModelDetailSchema>;
+export type BusinessModelDetail = z.infer<typeof BusinessModelDetailSchema>;
+export type PipelineMonitor = z.infer<typeof PipelineMonitorSchema>;

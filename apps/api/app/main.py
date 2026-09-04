@@ -8,12 +8,16 @@ from app.api.admin_ml_verifications import router as admin_ml_verifications_rout
 from app.api.admin_monitoring import router as admin_monitoring_router
 from app.api.admin_organizations import router as admin_organizations_router
 from app.api.auth import router as auth_router
+from app.api.business_explorer import router as business_explorer_router
 from app.api.client_labs import router as client_labs_router
 from app.api.decisions import router as decisions_router
 from app.api.deps import require_admin, require_client
 from app.api.insights import router as insights_router
 from app.api.lab import router as lab_router
 from app.api.opportunities import router as opportunities_router
+from app.api.observability import admin_router as admin_observability_router
+from app.api.observability import business_router as business_observability_router
+from app.api.platform_explorer import router as platform_explorer_router
 from app.api.simulations import router as simulations_router
 from app.config import get_settings
 from app.db.session import get_engine
@@ -32,6 +36,7 @@ app.add_middleware(
 # read-only enforcement, and (for /app) validated workspace selection.
 admin_api = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 client_api = APIRouter(prefix="/app", dependencies=[Depends(require_client)])
+business_api = APIRouter(prefix="/business", dependencies=[Depends(require_client)])
 
 # Platform surface: full ML detail for the DCLab team. Platform developers may
 # inspect it, while method-aware authorization reserves writes for platform admins.
@@ -47,6 +52,13 @@ admin_api.include_router(admin_model_registry_router)
 admin_api.include_router(admin_monitoring_router)
 admin_api.include_router(admin_client_uploads_router)
 admin_api.include_router(admin_ml_verifications_router)
+admin_api.include_router(admin_observability_router)
+admin_api.include_router(platform_explorer_router)
+
+# Technical workspace administration is deliberately separate from the translated
+# end-user `/app` surface. It shares the same persisted workspace authorization
+# context, but may expose the precise pipeline vocabulary administrators need.
+business_api.include_router(business_observability_router)
 
 # Client surface: business objects only, always through app.translation.
 client_api.include_router(opportunities_router)
@@ -55,7 +67,9 @@ client_api.include_router(insights_router)
 client_api.include_router(client_labs_router)
 
 app.include_router(auth_router)
+app.include_router(business_explorer_router)
 app.include_router(admin_api)
+app.include_router(business_api)
 app.include_router(client_api)
 
 

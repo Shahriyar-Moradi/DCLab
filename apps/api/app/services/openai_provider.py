@@ -41,8 +41,10 @@ class OpenAIPipelineAuditProvider:
         self.api_key = api_key
         self.timeout_seconds = timeout_seconds
         self.max_attempts = max(1, min(max_attempts, 2))
+        self.last_usage: dict[str, int] | None = None
 
     def audit(self, *, evidence: dict[str, Any], model: str) -> PipelineAuditReport:
+        self.last_usage = None
         try:
             from openai import (
                 APIConnectionError,
@@ -71,6 +73,20 @@ class OpenAIPipelineAuditProvider:
                 parsed = response.output_parsed
                 if parsed is None:
                     raise OpenAIProviderFailure("invalid_structured_output")
+                usage = getattr(response, "usage", None)
+                if usage is not None:
+                    input_tokens = getattr(usage, "input_tokens", None)
+                    output_tokens = getattr(usage, "output_tokens", None)
+                    total_tokens = getattr(usage, "total_tokens", None)
+                    self.last_usage = {
+                        key: int(value)
+                        for key, value in {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": total_tokens,
+                        }.items()
+                        if isinstance(value, int) and value >= 0
+                    }
                 return parsed
             except (APIConnectionError, APITimeoutError, RateLimitError) as exc:
                 if attempt_number < self.max_attempts:

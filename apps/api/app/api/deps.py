@@ -5,7 +5,7 @@ import uuid
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.db.models import User
+from app.db.models import User, UserRole
 from app.db.session import get_db
 from app.services.auth_service import AuthError, user_from_token
 from app.services.authorization_service import (
@@ -14,6 +14,7 @@ from app.services.authorization_service import (
     can_read_platform,
     can_write_platform,
     can_write_workspace,
+    platform_role_for,
     resolve_workspace_access,
 )
 
@@ -62,6 +63,20 @@ def require_platform_admin(
             detail="platform write access requires dclab_admin",
         )
     return user
+
+
+def require_business_administration(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> User:
+    if platform_role_for(db, user) is not None or user.role in {
+        UserRole.BUSINESS_ADMIN.value,
+        UserRole.BUSINESS_DEVELOPER.value,
+    }:
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="this area is restricted to Business administration members",
+    )
 
 
 def _requested_workspace_id(request: Request) -> uuid.UUID | None:
@@ -114,6 +129,13 @@ def request_workspace_id(request: Request) -> uuid.UUID:
     if not isinstance(access, WorkspaceAccess):
         raise RuntimeError("workspace authorization dependency was not evaluated")
     return access.workspace_id
+
+
+def request_workspace_access(request: Request) -> WorkspaceAccess:
+    access = getattr(request.state, "workspace_access", None)
+    if not isinstance(access, WorkspaceAccess):
+        raise RuntimeError("workspace authorization dependency was not evaluated")
+    return access
 
 
 _READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})

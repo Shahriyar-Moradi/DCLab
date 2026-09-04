@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import subprocess
 from collections.abc import Callable
 from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import UUID, uuid4
 
 import yaml
 from sqlalchemy import select
@@ -15,13 +17,16 @@ from sqlalchemy.orm import Session
 
 from app.config import REPO_ROOT
 from app.db.models import (
+    DEFAULT_WORKSPACE_ID,
     Dataset,
+    DatasetAsset,
     DatasetProfile,
     Environment,
     Experiment,
     ExperimentCandidate,
     ExperimentTestPrediction,
     PredictionTask,
+    WorkflowRun,
 )
 from app.engine.data.loaders import infer_schema, load_table
 from app.engine.datasets.synthetic import make_synthetic_customers
@@ -64,15 +69,35 @@ def ingest_dataset(
     location: str,
     source_type: str = "csv",
     version: str = "v1",
+    workspace_id: UUID = DEFAULT_WORKSPACE_ID,
+    dataset_asset: DatasetAsset | None = None,
+    created_by: UUID | None = None,
 ) -> Dataset:
     frame = load_table(location)
     schema = infer_schema(frame)
+    if dataset_asset is not None and dataset_asset.workspace_id != workspace_id:
+        raise ValueError("dataset asset belongs to another workspace")
+    if dataset_asset is None:
+        from app.services.lineage_service import slugify
+
+        dataset_asset = DatasetAsset(
+            workspace_id=workspace_id,
+            name=name,
+            slug=f"{slugify(name)}-{uuid4().hex[:8]}",
+            created_by=created_by,
+        )
+        db.add(dataset_asset)
+        db.flush()
+    digest = hashlib.sha256(Path(location).read_bytes()).hexdigest()
     row = Dataset(
+        workspace_id=workspace_id,
+        dataset_asset_id=dataset_asset.id,
         environment_id=environment.id,
         name=name,
         source_type=source_type,
         location=str(location),
         version=version,
+        content_digest=digest,
         schema_json=schema,
         row_count=int(len(frame)),
         column_count=int(frame.shape[1]),
@@ -160,22 +185,37 @@ def create_experiment(
     *,
     environment: Environment,
     dataset: Dataset,
-    task: PredictionTask,
+    task: PredictionTask | None,
     config: SearchConfig | None = None,
+    workflow_run: WorkflowRun | None = None,
+    pipeline_name: str = "deterministic_ml",
+    pipeline_index: int = 0,
+    pipeline_purpose: str = "training",
+    commit: bool = True,
 ) -> Experiment:
+    if workflow_run is not None and workflow_run.workspace_id != dataset.workspace_id:
+        raise ValueError("workflow run and dataset belong to different workspaces")
     cfg = config or SearchConfig()
     row = Experiment(
+        workspace_id=dataset.workspace_id,
+        workflow_run_id=workflow_run.id if workflow_run is not None else None,
+        pipeline_name=pipeline_name,
+        pipeline_index=pipeline_index,
+        pipeline_purpose=pipeline_purpose,
         environment_id=environment.id,
         dataset_id=dataset.id,
-        task_id=task.id,
+        task_id=task.id if task is not None else None,
         status="CREATED",
         config=cfg.to_dict(),
         seed=cfg.seed,
         git_commit=_git_hash(),
     )
     db.add(row)
-    db.commit()
-    db.refresh(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
     return row
 
 
@@ -220,6 +260,7 @@ def execute_experiment(
     experiment: Experiment,
     *,
     on_stage: Callable[[str], None] | None = None,
+    on_event: Callable[[str, dict], None] | None = None,
 ) -> Experiment:
     dataset = db.get(Dataset, experiment.dataset_id)
     task_row = db.get(PredictionTask, experiment.task_id)
@@ -261,6 +302,7 @@ def execute_experiment(
             dataset_version=dataset.version,
             on_stage=on_stage,
             on_checkpoint=_persist_checkpoint,
+            on_event=on_event,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)

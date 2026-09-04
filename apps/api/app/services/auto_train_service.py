@@ -22,10 +22,19 @@ from typing import Any
 from uuid import UUID
 
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import REPO_ROOT, get_settings
-from app.db.models import ClientLabUpload, Experiment, LabDecisionRecord
+from app.db.models import (
+    ClientLabUpload,
+    Experiment,
+    ExperimentCandidate,
+    LabDecisionRecord,
+    ModelAsset,
+    ModelVersion,
+    WorkflowRun,
+)
 from app.db.session import get_session_factory
 from app.domain.lab_run_stages import (
     ANALYZING,
@@ -62,6 +71,7 @@ from app.services.lab_decision_ledger import (
     resolve_target_selection,
 )
 from app.services.lab_service import create_experiment, execute_experiment, ingest_dataset, seed_dogfood, upsert_task
+from app.services.observability_service import PipelineRunObserver
 from app.services.pipeline_verifier import verify_pipeline
 from app.services.pipeline_audit_service import request_pipeline_verification
 from app.services.technical_run_report import build_technical_run_report
@@ -147,6 +157,38 @@ def _mark(
     upload.pipeline_log = merged
     if experiment_id is not None:
         upload.experiment_id = experiment_id
+    workflow_run = db.scalar(
+        select(WorkflowRun).where(WorkflowRun.source_upload_id == upload.id)
+    )
+    if workflow_run is not None:
+        if status in {COMPLETED, FAILED, SKIPPED}:
+            workflow_run.status = status
+            workflow_run.completed_at = datetime.now(UTC)
+            workflow_run.failure_reason = (
+                str(merged.get("reason"))[:2048]
+                if status in {FAILED, SKIPPED} and merged.get("reason")
+                else None
+            )
+        elif status != QUEUED:
+            workflow_run.status = "running"
+            workflow_run.failure_reason = None
+            if workflow_run.started_at is None:
+                workflow_run.started_at = datetime.now(UTC)
+    effective_experiment_id = experiment_id or upload.experiment_id
+    experiment = (
+        db.get(Experiment, effective_experiment_id)
+        if effective_experiment_id is not None
+        else None
+    )
+    if experiment is not None and status in {COMPLETED, FAILED, SKIPPED}:
+        experiment.status = status.upper()
+        if experiment.ended_at is None:
+            experiment.ended_at = datetime.now(UTC)
+        experiment.failure_reason = (
+            str(merged.get("reason"))[:2048]
+            if status in {FAILED, SKIPPED} and merged.get("reason")
+            else None
+        )
     db.commit()
 
 
@@ -160,6 +202,18 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
     upload = db.get(ClientLabUpload, upload_id)
     if upload is None:
         return
+    observer = PipelineRunObserver.for_upload(db, upload_id)
+
+    def _emit_event(
+        stage: str,
+        event_type: str,
+        status: str,
+        payload: dict[str, Any] | None = None,
+        duration_ms: float | None = None,
+    ) -> None:
+        if observer is not None:
+            observer.emit(stage, event_type, status, payload, duration_ms)
+
     if not is_simple_tabular(upload):
         reasons = []
         if upload.kind not in SIMPLE_KINDS:
@@ -168,7 +222,9 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             reasons.append("file has no named fields")
         if upload.record_count < MIN_TRAIN_ROWS:
             reasons.append(f"only {upload.record_count} rows (need at least {MIN_TRAIN_ROWS})")
-        _mark(db, upload, status=SKIPPED, log={"reason": "; ".join(reasons) or "not a simple tabular file"})
+        reason = "; ".join(reasons) or "not a simple tabular file"
+        _mark(db, upload, status=SKIPPED, log={"reason": reason})
+        _emit_event("terminal", "pipeline_terminal", "skipped", {"reason": reason})
         return
 
     current_stage = QUEUED
@@ -177,10 +233,26 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
     evidence_stage_timings: list[dict[str, Any]] = []
     current_rows = int(upload.record_count)
     active_stage: dict[str, Any] | None = None
+    event_stage_names = {
+        "file_ingestion": "ingestion",
+        "profiling": "profiling_eda",
+        "target_task_resolution": "target_task",
+        "structural_cleaning": "structural_cleaning",
+        "splitting": "holdout_lock",
+        "train_only_decisions": "train_only_decisions",
+        "column_roles": "column_roles",
+        "feature_engineering": "feature_engineering",
+        "preprocessing_setup": "preprocessing_configuration",
+        "deterministic_verification": "deterministic_verification",
+        "report_generation": "report",
+    }
 
     def _evidence_start(stage: str) -> dict[str, Any]:
+        event_stage = event_stage_names.get(stage, stage)
+        _emit_event(event_stage, "operation_started", "started")
         return {
             "stage": stage,
+            "event_stage": event_stage,
             "started_at": datetime.now(UTC),
             "timer": time.perf_counter(),
             "rows_in": current_rows,
@@ -198,6 +270,13 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "rows_out": current_rows,
         }
         evidence_stage_timings.append(record)
+        _emit_event(
+            str(token["event_stage"]),
+            "operation_completed",
+            status,
+            {"rows_in": token["rows_in"], "rows_out": current_rows},
+            record["duration_ms"],
+        )
         return record
 
     def _finish_stage(*, status: str = "completed") -> None:
@@ -278,7 +357,12 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         }
         partial_timings = [*evidence_stage_timings, ml_execution_total]
         partial_log = {**payload, "stage_timings": partial_timings}
-        experiment = db.get(Experiment, experiment_id) if experiment_id is not None else None
+        effective_experiment_id = experiment_id or row.experiment_id
+        experiment = (
+            db.get(Experiment, effective_experiment_id)
+            if effective_experiment_id is not None
+            else None
+        )
         preliminary_report = build_technical_run_report(
             db,
             upload=row,
@@ -321,8 +405,22 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             partial_result["deterministic_verification"] = verification
             partial_result["technical_report"] = report
             partial_result["stage_timings"] = final_timings
+            partial_result["error"] = reason
             experiment.result = partial_result
-        _mark(db, row, status=FAILED, log=payload, experiment_id=experiment_id)
+            experiment.failure_reason = reason[:2048]
+        _mark(
+            db,
+            row,
+            status=FAILED,
+            log=payload,
+            experiment_id=effective_experiment_id,
+        )
+        _emit_event(
+            "terminal",
+            "pipeline_terminal",
+            "failed",
+            {"reason": reason, "failed_at": current_stage},
+        )
         _request_routine_advisory_verification()
 
     _stage(INGESTING)
@@ -359,12 +457,21 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             coerced,
             columns,
             explicit_target=upload.explicit_target_column,
+            db=db,
+            upload_id=upload.id,
         )
         target_evidence = {
             **target.audit_dict(),
             "target_column": target.column,
             "locked_at": datetime.now(UTC).isoformat() if target.column is not None else None,
         }
+        workflow_run = db.scalar(
+            select(WorkflowRun).where(WorkflowRun.source_upload_id == upload.id)
+        )
+        if workflow_run is not None:
+            workflow_run.resolved_target = target.column
+            workflow_run.task_type = target.task_type if target.column is not None else None
+            db.commit()
         _evidence_finish(evidence_timer, status="completed" if target.column is not None else "failed")
         if target.column is None:
             _fail(
@@ -457,6 +564,15 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             target.column,
         )
         db.commit()
+        _emit_event(
+            "missing_value_decisions",
+            "missing_value_decisions_completed",
+            "completed",
+            {
+                "decision_count": len(missing_plan.column_decisions),
+                "dropped_column_count": len(missing_plan.dropped_columns),
+            },
+        )
         for decision in missing_plan.column_decisions:
             if decision.action == "domain_fill" and decision.fill_value is not None and decision.column in frame:
                 frame[decision.column] = frame[decision.column].fillna(decision.fill_value)
@@ -655,6 +771,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             location=str(dataset_path),
             source_type="csv",
             version="v1",
+            workspace_id=upload.workspace_id,
         )
 
         task_type = target.task_type
@@ -693,7 +810,47 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             feature_engineering=feature_report,
         )
         task_row = upsert_task(db, env, task_spec)
-        experiment = create_experiment(db, environment=env, dataset=dataset, task=task_row, config=search)
+        workflow_run = db.scalar(
+            select(WorkflowRun).where(WorkflowRun.source_upload_id == upload.id)
+        )
+        if workflow_run is not None:
+            from app.services.lineage_service import bind_pipeline_run, create_pipeline_run
+
+            experiment = (
+                db.get(Experiment, upload.experiment_id)
+                if upload.experiment_id is not None
+                else None
+            )
+            if experiment is not None:
+                experiment = bind_pipeline_run(
+                    db,
+                    pipeline_run=experiment,
+                    workflow_run=workflow_run,
+                    environment=env,
+                    dataset=dataset,
+                    task=task_row,
+                    config=search,
+                )
+            else:
+                experiment = create_pipeline_run(
+                    db,
+                    workflow_run=workflow_run,
+                    environment=env,
+                    dataset=dataset,
+                    task=task_row,
+                    pipeline_name="open_ingest_deterministic_ml",
+                    pipeline_index=len(workflow_run.pipeline_runs),
+                    pipeline_purpose="training_and_scoring",
+                    config=search,
+                )
+        else:
+            experiment = create_experiment(
+                db,
+                environment=env,
+                dataset=dataset,
+                task=task_row,
+                config=search,
+            )
         _evidence_finish(evidence_timer)
 
         def _experiment_stage(stage: str) -> None:
@@ -702,7 +859,12 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             if stage != SPLITTING:
                 _stage(stage)
 
-        experiment = execute_experiment(db, experiment, on_stage=_experiment_stage)
+        experiment = execute_experiment(
+            db,
+            experiment,
+            on_stage=_experiment_stage,
+            on_event=observer.callback if observer is not None else None,
+        )
         if experiment.status != "COMPLETED":
             result = dict(experiment.result or {})
             reason = result.get("error") or f"experiment ended with status {experiment.status}"
@@ -923,7 +1085,57 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             )
             experiment.result = result
             db.commit()
+            if workflow_run is not None:
+                from app.services.lineage_service import (
+                    create_model_asset,
+                    create_model_version,
+                )
+
+                model_asset = db.scalar(
+                    select(ModelAsset).where(
+                        ModelAsset.workflow_id == workflow_run.workflow_id,
+                        ModelAsset.slug == "client-lab-selected-model",
+                    )
+                )
+                if model_asset is None:
+                    model_asset = create_model_asset(
+                        db,
+                        workspace_id=upload.workspace_id,
+                        workflow=workflow_run.workflow,
+                        name="Client Lab Selected Model",
+                        slug="client-lab-selected-model",
+                    )
+                selected_key = (result.get("selection") or {}).get(
+                    "selected_candidate_id"
+                ) or (result.get("best_single") or {}).get("candidate_id")
+                selected_candidate = db.scalar(
+                    select(ExperimentCandidate).where(
+                        ExperimentCandidate.experiment_id == experiment.id,
+                        ExperimentCandidate.candidate_key == selected_key,
+                    )
+                )
+                if selected_candidate is None:
+                    raise RuntimeError("selected candidate was not persisted")
+                version_count = db.query(ModelVersion).filter(
+                    ModelVersion.model_asset_id == model_asset.id
+                ).count()
+                create_model_version(
+                    db,
+                    model_asset=model_asset,
+                    pipeline_run=experiment,
+                    selected_candidate=selected_candidate,
+                    version=f"v{version_count + 1}",
+                )
             _mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)
+            _emit_event(
+                "terminal",
+                "pipeline_terminal",
+                "completed",
+                {
+                    "model_version_created": workflow_run is not None,
+                    "candidate_count": len(experiment.candidates),
+                },
+            )
             _request_routine_advisory_verification()
     except Exception as exc:  # noqa: BLE001
         logger.exception("auto-train job failed for upload %s", upload_id)

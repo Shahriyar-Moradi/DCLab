@@ -158,10 +158,11 @@ export default function ClientUploadAutoTrainPage() {
             {" · "}
             <Link
               className="text-navy underline-offset-2 hover:underline"
-              href={`/admin/lab/experiments/${upload.experiment_id}`}
+              href={`/admin/pipeline-runs/${upload.experiment_id}/monitor`}
             >
-              Open experiment record
+              Open Pipeline Monitor
             </Link>
+            {upload.workflow_run_id ? <>{" · "}<Link className="text-navy underline-offset-2 hover:underline" href={`/admin/businesses/${upload.workspace_id}/workflow-runs/${upload.workflow_run_id}`}>Open Workflow Run</Link></> : null}
           </>
         ) : null}
       </p>

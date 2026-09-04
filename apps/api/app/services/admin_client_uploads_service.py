@@ -25,7 +25,12 @@ from app.services.pipeline_audit_service import (
 
 def list_client_uploads(db: Session) -> list[AdminClientUploadSummary]:
     rows = db.scalars(select(ClientLabUpload).order_by(ClientLabUpload.created_at.desc()).limit(200)).all()
-    return [AdminClientUploadSummary.model_validate(row) for row in rows]
+    return [
+        AdminClientUploadSummary.model_validate(row).model_copy(
+            update={"workflow_run_id": row.workflow_runs[0].id if row.workflow_runs else None}
+        )
+        for row in rows
+    ]
 
 
 def get_client_upload(db: Session, upload_id: UUID) -> AdminClientUploadDetail | None:
@@ -53,6 +58,7 @@ def get_client_upload(db: Session, upload_id: UUID) -> AdminClientUploadDetail |
         has_named_fields=row.has_named_fields,
         pipeline_status=row.pipeline_status,
         experiment_id=row.experiment_id,
+        workflow_run_id=experiment.workflow_run_id if experiment is not None else None,
         created_at=row.created_at,
         stored_path=row.stored_path,
         fields_noticed=list(row.fields_noticed or []),

@@ -30,7 +30,10 @@ accepted.
 | `.txt`, `.log`, `.text` | Plain text / raw log. One record per non-empty line. Delimited logs with more than one column are treated as a spreadsheet. |
 | No suffix | Sniffed as JSON, spreadsheet, or plain text. |
 
-Bounds: **500 rows noticed**, **2 MB**. Empty files and unknown types (images,
+Bounds: no DCLab application file-size, row-count, or column-count ceiling is
+applied to generic Labs uploads. CSV/TSV and JSON Lines metadata is scanned
+incrementally, so a file with millions of rows is not duplicated in API memory
+for previewing. Empty files and unknown types (images,
 archives, binaries that are not a data file) are rejected with a client-safe
 message.
 

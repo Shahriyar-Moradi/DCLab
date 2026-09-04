@@ -22,6 +22,11 @@ from app.services.openai_provider import (
     OpenAIProviderFailure,
     PipelineAuditProvider,
 )
+from app.services.observability_service import (
+    PipelineRunObserver,
+    create_llm_invocation,
+    finalize_llm_invocation,
+)
 from app.services.pipeline_verifier import verify_pipeline
 from app.services.technical_run_report import persisted_technical_report
 from app.services.verification_evidence import build_verification_evidence
@@ -187,7 +192,37 @@ def request_pipeline_verification(
     model = config.pipeline_llm_verifier_deep_model if deep else config.pipeline_llm_verifier_model
     started_at = datetime.now(UTC)
     timer = time.perf_counter()
+    llm_used = bool(
+        config.pipeline_llm_verifier_enabled
+        and config.pipeline_llm_verifier_api_key
+    )
+    invocation = create_llm_invocation(
+        db,
+        upload_id=upload.id,
+        purpose=f"pipeline_audit_{audit_mode}",
+        mode=audit_mode,
+        prompt_version=PROMPT_VERSION,
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        evidence=package.payload,
+        llm_used=llm_used,
+        reason=(
+            "LLM used: YES — advisory pipeline audit requested."
+            if llm_used
+            else "LLM used: NO — advisory provider was disabled or unavailable."
+        ),
+        status="pending" if llm_used else "not_used",
+        validator_verdict="pending" if llm_used else "not_run",
+        provider="openai",
+        model=model,
+        started_at=started_at,
+    )
+    if invocation is not None:
+        invocation.redaction_summary = {
+            **dict(invocation.redaction_summary or {}),
+            "production_evidence": package.redaction_summary,
+        }
     attempt = MlRunVerification(
+        llm_invocation_id=invocation.id if invocation is not None else None,
         run_id=upload.id,
         experiment_id=upload.experiment_id,
         audit_mode=audit_mode,
@@ -206,15 +241,71 @@ def request_pipeline_verification(
     db.add(attempt)
     db.commit()
     db.refresh(attempt)
+    active_provider: PipelineAuditProvider | None = None
 
     def finish(status: str, *, error: str | None = None, llm_report: dict[str, Any] | None = None) -> MlRunVerification:
+        duration_ms = max(0.001, (time.perf_counter() - timer) * 1000.0)
         attempt.llm_status = status
         attempt.error = error
         attempt.llm_report = llm_report
         attempt.completed_at = datetime.now(UTC)
-        attempt.duration_ms = max(0.001, (time.perf_counter() - timer) * 1000.0)
+        attempt.duration_ms = duration_ms
+        if invocation is not None:
+            report = dict(llm_report or {})
+            finalize_llm_invocation(
+                invocation,
+                status=status,
+                validator_verdict="validated" if status == "completed" else (error or status),
+                reason=(
+                    "LLM used: YES — advisory output passed strict validation."
+                    if status == "completed"
+                    else (
+                        "LLM used: NO — advisory provider was disabled or unavailable."
+                        if not invocation.llm_used
+                        else f"LLM used: YES — advisory audit ended with {error or status}."
+                    )
+                ),
+                safe_output={
+                    "audit_mode": audit_mode,
+                    "provider": "openai",
+                    "model": model,
+                    "evidence_digest": package.digest,
+                    "redaction_summary": package.redaction_summary,
+                    "deterministic_status": attempt.deterministic_status,
+                    "advisory_status": report.get("overall_status") or status,
+                    "warnings": report.get("warnings") or [],
+                    "critical_issues": report.get("critical_issues") or [],
+                    "confidence": report.get("confidence"),
+                    "recommendations": report.get("recommendations") or [],
+                },
+                final_decision={"advisory_status": report.get("overall_status") or status},
+                latency_ms=duration_ms,
+            )
+            usage = getattr(active_provider, "last_usage", None)
+            if isinstance(usage, dict):
+                invocation.input_tokens = usage.get("input_tokens")
+                invocation.output_tokens = usage.get("output_tokens")
+                invocation.total_tokens = usage.get("total_tokens")
         db.commit()
         db.refresh(attempt)
+        observer = PipelineRunObserver.for_upload(db, upload.id)
+        if observer is not None:
+            observer.emit(
+                "openai_audit",
+                "openai_audit_completed",
+                status,
+                {
+                    "llm_invocation_id": str(invocation.id) if invocation is not None else None,
+                    "verification_id": str(attempt.id),
+                    "audit_mode": audit_mode,
+                    "provider": "openai",
+                    "model": model,
+                    "evidence_digest": package.digest,
+                    "deterministic_status": attempt.deterministic_status,
+                    "advisory_status": (llm_report or {}).get("overall_status") or status,
+                },
+                duration_ms,
+            )
         return attempt
 
     if not config.pipeline_llm_verifier_enabled:
@@ -222,12 +313,12 @@ def request_pipeline_verification(
     if not config.pipeline_llm_verifier_api_key:
         return finish("unavailable", error="api_key_missing")
 
-    boundary = provider or OpenAIPipelineAuditProvider(
+    active_provider = provider or OpenAIPipelineAuditProvider(
         api_key=config.pipeline_llm_verifier_api_key,
         timeout_seconds=config.pipeline_llm_timeout_seconds,
     )
     try:
-        advisory = boundary.audit(evidence=package.payload, model=model)
+        advisory = active_provider.audit(evidence=package.payload, model=model)
         validated = validate_advisory_report(
             advisory,
             deterministic_status=attempt.deterministic_status,

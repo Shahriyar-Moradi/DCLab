@@ -5,7 +5,7 @@ import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { apiGet } from "@/lib/infrastructure";
 import { LabDatasetSchema } from "@/lib/domain";
-import { useLabUseCasePlan, useTrainLabUseCase } from "@/lib/application";
+import { useLabUseCasePlan, useSession, useTrainLabUseCase } from "@/lib/application";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import Link from "next/link";
@@ -28,6 +28,8 @@ export default function DatasetDetailPage() {
   });
   const plan = useLabUseCasePlan(datasetId);
   const train = useTrainLabUseCase(datasetId);
+  const { user } = useSession();
+  const canWrite = user?.role === "dclab_admin";
 
   if (dataset.isPending) return <Skeleton className="h-64" />;
   if (dataset.isError || !dataset.data) {
@@ -110,7 +112,7 @@ export default function DatasetDetailPage() {
                 ) : null}
               </div>
               <Button
-                disabled={!item.trainable || train.isPending}
+                disabled={!canWrite || !item.trainable || train.isPending}
                 onClick={() => {
                   setActiveSlug(item.slug);
                   setBatchMessage(null);
@@ -124,10 +126,11 @@ export default function DatasetDetailPage() {
         ))}
       </div>
       <p className="mt-6">
-        <Button disabled={trainable.length === 0 || train.isPending} onClick={() => void trainAll()}>
+        <Button disabled={!canWrite || trainable.length === 0 || train.isPending} onClick={() => void trainAll()}>
           {train.isPending && activeSlug ? `Training ${activeSlug}…` : `Train all ready use cases (${trainable.length})`}
         </Button>
       </p>
+      {!canWrite ? <p className="mt-3 text-body text-ink-muted">Read-only platform access. Training requires DCLab Admin.</p> : null}
       {train.isError ? <p className="mt-3 font-body text-body text-oxblood">{train.error.message}</p> : null}
       {batchMessage ? <p className="mt-3 font-body text-body text-ink">{batchMessage}</p> : null}
       <h2 className="mt-10 font-display text-section text-ink">Profile</h2>

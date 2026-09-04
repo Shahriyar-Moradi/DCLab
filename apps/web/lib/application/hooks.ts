@@ -32,6 +32,17 @@ import {
   OrganizationDetailSchema,
   OrganizationSummarySchema,
   RegisteredModelSchema,
+  PipelineMonitorSchema,
+  PlatformBusinessDetailSchema,
+  PlatformBusinessSummarySchema,
+  PlatformDomainDetailSchema,
+  PlatformModelDetailSchema,
+  PlatformWorkflowDetailSchema,
+  PlatformWorkflowRunDetailSchema,
+  BusinessWorkspaceDetailSchema,
+  BusinessWorkspaceSummarySchema,
+  BusinessWorkflowRunDetailSchema,
+  BusinessModelDetailSchema,
   UploadResultSchema,
   type AdminClientUploadDetail,
   type AdminClientUploadSummary,
@@ -51,6 +62,17 @@ import {
   type OrganizationDetail,
   type OrganizationSummary,
   type RegisteredModel,
+  type PipelineMonitor,
+  type PlatformBusinessDetail,
+  type PlatformBusinessSummary,
+  type PlatformDomainDetail,
+  type PlatformModelDetail,
+  type PlatformWorkflowDetail,
+  type PlatformWorkflowRunDetail,
+  type BusinessWorkspaceDetail,
+  type BusinessWorkspaceSummary,
+  type BusinessWorkflowRunDetail,
+  type BusinessModelDetail,
   type UploadResult,
 } from "@/lib/domain/schemas";
 
@@ -499,5 +521,88 @@ export function useAdminClientTrialAudit(
     queryKey: ["admin", "models", "client-trials", auditId],
     queryFn: () => apiGet(`/admin/models/client-trials/${auditId}`, ClientTrialAuditDetailSchema),
     enabled: Boolean(auditId),
+  });
+}
+
+export function usePlatformBusinesses(): ReturnType<typeof useQuery<PlatformBusinessSummary[]>> {
+  return useQuery({
+    queryKey: ["platform", "businesses"],
+    queryFn: () => apiGet("/admin/businesses", z.array(PlatformBusinessSummarySchema)),
+  });
+}
+
+export function usePlatformBusiness(id: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformBusinessDetail | BusinessWorkspaceDetail>> {
+  return useQuery({
+    queryKey: [businessMode ? "business" : "platform", "businesses", id],
+    queryFn: () => businessMode
+      ? apiGet(`/business/workspaces/${id}`, BusinessWorkspaceDetailSchema)
+      : apiGet(`/admin/businesses/${id}`, PlatformBusinessDetailSchema),
+    enabled: Boolean(id),
+  });
+}
+
+export function usePlatformDomain(businessId: string | undefined, domainId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformDomainDetail>> {
+  return useQuery({
+    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "domains", domainId],
+    queryFn: () => apiGet(businessMode ? `/business/workspaces/${businessId}/domains/${domainId}` : `/admin/businesses/${businessId}/domains/${domainId}`, PlatformDomainDetailSchema),
+    enabled: Boolean(businessId && domainId),
+  });
+}
+
+export function usePlatformWorkflow(businessId: string | undefined, workflowId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformWorkflowDetail>> {
+  return useQuery({
+    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "workflows", workflowId],
+    queryFn: () => apiGet(businessMode ? `/business/workspaces/${businessId}/workflows/${workflowId}` : `/admin/businesses/${businessId}/workflows/${workflowId}`, PlatformWorkflowDetailSchema),
+    enabled: Boolean(businessId && workflowId),
+  });
+}
+
+export function usePlatformWorkflowRun(businessId: string | undefined, runId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformWorkflowRunDetail | BusinessWorkflowRunDetail>> {
+  return useQuery({
+    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "workflow-runs", runId],
+    queryFn: () => businessMode
+      ? apiGet(`/business/workspaces/${businessId}/workflow-runs/${runId}`, BusinessWorkflowRunDetailSchema)
+      : apiGet(`/admin/businesses/${businessId}/workflow-runs/${runId}`, PlatformWorkflowRunDetailSchema),
+    enabled: Boolean(businessId && runId),
+  });
+}
+
+export function usePlatformModel(businessId: string | undefined, modelId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformModelDetail | BusinessModelDetail>> {
+  return useQuery({
+    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "models", modelId],
+    queryFn: () => businessMode
+      ? apiGet(`/business/workspaces/${businessId}/models/${modelId}`, BusinessModelDetailSchema)
+      : apiGet(`/admin/businesses/${businessId}/models/${modelId}`, PlatformModelDetailSchema),
+    enabled: Boolean(businessId && modelId),
+  });
+}
+
+export function usePipelineMonitor(id: string | undefined, businessId?: string): ReturnType<typeof useQuery<PipelineMonitor>> {
+  return useQuery({
+    queryKey: [businessId ? "business" : "platform", "pipeline-monitor", businessId, id],
+    queryFn: () => apiGet(businessId ? `/business/workspaces/${businessId}/pipeline-runs/${id}/monitor` : `/admin/pipeline-runs/${id}/monitor`, PipelineMonitorSchema),
+    enabled: Boolean(id),
+    refetchInterval: (query) => {
+      const status = query.state.data?.summary.status.toLowerCase();
+      return status && !["completed", "failed"].includes(status) ? 1000 : false;
+    },
+  });
+}
+
+export function useBusinessWorkspaces(): ReturnType<typeof useQuery<BusinessWorkspaceSummary[]>> {
+  return useQuery({
+    queryKey: ["business", "workspaces"],
+    queryFn: () => apiGet("/business/workspaces", z.array(BusinessWorkspaceSummarySchema)),
+  });
+}
+
+export function useBusinessDeepAudit() {
+  return useMutation({
+    mutationFn: ({ businessId, runId }: { businessId: string; runId: string }) =>
+      apiPost(
+        `/business/workspaces/${businessId}/lab-runs/${runId}/verification/deep`,
+        z.record(z.string(), z.unknown()),
+        {},
+      ),
   });
 }

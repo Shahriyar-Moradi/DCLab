@@ -6,15 +6,16 @@ docs/LABS_DATA_UNDERSTANDING.md.
 
 from __future__ import annotations
 
-import logging
+import hashlib
 from pathlib import Path
+from typing import BinaryIO
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import REPO_ROOT
-from app.db.models import ClientLabUpload, User
+from app.db.models import ClientLabUpload, Dataset, DatasetAsset, User
 from app.domain.client_lab import ClientLabUploadRead
 from app.domain.errors import OpenLabFileError, UnknownLabCategoryError
 from app.domain.lab_run_stages import (
@@ -28,13 +29,11 @@ from app.domain.lab_run_stages import (
     public_pipeline_status,
     steps_for,
 )
-from app.engine.lab.open_ingest import OpenIngestError, preview_upload
+from app.engine.lab.open_ingest import OpenIngestError, OpenIngestPreview, preview_upload_path
 from app.services.auto_train_service import enqueue_auto_train
 from app.services.client_upload_insights import insights_for_upload, outcome_for_upload, predictions_csv_text
-from app.services.lab_service import ingest_dataset, seed_dogfood
+from app.services.lab_service import seed_dogfood
 from app.translation.models import InsightCategory
-
-logger = logging.getLogger(__name__)
 
 SAVED_MESSAGE = (
     "We saved your file. Turning unstructured files into a usable table is not available yet."
@@ -59,29 +58,54 @@ def _parse_category(value: str) -> InsightCategory:
         raise UnknownLabCategoryError(f"{value!r} is not a Labs category") from exc
 
 
-def _try_persist_dataset(db: Session, dest: Path, filename: str) -> UUID | None:
-    """Create a Lab Dataset row from CSV/Parquet so the upload response can
-    return `dataset_id`. Other formats stay file-only until they can be read.
-    """
-    suffix = dest.suffix.lower()
-    if suffix not in {".csv", ".parquet", ".pq"}:
-        return None
-    try:
-        env = seed_dogfood(db)
-        source = "parquet" if suffix in {".parquet", ".pq"} else "csv"
-        name = (Path(filename).stem or "upload")[:128]
-        dataset = ingest_dataset(
-            db,
-            environment=env,
-            name=name,
-            location=str(dest),
-            source_type=source,
-        )
-        return dataset.id
-    except Exception:
-        logger.exception("could not persist Lab dataset for %s", dest)
-        db.rollback()
-        return None
+def _persist_upload_dataset(
+    db: Session,
+    dest: Path,
+    filename: str,
+    content_digest: str,
+    preview: OpenIngestPreview,
+    *,
+    workspace_id: UUID,
+    requested_by: UUID,
+) -> Dataset:
+    """Persist the physical upload even when it is not yet training-ready."""
+
+    env = seed_dogfood(db)
+    from app.services.lineage_service import slugify
+
+    name = (Path(filename).stem or "upload")[:128]
+    asset = DatasetAsset(
+        workspace_id=workspace_id,
+        name=name,
+        slug=f"{slugify(name)}-{uuid4().hex[:8]}",
+        created_by=requested_by,
+    )
+    db.add(asset)
+    db.flush()
+    fields = list(preview.fields_noticed or [])
+    dataset = Dataset(
+        workspace_id=workspace_id,
+        dataset_asset_id=asset.id,
+        environment_id=env.id,
+        name=name,
+        source_type=(dest.suffix.lower().lstrip(".") or preview.kind)[:32],
+        location=str(dest),
+        version="v1",
+        content_digest=content_digest,
+        schema_json={
+            "columns": [
+                {"name": field, "dtype": "unknown", "semantic": "unknown"}
+                for field in fields
+            ],
+            "row_count": preview.record_count,
+            "column_count": len(fields),
+        },
+        row_count=preview.record_count,
+        column_count=len(fields),
+    )
+    db.add(dataset)
+    db.flush()
+    return dataset
 
 
 def _to_read(
@@ -133,15 +157,16 @@ def save_upload(
     user: User,
     category: str,
     filename: str,
-    data: bytes,
+    data: bytes | None = None,
+    upload_stream: BinaryIO | None = None,
     target_column: str | None = None,
     workspace_id: UUID,
 ) -> ClientLabUploadRead:
     parsed_category = _parse_category(category)
-    try:
-        preview = preview_upload(filename, data)
-    except OpenIngestError as exc:
-        raise OpenLabFileError(str(exc)) from exc
+    if data is None and upload_stream is None:
+        raise ValueError("data or upload_stream is required")
+    if data is not None and upload_stream is not None:
+        raise ValueError("provide data or upload_stream, not both")
 
     dest_dir = REPO_ROOT / "data" / "uploads" / "client_labs" / str(workspace_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -149,9 +174,34 @@ def save_upload(
     if "." in (filename or ""):
         suffix = "." + filename.rsplit(".", 1)[-1].lower()[:12]
     dest = dest_dir / f"{uuid4().hex}{suffix}"
-    dest.write_bytes(data)
+    digest = hashlib.sha256()
+    try:
+        with dest.open("wb") as destination:
+            if upload_stream is not None:
+                while chunk := upload_stream.read(1024 * 1024):
+                    destination.write(chunk)
+                    digest.update(chunk)
+            else:
+                assert data is not None
+                destination.write(data)
+                digest.update(data)
+        preview = preview_upload_path(filename, dest)
+    except OpenIngestError as exc:
+        dest.unlink(missing_ok=True)
+        raise OpenLabFileError(str(exc)) from exc
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
 
-    dataset_id = _try_persist_dataset(db, dest, filename or "upload")
+    dataset = _persist_upload_dataset(
+        db,
+        dest,
+        filename or "upload",
+        digest.hexdigest(),
+        preview,
+        workspace_id=workspace_id,
+        requested_by=user.id,
+    )
 
     row = ClientLabUpload(
         workspace_id=workspace_id,
@@ -166,9 +216,43 @@ def save_upload(
         explicit_target_column=(target_column or "").strip() or None,
         pipeline_status="queued",
         client_status="queued",
-        dataset_id=dataset_id,
+        dataset_id=dataset.id,
     )
     db.add(row)
+    db.flush()
+    from app.services.lineage_service import (
+        create_pipeline_run,
+        create_workflow_run,
+        get_or_create_labs_workflow,
+    )
+
+    workflow = get_or_create_labs_workflow(
+        db, workspace_id=workspace_id, actor=user
+    )
+    workflow_run = create_workflow_run(
+        db,
+        workspace_id=workspace_id,
+        workflow=workflow,
+        requester=user,
+        trigger_type="upload",
+        source_type=preview.kind,
+        source_upload=row,
+        explicit_target=(target_column or "").strip() or None,
+        inputs=[(dataset, "reference")],
+    )
+    pipeline_run = create_pipeline_run(
+        db,
+        workflow_run=workflow_run,
+        environment=dataset.environment,
+        dataset=dataset,
+        task=None,
+        pipeline_name="open_ingest_deterministic_ml",
+        pipeline_index=0,
+        pipeline_purpose="training_and_scoring",
+        input_role=None,
+        commit=False,
+    )
+    row.experiment_id = pipeline_run.id
     db.commit()
     db.refresh(row)
     # Build the client payload while the row is still queued. The background job

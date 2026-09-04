@@ -31,11 +31,13 @@ const WORKSPACE = [
 // DCLab staff only. Never rendered for a client user, and the middleware plus
 // the API both reject the routes independently of what the nav shows.
 const ADMIN = [
-  { href: "/admin/organizations", label: "Organizations" },
+  { href: "/admin/businesses", label: "Businesses" },
   { href: "/admin/lab", label: "Labs & Experiments" },
   { href: "/admin/models", label: "Registry" },
   { href: "/admin/monitoring", label: "Monitoring" },
 ];
+
+const BUSINESS_ADMIN = [{ href: "/business", label: "Business Admin" }];
 
 const BOOK_A_DEMO_HREF = "mailto:hello@decision.ai?subject=Book%20a%20demo";
 
@@ -56,7 +58,8 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const { user, loaded, signOut } = useSession();
   const isPlatformMember = user ? isPlatformRole(user.role) : false;
-  const workspaceNav = isPlatformMember ? [...WORKSPACE, ...ADMIN] : WORKSPACE;
+  const isBusinessMember = user?.role === "business_admin" || user?.role === "business_developer";
+  const workspaceNav = isPlatformMember ? [...WORKSPACE, ...ADMIN] : isBusinessMember ? [...WORKSPACE, ...BUSINESS_ADMIN] : WORKSPACE;
 
   function handleSignOut() {
     signOut();

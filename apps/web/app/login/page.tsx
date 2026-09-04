@@ -37,9 +37,12 @@ function LoginForm() {
         onSuccess: (data) => {
           const requested = params.get("next");
           const platformMember = isPlatformRole(data.user.role);
-          const fallback = platformMember ? "/admin/lab" : "/app/dashboards";
-          const allowed =
-            requested && (platformMember || !requested.startsWith("/admin"));
+          const businessMember = data.user.role === "business_admin" || data.user.role === "business_developer";
+          const fallback = platformMember ? "/admin/businesses" : businessMember ? "/business" : "/app/dashboards";
+          const allowed = requested && (
+            platformMember ||
+            (!requested.startsWith("/admin") && (businessMember || !requested.startsWith("/business")))
+          );
           router.push(allowed && requested ? requested : fallback);
           router.refresh();
         },
@@ -50,7 +53,7 @@ function LoginForm() {
   if (!loaded) return null;
 
   if (user) {
-    const home = isPlatformRole(user.role) ? "/admin/lab" : "/app/dashboards";
+    const home = isPlatformRole(user.role) ? "/admin/businesses" : user.role === "business_admin" || user.role === "business_developer" ? "/business" : "/app/dashboards";
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-5">
         <h1 className="font-display text-title text-ink">You are signed in</h1>

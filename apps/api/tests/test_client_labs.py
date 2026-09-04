@@ -432,7 +432,7 @@ def test_open_ingest_accepts_raw_logs_without_headers(auth_client):
     assert body["fields_noticed"] == []
     assert body["structured"] is False
     assert body["run_id"] == body["id"]
-    assert body["dataset_id"] is None
+    assert body["dataset_id"] is not None
     assert body["status"] == "queued"
     assert find_banned_terms(response.text) == []
 

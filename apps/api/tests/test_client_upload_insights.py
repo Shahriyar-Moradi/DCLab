@@ -11,6 +11,7 @@ from app.db.models import (
     DEFAULT_WORKSPACE_ID,
     ClientLabUpload,
     Dataset,
+    DatasetAsset,
     Experiment,
     PredictionTask,
 )
@@ -46,7 +47,16 @@ def _make_upload(db_session, **overrides) -> ClientLabUpload:
 
 def _seed_experiment(db_session, *, roc_auc: float = 0.84, target: str = "churn") -> Experiment:
     env = seed_dogfood(db_session)
+    asset = DatasetAsset(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        name="open-ingest-test",
+        slug="open-ingest-test",
+    )
+    db_session.add(asset)
+    db_session.flush()
     dataset = Dataset(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        dataset_asset_id=asset.id,
         environment_id=env.id,
         name="open-ingest-test",
         source_type="csv",
@@ -66,6 +76,7 @@ def _seed_experiment(db_session, *, roc_auc: float = 0.84, target: str = "churn"
     db_session.add(task)
     db_session.flush()
     experiment = Experiment(
+        workspace_id=DEFAULT_WORKSPACE_ID,
         environment_id=env.id,
         task_id=task.id,
         dataset_id=dataset.id,

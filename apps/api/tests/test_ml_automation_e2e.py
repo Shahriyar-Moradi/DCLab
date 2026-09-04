@@ -13,9 +13,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from sqlalchemy import select
 
 from app.config import REPO_ROOT
-from app.db.models import ClientLabUpload, Experiment
+from app.db.models import ClientLabUpload, Experiment, ModelVersion, WorkflowRun
 from app.engine.lab.auto_prepare import build_preprocessor
 from app.engine.search.generator import open_ingest_families
 from app.services.auto_train_service import run_auto_train_job
@@ -112,6 +113,59 @@ def _assert_stages_in_order(seen: list[str]) -> None:
     assert cursor == len(REQUIRED_STAGES), seen
 
 
+def _assert_complete_runtime_lineage(
+    db_session,
+    upload: ClientLabUpload,
+    *,
+    task_type: str,
+) -> tuple[WorkflowRun, Experiment, ModelVersion]:
+    workflow_run = db_session.scalar(
+        select(WorkflowRun).where(WorkflowRun.source_upload_id == upload.id)
+    )
+    assert workflow_run is not None
+    assert workflow_run.workspace_id == upload.workspace_id
+    assert workflow_run.status == "completed"
+    assert workflow_run.failure_reason is None
+    assert workflow_run.workflow.workspace_id == upload.workspace_id
+    assert workflow_run.workflow.workspace_domain.workspace_id == upload.workspace_id
+    assert workflow_run.workflow.workspace_domain.business_domain.slug == "labs"
+
+    assert upload.dataset is not None
+    assert upload.dataset.asset.workspace_id == upload.workspace_id
+    assert upload.dataset.content_digest
+    inputs = {(row.input_role, row.dataset_id) for row in workflow_run.inputs}
+    assert ("reference", upload.dataset_id) in inputs
+
+    assert upload.experiment_id is not None
+    experiment = db_session.get(Experiment, upload.experiment_id)
+    assert experiment is not None
+    assert experiment.workflow_run_id == workflow_run.id
+    assert experiment.workspace_id == upload.workspace_id
+    assert experiment.status == "COMPLETED"
+    assert experiment.failure_reason is None
+    assert experiment.task is not None
+    assert experiment.task.spec["task_type"] == task_type
+    assert ("training", experiment.dataset_id) in inputs
+    assert experiment.dataset.asset.workspace_id == upload.workspace_id
+    assert len(workflow_run.pipeline_runs) == 1
+    assert len(experiment.candidates) > 1
+
+    selected_key = experiment.result["selection"]["selected_candidate_id"]
+    selected = next(
+        row for row in experiment.candidates if row.candidate_key == selected_key
+    )
+    model_version = db_session.scalar(
+        select(ModelVersion).where(ModelVersion.pipeline_run_id == experiment.id)
+    )
+    assert model_version is not None
+    assert model_version.selected_candidate_id == selected.id
+    assert model_version.workflow_run_id == workflow_run.id
+    assert model_version.workflow_id == workflow_run.workflow_id
+    assert model_version.workspace_id == upload.workspace_id
+    assert model_version.dataset_id == experiment.dataset_id
+    return workflow_run, experiment, model_version
+
+
 class Test1ClassificationCsv:
     def test_real_telco_csv_travels_upload_to_client_result(self, auth_client, db_session, monkeypatch):
         _disable_background_job(monkeypatch)
@@ -140,12 +194,23 @@ class Test1ClassificationCsv:
         upload = db_session.get(ClientLabUpload, run_id)
         assert upload is not None
         assert upload.dataset_id is not None
+        initial_experiment_id = upload.experiment_id
+        assert initial_experiment_id is not None
+        pipeline_shell = db_session.get(Experiment, initial_experiment_id)
+        assert pipeline_shell is not None
+        assert pipeline_shell.status == "CREATED"
+        assert pipeline_shell.task_id is None
         run_auto_train_job(db_session, upload.id)
         db_session.expire_all()
         db_session.refresh(upload)
         _assert_stages_in_order(seen)
         assert upload.pipeline_status == "completed"
-        assert upload.experiment_id is not None
+        assert upload.experiment_id == initial_experiment_id
+        _assert_complete_runtime_lineage(
+            db_session,
+            upload,
+            task_type="binary",
+        )
 
         log = upload.pipeline_log or {}
         assert log["analysis"]["row_count"] >= 40
@@ -267,6 +332,11 @@ class Test4Regression:
         db_session.expire_all()
         db_session.refresh(upload)
         assert upload.pipeline_status == "completed", upload.pipeline_log
+        _assert_complete_runtime_lineage(
+            db_session,
+            upload,
+            task_type="regression",
+        )
         experiment = db_session.get(Experiment, upload.experiment_id)
         result = experiment.result
         assert result["task"]["task_type"] == "regression"
@@ -324,6 +394,22 @@ class Test5Failure:
         upload = db_session.get(ClientLabUpload, run_id)
         assert upload.pipeline_status == "failed"
         assert "target selection is ambiguous" in (upload.pipeline_log or {}).get("reason", "")
+        assert upload.experiment_id is not None
+        workflow_run = db_session.scalar(
+            select(WorkflowRun).where(WorkflowRun.source_upload_id == upload.id)
+        )
+        experiment = db_session.get(Experiment, upload.experiment_id)
+        assert workflow_run is not None
+        assert workflow_run.status == "failed"
+        assert "target selection is ambiguous" in workflow_run.failure_reason
+        assert experiment is not None
+        assert experiment.workflow_run_id == workflow_run.id
+        assert experiment.status == "FAILED"
+        assert "target selection is ambiguous" in experiment.failure_reason
+        assert experiment.result["error"] == experiment.failure_reason
+        assert db_session.scalar(
+            select(ModelVersion).where(ModelVersion.pipeline_run_id == experiment.id)
+        ) is None
         assert find_banned_terms(failed.text) == []
         again = auth_client.get(f"/app/labs/uploads/{run_id}")
         assert again.json()["status"] == "failed"
