@@ -12,6 +12,7 @@ export type SessionUser = {
     | "dclab_developer"
     | "business_admin"
     | "business_developer"
+    | "personal_developer"
     | "client_user";
   full_name: string;
   workspace_id: string | null;
@@ -77,6 +78,7 @@ export function roleLabel(role: SessionUser["role"]): string {
     dclab_developer: "DCLab Developer",
     business_admin: "Business Admin",
     business_developer: "Business Developer",
+    personal_developer: "Personal Developer",
     client_user: "Business Client",
   };
   return labels[role];
@@ -84,6 +86,15 @@ export function roleLabel(role: SessionUser["role"]): string {
 
 export function isPlatformRole(role: SessionUser["role"]): boolean {
   return role === "dclab_admin" || role === "dclab_developer";
+}
+
+export function isDevelopmentRole(role: SessionUser["role"]): boolean {
+  return (
+    role === "personal_developer" ||
+    role === "business_admin" ||
+    role === "business_developer" ||
+    role === "dclab_admin"
+  );
 }
 
 export function displayName(user: SessionUser): string {
@@ -106,6 +117,7 @@ export function readSessionUser(): SessionUser | null {
       "dclab_developer",
       "business_admin",
       "business_developer",
+      "personal_developer",
       "client_user",
     ].includes(decoded.role)
   ) {
