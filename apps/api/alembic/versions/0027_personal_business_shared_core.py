@@ -14,6 +14,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0027_personal_business_shared_core"
 down_revision: Union[str, Sequence[str], None] = "0026_ml_run_events_append_only"
@@ -74,7 +75,7 @@ def upgrade() -> None:
     op.alter_column(
         "ml_workflows",
         "workspace_domain_id",
-        existing_type=sa.UUID(),
+        existing_type=postgresql.UUID(as_uuid=True),
         nullable=True,
     )
 
@@ -112,7 +113,7 @@ def downgrade() -> None:
     op.alter_column(
         "ml_workflows",
         "workspace_domain_id",
-        existing_type=sa.UUID(),
+        existing_type=postgresql.UUID(as_uuid=True),
         nullable=False,
     )
 
