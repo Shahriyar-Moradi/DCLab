@@ -11,6 +11,7 @@ from app.services.auth_service import AuthError, user_from_token
 from app.services.authorization_service import (
     AuthorizationError,
     WorkspaceAccess,
+    can_execute_workspace_ml,
     can_read_platform,
     can_write_platform,
     can_write_workspace,
@@ -120,6 +121,26 @@ def require_workspace_admin(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="workspace write access requires business_admin or dclab_admin",
+        )
+    return user
+
+
+def require_workspace_ml_execution(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Authorize one shared ML-core mutation in the selected workspace.
+
+    This permission is deliberately distinct from workspace/business administration.
+    Business Developers and Personal Developers can build and run ML workloads without
+    gaining organization-management authority.
+    """
+    access = _workspace_access(request, db, user)
+    if not can_execute_workspace_ml(db, user, access.workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="workspace ML execution access is not permitted",
         )
     return user
 
