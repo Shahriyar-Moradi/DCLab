@@ -2,6 +2,11 @@
 
 Membership rows are authoritative when present. Legacy ``users.role`` fallback
 exists only for pre-migration ``dclab_admin`` and ``client_user`` accounts.
+
+Workspace administration and shared ML-core execution are intentionally separate
+permissions. A Business Developer may execute ML work without gaining business
+administration authority; a Personal Developer may execute ML work only inside
+an authorized Personal workspace.
 """
 
 from __future__ import annotations
@@ -23,6 +28,15 @@ from app.db.models import (
     WorkspaceRole,
 )
 
+PERSONAL_DEVELOPER_ROLE = "personal_developer"
+ML_EXECUTION_WORKSPACE_ROLES = frozenset(
+    {
+        WorkspaceRole.BUSINESS_ADMIN.value,
+        WorkspaceRole.BUSINESS_DEVELOPER.value,
+        PERSONAL_DEVELOPER_ROLE,
+    }
+)
+
 
 class AuthorizationError(Exception):
     def __init__(self, message: str, *, status_code: int = 403) -> None:
@@ -34,7 +48,9 @@ class AuthorizationError(Exception):
 class WorkspaceAccess:
     workspace_id: UUID
     platform_role: PlatformRole | None
-    workspace_role: WorkspaceRole | None
+    # Kept as a string-compatible value because Personal Development is added
+    # additively before the legacy WorkspaceRole enum is fully retired.
+    workspace_role: WorkspaceRole | str | None
 
 
 def platform_role_for(db: Session, user: User) -> PlatformRole | None:
@@ -58,15 +74,34 @@ def _explicit_workspace_memberships(db: Session, user: User) -> list[WorkspaceMe
     )
 
 
-def workspace_role_for(db: Session, user: User, workspace_id: UUID) -> WorkspaceRole | None:
+def _workspace_membership_role(
+    db: Session, user: User, workspace_id: UUID
+) -> str | None:
+    """Return the authoritative persisted workspace role without enum coercion."""
     memberships = _explicit_workspace_memberships(db, user)
     if memberships:
         membership = next(
             (row for row in memberships if row.workspace_id == workspace_id), None
         )
-        return WorkspaceRole(membership.role) if membership is not None else None
+        return membership.role if membership is not None else None
     if user.role == UserRole.CLIENT_USER.value and user.workspace_id == workspace_id:
-        return WorkspaceRole.BUSINESS_ADMIN
+        return WorkspaceRole.BUSINESS_ADMIN.value
+    return None
+
+
+def workspace_role_for(db: Session, user: User, workspace_id: UUID) -> WorkspaceRole | None:
+    """Compatibility accessor for the existing Business-role enum.
+
+    New authorization code should use the persisted role string through the
+    dedicated permission primitives below. Personal Development is deliberately
+    not forced into the old Business-only enum.
+    """
+    role = _workspace_membership_role(db, user, workspace_id)
+    if role in {
+        WorkspaceRole.BUSINESS_ADMIN.value,
+        WorkspaceRole.BUSINESS_DEVELOPER.value,
+    }:
+        return WorkspaceRole(role)
     return None
 
 
@@ -81,14 +116,33 @@ def can_write_platform(db: Session, user: User) -> bool:
 def can_read_workspace(db: Session, user: User, workspace_id: UUID) -> bool:
     if platform_role_for(db, user) is not None:
         return True
-    return workspace_role_for(db, user, workspace_id) is not None
+    return _workspace_membership_role(db, user, workspace_id) is not None
 
 
 def can_write_workspace(db: Session, user: User, workspace_id: UUID) -> bool:
+    """Workspace/business-administration write authority.
+
+    Do not use this primitive for model-building actions. Business Developers and
+    Personal Developers intentionally remain unable to mutate organization/admin
+    state through this permission.
+    """
     platform_role = platform_role_for(db, user)
     if platform_role is not None:
         return platform_role is PlatformRole.DCLAB_ADMIN
-    return workspace_role_for(db, user, workspace_id) is WorkspaceRole.BUSINESS_ADMIN
+    return (
+        _workspace_membership_role(db, user, workspace_id)
+        == WorkspaceRole.BUSINESS_ADMIN.value
+    )
+
+
+def can_execute_workspace_ml(db: Session, user: User, workspace_id: UUID) -> bool:
+    """Authority to mutate shared ML-core resources in an authorized workspace."""
+    platform_role = platform_role_for(db, user)
+    if platform_role is not None:
+        # DCLab Developer remains platform read-only. Cross-workspace execution is
+        # reserved for DCLab Admin support/operations.
+        return platform_role is PlatformRole.DCLAB_ADMIN
+    return _workspace_membership_role(db, user, workspace_id) in ML_EXECUTION_WORKSPACE_ROLES
 
 
 def resolve_workspace_access(
@@ -99,7 +153,7 @@ def resolve_workspace_access(
     """Resolve a workspace only after checking server-side membership.
 
     A supplied header is a selector, never proof of access. Platform members may
-    select any existing workspace. Business members may select only a workspace
+    select any existing workspace. Customer members may select only a workspace
     represented by an authoritative membership row.
     """
 
@@ -126,11 +180,15 @@ def resolve_workspace_access(
                 "select an authorized workspace with X-Workspace-Id",
                 status_code=400,
             )
-        return WorkspaceAccess(
-            membership.workspace_id,
-            None,
-            WorkspaceRole(membership.role),
-        )
+        role: WorkspaceRole | str
+        if membership.role in {
+            WorkspaceRole.BUSINESS_ADMIN.value,
+            WorkspaceRole.BUSINESS_DEVELOPER.value,
+        }:
+            role = WorkspaceRole(membership.role)
+        else:
+            role = membership.role
+        return WorkspaceAccess(membership.workspace_id, None, role)
 
     # Compatibility-only path for old accounts not yet backfilled. An explicit
     # membership anywhere disables this fallback and therefore prevents mixed
@@ -147,4 +205,4 @@ def resolve_workspace_access(
             WorkspaceRole.BUSINESS_ADMIN,
         )
 
-    raise AuthorizationError("not authorized for a business workspace")
+    raise AuthorizationError("not authorized for a workspace")
