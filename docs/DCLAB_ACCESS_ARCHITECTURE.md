@@ -56,8 +56,10 @@ to FastAPI through `app.api.deps`. The canonical primitives are:
 
 The `/admin` parent router uses a method-aware platform guard: platform developers
 may read, while only platform admins may use unsafe methods. The `/app` parent
-router applies the equivalent workspace guard. Because guards are attached to the
-parent routers, newly mounted endpoints inherit the same policy.
+router applies the equivalent workspace guard. The `/business` observatory tree
+uses `require_business_administration` plus `require_workspace_read`, so legacy
+`client_user` tokens cannot reach technical observatory APIs. Because guards are
+attached to the parent routers, newly mounted endpoints inherit the same policy.
 
 For `/app`, the backend resolves one `WorkspaceAccess` context before the handler
 runs. `X-Workspace-Id` is only a requested selector. It is parsed and checked

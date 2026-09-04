@@ -6,7 +6,9 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "next lint"
+    "lint": "next lint",
+    "e2e:prepare": "cd ../.. && DATABASE_URL=${DCLAB_E2E_DATABASE_URL:-postgresql://localhost:55432/dclab_e2e_verify} .venv/bin/python scripts/seed_e2e_verification.py --recreate",
+    "e2e": "npm run e2e:prepare && playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.3",
@@ -19,6 +21,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

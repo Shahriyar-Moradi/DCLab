@@ -70,6 +70,29 @@ def test_every_client_route_rejects_anonymous(client, method, path):
     )
 
 
+def test_business_routes_exist():
+    business_routes = _routes_under("/business")
+    assert len(business_routes) >= 8, (
+        f"expected a populated business tree, got {business_routes}"
+    )
+
+
+@pytest.mark.parametrize("method,path", _routes_under("/business"))
+def test_every_business_route_rejects_anonymous(client, method, path):
+    response = _call(client, method, path)
+    assert response.status_code == 401, (
+        f"{method} {path} returned {response.status_code} without a token; expected 401"
+    )
+
+
+@pytest.mark.parametrize("method,path", _routes_under("/business"))
+def test_every_business_route_rejects_client_token(client, client_token, method, path):
+    response = _call_with_token(client, method, path, client_token)
+    assert response.status_code == 403, (
+        f"{method} {path} returned {response.status_code} for a client token; expected 403"
+    )
+
+
 def _call_with_token(client, method: str, path: str, token: str):
     kwargs = {"json": {}} if method in METHODS_WITH_BODY else {}
     return client.request(method, path, headers={"Authorization": f"Bearer {token}"}, **kwargs)

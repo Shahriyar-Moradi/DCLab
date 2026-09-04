@@ -19,15 +19,59 @@ from app.services.auth_service import create_user
 from app.services.lab_service import ingest_dataset, seed_dogfood, upsert_task
 from app.services.lineage_service import (
     LineageError,
+    bind_pipeline_run,
     create_dataset_asset,
     create_model_asset,
     create_model_version,
     create_pipeline_run,
     create_workflow,
     create_workflow_run,
+    disable_workspace_domain,
     enable_workspace_domain,
     seed_business_domains,
 )
+
+
+def _create_publishable_pipeline(
+    db_session,
+    setup,
+    *,
+    pipeline_index=0,
+    candidate_key="winner",
+    candidate_status="trained",
+    pipeline_status="COMPLETED",
+):
+    run = create_workflow_run(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        workflow=setup["alpha_workflow"],
+        requester=setup["alpha_admin"],
+        trigger_type="manual",
+        source_type="dataset",
+    )
+    pipeline = create_pipeline_run(
+        db_session,
+        workflow_run=run,
+        environment=setup["env"],
+        dataset=setup["alpha_dataset"],
+        task=setup["task"],
+        pipeline_index=pipeline_index,
+    )
+    candidate = ExperimentCandidate(
+        experiment_id=pipeline.id,
+        candidate_key=candidate_key,
+        fingerprint=uuid4().hex[:40],
+        status=candidate_status,
+        payload={"test_metrics": {"pr_auc": 0.82}},
+    )
+    db_session.add(candidate)
+    pipeline.status = pipeline_status
+    pipeline.result = {
+        "selection": {"selected_candidate_id": candidate_key},
+        "test_metrics": {"pr_auc": 0.82},
+    }
+    db_session.commit()
+    return run, pipeline, candidate
 
 
 @pytest.fixture()
@@ -171,6 +215,59 @@ def test_domains_are_configurable_seed_data(db_session, lineage_setup):
     assert db_session.scalar(
         select(BusinessDomain).where(BusinessDomain.slug == "operations")
     ) is not None
+
+
+def test_operations_domain_can_be_enabled_disabled_and_reenabled_without_migration(
+    db_session, lineage_setup
+):
+    from app.services.platform_explorer_service import get_business, get_domain
+
+    setup = lineage_setup
+    db_session.add(
+        BusinessDomain(
+            slug="operations",
+            name="Operations",
+            description="Added through data, without a schema change.",
+            default_config={"owner": "ops"},
+        )
+    )
+    db_session.commit()
+    first = enable_workspace_domain(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        domain_slug="operations",
+        actor=setup["alpha_admin"],
+    )
+    db_session.commit()
+    enabled = get_business(db_session, setup["alpha"].id, enabled_domains_only=True)
+    assert "operations" in {row["slug"] for row in enabled["domains"]}
+    assert get_domain(db_session, setup["alpha"].id, first.id, require_enabled=True)
+
+    disable_workspace_domain(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        domain_slug="operations",
+        actor=setup["alpha_admin"],
+    )
+    db_session.commit()
+    hidden = get_business(db_session, setup["alpha"].id, enabled_domains_only=True)
+    assert "operations" not in {row["slug"] for row in hidden["domains"]}
+    assert (
+        get_domain(db_session, setup["alpha"].id, first.id, require_enabled=True)
+        is None
+    )
+
+    restored = enable_workspace_domain(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        domain_slug="operations",
+        actor=setup["alpha_admin"],
+    )
+    db_session.commit()
+    assert restored.id == first.id
+    assert restored.enabled is True
+    visible = get_business(db_session, setup["alpha"].id, enabled_domains_only=True)
+    assert "operations" in {row["slug"] for row in visible["domains"]}
 
 
 def test_two_businesses_cannot_cross_link_workflows_or_datasets(
@@ -332,6 +429,7 @@ def test_selected_model_version_has_exact_pipeline_candidate_and_dataset_lineage
         payload={},
     )
     db_session.add_all([winner, challenger])
+    pipeline.status = "COMPLETED"
     pipeline.result = {
         "selection": {"selected_candidate_id": "winner"},
         "test_metrics": {"pr_auc": 0.82},
@@ -410,6 +508,14 @@ def test_dataset_asset_has_multiple_immutable_physical_versions(
     with pytest.raises(ValueError, match="immutable"):
         db_session.commit()
     db_session.rollback()
+    second.dataset_asset_id = setup["beta_dataset"].dataset_asset_id
+    with pytest.raises(ValueError, match="immutable"):
+        db_session.commit()
+    db_session.rollback()
+    db_session.delete(second)
+    with pytest.raises(ValueError, match="immutable"):
+        db_session.commit()
+    db_session.rollback()
 
 
 def test_cross_tenant_pipeline_dataset_is_rejected(db_session, lineage_setup):
@@ -430,3 +536,136 @@ def test_cross_tenant_pipeline_dataset_is_rejected(db_session, lineage_setup):
             dataset=setup["beta_dataset"],
             task=setup["task"],
         )
+
+
+def test_pipeline_cannot_be_rebound_to_cross_workspace_workflow_run(
+    db_session, lineage_setup
+):
+    setup = lineage_setup
+    alpha_run, pipeline, _candidate = _create_publishable_pipeline(
+        db_session, setup
+    )
+    beta_run = create_workflow_run(
+        db_session,
+        workspace_id=setup["beta"].id,
+        workflow=setup["beta_workflow"],
+        requester=setup["beta_admin"],
+        trigger_type="manual",
+        source_type="dataset",
+    )
+    with pytest.raises(LineageError, match="another workflow run"):
+        bind_pipeline_run(
+            db_session,
+            pipeline_run=pipeline,
+            workflow_run=beta_run,
+            environment=setup["env"],
+            dataset=setup["beta_dataset"],
+            task=setup["task"],
+            config=SearchConfig(max_candidates=3),
+        )
+    assert pipeline.workflow_run_id == alpha_run.id
+
+
+def test_model_publication_rejects_invalid_lineage_and_duplicate_pipeline(
+    db_session, lineage_setup
+):
+    setup = lineage_setup
+    _run, pipeline, winner = _create_publishable_pipeline(db_session, setup)
+    asset = create_model_asset(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        workflow=setup["alpha_workflow"],
+        name="Lead conversion model",
+        slug="publication-model",
+        actor=setup["alpha_admin"],
+    )
+    beta_asset = create_model_asset(
+        db_session,
+        workspace_id=setup["beta"].id,
+        workflow=setup["beta_workflow"],
+        name="Beta model",
+        slug="publication-model",
+        actor=setup["beta_admin"],
+    )
+    _other_run, other_pipeline, other_candidate = _create_publishable_pipeline(
+        db_session, setup
+    )
+
+    with pytest.raises(LineageError, match="another pipeline run"):
+        create_model_version(
+            db_session,
+            model_asset=asset,
+            pipeline_run=pipeline,
+            selected_candidate=other_candidate,
+            version="v1",
+        )
+    with pytest.raises(LineageError, match="another workspace"):
+        create_model_version(
+            db_session,
+            model_asset=beta_asset,
+            pipeline_run=pipeline,
+            selected_candidate=winner,
+            version="v1",
+        )
+
+    version = create_model_version(
+        db_session,
+        model_asset=asset,
+        pipeline_run=pipeline,
+        selected_candidate=winner,
+        version="v1",
+    )
+    db_session.commit()
+    assert version.selected_candidate_id == winner.id
+    with pytest.raises(LineageError, match="already has"):
+        create_model_version(
+            db_session,
+            model_asset=asset,
+            pipeline_run=pipeline,
+            selected_candidate=winner,
+            version="v2",
+        )
+    assert other_pipeline.model_version is None
+
+
+@pytest.mark.parametrize(
+    ("pipeline_status", "candidate_status", "error"),
+    [
+        ("FAILED", "trained", "pipeline run did not complete successfully"),
+        ("COMPLETED", "rejected", "candidate is not publishable"),
+    ],
+)
+def test_failed_pipeline_or_rejected_candidate_has_no_successful_model_version(
+    db_session,
+    lineage_setup,
+    pipeline_status,
+    candidate_status,
+    error,
+):
+    setup = lineage_setup
+    _run, pipeline, candidate = _create_publishable_pipeline(
+        db_session,
+        setup,
+        pipeline_status=pipeline_status,
+        candidate_status=candidate_status,
+    )
+    asset = create_model_asset(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        workflow=setup["alpha_workflow"],
+        name="Unpublishable model",
+        slug=f"unpublishable-{pipeline_status.lower()}-{candidate_status}",
+        actor=setup["alpha_admin"],
+    )
+
+    with pytest.raises(LineageError, match=error):
+        create_model_version(
+            db_session,
+            model_asset=asset,
+            pipeline_run=pipeline,
+            selected_candidate=candidate,
+            version="v1",
+        )
+    assert db_session.scalar(
+        select(ModelVersion).where(ModelVersion.pipeline_run_id == pipeline.id)
+    ) is None

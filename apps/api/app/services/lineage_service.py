@@ -113,6 +113,38 @@ def enable_workspace_domain(
         )
         db.add(link)
         db.flush()
+        return link
+    link.enabled = True
+    if config is not None:
+        link.config = dict(config)
+    db.flush()
+    return link
+
+
+def disable_workspace_domain(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    domain_slug: str,
+    actor: User | None = None,
+) -> WorkspaceDomain:
+    _require_workspace(db, workspace_id)
+    _require_actor_write(db, actor, workspace_id)
+    domain = db.scalar(
+        select(BusinessDomain).where(BusinessDomain.slug == domain_slug)
+    )
+    if domain is None:
+        raise LineageError("business domain not found")
+    link = db.scalar(
+        select(WorkspaceDomain).where(
+            WorkspaceDomain.workspace_id == workspace_id,
+            WorkspaceDomain.business_domain_id == domain.id,
+        )
+    )
+    if link is None:
+        raise LineageError("workspace domain is not enabled")
+    link.enabled = False
+    db.flush()
     return link
 
 
@@ -399,8 +431,12 @@ def create_model_version(
     workflow_run = pipeline_run.workflow_run
     if workflow_run is None:
         raise LineageError("pipeline run is not attached to a workflow run")
+    if pipeline_run.status != "COMPLETED":
+        raise LineageError("pipeline run did not complete successfully")
     if selected_candidate.experiment_id != pipeline_run.id:
         raise LineageError("candidate belongs to another pipeline run")
+    if selected_candidate.status.lower() in {"failed", "rejected"}:
+        raise LineageError("candidate is not publishable")
     if model_asset.workspace_id != pipeline_run.workspace_id:
         raise LineageError("model asset belongs to another workspace")
     if model_asset.workflow_id != workflow_run.workflow_id:

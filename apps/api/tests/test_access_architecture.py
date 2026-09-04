@@ -315,6 +315,17 @@ def test_developer_roles_are_blocked_from_every_live_mutation(client, access_set
         )
         assert response.status_code == 403, f"{method} {path} was not read-only"
 
+    for method, path in _unsafe_operations("/business"):
+        response = client.request(
+            method,
+            path,
+            headers=_headers(setup["business_developer"], setup["alpha"].id),
+            json={},
+        )
+        assert response.status_code in {403, 404}, (
+            f"{method} {path} was not read-only ({response.status_code})"
+        )
+
 
 def test_explicit_membership_overrides_legacy_role_string(db_session, access_setup):
     user = access_setup["platform_admin"]

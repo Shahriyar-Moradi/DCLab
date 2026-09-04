@@ -88,7 +88,7 @@ export default function PipelineMonitorPage() {
 
     {capabilities.raw_pipeline_debug ? <Panel title="Timeline / replay" subtitle="Append-only sequence order; no artificial delay is introduced."><ol className="space-y-3 border-l border-hairline pl-5">{events.map((event) => <li key={text(event.id)} className="relative rounded bg-paper-raised p-4 before:absolute before:-left-[1.55rem] before:top-5 before:h-2 before:w-2 before:rounded-full before:bg-brand"><div className="flex flex-wrap justify-between gap-2"><span className="font-mono text-data">#{text(event.sequence)} · {text(event.stage)} · {text(event.event_type)}</span><span className="font-mono text-data text-ink-muted">{new Date(text(event.timestamp)).toLocaleString()}</span></div><pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-data text-ink-muted">{JSON.stringify(event.payload ?? {}, null, 2)}</pre></li>)}</ol></Panel> : <CapabilityUnavailable name="raw_pipeline_debug" />}
 
-    <Panel title="Reports"><SafeJson value={monitor.reports} /></Panel>
+    {capabilities.decision_ledger ? <Panel title="Reports"><SafeJson value={monitor.reports} /></Panel> : <CapabilityUnavailable name="decision_ledger" />}
     {capabilities.raw_pipeline_debug ? <Panel title="Sanitized raw technical evidence" subtitle="Bounded evidence only. Datasets, secrets, API keys, and row provenance are excluded."><SafeJson value={monitor.sanitized_evidence} /></Panel> : null}
   </div>;
 }

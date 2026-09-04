@@ -189,3 +189,31 @@ def test_platform_monitor_supports_real_regression(
     final = [row for row in body["events"] if row["event_type"] == "final_test_completed"]
     assert len(final) == 1
     assert "r2" in final[0]["payload"]["metrics"]
+
+
+def test_platform_monitor_preprocessing_uses_persisted_pipeline_evidence(
+    auth_client, admin_client, db_session, monkeypatch
+):
+    _upload, _run, pipeline = _upload_and_run(
+        auth_client, db_session, monkeypatch, regression=False
+    )
+    result = dict(pipeline.result or {})
+    technical_report = dict(result.get("technical_report") or {})
+    technical_report["preprocessing"] = {
+        "numerical": ["Custom Numeric Transformer"],
+        "categorical": ["Custom Categorical Transformer"],
+        "one_hot": {"drop": None, "handle_unknown": "error"},
+        "fit_partition": "full_dataset_including_holdout",
+    }
+    result["technical_report"] = technical_report
+    pipeline.result = result
+    db_session.commit()
+
+    monitor = admin_client.get(f"/admin/pipeline-runs/{pipeline.id}/monitor")
+
+    assert monitor.status_code == 200, monitor.text
+    preprocessing = monitor.json()["preprocessing"]
+    assert preprocessing["numerical"] == ["Custom Numeric Transformer"]
+    assert preprocessing["categorical"] == ["Custom Categorical Transformer"]
+    assert preprocessing["one_hot"] == {"drop": None, "handle_unknown": "error"}
+    assert preprocessing["fit_guarantees"] == []

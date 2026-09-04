@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.engine.features.encode import coerce_binary_target
 from app.services.artifact_store import ArtifactAccess, LocalArtifactAccess
 
 CHECK_PASS = "PASS"
@@ -30,6 +31,28 @@ def _timestamp(value: Any) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _labels_match(expected: Any, actual: Any) -> bool:
+    if pd.isna(expected) and pd.isna(actual):
+        return True
+    if expected == actual:
+        return True
+    try:
+        return float(expected) == float(actual)
+    except (TypeError, ValueError):
+        return False
+
+
+def _artifact_target_values(frame: pd.DataFrame, column: str, task_type: str) -> pd.Series:
+    series = frame[column]
+    if task_type == "binary":
+        encoded = coerce_binary_target(series)
+        if int(encoded.notna().sum()) == int(series.notna().sum()):
+            return encoded
+    if task_type == "regression":
+        return pd.to_numeric(series, errors="coerce")
+    return series
 
 
 class PipelineVerifier:
@@ -469,11 +492,34 @@ class PipelineVerifier:
         else:
             add("winner_only_final_test", "final_test_evaluation", CHECK_PASS, "Only the selected winner has final-test metrics and it was evaluated once.", "candidate_models", "final_test_evaluation")
 
-        prediction_sources = [row.get("source_row_index") for row in predictions if isinstance(row, dict)]
-        if not predictions or any(value is None for value in prediction_sources):
+        prediction_rows = [row for row in predictions if isinstance(row, dict)]
+        prediction_sources = [row.get("source_row_index") for row in prediction_rows]
+        prediction_truth_mismatches: list[Any] = []
+        artifact_targets = None
+        if input_frame is not None and target_column in input_frame:
+            artifact_targets = _artifact_target_values(
+                input_frame,
+                target_column,
+                str(target.get("task_type") or task.get("task_type") or ""),
+            )
+            for row in prediction_rows:
+                source_row = row.get("source_row_index")
+                if isinstance(source_row, int) and 0 <= source_row < len(artifact_targets):
+                    expected = artifact_targets.iloc[source_row]
+                    actual = row.get("y_true")
+                    if not _labels_match(expected, actual):
+                        prediction_truth_mismatches.append(source_row)
+        if (
+            not predictions
+            or len(prediction_rows) != len(predictions)
+            or any(value is None for value in prediction_sources)
+            or any("y_true" not in row for row in prediction_rows)
+        ):
             add("prediction_provenance_complete", "prediction_persistence", CHECK_NOT_VERIFIABLE, "Prediction provenance is missing.", "prediction_evidence")
         elif len(predictions) != split.get("n_test") or set(prediction_sources) != test_set or set(prediction_sources) & train_set:
             add("prediction_provenance_complete", "prediction_persistence", CHECK_FAIL, "Predictions do not map exactly to final-test provenance.", "prediction_evidence", "split")
+        elif prediction_truth_mismatches:
+            add("prediction_provenance_complete", "prediction_persistence", CHECK_FAIL, f"Persisted true labels differ from the input artifact for rows: {prediction_truth_mismatches}.", "prediction_evidence", "artifacts.input")
         else:
             add("prediction_provenance_complete", "prediction_persistence", CHECK_PASS, "Every final-test row has exactly one persisted prediction.", "prediction_evidence", "split")
 

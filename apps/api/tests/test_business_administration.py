@@ -12,6 +12,7 @@ from app.db.models import (
     ClientLabUpload,
     Experiment,
     LlmInvocation,
+    ModelVersion,
     UserRole,
     Workspace,
     WorkspaceCapability,
@@ -311,3 +312,49 @@ def test_prediction_download_and_deep_audit_cannot_bypass_capabilities(
     assert auth_client.get(detail_path, headers=admin_headers).status_code == 403
     _set_capability(db_session, workspace_id, "openai_pipeline_audit")
     assert auth_client.get(detail_path, headers=admin_headers).status_code == 200
+
+
+def test_model_management_fails_closed_on_business_model_routes(
+    auth_client, db_session, monkeypatch
+):
+    upload, _workflow_run, pipeline = _upload_and_run(
+        auth_client, db_session, monkeypatch
+    )
+    workspace_id = upload.workspace_id
+    version = db_session.scalar(
+        select(ModelVersion).where(ModelVersion.pipeline_run_id == pipeline.id)
+    )
+    assert version is not None
+    business_admin = create_user(
+        db_session,
+        email=f"business-model-admin-{uuid4().hex}@test.invalid",
+        password="password",
+        role=UserRole.BUSINESS_ADMIN,
+        workspace_id=workspace_id,
+    )
+    db_session.commit()
+    headers = _headers(business_admin, workspace_id)
+    model_path = (
+        f"/business/workspaces/{workspace_id}/models/{version.model_asset_id}"
+    )
+
+    assert auth_client.get(model_path, headers=headers).status_code == 403
+    detail = auth_client.get(
+        f"/business/workspaces/{workspace_id}", headers=headers
+    )
+    assert detail.status_code == 200
+    assert detail.json()["models"] == []
+    assert detail.json()["model_count"] == 0
+    assert detail.json()["capabilities"]["model_management"] is False
+
+    _set_capability(db_session, workspace_id, "model_management")
+    allowed = auth_client.get(model_path, headers=headers)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["id"] == str(version.model_asset_id)
+    enabled_detail = auth_client.get(
+        f"/business/workspaces/{workspace_id}", headers=headers
+    )
+    assert enabled_detail.status_code == 200
+    assert str(version.model_asset_id) in {
+        row["id"] for row in enabled_detail.json()["models"]
+    }

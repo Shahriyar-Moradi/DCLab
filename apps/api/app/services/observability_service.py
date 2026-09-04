@@ -53,6 +53,8 @@ _BLOCKED_KEY_PARTS = (
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    re.compile(r"\+?\d[\d()\-\s.]{8,}\d"),
 )
 _MAX_STRING = 1000
 _MAX_LIST = 50
@@ -283,6 +285,10 @@ def create_llm_invocation(
 ) -> LlmInvocation | None:
     if purpose not in LLM_PURPOSES:
         raise ValueError("unsupported LLM invocation purpose")
+    if purpose in SEMANTIC_PURPOSES and mode != "semantic_decision":
+        raise ValueError("semantic LLM purpose requires semantic_decision mode")
+    if purpose in AUDIT_PURPOSES and mode not in {"routine", "deep", "pipeline_audit"}:
+        raise ValueError("pipeline audit purpose requires an audit mode")
     context = pipeline_context_for_upload(db, upload_id)
     if context is None:
         return None

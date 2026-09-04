@@ -280,6 +280,17 @@ def test_valid_evidence_is_verified(tmp_path):
     assert all(row["status"] == "PASS" for row in result["checks"])
 
 
+def test_encoded_binary_labels_still_match_the_input_artifact(tmp_path):
+    report = _valid_report(tmp_path)
+    input_path = tmp_path / "input.csv"
+    input_path.write_text("measure,segment,outcome\n1,a,No\n2,b,Yes\n3,a,No\n4,b,Yes\n5,a,No\n6,b,Yes\n")
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "PASS"
+    report["prediction_evidence"][0]["y_true"] = 1
+    corrupted = PipelineVerifier().verify(report)
+    assert _status_for(corrupted, "prediction_provenance_complete") == "FAIL"
+
+
 @pytest.mark.parametrize(
     ("case", "check_id"),
     [
@@ -292,6 +303,7 @@ def test_valid_evidence_is_verified(tmp_path):
         ("late_lock", "final_fit_after_lock"),
         ("rejected_test_metrics", "winner_only_final_test"),
         ("missing_model", "model_artifacts_persisted"),
+        ("prediction_mismatch", "prediction_provenance_complete"),
         ("prediction_count", "prediction_provenance_complete"),
         ("train_prediction", "prediction_provenance_complete"),
     ],
@@ -324,6 +336,8 @@ def test_deliberate_corruption_is_never_verified(tmp_path, case, check_id):
         report["selection"]["eligible_candidate_ids"].append("rejected")
     elif case == "missing_model":
         report["artifacts"]["model"] = str(tmp_path / "missing.joblib")
+    elif case == "prediction_mismatch":
+        report["prediction_evidence"][0]["y_true"] = 1
     elif case == "prediction_count":
         report["prediction_evidence"].pop()
     elif case == "train_prediction":

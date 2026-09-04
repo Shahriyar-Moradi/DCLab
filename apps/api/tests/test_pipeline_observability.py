@@ -30,6 +30,7 @@ from app.services.auth_service import create_access_token, create_user
 from app.services.auto_train_service import run_auto_train_job
 from app.services.observability_service import (
     append_ml_run_event,
+    create_llm_invocation,
     sanitize_observability_payload,
 )
 from app.services.pipeline_audit_service import request_pipeline_verification
@@ -293,11 +294,13 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
         payload={
             "api_key": secret,
             "authorization": f"Bearer {secret}",
+            "contact": "person@example.com / +1 (415) 555-1234",
             "raw_rows": [{"customer": "real-row"}] * 100,
             "safe_count": 100,
         },
     )
-    serialized_event = json.dumps(secret_event.payload)
+    persisted = db_session.get(MlRunEvent, secret_event.id)
+    serialized_event = json.dumps(persisted.payload)
     serialized_invocations = json.dumps(
         [
             {
@@ -312,25 +315,27 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     )
     assert secret not in serialized_event
     assert "real-row" not in serialized_event
+    assert "person@example.com" not in serialized_event
+    assert "555-1234" not in serialized_event
     assert _audit_settings().pipeline_llm_verifier_api_key not in serialized_invocations
     secret_event.payload = {"changed": True}
     with pytest.raises(ValueError, match="append-only"):
         db_session.commit()
     db_session.rollback()
 
-    summary = auth_client.get(f"/business/observatory/pipeline-runs/{pipeline.id}/summary")
+    summary = admin_client.get(f"/business/observatory/pipeline-runs/{pipeline.id}/summary")
     assert summary.status_code == 200
     assert summary.json()["pipeline_audit_count"] == 1
-    history = auth_client.get(f"/business/observatory/pipeline-runs/{pipeline.id}/events")
+    history = admin_client.get(f"/business/observatory/pipeline-runs/{pipeline.id}/events")
     assert history.status_code == 200
     after = history.json()[5]["sequence"]
-    incremental = auth_client.get(
+    incremental = admin_client.get(
         f"/business/observatory/pipeline-runs/{pipeline.id}/events/incremental",
         params={"after_sequence": after},
     )
     assert incremental.status_code == 200
     assert all(row["sequence"] > after for row in incremental.json())
-    llm_list = auth_client.get(
+    llm_list = admin_client.get(
         f"/business/observatory/pipeline-runs/{pipeline.id}/llm-invocations"
     )
     assert llm_list.status_code == 200
@@ -338,11 +343,11 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
         "semantic_target",
         "pipeline_audit_deep",
     }
-    detail = auth_client.get(
+    detail = admin_client.get(
         f"/business/observatory/llm-invocations/{audit_invocation.id}"
     )
     assert detail.status_code == 200
-    pipelines = auth_client.get(
+    pipelines = admin_client.get(
         f"/business/observatory/workflow-runs/{workflow_run.id}/pipelines"
     )
     assert pipelines.status_code == 200
@@ -350,6 +355,9 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     assert admin_client.get(
         f"/admin/observatory/pipeline-runs/{pipeline.id}/summary"
     ).status_code == 200
+    assert auth_client.get(
+        f"/business/observatory/pipeline-runs/{pipeline.id}/summary"
+    ).status_code == 403
     assert auth_client.get(
         f"/business/observatory/pipeline-runs/{pipeline.id}/summary",
         headers={"Authorization": ""},
@@ -412,6 +420,41 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     assert foreign.status_code == 404
 
 
+def test_admin_pipeline_events_return_ordered_and_incremental_history(
+    auth_client,
+    admin_client,
+    db_session,
+    monkeypatch,
+):
+    _upload, _workflow_run, pipeline = _post_and_run(
+        auth_client, db_session, monkeypatch
+    )
+    persisted_sequences = list(
+        db_session.scalars(
+            select(MlRunEvent.sequence)
+            .where(MlRunEvent.experiment_id == pipeline.id)
+            .order_by(MlRunEvent.sequence)
+        )
+    )
+    assert len(persisted_sequences) > 2
+
+    history = admin_client.get(
+        f"/admin/observatory/pipeline-runs/{pipeline.id}/events"
+    )
+    assert history.status_code == 200, history.text
+    assert [row["sequence"] for row in history.json()] == persisted_sequences
+
+    after_sequence = persisted_sequences[-2]
+    incremental = admin_client.get(
+        f"/admin/observatory/pipeline-runs/{pipeline.id}/events/incremental",
+        params={"after_sequence": after_sequence},
+    )
+    assert incremental.status_code == 200, incremental.text
+    assert [row["sequence"] for row in incremental.json()] == [
+        sequence for sequence in persisted_sequences if sequence > after_sequence
+    ]
+
+
 def test_failed_candidate_is_emitted_without_failing_pipeline(
     auth_client, db_session, monkeypatch
 ):
@@ -448,11 +491,13 @@ def test_safe_payload_is_bounded_and_observer_callback_does_not_change_results(
             "secret": secret,
             "nested": {"authorization": f"Bearer {secret}"},
             "raw_rows": [{"value": index} for index in range(1000)],
-            "message": f"do not persist {secret}",
+            "message": f"do not persist {secret} person@example.com +1 (415) 555-1234",
         }
     )
     serialized = json.dumps(safe)
     assert secret not in serialized
+    assert "person@example.com" not in serialized
+    assert "555-1234" not in serialized
     assert "\"value\"" not in serialized
     assert summary["redacted_fields"] >= 2
     assert len(serialized.encode()) < 32_768
@@ -497,3 +542,32 @@ def test_safe_payload_is_bounded_and_observer_callback_does_not_change_results(
     assert observed_selection == baseline_selection
     assert with_observer["test_metrics"] == without_observer["test_metrics"]
     assert with_observer["test_predictions"] == without_observer["test_predictions"]
+
+
+def test_create_llm_invocation_rejects_mismatched_purpose_and_mode(db_session):
+    from datetime import UTC, datetime
+
+    common = dict(
+        db=db_session,
+        upload_id=uuid4(),
+        prompt_version="test",
+        schema_version="1",
+        evidence={"ok": True},
+        llm_used=False,
+        reason="contract test",
+        status="not_used",
+        validator_verdict="not_run",
+        started_at=datetime.now(UTC),
+    )
+    with pytest.raises(ValueError, match="semantic"):
+        create_llm_invocation(
+            purpose="semantic_target",
+            mode="deep",
+            **common,
+        )
+    with pytest.raises(ValueError, match="audit"):
+        create_llm_invocation(
+            purpose="pipeline_audit_routine",
+            mode="semantic_decision",
+            **common,
+        )

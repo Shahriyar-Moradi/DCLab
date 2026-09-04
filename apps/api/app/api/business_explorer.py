@@ -35,6 +35,7 @@ from app.services.pipeline_audit_service import (
 )
 from app.services.workspace_capability_service import (
     DEEP_AUDIT,
+    MODEL_MANAGEMENT,
     OPENAI_PIPELINE_AUDIT,
     PIPELINE_MONITOR,
     PREDICTION_DOWNLOAD,
@@ -151,6 +152,8 @@ def model(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _require_read(db, user, workspace_id)
+    _capability(db, user, workspace_id, MODEL_MANAGEMENT)
     return _required(
         business_explorer_service.get_model(db, user, workspace_id, model_id)
     )

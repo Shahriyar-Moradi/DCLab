@@ -303,6 +303,69 @@ def get_model(
     return {**_model_row(model), "business_name": workspace.name, "domain_slug": domain.slug, "domain_name": domain.name}
 
 
+def _monitor_preprocessing(technical_report: dict[str, Any]) -> dict[str, Any]:
+    persisted = technical_report.get("preprocessing")
+    evidence = dict(persisted) if isinstance(persisted, dict) else {}
+
+    if "numeric_imputer_strategy" in evidence or "numeric_scaler" in evidence:
+        numerical = []
+        if evidence.get("numeric_imputer_strategy"):
+            strategy = str(evidence["numeric_imputer_strategy"]).replace("_", "-").title()
+            numerical.append(f"{strategy} Imputer")
+        if evidence.get("numeric_scaler"):
+            numerical.append(str(evidence["numeric_scaler"]))
+    else:
+        numerical = list(evidence.get("numerical") or [])
+
+    if "categorical_imputer_strategy" in evidence or "categorical_encoder" in evidence:
+        categorical = []
+        if evidence.get("categorical_imputer_strategy"):
+            strategy = str(evidence["categorical_imputer_strategy"]).replace("_", "-").title()
+            categorical.append(f"{strategy} Imputer")
+        if evidence.get("categorical_encoder"):
+            categorical.append(str(evidence["categorical_encoder"]))
+    else:
+        categorical = list(evidence.get("categorical") or [])
+
+    persisted_one_hot = evidence.get("one_hot")
+    one_hot = (
+        dict(persisted_one_hot)
+        if isinstance(persisted_one_hot, dict)
+        else {
+            "drop": evidence.get("categorical_encoder_drop"),
+            "handle_unknown": evidence.get("handle_unknown"),
+        }
+    )
+
+    fit_guarantees: list[str] = []
+    if evidence.get("fit_partition") == "fold_train_only_then_full_train_for_locked_winner":
+        fit_guarantees.extend(
+            [
+                "Preprocessing is fitted on training data only.",
+                "During cross-validation, preprocessing is fitted independently inside each training fold.",
+            ]
+        )
+        split = technical_report.get("split")
+        selection = technical_report.get("selection")
+        if (
+            isinstance(split, dict)
+            and split.get("provenance_disjoint") is True
+            and isinstance(selection, dict)
+            and selection.get("selection_source") == "cross_validation"
+            and selection.get("locked") is True
+        ):
+            fit_guarantees.append(
+                "The final holdout is never used for preprocessing, candidate ranking, or winner selection."
+            )
+
+    return {
+        "numerical": numerical,
+        "categorical": categorical,
+        "one_hot": one_hot,
+        "fit_guarantees": fit_guarantees,
+    }
+
+
 def get_pipeline_monitor(
     db: Session,
     experiment_id: UUID,
@@ -396,12 +459,7 @@ def get_pipeline_monitor(
         "events": [{"id": str(row.id), "sequence": row.sequence, "stage": row.stage, "event_type": row.event_type, "status": row.status, "timestamp": row.timestamp.isoformat(), "duration_ms": row.duration_ms, "payload": row.payload, "created_at": row.created_at.isoformat()} for row in events],
         "llm_invocations": [{"id": str(row.id), "purpose": row.purpose, "llm_used": row.llm_used, "reason": row.reason, "provider": row.provider, "model": row.model, "mode": row.mode, "prompt_version": row.prompt_version, "schema_version": row.schema_version, "input_evidence_digest": row.input_evidence_digest, "redaction_summary": row.redaction_summary, "status": row.status, "validator_verdict": row.validator_verdict, "safe_output": row.safe_output, "final_decision": row.final_decision, "latency_ms": row.latency_ms, "input_tokens": row.input_tokens, "output_tokens": row.output_tokens, "total_tokens": row.total_tokens, "estimated_cost": row.estimated_cost, "started_at": row.started_at.isoformat(), "completed_at": row.completed_at.isoformat() if row.completed_at else None} for row in invocations],
         "candidates": candidates,
-        "preprocessing": {
-            "numerical": ["Median Imputer", "StandardScaler"],
-            "categorical": ["Most-Frequent Imputer", "OneHotEncoder"],
-            "one_hot": {"drop": "first", "handle_unknown": "ignore"},
-            "fit_guarantees": ["Preprocessing is fitted on training data only.", "During cross-validation, preprocessing is fitted independently inside each training fold.", "The final holdout is never used for preprocessing, candidate ranking, or winner selection."],
-        },
+        "preprocessing": _monitor_preprocessing(technical_report),
         "predictions": {"count": len(prediction_rows), "distribution": dict(distribution), "raw_rows_included": False},
         "deterministic_verification": deterministic,
         "openai_audits": [row.safe_output or {"status": row.status, "reason": row.reason} for row in invocations if row.purpose.startswith("pipeline_audit_")],

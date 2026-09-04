@@ -71,9 +71,10 @@ different purpose set at both service and database layers.
 ## Read APIs and tenant enforcement
 
 Platform readers use `/admin/observatory`; workspace readers use the technical
-business-administration surface `/business/observatory`. The latter is separate
-from the translated end-user `/app` surface but uses the same centralized
-workspace authorization dependency.
+business-administration surface `/business/observatory`. That tree requires
+`require_business_administration` (platform or Business Admin/Developer) plus
+`require_workspace_read`. Legacy `client_user` tokens receive `403`. The
+translated end-user `/app` surface remains separate.
 
 Both surfaces provide:
 

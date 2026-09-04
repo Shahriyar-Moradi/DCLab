@@ -20,6 +20,7 @@ from app.services.authorization_service import (
 from app.services.workspace_capability_service import (
     CV_FOLD_DETAILS,
     DECISION_LEDGER,
+    MODEL_MANAGEMENT,
     OPENAI_PIPELINE_AUDIT,
     RAW_PIPELINE_DEBUG,
     SEMANTIC_LLM_AUDIT,
@@ -101,7 +102,10 @@ def get_business(db: Session, user: User, workspace_id: UUID) -> dict[str, Any] 
     )
     if detail is None:
         return None
+    capabilities = capability_matrix(db, user, workspace_id)
     detail["memberships"] = []
+    if not capabilities[MODEL_MANAGEMENT]:
+        detail["models"] = []
     detail["domain_count"] = len(detail["domains"])
     detail["workflow_count"] = len(detail["workflows"])
     detail["run_count"] = len(detail["runs"])
@@ -110,7 +114,7 @@ def get_business(db: Session, user: User, workspace_id: UUID) -> dict[str, Any] 
     detail.update(
         role=_role(db, user, workspace_id),
         can_write=can_write_workspace(db, user, workspace_id),
-        capabilities=capability_matrix(db, user, workspace_id),
+        capabilities=capabilities,
     )
     return detail
 
@@ -145,6 +149,8 @@ def get_workflow_run(db: Session, user: User, workspace_id: UUID, run_id: UUID):
 
 def get_model(db: Session, user: User, workspace_id: UUID, model_id: UUID):
     if not can_read_workspace(db, user, workspace_id):
+        return None
+    if not capability_matrix(db, user, workspace_id)[MODEL_MANAGEMENT]:
         return None
     result = platform_explorer_service.get_model(
         db, workspace_id, model_id, require_enabled_domain=True

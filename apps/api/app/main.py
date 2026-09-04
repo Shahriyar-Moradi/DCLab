@@ -11,7 +11,12 @@ from app.api.auth import router as auth_router
 from app.api.business_explorer import router as business_explorer_router
 from app.api.client_labs import router as client_labs_router
 from app.api.decisions import router as decisions_router
-from app.api.deps import require_admin, require_client
+from app.api.deps import (
+    require_admin,
+    require_business_administration,
+    require_client,
+    require_workspace_read,
+)
 from app.api.insights import router as insights_router
 from app.api.lab import router as lab_router
 from app.api.opportunities import router as opportunities_router
@@ -36,7 +41,13 @@ app.add_middleware(
 # read-only enforcement, and (for /app) validated workspace selection.
 admin_api = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 client_api = APIRouter(prefix="/app", dependencies=[Depends(require_client)])
-business_api = APIRouter(prefix="/business", dependencies=[Depends(require_client)])
+business_api = APIRouter(
+    prefix="/business",
+    dependencies=[
+        Depends(require_business_administration),
+        Depends(require_workspace_read),
+    ],
+)
 
 # Platform surface: full ML detail for the DCLab team. Platform developers may
 # inspect it, while method-aware authorization reserves writes for platform admins.

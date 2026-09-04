@@ -149,9 +149,7 @@ def admin_pipeline_events(
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _business_events(
-        db, user, workspace_id, experiment_id, after_sequence
-    )
+    return _events(db, experiment_id, workspace_id, after_sequence)
 
 
 @admin_router.get(
@@ -164,9 +162,7 @@ def admin_incremental_pipeline_events(
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _business_events(
-        db, user, workspace_id, experiment_id, after_sequence
-    )
+    return _events(db, experiment_id, workspace_id, after_sequence)
 
 
 @admin_router.get(
@@ -249,7 +245,7 @@ def business_pipeline_events(
 def business_incremental_pipeline_events(
     experiment_id: UUID,
     request: Request,
-    after_sequence: int = Query(..., ge=0),
+    after_sequence: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
