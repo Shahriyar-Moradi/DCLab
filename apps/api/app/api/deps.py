@@ -10,7 +10,9 @@ from app.db.session import get_db
 from app.services.auth_service import AuthError, user_from_token
 from app.services.authorization_service import (
     AuthorizationError,
+    PERSONAL_DEVELOPER_ROLE,
     WorkspaceAccess,
+    can_execute_workspace_ml,
     can_read_platform,
     can_write_platform,
     can_write_workspace,
@@ -124,6 +126,20 @@ def require_workspace_admin(
     return user
 
 
+def require_workspace_ml_execution(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    access = _workspace_access(request, db, user)
+    if not can_execute_workspace_ml(db, user, access.workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="workspace ML execution access is not permitted",
+        )
+    return user
+
+
 def request_workspace_id(request: Request) -> uuid.UUID:
     access = getattr(request.state, "workspace_access", None)
     if not isinstance(access, WorkspaceAccess):
@@ -146,7 +162,6 @@ def require_admin(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    """Compatibility name for the method-aware /admin tree guard."""
     if request.method in _READ_METHODS:
         return require_platform_read(user, db)
     return require_platform_admin(user, db)
@@ -157,7 +172,32 @@ def require_client(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    """Compatibility name for the method-aware, tenant-aware /app guard."""
+    access = _workspace_access(request, db, user)
+    role_value = (
+        access.workspace_role.value
+        if hasattr(access.workspace_role, "value")
+        else access.workspace_role
+    )
+    if role_value == PERSONAL_DEVELOPER_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Personal Development accounts use the Development workspace",
+        )
+    if request.method in _READ_METHODS:
+        return user
+    if not can_write_workspace(db, user, access.workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="workspace write access requires business_admin or dclab_admin",
+        )
+    return user
+
+
+def require_development(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
     if request.method in _READ_METHODS:
         return require_workspace_read(request, user, db)
-    return require_workspace_admin(request, user, db)
+    return require_workspace_ml_execution(request, user, db)
