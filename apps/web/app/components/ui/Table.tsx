@@ -3,7 +3,7 @@ import type { ReactNode, ThHTMLAttributes } from "react";
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className="relative overflow-x-auto rounded-xl border border-hairline bg-paper-raised shadow-sm">
+    <div className="relative overflow-x-auto overscroll-x-contain rounded-xl border border-hairline bg-paper-raised shadow-sm">
       <p className="mb-2 px-4 pt-3 font-sans text-label uppercase text-ink-muted md:hidden">
         Scroll horizontally to see all columns
       </p>
@@ -47,7 +47,13 @@ export function Th({
 
 export function Td({ children, className, mono }: { children: ReactNode; className?: string; mono?: boolean }) {
   return (
-    <td className={cn("border-b border-hairline px-5 py-3.5 font-sans text-body text-ink", mono && "font-mono text-data", className)}>
+    <td
+      className={cn(
+        "max-w-[18rem] break-words border-b border-hairline px-5 py-3.5 align-top font-sans text-body text-ink",
+        mono && "break-all font-mono text-data",
+        className,
+      )}
+    >
       {children}
     </td>
   );

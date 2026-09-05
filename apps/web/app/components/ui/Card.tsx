@@ -10,6 +10,27 @@ export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   );
 }
 
+export function Fact({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="product-eyebrow">{label}</p>
+      <p className={cn("mt-1 break-words text-ink", mono ? "break-all font-mono text-data" : "text-body")}>{value}</p>
+    </div>
+  );
+}
+
+export function FactGrid({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn("grid gap-4 sm:grid-cols-2 xl:grid-cols-3", className)}>{children}</div>;
+}
+
 export function Panel({
   title,
   description,

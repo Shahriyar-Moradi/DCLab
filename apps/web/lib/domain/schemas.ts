@@ -345,7 +345,11 @@ export const LabComparisonSchema = z
 // Step 6 — Admin-only surfaces (Organizations, Model Registry, Monitoring).
 // Unrestricted, no translation layer; not part of the client-facing block above.
 export const OrganizationSummarySchema = z.object({
-  id: z.uuid(),
+  // Organizations are Workspace rows. Local/demo workspaces use a stable
+  // sentinel GUID whose version nibble is zero, so Zod's strict `z.uuid()`
+  // rejects the same identifier that `PlatformBusinessSummarySchema.id` already
+  // accepts as `z.guid()`.
+  id: z.guid(),
   slug: z.string(),
   name: z.string(),
   created_at: z.string(),
@@ -728,6 +732,13 @@ export const PipelineMonitorSchema = z.object({
 
 export type PlatformBusinessSummary = z.infer<typeof PlatformBusinessSummarySchema>;
 export type PlatformBusinessDetail = z.infer<typeof PlatformBusinessDetailSchema>;
+export type PlatformDomain = z.infer<typeof PlatformDomainSchema>;
+export type PlatformWorkflow = z.infer<typeof PlatformWorkflowSchema>;
+export type PlatformWorkflowRun = z.infer<typeof PlatformWorkflowRunSchema>;
+export type PlatformModelVersion = z.infer<typeof PlatformModelVersionSchema>;
+export type PlatformModel = z.infer<typeof PlatformModelSchema>;
+export type PlatformMembership = z.infer<typeof PlatformMembershipSchema>;
+export type PlatformPipeline = z.infer<typeof PlatformPipelineSchema>;
 export type BusinessWorkspaceSummary = z.infer<typeof BusinessWorkspaceSummarySchema>;
 export type BusinessWorkspaceDetail = z.infer<typeof BusinessWorkspaceDetailSchema>;
 export type PlatformDomainDetail = z.infer<typeof PlatformDomainDetailSchema>;

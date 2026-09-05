@@ -85,7 +85,7 @@ export default function DashboardsPage() {
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
         </div>
-        <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <div className="mt-6 grid min-w-0 gap-5 lg:grid-cols-3">
           <Skeleton className="h-72 lg:col-span-2" />
           <Skeleton className="h-72" />
         </div>
@@ -147,13 +147,13 @@ export default function DashboardsPage() {
         <MetricCard icon={<AlertTriangle size={17} />} label="Needs review" value={String(bands.Low)} hint="Low confidence" tone="warning" />
       </div>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-3">
+      <div className="mt-6 grid min-w-0 gap-5 lg:grid-cols-3">
         <GlassPanel
           title="Recommended actions"
           description="Current decision mix from the translated workspace ledger."
-          className="lg:col-span-2"
+          className="min-w-0 lg:col-span-2"
         >
-          <div className="h-64">
+          <div className="h-64 min-w-0 overflow-hidden">
             <ActionChart counts={counts} />
           </div>
           {data.truncated ? (

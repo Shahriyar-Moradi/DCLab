@@ -54,7 +54,7 @@ export function UploadZone({
         onDragLeave={() => setDrag(false)}
         onDrop={onDrop}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-hairline bg-paper-raised px-8 py-16 text-center transition-ui",
+          "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-hairline bg-paper-raised px-4 py-10 text-center transition-ui sm:px-8 sm:py-16",
           drag && "border-navy bg-navy-soft",
           disabled && "cursor-not-allowed opacity-50",
           error && "border-oxblood",
@@ -70,7 +70,7 @@ export function UploadZone({
           onChange={onChange}
         />
         <Upload className="mb-3 h-5 w-5 text-ink-muted" aria-hidden />
-        <span className="font-sans text-body text-ink">{label}</span>
+        <span className="max-w-full break-all font-sans text-body text-ink">{label}</span>
         {hint ? <span className="mt-2 text-helper text-ink-muted">{hint}</span> : null}
       </label>
       {error ? (

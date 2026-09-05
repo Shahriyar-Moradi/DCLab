@@ -1,15 +1,13 @@
 "use client";
 
+import { PLATFORM_NAV_SECTION } from "@/app/components/admin/platform-nav";
 import {
   BarChart3,
-  Building2,
   ClipboardList,
   FlaskConical,
   type LucideIcon,
   LayoutDashboard,
   Lightbulb,
-  LineChart,
-  Network,
   Scale,
   Upload,
 } from "lucide-react";
@@ -104,46 +102,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
       },
     ],
   },
-  {
-    id: "platform",
-    label: "Platform",
-    audience: "platform",
-    items: [
-      {
-        id: "businesses",
-        label: "Businesses",
-        href: "/admin/businesses",
-        icon: Building2,
-        audience: "platform",
-        isActive: (pathname) => prefixMatch(pathname, "/admin/businesses"),
-      },
-      {
-        id: "admin-labs",
-        label: "Labs & Experiments",
-        href: "/admin/lab",
-        icon: FlaskConical,
-        audience: "platform",
-        isActive: (pathname) =>
-          prefixMatch(pathname, "/admin/lab") || pathname.startsWith("/admin/pipeline-runs"),
-      },
-      {
-        id: "registry",
-        label: "Model Registry",
-        href: "/admin/models",
-        icon: Network,
-        audience: "platform",
-        isActive: (pathname) => prefixMatch(pathname, "/admin/models"),
-      },
-      {
-        id: "monitoring",
-        label: "Monitoring",
-        href: "/admin/monitoring",
-        icon: LineChart,
-        audience: "platform",
-        isActive: (pathname) => prefixMatch(pathname, "/admin/monitoring"),
-      },
-    ],
-  },
+  PLATFORM_NAV_SECTION,
   {
     id: "business",
     label: "Business",
@@ -175,6 +134,28 @@ export function navigationForRole(user: SessionUser | null) {
       items: section.items.filter((item) => isVisible(item.audience, user.role)),
     }))
     .filter((section) => section.items.length > 0);
+}
+
+export type CommandDestination = {
+  href: string;
+  label: string;
+  group: string;
+};
+
+export function commandDestinationsForRole(user: SessionUser | null): CommandDestination[] {
+  const destinations: CommandDestination[] = navigationForRole(user).flatMap((section) =>
+    section.items.map((item) => ({ href: item.href, label: item.label, group: section.label })),
+  );
+  destinations.push({ href: "/app/settings", label: "Account", group: "Workspace" });
+  if (user && isPlatformRole(user.role)) {
+    destinations.push({ href: "/admin/organizations", label: "Organizations", group: "Platform" });
+  }
+  const seen = new Set<string>();
+  return destinations.filter((item) => {
+    if (seen.has(item.href)) return false;
+    seen.add(item.href);
+    return true;
+  });
 }
 
 export function activeNavigationItem(pathname: string, user: SessionUser | null) {

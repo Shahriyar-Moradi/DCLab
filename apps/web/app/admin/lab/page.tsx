@@ -1,9 +1,16 @@
 "use client";
 
-import { Badge } from "@/app/components/ui/Badge";
-import { GlassPanel, MetricCard, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
+import { formatWhen } from "@/app/components/admin/format";
+import { CollectionSearch } from "@/app/components/ui/CollectionSearch";
+import { DataTable } from "@/app/components/ui/DataTable";
 import { ErrorState } from "@/app/components/ui/ErrorState";
+import { MetricCard } from "@/app/components/ui/MetricCard";
+import { PageHeader } from "@/app/components/ui/PageHeader";
+import { SectionHeader } from "@/app/components/ui/SectionHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
+import { StatusBadge } from "@/app/components/ui/StatusBadge";
+import { buttonClassName } from "@/app/components/ui/Button";
+import { filterByText } from "@/app/components/ui/localCollection";
 import {
   useAdminClientUploads,
   useLabDatasets,
@@ -11,17 +18,8 @@ import {
   useLabExperiments,
   useLabTasks,
 } from "@/lib/application";
-import type { SignalTone } from "@/lib/domain";
 import Link from "next/link";
-
-const UPLOAD_STATUS_TONE: Record<string, SignalTone> = {
-  completed: "green",
-  running: "amber",
-  queued: "amber",
-  skipped: "amber",
-  failed: "oxblood",
-  not_applicable: "amber",
-};
+import { useState } from "react";
 
 export default function LabDashboard() {
   const env = useLabEnvironments();
@@ -29,6 +27,8 @@ export default function LabDashboard() {
   const tasks = useLabTasks();
   const experiments = useLabExperiments();
   const clientUploads = useAdminClientUploads();
+  const [experimentQuery, setExperimentQuery] = useState("");
+  const [ingestQuery, setIngestQuery] = useState("");
 
   if (env.isError || datasets.isError || tasks.isError || experiments.isError || clientUploads.isError) {
     return (
@@ -45,79 +45,161 @@ export default function LabDashboard() {
     );
   }
   if (env.isPending || datasets.isPending || tasks.isPending || experiments.isPending || clientUploads.isPending) {
-    return <Skeleton className="h-64" />;
+    return (
+      <div>
+        <PageHeader
+          eyebrow="Internal ML workspace"
+          title="Labs"
+          description="Upload datasets, inspect use cases, and trace experiments through their candidate models and results."
+        />
+        <Skeleton className="h-64" />
+      </div>
+    );
   }
+
+  const environments = env.data ?? [];
+  const recent = filterByText((experiments.data ?? []).slice(0, 8), experimentQuery, (row) => [
+    row.task_name,
+    row.use_case,
+    row.id,
+    row.status,
+    row.dataset_name,
+  ]);
+  const ingest = filterByText((clientUploads.data ?? []).slice(0, 10), ingestQuery, (row) => [
+    row.original_filename,
+    row.category,
+    row.kind,
+    row.pipeline_status,
+  ]);
 
   return (
     <div>
-      <ProductPageHeader eyebrow="DCLab internal ML workspace" title="Labs" description="Upload datasets, inspect use cases, and trace experiments through their candidate models and results." />
-      <GlassPanel title="Lab workflow" description="The internal experimentation path maps eligible columns onto supported use cases before training.">
-      <ol className="max-w-2xl list-decimal space-y-1 pl-5 font-body text-body text-ink">
-        <li>Upload a spreadsheet (or load the sample workbook with all five labels).</li>
-        <li>Confirm which use cases have a label column in that file.</li>
-        <li>Train. Each use case fits five models across feature groups, then keeps the useful ones.</li>
-        <li>Open the experiment report for metrics, candidates, and the ensemble.</li>
-      </ol>
-      </GlassPanel>
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        <Stat label="Datasets" value={String(datasets.data?.length ?? 0)} href="/admin/lab/datasets" />
-        <Stat label="Experiments" value={String(experiments.data?.length ?? 0)} href="/admin/lab/experiments" />
-        <Stat label="Tasks" value={String(tasks.data?.length ?? 0)} href="/admin/lab/tasks" />
-      </div>
-      <p className="mt-8">
-        <Link
-          className="inline-flex rounded bg-navy px-4 py-2 font-body text-body font-medium text-paper-raised"
-          href="/admin/lab/datasets"
-        >
-          Open datasets
+      <PageHeader
+        eyebrow="Internal ML workspace"
+        title="Labs"
+        description="Upload datasets, inspect use cases, and trace experiments through their candidate models and results."
+        actions={
+          <Link href="/admin/lab/datasets" className={buttonClassName()}>
+            Open datasets
+          </Link>
+        }
+      />
+      <div className="mt-8 grid gap-4 md:grid-cols-4">
+        <Link href="/admin/lab/datasets">
+          <MetricCard label="Datasets" value={String(datasets.data?.length ?? 0)} />
         </Link>
-      </p>
-      <h2 className="mt-12 font-display text-section text-ink">Recent experiments</h2>
-      <ul className="mt-4 divide-y divide-hairline rounded-xl border border-hairline bg-paper-raised">
-        {(experiments.data ?? []).slice(0, 8).map((row) => (
-          <li key={row.id} className="px-4 py-3">
-            <Link className="font-body text-body text-navy underline-offset-2 hover:underline" href={`/admin/lab/experiments/${row.id}`}>
-              {row.task_name ?? row.use_case ?? row.id}
-            </Link>
-            <p className="font-mono text-data text-ink-muted">
-              {row.status}
-              {row.dataset_name ? ` · ${row.dataset_name}` : ""}
-            </p>
-          </li>
-        ))}
-      </ul>
-      <h2 className="mt-12 font-display text-section text-ink">Open ingest jobs</h2>
-      <p className="mt-2 max-w-2xl font-body text-body text-ink-muted">
-        Simple-case auto-train runs behind every Labs custom-box upload (spreadsheet/JSON/table file, named
-        columns, 40+ rows). See docs/LABS_DATA_UNDERSTANDING.md.
-      </p>
-      <ul className="mt-4 divide-y divide-hairline rounded-xl border border-hairline bg-paper-raised">
-        {(clientUploads.data ?? []).slice(0, 10).map((row) => (
-          <li key={row.id} className="flex items-center justify-between px-4 py-3">
-            <div>
-              <Link
-                className="font-body text-body text-navy underline-offset-2 hover:underline"
-                href={`/admin/models/client-uploads/${row.id}`}
-              >
-                {row.original_filename}
-              </Link>
-              <p className="font-mono text-data text-ink-muted">
-                {row.category} · {row.kind} · {row.record_count} rows
-              </p>
-            </div>
-            <Badge tone={UPLOAD_STATUS_TONE[row.pipeline_status] ?? "amber"}>{row.pipeline_status}</Badge>
-          </li>
-        ))}
-        {(clientUploads.data ?? []).length === 0 ? (
-          <li className="px-4 py-3 font-body text-body text-ink-muted">No custom-box uploads yet.</li>
-        ) : null}
-      </ul>
-    </div>
-  );
-}
+        <Link href="/admin/lab/experiments">
+          <MetricCard label="Experiments" value={String(experiments.data?.length ?? 0)} />
+        </Link>
+        <Link href="/admin/lab/tasks">
+          <MetricCard label="Tasks" value={String(tasks.data?.length ?? 0)} />
+        </Link>
+        <MetricCard label="Environments" value={String(environments.length)} />
+      </div>
 
-function Stat({ label, value, href }: { label: string; value: string; href: string }) {
-  return (
-    <Link href={href}><MetricCard label={label} value={value} /></Link>
+      {environments.length > 0 ? (
+        <div className="mt-10">
+          <SectionHeader title="Environments" />
+          <div className="mt-4">
+            <DataTable
+              columns={[
+                { id: "name", header: "Name", cell: (row) => row.name },
+                { id: "id", header: "Id", mono: true, cell: (row) => row.id },
+                { id: "org", header: "Org", mono: true, cell: (row) => row.org_id },
+              ]}
+              rows={environments}
+              rowKey={(row) => row.id}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-10">
+        <SectionHeader title="Recent experiments" />
+        <div className="mt-4">
+          <CollectionSearch
+            value={experimentQuery}
+            onChange={setExperimentQuery}
+            shown={recent.length}
+            total={Math.min((experiments.data ?? []).length, 8)}
+          />
+          <DataTable
+            columns={[
+              {
+                id: "name",
+                header: "Experiment",
+                cell: (row) => (
+                  <Link className="text-navy hover:underline" href={`/admin/lab/experiments/${row.id}`}>
+                    {row.task_name ?? row.use_case ?? row.id}
+                  </Link>
+                ),
+              },
+              {
+                id: "status",
+                header: "Status",
+                cell: (row) => <StatusBadge status={row.status} />,
+              },
+              { id: "dataset", header: "Dataset", cell: (row) => row.dataset_name ?? "—" },
+              { id: "use_case", header: "Use case", mono: true, cell: (row) => row.use_case ?? "—" },
+            ]}
+            rows={recent}
+            rowKey={(row) => row.id}
+            emptyTitle="No experiments"
+            emptyBody={
+              experimentQuery.trim()
+                ? "Nothing on this list matches that filter."
+                : "Train a use case from a dataset to create an experiment."
+            }
+          />
+        </div>
+      </div>
+
+      <div className="mt-10">
+        <SectionHeader
+          title="Open ingest jobs"
+          description="Simple-case auto-train runs behind Labs custom-box uploads (spreadsheet/JSON/table file, named columns, 40+ rows)."
+        />
+        <div className="mt-4">
+          <CollectionSearch
+            value={ingestQuery}
+            onChange={setIngestQuery}
+            shown={ingest.length}
+            total={Math.min((clientUploads.data ?? []).length, 10)}
+          />
+          <DataTable
+            columns={[
+              {
+                id: "file",
+                header: "Upload",
+                cell: (row) => (
+                  <div>
+                    <Link className="text-navy hover:underline" href={`/admin/models/client-uploads/${row.id}`}>
+                      {row.original_filename}
+                    </Link>
+                    <p className="font-mono text-data text-ink-muted">
+                      {row.category} · {row.kind} · {row.record_count} rows
+                    </p>
+                  </div>
+                ),
+              },
+              {
+                id: "status",
+                header: "Status",
+                cell: (row) => <StatusBadge status={row.pipeline_status} />,
+              },
+              { id: "created", header: "Created", mono: true, cell: (row) => formatWhen(row.created_at) || "—" },
+            ]}
+            rows={ingest}
+            rowKey={(row) => row.id}
+            emptyTitle="No custom-box uploads yet."
+            emptyBody={
+              ingestQuery.trim()
+                ? "Nothing on this list matches that filter."
+                : "Client Labs uploads appear here with their recorded pipeline status."
+            }
+          />
+        </div>
+      </div>
+    </div>
   );
 }

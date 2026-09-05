@@ -1,31 +1,30 @@
 "use client";
 
+import { formatNumericMetrics, formatWhen, sourceTone } from "@/app/components/admin/format";
 import { Badge } from "@/app/components/ui/Badge";
-import { GlassPanel, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
+import { CollectionSearch } from "@/app/components/ui/CollectionSearch";
+import { DataTable } from "@/app/components/ui/DataTable";
 import { ErrorState } from "@/app/components/ui/ErrorState";
+import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { Table, Td, Th } from "@/app/components/ui/Table";
+import { StatusBadge } from "@/app/components/ui/StatusBadge";
+import { filterByText } from "@/app/components/ui/localCollection";
 import { useAdminModelRegistry } from "@/lib/application";
 import type { RegisteredModel } from "@/lib/domain/schemas";
 import Link from "next/link";
-
-function metricEntries(metrics: Record<string, unknown>): [string, number][] {
-  return Object.entries(metrics).filter(
-    (entry): entry is [string, number] => typeof entry[1] === "number",
-  );
-}
+import { useState } from "react";
 
 function DetailLink({ row }: { row: RegisteredModel }) {
   if (row.source === "experiment") {
     return (
-      <Link className="text-navy underline-offset-2 hover:underline" href={`/admin/lab/experiments/${row.id}`}>
+      <Link className="font-mono text-data text-navy hover:underline" href={`/admin/lab/experiments/${row.id}`}>
         {row.id}
       </Link>
     );
   }
   if (row.source === "client_trial") {
     return (
-      <Link className="text-navy underline-offset-2 hover:underline" href={`/admin/models/client-trials/${row.id}`}>
+      <Link className="font-mono text-data text-navy hover:underline" href={`/admin/models/client-trials/${row.id}`}>
         {row.id}
       </Link>
     );
@@ -35,66 +34,86 @@ function DetailLink({ row }: { row: RegisteredModel }) {
 
 export default function ModelRegistryPage() {
   const query = useAdminModelRegistry();
+  const [queryText, setQueryText] = useState("");
 
-  if (query.isPending) return <Skeleton className="h-64" />;
+  if (query.isPending) {
+    return (
+      <div>
+        <PageHeader
+          eyebrow="Registry"
+          title="Model registry"
+          description="Every trained model across Labs, uploaded data, and the bundled simulation pack."
+        />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
   if (query.isError) {
     return <ErrorState body="Could not load the model registry." onRetry={() => void query.refetch()} />;
   }
 
-  const rows = query.data ?? [];
+  const allRows = query.data ?? [];
+  const rows = filterByText(allRows, queryText, (row) => [
+    row.name,
+    row.source,
+    row.status,
+    row.model_family,
+    row.fusion,
+    row.id,
+  ]);
 
   return (
     <div>
-      <ProductPageHeader
-        eyebrow="DCLab Admin · Registry"
+      <PageHeader
+        eyebrow="Registry"
         title="Model registry"
         description="Every trained model across Labs, uploaded data, and the bundled simulation pack."
       />
-      <GlassPanel title="Registered models" description="Technical registry entries are retained with their source, metrics, and candidate portfolio.">
-        <Table>
-          <thead>
-            <tr>
-              <Th>Source</Th>
-              <Th>Name</Th>
-              <Th>Status</Th>
-              <Th>Model family</Th>
-              <Th>Fusion</Th>
-              <Th>Metrics</Th>
-              <Th>Candidates</Th>
-              <Th>Created</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.source}:${row.id}`}>
-                <Td>
-                  <Badge tone={row.source === "experiment" ? "green" : row.source === "simulation" ? "amber" : "oxblood"}>
-                    {row.source}
-                  </Badge>
-                </Td>
-                <Td>
-                  {row.name}
-                  <br />
+      <div className="mt-8">
+        <CollectionSearch value={queryText} onChange={setQueryText} shown={rows.length} total={allRows.length} />
+        <DataTable
+          columns={[
+            {
+              id: "source",
+              header: "Source",
+              cell: (row) => <Badge tone={sourceTone(row.source)}>{row.source}</Badge>,
+            },
+            {
+              id: "name",
+              header: "Name",
+              cell: (row) => (
+                <div>
+                  <p>{row.name}</p>
                   <DetailLink row={row} />
-                </Td>
-                <Td>{row.status}</Td>
-                <Td mono>{row.model_family ?? "—"}</Td>
-                <Td mono>{row.fusion ?? "—"}</Td>
-                <Td mono>
-                  {metricEntries(row.metrics).length === 0
-                    ? "—"
-                    : metricEntries(row.metrics)
-                        .map(([key, value]) => `${key}=${value.toFixed(3)}`)
-                        .join(" · ")}
-                </Td>
-                <Td mono>{row.candidate_count ?? "—"}</Td>
-                <Td mono>{new Date(row.created_at).toLocaleString()}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-        {rows.length === 0 ? <p className="mt-6 font-body text-body text-ink-muted">No models trained yet.</p> : null}
-      </GlassPanel>
+                </div>
+              ),
+            },
+            {
+              id: "status",
+              header: "Status",
+              cell: (row) => <StatusBadge status={row.status} />,
+            },
+            { id: "family", header: "Model family", mono: true, cell: (row) => row.model_family ?? "—" },
+            { id: "fusion", header: "Fusion", mono: true, cell: (row) => row.fusion ?? "—" },
+            {
+              id: "metrics",
+              header: "Metrics",
+              mono: true,
+              cell: (row) => formatNumericMetrics(row.metrics) || "—",
+            },
+            { id: "candidates", header: "Candidates", mono: true, cell: (row) => String(row.candidate_count ?? "—") },
+            { id: "created", header: "Created", mono: true, cell: (row) => formatWhen(row.created_at) || "—" },
+          ]}
+          rows={rows}
+          rowKey={(row) => `${row.source}:${row.id}`}
+          emptyTitle="No models trained yet."
+          emptyBody={
+            queryText.trim()
+              ? "Nothing on this list matches that filter."
+              : "Registry rows appear after experiments, client trials, or simulation runs persist models."
+          }
+        />
+      </div>
     </div>
   );
 }

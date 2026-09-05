@@ -6,11 +6,13 @@ export function BrandLogo({
   href = "/",
   product = false,
   compact = false,
+  invert = false,
 }: {
   className?: string;
   href?: string;
   product?: boolean;
   compact?: boolean;
+  invert?: boolean;
 }) {
   return (
     <Link href={href} className={cn("flex items-center gap-2.5", className)} aria-label="Decision.ai home">
@@ -23,7 +25,8 @@ export function BrandLogo({
       <span className="brand-wordmark leading-tight">
         <span
           className={cn(
-            "block tracking-tight text-ink",
+            "block tracking-tight",
+            invert ? "text-white" : "text-ink",
             product ? "text-[1.0625rem] font-semibold" : "text-[1.05rem] font-bold",
           )}
         >
@@ -32,10 +35,11 @@ export function BrandLogo({
         {compact ? null : (
           <span
             className={cn(
-              "block text-ink-muted",
+              "block",
+              invert ? "text-white/65" : "text-ink-muted",
               product
                 ? "text-[0.75rem] font-medium tracking-normal"
-                : "text-[0.62rem] font-semibold uppercase tracking-[0.12em]",
+                : "text-[0.62rem] font-semibold uppercase tracking-[0.18em]",
             )}
           >
             Decision Intelligence

@@ -7,10 +7,10 @@ import type { ReactNode } from "react";
 
 export function MarketingShell({ children }: { children: ReactNode }) {
   return (
-    <>
+    <div className="marketing-app">
       <SiteHeader />
       <SiteMain>{children}</SiteMain>
       <SiteFooter />
-    </>
+    </div>
   );
 }

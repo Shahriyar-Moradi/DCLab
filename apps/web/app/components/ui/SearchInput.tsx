@@ -43,6 +43,7 @@ export function SearchInput({
         }}
         className={cn(controlClass, controlHeightClass, "pl-9 pr-9", error && controlErrorClass)}
         {...props}
+        aria-label={props["aria-label"] ?? placeholder}
       />
       {value && !disabled ? (
         <span className="absolute right-1 top-1/2 -translate-y-1/2">

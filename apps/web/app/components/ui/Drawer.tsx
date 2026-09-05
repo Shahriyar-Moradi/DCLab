@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/cn";
 import { X } from "lucide-react";
-import { useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconButton } from "./IconButton";
 import { useBodyScrollLock, useEscape, useFocusTrap } from "./overlay";
@@ -21,6 +21,7 @@ export function Drawer({
   side?: "left" | "right";
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useBodyScrollLock(open);
   useEscape(open, onClose);
   useFocusTrap(open, panelRef);
@@ -34,14 +35,14 @@ export function Drawer({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="ui-drawer-title"
+        aria-labelledby={titleId}
         className={cn(
           "app-drawer-enter absolute top-0 flex h-full w-full max-w-md flex-col border-hairline bg-paper-raised shadow-lg sm:w-sidebar",
           side === "left" ? "left-0 border-r" : "right-0 border-l",
         )}
       >
         <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
-          <h2 id="ui-drawer-title" className="font-sans text-section text-ink">
+          <h2 id={titleId} className="min-w-0 break-words font-sans text-section text-ink">
             {title}
           </h2>
           <IconButton label="Close" onClick={onClose}>

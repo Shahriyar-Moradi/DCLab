@@ -2,25 +2,29 @@
 
 import { InsightCard } from "@/app/components/insights/InsightCard";
 import { CATEGORY_META, CATEGORY_ORDER } from "@/app/components/insights/categoryMeta";
+import { Button } from "@/app/components/ui/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { ErrorState } from "@/app/components/ui/ErrorState";
+import { FilterBar } from "@/app/components/ui/FilterBar";
+import { PageHeader } from "@/app/components/ui/PageHeader";
+import { SectionHeader } from "@/app/components/ui/SectionHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { useInsights } from "@/lib/application";
 import { type ClientInsight, type InsightCategoryValue } from "@/lib/domain";
+import { useState } from "react";
 
 export default function InsightsPage() {
   const insights = useInsights();
+  const [category, setCategory] = useState("");
 
   if (insights.isPending) {
     return (
       <div>
-        <InsightsHero />
-        <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Skeleton className="h-40" />
-            <Skeleton className="h-40" />
-            <Skeleton className="h-40" />
-          </div>
+        <InsightsHeader />
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-40" />
+          <Skeleton className="h-40" />
+          <Skeleton className="h-40" />
         </div>
       </div>
     );
@@ -29,13 +33,11 @@ export default function InsightsPage() {
   if (insights.isError) {
     return (
       <div>
-        <InsightsHero />
-        <div className="mx-auto max-w-3xl px-5 py-12">
-          <ErrorState
-            body="Could not load insights from the backend. Check that the API is running."
-            onRetry={() => void insights.refetch()}
-          />
-        </div>
+        <InsightsHeader fetching={insights.isFetching} onRefresh={() => void insights.refetch()} />
+        <ErrorState
+          body="Could not load insights from the backend. Check that the API is running."
+          onRetry={() => void insights.refetch()}
+        />
       </div>
     );
   }
@@ -46,34 +48,50 @@ export default function InsightsPage() {
 
   return (
     <div>
-      <InsightsHero />
-      <div className="mx-auto max-w-7xl px-5 pb-16 lg:px-8">
-        {totalInsights === 0 ? (
-          <EmptyState
-            title="No insights yet"
-            body="Insights appear here once your workspace has recommendations for a business area — ask your DCLab team to prepare one, or try the trial prototypes in Labs."
+      <InsightsHeader fetching={insights.isFetching} onRefresh={() => void insights.refetch()} />
+      {totalInsights === 0 ? (
+        <EmptyState
+          title="No insights yet"
+          body="Insights appear here once your workspace has recommendations for a business area — ask your DCLab team to prepare one, or try the trial prototypes in Labs."
+        />
+      ) : (
+        <div className="space-y-10">
+          <FilterBar
+            ariaLabel="Business area"
+            value={category}
+            onChange={setCategory}
+            options={[
+              { id: "", label: "All areas" },
+              ...CATEGORY_ORDER.map((item) => ({ id: item, label: item })),
+            ]}
           />
-        ) : (
-          <div className="space-y-12">
-            {CATEGORY_ORDER.map((category) => (
-              <InsightSection key={category} category={category} insights={byCategory.get(category) ?? []} />
-            ))}
-          </div>
-        )}
-      </div>
+          {(category ? [category as InsightCategoryValue] : CATEGORY_ORDER).map((item) => (
+            <InsightSection key={item} category={item} insights={byCategory.get(item) ?? []} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function InsightsHero() {
+function InsightsHeader({
+  fetching = false,
+  onRefresh,
+}: {
+  fetching?: boolean;
+  onRefresh?: () => void;
+}) {
   return (
-    <section className="bg-midnight px-5 pb-10 pt-16 text-center lg:px-8 lg:pt-20">
-      <p className="text-eyebrow uppercase text-cyan">Insights</p>
-      <h1 className="mt-4 text-4xl font-bold text-white lg:text-5xl">What Matters, By Business Area.</h1>
-      <p className="mx-auto mt-3 max-w-2xl text-white/65">
-        Every recommendation in plain language — organized the way you run the business, not the way it was built.
-      </p>
-    </section>
+    <PageHeader
+      eyebrow="Workspace"
+      title="Insights"
+      description="Recommendations grouped by business area, using the latest translated results for this workspace."
+      actions={
+        <Button variant="secondary" disabled={!onRefresh || fetching} onClick={onRefresh}>
+          {fetching ? "Refreshing…" : "Refresh"}
+        </Button>
+      }
+    />
   );
 }
 
@@ -82,17 +100,17 @@ function InsightSection({ category, insights }: { category: InsightCategoryValue
   const Icon = meta.icon;
   return (
     <section>
-      <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-soft/60 text-navy">
-          <Icon size={18} />
-        </span>
-        <div>
-          <h2 className="font-display text-section text-ink">{category}</h2>
-          <p className="font-body text-body text-ink-muted">{meta.blurb}</p>
-        </div>
-      </div>
+      <SectionHeader
+        title={category}
+        description={meta.blurb}
+        actions={
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-soft text-navy">
+            <Icon size={18} aria-hidden />
+          </span>
+        }
+      />
       {insights.length === 0 ? (
-        <p className="mt-4 rounded bg-paper-raised px-6 py-8 text-center font-body text-body text-ink-muted">
+        <p className="mt-4 rounded-xl border border-hairline bg-paper-raised px-6 py-8 text-center text-body text-ink-muted">
           No {category.toLowerCase()} insights yet.
         </p>
       ) : (

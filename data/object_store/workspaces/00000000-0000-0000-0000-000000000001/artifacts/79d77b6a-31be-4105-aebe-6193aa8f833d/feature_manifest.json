@@ -1,0 +1,9 @@
+{
+  "pipeline_run_id": "1092bfbd-6f97-4e94-8134-d229fd8f12bf",
+  "feature_set_version_id": "29cefa8c-8748-4699-8bc0-fe692157dc16",
+  "features": [
+    "income",
+    "region"
+  ],
+  "candidate_id": "lightgbm"
+}

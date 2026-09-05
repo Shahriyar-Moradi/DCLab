@@ -37,6 +37,7 @@ export function AppMobileDrawer({ open, onClose }: AppMobileDrawerProps) {
       />
       <div
         ref={panelRef}
+        id="app-mobile-navigation"
         className="app-mobile-drawer-panel"
         role="dialog"
         aria-modal="true"

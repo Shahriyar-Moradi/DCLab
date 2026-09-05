@@ -9,6 +9,7 @@ export type { BreadcrumbItem };
 export function PageHeader({
   eyebrow,
   title,
+  identifier,
   description,
   breadcrumbs,
   status,
@@ -17,6 +18,7 @@ export function PageHeader({
 }: {
   eyebrow?: string;
   title: string;
+  identifier?: string;
   description?: string;
   breadcrumbs?: BreadcrumbItem[];
   status?: { label: string; tone?: SignalTone };
@@ -30,16 +32,19 @@ export function PageHeader({
         <div className="min-w-0">
           {eyebrow ? <p className="product-eyebrow">{eyebrow}</p> : null}
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h1 className="font-sans text-title text-ink">{title}</h1>
+            <h1 className="min-w-0 break-words font-sans text-title text-ink">{title}</h1>
             {status ? (
               <Badge tone={status.tone ?? "amber"} emphasis="soft">
                 {status.label}
               </Badge>
             ) : null}
           </div>
-          {description ? <p className="mt-2 max-w-3xl text-body text-ink-muted">{description}</p> : null}
+          {identifier ? (
+            <p className="mt-1 break-all font-mono text-data text-ink-muted">{identifier}</p>
+          ) : null}
+          {description ? <p className="mt-2 max-w-3xl break-words text-body text-ink-muted">{description}</p> : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">{actions}</div> : null}
       </div>
     </header>
   );

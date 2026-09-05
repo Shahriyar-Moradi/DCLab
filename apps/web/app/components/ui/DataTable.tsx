@@ -18,6 +18,7 @@ export function DataTable<T>({
   emptyTitle = "Nothing to show",
   emptyBody = "There are no rows in this table.",
   sortId,
+  sortDir,
   onSort,
 }: {
   columns: DataTableColumn<T>[];
@@ -26,6 +27,7 @@ export function DataTable<T>({
   emptyTitle?: string;
   emptyBody?: string;
   sortId?: string;
+  sortDir?: "asc" | "desc";
   onSort?: (id: string) => void;
 }) {
   if (rows.length === 0) {
@@ -35,17 +37,21 @@ export function DataTable<T>({
     <Table>
       <thead>
         <tr>
-          {columns.map((column) => (
-            <Th
-              key={column.id}
-              sortable={Boolean(column.sortable && onSort)}
-              onSort={column.sortable && onSort ? () => onSort(column.id) : undefined}
-              aria-sort={sortId === column.id ? "other" : undefined}
-              className={column.className}
-            >
-              {column.header}
-            </Th>
-          ))}
+          {columns.map((column) => {
+            const sorted = sortId === column.id;
+            const ariaSort = sorted ? (sortDir === "asc" ? "ascending" : sortDir === "desc" ? "descending" : "other") : undefined;
+            return (
+              <Th
+                key={column.id}
+                sortable={Boolean(column.sortable && onSort)}
+                onSort={column.sortable && onSort ? () => onSort(column.id) : undefined}
+                aria-sort={ariaSort}
+                className={column.className}
+              >
+                {column.header}
+              </Th>
+            );
+          })}
         </tr>
       </thead>
       <tbody>

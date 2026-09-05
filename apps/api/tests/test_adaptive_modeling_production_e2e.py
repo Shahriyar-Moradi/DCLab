@@ -302,9 +302,11 @@ def test_production_report_corruption_fails_verifier(
 
 
 def test_monitor_page_exposes_required_scientific_panels():
-    source = (
-        REPO_ROOT / "apps/web/app/admin/pipeline-runs/[pipelineId]/monitor/page.tsx"
-    ).read_text(encoding="utf-8")
+    page = REPO_ROOT / "apps/web/app/admin/pipeline-runs/[pipelineId]/monitor/page.tsx"
+    view = REPO_ROOT / "apps/web/app/components/explorer/PipelineMonitorView.tsx"
+    page_source = page.read_text(encoding="utf-8")
+    source = view.read_text(encoding="utf-8")
+    assert "PipelineMonitorView" in page_source
     for title in (
         "Holdout Strategy",
         "Validation Strategy",

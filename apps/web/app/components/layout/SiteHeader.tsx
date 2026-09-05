@@ -3,22 +3,14 @@
 import { BrandLogo } from "@/app/components/brand/BrandLogo";
 import { useSession } from "@/lib/application";
 import { defaultProductRoute } from "@/app/components/layout/app-navigation";
+import { BOOK_A_DEMO_HREF, MARKETING_NAV } from "@/app/components/marketing/links";
+import { buttonClassName } from "@/app/components/ui/Button";
+import { useBodyScrollLock, useEscape, useFocusTrap } from "@/app/components/ui/overlay";
 import { cn } from "@/lib/cn";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-
-const MARKETING = [
-  { href: "/company", label: "Company" },
-  { href: "/solutions", label: "Solutions" },
-  { href: "/platform", label: "Platform" },
-  { href: "/industries", label: "Industries" },
-  { href: "/resources", label: "Resources" },
-  { href: "/pricing", label: "Pricing" },
-];
-
-const BOOK_A_DEMO_HREF = "mailto:hello@decision.ai?subject=Book%20a%20demo";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 function isMarketingActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -28,18 +20,31 @@ export function SiteHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const { user, loaded } = useSession();
+  const menuId = useId();
+  const headerRef = useRef<HTMLElement>(null);
+  const sessionHref = loaded && user ? defaultProductRoute(user.role) : "/login";
+  const sessionLabel = loaded && user ? "Open workspace" : "Sign In";
+  const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  useBodyScrollLock(open);
+  useEscape(open, close);
+  useFocusTrap(open, headerRef);
 
   return (
-    <header className="relative z-40 border-b border-hairline bg-paper/85 backdrop-blur">
-      <div className="mx-auto flex max-w-page items-center justify-between gap-4 px-page-x py-3 lg:px-page-x-lg">
+    <header ref={headerRef} className="marketing-header">
+      <div className="marketing-wrap flex h-16 items-center justify-between gap-4">
         <BrandLogo />
-        <nav className="hidden items-center gap-5 xl:flex" aria-label="Marketing">
-          {MARKETING.map((item) => (
+        <nav className="hidden items-center gap-6 lg:flex" aria-label="Marketing">
+          {MARKETING_NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "text-[0.82rem] font-medium",
+                "text-[14px] font-medium transition-ui",
                 isMarketingActive(pathname, item.href) ? "text-ink" : "text-ink-muted hover:text-ink",
               )}
             >
@@ -47,60 +52,47 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <div className="hidden items-center gap-4 md:flex">
-          {loaded && user ? (
-            <Link href={defaultProductRoute(user.role)} className="text-[0.82rem] font-medium text-ink-muted hover:text-ink">
-              Open workspace
-            </Link>
-          ) : (
-            <Link href="/login" className="text-[0.82rem] font-medium text-ink-muted hover:text-ink">
-              Sign In
-            </Link>
-          )}
-          <Link
-            href={BOOK_A_DEMO_HREF}
-            className="bg-brand-gradient shadow-brand rounded-full px-4 py-2 text-[0.82rem] font-semibold text-white"
-          >
+        <div className="hidden items-center gap-4 lg:flex">
+          <Link href={sessionHref} className="text-[14px] font-medium text-ink-muted transition-ui hover:text-ink">
+            {sessionLabel}
+          </Link>
+          <Link href={BOOK_A_DEMO_HREF} className={buttonClassName({ size: "md", className: "rounded-full" })}>
             Book a Demo
           </Link>
         </div>
-        <button type="button" className="xl:hidden" aria-label="Open menu" onClick={() => setOpen(true)}>
-          <Menu size={22} className="text-ink" />
+        <button
+          type="button"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink lg:hidden"
+          aria-label={open ? "Close menu" : "Open menu"}
+          aria-expanded={open}
+          aria-controls={menuId}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {open ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
       {open ? (
-        <div className="app-overlay fixed inset-0 z-50 bg-black/60 xl:hidden">
-          <aside className="app-drawer-enter h-full w-sidebar bg-paper-raised p-5">
-            <div className="flex items-center justify-between">
-              <BrandLogo />
-              <button type="button" aria-label="Close menu" onClick={() => setOpen(false)}>
-                <X size={20} className="text-ink" />
-              </button>
-            </div>
-            <nav className="mt-8 flex flex-col gap-3">
-              {MARKETING.map((item) => (
-                <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="text-ink">
-                  {item.label}
-                </Link>
-              ))}
-              {loaded && user ? (
-                <Link href={defaultProductRoute(user.role)} onClick={() => setOpen(false)} className="mt-4 text-ink">
-                  Open workspace
-                </Link>
-              ) : (
-                <Link href="/login" onClick={() => setOpen(false)} className="text-ink-muted">
-                  Sign In
-                </Link>
-              )}
+        <div id={menuId} className="border-t border-hairline lg:hidden">
+          <nav className="marketing-wrap flex flex-col gap-3 py-4" aria-label="Marketing mobile">
+            {MARKETING_NAV.map((item) => (
               <Link
-                href={BOOK_A_DEMO_HREF}
-                onClick={() => setOpen(false)}
-                className="bg-brand-gradient mt-2 rounded-full px-4 py-2 text-center text-white"
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "text-[14px] font-medium",
+                  isMarketingActive(pathname, item.href) ? "text-ink" : "text-ink-muted",
+                )}
               >
-                Book a Demo
+                {item.label}
               </Link>
-            </nav>
-          </aside>
+            ))}
+            <Link href={sessionHref} className="text-[14px] font-medium text-ink-muted">
+              {sessionLabel}
+            </Link>
+            <Link href={BOOK_A_DEMO_HREF} className={buttonClassName({ size: "md", className: "mt-1 w-full rounded-full" })}>
+              Book a Demo
+            </Link>
+          </nav>
         </div>
       ) : null}
     </header>

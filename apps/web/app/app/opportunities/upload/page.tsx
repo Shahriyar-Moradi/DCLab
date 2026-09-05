@@ -1,6 +1,10 @@
 "use client";
 
 import { Button } from "@/app/components/ui/Button";
+import { DataTable } from "@/app/components/ui/DataTable";
+import { PageHeader } from "@/app/components/ui/PageHeader";
+import { Panel } from "@/app/components/ui/Card";
+import { UploadZone } from "@/app/components/ui/UploadZone";
 import { useUploadOpportunities } from "@/lib/application";
 import Link from "next/link";
 import { useState } from "react";
@@ -8,7 +12,6 @@ import { useState } from "react";
 export default function UploadPage() {
   const upload = useUploadOpportunities();
   const [progress, setProgress] = useState(0);
-  const [drag, setDrag] = useState(false);
 
   function send(file: File) {
     setProgress(0);
@@ -16,65 +19,61 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="max-w-xl">
-      <h1 className="font-display text-title text-ink">Upload opportunities</h1>
-      <p className="mt-2 font-body text-body text-ink-muted">
-        CSV with at least external_id, customer_id, amount, currency, stage, source, owner_id.
-      </p>
-      <label
-        className={`mt-8 block cursor-pointer rounded border border-hairline bg-paper-raised px-8 py-16 text-center ${drag ? "bg-navy-soft" : ""}`}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDrag(true);
-        }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDrag(false);
-          const file = event.dataTransfer.files[0];
+    <div>
+      <PageHeader
+        eyebrow="Workspace"
+        title="Upload opportunities"
+        description="CSV with at least external_id, customer_id, amount, currency, stage, source, owner_id."
+        breadcrumbs={[
+          { label: "Opportunities", href: "/app/opportunities" },
+          { label: "Upload" },
+        ]}
+      />
+
+      <UploadZone
+        accept=".csv,text/csv"
+        disabled={upload.isPending}
+        label="Drop a CSV here, or click to choose a file"
+        hint="One row per opportunity. Invalid rows are rejected without blocking the rest of the file."
+        error={upload.isError ? upload.error.message : undefined}
+        onFiles={(files) => {
+          const file = files[0];
           if (file) send(file);
         }}
-      >
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          className="sr-only"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) send(file);
-          }}
-        />
-        <span className="font-body text-body text-ink">Drop a CSV here, or click to choose a file</span>
-      </label>
+      />
+
       {upload.isPending ? (
-        <p className="mt-4 font-mono text-data text-ink">Uploading {progress}%</p>
-      ) : null}
-      {upload.isError ? <p className="mt-4 font-body text-body text-oxblood">{upload.error.message}</p> : null}
-      {upload.data ? (
-        <div className="mt-8 rounded bg-paper-raised p-6">
-          <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">Result</p>
-          <p className="mt-2 font-mono text-title text-ink">{upload.data.inserted} inserted</p>
-          <p className="mt-1 font-mono text-data text-ink-muted">{upload.data.rejected} rejected</p>
-          {upload.data.errors.length ? (
-            <ul className="mt-4">
-              {upload.data.errors.map((item) => (
-                <li key={`${item.row}-${item.reason}`} className="border-t border-hairline py-2 font-mono text-data text-ink">
-                  row {item.row}: {item.reason}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <Link className="mt-6 inline-block font-body text-body text-navy underline-offset-2 hover:underline" href="/app/opportunities">
-            Open opportunities
-          </Link>
+        <div className="mt-4" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Upload progress">
+          <p className="font-mono text-data text-ink">Uploading {progress}%</p>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-navy-soft">
+            <div className="h-full rounded-full bg-navy" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
+          </div>
         </div>
       ) : null}
-      <Button
-        className="mt-6"
-        variant="secondary"
-        disabled={upload.isPending}
-        onClick={() => upload.reset()}
-      >
+
+      {upload.data ? (
+        <Panel className="mt-6" title="Result" description="Inserted rows are available on the opportunities list.">
+          <p className="font-mono text-title text-ink">{upload.data.inserted} inserted</p>
+          <p className="mt-1 font-mono text-data text-ink-muted">{upload.data.rejected} rejected</p>
+          {upload.data.errors.length ? (
+            <div className="mt-4">
+              <DataTable
+                columns={[
+                  { id: "row", header: "Row", mono: true, cell: (item) => String(item.row) },
+                  { id: "reason", header: "Reason", cell: (item) => item.reason },
+                ]}
+                rows={upload.data.errors}
+                rowKey={(item) => `${item.row}-${item.reason}`}
+              />
+            </div>
+          ) : null}
+          <Link className="mt-6 inline-block font-medium text-navy underline-offset-2 hover:underline" href="/app/opportunities">
+            Open opportunities
+          </Link>
+        </Panel>
+      ) : null}
+
+      <Button className="mt-6" variant="secondary" disabled={upload.isPending} onClick={() => upload.reset()}>
         Clear result
       </Button>
     </div>

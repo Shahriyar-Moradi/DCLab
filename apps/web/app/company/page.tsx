@@ -1,9 +1,9 @@
-import { MarketingShell, PageHero } from "@/app/components/marketing/primitives";
+import { MarketingPage, PageHero } from "@/app/components/marketing/primitives";
 import { GetStartedCTA, ServicesGrid, WhyUsSection } from "@/app/components/marketing/sections";
 
 export default function CompanyPage() {
   return (
-    <MarketingShell>
+    <MarketingPage>
       <PageHero
         eyebrow="Services"
         title="Consulting Before You Adopt"
@@ -12,6 +12,6 @@ export default function CompanyPage() {
       <ServicesGrid />
       <WhyUsSection />
       <GetStartedCTA />
-    </MarketingShell>
+    </MarketingPage>
   );
 }

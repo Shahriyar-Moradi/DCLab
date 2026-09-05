@@ -194,7 +194,7 @@ export function useGenerateDecision(): ReturnType<
   });
 }
 
-export function useOverviewSnapshot(): ReturnType<
+export function useOverviewSnapshot(enabled = true): ReturnType<
   typeof useQuery<{ opportunityTotal: number; decisions: DecisionList["items"]; decisionTotal: number; truncated: boolean }>
 > {
   return useQuery({
@@ -216,6 +216,7 @@ export function useOverviewSnapshot(): ReturnType<
         truncated: first.total > 500,
       };
     },
+    enabled,
   });
 }
 
@@ -408,6 +409,17 @@ export function useLabTasks() {
   return useQuery({
     queryKey: ["lab", "tasks"],
     queryFn: () => apiGet("/admin/tasks", z.array(LabTaskSchema)),
+  });
+}
+
+export function useCreateLabTaskFromConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (path: string) =>
+      apiPost(`/admin/tasks/from-config?path=${encodeURIComponent(path)}`, LabTaskSchema, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["lab", "tasks"] });
+    },
   });
 }
 

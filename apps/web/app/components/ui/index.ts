@@ -2,8 +2,9 @@ export { ActionMenu as Dropdown, ActionMenu, type ActionMenuItem } from "./Actio
 export { Badge, type BadgeTone } from "./Badge";
 export { Breadcrumbs, type BreadcrumbItem } from "./Breadcrumbs";
 export { Button, buttonClassName, type ButtonSize, type ButtonVariant } from "./Button";
-export { Card, Panel } from "./Card";
+export { Card, Fact, FactGrid, Panel } from "./Card";
 export { Checkbox } from "./Checkbox";
+export { CollectionSearch } from "./CollectionSearch";
 export { ConfidenceBar } from "./ConfidenceBar";
 export { DataTable, type DataTableColumn } from "./DataTable";
 export { Dialog } from "./Dialog";

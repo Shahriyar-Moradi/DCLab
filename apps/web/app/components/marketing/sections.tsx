@@ -1,480 +1,227 @@
 import {
-  ArrowDown,
   ArrowRight,
   BarChart3,
-  Bot,
-  Brain,
+  Beaker,
   Building2,
-  Calendar,
-  Check,
-  CheckCircle2,
-  CircleDollarSign,
-  Clock,
-  Eye,
-  FileText,
-  Heart,
-  Hexagon,
+  ClipboardList,
+  LayoutDashboard,
   Lightbulb,
   LineChart,
-  Map,
   Megaphone,
   Plug,
   RefreshCw,
   Rocket,
-  Search,
-  Sparkles,
+  ScanSearch,
   Target,
-  TrendingUp,
-  User,
+  Upload,
   UserCheck,
-  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { FeatureCard } from "./primitives";
-
-const BOOK_A_DEMO_HREF = "mailto:hello@decision.ai?subject=Book%20a%20demo";
+import { BOOK_A_DEMO_HREF } from "./links";
+import { Eyebrow, FeatureCard, MarketingButton, MarketingSection, MarketingWrap } from "./primitives";
 
 export const ML_FEATURES: { icon: LucideIcon; title: string; body: string }[] = [
-  { icon: TrendingUp, title: "Revenue Forecasting", body: "Predict future revenue with confidence intervals and scenario modeling." },
-  { icon: Target, title: "Conversion Prediction", body: "Forecast which prospects will convert before they even enter your pipeline." },
-  { icon: UserCheck, title: "Lead Scoring", body: "Automatically rank every lead by likelihood to close and potential value." },
-  { icon: CircleDollarSign, title: "Demand Forecast", body: "Anticipate market demand shifts weeks before they impact your business." },
-  { icon: Heart, title: "Customer Lifetime Value", body: "Calculate and predict the true lifetime value of every customer." },
-  { icon: RefreshCw, title: "Model Retraining", body: "Models continuously retrain on new data so predictions stay accurate." },
-  { icon: Hexagon, title: "Feature Engineering", body: "Automatically discover the data signals that drive the best outcomes." },
-  { icon: Eye, title: "Explainable AI", body: "Every prediction comes with a clear explanation of why the AI decided." },
+  { icon: Target, title: "Conversion scoring", body: "Score which opportunities are more likely to convert from the fields you upload." },
+  { icon: UserCheck, title: "Lead ranking", body: "Rank pipeline rows by the recorded recommendation and confidence band." },
+  { icon: LineChart, title: "Revenue views", body: "Read expected value from decisions currently in the ledger — not a separate forecast product." },
+  { icon: ScanSearch, title: "Recommended actions", body: "Each decision returns a next action with reasoning the workspace can audit." },
+  { icon: Beaker, title: "Lab experiments", body: "Profile a dataset, define a task, and run a budgeted candidate search against a baseline." },
+  { icon: RefreshCw, title: "Retrain history", body: "Staff monitoring shows consecutive evaluation deltas when a later run exists." },
+  { icon: Lightbulb, title: "Translated insights", body: "Client insights are generated from the latest recorded simulation or trial for a use case." },
+  { icon: ClipboardList, title: "Decision ledger", body: "Keep an append-only record of scored opportunities and the action that was recommended." },
 ];
 
 export const SERVICES: { icon: LucideIcon; title: string; body: string }[] = [
-  { icon: Map, title: "AI Strategy", body: "Business AI roadmap — identify where AI creates the most value across your organization." },
-  { icon: Bot, title: "AI Agent Development", body: "Custom autonomous agents built for your specific workflows and data sources." },
-  { icon: LineChart, title: "Predictive Analytics", body: "Machine learning models tailored to your unique business outcomes and KPIs." },
-  { icon: Plug, title: "Enterprise Integration", body: "CRM, ERP, marketing stack, and cloud — connected into one intelligent system." },
-  { icon: Rocket, title: "AI Transformation", body: "End-to-end implementation — from strategy to deployed AI across your entire business." },
+  { icon: ScanSearch, title: "Decision layer design", body: "Map opportunity fields onto scoring, recommended actions, and an auditable ledger." },
+  { icon: Beaker, title: "Experimentation Lab", body: "Stand up dataset profiling, task specs, and candidate search without a new CRM." },
+  { icon: LineChart, title: "Predictive workflows", body: "Connect conversion, ranking, and holdout evaluation to the models the lab actually trains." },
+  { icon: Plug, title: "Workspace onboarding", body: "Load historical opportunities from CSV and review decisions in a role-aware workspace." },
+  { icon: Rocket, title: "Rollout support", body: "Adopt the operating surfaces that already exist: dashboards, insights, labs, and administration." },
 ];
 
-export const AGENTS: {
-  icon: LucideIcon;
-  name: string;
-  confidence: string;
-  tasks: string;
-  recommendation: string;
-  gauge: number;
-}[] = [
-  { icon: Search, name: "Research Agent", confidence: "94%", tasks: "8,210", recommendation: "Monitor competitor pricing trends in Q3.", gauge: 94 },
-  { icon: Megaphone, name: "Marketing Agent", confidence: "96%", tasks: "12,430", recommendation: "Increase Meta Ads budget by 18%.", gauge: 96 },
-  { icon: User, name: "Sales Agent", confidence: "91%", tasks: "6,847", recommendation: "Prioritize 14 high-probability leads today.", gauge: 91 },
-  { icon: CircleDollarSign, name: "Pricing Agent", confidence: "89%", tasks: "4,512", recommendation: "Adjust premium tier +7% for Q3.", gauge: 89 },
-  { icon: Heart, name: "Customer Agent", confidence: "93%", tasks: "9,180", recommendation: "3 accounts at risk — trigger retention flow.", gauge: 93 },
-  { icon: BarChart3, name: "Executive Agent", confidence: "97%", tasks: "15,602", recommendation: "Revenue forecast up 8.2% — align hiring plan.", gauge: 97 },
-];
-
-export const INTEGRATIONS = [
-  { letter: "G", name: "Google Analytics" },
-  { letter: "M", name: "Meta Ads" },
-  { letter: "H", name: "HubSpot" },
-  { letter: "S", name: "Salesforce" },
-  { letter: "G", name: "GA4" },
-  { letter: "S", name: "Stripe" },
-  { letter: "S", name: "Snowflake" },
-  { letter: "B", name: "BigQuery" },
-  { letter: "S", name: "SQL Server" },
-  { letter: "C", name: "CRM Sync" },
-  { letter: "E", name: "ERP Connect" },
-  { letter: "Z", name: "Zapier" },
-];
-
-export const PLATFORM_PILLS: { icon: LucideIcon; label: string; href: string }[] = [
-  { icon: BarChart3, label: "Dashboard", href: "/app/dashboards" },
-  { icon: LineChart, label: "Marketing", href: "/solutions" },
-  { icon: User, label: "Sales", href: "/app/opportunities" },
-  { icon: CircleDollarSign, label: "Pricing", href: "/pricing" },
-  { icon: Heart, label: "Customer", href: "/solutions" },
-  { icon: Hexagon, label: "Machine Learning", href: "/solutions" },
-  { icon: Bot, label: "Agents", href: "/platform" },
-  { icon: FileText, label: "Reports", href: "/resources" },
-  { icon: Sparkles, label: "Lab", href: "/admin/lab" },
+export const PLATFORM_SURFACES: { icon: LucideIcon; label: string; href: string; body: string }[] = [
+  { icon: LayoutDashboard, label: "Dashboard", href: "/app/dashboards", body: "Workspace totals from opportunities and the decision ledger." },
+  { icon: BarChart3, label: "Opportunities", href: "/app/opportunities", body: "The pipeline rows the engine scores." },
+  { icon: ClipboardList, label: "Decisions", href: "/app/decisions", body: "Recommended actions, confidence, and expected value." },
+  { icon: Lightbulb, label: "Insights", href: "/app/insights", body: "Translated findings from recorded trials." },
+  { icon: Beaker, label: "Labs", href: "/app/labs", body: "Bounded problem trials and dataset uploads." },
+  { icon: Building2, label: "Administration", href: "/business", body: "Tenant explorer for authorized business roles." },
 ];
 
 export const INDUSTRIES = [
-  { icon: Building2, title: "Financial Services", body: "Score pipeline quality, prioritize outreach, and audit every recommended action." },
-  { icon: LineChart, title: "B2B SaaS", body: "Turn product and CRM signals into conversion scores and next-best actions." },
-  { icon: Megaphone, title: "Marketing & Growth", body: "Connect campaign data to opportunity scoring without replacing your stack." },
-  { icon: Rocket, title: "Enterprise Sales", body: "A decision layer on top of the CRM — generate, review, and explain actions." },
+  { icon: Building2, title: "Financial services", body: "Score pipeline quality, prioritize outreach, and audit every recommended action." },
+  { icon: LineChart, title: "B2B SaaS", body: "Turn product and CRM exports into conversion scores and next-best actions." },
+  { icon: Megaphone, title: "Marketing and growth", body: "Connect campaign files to opportunity scoring without replacing your stack." },
+  { icon: Rocket, title: "Enterprise sales", body: "A decision layer on top of the CRM export — generate, review, and explain actions." },
 ];
 
 export function WhyUsSection() {
   return (
-    <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-      <p className="text-center text-eyebrow uppercase text-brand">Why companies choose us</p>
-      <h2 className="mt-4 text-center text-3xl font-bold text-ink lg:text-4xl">
-        Continuous Intelligence, Not One-Time Consulting
-      </h2>
+    <MarketingSection>
+      <Eyebrow className="text-center">Why this product exists</Eyebrow>
+      <h2 className="mt-4 text-center text-title text-ink lg:text-[2rem]">A decision layer that stays in the loop</h2>
       <div className="mt-12 grid gap-6 lg:grid-cols-2">
-        <article className="rounded-3xl border border-hairline bg-paper-raised p-8 shadow-sm">
-          <p className="text-eyebrow uppercase text-ink-muted">Traditional consulting</p>
-          <h3 className="mt-2 text-2xl font-bold text-ink">The old way</h3>
-          <ol className="mt-8 space-y-4">
-            {[
-              { icon: FileText, label: "Reports" },
-              { icon: Calendar, label: "Meetings" },
-              { icon: Lightbulb, label: "Recommendations" },
-              { icon: CheckCircle2, label: "Done." },
-            ].map((row, index, all) => (
-              <li key={row.label} className="flex items-center justify-between">
-                <span className="flex items-center gap-3 text-ink">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-navy-soft text-ink-muted">
-                    <row.icon size={18} />
-                  </span>
-                  {row.label}
-                </span>
-                {index < all.length - 1 ? <ArrowDown size={16} className="text-ink-muted" /> : null}
-              </li>
-            ))}
+        <article className="rounded-2xl border border-hairline bg-paper-raised p-8">
+          <p className="text-eyebrow uppercase tracking-[0.18em] text-ink-muted">One-off consulting</p>
+          <h3 className="mt-2 text-section text-ink">A report, then a pause</h3>
+          <ol className="mt-8 space-y-3 text-body text-ink-muted">
+            <li>Static slides</li>
+            <li>A round of meetings</li>
+            <li>Recommendations that expire</li>
           </ol>
-          <p className="mt-8 text-sm text-ink-muted">Static. Expires. Then you hire another consultant.</p>
         </article>
-        <article className="rounded-3xl bg-midnight p-8 text-white shadow-brand">
-          <p className="text-eyebrow uppercase text-cyan">Our platform</p>
-          <h3 className="mt-2 text-2xl font-bold">The Decision.ai way</h3>
-          <ol className="mt-8 space-y-4">
-            {[
-              { icon: Brain, label: "AI Learns" },
-              { icon: LineChart, label: "Predicts" },
-              { icon: Zap, label: "Improves" },
-              { icon: RefreshCw, label: "Learns Again" },
-            ].map((row) => (
-              <li key={row.label} className="flex items-center justify-between">
-                <span className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-cyan">
-                    <row.icon size={18} />
-                  </span>
-                  {row.label}
-                </span>
-                <ArrowDown size={16} className="text-cyan" />
-              </li>
-            ))}
+        <article className="rounded-2xl bg-midnight p-8 text-white">
+          <p className="text-eyebrow uppercase tracking-[0.18em] text-cyan">This workspace</p>
+          <h3 className="mt-2 text-section">Score, decide, re-run</h3>
+          <ol className="mt-8 space-y-3 text-body text-white/80">
+            <li>Upload opportunities</li>
+            <li>Record an audited decision</li>
+            <li>Compare models in the Lab</li>
           </ol>
-          <p className="mt-8 text-sm text-white/80">Continuous intelligence. It never stops improving.</p>
         </article>
       </div>
-    </section>
+    </MarketingSection>
   );
 }
 
-export function IntegrationsSection() {
+export function ProductPathSection() {
   return (
-    <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-      <h2 className="text-center text-3xl font-bold text-ink lg:text-4xl">Connects to Your Entire Stack</h2>
-      <p className="mx-auto mt-4 max-w-2xl text-center text-ink-muted">
-        Your data lives everywhere. Decision.ai brings it together into one intelligent system.
-      </p>
-      <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {INTEGRATIONS.map((item) => (
-          <div
-            key={item.name}
-            className="flex items-center gap-3 rounded-2xl bg-paper-raised px-4 py-4 shadow-sm ring-1 ring-hairline transition hover:shadow-md hover:ring-navy/20"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-soft text-sm font-bold text-brand">
-              {item.letter}
-            </span>
-            <span className="text-sm font-medium text-ink">{item.name}</span>
-          </div>
-        ))}
+    <MarketingSection>
+      <Eyebrow className="text-center">How it works</Eyebrow>
+      <h2 className="mt-4 text-center text-title text-ink lg:text-[2rem]">From upload to decision to experiment</h2>
+      <div className="mt-12 grid gap-6 lg:grid-cols-3">
+        <FeatureCard
+          icon={Upload}
+          title="Upload opportunities"
+          body="Drop in a CSV of historical sales opportunities — external ID, amount, stage, source, owner."
+          href="/app/opportunities/upload"
+        />
+        <FeatureCard
+          icon={ScanSearch}
+          title="Score and decide"
+          body="The decision engine scores each row and returns a recommended action with confidence and reasoning."
+          href="/app/decisions"
+        />
+        <FeatureCard
+          icon={Beaker}
+          title="Experiment in Labs"
+          body="Profile a dataset, define a prediction task, and run a budgeted candidate search against a baseline."
+          href="/app/labs"
+        />
       </div>
-      <p className="mt-8 text-center text-sm text-ink-muted">
-        Plus 50+ additional connectors. Don&apos;t see yours?{" "}
-        <Link href={BOOK_A_DEMO_HREF} className="font-semibold text-brand">
-          Talk to us →
-        </Link>
-      </p>
-    </section>
+    </MarketingSection>
   );
 }
 
-export function CaseStudySection() {
+export function SurfaceGrid() {
   return (
-    <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-      <p className="text-center text-eyebrow uppercase text-brand">Case studies</p>
-      <h2 className="mt-4 text-center text-3xl font-bold text-ink lg:text-4xl">Proof, Not Promises</h2>
-      <div className="mt-12 overflow-hidden rounded-3xl shadow-sm ring-1 ring-hairline lg:grid lg:grid-cols-2">
-        <div className="bg-paper-raised p-8 lg:p-10">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-midnight text-white">
-              <Building2 size={22} />
-            </span>
-            <div>
-              <p className="font-bold text-ink">Multibank</p>
-              <p className="text-sm text-ink-muted">AI Marketing Intelligence</p>
-            </div>
-          </div>
-          <p className="mt-8 text-eyebrow uppercase text-ink-muted">Problem</p>
-          <p className="mt-2 text-sm leading-6 text-ink-muted">
-            Manual reporting and slow decision-making across 12 markets left teams reacting days after the window closed.
-          </p>
-          <p className="mt-6 text-eyebrow uppercase text-ink-muted">Solution</p>
-          <p className="mt-2 text-sm leading-6 text-ink-muted">
-            Decision.ai scores opportunities, recommends the next action, and keeps an audit trail so every market can
-            move on the same intelligence.
-          </p>
-        </div>
-        <div className="bg-midnight p-8 text-white lg:p-10">
-          <p className="text-eyebrow uppercase text-cyan">Results</p>
-          <div className="mt-6 grid grid-cols-2 gap-6">
-            {[
-              { icon: Target, value: "+41%", label: "Lead Quality" },
-              { icon: TrendingUp, value: "+22%", label: "Conversion" },
-              { icon: CircleDollarSign, value: "+35%", label: "Campaign ROI" },
-              { icon: Clock, value: "-90%", label: "Reporting Time" },
-            ].map((stat) => (
-              <div key={stat.label}>
-                <stat.icon size={18} className="text-cyan" />
-                <p className="mt-2 text-3xl font-bold text-cyan">{stat.value}</p>
-                <p className="text-sm text-white/70">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-          <Link href="/resources" className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-cyan">
-            Read full case study <ArrowRight size={16} />
-          </Link>
-        </div>
-      </div>
-    </section>
+    <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {PLATFORM_SURFACES.map((item) => (
+        <FeatureCard key={item.label} icon={item.icon} title={item.label} body={item.body} href={item.href} />
+      ))}
+    </div>
   );
 }
 
 export function MLGrid() {
   return (
-    <div className="mx-auto mt-12 grid max-w-7xl gap-4 px-5 sm:grid-cols-2 lg:grid-cols-4 lg:px-8">
+    <MarketingWrap className="grid gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-4">
       {ML_FEATURES.map((item) => (
         <FeatureCard key={item.title} {...item} />
       ))}
-    </div>
+    </MarketingWrap>
   );
 }
 
 export function ServicesGrid() {
   return (
-    <div className="mx-auto mt-12 grid max-w-7xl gap-4 px-5 md:grid-cols-2 lg:grid-cols-3 lg:px-8">
+    <MarketingWrap className="grid gap-4 pb-4 md:grid-cols-2 lg:grid-cols-3">
       {SERVICES.map((item) => (
         <FeatureCard key={item.title} {...item} />
       ))}
-      <article className="bg-brand-gradient flex flex-col justify-between rounded-2xl p-6 text-white shadow-brand">
+      <article className="flex flex-col justify-between rounded-2xl bg-midnight p-6 text-white">
         <div>
-          <h3 className="text-xl font-bold">Not sure where to start?</h3>
-          <p className="mt-2 text-sm text-white/85">Book a free consultation and start your AI transformation journey.</p>
+          <h3 className="text-card">Not sure where to start?</h3>
+          <p className="mt-2 text-body text-white/75">Book a walkthrough of the workspace that already exists.</p>
         </div>
         <Link
           href={BOOK_A_DEMO_HREF}
-          className="mt-6 inline-flex w-fit items-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-brand"
+          className="mt-6 inline-flex h-10 w-fit items-center rounded-full bg-white px-5 text-button font-medium text-navy"
         >
-          Book a Consultation
+          Book a Demo
         </Link>
       </article>
-    </div>
+    </MarketingWrap>
   );
 }
 
-export function AgentsGrid() {
+export function DataInSection() {
   return (
-    <div className="mx-auto mt-12 grid max-w-7xl gap-4 px-5 md:grid-cols-2 lg:grid-cols-3 lg:px-8">
-      {AGENTS.map((agent) => (
-        <article key={agent.name} className="rounded-2xl bg-white/5 p-5 ring-1 ring-white/10">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan/15 text-cyan">
-                <agent.icon size={18} />
-              </span>
-              <div>
-                <p className="font-semibold text-white">{agent.name}</p>
-                <p className="text-xs font-medium text-green">• Active</p>
-              </div>
-            </div>
-            <span
-              className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-cyan text-xs font-bold text-cyan"
-              aria-hidden
-            >
-              {agent.gauge}%
-            </span>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-black/30 p-3">
-              <p className="text-[0.65rem] uppercase tracking-wide text-white/50">Confidence</p>
-              <p className="mt-1 font-semibold text-white">{agent.confidence}</p>
-            </div>
-            <div className="rounded-xl bg-black/30 p-3">
-              <p className="text-[0.65rem] uppercase tracking-wide text-white/50">Tasks completed</p>
-              <p className="mt-1 font-semibold text-white">{agent.tasks}</p>
-            </div>
-          </div>
-          <div className="mt-3 rounded-xl bg-black/30 p-3">
-            <p className="text-[0.65rem] uppercase tracking-wide text-white/50">Recommendation</p>
-            <p className="mt-1 text-sm text-white/90">{agent.recommendation}</p>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-export function PlatformPills() {
-  return (
-    <div className="mx-auto mt-10 flex max-w-4xl flex-wrap justify-center gap-2 px-5">
-      {PLATFORM_PILLS.map((pill) => (
-        <Link
-          key={pill.label}
-          href={pill.href}
-          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/85 hover:bg-white/10"
-        >
-          <pill.icon size={14} />
-          {pill.label}
-        </Link>
-      ))}
-    </div>
+    <MarketingWrap className="grid gap-6 pb-8 md:grid-cols-2">
+      <FeatureCard
+        icon={Upload}
+        title="Opportunity CSV"
+        body="Historical sales rows become the workspace ledger. Sign in to upload."
+        href="/app/opportunities/upload"
+      />
+      <FeatureCard
+        icon={Beaker}
+        title="Labs datasets"
+        body="Spreadsheet and table uploads drive bounded trials and auto-train jobs."
+        href="/app/labs"
+      />
+    </MarketingWrap>
   );
 }
 
 export function GetStartedCTA() {
   return (
-    <section className="bg-midnight px-5 py-20 text-center text-white lg:px-8">
-      <p className="text-eyebrow uppercase text-cyan">Get started</p>
-      <h2 className="mx-auto mt-4 max-w-3xl text-4xl font-bold lg:text-5xl">
-        Ready to Build an <span className="text-brand-gradient">AI-Driven Business?</span>
-      </h2>
-      <p className="mx-auto mt-4 max-w-2xl text-white/70">
-        See how Decision.ai can predict outcomes, optimize decisions, and grow your business with continuous AI
-        intelligence.
-      </p>
-      <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <Link
-          href={BOOK_A_DEMO_HREF}
-          className="bg-brand-gradient shadow-brand inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white"
-        >
-          Book a Demo <ArrowRight size={16} />
-        </Link>
-        <Link href="/platform" className="rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white">
-          Explore the Platform
-        </Link>
+    <MarketingSection invert>
+      <div className="text-center">
+        <Eyebrow className="text-cyan">Get started</Eyebrow>
+        <h2 className="mx-auto mt-4 max-w-3xl text-title text-white lg:text-[2rem]">
+          Open the workspace, or talk with the team
+        </h2>
+        <p className="mx-auto mt-4 max-w-2xl text-body text-white/70">
+          Decision.ai scores opportunities, recommends the next action, and keeps experiments in the Lab.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <MarketingButton href={BOOK_A_DEMO_HREF} invert>
+            Book a Demo <ArrowRight size={16} />
+          </MarketingButton>
+          <MarketingButton href="/platform" variant="secondary" invert>
+            Explore the Platform
+          </MarketingButton>
+        </div>
       </div>
-      <p className="mt-4 text-xs text-white/50">No commitment. 30-minute walkthrough. See your business through AI.</p>
-    </section>
+    </MarketingSection>
   );
 }
 
-export function PricingGrid() {
+export function PricingPanel() {
   return (
-    <div className="mx-auto mt-12 grid max-w-6xl gap-6 px-5 lg:grid-cols-3 lg:px-8">
-      <PriceCard
-        name="Starter"
-        price="$499"
-        period="/mo"
-        blurb="For small teams getting started with AI."
-        features={["3 AI Agents", "5 Integrations", "Weekly Reports", "Standard ML Models", "Email Support"]}
-        cta="Start Free Trial →"
-        href="/app/opportunities/upload"
-        variant="light"
-      />
-      <PriceCard
-        name="Growth"
-        price="$1,999"
-        period="/mo"
-        blurb="Most popular — for scaling businesses."
-        features={[
-          "All 6 AI Agents",
-          "Unlimited Integrations",
-          "Real-time Dashboard",
-          "Advanced ML Models",
-          "Custom Predictions",
-          "Priority Support",
-        ]}
-        cta="Book a Demo →"
-        href={BOOK_A_DEMO_HREF}
-        variant="popular"
-        badge="Most Popular"
-      />
-      <PriceCard
-        name="Enterprise"
-        price="Custom"
-        period=""
-        blurb="Custom AI infrastructure for large organizations."
-        features={[
-          "Dedicated AI Infrastructure",
-          "Custom Agent Development",
-          "On-premise Deployment",
-          "White-glove Onboarding",
-          "SLA Guarantee",
-          "Dedicated AI Strategist",
-        ]}
-        cta="Contact Sales →"
-        href={BOOK_A_DEMO_HREF}
-        variant="dark"
-      />
-    </div>
-  );
-}
-
-function PriceCard({
-  name,
-  price,
-  period,
-  blurb,
-  features,
-  cta,
-  href,
-  variant,
-  badge,
-}: {
-  name: string;
-  price: string;
-  period: string;
-  blurb: string;
-  features: string[];
-  cta: string;
-  href: string;
-  variant: "light" | "popular" | "dark";
-  badge?: string;
-}) {
-  const box =
-    variant === "dark"
-      ? "bg-midnight text-white"
-      : variant === "popular"
-        ? "bg-paper-raised ring-2 ring-brand shadow-brand"
-        : "bg-paper-raised shadow-sm ring-1 ring-hairline";
-  const muted = variant === "dark" ? "text-white/70" : "text-ink-muted";
-  const title = variant === "dark" ? "text-white" : "text-ink";
-  const accent = variant === "dark" ? "text-cyan" : "text-brand";
-  const button =
-    variant === "popular"
-      ? "bg-brand-gradient text-white"
-      : variant === "dark"
-        ? "bg-white text-ink"
-        : "border border-hairline bg-paper text-ink";
-
-  return (
-    <article className={`relative flex flex-col rounded-3xl p-8 ${box}`}>
-      {badge ? (
-        <span className="bg-brand-gradient absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-semibold text-white">
-          {badge}
-        </span>
-      ) : null}
-      <h3 className={`text-lg font-bold ${title}`}>{name}</h3>
-      <p className="mt-3">
-        <span className={`text-4xl font-bold ${title}`}>{price}</span>
-        <span className={muted}>{period}</span>
-      </p>
-      <p className={`mt-3 text-sm ${muted}`}>{blurb}</p>
-      <ul className="mt-6 flex-1 space-y-3">
-        {features.map((item) => (
-          <li key={item} className={`flex items-start gap-2 text-sm ${title}`}>
-            <Check size={16} className={`mt-0.5 shrink-0 ${accent}`} />
-            {item}
-          </li>
-        ))}
-      </ul>
-      <Link href={href} className={`mt-8 rounded-full px-5 py-3 text-center text-sm font-semibold ${button}`}>
-        {cta}
-      </Link>
-    </article>
+    <MarketingWrap className="grid gap-6 pb-8 lg:grid-cols-2">
+      <article className="rounded-2xl border border-hairline bg-paper-raised p-8">
+        <h2 className="text-section text-ink">Workspace</h2>
+        <p className="mt-3 text-body text-ink-muted">
+          Dashboards, opportunities, decisions, insights, and client Labs. Sign in if you already have an account.
+        </p>
+        <div className="mt-8">
+          <MarketingButton href="/login">Sign In</MarketingButton>
+        </div>
+      </article>
+      <article className="rounded-2xl bg-midnight p-8 text-white">
+        <h2 className="text-section">Commercial terms</h2>
+        <p className="mt-3 text-body text-white/70">
+          This product does not publish self-serve plan prices or packaged agent seats. Discuss access with the team.
+        </p>
+        <div className="mt-8">
+          <MarketingButton href={BOOK_A_DEMO_HREF} invert>
+            Book a Demo
+          </MarketingButton>
+        </div>
+      </article>
+    </MarketingWrap>
   );
 }

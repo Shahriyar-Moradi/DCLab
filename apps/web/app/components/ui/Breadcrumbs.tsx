@@ -11,8 +11,16 @@ export function Breadcrumbs({ items, className }: { items: BreadcrumbItem[]; cla
     <nav aria-label="Breadcrumb" className={cn("product-breadcrumbs", className)}>
       <ol className="m-0 flex list-none flex-wrap items-center gap-2 p-0">
         {items.map((item, index) => (
-          <li key={`${item.label}-${index}`} className="inline-flex items-center gap-2">
-            {item.href ? <Link href={item.href}>{item.label}</Link> : <span aria-current="page">{item.label}</span>}
+          <li key={`${item.label}-${index}`} className="inline-flex max-w-full min-w-0 items-center gap-2">
+            {item.href ? (
+              <Link href={item.href} className="min-w-0 break-words">
+                {item.label}
+              </Link>
+            ) : (
+              <span aria-current="page" className="min-w-0 break-words">
+                {item.label}
+              </span>
+            )}
             {index < items.length - 1 ? <span aria-hidden>›</span> : null}
           </li>
         ))}

@@ -1,0 +1,15 @@
+{
+  "pipeline_run_id": "b4361025-c564-4fbc-acf4-34ece59f71d0",
+  "feature_set_version_id": "9ce677fa-8a95-464a-a21b-a43b8bc7094d",
+  "features": [
+    "safe_feature",
+    "income",
+    "policy_renewal_date",
+    "source_lat",
+    "source_lon",
+    "destination_lat",
+    "destination_lon",
+    "region"
+  ],
+  "candidate_id": "random_forest"
+}

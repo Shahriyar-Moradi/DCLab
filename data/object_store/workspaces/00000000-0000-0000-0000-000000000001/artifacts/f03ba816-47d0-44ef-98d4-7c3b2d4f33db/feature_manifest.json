@@ -1,0 +1,8 @@
+{
+  "pipeline_run_id": "e5e442b4-7e86-45ca-92ee-9fbef6793d57",
+  "feature_set_version_id": "70fa861a-832f-4f60-aa6a-dc04768d8c4d",
+  "features": [
+    "segment"
+  ],
+  "candidate_id": "lightgbm_regressor"
+}

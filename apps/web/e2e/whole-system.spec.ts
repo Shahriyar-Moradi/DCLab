@@ -454,6 +454,125 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(main.getByRole("link", { name: /Opportunities 11/ })).toBeVisible();
   });
 
+  test("workspace insights render live insight payload", async ({ page }) => {
+    await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/app/insights");
+    await expect(page.getByRole("heading", { name: "Insights", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No insights yet" })).toBeVisible();
+
+    await page.route(
+      (url) => url.origin === "http://127.0.0.1:8001" && url.pathname === "/app/insights",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            categories: [
+              { category: "Marketing", insights: [] },
+              {
+                category: "Sales",
+                insights: [
+                  {
+                    subject_id: "cust_e2e",
+                    category: "Sales",
+                    headline: "Follow the proposal that is still open",
+                    confidence_band: "High",
+                    recommended_action: "Contact today",
+                    expected_value: 25000,
+                    currency: "AED",
+                    reasoning: ["This account has an open proposal in the current workspace file."],
+                    generated_at: "2026-01-15T10:00:00.000Z",
+                  },
+                ],
+              },
+              { category: "Revenue", insights: [] },
+              { category: "Churn & Retention", insights: [] },
+              { category: "Customer Value", insights: [] },
+              { category: "Custom", insights: [] },
+            ],
+          }),
+        });
+      },
+    );
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(page.getByRole("heading", { name: "Follow the proposal that is still open" })).toBeVisible();
+    await expect(page.getByText("Contact today")).toBeVisible();
+    await expect(page.getByText("This account has an open proposal in the current workspace file.")).toBeVisible();
+    await expect(page.getByText("12,482")).toHaveCount(0);
+  });
+
+  test("workspace labs sample trial returns translated insights", async ({ page }) => {
+    await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/app/labs");
+    await expect(page.getByRole("heading", { name: "Labs", exact: true })).toBeVisible();
+    const catalog = await apiGet<JsonRecord[]>(page, "/app/labs/problems");
+    const problem = catalog.find((row) => row.use_case === "cross_sell");
+    expect(problem, "cross_sell catalog problem").toBeTruthy();
+    await page.getByRole("button", { name: String(problem?.category), exact: true }).click();
+    await page.getByRole("option", { name: String(problem?.question) }).click();
+    await page.getByRole("button", { name: "Run with sample data" }).click();
+    await expect(page.getByText(/Results from sample data/)).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#main").getByRole("alert")).toHaveCount(0);
+  });
+
+  test("workspace opportunities upload and decision generation", async ({ page }, testInfo) => {
+    const externalId = `e2e-opp-${Date.now()}`;
+    const csv = [
+      "external_id,customer_id,amount,currency,stage,source,owner_id,created_at",
+      `${externalId},cust-e2e,25000,AED,proposal,inbound,rep-e2e,2026-01-15`,
+      "",
+    ].join("\n");
+    const fixture = testInfo.outputPath("e2e-opportunities.csv");
+    await writeFile(fixture, csv);
+
+    await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/app/dashboards");
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await page.getByRole("navigation", { name: "Application navigation" }).getByRole("link", { name: "Opportunities" }).click();
+    await expect(page.getByRole("heading", { name: "Opportunities", exact: true })).toBeVisible();
+    await page.locator("#main").getByRole("link", { name: "Upload opportunities" }).or(page.locator("#main").getByRole("link", { name: "Upload", exact: true })).first().click();
+    await expect(page).toHaveURL(/\/app\/opportunities\/upload/);
+    await expect(page.getByRole("heading", { name: "Upload opportunities" })).toBeVisible();
+
+    const uploaded = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/app/opportunities/upload",
+    );
+    await page.locator('input[type="file"]').setInputFiles(fixture);
+    const uploadResponse = await uploaded;
+    expect(uploadResponse.ok(), await uploadResponse.text()).toBeTruthy();
+    await expect(page.getByText("1 inserted")).toBeVisible();
+    await page.getByRole("link", { name: "Open opportunities" }).click();
+    await expect(page).toHaveURL(/\/app\/opportunities$/);
+    await expect(page.getByRole("link", { name: externalId })).toBeVisible();
+    await page.getByRole("link", { name: externalId }).click();
+    await expect(page).toHaveURL(new RegExp(`/app/opportunities/${externalId}`));
+    await expect(page.getByRole("heading", { name: externalId })).toBeVisible();
+    await expect(page.getByText("AED 25,000")).toBeVisible();
+
+    await page.getByRole("button", { name: "Generate decision" }).click();
+    const generateOutcome = page.getByRole("button", { name: "Regenerate" }).or(page.locator("#main").getByRole("alert"));
+    await expect(generateOutcome.first()).toBeVisible({ timeout: 30_000 });
+    const generatedOk = await page.getByRole("button", { name: "Regenerate" }).isVisible();
+
+    await page.goto("/app/dashboards");
+    await page.getByRole("navigation", { name: "Application navigation" }).getByRole("link", { name: "Decisions" }).click();
+    await expect(page.getByRole("heading", { name: "Decisions", exact: true })).toBeVisible();
+    if (generatedOk) {
+      await expect(page.getByRole("link", { name: externalId }).first()).toBeVisible();
+      await page.getByRole("link", { name: "Open" }).first().click();
+      await expect(page).toHaveURL(/\/app\/decisions\//);
+      await expect(page.getByRole("link", { name: new RegExp(`Source opportunity ${externalId}`) })).toBeVisible();
+    } else {
+      await expect(page.getByRole("heading", { name: "No decisions yet" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Go to opportunities" })).toHaveAttribute(
+        "href",
+        "/app/opportunities",
+      );
+    }
+  });
+
   test("DCLab Admin uploads classification data and replays the monitor", async ({
     page,
   }, testInfo) => {
@@ -622,11 +741,14 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       "revenue",
     );
     businessUploadId = String(upload.id);
+    await expect(page).toHaveURL(new RegExp(`/lab/runs/${String(upload.run_id)}`));
     await waitForUpload(
       page,
       `/app/labs/uploads/${String(upload.run_id)}`,
       "status",
     );
+    await expect(page.getByText("Completed", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download results" })).toBeVisible();
     const workspace = await apiGet(
       page,
       `/business/workspaces/${businessWorkspaceId}`,

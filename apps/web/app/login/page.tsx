@@ -1,6 +1,5 @@
 "use client";
 
-import { BrandLogo } from "@/app/components/brand/BrandLogo";
 import { defaultProductRoute } from "@/app/components/layout/app-navigation";
 import { Button } from "@/app/components/ui/Button";
 import { Field } from "@/app/components/ui/Field";
@@ -87,8 +86,7 @@ function LoginForm() {
     const home = defaultProductRoute(user.role);
     return (
       <div className="auth-panel">
-        <BrandLogo product />
-        <h1 className="mt-6 text-title text-ink">You are signed in</h1>
+        <h1 className="text-title text-ink">You are signed in</h1>
         <p className="mt-2 text-body text-ink-muted">
           Signed in as <span className="font-medium text-ink">{displayName(user)}</span>
         </p>
@@ -127,8 +125,7 @@ function LoginForm() {
 
   return (
     <div className="auth-panel">
-      <BrandLogo product />
-      <h1 className="mt-6 text-title text-ink">Sign in</h1>
+      <h1 className="text-title text-ink">Sign in</h1>
       <p className="mt-2 text-body text-ink-muted">Use your Decision.ai account to open your workspace.</p>
       <form className="mt-8 space-y-4" onSubmit={onSubmit}>
         <Field label="Email" htmlFor="email">
