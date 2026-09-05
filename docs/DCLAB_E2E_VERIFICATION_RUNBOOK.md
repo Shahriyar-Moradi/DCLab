@@ -75,7 +75,7 @@ cd apps/web
 npm run e2e
 ```
 
-This recreates `dclab_e2e_verify`, migrates to Alembic head, seeds four fixture
+This recreates `dclab_e2e_verify`, migrates to Alembic head, seeds five fixture
 accounts (password `VerificationOnly123!`), boots FastAPI on 8001 and Next.js
 on 3001, and writes screenshots under `artifacts/e2e-verification/` (gitignored).
 
@@ -85,6 +85,7 @@ Fixture emails:
 - `dclab-developer@verification.invalid`
 - `business-admin-a@verification.invalid`
 - `business-developer-a@verification.invalid`
+- `client-user@verification.invalid`
 
 JWT for both processes in Playwright is `e2e-verification-only-secret`. The Next
 middleware must use the same secret as the API or `/admin` and `/business`

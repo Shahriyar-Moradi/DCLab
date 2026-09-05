@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Artifact, Project, Workspace
+from app.db.models import Artifact, Experiment, Project, Workspace
 from app.domain.data_plane import ARTIFACT_TYPES
 from app.domain.errors import ArtifactNotFoundError, IdentityError
 from app.storage.base import ObjectPutResult, ObjectStorage
@@ -42,6 +42,18 @@ def _require_project(db: Session, workspace_id: UUID, project_id: UUID | None) -
         raise IdentityError("project does not belong to this workspace", status_code=404)
 
 
+def _require_pipeline_run(
+    db: Session, workspace_id: UUID, pipeline_run_id: UUID | None
+) -> None:
+    if pipeline_run_id is None:
+        return
+    run = db.get(Experiment, pipeline_run_id)
+    if run is None or run.workspace_id != workspace_id:
+        raise IdentityError(
+            "pipeline run does not belong to this workspace", status_code=404
+        )
+
+
 def store_artifact(
     db: Session,
     *,
@@ -50,6 +62,7 @@ def store_artifact(
     filename: str,
     data: bytes | BinaryIO,
     project_id: UUID | None = None,
+    pipeline_run_id: UUID | None = None,
     created_by: UUID | None = None,
     mime_type: str | None = None,
     extra_metadata: dict | None = None,
@@ -62,6 +75,7 @@ def store_artifact(
         raise IdentityError(f"unsupported artifact_type: {artifact_type}", status_code=400)
     _require_workspace(db, workspace_id)
     _require_project(db, workspace_id, project_id)
+    _require_pipeline_run(db, workspace_id, pipeline_run_id)
     backend = storage or get_object_storage()
     row_id = artifact_id or uuid4()
     key = artifact_object_key(workspace_id, row_id, filename)
@@ -72,6 +86,7 @@ def store_artifact(
         artifact_id=row_id,
         workspace_id=workspace_id,
         project_id=project_id,
+        pipeline_run_id=pipeline_run_id,
         artifact_type=artifact_type,
         put=put,
         mime_type=put.content_type or guessed,
@@ -88,6 +103,7 @@ def record_artifact(
     artifact_type: str,
     put: ObjectPutResult,
     project_id: UUID | None = None,
+    pipeline_run_id: UUID | None = None,
     created_by: UUID | None = None,
     mime_type: str | None = None,
     extra_metadata: dict | None = None,
@@ -100,6 +116,7 @@ def record_artifact(
         id=artifact_id,
         workspace_id=workspace_id,
         project_id=project_id,
+        pipeline_run_id=pipeline_run_id,
         artifact_type=artifact_type,
         provider=put.provider,
         bucket=put.bucket,

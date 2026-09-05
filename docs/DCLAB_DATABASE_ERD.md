@@ -1,6 +1,6 @@
 # DCLab database ERD
 
-Logical model at Alembic head `0036_legacy_import_projects`. Physical table names
+Logical model at Alembic head `0039_scientific_plans`. Physical table names
 that differ from the logical noun are noted in parentheses.
 
 ```mermaid
@@ -25,6 +25,7 @@ erDiagram
     PipelineVersion ||--o{ PipelineRun : executes
     WorkflowRun ||--o{ PipelineRun : contains
     PipelineRun ||--o{ PipelineStageRun : stages
+    PipelineRun ||--o| PipelineScientificPlan : plans
     PipelineRun ||--o{ DataPreparationDecision : records
     PipelineRun ||--o{ FeatureSet : produces
     FeatureSet ||--o{ FeatureSetVersion : versions
@@ -43,9 +44,14 @@ erDiagram
     ModelVersion }o--o| Artifact : model
     ModelVersion }o--o| CodeSnapshot : source
     ModelVersion }o--o| RuntimeEnvironment : runtime
+    CodeSnapshot }o--o| RuntimeEnvironment : fingerprint
+    CodeSnapshot }o--o| Artifact : lockfile
 ```
 
 PipelineRun is the `experiments` table. Candidate is `experiment_candidates`.
+`PipelineScientificPlan` is `pipeline_scientific_plans` (one row per run).
+`RuntimeEnvironment` is a globally reusable fingerprint. The dependency-lock
+Artifact is workspace-owned and referenced from `CodeSnapshot`.
 
 ## Compatibility and legacy (not first-class Project children)
 

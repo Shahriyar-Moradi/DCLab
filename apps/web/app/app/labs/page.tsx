@@ -66,8 +66,8 @@ export default function ClientLabsPage() {
       />
       <SectionHeader className="mt-8" title={category} description={meta.blurb} />
       <div className="mt-5 grid gap-8">
-        <OpenDatasetPanel key={category} category={category} />
-        <ProblemWorkspace key={category} problems={items} />
+        <OpenDatasetPanel key={`upload-${category}`} category={category} />
+        <ProblemWorkspace key={`trial-${category}`} problems={items} />
       </div>
     </div>
   );

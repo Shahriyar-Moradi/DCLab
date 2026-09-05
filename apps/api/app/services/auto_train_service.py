@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,7 +37,6 @@ from app.db.models import (
     Project,
     WorkflowRun,
 )
-from app.db.session import get_session_factory
 from app.domain.lab_run_stages import (
     ANALYZING,
     CLEANING,
@@ -226,10 +225,16 @@ def _mark(
     db.commit()
 
 
-def run_auto_train_job(db: Session, upload_id: UUID) -> None:
-    """Runs synchronously against the given session. In production this is
-    called from `enqueue_auto_train`'s background thread (its own session) so
-    `POST /app/labs/uploads` is never blocked on training.
+def run_auto_train_job(
+    db: Session,
+    upload_id: UUID,
+    *,
+    on_heartbeat: Callable[[], None] | None = None,
+) -> None:
+    """Runs synchronously against the given session.
+
+    Production callers are durable workers that claimed an ``ml_jobs`` row.
+    The API request only persists that row and returns.
     """
     total_started_at = datetime.now(UTC)
     total_timer = time.perf_counter()
@@ -285,10 +290,11 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
     def _evidence_start(stage: str) -> dict[str, Any]:
         event_stage = event_stage_names.get(stage, stage)
         _emit_event(event_stage, "operation_started", "started")
+        started_at = datetime.now(UTC)
         return {
             "stage": stage,
             "event_stage": event_stage,
-            "started_at": datetime.now(UTC),
+            "started_at": started_at,
             "timer": time.perf_counter(),
             "rows_in": current_rows,
         }
@@ -314,21 +320,35 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         )
         return record
 
-    def _finish_stage(*, status: str = "completed") -> None:
+    def _finish_stage(*, status: str = "completed", reason: str | None = None) -> None:
         nonlocal active_stage
         if active_stage is None:
             return
         ended = datetime.now(UTC)
+        duration_ms = max(0.001, (time.perf_counter() - active_stage["timer"]) * 1000.0)
         stage_timings.append(
             {
                 "stage": active_stage["stage"],
                 "started_at": active_stage["started_at"],
                 "ended_at": ended.isoformat(),
-                "duration_ms": max(0.001, (time.perf_counter() - active_stage["timer"]) * 1000.0),
+                "duration_ms": duration_ms,
                 "rows_in": active_stage["rows_in"],
                 "rows_out": current_rows,
                 "status": status,
             }
+        )
+        payload = {
+            "rows_in": active_stage["rows_in"],
+            "rows_out": current_rows,
+        }
+        if status == "failed" and reason:
+            payload["failure_reason"] = reason
+        _emit_event(
+            str(active_stage["stage"]),
+            "operation_completed",
+            status,
+            payload,
+            duration_ms,
         )
         active_stage = None
 
@@ -344,9 +364,12 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "timer": time.perf_counter(),
             "rows_in": current_rows,
         }
+        _emit_event(stage, "operation_started", "started", {"rows_in": current_rows})
         row = db.get(ClientLabUpload, upload_id)
         if row is not None:
             _mark(db, row, status=stage)
+        if on_heartbeat is not None:
+            on_heartbeat()
 
     def _trace(step: str, fn: str, **payload: Any) -> None:
         entry = {"step": step, "fn": fn, **payload}
@@ -370,7 +393,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         row = db.get(ClientLabUpload, upload_id)
         if row is None:
             return
-        _finish_stage(status="failed")
+        _finish_stage(status="failed", reason=reason)
         payload = {**dict(row.pipeline_log or {}), **dict(extra or {})}
         payload["reason"] = reason
         payload["failed_at"] = current_stage
@@ -443,9 +466,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             partial_result["error"] = reason
             experiment.result = partial_result
             experiment.failure_reason = reason[:2048]
-            from app.services.workflow_execution_service import replace_pipeline_stage_runs
-
-            replace_pipeline_stage_runs(db, experiment, final_timings)
+            experiment.result = partial_result
         _mark(
             db,
             row,
@@ -1204,9 +1225,8 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             experiment.result = result
             db.commit()
             from app.services.scientific_lineage_service import (
-                ScientificRunEvidence,
                 lab_decision_sources_for_upload,
-                persist_scientific_lineage,
+                persist_scientific_lineage_from_result,
             )
 
             result_prep = (
@@ -1214,28 +1234,38 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 if isinstance(result.get("preprocessing"), dict)
                 else {}
             )
-            persist_scientific_lineage(
-                db,
-                experiment,
-                ScientificRunEvidence(
-                    quality=quality,
-                    missing_plan=missing_plan,
-                    leakage_exclusions=list(development_plan.excluded_features),
-                    feature_actions=list(fe_transformations),
-                    numerical_cols=[
+            evidence = (
+                dict(result["scientific_evidence"])
+                if isinstance(result.get("scientific_evidence"), dict)
+                else {}
+            )
+            evidence.update(
+                {
+                    "quality": quality,
+                    "missing_value_plan": missing_plan.to_dict(),
+                    "leakage_exclusions": list(development_plan.excluded_features),
+                    "feature_actions": list(fe_transformations),
+                    "numerical_columns": [
                         str(name)
                         for name in (result_prep.get("numeric_columns") or num_cols)
                     ],
-                    categorical_cols=[
+                    "categorical_columns": [
                         str(name)
                         for name in (result_prep.get("categorical_columns") or cat_cols)
                     ],
-                    modeled_features=list(modeled_cols),
-                    dropped_columns=list(missing_plan.dropped_columns),
-                    source_dataset_id=upload.dataset_id,
-                    lab_decision_sources=lab_decision_sources_for_upload(db, upload.id),
-                    fit_scope="fold_train",
-                ),
+                    "modeled_features": list(modeled_cols),
+                    "dropped_columns": list(missing_plan.dropped_columns),
+                    "preprocessing_fit_scope": "fold_train",
+                }
+            )
+            result["scientific_evidence"] = evidence
+            persist_scientific_lineage_from_result(
+                db,
+                experiment,
+                result,
+                missing_plan=missing_plan,
+                lab_decision_sources=lab_decision_sources_for_upload(db, upload.id),
+                source_dataset_id=upload.dataset_id,
             )
             from app.services.candidate_modeling_service import (
                 link_candidates_to_feature_set_version,
@@ -1361,9 +1391,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 encoding="utf-8",
             )
             experiment.result = result
-            from app.services.workflow_execution_service import replace_pipeline_stage_runs
-
-            replace_pipeline_stage_runs(db, experiment, list(result["stage_timings"]))
+            _finish_stage()
             store_report_artifacts(db, experiment)
             _mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)
             _emit_event(
@@ -1383,16 +1411,12 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
 
 
 def enqueue_auto_train(upload_id: UUID) -> None:
-    """Fire-and-forget: runs in a background thread with its own DB session so
-    the upload request is never blocked on training."""
+    """Dispatch an already-persisted auto-train job.
 
-    def _worker() -> None:
-        session = get_session_factory()()
-        try:
-            run_auto_train_job(session, upload_id)
-        except Exception:  # noqa: BLE001
-            logger.exception("auto-train worker crashed for upload %s", upload_id)
-        finally:
-            session.close()
+    Production default is a no-op: a worker claims the ``ml_jobs`` row.
+    ``inline`` / ``thread`` dispatchers are explicit local adapters only.
+    """
 
-    threading.Thread(target=_worker, daemon=True, name=f"auto-train-{upload_id}").start()
+    from app.services.job_dispatcher import get_job_dispatcher
+
+    get_job_dispatcher().dispatch(upload_id)

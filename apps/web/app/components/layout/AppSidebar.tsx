@@ -119,9 +119,8 @@ export function AppSidebar({
             {accountName.slice(0, 1).toUpperCase()}
           </div>
           <div className={cn("min-w-0", iconOnly && "sr-only")}>
-            <p className="truncate text-[0.9375rem] font-semibold text-ink">{accountName}</p>
-            <p className="truncate text-[0.8125rem] text-ink-muted">{accountRole}</p>
-            {user ? <p className="truncate text-[0.8125rem] text-ink-muted/80">{user.email}</p> : null}
+            <p className="truncate text-[0.8125rem] font-semibold leading-tight text-ink">{accountName}</p>
+            <p className="truncate text-[0.6875rem] leading-tight text-ink-muted">{accountRole}</p>
           </div>
         </Link>
         {user ? (

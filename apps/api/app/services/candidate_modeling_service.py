@@ -25,7 +25,7 @@ from app.db.models import (
     ModelVersion,
 )
 from app.engine.models.registry import applied_hyperparameters, implementation_for_family
-from app.engine.search.fingerprint import candidate_fingerprint
+from app.engine.search.fingerprint import scientific_candidate_fingerprint
 from app.services.scientific_lineage_service import latest_pipeline_run_feature_set_version
 
 
@@ -80,16 +80,46 @@ def _scalar_metrics(payload: Any) -> dict[str, float]:
     return metrics
 
 
+def _dataset_identity(experiment: Experiment) -> tuple[str | None, str | None]:
+    dataset = getattr(experiment, "dataset", None)
+    version = getattr(dataset, "version", None) if dataset is not None else None
+    digest = getattr(dataset, "content_digest", None) if dataset is not None else None
+    result = experiment.result if isinstance(experiment.result, dict) else {}
+    task = result.get("task") if isinstance(result.get("task"), dict) else {}
+    if not version:
+        version = task.get("dataset_version") or "v1"
+    if not digest:
+        digest = result.get("dataset_content_digest")
+    return (str(version) if version else "v1", str(digest) if digest else None)
+
+
 def _fingerprint_for(experiment: Experiment, row: dict[str, Any], candidate_key: str) -> str:
     fingerprint = str(row.get("fingerprint") or "").strip()
     if fingerprint:
         return fingerprint[:40]
-    return candidate_fingerprint(
-        {
-            "pipeline_run_id": str(experiment.id),
-            "candidate_id": candidate_key,
-            "model_family": row.get("model_family"),
-        }
+    result = experiment.result if isinstance(experiment.result, dict) else {}
+    task = result.get("task") if isinstance(result.get("task"), dict) else {}
+    features = row.get("features") or []
+    if isinstance(features, str):
+        features = [features]
+    preprocess = row.get("preprocessing")
+    dataset_version, dataset_content_digest = _dataset_identity(experiment)
+    return scientific_candidate_fingerprint(
+        task_type=str(task.get("task_type") or ""),
+        target=str(task.get("target") or ""),
+        evaluation_metric=task.get("evaluation_metric"),
+        features=list(features),
+        family=str(row.get("model_family") or candidate_key),
+        seed=int(row.get("random_seed") or experiment.seed or 42),
+        dataset_version=dataset_version,
+        dataset_content_digest=dataset_content_digest,
+        hyperparameters=dict(row.get("hyperparameters") or {}),
+        preprocessing=preprocess if preprocess else "default",
+        holdout_plan=result.get("holdout_plan"),
+        development_plan=result.get("model_development_plan"),
+        validation_plan=result.get("validation_plan"),
+        metric_plan=result.get("metric_plan"),
+        feature_set_version_digest=row.get("feature_set_version_digest"),
     )
 
 
@@ -186,13 +216,9 @@ def persist_candidate_modeling(
             continue
         fingerprint = _fingerprint_for(experiment, row, candidate_key)
         if fingerprint in used_fingerprints:
-            fingerprint = candidate_fingerprint(
-                {
-                    "pipeline_run_id": str(experiment.id),
-                    "candidate_id": candidate_key,
-                    "fingerprint": fingerprint,
-                }
-            )
+            # Equivalent scientific configuration already persisted for this
+            # experiment. Do not mix in PipelineRun or row IDs to force uniqueness.
+            continue
         used_fingerprints.add(fingerprint)
         family = str(row.get("model_family") or "")
         library, implementation_class, library_version = implementation_for_family(family)

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+from sqlalchemy import select
 
 from app.config import REPO_ROOT
+from app.db.models import PipelineScientificPlan
 from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.pipeline_verifier import PipelineVerifier
 from adaptive_modeling.fixtures import (
@@ -56,6 +58,26 @@ def _assert_common_production_proofs(db_session, result, experiment) -> None:
     events = events_for(db_session, experiment.id)
     assert_event_order(events)
     assert_event_replay_identical(events, events_for(db_session, experiment.id))
+    plans = list(
+        db_session.scalars(
+            select(PipelineScientificPlan).where(
+                PipelineScientificPlan.pipeline_run_id == experiment.id
+            )
+        )
+    )
+    assert len(plans) == 1
+    plan = plans[0]
+    holdout = result.get("holdout_plan") or {}
+    validation = result.get("validation_plan") or {}
+    development = result.get("model_development_plan") or {}
+    profile = development.get("problem_profile") or {}
+    metric = result.get("metric_plan") or development.get("metric_plan") or {}
+    assert plan.holdout_strategy == holdout.get("strategy")
+    assert plan.validation_strategy == validation.get("strategy")
+    assert plan.task_type == profile.get("task_type")
+    assert plan.primary_metric == metric.get("primary_metric")
+    assert plan.requested_folds == validation.get("requested_folds")
+    assert plan.actual_folds == validation.get("actual_folds")
 
 
 def test_catalog_includes_production_probes():

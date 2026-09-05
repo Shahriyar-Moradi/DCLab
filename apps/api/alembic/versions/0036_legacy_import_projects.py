@@ -5,12 +5,13 @@ Revises: 0035_database_integrity
 Create Date: 2026-09-05
 
 Existing records without Project get one deterministic compatibility project
-per Workspace (slug ``legacy-import``). Only rows with a known workspace_id and
-NULL project_id are attached. Two historical Workflows in the same workspace
-share that bucket; they are not merged into one case study.
+per Workspace (slug ``legacy-import``). Only rows on the frozen 0036 table list
+with a known workspace_id and NULL project_id are attached. Two historical
+Workflows in the same workspace share that bucket; they are not merged into one
+case study.
 
-Workspaces with orphan rows but no membership/user actor are skipped: Project
-requires created_by, and inventing an owner would be unsafe.
+Actorless workspaces still receive a system-created compatibility Project
+(``provenance = system_legacy_import``, ``created_by`` NULL). No user is invented.
 """
 
 from __future__ import annotations
@@ -20,11 +21,18 @@ from uuid import uuid4
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
+from app.db.integrity import (
+    immutability_disable_trigger_statements,
+    immutability_enable_trigger_statements,
+)
+from app.db.legacy_import import LEGACY_IMPORT_BACKFILL_TABLES
 from app.domain.workspace_identity import (
     LEGACY_IMPORT_PROJECT_DESCRIPTION,
     LEGACY_IMPORT_PROJECT_NAME,
     LEGACY_IMPORT_PROJECT_SLUG,
+    PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT,
 )
 
 revision: str = "0036_legacy_import_projects"
@@ -37,29 +45,9 @@ def _quote(connection, name: str) -> str:
     return connection.dialect.identifier_preparer.quote(name)
 
 
-def _nullable_project_tables(connection) -> list[str]:
-    rows = connection.execute(
-        sa.text(
-            """
-            SELECT c.table_name
-            FROM information_schema.columns AS c
-            JOIN information_schema.columns AS w
-              ON w.table_schema = c.table_schema
-             AND w.table_name = c.table_name
-             AND w.column_name = 'workspace_id'
-            WHERE c.table_schema = 'public'
-              AND c.column_name = 'project_id'
-              AND c.is_nullable = 'YES'
-            ORDER BY c.table_name
-            """
-        )
-    )
-    return [str(row[0]) for row in rows]
-
-
-def _orphan_workspace_ids(connection, tables: list[str]) -> set:
+def _orphan_workspace_ids(connection) -> set:
     ids: set = set()
-    for table in tables:
+    for table in LEGACY_IMPORT_BACKFILL_TABLES:
         quoted = _quote(connection, table)
         rows = connection.execute(
             sa.text(
@@ -96,53 +84,20 @@ def _actors_by_workspace(connection) -> dict:
     return actors
 
 
-def upgrade() -> None:
-    connection = op.get_bind()
-    # 0035 freezes datasets/model_versions. This data fix is the one allowed
-    # exception: attach project_id on existing rows. Replica role skips user triggers.
-    connection.execute(sa.text("SET LOCAL session_replication_role = 'replica'"))
-    tables = _nullable_project_tables(connection)
-    orphan_ids = _orphan_workspace_ids(connection, tables)
-    actors = _actors_by_workspace(connection)
-    existing = {
-        row[0]
-        for row in connection.execute(
-            sa.text(
-                "SELECT workspace_id FROM projects WHERE slug = :slug"
-            ),
-            {"slug": LEGACY_IMPORT_PROJECT_SLUG},
-        )
-    }
+def _run_with_immutability_triggers_disabled(connection, callback) -> None:
+    disable = immutability_disable_trigger_statements(LEGACY_IMPORT_BACKFILL_TABLES)
+    enable = immutability_enable_trigger_statements(LEGACY_IMPORT_BACKFILL_TABLES)
+    for statement in disable:
+        connection.execute(sa.text(statement))
+    try:
+        callback()
+    finally:
+        for statement in enable:
+            connection.execute(sa.text(statement))
 
-    for workspace_id in orphan_ids:
-        if workspace_id in existing:
-            continue
-        created_by = actors.get(workspace_id)
-        if created_by is None:
-            continue
-        connection.execute(
-            sa.text(
-                """
-                INSERT INTO projects (
-                    id, workspace_id, name, slug, description, status, created_by
-                )
-                VALUES (
-                    :id, :workspace_id, :name, :slug, :description, 'active', :created_by
-                )
-                """
-            ),
-            {
-                "id": uuid4(),
-                "workspace_id": workspace_id,
-                "name": LEGACY_IMPORT_PROJECT_NAME,
-                "slug": LEGACY_IMPORT_PROJECT_SLUG,
-                "description": LEGACY_IMPORT_PROJECT_DESCRIPTION,
-                "created_by": created_by,
-            },
-        )
-        existing.add(workspace_id)
 
-    for table in tables:
+def _attach_legacy_import_projects(connection) -> None:
+    for table in LEGACY_IMPORT_BACKFILL_TABLES:
         quoted = _quote(connection, table)
         connection.execute(
             sa.text(
@@ -159,11 +114,8 @@ def upgrade() -> None:
         )
 
 
-def downgrade() -> None:
-    connection = op.get_bind()
-    connection.execute(sa.text("SET LOCAL session_replication_role = 'replica'"))
-    tables = _nullable_project_tables(connection)
-    for table in tables:
+def _detach_legacy_import_projects(connection) -> None:
+    for table in LEGACY_IMPORT_BACKFILL_TABLES:
         quoted = _quote(connection, table)
         connection.execute(
             sa.text(
@@ -177,7 +129,100 @@ def downgrade() -> None:
             ),
             {"slug": LEGACY_IMPORT_PROJECT_SLUG},
         )
+
+
+def upgrade() -> None:
+    op.add_column(
+        "projects",
+        sa.Column(
+            "provenance",
+            sa.String(length=32),
+            server_default="user",
+            nullable=False,
+        ),
+    )
+    op.alter_column(
+        "projects",
+        "created_by",
+        existing_type=postgresql.UUID(as_uuid=True),
+        nullable=True,
+        existing_nullable=False,
+    )
+    op.create_check_constraint(
+        "ck_projects_provenance_valid",
+        "projects",
+        "provenance IN ('user', 'system_legacy_import')",
+    )
+    op.create_check_constraint(
+        "ck_projects_user_provenance_requires_actor",
+        "projects",
+        "provenance <> 'user' OR created_by IS NOT NULL",
+    )
+
+    connection = op.get_bind()
+    orphan_ids = _orphan_workspace_ids(connection)
+    actors = _actors_by_workspace(connection)
+    existing = {
+        row[0]
+        for row in connection.execute(
+            sa.text("SELECT workspace_id FROM projects WHERE slug = :slug"),
+            {"slug": LEGACY_IMPORT_PROJECT_SLUG},
+        )
+    }
+
+    for workspace_id in orphan_ids:
+        if workspace_id in existing:
+            continue
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO projects (
+                    id, workspace_id, name, slug, description, status,
+                    created_by, provenance
+                )
+                VALUES (
+                    :id, :workspace_id, :name, :slug, :description, 'active',
+                    :created_by, :provenance
+                )
+                """
+            ),
+            {
+                "id": uuid4(),
+                "workspace_id": workspace_id,
+                "name": LEGACY_IMPORT_PROJECT_NAME,
+                "slug": LEGACY_IMPORT_PROJECT_SLUG,
+                "description": LEGACY_IMPORT_PROJECT_DESCRIPTION,
+                "created_by": actors.get(workspace_id),
+                "provenance": PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT,
+            },
+        )
+        existing.add(workspace_id)
+
+    # 0035 freezes datasets / model_versions / model_selection_decisions.
+    # Disable only those named DCLab triggers for this project_id backfill.
+    _run_with_immutability_triggers_disabled(
+        connection, lambda: _attach_legacy_import_projects(connection)
+    )
+
+
+def downgrade() -> None:
+    connection = op.get_bind()
+    _run_with_immutability_triggers_disabled(
+        connection, lambda: _detach_legacy_import_projects(connection)
+    )
     connection.execute(
         sa.text("DELETE FROM projects WHERE slug = :slug"),
         {"slug": LEGACY_IMPORT_PROJECT_SLUG},
     )
+    op.drop_constraint(
+        "ck_projects_user_provenance_requires_actor", "projects", type_="check"
+    )
+    op.drop_constraint("ck_projects_provenance_valid", "projects", type_="check")
+    op.alter_column(
+        "projects",
+        "created_by",
+        existing_type=postgresql.UUID(as_uuid=True),
+        nullable=False,
+        existing_nullable=True,
+    )
+    op.drop_column("projects", "provenance")

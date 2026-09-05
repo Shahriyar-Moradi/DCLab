@@ -13,18 +13,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 const LOCAL_ACCOUNTS = [
-  {
-    label: "Business Client",
-    email: "demo@client.io",
-    password: "ClientPass123",
-    lands: "the workspace (dashboards, opportunities, decisions)",
-  },
-  {
-    label: "Admin",
-    email: "admin@dclab.io",
-    password: "AdminPass123",
-    lands: "Labs and the rest of the staff area",
-  },
+  { label: "DCLab Admin", email: "admin@dclab.io", password: "AdminPass123" },
+  { label: "DCLab Developer", email: "developer@dclab.io", password: "DeveloperPass123" },
+  { label: "Business Client", email: "demo@client.io", password: "ClientPass123" },
+  { label: "Business Admin", email: "business-admin@dclab.io", password: "BusinessAdminPass123" },
+  { label: "Business Developer", email: "business-developer@dclab.io", password: "BusinessDevPass123" },
+  { label: "Personal Developer", email: "personal@dclab.io", password: "PersonalPass123" },
 ] as const;
 
 const SHOW_LOCAL_ACCOUNTS = process.env.NODE_ENV !== "production";
@@ -126,7 +120,7 @@ function LoginForm() {
   return (
     <div className="auth-panel">
       <h1 className="text-title text-ink">Sign in</h1>
-      <p className="mt-2 text-body text-ink-muted">Use your Decision.ai account to open your workspace.</p>
+      <p className="mt-2 text-body text-ink-muted">Use your DCLab account to open your workspace.</p>
       <form className="mt-8 space-y-4" onSubmit={onSubmit}>
         <Field label="Email" htmlFor="email">
           <div className="auth-field">
@@ -178,27 +172,39 @@ function LoginForm() {
       {SHOW_LOCAL_ACCOUNTS ? (
         <details className="mt-8 rounded-xl border border-hairline bg-paper px-4 py-3">
           <summary className="cursor-pointer text-helper font-medium text-ink-muted">Local development accounts</summary>
-          <ul className="mt-3 space-y-3">
-            {LOCAL_ACCOUNTS.map((account) => (
-              <li key={account.email}>
-                <p className="text-eyebrow uppercase tracking-[0.06em] text-ink-muted">{account.label}</p>
-                <p className="mt-1 font-mono text-data text-ink-muted">
-                  {account.email} · {account.password}
-                </p>
-                <p className="mt-1 text-helper text-ink-muted">Opens {account.lands}.</p>
-                <button
-                  type="button"
-                  className="mt-2 text-helper font-medium text-navy underline-offset-2 hover:underline"
-                  onClick={() => {
-                    setEmail(account.email);
-                    setPassword(account.password);
-                  }}
-                >
-                  Use this account
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-helper">
+              <thead>
+                <tr className="text-ink-muted">
+                  <th className="py-1 pr-3 font-medium">Role</th>
+                  <th className="py-1 pr-3 font-medium">Email</th>
+                  <th className="py-1 pr-3 font-medium">Password</th>
+                  <th className="py-1 font-medium"><span className="sr-only">Use</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {LOCAL_ACCOUNTS.map((account) => (
+                  <tr key={account.email} className="align-top text-ink">
+                    <td className="py-2 pr-3 font-medium">{account.label}</td>
+                    <td className="py-2 pr-3 font-mono text-data">{account.email}</td>
+                    <td className="py-2 pr-3 font-mono text-data">{account.password}</td>
+                    <td className="py-2">
+                      <button
+                        type="button"
+                        className="font-medium text-navy underline-offset-2 hover:underline"
+                        onClick={() => {
+                          setEmail(account.email);
+                          setPassword(account.password);
+                        }}
+                      >
+                        Use
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </details>
       ) : null}
     </div>

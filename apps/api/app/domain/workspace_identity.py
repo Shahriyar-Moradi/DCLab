@@ -16,6 +16,8 @@ LEGACY_IMPORT_PROJECT_DESCRIPTION = (
     "Compatibility project for historical records that had no Project. "
     "Attaching multiple Workflows here does not mean they were the same case study."
 )
+PROJECT_PROVENANCE_USER = "user"
+PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT = "system_legacy_import"
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -46,7 +48,8 @@ class WorkspaceRead(BaseModel):
     name: str
     kind: str
     created_at: datetime
-    max_members: int
+    max_members: int | None = None
+    max_ml_engineer_seats: int
 
 
 class ProjectCreateRequest(BaseModel):
@@ -64,7 +67,8 @@ class ProjectRead(BaseModel):
     slug: str
     description: str
     status: str
-    created_by: UUID
+    created_by: UUID | None
+    provenance: str
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None

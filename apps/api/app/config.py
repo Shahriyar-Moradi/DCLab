@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     object_storage_region: str = "us-east-1"
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
+    # Durable ML jobs. Production default persists a row and returns; a worker
+    # process claims with FOR UPDATE SKIP LOCKED. `inline` / `thread` are local
+    # adapters only — they must be set explicitly and are not the default.
+    ml_job_dispatcher: str = "postgres"
+    ml_job_max_attempts: int = 3
+    ml_job_heartbeat_timeout_seconds: float = 300.0
+    ml_job_poll_seconds: float = 1.0
 
 
 @lru_cache

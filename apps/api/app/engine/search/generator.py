@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.engine.features.combinations import features_for_groups, generate_group_combinations
 from app.engine.models.registry import available_families, baseline_families, cheap_families, strong_families
-from app.engine.search.fingerprint import candidate_fingerprint
+from app.engine.search.fingerprint import scientific_candidate_fingerprint
 from app.engine.types import Candidate, SearchConfig, TaskSpec
 
 DUMMY_FAMILIES = {"majority", "mean"}
@@ -36,7 +36,7 @@ def scientific_plan_identity(
     development_plan=None,
     task: TaskSpec | None = None,
 ) -> dict[str, str | None]:
-    """Bounded plan identity used in open-ingest candidate fingerprints."""
+    """Bounded plan identity stored on candidate metadata for verifier checks."""
     holdout = _as_plan_dict(holdout_plan)
     development = _as_plan_dict(development_plan)
     validation = development.get("validation_plan") if isinstance(development.get("validation_plan"), dict) else {}
@@ -68,40 +68,33 @@ def open_ingest_families(task_type: str) -> list[str]:
     return [name for name in wanted if name in avail]
 
 
-def _fingerprint_payload(
+def _candidate_fingerprint(
     task: TaskSpec,
     *,
     features: tuple[str, ...],
     family: str,
     seed: int,
     dataset_version: str,
+    dataset_content_digest: str | None = None,
     hyperparameters: dict | None = None,
     preprocessing: dict | str | None = None,
     holdout_plan=None,
     development_plan=None,
-) -> dict:
-    identity = scientific_plan_identity(
+    feature_set_version_digest: str | None = None,
+) -> str:
+    return scientific_candidate_fingerprint(
+        task=task,
+        features=features,
+        family=family,
+        seed=seed,
+        dataset_version=dataset_version,
+        dataset_content_digest=dataset_content_digest,
+        hyperparameters=hyperparameters,
+        preprocessing=preprocessing,
         holdout_plan=holdout_plan,
         development_plan=development_plan,
-        task=task,
+        feature_set_version_digest=feature_set_version_digest,
     )
-    payload = {
-        "dataset_version": dataset_version,
-        "task_id": task.id,
-        "target": task.target,
-        "features": list(features),
-        "family": family,
-        "hyperparams": dict(hyperparameters or {}),
-        "preprocess": preprocessing if preprocessing is not None else "default",
-        "seed": seed,
-        "validation": task.validation_strategy,
-        "split": task.validation_strategy,
-    }
-    if holdout_plan is not None or development_plan is not None:
-        payload["validation"] = identity.get("validation_strategy") or task.validation_strategy
-        payload["split"] = identity.get("holdout_strategy") or task.validation_strategy
-        payload.update(identity)
-    return payload
 
 
 def _make_candidate(
@@ -111,6 +104,12 @@ def _make_candidate(
     *,
     seed: int,
     dataset_version: str,
+    dataset_content_digest: str | None = None,
+    holdout_plan=None,
+    development_plan=None,
+    hyperparameters: dict | None = None,
+    preprocessing: dict | str | None = None,
+    feature_set_version_digest: str | None = None,
 ) -> Candidate | None:
     feats = tuple(features_for_groups(task.feature_groups, combo))
     if not feats:
@@ -123,10 +122,18 @@ def _make_candidate(
         model_family=family,
         random_seed=seed,
         validation_strategy=task.validation_strategy,
-        fingerprint=candidate_fingerprint(
-            _fingerprint_payload(
-                task, features=feats, family=family, seed=seed, dataset_version=dataset_version
-            )
+        fingerprint=_candidate_fingerprint(
+            task,
+            features=feats,
+            family=family,
+            seed=seed,
+            dataset_version=dataset_version,
+            dataset_content_digest=dataset_content_digest,
+            hyperparameters=hyperparameters,
+            preprocessing=preprocessing,
+            holdout_plan=holdout_plan,
+            development_plan=development_plan,
+            feature_set_version_digest=feature_set_version_digest,
         ),
     )
 
@@ -152,8 +159,10 @@ def _open_ingest_candidates(
     config: SearchConfig,
     *,
     dataset_version: str,
+    dataset_content_digest: str | None = None,
     holdout_plan=None,
     development_plan=None,
+    feature_set_version_digest: str | None = None,
 ) -> list[Candidate]:
     """One feature group, registry families, a single ColumnTransformer preprocessor.
 
@@ -185,17 +194,6 @@ def _open_ingest_candidates(
     for family in families:
         if len(candidates) >= config.max_candidates:
             return candidates
-        payload = _fingerprint_payload(
-            task,
-            features=feats,
-            family=family,
-            seed=config.seed,
-            dataset_version=dataset_version,
-            hyperparameters={},
-            preprocessing=dict(OPEN_INGEST_PREPROCESS),
-            holdout_plan=holdout_plan,
-            development_plan=development_plan,
-        )
         candidates.append(
             Candidate(
                 candidate_id=family,
@@ -206,7 +204,19 @@ def _open_ingest_candidates(
                 random_seed=config.seed,
                 validation_strategy=str(identity.get("validation_strategy") or task.validation_strategy),
                 preprocessing=dict(OPEN_INGEST_PREPROCESS),
-                fingerprint=candidate_fingerprint(payload),
+                fingerprint=_candidate_fingerprint(
+                    task,
+                    features=feats,
+                    family=family,
+                    seed=config.seed,
+                    dataset_version=dataset_version,
+                    dataset_content_digest=dataset_content_digest,
+                    hyperparameters={},
+                    preprocessing=dict(OPEN_INGEST_PREPROCESS),
+                    holdout_plan=holdout_plan,
+                    development_plan=development_plan,
+                    feature_set_version_digest=feature_set_version_digest,
+                ),
                 metadata=dict(identity),
             )
         )
@@ -218,8 +228,10 @@ def assemble_candidates(
     config: SearchConfig,
     *,
     dataset_version: str = "v1",
+    dataset_content_digest: str | None = None,
     holdout_plan=None,
     development_plan=None,
+    feature_set_version_digest: str | None = None,
 ) -> list[Candidate]:
     """Progressive search reserves slots for baselines *and* stronger families."""
     groups = list(task.feature_groups.keys())
@@ -230,8 +242,10 @@ def assemble_candidates(
             task,
             config,
             dataset_version=dataset_version,
+            dataset_content_digest=dataset_content_digest,
             holdout_plan=holdout_plan,
             development_plan=development_plan,
+            feature_set_version_digest=feature_set_version_digest,
         )
     combos = _combos(task, config)
     full = tuple(sorted(groups))
@@ -243,7 +257,15 @@ def assemble_candidates(
         if len(candidates) >= config.max_candidates:
             return False
         row = _make_candidate(
-            task, family, combo, seed=config.seed, dataset_version=dataset_version
+            task,
+            family,
+            combo,
+            seed=config.seed,
+            dataset_version=dataset_version,
+            dataset_content_digest=dataset_content_digest,
+            holdout_plan=holdout_plan,
+            development_plan=development_plan,
+            feature_set_version_digest=feature_set_version_digest,
         )
         if row is None or row.candidate_id in seen:
             return True
@@ -305,11 +327,21 @@ def generate_candidates(
     *,
     stage: str = "all",
     dataset_version: str = "v1",
+    dataset_content_digest: str | None = None,
+    holdout_plan=None,
+    development_plan=None,
     limit: int | None = None,
 ) -> list[Candidate]:
     """Stage-aware generator. Prefer ``assemble_candidates`` for a full run."""
     if stage == "all":
-        rows = assemble_candidates(task, config, dataset_version=dataset_version)
+        rows = assemble_candidates(
+            task,
+            config,
+            dataset_version=dataset_version,
+            dataset_content_digest=dataset_content_digest,
+            holdout_plan=holdout_plan,
+            development_plan=development_plan,
+        )
         return rows[: limit or config.max_candidates]
 
     groups = list(task.feature_groups.keys())
@@ -330,7 +362,14 @@ def generate_candidates(
     for combo in combos:
         for family in families:
             row = _make_candidate(
-                task, family, combo, seed=config.seed, dataset_version=dataset_version
+                task,
+                family,
+                combo,
+                seed=config.seed,
+                dataset_version=dataset_version,
+                dataset_content_digest=dataset_content_digest,
+                holdout_plan=holdout_plan,
+                development_plan=development_plan,
             )
             if row is None:
                 continue

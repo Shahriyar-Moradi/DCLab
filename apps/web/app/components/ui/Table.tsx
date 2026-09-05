@@ -4,10 +4,10 @@ import type { ReactNode, ThHTMLAttributes } from "react";
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className="relative overflow-x-auto overscroll-x-contain rounded-xl border border-hairline bg-paper-raised shadow-sm">
-      <p className="mb-2 px-4 pt-3 font-sans text-label uppercase text-ink-muted md:hidden">
+      <p className="mb-2 px-5 pt-3 font-sans text-label uppercase text-ink-muted md:hidden">
         Scroll horizontally to see all columns
       </p>
-      <table className={cn("w-full min-w-[640px] border-collapse text-left", className)}>{children}</table>
+      <table className={cn("w-full min-w-[40rem] border-collapse text-left", className)}>{children}</table>
     </div>
   );
 }

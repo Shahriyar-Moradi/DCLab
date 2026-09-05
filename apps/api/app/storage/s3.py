@@ -8,7 +8,7 @@ from typing import Any, BinaryIO, Iterator
 
 from app.storage._hashing import as_bytes, sha256_bytes
 from app.storage.base import ObjectMetadata, ObjectPutResult
-from app.storage.exceptions import ObjectNotFoundError, ObjectStorageError
+from app.storage.exceptions import ObjectNotFoundError, ObjectStorageError, S3_SDK_INSTALL
 
 
 def _client_error_code(exc: BaseException) -> str | None:
@@ -51,7 +51,8 @@ class S3Storage:
             import boto3
         except ImportError as exc:
             raise ObjectStorageError(
-                "boto3 is required for S3Storage when no client is injected"
+                "boto3 is required for S3Storage when no client is injected. "
+                f"Install with: {S3_SDK_INSTALL}"
             ) from exc
         kwargs = {}
         if self.region:

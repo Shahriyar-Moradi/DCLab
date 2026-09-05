@@ -362,11 +362,18 @@ def save_upload(
         commit=False,
     )
     row.experiment_id = pipeline_run.id
+    from app.services.ml_job_service import create_auto_train_job
+
+    create_auto_train_job(
+        db,
+        workspace_id=workspace_id,
+        project_id=project.id,
+        upload_id=row.id,
+    )
     db.commit()
     db.refresh(row)
-    # Build the client payload while the row is still queued. The background job
-    # must not start until this snapshot exists — otherwise POST can return a
-    # later pipeline_status.
+    # Build the client payload while the row is still queued. Training starts
+    # only when a worker claims the persisted ml_jobs row.
     payload = _to_read(db, row)
     enqueue_auto_train(row.id)
     return payload

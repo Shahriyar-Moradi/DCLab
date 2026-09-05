@@ -21,25 +21,26 @@ from app.db.models import (
 from app.domain.errors import IdentityError
 from app.domain.workspace_identity import WorkspaceRead
 from app.services.authorization_service import (
+    AuthorizationError,
+    assert_can_assign_workspace_role,
     can_manage_workspace_members,
+    parse_assigned_workspace_role,
     platform_role_for,
 )
 from app.services.auth_service import create_user
 from app.services.workspace_entitlement_service import (
     assert_can_add_member,
     max_members_for,
+    max_ml_engineer_seats_for,
     seed_default_entitlements,
 )
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 _USER_ROLE_FOR_MEMBERSHIP = {
-    WorkspaceRole.WORKSPACE_OWNER: UserRole.WORKSPACE_OWNER,
     WorkspaceRole.WORKSPACE_ADMIN: UserRole.WORKSPACE_ADMIN,
     WorkspaceRole.ML_ENGINEER: UserRole.ML_ENGINEER,
     WorkspaceRole.VIEWER: UserRole.VIEWER,
-    WorkspaceRole.BUSINESS_ADMIN: UserRole.BUSINESS_ADMIN,
-    WorkspaceRole.BUSINESS_DEVELOPER: UserRole.BUSINESS_DEVELOPER,
 }
 
 
@@ -75,6 +76,7 @@ def _to_read(db: Session, workspace: Workspace) -> WorkspaceRead:
         kind=workspace.kind,
         created_at=workspace.created_at,
         max_members=max_members_for(db, workspace.id),
+        max_ml_engineer_seats=max_ml_engineer_seats_for(db, workspace.id),
     )
 
 
@@ -144,11 +146,15 @@ def workspace_to_read(db: Session, workspace: Workspace) -> WorkspaceRead:
     return _to_read(db, workspace)
 
 
-def _parse_member_role(raw: str) -> WorkspaceRole:
+def _parse_and_authorize_member_role(
+    db: Session, actor: User, workspace_id: UUID, raw: str
+) -> WorkspaceRole:
     try:
-        return WorkspaceRole(raw)
-    except ValueError as exc:
-        raise IdentityError(f"unknown workspace role '{raw}'") from exc
+        membership_role = parse_assigned_workspace_role(raw)
+        assert_can_assign_workspace_role(db, actor, workspace_id, membership_role)
+    except AuthorizationError as exc:
+        raise IdentityError(str(exc), status_code=exc.status_code) from exc
+    return membership_role
 
 
 def add_workspace_member(
@@ -169,8 +175,8 @@ def add_workspace_member(
             "membership administration requires workspace_owner, workspace_admin, or dclab_admin",
             status_code=403,
         )
-    membership_role = _parse_member_role(role)
-    assert_can_add_member(db, workspace_id)
+    membership_role = _parse_and_authorize_member_role(db, actor, workspace_id, role)
+    assert_can_add_member(db, workspace_id, membership_role)
     normalized_email = email.strip().lower()
     existing = db.query(User).filter(User.email == normalized_email).one_or_none()
     if existing is not None:

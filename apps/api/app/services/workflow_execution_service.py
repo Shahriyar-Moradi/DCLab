@@ -328,10 +328,16 @@ def _parse_time(value: Any) -> datetime | None:
     return None
 
 
+_TERMINAL_STAGE = "terminal"
+_INTRA_STAGE_EVENT_PREFIXES = ("cv_fold_", "candidate_")
+
+
 def _stage_status(raw: str | None) -> str:
     value = (raw or "completed").lower()
     if value in {"queued", "running", "completed", "failed", "skipped"}:
         return value
+    if value in {"started"}:
+        return "running"
     if value in {"fail", "error"}:
         return "failed"
     if value in {"skip", "not_applicable"}:
@@ -339,12 +345,405 @@ def _stage_status(raw: str | None) -> str:
     return "completed"
 
 
+def _stage_key(value: Any, *, fallback: str = "stage") -> str:
+    return str(value or fallback)[:80]
+
+
+def _stage_name(stage_key: str, raw: Any = None) -> str:
+    name = str(raw or stage_key.replace("_", " "))
+    return name[:256]
+
+
+def _next_stage_sequence(db: Session, pipeline_run_id: UUID) -> int:
+    last = db.scalar(
+        select(func.max(PipelineStageRun.sequence)).where(
+            PipelineStageRun.pipeline_run_id == pipeline_run_id
+        )
+    )
+    return int(last or 0) + 1
+
+
+def _lookup_stage_run(
+    db: Session, pipeline_run_id: UUID, stage_key: str
+) -> PipelineStageRun | None:
+    return db.scalar(
+        select(PipelineStageRun).where(
+            PipelineStageRun.pipeline_run_id == pipeline_run_id,
+            PipelineStageRun.stage_key == stage_key,
+        )
+    )
+
+
+def _summaries_from_mapping(payload: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    data = payload or {}
+    return (
+        {key: data[key] for key in ("rows_in",) if key in data},
+        {key: data[key] for key in ("rows_out",) if key in data},
+    )
+
+
+def _apply_summaries(row: PipelineStageRun, payload: dict[str, Any] | None) -> None:
+    incoming_in, incoming_out = _summaries_from_mapping(payload)
+    if incoming_in:
+        row.input_summary = {**dict(row.input_summary or {}), **incoming_in}
+    if incoming_out:
+        row.output_summary = {**dict(row.output_summary or {}), **incoming_out}
+
+
+def start_pipeline_stage_run(
+    db: Session,
+    pipeline_run: Experiment,
+    *,
+    stage_key: str,
+    started_at: datetime | None = None,
+    payload: dict[str, Any] | None = None,
+    stage_type: str = "execution",
+    name: str | None = None,
+) -> PipelineStageRun | None:
+    """Create or reuse the live stage row. Same stage_key keeps the same row."""
+
+    key = _stage_key(stage_key)
+    if not key or key == _TERMINAL_STAGE:
+        return None
+    started = started_at or _now()
+    row = _lookup_stage_run(db, pipeline_run.id, key)
+    if row is None:
+        row = PipelineStageRun(
+            workspace_id=pipeline_run.workspace_id,
+            project_id=pipeline_run.project_id,
+            pipeline_run_id=pipeline_run.id,
+            stage_key=key,
+            stage_type=str(stage_type or "execution")[:64],
+            sequence=_next_stage_sequence(db, pipeline_run.id),
+            name=_stage_name(key, name),
+            status="running",
+            started_at=started,
+            completed_at=None,
+            duration_ms=None,
+            input_summary={},
+            output_summary={},
+        )
+        db.add(row)
+    elif row.status == "running":
+        if name:
+            row.name = _stage_name(key, name)
+    else:
+        row.status = "running"
+        row.started_at = started
+        row.completed_at = None
+        row.duration_ms = None
+        row.failure_code = None
+        row.failure_reason = None
+        if name:
+            row.name = _stage_name(key, name)
+    _apply_summaries(row, payload)
+    db.flush()
+    return row
+
+
+def complete_pipeline_stage_run(
+    db: Session,
+    pipeline_run: Experiment,
+    *,
+    stage_key: str,
+    status: str = "completed",
+    completed_at: datetime | None = None,
+    duration_ms: float | None = None,
+    payload: dict[str, Any] | None = None,
+    started_at: datetime | None = None,
+    stage_type: str = "execution",
+    name: str | None = None,
+) -> PipelineStageRun | None:
+    key = _stage_key(stage_key)
+    if not key or key == _TERMINAL_STAGE:
+        return None
+    ended = completed_at or _now()
+    resolved = _stage_status(status)
+    if resolved not in {"completed", "skipped"}:
+        resolved = "completed"
+    row = _lookup_stage_run(db, pipeline_run.id, key)
+    if row is None:
+        row = start_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=key,
+            started_at=started_at,
+            payload=payload,
+            stage_type=stage_type,
+            name=name,
+        )
+        if row is None:
+            return None
+    row.status = resolved
+    row.completed_at = ended
+    if duration_ms is not None:
+        row.duration_ms = float(duration_ms)
+    elif row.started_at is not None:
+        row.duration_ms = max(0.0, (ended - row.started_at).total_seconds() * 1000.0)
+    if started_at is not None and row.started_at is None:
+        row.started_at = started_at
+    _apply_summaries(row, payload)
+    db.flush()
+    return row
+
+
+def fail_pipeline_stage_run(
+    db: Session,
+    pipeline_run: Experiment,
+    *,
+    stage_key: str,
+    reason: str | None = None,
+    failure_code: str | None = None,
+    completed_at: datetime | None = None,
+    duration_ms: float | None = None,
+    payload: dict[str, Any] | None = None,
+    started_at: datetime | None = None,
+) -> PipelineStageRun | None:
+    key = _stage_key(stage_key)
+    if not key or key == _TERMINAL_STAGE:
+        return None
+    ended = completed_at or _now()
+    row = _lookup_stage_run(db, pipeline_run.id, key)
+    if row is None:
+        row = start_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=key,
+            started_at=started_at,
+            payload=payload,
+        )
+        if row is None:
+            return None
+    row.status = "failed"
+    row.completed_at = ended
+    if duration_ms is not None:
+        row.duration_ms = float(duration_ms)
+    elif row.started_at is not None:
+        row.duration_ms = max(0.0, (ended - row.started_at).total_seconds() * 1000.0)
+    data = payload or {}
+    code = failure_code or data.get("failure_code")
+    detail = reason or data.get("failure_reason") or data.get("error") or data.get("reason")
+    row.failure_code = str(code)[:64] if code else row.failure_code
+    row.failure_reason = str(detail)[:2048] if detail else row.failure_reason
+    _apply_summaries(row, payload)
+    db.flush()
+    return row
+
+
+def fail_open_pipeline_stage_runs(
+    db: Session,
+    pipeline_run: Experiment,
+    *,
+    reason: str | None = None,
+    failure_code: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> list[PipelineStageRun]:
+    rows = list(
+        db.scalars(
+            select(PipelineStageRun).where(
+                PipelineStageRun.pipeline_run_id == pipeline_run.id,
+                PipelineStageRun.status == "running",
+            )
+        )
+    )
+    failed: list[PipelineStageRun] = []
+    for row in rows:
+        updated = fail_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=row.stage_key,
+            reason=reason,
+            failure_code=failure_code,
+            payload=payload,
+        )
+        if updated is not None:
+            failed.append(updated)
+    return failed
+
+
+def complete_open_pipeline_stage_runs(
+    db: Session,
+    pipeline_run: Experiment,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> list[PipelineStageRun]:
+    rows = list(
+        db.scalars(
+            select(PipelineStageRun).where(
+                PipelineStageRun.pipeline_run_id == pipeline_run.id,
+                PipelineStageRun.status == "running",
+            )
+        )
+    )
+    completed: list[PipelineStageRun] = []
+    for row in rows:
+        updated = complete_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=row.stage_key,
+            payload=payload,
+        )
+        if updated is not None:
+            completed.append(updated)
+    return completed
+
+
+def apply_live_stage_from_event(
+    db: Session,
+    pipeline_run: Experiment,
+    *,
+    stage: str,
+    event_type: str,
+    status: str,
+    payload: dict[str, Any] | None = None,
+    duration_ms: float | None = None,
+) -> PipelineStageRun | None:
+    """Keep PipelineStageRun in lockstep with an append-only MlRunEvent."""
+
+    key = _stage_key(stage)
+    event_name = str(event_type or "")
+    resolved = _stage_status(status)
+    data = payload or {}
+    if key == _TERMINAL_STAGE or event_name == "pipeline_terminal":
+        if resolved == "failed" or str(status).lower() == "failed":
+            fail_open_pipeline_stage_runs(
+                db,
+                pipeline_run,
+                reason=str(data.get("reason") or "") or None,
+                failure_code=str(data.get("failure_code") or "") or None,
+                payload=data,
+            )
+        elif resolved in {"completed", "skipped"}:
+            complete_open_pipeline_stage_runs(db, pipeline_run, payload=data)
+        return None
+    intra = event_name.startswith(_INTRA_STAGE_EVENT_PREFIXES)
+    if resolved == "running" or event_name.endswith("_started") or event_name == "operation_started":
+        return start_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=key,
+            payload=data,
+        )
+    if resolved == "failed" or event_name.endswith("_failed"):
+        if intra:
+            return start_pipeline_stage_run(
+                db,
+                pipeline_run,
+                stage_key=key,
+                payload=data,
+            )
+        return fail_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=key,
+            reason=str(data.get("reason") or data.get("error") or "") or None,
+            failure_code=str(data.get("failure_code") or "") or None,
+            duration_ms=duration_ms,
+            payload=data,
+        )
+    if intra:
+        return start_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=key,
+            payload=data,
+        )
+    if resolved in {"completed", "skipped"} or event_name in {
+        "operation_completed",
+    } or event_name.endswith("_completed"):
+        return complete_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=key,
+            status=resolved if resolved in {"completed", "skipped"} else "completed",
+            duration_ms=duration_ms,
+            payload=data,
+        )
+    return start_pipeline_stage_run(db, pipeline_run, stage_key=key, payload=data)
+
+
+def _row_from_timing(
+    db: Session,
+    pipeline_run: Experiment,
+    timing: dict[str, Any],
+    *,
+    sequence: int | None = None,
+) -> PipelineStageRun | None:
+    stage_key = _stage_key(timing.get("stage") or timing.get("stage_key"))
+    if not stage_key or stage_key == _TERMINAL_STAGE:
+        return None
+    status = _stage_status(str(timing.get("status") or "completed"))
+    started = _parse_time(timing.get("started_at"))
+    completed = _parse_time(timing.get("ended_at") or timing.get("completed_at"))
+    duration = timing.get("duration_ms")
+    if status == "running":
+        return start_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=stage_key,
+            started_at=started,
+            payload=timing,
+            stage_type=str(timing.get("stage_type") or "execution"),
+            name=timing.get("name"),
+        )
+    if status == "failed":
+        return fail_pipeline_stage_run(
+            db,
+            pipeline_run,
+            stage_key=stage_key,
+            reason=str(timing.get("failure_reason") or timing.get("error") or "") or None,
+            failure_code=str(timing["failure_code"]) if timing.get("failure_code") else None,
+            completed_at=completed,
+            duration_ms=float(duration) if duration is not None else None,
+            payload=timing,
+            started_at=started,
+        )
+    row = complete_pipeline_stage_run(
+        db,
+        pipeline_run,
+        stage_key=stage_key,
+        status=status,
+        completed_at=completed,
+        duration_ms=float(duration) if duration is not None else None,
+        payload=timing,
+        started_at=started,
+        stage_type=str(timing.get("stage_type") or "execution"),
+        name=timing.get("name"),
+    )
+    if row is not None and sequence is not None and row.sequence != sequence:
+        # Recovery rebuild assigns explicit sequences; live upsert keeps first sequence.
+        pass
+    return row
+
+
+def reconcile_pipeline_stage_runs(
+    db: Session,
+    pipeline_run: Experiment,
+    timings: list[dict[str, Any]],
+) -> list[PipelineStageRun]:
+    """Backfill missing stage facts from timing records. Does not delete live rows."""
+
+    rows: list[PipelineStageRun] = []
+    seen: set[str] = set()
+    for timing in timings:
+        if not isinstance(timing, dict):
+            continue
+        key = _stage_key(timing.get("stage") or timing.get("stage_key"))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        row = _row_from_timing(db, pipeline_run, timing)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
 def replace_pipeline_stage_runs(
     db: Session,
     pipeline_run: Experiment,
     timings: list[dict[str, Any]],
 ) -> list[PipelineStageRun]:
-    """Replace queryable stage state from timing records. Events stay append-only."""
+    """Recovery-only rebuild. Normal execution must update live rows in place."""
 
     db.query(PipelineStageRun).filter(
         PipelineStageRun.pipeline_run_id == pipeline_run.id
@@ -354,41 +753,10 @@ def replace_pipeline_stage_runs(
     for sequence, timing in enumerate(timings, start=1):
         if not isinstance(timing, dict):
             continue
-        stage_key = str(timing.get("stage") or timing.get("stage_key") or f"stage_{sequence}")[:80]
-        status = _stage_status(str(timing.get("status") or "completed"))
-        started = _parse_time(timing.get("started_at"))
-        completed = _parse_time(timing.get("ended_at") or timing.get("completed_at"))
-        duration = timing.get("duration_ms")
-        row = PipelineStageRun(
-            workspace_id=pipeline_run.workspace_id,
-            project_id=pipeline_run.project_id,
-            pipeline_run_id=pipeline_run.id,
-            stage_key=stage_key,
-            stage_type=str(timing.get("stage_type") or "execution")[:64],
-            sequence=sequence,
-            name=str(timing.get("name") or stage_key.replace("_", " "))[:256],
-            status=status,
-            started_at=started,
-            completed_at=completed,
-            duration_ms=float(duration) if duration is not None else None,
-            input_summary={
-                key: timing[key]
-                for key in ("rows_in",)
-                if key in timing
-            },
-            output_summary={
-                key: timing[key]
-                for key in ("rows_out",)
-                if key in timing
-            },
-            failure_code=(str(timing["failure_code"])[:64] if timing.get("failure_code") else None),
-            failure_reason=(
-                str(timing.get("failure_reason") or timing.get("error") or "")[:2048] or None
-                if status == "failed"
-                else None
-            ),
-        )
-        db.add(row)
+        row = _row_from_timing(db, pipeline_run, timing, sequence=sequence)
+        if row is None:
+            continue
+        row.sequence = sequence
         rows.append(row)
     if rows:
         db.flush()

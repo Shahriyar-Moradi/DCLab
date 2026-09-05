@@ -269,10 +269,19 @@ def test_scientific_lineage_persists_from_real_auto_train(
 
 
 def test_learned_preprocessor_cannot_be_recorded_as_all_data():
-    from app.services.scientific_lineage_service import _learned_fit_scope
+    from app.services.scientific_lineage_service import _fit_scope_from_evidence, _learned_fit_scope
 
     with pytest.raises(ValueError, match="all_data"):
         _learned_fit_scope("all_data")
+    with pytest.raises(ValueError, match="all_data"):
+        _fit_scope_from_evidence("cv_fold_all_data", has_learned_steps=True)
     assert _learned_fit_scope("fold_train") == "fold_train"
     assert _learned_fit_scope("all_train") == "all_train"
     assert _learned_fit_scope("non_learned") == "non_learned"
+    assert (
+        _fit_scope_from_evidence(
+            "cv_fold_train_only_then_full_training_partition",
+            has_learned_steps=True,
+        )
+        == "fold_train"
+    )

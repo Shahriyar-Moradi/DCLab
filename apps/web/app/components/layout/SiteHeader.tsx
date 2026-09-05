@@ -38,7 +38,7 @@ export function SiteHeader() {
     <header ref={headerRef} className="marketing-header">
       <div className="marketing-wrap flex h-16 items-center justify-between gap-4">
         <BrandLogo />
-        <nav className="hidden items-center gap-6 lg:flex" aria-label="Marketing">
+        <nav className="hidden items-center gap-4 xl:gap-6 lg:flex" aria-label="Marketing">
           {MARKETING_NAV.map((item) => (
             <Link
               key={item.href}
@@ -62,7 +62,7 @@ export function SiteHeader() {
         </div>
         <button
           type="button"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink lg:hidden"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-hairline bg-paper-raised text-ink lg:hidden"
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
           aria-controls={menuId}

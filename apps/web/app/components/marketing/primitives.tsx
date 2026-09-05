@@ -108,7 +108,7 @@ export function MarketingButton({
     return (
       <Link
         href={href}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/20 px-5 text-button text-white transition-ui hover:bg-white/10"
+        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full border border-white/20 px-5 text-button text-white transition-ui hover:bg-white/10 sm:w-auto"
       >
         {children}
       </Link>
@@ -118,14 +118,24 @@ export function MarketingButton({
     return (
       <Link
         href={href}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-brand px-5 text-button text-white transition-ui hover:bg-brand/90"
+        className="marketing-cta-primary inline-flex h-10 w-full items-center justify-center gap-2 rounded-full px-5 text-button text-white transition-ui sm:w-auto"
+      >
+        {children}
+      </Link>
+    );
+  }
+  if (variant === "primary") {
+    return (
+      <Link
+        href={href}
+        className="marketing-cta-primary inline-flex h-10 w-full items-center justify-center gap-2 rounded-full px-5 text-button text-white transition-ui sm:w-auto"
       >
         {children}
       </Link>
     );
   }
   return (
-    <Link href={href} className={buttonClassName({ variant, size: "lg", className: "rounded-full px-5" })}>
+    <Link href={href} className={buttonClassName({ variant, size: "lg", className: "w-full rounded-full px-5 sm:w-auto" })}>
       {children}
     </Link>
   );

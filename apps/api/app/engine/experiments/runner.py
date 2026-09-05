@@ -28,7 +28,13 @@ from app.engine.evaluation.metrics import (
 )
 from app.engine.features.combinations import generate_group_combinations
 from app.engine.features.encode import coerce_binary_target, encode_feature_columns
-from app.engine.lab.auto_prepare import build_preprocessor, engineer_features, split_column_roles
+from app.engine.lab.auto_prepare import (
+    apply_feature_engineering_actions,
+    build_preprocessor,
+    engineer_features,
+    missing_plan_from_applied_imputers,
+    split_column_roles,
+)
 from app.engine.leakage.detector import detect_leakage
 from app.engine.models.registry import make_model
 from app.engine.modeling.holdout_planner import (
@@ -269,15 +275,78 @@ def _estimator_columns_from_plan(
         for name, cols in task.feature_groups.items()
     }
     groups = {name: cols for name, cols in groups.items() if cols}
+    if not groups:
+        groups = {"features": [column for column in train.columns if keep(column)]}
+        groups = {name: cols for name, cols in groups.items() if cols}
     roles = task.column_roles or {}
     numerical_cols = [column for column in (roles.get("numerical") or []) if keep(column) and any(column in cols for cols in groups.values())]
     categorical_cols = [
         column for column in (roles.get("categorical") or []) if keep(column) and any(column in cols for cols in groups.values())
     ]
+    roles_provided = bool(roles.get("numerical") or roles.get("categorical"))
+    if not roles_provided:
+        role_source = [column for cols in groups.values() for column in cols]
+        numerical_cols, categorical_cols = split_column_roles(train, role_source)
     modeled = numerical_cols + categorical_cols
     if modeled:
         groups = {"features": modeled}
     return numerical_cols, categorical_cols, groups
+
+
+def _open_ingest_feature_actions(
+    task: TaskSpec,
+    train: pd.DataFrame,
+    val: pd.DataFrame,
+    test: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[dict[str, Any]]]:
+    existing = [
+        row
+        for row in list((task.feature_engineering or {}).get("feature_engineering_actions") or [])
+        if isinstance(row, dict)
+    ]
+    if existing:
+        return train, val, test, existing
+    reserved = {task.target, SOURCE_ROW_COLUMN}
+    if task.entity_id:
+        reserved.add(task.entity_id)
+    if task.prediction_time_column:
+        reserved.add(task.prediction_time_column)
+    columns = [name for name in train.columns if name not in reserved]
+    engineered, actions = engineer_features(train, columns)
+    if not actions:
+        return train, val, test, []
+    return (
+        engineered,
+        apply_feature_engineering_actions(val, actions),
+        apply_feature_engineering_actions(test, actions),
+        actions,
+    )
+
+
+def _scientific_evidence_payload(
+    *,
+    missing_plan: Any = None,
+    leakage_exclusions: list[dict[str, Any]] | None = None,
+    feature_actions: list[dict[str, Any]] | None = None,
+    numerical_cols: list[str] | None = None,
+    categorical_cols: list[str] | None = None,
+    dropped_columns: list[str] | None = None,
+    fit_scope: str = "fold_train",
+) -> dict[str, Any]:
+    numerical = list(numerical_cols or [])
+    categorical = list(categorical_cols or [])
+    to_dict = getattr(missing_plan, "to_dict", None)
+    missing_payload = to_dict() if callable(to_dict) else None
+    return {
+        "missing_value_plan": missing_payload,
+        "leakage_exclusions": list(leakage_exclusions or []),
+        "feature_actions": list(feature_actions or []),
+        "numerical_columns": numerical,
+        "categorical_columns": categorical,
+        "modeled_features": list(dict.fromkeys([*numerical, *categorical])),
+        "dropped_columns": list(dropped_columns or []),
+        "preprocessing_fit_scope": fit_scope,
+    }
 
 
 def _predict(model, X: np.ndarray, classifier: bool) -> np.ndarray:
@@ -915,6 +984,7 @@ def _run_open_ingest_experiment(
     artifact_dir: Path,
     members_dir: Path,
     dataset_version: str,
+    dataset_content_digest: str | None = None,
     started: float,
     on_stage: Callable[[str], None] | None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None,
@@ -970,6 +1040,27 @@ def _run_open_ingest_experiment(
         metric_plan=metric_plan,
         development_plan=development_plan,
     )
+    train, val, test, fe_actions = _open_ingest_feature_actions(task, train, val, test)
+    if fe_actions:
+        feature_eng = dict(task.feature_engineering or {})
+        if not feature_eng.get("feature_engineering_actions"):
+            converted = [
+                str(name)
+                for action in fe_actions
+                for name in (action.get("columns") or action.get("output_columns") or [])
+            ]
+            task = TaskSpec(
+                **{
+                    **task.to_dict(),
+                    "feature_engineering": {
+                        **feature_eng,
+                        "feature_engineering_actions": list(fe_actions),
+                        "transformed_features": list(
+                            feature_eng.get("transformed_features") or converted
+                        ),
+                    },
+                }
+            )
     numerical_cols, categorical_cols, groups = _estimator_columns_from_plan(
         task, train, development_plan
     )
@@ -988,6 +1079,7 @@ def _run_open_ingest_experiment(
         task,
         config,
         dataset_version=dataset_version,
+        dataset_content_digest=dataset_content_digest,
         holdout_plan=holdout_plan,
         development_plan=development_plan,
     )
@@ -1036,6 +1128,21 @@ def _run_open_ingest_experiment(
     }
     development_payload = development_plan.to_dict()
     holdout_payload = holdout_plan.to_dict()
+    missing_plan = missing_plan_from_applied_imputers(train, numerical_cols, categorical_cols)
+    leakage_exclusions = [
+        row
+        for row in list(development_plan.excluded_features or [])
+        if isinstance(row, dict)
+    ]
+    scientific_evidence = _scientific_evidence_payload(
+        missing_plan=missing_plan,
+        leakage_exclusions=leakage_exclusions,
+        feature_actions=list(feature_report.get("feature_engineering_actions") or fe_actions),
+        numerical_cols=numerical_cols,
+        categorical_cols=categorical_cols,
+        dropped_columns=list(feature_report.get("removed_features") or []),
+        fit_scope="fold_train",
+    )
     result = {
         "task": task.to_dict(),
         "config": config.to_dict(),
@@ -1060,6 +1167,7 @@ def _run_open_ingest_experiment(
             split_meta, records, config.seed, task.task_type, plan=validation_plan
         ),
         "feature_engineering": feature_report,
+        "scientific_evidence": scientific_evidence,
         "preprocessing": {
             "numeric_columns": numerical_cols,
             "categorical_columns": categorical_cols,
@@ -1113,6 +1221,7 @@ def run_experiment(
     *,
     artifact_dir: Path | None = None,
     dataset_version: str = "v1",
+    dataset_content_digest: str | None = None,
     on_stage: Callable[[str], None] | None = None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
     on_event: RunEventCallback | None = None,
@@ -1139,6 +1248,7 @@ def run_experiment(
             artifact_dir=artifact_dir,
             members_dir=members_dir,
             dataset_version=dataset_version,
+            dataset_content_digest=dataset_content_digest,
             started=started,
             on_stage=on_stage,
             on_checkpoint=on_checkpoint,
@@ -1222,7 +1332,14 @@ def run_experiment(
     )
 
     status = ExperimentStatus.GENERATING_CANDIDATES.value
-    candidates = assemble_candidates(task, config, dataset_version=dataset_version)
+    candidates = assemble_candidates(
+        task,
+        config,
+        dataset_version=dataset_version,
+        dataset_content_digest=dataset_content_digest,
+        holdout_plan=config.holdout_plan,
+        development_plan=config.model_development_plan,
+    )
     funnel["generated"] = len(candidates)
     funnel["valid"] = len(candidates)
     logger.info(
@@ -1304,6 +1421,21 @@ def run_experiment(
             "split": split_meta,
             "validation": _open_ingest_validation(split_meta, records, config.seed, task.task_type),
             "feature_engineering": {"transformations": feature_engineering_log},
+            "scientific_evidence": _scientific_evidence_payload(
+                leakage_exclusions=[
+                    {
+                        "column": name,
+                        "risk": "HIGH",
+                        "action": "exclude",
+                        "reason": "High-risk leakage column excluded by the detector.",
+                    }
+                    for name in list(leakage.get("high_risk_columns") or [])
+                ]
+                if config.exclude_high_leakage
+                else [],
+                feature_actions=list(feature_engineering_log),
+                fit_scope="non_learned",
+            ),
             "preprocessing": {
                 "numerical": ["imputer:median", "scaler:standard"],
                 "categorical": ["imputer:most_frequent", "onehot:drop_first"],
@@ -1532,6 +1664,22 @@ def run_experiment(
         "quality": quality,
         "leakage": leakage,
         "split": split_meta,
+        "feature_engineering": {"transformations": feature_engineering_log},
+        "scientific_evidence": _scientific_evidence_payload(
+            leakage_exclusions=[
+                {
+                    "column": name,
+                    "risk": "HIGH",
+                    "action": "exclude",
+                    "reason": "High-risk leakage column excluded by the detector.",
+                }
+                for name in list(leakage.get("high_risk_columns") or [])
+            ]
+            if config.exclude_high_leakage
+            else [],
+            feature_actions=list(feature_engineering_log),
+            fit_scope="non_learned",
+        ),
         "candidates": records,
         "selected_ids": selected_ids,
         "best_single": best_single,

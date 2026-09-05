@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any
 
@@ -68,15 +69,33 @@ def _timestamp(value: Any) -> datetime | None:
         return None
 
 
-def _labels_match(expected: Any, actual: Any) -> bool:
+# JSON (`json.dumps`/`json.loads` in the technical report) and pandas CSV
+# default float text can move a float64 target by a few ULPs. At magnitude
+# ~200 that is ~1e-14. This is serialization, not a rewritten label.
+_REGRESSION_LABEL_REL_TOL = 1e-12
+_REGRESSION_LABEL_ABS_TOL = 1e-9
+
+
+def _labels_match(expected: Any, actual: Any, *, task_type: str = "") -> bool:
     if pd.isna(expected) and pd.isna(actual):
         return True
     if expected == actual:
         return True
     try:
-        return float(expected) == float(actual)
+        expected_f = float(expected)
+        actual_f = float(actual)
     except (TypeError, ValueError):
         return False
+    if expected_f == actual_f:
+        return True
+    if task_type == "regression":
+        return math.isclose(
+            expected_f,
+            actual_f,
+            rel_tol=_REGRESSION_LABEL_REL_TOL,
+            abs_tol=_REGRESSION_LABEL_ABS_TOL,
+        )
+    return False
 
 
 def _artifact_target_values(frame: pd.DataFrame, column: str, task_type: str) -> pd.Series:
@@ -1569,18 +1588,19 @@ class PipelineVerifier:
         prediction_sources = [row.get("source_row_index") for row in prediction_rows]
         prediction_truth_mismatches: list[Any] = []
         artifact_targets = None
+        label_task_type = str(target.get("task_type") or task.get("task_type") or "")
         if input_frame is not None and target_column in input_frame:
             artifact_targets = _artifact_target_values(
                 input_frame,
                 target_column,
-                str(target.get("task_type") or task.get("task_type") or ""),
+                label_task_type,
             )
             for row in prediction_rows:
                 source_row = row.get("source_row_index")
                 if isinstance(source_row, int) and 0 <= source_row < len(artifact_targets):
                     expected = artifact_targets.iloc[source_row]
                     actual = row.get("y_true")
-                    if not _labels_match(expected, actual):
+                    if not _labels_match(expected, actual, task_type=label_task_type):
                         prediction_truth_mismatches.append(source_row)
         if (
             not predictions

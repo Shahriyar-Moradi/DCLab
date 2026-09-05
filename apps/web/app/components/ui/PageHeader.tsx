@@ -28,7 +28,7 @@ export function PageHeader({
   return (
     <header className={cn("product-page-header", className)}>
       {breadcrumbs?.length ? <Breadcrumbs items={breadcrumbs} /> : null}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="product-page-header-row">
         <div className="min-w-0">
           {eyebrow ? <p className="product-eyebrow">{eyebrow}</p> : null}
           <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -44,7 +44,7 @@ export function PageHeader({
           ) : null}
           {description ? <p className="mt-2 max-w-3xl break-words text-body text-ink-muted">{description}</p> : null}
         </div>
-        {actions ? <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">{actions}</div> : null}
+        {actions ? <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">{actions}</div> : null}
       </div>
     </header>
   );

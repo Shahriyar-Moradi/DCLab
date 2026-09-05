@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Project, User, Workspace
 from app.domain.errors import IdentityError, ProjectNotFoundError
+from app.domain.workspace_identity import PROJECT_PROVENANCE_USER
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
 from app.services.workspace_service import slugify
 
@@ -51,6 +52,7 @@ def create_project(
         description=description,
         status="active",
         created_by=actor.id,
+        provenance=PROJECT_PROVENANCE_USER,
     )
     db.add(project)
     db.flush()

@@ -24,6 +24,7 @@ from app.db.models import (
     FeatureSetVersion,
     FeatureTransformation,
     LabDecisionRecord,
+    PipelineScientificPlan,
     PipelineStageRun,
     PreprocessingStep,
     Project,
@@ -44,6 +45,172 @@ def _now() -> datetime:
 def content_digest(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _as_plan_dict(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        return dict(payload) if isinstance(payload, dict) else {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _json_ready(payload: Any) -> Any:
+    return json.loads(json.dumps(payload, default=str))
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _required_str(value: Any) -> str | None:
+    return _optional_str(value)
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def scientific_plan_columns_from_payloads(
+    *,
+    holdout_plan: Any,
+    development_plan: Any,
+    split: Any = None,
+    validation_plan: Any = None,
+    metric_plan: Any = None,
+) -> dict[str, Any] | None:
+    """Map authoritative HoldoutPlan / ModelDevelopmentPlan into queryable columns."""
+
+    holdout = _as_plan_dict(holdout_plan)
+    development = _as_plan_dict(development_plan)
+    if not holdout or not development:
+        return None
+    nested_validation = _as_plan_dict(development.get("validation_plan"))
+    nested_metric = _as_plan_dict(development.get("metric_plan"))
+    validation = nested_validation or _as_plan_dict(validation_plan)
+    metric = nested_metric or _as_plan_dict(metric_plan)
+    profile = _as_plan_dict(development.get("problem_profile"))
+    split_payload = _as_plan_dict(split)
+    task_type = _required_str(profile.get("task_type"))
+    holdout_strategy = _required_str(holdout.get("strategy"))
+    validation_strategy = _required_str(validation.get("strategy"))
+    primary_metric = _required_str(metric.get("primary_metric"))
+    if not task_type or not holdout_strategy or not validation_strategy or not primary_metric:
+        return None
+    try:
+        holdout_test_size = float(holdout.get("test_size"))
+    except (TypeError, ValueError):
+        return None
+    requested = _optional_int(validation.get("requested_folds"))
+    requested_folds = 5 if requested is None else requested
+    development_payload = dict(development)
+    if validation and not nested_validation:
+        development_payload["validation_plan"] = validation
+    if metric and not nested_metric:
+        development_payload["metric_plan"] = metric
+    allowed = list(development.get("allowed_features") or [])
+    excluded = list(development.get("excluded_features") or [])
+    group_column = (
+        _optional_str(holdout.get("group_column"))
+        or _optional_str(development.get("group_column"))
+        or _optional_str(validation.get("group_column"))
+    )
+    time_column = (
+        _optional_str(holdout.get("time_column"))
+        or _optional_str(development.get("time_column"))
+        or _optional_str(validation.get("time_column"))
+    )
+    full_plan = _json_ready(
+        {
+            "holdout_plan": holdout,
+            "model_development_plan": development_payload,
+            "validation_plan": validation,
+            "metric_plan": metric,
+            "split": split_payload,
+        }
+    )
+    return {
+        "task_type": task_type,
+        "holdout_strategy": holdout_strategy,
+        "holdout_test_size": holdout_test_size,
+        "validation_strategy": validation_strategy,
+        "requested_folds": requested_folds,
+        "actual_folds": _optional_int(validation.get("actual_folds")),
+        "primary_metric": primary_metric,
+        "group_column": group_column,
+        "time_column": time_column,
+        "allowed_feature_count": len(allowed),
+        "excluded_feature_count": len(excluded),
+        "holdout_plan_digest": content_digest(_json_ready(holdout)),
+        "model_development_plan_digest": content_digest(_json_ready(development_payload)),
+        "full_plan": full_plan,
+    }
+
+
+def persist_scientific_plan(
+    db: Session,
+    experiment: Experiment,
+    *,
+    holdout_plan: Any,
+    development_plan: Any,
+    split: Any = None,
+    validation_plan: Any = None,
+    metric_plan: Any = None,
+) -> PipelineScientificPlan | None:
+    """Insert-once scientific plan for this PipelineRun. Second persist is a no-op."""
+
+    existing = db.scalar(
+        select(PipelineScientificPlan).where(
+            PipelineScientificPlan.pipeline_run_id == experiment.id
+        )
+    )
+    if existing is not None:
+        return existing
+    values = scientific_plan_columns_from_payloads(
+        holdout_plan=holdout_plan,
+        development_plan=development_plan,
+        split=split,
+        validation_plan=validation_plan,
+        metric_plan=metric_plan,
+    )
+    if values is None:
+        return None
+    row = PipelineScientificPlan(
+        workspace_id=experiment.workspace_id,
+        project_id=experiment.project_id,
+        pipeline_run_id=experiment.id,
+        locked_at=_now(),
+        **values,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def persist_scientific_plan_from_result(
+    db: Session, experiment: Experiment, result: dict[str, Any]
+) -> PipelineScientificPlan | None:
+    return persist_scientific_plan(
+        db,
+        experiment,
+        holdout_plan=result.get("holdout_plan"),
+        development_plan=result.get("model_development_plan"),
+        split=result.get("split"),
+        validation_plan=result.get("validation_plan"),
+        metric_plan=result.get("metric_plan"),
+    )
 
 
 @dataclass
@@ -304,57 +471,107 @@ def persist_scientific_lineage(
     db.flush()
 
 
+def _dict_rows(value: Any) -> list[dict[str, Any]]:
+    return [row for row in list(value or []) if isinstance(row, dict)]
+
+
+def _fit_scope_from_evidence(raw: str, *, has_learned_steps: bool) -> str:
+    scope = str(raw or "").strip()
+    if "all_data" in scope:
+        raise ValueError("learned preprocessors cannot be recorded as all_data")
+    if scope in PREPROCESSING_FIT_SCOPES:
+        return scope
+    return "fold_train" if has_learned_steps else "non_learned"
+
+
 def persist_scientific_lineage_from_result(
-    db: Session, experiment: Experiment, result: dict[str, Any]
+    db: Session,
+    experiment: Experiment,
+    result: dict[str, Any],
+    *,
+    missing_plan: MissingValuePlan | None = None,
+    lab_decision_sources: dict[str, str] | None = None,
+    source_dataset_id: UUID | None = None,
 ) -> None:
     """Persist runner output that was actually produced. Does not invent configs."""
 
-    quality = result.get("quality") if isinstance(result.get("quality"), dict) else None
+    payload = (
+        result.get("scientific_evidence")
+        if isinstance(result.get("scientific_evidence"), dict)
+        else {}
+    )
+    quality = payload.get("quality") if isinstance(payload.get("quality"), dict) else None
+    if quality is None:
+        quality = result.get("quality") if isinstance(result.get("quality"), dict) else None
     development = (
         result.get("model_development_plan")
         if isinstance(result.get("model_development_plan"), dict)
         else {}
     )
-    excluded = [
-        row
-        for row in list(development.get("excluded_features") or [])
-        if isinstance(row, dict)
-    ]
+    if "leakage_exclusions" in payload:
+        excluded = _dict_rows(payload.get("leakage_exclusions"))
+    else:
+        excluded = _dict_rows(development.get("excluded_features"))
     feature_report = (
         result.get("feature_engineering")
         if isinstance(result.get("feature_engineering"), dict)
         else {}
     )
-    actions = [
-        row
-        for row in list(
+    if "feature_actions" in payload:
+        actions = _dict_rows(payload.get("feature_actions"))
+    else:
+        actions = _dict_rows(
             feature_report.get("feature_engineering_actions")
             or feature_report.get("transformations")
-            or []
         )
-        if isinstance(row, dict)
-    ]
     preprocessing = (
         result.get("preprocessing") if isinstance(result.get("preprocessing"), dict) else {}
     )
-    numerical = [str(name) for name in list(preprocessing.get("numeric_columns") or [])]
-    categorical = [str(name) for name in list(preprocessing.get("categorical_columns") or [])]
-    modeled = list(dict.fromkeys([*numerical, *categorical]))
-    raw_scope = str(preprocessing.get("fit_scope") or "")
-    if "all_data" in raw_scope:
-        raise ValueError("learned preprocessors cannot be recorded as all_data")
+    numerical = [
+        str(name)
+        for name in list(
+            payload.get("numerical_columns") or preprocessing.get("numeric_columns") or []
+        )
+    ]
+    categorical = [
+        str(name)
+        for name in list(
+            payload.get("categorical_columns") or preprocessing.get("categorical_columns") or []
+        )
+    ]
+    modeled = [
+        str(name)
+        for name in list(payload.get("modeled_features") or [])
+        if str(name)
+    ] or list(dict.fromkeys([*numerical, *categorical]))
+    dropped = [
+        str(name)
+        for name in list(
+            payload.get("dropped_columns") or feature_report.get("removed_features") or []
+        )
+    ]
+    plan = missing_plan or MissingValuePlan.from_dict(payload.get("missing_value_plan"))
+    raw_scope = str(
+        payload.get("preprocessing_fit_scope") or preprocessing.get("fit_scope") or ""
+    )
+    persist_scientific_plan_from_result(db, experiment, result)
     persist_scientific_lineage(
         db,
         experiment,
         ScientificRunEvidence(
             quality=quality,
+            missing_plan=plan,
             leakage_exclusions=excluded,
             feature_actions=actions,
             numerical_cols=numerical,
             categorical_cols=categorical,
             modeled_features=modeled,
-            dropped_columns=[str(name) for name in list(feature_report.get("removed_features") or [])],
-            fit_scope="fold_train" if (numerical or categorical) else "non_learned",
+            dropped_columns=dropped,
+            source_dataset_id=source_dataset_id,
+            lab_decision_sources=lab_decision_sources or {},
+            fit_scope=_fit_scope_from_evidence(
+                raw_scope, has_learned_steps=bool(numerical or categorical)
+            ),
         ),
     )
 

@@ -11,7 +11,7 @@ export function LoadingState({
   return (
     <div
       className={cn(
-        "flex min-h-40 flex-col items-center justify-center gap-3 rounded-xl border border-hairline bg-paper-raised px-6 py-12 text-body text-ink-muted",
+        "flex min-h-40 flex-col items-center justify-center gap-3 rounded-xl border border-hairline bg-paper-raised px-5 py-10 text-body text-ink-muted sm:px-6 sm:py-12",
         className,
       )}
       role="status"

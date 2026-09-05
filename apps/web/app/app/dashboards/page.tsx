@@ -13,7 +13,7 @@ import { MetricCard } from "@/app/components/ui/MetricCard";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { SectionHeader } from "@/app/components/ui/SectionHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { useOverviewSnapshot } from "@/lib/application";
+import { useOverviewSnapshot, useSession } from "@/lib/application";
 import {
   actionLabel,
   actionTone,
@@ -71,7 +71,8 @@ function DashboardHeader({
 }
 
 export default function DashboardsPage() {
-  const snapshot = useOverviewSnapshot();
+  const { user, loaded } = useSession();
+  const snapshot = useOverviewSnapshot(loaded && Boolean(user));
 
   if (snapshot.isPending) {
     return (

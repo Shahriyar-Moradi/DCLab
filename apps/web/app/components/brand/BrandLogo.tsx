@@ -15,7 +15,7 @@ export function BrandLogo({
   invert?: boolean;
 }) {
   return (
-    <Link href={href} className={cn("flex items-center gap-2.5", className)} aria-label="Decision.ai home">
+    <Link href={href} className={cn("flex items-center gap-2.5", className)} aria-label="DCLab home">
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
         <circle cx="14" cy="6" r="3.2" fill="#2563EB" />
         <circle cx="6.5" cy="20" r="3.2" fill="#38BDF8" />
@@ -30,7 +30,7 @@ export function BrandLogo({
             product ? "text-[1.0625rem] font-semibold" : "text-[1.05rem] font-bold",
           )}
         >
-          Decision.ai
+          DCLab
         </span>
         {compact ? null : (
           <span

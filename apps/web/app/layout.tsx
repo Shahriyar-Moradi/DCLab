@@ -19,9 +19,9 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Decision.ai — Decision Intelligence",
+  title: "DCLab — Decision Intelligence",
   description:
-    "Decision.ai scores every opportunity, recommends the next action, and runs reproducible experiments in the Experimentation Lab.",
+    "DCLab scores every opportunity, recommends the next action, and runs reproducible experiments in the Experimentation Lab.",
 };
 
 export default function RootLayout({

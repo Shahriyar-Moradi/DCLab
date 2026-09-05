@@ -2,26 +2,50 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError, ProgrammingError
 from sqlalchemy.orm import sessionmaker
 
-from conftest import ADMIN_URL
+from app.db.integrity import (
+    ALWAYS_IMMUTABLE_TABLES,
+    immutability_disable_trigger_statements,
+    immutability_enable_trigger_statements,
+)
+from app.db.legacy_import import LEGACY_IMPORT_BACKFILL_TABLES
 from app.db.models import DEFAULT_WORKSPACE_ID, UserRole, WorkspaceKind
-from app.domain.workspace_identity import LEGACY_IMPORT_PROJECT_SLUG
+from app.domain.workspace_identity import (
+    LEGACY_IMPORT_PROJECT_SLUG,
+    PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT,
+    PROJECT_PROVENANCE_USER,
+)
 from app.services.auth_service import hash_password, register_customer
 from app.services.problem_spec_service import create_problem_spec
 from app.services.project_service import create_project
 from app.services.workspace_service import create_personal_workspace
+from conftest import ADMIN_URL
+
+_MIGRATION_0036 = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "0036_legacy_import_projects.py"
+)
 
 
 def _alembic_config() -> Config:
     return Config("alembic.ini")
+
+
+def _alembic_head(alembic_config: Config) -> str:
+    return ScriptDirectory.from_config(alembic_config).get_current_head()
 
 
 def _isolated_database(monkeypatch):
@@ -46,7 +70,11 @@ def _isolated_database(monkeypatch):
     return admin_engine, database_name, database_url, _alembic_config()
 
 
-def _drop_isolated(admin_engine, database_name: str) -> None:
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _drop_isolated(admin_engine, database_name: str, *, role: str | None = None) -> None:
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -58,8 +86,151 @@ def _drop_isolated(admin_engine, database_name: str) -> None:
             ),
             {"database_name": database_name},
         )
-        connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+        connection.execute(text(f'DROP DATABASE IF EXISTS {_quote_ident(database_name)}'))
+        if role is not None:
+            connection.execute(text(f"DROP ROLE IF EXISTS {_quote_ident(role)}"))
     admin_engine.dispose()
+
+
+def _transfer_public_schema_owner(connection, role: str) -> None:
+    """Change owner of objects in this database's public schema only.
+
+    Do not use REASSIGN OWNED: that also reassigns databases owned by the
+    current user across the cluster.
+    """
+
+    quoted_role = _quote_ident(role)
+    for (table_name,) in connection.execute(
+        text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+    ):
+        connection.execute(
+            text(f"ALTER TABLE public.{_quote_ident(table_name)} OWNER TO {quoted_role}")
+        )
+    for (sequence_name,) in connection.execute(
+        text(
+            """
+            SELECT sequence_name
+            FROM information_schema.sequences
+            WHERE sequence_schema = 'public'
+            """
+        )
+    ):
+        connection.execute(
+            text(
+                f"ALTER SEQUENCE public.{_quote_ident(sequence_name)} OWNER TO {quoted_role}"
+            )
+        )
+    for (type_name,) in connection.execute(
+        text(
+            """
+            SELECT t.typname
+            FROM pg_type AS t
+            JOIN pg_namespace AS n ON n.oid = t.typnamespace
+            WHERE n.nspname = 'public'
+              AND t.typtype IN ('e', 'c', 'd')
+              AND NOT EXISTS (
+                  SELECT 1 FROM pg_class AS c
+                  WHERE c.reltype = t.oid AND c.relnamespace = t.typnamespace
+              )
+            """
+        )
+    ):
+        connection.execute(
+            text(f"ALTER TYPE public.{_quote_ident(type_name)} OWNER TO {quoted_role}")
+        )
+    for (func_ident,) in connection.execute(
+        text(
+            """
+            SELECT p.oid::regprocedure::text
+            FROM pg_proc AS p
+            JOIN pg_namespace AS n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+            """
+        )
+    ):
+        connection.execute(text(f"ALTER FUNCTION {func_ident} OWNER TO {quoted_role}"))
+    connection.execute(text(f"ALTER SCHEMA public OWNER TO {quoted_role}"))
+
+
+def _provision_nonsuperuser_migrator(
+    admin_url, database_name: str, *, reassign_existing: bool
+) -> tuple[str, object]:
+    role = f"dclab_mig_{uuid4().hex[:12]}"
+    password = uuid4().hex
+    admin_engine = create_engine(
+        admin_url.set(database="postgres"), isolation_level="AUTOCOMMIT"
+    )
+    try:
+        with admin_engine.connect() as connection:
+            connection.execute(
+                text(
+                    f"CREATE ROLE {role} LOGIN PASSWORD '{password}' "
+                    "NOSUPERUSER NOREPLICATION NOBYPASSRLS"
+                )
+            )
+            connection.execute(
+                text(f"ALTER DATABASE {_quote_ident(database_name)} OWNER TO {_quote_ident(role)}")
+            )
+    except Exception as exc:
+        with admin_engine.connect() as connection:
+            connection.execute(text(f"DROP ROLE IF EXISTS {_quote_ident(role)}"))
+        admin_engine.dispose()
+        pytest.skip(f"cannot create non-superuser migration role: {exc}")
+    admin_engine.dispose()
+
+    owner_engine = create_engine(
+        admin_url.set(database=database_name), isolation_level="AUTOCOMMIT"
+    )
+    try:
+        with owner_engine.connect() as connection:
+            connection.execute(
+                text(f"GRANT USAGE, CREATE ON SCHEMA public TO {_quote_ident(role)}")
+            )
+            if reassign_existing:
+                _transfer_public_schema_owner(connection, role)
+            else:
+                connection.execute(text(f"ALTER SCHEMA public OWNER TO {_quote_ident(role)}"))
+    finally:
+        owner_engine.dispose()
+
+    migrator_url = admin_url.set(
+        username=role, password=password, database=database_name
+    )
+    return role, migrator_url
+
+
+def _use_database_url(monkeypatch, database_url) -> None:
+    monkeypatch.setenv(
+        "DATABASE_URL", database_url.render_as_string(hide_password=False)
+    )
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+
+def test_legacy_import_migration_is_portable_and_deterministic():
+    source = _MIGRATION_0036.read_text()
+    assert "session_replication_role" not in source
+    assert "information_schema" not in source
+    assert "LEGACY_IMPORT_BACKFILL_TABLES" in source
+    assert "ml_jobs" not in LEGACY_IMPORT_BACKFILL_TABLES
+    assert "pipeline_scientific_plans" not in LEGACY_IMPORT_BACKFILL_TABLES
+    assert "opportunities" not in LEGACY_IMPORT_BACKFILL_TABLES
+    disable = immutability_disable_trigger_statements(LEGACY_IMPORT_BACKFILL_TABLES)
+    enable = immutability_enable_trigger_statements(LEGACY_IMPORT_BACKFILL_TABLES)
+    assert disable == [
+        'ALTER TABLE "datasets" DISABLE TRIGGER "datasets_immutable"',
+        'ALTER TABLE "model_selection_decisions" DISABLE TRIGGER '
+        '"model_selection_decisions_immutable"',
+        'ALTER TABLE "model_versions" DISABLE TRIGGER "model_versions_immutable"',
+    ]
+    assert enable == [
+        'ALTER TABLE "datasets" ENABLE TRIGGER "datasets_immutable"',
+        'ALTER TABLE "model_selection_decisions" ENABLE TRIGGER '
+        '"model_selection_decisions_immutable"',
+        'ALTER TABLE "model_versions" ENABLE TRIGGER "model_versions_immutable"',
+    ]
+    assert set(ALWAYS_IMMUTABLE_TABLES) <= set(LEGACY_IMPORT_BACKFILL_TABLES)
 
 
 def test_fresh_database_upgrade_matches_metadata_then_seed_and_identity_e2e(monkeypatch):
@@ -100,13 +271,67 @@ def test_fresh_database_upgrade_matches_metadata_then_seed_and_identity_e2e(monk
             assert workspace.kind == WorkspaceKind.PERSONAL.value
             assert owner.role == UserRole.WORKSPACE_OWNER.value
             assert spec.project_id == project.id
+            assert project.provenance == PROJECT_PROVENANCE_USER
+            assert project.created_by == owner.id
             current = db.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            assert current == "0036_legacy_import_projects"
+            assert current == _alembic_head(alembic_config)
+            assert (
+                db.execute(
+                    text("SELECT COUNT(*) FROM projects WHERE slug = :slug"),
+                    {"slug": LEGACY_IMPORT_PROJECT_SLUG},
+                ).scalar_one()
+                == 0
+            )
         finally:
             db.close()
             engine.dispose()
     finally:
         _drop_isolated(admin_engine, database_name)
+
+
+def test_fresh_database_upgrade_as_nonsuperuser(monkeypatch):
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch
+    )
+    role = None
+    migrator_engine = None
+    try:
+        role, migrator_url = _provision_nonsuperuser_migrator(
+            make_url(ADMIN_URL), database_name, reassign_existing=False
+        )
+        _use_database_url(monkeypatch, migrator_url)
+        command.upgrade(alembic_config, "head")
+        command.check(alembic_config)
+
+        migrator_engine = create_engine(migrator_url)
+        with migrator_engine.connect() as connection:
+            assert connection.execute(text("SELECT current_setting('is_superuser')")).scalar() == "off"
+            assert connection.execute(
+                text("SELECT rolreplication FROM pg_roles WHERE rolname = current_user")
+            ).scalar() is False
+            current = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
+            assert current == _alembic_head(alembic_config)
+            trigger_state = connection.execute(
+                text(
+                    """
+                    SELECT tgenabled FROM pg_trigger
+                    WHERE tgname = 'datasets_immutable' AND NOT tgisinternal
+                    """
+                )
+            ).scalar_one()
+            assert trigger_state == "O"
+        with migrator_engine.connect() as connection:
+            with pytest.raises(ProgrammingError, match="session_replication_role"):
+                connection.execute(
+                    text("SET LOCAL session_replication_role = 'replica'")
+                )
+                connection.commit()
+    finally:
+        if migrator_engine is not None:
+            migrator_engine.dispose()
+        _drop_isolated(admin_engine, database_name, role=role)
 
 
 def test_existing_pre_redesign_database_preserves_legacy_and_attaches_compatibility_project(
@@ -134,6 +359,7 @@ def test_existing_pre_redesign_database_preserves_legacy_and_attaches_compatibil
     orphan_workspace = uuid4()
     orphan_asset = uuid4()
     orphan_dataset = uuid4()
+    role = None
     try:
         command.upgrade(alembic_config, "0028_semantic_leakage_purpose")
         engine = create_engine(database_url)
@@ -369,13 +595,20 @@ def test_existing_pre_redesign_database_preserves_legacy_and_attaches_compatibil
                     "asset_id": orphan_asset,
                 },
             )
+        engine.dispose()
 
+        role, migrator_url = _provision_nonsuperuser_migrator(
+            make_url(ADMIN_URL), database_name, reassign_existing=True
+        )
+        _use_database_url(monkeypatch, migrator_url)
         command.upgrade(alembic_config, "head")
+
+        engine = create_engine(database_url)
         with engine.connect() as connection:
-            project_id = connection.execute(
+            project = connection.execute(
                 text(
                     """
-                    SELECT id FROM projects
+                    SELECT id, created_by, provenance FROM projects
                     WHERE workspace_id = :workspace_id AND slug = :slug
                     """
                 ),
@@ -383,15 +616,25 @@ def test_existing_pre_redesign_database_preserves_legacy_and_attaches_compatibil
                     "workspace_id": DEFAULT_WORKSPACE_ID,
                     "slug": LEGACY_IMPORT_PROJECT_SLUG,
                 },
-            ).scalar_one()
-            assert connection.execute(
-                text("SELECT COUNT(*) FROM projects WHERE workspace_id = :id AND slug = :slug"),
+            ).one()
+            project_id, created_by, provenance = project
+            assert created_by == user_id
+            assert provenance == PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT
+            orphan_project = connection.execute(
+                text(
+                    """
+                    SELECT id, created_by, provenance FROM projects
+                    WHERE workspace_id = :id AND slug = :slug
+                    """
+                ),
                 {"id": orphan_workspace, "slug": LEGACY_IMPORT_PROJECT_SLUG},
-            ).scalar_one() == 0
+            ).one()
+            assert orphan_project.created_by is None
+            assert orphan_project.provenance == PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT
             assert connection.execute(
                 text("SELECT project_id FROM datasets WHERE id = :id"),
                 {"id": orphan_dataset},
-            ).scalar_one() is None
+            ).scalar_one() == orphan_project.id
             for table, row_id in (
                 ("datasets", dataset_a),
                 ("datasets", dataset_b),
@@ -440,6 +683,26 @@ def test_existing_pre_redesign_database_preserves_legacy_and_attaches_compatibil
             assert connection.execute(
                 text(
                     """
+                    SELECT value_json FROM workspace_entitlements
+                    WHERE workspace_id = :workspace_id
+                      AND entitlement_key = 'max_ml_engineer_seats'
+                    """
+                ),
+                {"workspace_id": DEFAULT_WORKSPACE_ID},
+            ).scalar_one() == 5
+            assert connection.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM workspace_entitlements
+                    WHERE workspace_id = :workspace_id
+                      AND entitlement_key = 'max_members'
+                    """
+                ),
+                {"workspace_id": DEFAULT_WORKSPACE_ID},
+            ).scalar_one() == 0
+            assert connection.execute(
+                text(
+                    """
                     SELECT COUNT(*) FROM experiments
                     WHERE workspace_id = :workspace_id AND project_id = :project_id
                     """
@@ -456,5 +719,31 @@ def test_existing_pre_redesign_database_preserves_legacy_and_attaches_compatibil
                 {"workspace_id": DEFAULT_WORKSPACE_ID, "project_id": project_id},
             ).scalar_one() == 2
         engine.dispose()
+
+        with create_engine(database_url).connect() as probe:
+            with pytest.raises(DBAPIError, match="datasets rows are immutable"):
+                probe.execute(
+                    text("UPDATE datasets SET name = name WHERE id = :id"),
+                    {"id": dataset_a},
+                )
+                probe.commit()
+
+        migrator_engine = create_engine(migrator_url)
+        try:
+            with migrator_engine.connect() as connection:
+                assert (
+                    connection.execute(
+                        text("SELECT current_setting('is_superuser')")
+                    ).scalar()
+                    == "off"
+                )
+            with migrator_engine.connect() as connection:
+                with pytest.raises(ProgrammingError, match="session_replication_role"):
+                    connection.execute(
+                        text("SET LOCAL session_replication_role = 'replica'")
+                    )
+                    connection.commit()
+        finally:
+            migrator_engine.dispose()
     finally:
-        _drop_isolated(admin_engine, database_name)
+        _drop_isolated(admin_engine, database_name, role=role)

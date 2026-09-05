@@ -73,6 +73,8 @@ def test_runtime_code_and_model_artifact_lineage_from_auto_train(
     assert snapshot.language == "python"
     assert snapshot.artifact_id
     assert snapshot.runtime_environment_id == runtime.id
+    assert snapshot.dependency_lock_artifact_id is not None
+    assert snapshot.dependency_lock_digest
     assert model_version.model_artifact_id is not None
     model_artifact = db_session.get(Artifact, model_version.model_artifact_id)
     assert model_artifact is not None
@@ -110,7 +112,13 @@ def test_runtime_code_and_model_artifact_lineage_from_auto_train(
     )
     assert source.status_code == 200
     assert source.content[:2] == b"PK"
-    lock_id = body["runtime_environment"]["dependency_lock_artifact_id"]
+    lock_id = body["code_snapshot"]["dependency_lock_artifact_id"]
+    assert lock_id is not None
+    assert "dependency_lock_artifact_id" not in body["runtime_environment"]
+    lock_row = db_session.get(Artifact, lock_id)
+    assert lock_row is not None
+    assert lock_row.workspace_id == workspace_id
+    assert snapshot.dependency_lock_artifact_id == lock_row.id
     lock = auth_client.get(f"/workspaces/{workspace_id}/artifacts/{lock_id}/download")
     assert lock.status_code == 200
     assert b"==" in lock.content
@@ -126,6 +134,121 @@ def test_runtime_code_and_model_artifact_lineage_from_auto_train(
     assert "google_application" not in blob
     assert signed_body["url"]
     assert signed_body["artifact_id"] == str(model_artifact.id)
+
+
+def test_shared_runtime_environment_keeps_per_workspace_lock_artifacts(
+    client, db_session
+):
+    from app.db.models import Dataset, DatasetAsset, Experiment
+    from app.services.lab_service import seed_dogfood
+    from app.services.reproducibility_service import (
+        artifacts_for_model_version,
+        persist_reproducibility,
+    )
+
+    owner_a = create_user(
+        db_session,
+        email=f"lock-a-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=UserRole.WORKSPACE_OWNER,
+        full_name="Lock A",
+    )
+    owner_b = create_user(
+        db_session,
+        email=f"lock-b-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=UserRole.WORKSPACE_OWNER,
+        full_name="Lock B",
+    )
+    workspace_a = create_business_workspace(db_session, owner=owner_a, name="Lock Tenant A")
+    workspace_b = create_business_workspace(db_session, owner=owner_b, name="Lock Tenant B")
+    db_session.commit()
+    environment = seed_dogfood(db_session)
+
+    def _pipeline_run(workspace, name: str) -> Experiment:
+        slug = f"lock-{uuid4().hex[:12]}"
+        asset = DatasetAsset(workspace_id=workspace.id, name=name, slug=slug)
+        db_session.add(asset)
+        db_session.flush()
+        dataset = Dataset(
+            workspace_id=workspace.id,
+            dataset_asset_id=asset.id,
+            environment_id=environment.id,
+            name=name,
+            source_type="csv",
+            location=f"/tmp/{slug}.csv",
+            version="v1",
+            row_count=1,
+            column_count=1,
+        )
+        db_session.add(dataset)
+        db_session.flush()
+        experiment = Experiment(
+            workspace_id=workspace.id,
+            environment_id=environment.id,
+            dataset_id=dataset.id,
+            status="CREATED",
+            config={},
+            result={},
+        )
+        db_session.add(experiment)
+        db_session.flush()
+        return experiment
+
+    experiment_a = _pipeline_run(workspace_a, "Tenant A run")
+    experiment_b = _pipeline_run(workspace_b, "Tenant B run")
+    repro_a = persist_reproducibility(db_session, experiment_a, {})
+    repro_b = persist_reproducibility(db_session, experiment_b, {})
+    db_session.commit()
+
+    assert "dependency_lock_artifact_id" not in RuntimeEnvironment.__table__.c
+    assert repro_a.runtime_environment.id == repro_b.runtime_environment.id
+    assert repro_a.runtime_environment.environment_digest == (
+        repro_b.runtime_environment.environment_digest
+    )
+    lock_a = repro_a.dependency_lock_artifact
+    lock_b = repro_b.dependency_lock_artifact
+    assert lock_a is not None and lock_b is not None
+    assert lock_a.id != lock_b.id
+    assert lock_a.workspace_id == workspace_a.id
+    assert lock_b.workspace_id == workspace_b.id
+    assert repro_a.code_snapshot is not None
+    assert repro_b.code_snapshot is not None
+    assert repro_a.code_snapshot.dependency_lock_artifact_id == lock_a.id
+    assert repro_b.code_snapshot.dependency_lock_artifact_id == lock_b.id
+    assert repro_a.code_snapshot.runtime_environment_id == repro_a.runtime_environment.id
+
+    listed_b = artifacts_for_model_version(
+        db_session,
+        SimpleNamespace(
+            workspace_id=workspace_b.id,
+            model_artifact_id=None,
+            preprocessor_artifact_id=None,
+            feature_manifest_artifact_id=None,
+            code_snapshot=repro_b.code_snapshot,
+            pipeline_run=experiment_b,
+            runtime_environment=repro_a.runtime_environment,
+        ),
+    )
+    assert {row.id for row in listed_b}.isdisjoint({lock_a.id})
+    assert lock_b.id in {row.id for row in listed_b}
+    assert all(row.workspace_id == workspace_b.id for row in listed_b)
+
+    denied = client.get(
+        f"/workspaces/{workspace_b.id}/artifacts/{lock_a.id}/download",
+        headers=_headers(owner_b, workspace_b.id),
+    )
+    assert denied.status_code in {403, 404}
+    foreign_workspace = client.get(
+        f"/workspaces/{workspace_a.id}/artifacts/{lock_a.id}/download",
+        headers=_headers(owner_b, workspace_a.id),
+    )
+    assert foreign_workspace.status_code in {403, 404}
+    own = client.get(
+        f"/workspaces/{workspace_b.id}/artifacts/{lock_b.id}/download",
+        headers=_headers(owner_b, workspace_b.id),
+    )
+    assert own.status_code == 200, own.text
 
 
 def test_developer_cannot_read_another_workspace_artifact_but_platform_developer_can(

@@ -17,7 +17,7 @@ export function EmptyState({
   actionHref?: string;
 }) {
   return (
-    <Card className="px-8 py-16 text-center">
+    <Card className="px-6 py-12 text-center sm:px-8 sm:py-16">
       <h2 className="font-sans text-section text-ink">{title}</h2>
       <p className="mx-auto mt-3 max-w-md font-sans text-body text-ink-muted">{body}</p>
       {actionHref && actionLabel ? (

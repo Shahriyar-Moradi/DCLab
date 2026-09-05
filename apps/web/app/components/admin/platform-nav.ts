@@ -1,9 +1,13 @@
 import type { AppNavigationSection } from "@/app/components/layout/app-navigation";
 import { ADMIN_REGISTRY_HREF } from "@/app/components/admin/paths";
-import { Building2, FlaskConical, LineChart, Network } from "lucide-react";
+import { Building2, FlaskConical, LineChart, Network, Users } from "lucide-react";
 
 function prefixMatch(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function isPlatformPipelineMonitor(pathname: string) {
+  return /^\/admin\/pipeline-runs\/[^/]+\/monitor(?:\/|$)/.test(pathname);
 }
 
 export const PLATFORM_NAV_SECTION: AppNavigationSection = {
@@ -20,13 +24,20 @@ export const PLATFORM_NAV_SECTION: AppNavigationSection = {
       isActive: (pathname) => prefixMatch(pathname, "/admin/businesses"),
     },
     {
+      id: "organizations",
+      label: "Organizations",
+      href: "/admin/organizations",
+      icon: Users,
+      audience: "platform",
+      isActive: (pathname) => prefixMatch(pathname, "/admin/organizations"),
+    },
+    {
       id: "admin-labs",
       label: "Labs & Experiments",
       href: "/admin/lab",
       icon: FlaskConical,
       audience: "platform",
-      isActive: (pathname) =>
-        prefixMatch(pathname, "/admin/lab") || pathname.startsWith("/admin/pipeline-runs"),
+      isActive: (pathname) => prefixMatch(pathname, "/admin/lab"),
     },
     {
       id: "registry",
@@ -42,7 +53,8 @@ export const PLATFORM_NAV_SECTION: AppNavigationSection = {
       href: "/admin/monitoring",
       icon: LineChart,
       audience: "platform",
-      isActive: (pathname) => prefixMatch(pathname, "/admin/monitoring"),
+      isActive: (pathname) =>
+        prefixMatch(pathname, "/admin/monitoring") || isPlatformPipelineMonitor(pathname),
     },
   ],
 };

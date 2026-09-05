@@ -61,7 +61,7 @@ export function WhyUsSection() {
     <MarketingSection>
       <Eyebrow className="text-center">Why this product exists</Eyebrow>
       <h2 className="mt-4 text-center text-title text-ink lg:text-[2rem]">A decision layer that stays in the loop</h2>
-      <div className="mt-12 grid gap-6 lg:grid-cols-2">
+      <div className="mt-12 grid gap-6 md:grid-cols-2">
         <article className="rounded-2xl border border-hairline bg-paper-raised p-8">
           <p className="text-eyebrow uppercase tracking-[0.18em] text-ink-muted">One-off consulting</p>
           <h3 className="mt-2 text-section text-ink">A report, then a pause</h3>
@@ -90,7 +90,7 @@ export function ProductPathSection() {
     <MarketingSection>
       <Eyebrow className="text-center">How it works</Eyebrow>
       <h2 className="mt-4 text-center text-title text-ink lg:text-[2rem]">From upload to decision to experiment</h2>
-      <div className="mt-12 grid gap-6 lg:grid-cols-3">
+      <div className="mt-12 grid gap-6 md:grid-cols-3">
         <FeatureCard
           icon={Upload}
           title="Upload opportunities"
@@ -184,9 +184,9 @@ export function GetStartedCTA() {
           Open the workspace, or talk with the team
         </h2>
         <p className="mx-auto mt-4 max-w-2xl text-body text-white/70">
-          Decision.ai scores opportunities, recommends the next action, and keeps experiments in the Lab.
+          DCLab scores opportunities, recommends the next action, and keeps experiments in the Lab.
         </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
+        <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <MarketingButton href={BOOK_A_DEMO_HREF} invert>
             Book a Demo <ArrowRight size={16} />
           </MarketingButton>
@@ -201,7 +201,7 @@ export function GetStartedCTA() {
 
 export function PricingPanel() {
   return (
-    <MarketingWrap className="grid gap-6 pb-8 lg:grid-cols-2">
+    <MarketingWrap className="grid gap-6 pb-8 md:grid-cols-2">
       <article className="rounded-2xl border border-hairline bg-paper-raised p-8">
         <h2 className="text-section text-ink">Workspace</h2>
         <p className="mt-3 text-body text-ink-muted">

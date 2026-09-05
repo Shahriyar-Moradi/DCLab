@@ -54,7 +54,7 @@ export function UploadZone({
         onDragLeave={() => setDrag(false)}
         onDrop={onDrop}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-hairline bg-paper-raised px-4 py-10 text-center transition-ui sm:px-8 sm:py-16",
+          "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-hairline bg-paper-raised px-4 py-8 text-center transition-ui sm:px-8 sm:py-16",
           drag && "border-navy bg-navy-soft",
           disabled && "cursor-not-allowed opacity-50",
           error && "border-oxblood",

@@ -11,7 +11,7 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <Card role="alert" className="px-8 py-12">
+    <Card role="alert" className="px-6 py-10 sm:px-8 sm:py-12">
       <h2 className="font-sans text-section text-ink">{title}</h2>
       <p className="mt-3 font-sans text-body text-ink-muted">{body}</p>
       {onRetry ? (

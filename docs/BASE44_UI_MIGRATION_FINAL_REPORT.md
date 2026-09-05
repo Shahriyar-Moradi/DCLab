@@ -1,7 +1,7 @@
 # Base44 UI migration — final acceptance report
 
 **Date:** 2026-09-05  
-**Repository:** `decision_ai`  
+**Repository:** `decision_ai` (GitHub `Shahriyar-Moradi/DCLab`)  
 **Reference UI:** https://convivial-decide-with-clarity.base44.app  
 **Alembic head used in this pass:** `0036_legacy_import_projects`  
 **Python:** repository `.venv`  
@@ -9,22 +9,114 @@
 
 This is the Phase 16 acceptance record. It does **not** claim pixel identity with Base44. It does **not** claim every Base44 screen exists in DCLab. It records whether DCLab is one coherent Base44-inspired product **and** whether real FastAPI, Postgres, JWT auth, authorization, and ML workflows still work.
 
+Verification is split below. Local Phase 16 commands are **not** a substitute for GitHub clean CI.
+
 ## Acceptance verdict
 
-**Accepted, with documented residuals.**
+**Not accepted against GitHub clean CI.**
+
+Referenced pushed commit:
+
+| Field | Value |
+| --- | --- |
+| **SHA** | `2d4a87b2c3d8f1442cf43d5dd556f30ee110d003` |
+| **Commit** | `intital roles and database tables v1.2 and frontend  and ui redesign 0.2` |
+| **GitHub CI** | **failure** (completed 2026-09-05 16:08:58 UTC) |
+| **Run** | https://github.com/Shahriyar-Moradi/DCLab/actions/runs/33976577380 |
 
 | Gate | Result |
 | --- | --- |
-| **A.** One coherent Base44-inspired visual system across website, product, business, and admin | **Yes.** Geist/glass tokens, shared primitives, shared shells. Intentional DCLab deltas vs Base44 are listed in §16.7. |
-| **B.** Existing real DCLab functionality through real APIs, database, authentication, authorization, and ML workflows | **Yes.** Lint, production build, backend pytest (after two real source/test retargets), Playwright E2E (11/11), API+SQL persistence proof, and middleware 403/307 checks. |
+| **A.** One coherent Base44-inspired visual system across website, product, business, and admin | **Local yes** (Geist/glass tokens, shared primitives, shared shells; deltas in §16.7). **Not re-proven on GitHub** — frontend steps were skipped after pytest failed. |
+| **B.** Existing real DCLab functionality through real APIs, database, authentication, authorization, and ML workflows | **Fail on GitHub clean CI.** The regression job stopped at pytest. Typecheck, lint, build, live surface audits, and Playwright CI did not run on this SHA. |
 
-Visual success without functional success would have failed this phase. Functional success with half the routes still on the old UI would also have failed. Neither happened.
+A later uncommitted working tree contains follow-up fixes (regression label tolerance, CI `.[boosting]`, Playwright E2E job, `client_user` E2E, download click, monitor nav). Those changes are **not** on `2d4a87b` and are **not** GitHub-verified.
 
-**Do not read this as “all tests in the universe passed.”** Exact command results are in §16.1–16.3. One backend test is **skipped** by design (live LLM smoke). The first full pytest run in this phase had **2 failures**; those were real migration defects, fixed, and re-run to green.
+### Recorded results (do not mix these columns)
+
+| Item | GitHub clean CI (`2d4a87b`) | Local Phase 16 (developer machine) | Later local working tree (uncommitted) |
+| --- | --- | --- | --- |
+| **Final commit SHA** | `2d4a87b2c3d8f1442cf43d5dd556f30ee110d003` | not a GitHub SHA | not pushed |
+| **GitHub CI result** | **failure** — run [33976577380](https://github.com/Shahriyar-Moradi/DCLab/actions/runs/33976577380) | n/a | n/a |
+| **Backend pass/skip** | **`2 failed, 688 passed, 3 skipped, 7 warnings`** in 358.98s (`pytest` repo-wide) | 1st: `2 failed, 690 passed, 1 skipped`; 2nd: **`692 passed, 1 skipped`** (`pytest apps/api/tests`) | **`697 passed, 1 skipped`** (`pytest -q --tb=line`) |
+| **Frontend typecheck** | **not run** (step skipped after pytest fail) | not recorded as a separate Phase 16 command | `npx tsc --noEmit` exit 0 |
+| **Lint** | **not run** (step skipped) | `npm run lint` — no warnings/errors, exit 0 | exit 0 |
+| **Build** | **not run** (step skipped) | first fail (`KIND_LABELS`); then `npm run build` exit 0 (Next 14.2.18) | exit 0 |
+| **E2E result** | **not run** — no Playwright job on this SHA | `npm run e2e` — **11 passed** (1.1m) | extra tests/helpers exist locally; not GitHub CI |
 
 ---
 
-## 16.1 Frontend static verification
+## GitHub clean CI verification
+
+**SHA:** `2d4a87b2c3d8f1442cf43d5dd556f30ee110d003`  
+**Workflow:** `CI` (`.github/workflows/ci.yml` as committed on that SHA)  
+**Jobs on this run:** `regression` only. There was **no** `e2e` / Whole-system E2E job on this commit.
+
+| Step | Result |
+| --- | --- |
+| Install backend | `pip install -e .` (no boosting extra) — success |
+| Migrations | success |
+| **Backend test suite (`pytest`)** | **failure** — `2 failed, 688 passed, 3 skipped, 7 warnings` in 358.98s |
+| Banned-terms scan | skipped |
+| Client Labs schema contract | skipped |
+| Frontend `npm ci` | skipped |
+| Frontend typecheck (`npx tsc --noEmit`) | skipped |
+| Frontend lint (`npm run lint`) | skipped |
+| Frontend build (`npm run build`) | skipped |
+| Live admin/client surface audits | skipped |
+| Playwright CI | **not in this workflow / not run** |
+
+GitHub command is repo-wide `pytest` (not `apps/api/tests`). Skip names are not printed in the `-q` log. One skip is the live-LLM smoke (`test_live_smoke_request_decision`). The other two are consistent with isolated Postgres-on-55432 tests that this job does not provide.
+
+### Backend failures on this SHA (do not hide)
+
+1. `apps/api/tests/test_adaptive_modeling_production_e2e.py::test_e2e_regression_labs_path`  
+   Deterministic check `prediction_provenance_complete` **FAIL**: persisted true labels differ from the input artifact for source row **143** (JSON/CSV float64 round-trip on regression `y_true`, not a shuffled source-row set).
+
+2. `apps/api/tests/test_candidate_modeling.py::test_candidate_modeling_persists_from_real_auto_train`  
+   Expected candidate family `xgboost` missing. Clean CI only persisted `{logistic_regression, random_forest}` because boosting libraries were not installed (`pip install -e .` without `.[boosting]`).
+
+Frontend typecheck / lint / build have **no GitHub result** on this SHA. They must not be recorded as GitHub-green.
+
+### What was fixed after this SHA (uncommitted — not GitHub-verified)
+
+Do not treat these as clean-CI evidence. They are not on `2d4a87b`.
+
+1. Regression `y_true` provenance: `_labels_match(..., task_type=)` uses `math.isclose` only for `task_type == "regression"` (`rel_tol=1e-12`, `abs_tol=1e-9`). Binary 0 vs 1 stays exact.
+2. CI/docs install boosting extras: `pip install -e ".[boosting]"` so the XGBoost family assertion can run on a clean runner.
+3. Workflow job `e2e` (Playwright) added locally; **not** present on `2d4a87b`.
+
+Earlier **local** Phase 16 failures that **are** already in this SHA (monitor panel scan retarget, banned-term `model` copy/nav split, restore `KIND_LABELS` / `LAB_RUN_STATUS_LABEL` for `npm run build`) are documented under Local verification. They are not the two GitHub pytest failures.
+
+---
+
+## Playwright CI verification
+
+**On SHA `2d4a87b`:** not executed. The workflow on that commit has no Playwright job, and the regression job never reached a later stage that could have started browsers.
+
+**Local Playwright** from Phase 16 (not GitHub Actions) is recorded in §16.3: `cd apps/web && npm run e2e` → **11 passed** in 1.1m against `dclab_e2e_verify` on port 55432. That is a developer-machine result with a pre-existing venv (boosting already present). It does **not** count as Playwright CI.
+
+---
+
+## Local verification
+
+The sections below (§16.1–16.5) are **local** Phase 16 runs on a developer machine (repository `.venv`, Next 14.2.18). They are kept as the historical record of what was run before the GitHub SHA above. They are **not** GitHub clean CI.
+
+### Earlier local failures (fixed locally, then re-run)
+
+The first full **local** pytest in Phase 16 was **`2 failed, 690 passed, 1 skipped`**. Those were real migration defects, not flaky asserts:
+
+1. `test_monitor_page_exposes_required_scientific_panels` scanned only the thin `monitor/page.tsx` wrapper after explorer extraction. Retargeted to `PipelineMonitorView.tsx`.
+2. `test_client_frontend_source_is_clean` hit banned substring `model` in client-scanned trees (opportunity copy, platform nav). Copy and platform nav were moved so the client scanner stays clean.
+
+The first **local** `npm run build` failed because `apps/web/app/lab/runs/[run_id]/page.tsx` dropped `KIND_LABELS` / `LAB_RUN_STATUS_LABEL` while still using them. Imports were restored; rebuild succeeded.
+
+A later **local** full suite on the post-Phase-16 working tree (not SHA `2d4a87b`) reported **`697 passed, 1 skipped`**, plus local `tsc --noEmit`, `npm run lint`, and `npm run build` exit 0. That working tree includes uncommitted CI/product fixes and is **not** the GitHub result for `2d4a87b`.
+
+The skipped local pytest is `test_live_smoke_request_decision` (`DECISION_AGENT_LIVE=1` + API key). GitHub’s three skips on `2d4a87b` were not itemized in the log tail beyond the live-LLM skip class of tests.
+
+---
+
+## 16.1 Frontend static verification (local)
 
 Working directory: `apps/web`. Errors were not suppressed.
 
@@ -63,7 +155,7 @@ Also run:
 
 ---
 
-## 16.2 Backend tests
+## 16.2 Backend tests (local)
 
 Command (repository `.venv`, existing project environment — `decisionai_test` on localhost:5432 via conftest; isolated 55432 is **not** required for this suite):
 
@@ -103,7 +195,7 @@ Tests were **not** edited merely to make them pass. The monitor scan path was re
 
 ---
 
-## 16.3 E2E
+## 16.3 E2E (local Playwright, not GitHub Actions)
 
 Default DB: `postgresql://localhost:55432/dclab_e2e_verify`  
 Runbook: `docs/DCLAB_E2E_VERIFICATION_RUNBOOK.md`  
@@ -582,7 +674,7 @@ Present:
 
 ---
 
-## Exact frontend commands / results
+## Exact frontend commands / results (local Phase 16, not GitHub)
 
 ```text
 cd apps/web && npm run lint
@@ -599,7 +691,7 @@ cd apps/web && npm run build
 
 ---
 
-## Exact backend commands / results
+## Exact backend commands / results (local Phase 16, not GitHub)
 
 ```text
 .venv/bin/pytest apps/api/tests -q --tb=line
@@ -611,7 +703,7 @@ Skipped: `test_live_smoke_request_decision` (live LLM).
 
 ---
 
-## Exact E2E commands / results
+## Exact E2E commands / results (local Playwright, not GitHub Actions)
 
 ```text
 /opt/homebrew/opt/postgresql@16/bin/pg_ctl -D artifacts/e2e-verification-pgdata \
@@ -626,20 +718,28 @@ cd apps/web && npm run e2e
 
 ## Known remaining problems
 
-1. `docs/BASE44_UI_MIGRATION_ROUTE_INVENTORY.md` still labels every route “not started” (stale Phase 0 text).
-2. No `client_user` in E2E fixtures; that role’s `/business` 403 was not browser-hit.
-3. No IDE browser pass against live Base44; no full multi-breakpoint screenshot matrix.
-4. E2E does not click **Download results** (button visible; CSV API proven).
-5. E2E does not click admin dataset upload, YAML task create, or organizations detail.
-6. Nested explorer was proven by authenticated GET + HTML 200, not by Playwright click-through of every breadcrumb.
-7. Insights API is not workspace-filtered (backend).
-8. `/app/settings` cannot save profile or invite users (no API).
-9. `GET /auth/me` unused; session is cookie JWT.
-10. Local `data/object_store/...` artifacts from runs are workspace junk, not product files.
-11. Showcase and local login fills must stay out of production builds (already gated).
-12. Client-language scanner forbids the substring `model` in customer trees, so platform registry URLs cannot live in `app-navigation.ts`. That is a naming constraint, not a missing page (`/admin/models` still exists).
+### Blocking GitHub clean CI (`2d4a87b`)
 
-None of these are “the old UI is still on half the routes” or “the product fakes ML success.”
+1. GitHub `pytest` **failed** (`2 failed, 688 passed, 3 skipped`). Frontend typecheck, lint, build, and Playwright CI did **not** run.
+2. Regression `y_true` provenance check fails on float64 JSON/CSV round-trip for row 143 (`test_e2e_regression_labs_path`).
+3. Clean CI without boosting extras does not persist `xgboost` (`test_candidate_modeling_persists_from_real_auto_train`).
+4. This SHA’s workflow has **no** Playwright E2E job, so there is no GitHub Playwright result to cite.
+
+### Product / coverage residuals (still true)
+
+1. No IDE browser pass against live Base44; no full multi-breakpoint screenshot matrix.
+2. E2E on GitHub has not run; local Phase 16 E2E did not click **Download results** (button visible; CSV API proven). Later uncommitted spec work adds a real download click — not on `2d4a87b`.
+3. E2E does not click admin dataset upload, YAML task create, or organizations detail.
+4. Nested explorer was proven locally by authenticated GET + HTML 200, not by Playwright click-through of every breadcrumb.
+5. Insights API is not workspace-filtered (backend).
+6. `/app/settings` cannot save profile or invite users (no API).
+7. `GET /auth/me` unused; session is cookie JWT.
+8. Showcase and local login fills must stay out of production builds (already gated).
+9. Client-language scanner forbids the substring `model` in customer trees, so platform registry URLs cannot live in `app-navigation.ts`. `/admin/models` still exists.
+
+`docs/BASE44_UI_MIGRATION_ROUTE_INVENTORY.md` was a Phase 0 “not started” snapshot at report time. A later local rewrite of that inventory exists in the working tree; it is **not** part of SHA `2d4a87b`.
+
+None of these mean “the old UI is still on half the routes” or “the product fakes ML success.” They also do **not** make GitHub CI green.
 
 ---
 
@@ -785,7 +885,7 @@ Do **not** fake these in the UI.
 7. **Wire unused REAL admin lab POSTs** if product wants them: batch train, `POST /experiments/{id}/run`, environment dogfood, dataset re-profile, `report.docx`.
 8. **Technical explorer / observatory raw pages** — APIs exist; monitor already aggregates what the product needs.
 9. **CRM connectors HTTP** — `data_sources` table without a mounted router.
-10. **E2E fixture `client_user`** — prove HTML 403 on `/admin` and `/business`.
+10. **E2E fixture `client_user`** — still missing on SHA `2d4a87b`. A later uncommitted seed/spec exists locally; it is not GitHub-verified.
 11. **Client-language vs “Model Registry”** — if customer trees must mention models, change the scanner or the product glossary explicitly.
 
 ---
@@ -801,4 +901,4 @@ Do **not** fake these in the UI.
 
 No backend contract was redesigned. No ML result was stubbed.
 
-**STOP.** Phase 16 is complete. The Base44-inspired UI migration is accepted on gates A and B with the residuals listed above.
+**STOP.** Phase 16 visual work is recorded above. The migration is **not** accepted on GitHub clean CI for SHA `2d4a87b2c3d8f1442cf43d5dd556f30ee110d003`. Re-open this verdict only after that SHA, or a later pushed SHA, has a fully green `CI` run (regression **and**, once present, Playwright E2E).

@@ -261,6 +261,31 @@ def test_candidate_fingerprint_changes_when_validation_strategy_changes():
     assert first[0].metadata["validation_strategy"] != second[0].metadata["validation_strategy"]
 
 
+def test_same_scientific_config_keeps_fingerprint_when_task_id_changes():
+    table, holdout, development, _validation, _metric = _lock_and_plan(
+        binary_balanced(), target="outcome", task_type="binary"
+    )
+    task = _task(table, target="outcome", task_type="binary", metric="pr_auc")
+    config = SearchConfig(strategy="open_ingest", max_candidates=8, seed=42)
+    first = assemble_candidates(
+        task,
+        config,
+        dataset_version="v1",
+        holdout_plan=holdout,
+        development_plan=development,
+    )
+    renamed = TaskSpec(**{**task.to_dict(), "id": "another-run", "name": "another-run"})
+    second = assemble_candidates(
+        renamed,
+        config,
+        dataset_version="v1",
+        holdout_plan=holdout,
+        development_plan=development,
+    )
+    assert first[0].fingerprint == second[0].fingerprint
+    assert first[0].metadata["validation_strategy"] == second[0].metadata["validation_strategy"]
+
+
 def test_candidate_fingerprint_changes_when_feature_set_changes():
     table, holdout, development, _validation, _metric = _lock_and_plan(
         binary_balanced(), target="outcome", task_type="binary"

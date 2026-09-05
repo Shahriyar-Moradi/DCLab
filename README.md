@@ -14,7 +14,7 @@ It is **not** AutoML-for-its-own-sake, not a CRM, and not the Horizontal Intelli
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[boosting]"
 cp .env.example .env
 brew install postgresql@16
 make db

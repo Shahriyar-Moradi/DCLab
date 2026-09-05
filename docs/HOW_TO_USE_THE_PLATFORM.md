@@ -36,7 +36,7 @@ From the project root:
 cd /Users/shahriar/Downloads/decision_ai
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[boosting]"
 cp -n .env.example .env
 make db
 make migrate

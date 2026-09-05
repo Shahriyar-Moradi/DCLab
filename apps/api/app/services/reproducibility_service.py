@@ -36,7 +36,6 @@ from app.domain.errors import ArtifactNotFoundError, IdentityError
 from app.domain.reproducibility import ENGINE_ENTRYPOINT
 from app.services.artifact_service import (
     get_artifact,
-    list_artifacts,
     read_artifact_bytes,
     store_artifact,
 )
@@ -107,6 +106,7 @@ def _store_bytes(
         db,
         workspace_id=experiment.workspace_id,
         project_id=experiment.project_id,
+        pipeline_run_id=experiment.id,
         artifact_type=artifact_type,
         filename=filename,
         data=data,
@@ -166,6 +166,12 @@ def _preprocessor_bytes(experiment: Experiment, winner_key: str | None) -> bytes
 def capture_runtime_environment(
     db: Session, experiment: Experiment, *, lock_text: str, lock_digest: str
 ) -> tuple[RuntimeEnvironment, Artifact]:
+    """Store a workspace lockfile and reuse global environment facts by digest.
+
+    The returned Artifact always belongs to ``experiment.workspace_id``. The
+    RuntimeEnvironment row never stores that Artifact id.
+    """
+
     lock_artifact = _store_bytes(
         db,
         experiment,
@@ -202,9 +208,6 @@ def capture_runtime_environment(
         select(RuntimeEnvironment).where(RuntimeEnvironment.environment_digest == digest)
     )
     if existing is not None:
-        if existing.dependency_lock_artifact_id is None:
-            existing.dependency_lock_artifact_id = lock_artifact.id
-            db.flush()
         return existing, lock_artifact
     row = RuntimeEnvironment(
         python_version=python_version,
@@ -213,7 +216,6 @@ def capture_runtime_environment(
         architecture=architecture,
         container_image=container_image,
         container_digest=container_digest,
-        dependency_lock_artifact_id=lock_artifact.id,
         hardware=hardware,
         environment_digest=digest,
     )
@@ -329,6 +331,7 @@ def persist_reproducibility(
             git_commit=experiment.git_commit,
             code_digest=source_artifact.content_digest,
             dependency_lock_digest=lock_digest,
+            dependency_lock_artifact_id=lock_artifact.id,
             runtime_environment_id=runtime.id,
         )
         db.add(code_snapshot)
@@ -366,13 +369,16 @@ def store_report_artifacts(db: Session, experiment: Experiment) -> None:
 
 
 def artifacts_for_pipeline_run(db: Session, experiment: Experiment) -> list[Artifact]:
-    rows = list_artifacts(db, workspace_id=experiment.workspace_id, project_id=None)
-    run_id = str(experiment.id)
-    return [
-        row
-        for row in rows
-        if (row.extra_metadata or {}).get("pipeline_run_id") == run_id
-    ]
+    return list(
+        db.scalars(
+            select(Artifact)
+            .where(
+                Artifact.workspace_id == experiment.workspace_id,
+                Artifact.pipeline_run_id == experiment.id,
+            )
+            .order_by(Artifact.created_at.desc(), Artifact.id)
+        )
+    )
 
 
 def artifacts_for_model_version(db: Session, model_version: ModelVersion) -> list[Artifact]:
@@ -384,16 +390,24 @@ def artifacts_for_model_version(db: Session, model_version: ModelVersion) -> lis
     snapshot = model_version.code_snapshot
     if snapshot is not None:
         ids.append(snapshot.artifact_id)
-        if snapshot.runtime_environment is not None:
-            ids.append(snapshot.runtime_environment.dependency_lock_artifact_id)
-    if model_version.runtime_environment is not None:
-        ids.append(model_version.runtime_environment.dependency_lock_artifact_id)
+        ids.append(snapshot.dependency_lock_artifact_id)
     wanted = {item for item in ids if item is not None}
     found = []
     if wanted:
-        found = list(db.scalars(select(Artifact).where(Artifact.id.in_(wanted))))
+        found = list(
+            db.scalars(
+                select(Artifact).where(
+                    Artifact.workspace_id == model_version.workspace_id,
+                    Artifact.id.in_(wanted),
+                )
+            )
+        )
     extras = artifacts_for_pipeline_run(db, model_version.pipeline_run)
-    by_id = {row.id: row for row in [*found, *extras]}
+    by_id = {
+        row.id: row
+        for row in [*found, *extras]
+        if row.workspace_id == model_version.workspace_id
+    }
     return [by_id[key] for key in by_id]
 
 

@@ -6,7 +6,7 @@ import Link from "next/link";
 export function SiteFooter() {
   return (
     <footer className="border-t border-white/10 bg-midnight text-white">
-      <div className="marketing-wrap grid gap-10 py-14 lg:grid-cols-4">
+      <div className="marketing-wrap grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
         <div className="lg:col-span-1">
           <BrandLogo invert />
           <p className="mt-4 max-w-xs text-sm leading-6 text-white/65">
@@ -46,7 +46,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-white/10 py-4 text-center text-xs text-white/40">
-        Decision.ai — internal decision layer for secure, role-aware workspaces.
+        DCLab — internal decision layer for secure, role-aware workspaces.
       </div>
     </footer>
   );

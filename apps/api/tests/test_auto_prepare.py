@@ -8,11 +8,13 @@ import numpy as np
 import pandas as pd
 
 from app.engine.lab.auto_prepare import (
+    MissingValuePlan,
     build_preprocessor,
     clean_frame,
     coerce_numeric_like,
     engineer_features,
     infer_column_roles,
+    missing_plan_from_applied_imputers,
     pick_target_heuristic,
     plan_missing_values,
     split_column_roles,
@@ -216,6 +218,33 @@ def test_clean_frame_drops_duplicates_sentinels_constants_and_sparse_columns():
     assert "?" not in set(cleaned["gender"].dropna().astype(str))
     assert log["duplicate_rows_removed"] >= 1
     assert any(step["step"] == "drop_high_missing_columns" for step in log["transformations"])
+
+
+def test_missing_plan_from_applied_imputers_records_sklearn_actions_not_drops():
+    frame = pd.DataFrame(
+        {
+            "income": [10.0, None, 30.0, 40.0],
+            "mostly_empty": [None, None, None, 1.0],
+            "region": ["N", None, "S", "N"],
+            "complete": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+    plan = missing_plan_from_applied_imputers(
+        frame,
+        ["income", "mostly_empty", "complete"],
+        ["region"],
+    )
+    assert plan.dropped_columns == []
+    by_column = {row.column: row.action for row in plan.column_decisions}
+    assert by_column["income"] == "impute_median"
+    assert by_column["mostly_empty"] == "impute_median"
+    assert by_column["region"] == "impute_most_frequent"
+    assert by_column["complete"] == "keep"
+    restored = MissingValuePlan.from_dict(plan.to_dict())
+    assert restored is not None
+    assert [(row.column, row.action) for row in restored.column_decisions] == [
+        (row.column, row.action) for row in plan.column_decisions
+    ]
 
 
 def test_engineer_features_converts_datetime_columns():

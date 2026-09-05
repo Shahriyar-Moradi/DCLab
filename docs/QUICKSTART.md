@@ -5,7 +5,7 @@ Native Postgres + venv (not Docker) is the daily path.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[boosting]"
 cp .env.example .env
 make db
 make migrate

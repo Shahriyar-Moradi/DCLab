@@ -40,6 +40,7 @@ from app.domain.execution_plane import (
     CK_WORKFLOW_VERSION_POSITIVE,
 )
 from app.domain.reproducibility import CK_CODE_LANGUAGE
+from app.domain.ml_jobs import CK_ML_JOB_STATUS, CK_ML_JOB_TYPE
 from app.domain.scientific_plane import (
     CK_CV_FOLD_RUN_STATUS,
     CK_DATA_QUALITY_FINDING_TYPE,
@@ -53,6 +54,10 @@ from app.domain.scientific_plane import (
     CK_MODEL_EVALUATION_TYPE,
     CK_PREPARATION_DECISION_SOURCE,
     CK_PREPROCESSING_FIT_SCOPE,
+)
+from app.domain.workspace_identity import (
+    PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT,
+    PROJECT_PROVENANCE_USER,
 )
 
 DEFAULT_ORG_ID = "default"
@@ -201,6 +206,10 @@ class Workspace(Base):
     model_selection_decisions: Mapped[list["ModelSelectionDecision"]] = relationship(
         back_populates="workspace",
         foreign_keys="ModelSelectionDecision.workspace_id",
+    )
+    scientific_plans: Mapped[list["PipelineScientificPlan"]] = relationship(
+        back_populates="workspace",
+        foreign_keys="PipelineScientificPlan.workspace_id",
     )
     code_snapshots: Mapped[list["CodeSnapshot"]] = relationship(
         back_populates="workspace",
@@ -430,6 +439,15 @@ class Project(Base):
         UniqueConstraint("workspace_id", "slug", name="uq_projects_workspace_slug"),
         UniqueConstraint("workspace_id", "id", name="uq_projects_workspace_id"),
         CheckConstraint("status IN ('active', 'archived')", name="ck_projects_status_valid"),
+        CheckConstraint(
+            f"provenance IN ('{PROJECT_PROVENANCE_USER}', "
+            f"'{PROJECT_PROVENANCE_SYSTEM_LEGACY_IMPORT}')",
+            name="ck_projects_provenance_valid",
+        ),
+        CheckConstraint(
+            f"provenance <> '{PROJECT_PROVENANCE_USER}' OR created_by IS NOT NULL",
+            name="ck_projects_user_provenance_requires_actor",
+        ),
         Index("ix_projects_workspace_created_at", "workspace_id", "created_at"),
         Index(
             "ix_projects_workspace_status_created_at",
@@ -451,8 +469,14 @@ class Project(Base):
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="active", server_default="active"
     )
-    created_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    provenance: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=PROJECT_PROVENANCE_USER,
+        server_default=PROJECT_PROVENANCE_USER,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -559,6 +583,10 @@ class Project(Base):
     model_selection_decisions: Mapped[list["ModelSelectionDecision"]] = relationship(
         back_populates="project",
         foreign_keys="ModelSelectionDecision.project_id",
+    )
+    scientific_plans: Mapped[list["PipelineScientificPlan"]] = relationship(
+        back_populates="project",
+        foreign_keys="PipelineScientificPlan.project_id",
     )
     code_snapshots: Mapped[list["CodeSnapshot"]] = relationship(
         back_populates="project",
@@ -1058,6 +1086,71 @@ class ClientLabUpload(Base):
     )
 
 
+class MlJob(Base):
+    """Durable ML work item. API persists the row; a worker claims and runs it."""
+
+    __tablename__ = "ml_jobs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_ml_jobs_workspace_id"),
+        UniqueConstraint("job_type", "target_id", name="uq_ml_jobs_type_target"),
+        UniqueConstraint("upload_id", name="uq_ml_jobs_upload_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_ml_jobs_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "upload_id"],
+            ["client_lab_uploads.workspace_id", "client_lab_uploads.id"],
+            name="fk_ml_jobs_workspace_upload",
+        ),
+        CheckConstraint(CK_ML_JOB_TYPE, name="ck_ml_jobs_type_valid"),
+        CheckConstraint(CK_ML_JOB_STATUS, name="ck_ml_jobs_status_valid"),
+        CheckConstraint("attempts >= 0", name="ck_ml_jobs_attempts_non_negative"),
+        CheckConstraint("max_attempts >= 1", name="ck_ml_jobs_max_attempts_positive"),
+        Index("ix_ml_jobs_status_queued_at", "status", "queued_at"),
+        Index("ix_ml_jobs_workspace_created_at", "workspace_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    job_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("client_lab_uploads.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
+    queued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    upload: Mapped["ClientLabUpload | None"] = relationship(foreign_keys="MlJob.upload_id")
+
+
 class MlRunVerification(Base):
     """One persisted deterministic/OpenAI verification attempt for an ML run."""
 
@@ -1202,10 +1295,23 @@ class Artifact(Base):
             ["projects.workspace_id", "projects.id"],
             name="fk_artifacts_workspace_project",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_run_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_artifacts_workspace_pipeline_run",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
         CheckConstraint(CK_ARTIFACTS_TYPE, name="ck_artifacts_type_valid"),
         CheckConstraint(CK_ARTIFACTS_PROVIDER, name="ck_artifacts_provider_valid"),
         Index("ix_artifacts_workspace_created_at", "workspace_id", "created_at"),
         Index("ix_artifacts_project_id", "project_id"),
+        Index("ix_artifacts_pipeline_run_id", "pipeline_run_id"),
+        Index(
+            "ix_artifacts_workspace_pipeline_run_id",
+            "workspace_id",
+            "pipeline_run_id",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1216,6 +1322,16 @@ class Artifact(Base):
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "experiments.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_artifacts_pipeline_run_id",
+        ),
+        nullable=True,
     )
     artifact_type: Mapped[str] = mapped_column(String(32), nullable=False)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -1241,6 +1357,10 @@ class Artifact(Base):
     project: Mapped[Project | None] = relationship(
         back_populates="artifacts",
         foreign_keys="Artifact.project_id",
+    )
+    pipeline_run: Mapped["Experiment | None"] = relationship(
+        back_populates="artifacts",
+        foreign_keys="Artifact.pipeline_run_id",
     )
     datasets: Mapped[list["Dataset"]] = relationship(
         back_populates="artifact",
@@ -2337,6 +2457,90 @@ class Experiment(Base):
         back_populates="pipeline_run",
         foreign_keys="ModelSelectionDecision.pipeline_run_id",
         passive_deletes=True,
+    )
+    scientific_plan: Mapped["PipelineScientificPlan | None"] = relationship(
+        back_populates="pipeline_run",
+        uselist=False,
+        foreign_keys="PipelineScientificPlan.pipeline_run_id",
+        passive_deletes=True,
+    )
+    artifacts: Mapped[list["Artifact"]] = relationship(
+        back_populates="pipeline_run",
+        foreign_keys="Artifact.pipeline_run_id",
+    )
+
+
+class PipelineScientificPlan(Base):
+    """One locked scientific plan per PipelineRun.
+
+    Queryable holdout/validation/metric facts. ``full_plan`` JSONB is compatibility
+    evidence beside the columns, not the explorer source of truth.
+    """
+
+    __tablename__ = "pipeline_scientific_plans"
+    __table_args__ = (
+        UniqueConstraint(
+            "pipeline_run_id", name="uq_pipeline_scientific_plans_pipeline_run"
+        ),
+        UniqueConstraint("workspace_id", "id", name="uq_pipeline_scientific_plans_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_pipeline_scientific_plans_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_run_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_pipeline_scientific_plans_workspace_pipeline_run",
+            ondelete="CASCADE",
+        ),
+        Index("ix_pipeline_scientific_plans_workspace_id", "workspace_id"),
+        Index("ix_pipeline_scientific_plans_project_id", "project_id"),
+        Index("ix_pipeline_scientific_plans_pipeline_run_id", "pipeline_run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    pipeline_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    holdout_strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    holdout_test_size: Mapped[float] = mapped_column(Float, nullable=False)
+    validation_strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_folds: Mapped[int] = mapped_column(Integer, nullable=False)
+    actual_folds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    primary_metric: Mapped[str] = mapped_column(String(64), nullable=False)
+    group_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    time_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    allowed_feature_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    excluded_feature_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    holdout_plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_development_plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    full_plan: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    locked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="scientific_plans",
+        foreign_keys="PipelineScientificPlan.workspace_id",
+    )
+    project: Mapped[Project | None] = relationship(
+        back_populates="scientific_plans",
+        foreign_keys="PipelineScientificPlan.project_id",
+    )
+    pipeline_run: Mapped[Experiment] = relationship(
+        back_populates="scientific_plan",
+        foreign_keys="PipelineScientificPlan.pipeline_run_id",
     )
 
 
@@ -3435,7 +3639,11 @@ class ExperimentTestPrediction(Base):
 
 
 class RuntimeEnvironment(Base):
-    """Deduplicated interpreter / OS / dependency fingerprint for a trained model."""
+    """Globally reusable interpreter / OS / dependency fingerprint.
+
+    Deduplicated by ``environment_digest``. Workspace-owned lockfile bytes live
+    on ``CodeSnapshot.dependency_lock_artifact_id``, not here.
+    """
 
     __tablename__ = "runtime_environments"
     __table_args__ = (
@@ -3452,20 +3660,12 @@ class RuntimeEnvironment(Base):
     architecture: Mapped[str] = mapped_column(String(64), nullable=False)
     container_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
     container_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    dependency_lock_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("artifacts.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     hardware: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     environment_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    dependency_lock_artifact: Mapped[Artifact | None] = relationship(
-        foreign_keys="RuntimeEnvironment.dependency_lock_artifact_id",
-    )
     code_snapshots: Mapped[list["CodeSnapshot"]] = relationship(
         back_populates="runtime_environment",
         foreign_keys="CodeSnapshot.runtime_environment_id",
@@ -3477,7 +3677,7 @@ class RuntimeEnvironment(Base):
 
 
 class CodeSnapshot(Base):
-    """Queryable pointer to the source package in object storage for a PipelineRun."""
+    """Queryable source package and workspace-owned lockfile for a PipelineRun."""
 
     __tablename__ = "code_snapshots"
     __table_args__ = (
@@ -3510,10 +3710,19 @@ class CodeSnapshot(Base):
             ["artifacts.workspace_id", "artifacts.id"],
             name="fk_code_snapshots_workspace_artifact",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "dependency_lock_artifact_id"],
+            ["artifacts.workspace_id", "artifacts.id"],
+            name="fk_code_snapshots_workspace_dependency_lock_artifact",
+        ),
         CheckConstraint(CK_CODE_LANGUAGE, name="ck_code_snapshots_language_valid"),
         Index("ix_code_snapshots_workspace_id", "workspace_id"),
         Index("ix_code_snapshots_project_id", "project_id"),
         Index("ix_code_snapshots_artifact_id", "artifact_id"),
+        Index(
+            "ix_code_snapshots_dependency_lock_artifact_id",
+            "dependency_lock_artifact_id",
+        ),
         Index("ix_code_snapshots_runtime_environment_id", "runtime_environment_id"),
     )
 
@@ -3547,6 +3756,11 @@ class CodeSnapshot(Base):
     git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
     code_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     dependency_lock_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dependency_lock_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     runtime_environment_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("runtime_environments.id"), nullable=False
     )
@@ -3577,6 +3791,9 @@ class CodeSnapshot(Base):
     source_artifact: Mapped[Artifact] = relationship(
         back_populates="code_snapshots",
         foreign_keys="CodeSnapshot.artifact_id",
+    )
+    dependency_lock_artifact: Mapped[Artifact | None] = relationship(
+        foreign_keys="CodeSnapshot.dependency_lock_artifact_id",
     )
     runtime_environment: Mapped[RuntimeEnvironment] = relationship(
         back_populates="code_snapshots",

@@ -1,9 +1,0 @@
-{
-  "pipeline_run_id": "a9529297-ded6-4023-8bc8-66840f1c9ec9",
-  "feature_set_version_id": "9f5c1b16-2b9e-4c39-b1c9-a68f842ed0e5",
-  "features": [
-    "as_of_date",
-    "demand"
-  ],
-  "candidate_id": "linear_regression"
-}

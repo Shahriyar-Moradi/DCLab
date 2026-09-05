@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.db.models import (
@@ -35,11 +38,14 @@ from app.services.ingestion_run_service import (
     start_ingestion_run,
 )
 from app.services.lab_service import ingest_dataset, seed_dogfood
-from app.services.lineage_service import create_dataset_asset
+from app.services.lineage_service import create_dataset_asset, create_pipeline_run, create_workflow_run
 from app.services.project_service import create_project
+from app.services.reproducibility_service import artifacts_for_pipeline_run
+from app.storage.exceptions import GCS_SDK_INSTALL, ObjectStorageError, S3_SDK_INSTALL
 from app.storage.gcs import GCSStorage
 from app.storage.local import LocalStorage
 from app.storage.s3 import S3Storage
+from test_data_model_lineage import make_lineage_setup
 
 
 def _sha256(payload: bytes) -> str:
@@ -227,6 +233,10 @@ def test_csv_labs_upload_produces_canonical_lineage(
     assert upload.ingestion_run_id is not None
     assert upload.dataset_id is not None
 
+    stored = Path(upload.stored_path).resolve()
+    repo_store = Path(__file__).resolve().parents[3] / "data" / "object_store"
+    assert not stored.is_relative_to(repo_store.resolve())
+
     artifact = db_session.get(Artifact, upload.artifact_id)
     source = db_session.get(DataSource, upload.data_source_id)
     ingestion = db_session.get(IngestionRun, upload.ingestion_run_id)
@@ -388,3 +398,172 @@ def test_core_app_does_not_import_cloud_sdks():
         if "import boto3" in text or "from boto3" in text or "google.cloud.storage" in text:
             offenders.append(resolved)
     assert offenders == []
+
+
+def test_cloud_sdks_are_optional_install_extras():
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+    base, _, extras = text.partition("[project.optional-dependencies]")
+    assert "boto3" not in base
+    assert "google-cloud-storage" not in base
+    assert 'storage-s3 = ["boto3' in extras
+    assert 'storage-gcs = ["google-cloud-storage' in extras
+    assert "storage = [" in extras
+
+
+def test_s3_missing_sdk_mentions_install_extra(monkeypatch):
+    monkeypatch.setitem(sys.modules, "boto3", None)
+    storage = S3Storage(bucket="lab-bucket")
+    with pytest.raises(ObjectStorageError) as err:
+        storage._client()
+    assert S3_SDK_INSTALL in str(err.value)
+
+
+def test_gcs_missing_sdk_mentions_install_extra(monkeypatch):
+    monkeypatch.setitem(sys.modules, "google.cloud.storage", None)
+    storage = GCSStorage(bucket="lab-bucket")
+    with pytest.raises(ObjectStorageError) as err:
+        storage._client()
+    assert GCS_SDK_INSTALL in str(err.value)
+
+
+def test_pipeline_run_artifact_lookup_is_indexed_and_tenant_safe(db_session, tmp_path):
+    source = inspect.getsource(artifacts_for_pipeline_run)
+    assert "list_artifacts" not in source
+    assert "extra_metadata" not in source
+
+    setup = make_lineage_setup(db_session, tmp_path)
+    alpha_run = create_workflow_run(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        workflow=setup["alpha_workflow"],
+        requester=setup["alpha_admin"],
+        trigger_type="manual",
+        source_type="dataset",
+    )
+    alpha_pipeline = create_pipeline_run(
+        db_session,
+        workflow_run=alpha_run,
+        environment=setup["env"],
+        dataset=setup["alpha_dataset"],
+        task=setup["task"],
+    )
+    beta_run = create_workflow_run(
+        db_session,
+        workspace_id=setup["beta"].id,
+        workflow=setup["beta_workflow"],
+        requester=setup["beta_admin"],
+        trigger_type="manual",
+        source_type="dataset",
+    )
+    beta_pipeline = create_pipeline_run(
+        db_session,
+        workflow_run=beta_run,
+        environment=setup["env"],
+        dataset=setup["beta_dataset"],
+        task=setup["task"],
+    )
+    storage = LocalStorage(root=tmp_path)
+    attached = store_artifact(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        project_id=setup["alpha_project"].id,
+        pipeline_run_id=alpha_pipeline.id,
+        artifact_type="report",
+        filename="report.md",
+        data=b"# run",
+        storage=storage,
+        extra_metadata={"pipeline_run_id": str(alpha_pipeline.id), "role": "technical_report"},
+    )
+    other = store_artifact(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        project_id=setup["alpha_project"].id,
+        artifact_type="dataset",
+        filename="unrelated.csv",
+        data=b"a,b\n1,2\n",
+        storage=storage,
+    )
+    db_session.commit()
+
+    found = artifacts_for_pipeline_run(db_session, alpha_pipeline)
+    assert [row.id for row in found] == [attached.id]
+    assert attached.pipeline_run_id == alpha_pipeline.id
+    assert attached.extra_metadata["pipeline_run_id"] == str(alpha_pipeline.id)
+    assert other.pipeline_run_id is None
+    assert artifacts_for_pipeline_run(db_session, beta_pipeline) == []
+
+    db_session.execute(text("SET LOCAL enable_seqscan = off"))
+    indexes = {
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                SELECT indexname FROM pg_indexes
+                WHERE tablename = 'artifacts'
+                  AND indexname IN (
+                    'ix_artifacts_pipeline_run_id',
+                    'ix_artifacts_workspace_pipeline_run_id'
+                  )
+                """
+            )
+        )
+    }
+    assert indexes == {
+        "ix_artifacts_pipeline_run_id",
+        "ix_artifacts_workspace_pipeline_run_id",
+    }
+    plan = "\n".join(
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                EXPLAIN SELECT id FROM artifacts
+                WHERE pipeline_run_id = :pipeline_run_id
+                """
+            ),
+            {"pipeline_run_id": alpha_pipeline.id},
+        )
+    )
+    assert "ix_artifacts_pipeline_run_id" in plan
+    assert "Seq Scan" not in plan
+
+    with pytest.raises(IntegrityError):
+        db_session.execute(
+            text("UPDATE artifacts SET pipeline_run_id = :pipeline_run_id WHERE id = :id"),
+            {"pipeline_run_id": beta_pipeline.id, "id": attached.id},
+        )
+        db_session.commit()
+    db_session.rollback()
+
+    json_only = store_artifact(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        project_id=setup["alpha_project"].id,
+        artifact_type="result_json",
+        filename="result.json",
+        data=b"{}",
+        storage=storage,
+        extra_metadata={"pipeline_run_id": str(alpha_pipeline.id)},
+    )
+    db_session.commit()
+    assert json_only.pipeline_run_id is None
+    db_session.execute(
+        text(
+            """
+            UPDATE artifacts AS artifact
+            SET pipeline_run_id = experiment.id
+            FROM experiments AS experiment
+            WHERE artifact.pipeline_run_id IS NULL
+              AND artifact.workspace_id = experiment.workspace_id
+              AND artifact.metadata->>'pipeline_run_id' = experiment.id::text
+            """
+        )
+    )
+    db_session.commit()
+    db_session.refresh(json_only)
+    assert json_only.pipeline_run_id == alpha_pipeline.id
+    assert {row.id for row in artifacts_for_pipeline_run(db_session, alpha_pipeline)} == {
+        attached.id,
+        json_only.id,
+    }

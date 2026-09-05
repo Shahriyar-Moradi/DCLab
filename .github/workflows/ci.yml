@@ -1,11 +1,13 @@
 name: CI
 
 # Everything in DCLab's access-model split funnels through this one workflow:
-# unit tests, the static banned-terms scan (Step 1), and the two live,
+# unit tests, the static banned-terms scan (Step 1), the two live,
 # not-sampled regression crawls (Step 8) that boot the real API + web app and
 # assert the client surface is clean and the admin surface rejects a client
-# token. None of this is meant to be run manually once and trusted forever —
-# that's the whole point of putting it here.
+# token, then the Playwright whole-system suite (`npm run e2e`) on an isolated
+# verification database. None of this is meant to be run manually once and
+# trusted forever — that's the whole point of putting it here.
+# A push is green only when both the regression job and the E2E job pass.
 
 on:
   push:
@@ -53,7 +55,7 @@ jobs:
           node-version: "20"
 
       - name: Install backend
-        run: pip install -e .
+        run: pip install -e ".[boosting]"
 
       - name: Create databases
         run: |
@@ -73,6 +75,9 @@ jobs:
       # --- Step 1 guardrail: static scan of schemas + frontend source ---------------
       - name: Banned-terms static scan
         run: python -m scripts.scan_banned_terms
+
+      - name: Object-store files must not be tracked
+        run: python -m scripts.check_object_store_untracked
 
       - name: Client Labs Zod/Pydantic contract
         run: python -m scripts.check_client_lab_schema_contract
@@ -135,3 +140,67 @@ jobs:
         run: |
           echo "--- API ---"; tail -n 200 /tmp/api.log || true
           echo "--- WEB ---"; tail -n 200 /tmp/web.log || true
+
+  e2e:
+    name: Whole-system E2E
+    needs: regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dclab_e2e_verify
+      DCLAB_E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dclab_e2e_verify
+      JWT_SECRET: e2e-verification-only-secret
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Scripts and Playwright webServer call `.venv/bin/python` / uvicorn.
+      - name: Install backend into .venv
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -U pip
+          .venv/bin/pip install -e ".[boosting]"
+
+      - name: Install frontend
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      # Recreates dclab_e2e_verify, migrates, seeds fixture accounts, then
+      # Playwright boots API 8001 + Next 3001 against that database only.
+      - name: Whole-system browser E2E
+        working-directory: apps/web
+        run: npm run e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-report
+          path: artifacts/e2e-verification/
+          if-no-files-found: ignore
+          retention-days: 7

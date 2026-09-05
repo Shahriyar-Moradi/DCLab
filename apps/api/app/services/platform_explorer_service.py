@@ -20,6 +20,7 @@ from app.db.models import (
     MlWorkflow,
     ModelAsset,
     ModelVersion,
+    PipelineStageRun,
     Workspace,
     WorkspaceDomain,
     WorkflowRun,
@@ -237,8 +238,34 @@ def get_workflow(
     return {**_workflow_row(db, workflow), "business_name": workspace.name, "runs": [_run_row(db, row) for row in runs], "models": [_model_row(row) for row in models]}
 
 
+def _stage_row(row: PipelineStageRun) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "stage_key": row.stage_key,
+        "stage_type": row.stage_type,
+        "sequence": row.sequence,
+        "name": row.name,
+        "status": row.status,
+        "started_at": row.started_at,
+        "completed_at": row.completed_at,
+        "duration_ms": row.duration_ms,
+        "failure_code": row.failure_code,
+        "failure_reason": row.failure_reason,
+        "input_summary": dict(row.input_summary or {}),
+        "output_summary": dict(row.output_summary or {}),
+    }
+
+
 def _pipeline_row(db: Session, pipeline: Experiment) -> dict[str, Any]:
     version = pipeline.model_version
+    stages = list(
+        db.scalars(
+            select(PipelineStageRun)
+            .where(PipelineStageRun.pipeline_run_id == pipeline.id)
+            .order_by(PipelineStageRun.sequence, PipelineStageRun.created_at)
+        )
+    )
+    current = next((row for row in stages if row.status == "running"), None)
     return {
         "id": pipeline.id,
         "workspace_id": pipeline.workspace_id,
@@ -260,6 +287,8 @@ def _pipeline_row(db: Session, pipeline: Experiment) -> dict[str, Any]:
         "model_version": version.version if version else None,
         "started_at": pipeline.started_at,
         "ended_at": pipeline.ended_at,
+        "current_stage": current.stage_key if current is not None else None,
+        "current_stage_status": current.status if current is not None else None,
     }
 
 
@@ -378,13 +407,43 @@ def _cap_monitor(items: list[Any], limit: int = 40) -> list[Any]:
     return items[:limit]
 
 
-def _scientific_plan_monitor(result: dict[str, Any], technical_report: dict[str, Any]) -> dict[str, Any]:
-    plan = _as_monitor_dict(technical_report.get("model_development_plan") or result.get("model_development_plan"))
-    profile = _as_monitor_dict(plan.get("problem_profile") or technical_report.get("problem_profile") or result.get("problem_profile"))
-    validation = _as_monitor_dict(plan.get("validation_plan") or technical_report.get("validation_plan") or result.get("validation_plan"))
-    metric = _as_monitor_dict(plan.get("metric_plan") or technical_report.get("metric_plan") or result.get("metric_plan"))
-    holdout = _as_monitor_dict(technical_report.get("holdout_plan") or result.get("holdout_plan"))
-    split = _as_monitor_dict(technical_report.get("split") or result.get("split"))
+def _scientific_plan_monitor(
+    result: dict[str, Any],
+    technical_report: dict[str, Any],
+    scientific_plan: Any = None,
+) -> dict[str, Any]:
+    full = dict(getattr(scientific_plan, "full_plan", None) or {}) if scientific_plan is not None else {}
+    plan = _as_monitor_dict(
+        technical_report.get("model_development_plan")
+        or result.get("model_development_plan")
+        or full.get("model_development_plan")
+    )
+    profile = _as_monitor_dict(
+        plan.get("problem_profile")
+        or technical_report.get("problem_profile")
+        or result.get("problem_profile")
+        or _as_monitor_dict(full.get("model_development_plan")).get("problem_profile")
+    )
+    validation = _as_monitor_dict(
+        plan.get("validation_plan")
+        or technical_report.get("validation_plan")
+        or result.get("validation_plan")
+        or full.get("validation_plan")
+    )
+    metric = _as_monitor_dict(
+        plan.get("metric_plan")
+        or technical_report.get("metric_plan")
+        or result.get("metric_plan")
+        or full.get("metric_plan")
+    )
+    holdout = _as_monitor_dict(
+        technical_report.get("holdout_plan")
+        or result.get("holdout_plan")
+        or full.get("holdout_plan")
+    )
+    split = _as_monitor_dict(
+        technical_report.get("split") or result.get("split") or full.get("split")
+    )
     leakage = _as_monitor_dict(plan.get("leakage_assessment") or result.get("leakage"))
     excluded = [row for row in _as_monitor_list(plan.get("excluded_features")) if isinstance(row, dict)]
     overlap = 0
@@ -433,6 +492,18 @@ def _scientific_plan_monitor(result: dict[str, Any], technical_report: dict[str,
                 "reason": "; ".join(_as_monitor_list(row.get("reasons"))) or str(row.get("reason") or ""),
             }
         )
+    if scientific_plan is not None:
+        profile["task_type"] = scientific_plan.task_type or profile.get("task_type")
+        validation["strategy"] = scientific_plan.validation_strategy
+        validation["requested_folds"] = scientific_plan.requested_folds
+        validation["actual_folds"] = scientific_plan.actual_folds
+        validation["group_column"] = scientific_plan.group_column
+        validation["time_column"] = scientific_plan.time_column
+        metric["primary_metric"] = scientific_plan.primary_metric
+        holdout["strategy"] = scientific_plan.holdout_strategy
+        holdout["test_size"] = scientific_plan.holdout_test_size
+        holdout["group_column"] = scientific_plan.group_column
+        holdout["time_column"] = scientific_plan.time_column
     strategy = str(validation.get("strategy") or "")
     group_aware = strategy in {"StratifiedGroupKFold", "GroupKFold"}
     return {
@@ -579,11 +650,19 @@ def get_pipeline_monitor(
             "source_upload": ({"id": str(upload.id), "filename": upload.original_filename} if upload else None),
         },
         "summary": _pipeline_row(db, pipeline),
+        "stages": [
+            _stage_row(row)
+            for row in db.scalars(
+                select(PipelineStageRun)
+                .where(PipelineStageRun.pipeline_run_id == pipeline.id)
+                .order_by(PipelineStageRun.sequence, PipelineStageRun.created_at)
+            )
+        ],
         "events": [{"id": str(row.id), "sequence": row.sequence, "stage": row.stage, "event_type": row.event_type, "status": row.status, "timestamp": row.timestamp.isoformat(), "duration_ms": row.duration_ms, "payload": row.payload, "created_at": row.created_at.isoformat()} for row in events],
         "llm_invocations": [{"id": str(row.id), "purpose": row.purpose, "llm_used": row.llm_used, "reason": row.reason, "provider": row.provider, "model": row.model, "mode": row.mode, "prompt_version": row.prompt_version, "schema_version": row.schema_version, "input_evidence_digest": row.input_evidence_digest, "redaction_summary": row.redaction_summary, "status": row.status, "validator_verdict": row.validator_verdict, "safe_output": row.safe_output, "final_decision": row.final_decision, "latency_ms": row.latency_ms, "input_tokens": row.input_tokens, "output_tokens": row.output_tokens, "total_tokens": row.total_tokens, "estimated_cost": row.estimated_cost, "started_at": row.started_at.isoformat(), "completed_at": row.completed_at.isoformat() if row.completed_at else None} for row in invocations],
         "candidates": candidates,
         "preprocessing": _monitor_preprocessing(technical_report),
-        "scientific_plan": _scientific_plan_monitor(result, technical_report),
+        "scientific_plan": _scientific_plan_monitor(result, technical_report, pipeline.scientific_plan),
         "predictions": {"count": len(prediction_rows), "distribution": dict(distribution), "raw_rows_included": False},
         "deterministic_verification": deterministic,
         "openai_audits": [row.safe_output or {"status": row.status, "reason": row.reason} for row in invocations if row.purpose.startswith("pipeline_audit_")],

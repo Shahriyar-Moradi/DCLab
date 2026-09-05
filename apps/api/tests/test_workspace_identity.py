@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 
 from app.db.models import (
     ProblemSpec,
@@ -21,10 +24,16 @@ from app.services.authorization_service import (
     can_write_platform,
     can_write_workspace,
     canonical_workspace_role,
+    consumes_ml_engineer_seat,
 )
 from app.services.problem_spec_service import create_problem_spec, get_problem_spec
 from app.services.project_service import create_project, get_project, list_projects
-from app.services.workspace_entitlement_service import max_members_for, member_count
+from app.services.workspace_entitlement_service import (
+    max_members_for,
+    max_ml_engineer_seats_for,
+    member_count,
+    technical_seat_count,
+)
 from app.services.workspace_service import (
     add_workspace_member,
     create_business_workspace,
@@ -64,6 +73,7 @@ def test_personal_workspace_has_owner_and_max_members_one(db_session):
     assert memberships[0].user_id == owner.id
     assert memberships[0].role == WorkspaceRole.WORKSPACE_OWNER.value
     assert max_members_for(db_session, workspace.id) == 1
+    assert max_ml_engineer_seats_for(db_session, workspace.id) == 0
     assert member_count(db_session, workspace.id) == 1
 
     with pytest.raises(IdentityError) as exceeded:
@@ -78,7 +88,7 @@ def test_personal_workspace_has_owner_and_max_members_one(db_session):
     assert exceeded.value.status_code == 409
 
 
-def test_business_workspace_max_members_five_and_admin_can_add_ml_engineer(
+def test_business_workspace_technical_seats_do_not_include_owner_or_admin(
     db_session,
 ):
     owner = _owner(db_session, "business-owner")
@@ -86,7 +96,9 @@ def test_business_workspace_max_members_five_and_admin_can_add_ml_engineer(
     db_session.commit()
 
     assert workspace.kind == WorkspaceKind.BUSINESS.value
-    assert max_members_for(db_session, workspace.id) == 5
+    assert max_members_for(db_session, workspace.id) is None
+    assert max_ml_engineer_seats_for(db_session, workspace.id) == 5
+    assert technical_seat_count(db_session, workspace.id) == 0
 
     admin = add_workspace_member(
         db_session,
@@ -99,6 +111,7 @@ def test_business_workspace_max_members_five_and_admin_can_add_ml_engineer(
     )
     db_session.commit()
     assert admin.role == WorkspaceRole.WORKSPACE_ADMIN.value
+    assert technical_seat_count(db_session, workspace.id) == 0
 
     admin_user = db_session.get(User, admin.user_id)
     engineer = add_workspace_member(
@@ -113,6 +126,7 @@ def test_business_workspace_max_members_five_and_admin_can_add_ml_engineer(
     db_session.commit()
     assert engineer.role == WorkspaceRole.ML_ENGINEER.value
     assert member_count(db_session, workspace.id) == 3
+    assert technical_seat_count(db_session, workspace.id) == 1
 
 
 def test_legacy_business_admin_can_add_ml_engineer(db_session):
@@ -139,21 +153,29 @@ def test_legacy_business_admin_can_add_ml_engineer(db_session):
     assert membership.role == WorkspaceRole.ML_ENGINEER.value
 
 
-def test_business_cannot_exceed_member_entitlement(db_session):
+def test_business_owner_admin_and_five_ml_engineers_then_sixth_fails(db_session):
     owner = _owner(db_session, "cap-owner")
     workspace = create_business_workspace(db_session, owner=owner, name="Capped Co")
-    db_session.commit()
-    for index in range(4):
+    add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"admin-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.WORKSPACE_ADMIN.value,
+    )
+    for index in range(5):
         add_workspace_member(
             db_session,
             actor=owner,
             workspace_id=workspace.id,
             email=f"seat-{index}-{uuid4().hex}@test.invalid",
             password="test-password",
-            role=WorkspaceRole.VIEWER.value,
+            role=WorkspaceRole.ML_ENGINEER.value,
         )
     db_session.commit()
-    assert member_count(db_session, workspace.id) == 5
+    assert member_count(db_session, workspace.id) == 7
+    assert technical_seat_count(db_session, workspace.id) == 5
     with pytest.raises(IdentityError) as exceeded:
         add_workspace_member(
             db_session,
@@ -164,9 +186,100 @@ def test_business_cannot_exceed_member_entitlement(db_session):
             role=WorkspaceRole.ML_ENGINEER.value,
         )
     assert exceeded.value.status_code == 409
+    assert "ML engineer seat" in str(exceeded.value)
 
 
-def test_ml_engineer_can_write_and_viewer_cannot(db_session):
+def test_business_viewer_and_admin_do_not_consume_technical_seats(db_session):
+    owner = _owner(db_session, "viewer-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Viewer Co")
+    for index in range(5):
+        add_workspace_member(
+            db_session,
+            actor=owner,
+            workspace_id=workspace.id,
+            email=f"ml-{index}-{uuid4().hex}@test.invalid",
+            password="test-password",
+            role=WorkspaceRole.ML_ENGINEER.value,
+        )
+    db_session.commit()
+    assert technical_seat_count(db_session, workspace.id) == 5
+    viewer = add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"viewer-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.VIEWER.value,
+    )
+    admin = add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"admin-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.WORKSPACE_ADMIN.value,
+    )
+    db_session.commit()
+    assert viewer.role == WorkspaceRole.VIEWER.value
+    assert admin.role == WorkspaceRole.WORKSPACE_ADMIN.value
+    assert technical_seat_count(db_session, workspace.id) == 5
+    with pytest.raises(IdentityError) as exceeded:
+        add_workspace_member(
+            db_session,
+            actor=owner,
+            workspace_id=workspace.id,
+            email=f"sixth-ml-{uuid4().hex}@test.invalid",
+            password="test-password",
+            role=WorkspaceRole.ML_ENGINEER.value,
+        )
+    assert exceeded.value.status_code == 409
+
+
+def test_concurrent_ml_engineer_adds_cannot_exceed_five_seats(db_session, test_engine):
+    owner = _owner(db_session, "race-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Race Co")
+    for index in range(4):
+        add_workspace_member(
+            db_session,
+            actor=owner,
+            workspace_id=workspace.id,
+            email=f"ml-{index}-{uuid4().hex}@test.invalid",
+            password="test-password",
+            role=WorkspaceRole.ML_ENGINEER.value,
+        )
+    db_session.commit()
+    assert technical_seat_count(db_session, workspace.id) == 4
+    owner_id = owner.id
+    workspace_id = workspace.id
+    emails = [f"race-{index}-{uuid4().hex}@test.invalid" for index in range(2)]
+    SessionLocal = sessionmaker(bind=test_engine)
+
+    def _add(email: str) -> str | int:
+        session = SessionLocal()
+        try:
+            actor = session.get(User, owner_id)
+            add_workspace_member(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                email=email,
+                password="test-password",
+                role=WorkspaceRole.ML_ENGINEER.value,
+            )
+            session.commit()
+            return "ok"
+        except IdentityError as exc:
+            session.rollback()
+            return exc.status_code
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(_add, emails))
+    db_session.expire_all()
+    assert results.count("ok") == 1
+    assert results.count(409) == 1
+    assert technical_seat_count(db_session, workspace.id) == 5
     owner = _owner(db_session, "perm-owner")
     workspace = create_business_workspace(db_session, owner=owner, name="Perm Co")
     engineer_membership = add_workspace_member(
@@ -233,7 +346,11 @@ def test_legacy_business_developer_stays_read_only_viewer(db_session):
     )
     assert stored.role == WorkspaceRole.BUSINESS_DEVELOPER.value
     assert canonical_workspace_role(WorkspaceRole.BUSINESS_DEVELOPER) is WorkspaceRole.VIEWER
+    assert not consumes_ml_engineer_seat(WorkspaceRole.BUSINESS_DEVELOPER)
+    assert not consumes_ml_engineer_seat(WorkspaceRole.BUSINESS_ADMIN)
+    assert consumes_ml_engineer_seat(WorkspaceRole.ML_ENGINEER)
     assert not can_perform_ml_write(db_session, developer, workspace.id)
+    assert technical_seat_count(db_session, workspace.id) == 0
 
 
 def test_platform_roles_remain_internal(db_session, client):
@@ -263,6 +380,198 @@ def test_platform_roles_remain_internal(db_session, client):
         json={"name": "Developer should not create"},
     )
     assert created.status_code == 403
+
+
+def test_workspace_admin_cannot_create_workspace_owner(db_session, client):
+    owner = _owner(db_session, "esc-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Escalation Co")
+    admin = add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"esc-admin-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.WORKSPACE_ADMIN.value,
+    )
+    db_session.commit()
+    admin_user = db_session.get(User, admin.user_id)
+    with pytest.raises(IdentityError) as denied:
+        add_workspace_member(
+            db_session,
+            actor=admin_user,
+            workspace_id=workspace.id,
+            email=f"new-owner-{uuid4().hex}@test.invalid",
+            password="test-password",
+            role=WorkspaceRole.WORKSPACE_OWNER.value,
+        )
+    assert denied.value.status_code == 403
+    assert "workspace_owner" in str(denied.value)
+    http_denied = client.post(
+        f"/workspaces/{workspace.id}/members",
+        headers=_headers(admin_user, workspace.id),
+        json={
+            "email": f"http-owner-{uuid4().hex}@test.invalid",
+            "password": "test-password",
+            "role": WorkspaceRole.WORKSPACE_OWNER.value,
+        },
+    )
+    assert http_denied.status_code == 403, http_denied.text
+
+
+def test_workspace_admin_can_add_ml_engineer(db_session):
+    owner = _owner(db_session, "admin-ml-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Admin ML Co")
+    admin = add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"admin-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.WORKSPACE_ADMIN.value,
+    )
+    db_session.commit()
+    admin_user = db_session.get(User, admin.user_id)
+    engineer = add_workspace_member(
+        db_session,
+        actor=admin_user,
+        workspace_id=workspace.id,
+        email=f"ml-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.ML_ENGINEER.value,
+    )
+    db_session.commit()
+    assert engineer.role == WorkspaceRole.ML_ENGINEER.value
+
+
+def test_workspace_owner_can_add_workspace_admin(db_session):
+    owner = _owner(db_session, "owner-admin")
+    workspace = create_business_workspace(db_session, owner=owner, name="Owner Admin Co")
+    admin = add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"admin-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.WORKSPACE_ADMIN.value,
+    )
+    db_session.commit()
+    assert admin.role == WorkspaceRole.WORKSPACE_ADMIN.value
+
+
+def test_ml_engineer_and_viewer_cannot_manage_memberships(db_session):
+    owner = _owner(db_session, "deny-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Deny Co")
+    engineer = add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"ml-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.ML_ENGINEER.value,
+    )
+    viewer = add_workspace_member(
+        db_session,
+        actor=owner,
+        workspace_id=workspace.id,
+        email=f"viewer-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=WorkspaceRole.VIEWER.value,
+    )
+    db_session.commit()
+    engineer_user = db_session.get(User, engineer.user_id)
+    viewer_user = db_session.get(User, viewer.user_id)
+    assert not can_manage_workspace_members(db_session, engineer_user, workspace.id)
+    assert not can_manage_workspace_members(db_session, viewer_user, workspace.id)
+    with pytest.raises(IdentityError) as engineer_denied:
+        add_workspace_member(
+            db_session,
+            actor=engineer_user,
+            workspace_id=workspace.id,
+            email=f"blocked-ml-{uuid4().hex}@test.invalid",
+            password="test-password",
+            role=WorkspaceRole.VIEWER.value,
+        )
+    assert engineer_denied.value.status_code == 403
+    with pytest.raises(IdentityError) as viewer_denied:
+        add_workspace_member(
+            db_session,
+            actor=viewer_user,
+            workspace_id=workspace.id,
+            email=f"blocked-viewer-{uuid4().hex}@test.invalid",
+            password="test-password",
+            role=WorkspaceRole.ML_ENGINEER.value,
+        )
+    assert viewer_denied.value.status_code == 403
+
+
+def test_legacy_roles_cannot_be_assigned_as_membership_targets(db_session, client):
+    owner = _owner(db_session, "legacy-target-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Legacy Target Co")
+    db_session.commit()
+    for legacy_role in (
+        WorkspaceRole.BUSINESS_ADMIN.value,
+        WorkspaceRole.BUSINESS_DEVELOPER.value,
+    ):
+        with pytest.raises(IdentityError) as denied:
+            add_workspace_member(
+                db_session,
+                actor=owner,
+                workspace_id=workspace.id,
+                email=f"{legacy_role}-{uuid4().hex}@test.invalid",
+                password="test-password",
+                role=legacy_role,
+            )
+        assert denied.value.status_code == 400
+        http_denied = client.post(
+            f"/workspaces/{workspace.id}/members",
+            headers=_headers(owner, workspace.id),
+            json={
+                "email": f"http-{legacy_role}-{uuid4().hex}@test.invalid",
+                "password": "test-password",
+                "role": legacy_role,
+            },
+        )
+        assert http_denied.status_code == 400, http_denied.text
+    stored = (
+        db_session.query(WorkspaceMembership)
+        .filter(WorkspaceMembership.workspace_id == workspace.id)
+        .all()
+    )
+    assert {row.role for row in stored} == {WorkspaceRole.WORKSPACE_OWNER.value}
+
+
+def test_dclab_developer_cannot_add_workspace_members(db_session, client):
+    owner = _owner(db_session, "dev-mem-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Dev Members Co")
+    developer = create_user(
+        db_session,
+        email=f"platform-dev-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=UserRole.DCLAB_DEVELOPER,
+    )
+    db_session.commit()
+    assert not can_write_platform(db_session, developer)
+    assert not can_manage_workspace_members(db_session, developer, workspace.id)
+    with pytest.raises(IdentityError) as denied:
+        add_workspace_member(
+            db_session,
+            actor=developer,
+            workspace_id=workspace.id,
+            email=f"dev-add-{uuid4().hex}@test.invalid",
+            password="test-password",
+            role=WorkspaceRole.ML_ENGINEER.value,
+        )
+    assert denied.value.status_code == 403
+    http_denied = client.post(
+        f"/workspaces/{workspace.id}/members",
+        headers=_headers(developer, workspace.id),
+        json={
+            "email": f"http-dev-{uuid4().hex}@test.invalid",
+            "password": "test-password",
+            "role": WorkspaceRole.ML_ENGINEER.value,
+        },
+    )
+    assert http_denied.status_code == 403, http_denied.text
 
 
 def test_cross_workspace_project_access_rejected(db_session):
@@ -376,7 +685,8 @@ def test_workspace_project_problem_spec_http_routes(client, db_session):
     assert created.status_code == 200, created.text
     body = created.json()
     assert body["kind"] == "business"
-    assert body["max_members"] == 5
+    assert body["max_members"] is None
+    assert body["max_ml_engineer_seats"] == 5
     workspace_id = body["id"]
 
     project_response = client.post(

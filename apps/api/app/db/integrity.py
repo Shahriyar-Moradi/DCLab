@@ -6,6 +6,8 @@ Execution state (PipelineRun status, stage runs, events' parent runs) stays muta
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import text
 
 PREVENT_CANONICAL_MUTATION_SQL = """
@@ -102,3 +104,33 @@ def install_immutability_triggers(connection) -> None:
 
     for statement in immutability_upgrade_statements():
         connection.execute(text(statement))
+
+
+def _immutability_trigger_name(table: str) -> str | None:
+    if table in ALWAYS_IMMUTABLE_TABLES:
+        return _always_trigger_name(table)
+    if table in LOCKED_IMMUTABLE_TABLES:
+        return _locked_trigger_name(table)
+    return None
+
+
+def immutability_disable_trigger_statements(tables: Sequence[str]) -> list[str]:
+    """Disable only named DCLab immutability triggers. Does not touch constraint triggers."""
+
+    statements: list[str] = []
+    for table in tables:
+        trigger = _immutability_trigger_name(table)
+        if trigger is None:
+            continue
+        statements.append(f'ALTER TABLE "{table}" DISABLE TRIGGER "{trigger}"')
+    return statements
+
+
+def immutability_enable_trigger_statements(tables: Sequence[str]) -> list[str]:
+    statements: list[str] = []
+    for table in tables:
+        trigger = _immutability_trigger_name(table)
+        if trigger is None:
+            continue
+        statements.append(f'ALTER TABLE "{table}" ENABLE TRIGGER "{trigger}"')
+    return statements

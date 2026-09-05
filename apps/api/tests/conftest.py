@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 import threading
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +17,33 @@ ADMIN_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/decisionai"
 )
 TEST_URL = ADMIN_URL.rsplit("/", 1)[0] + f"/{TEST_DB_NAME}"
+
+# Isolate object storage before any app.config.get_settings() call can cache
+# the repository default (data/object_store). Local development still uses that
+# default; tests must not.
+_TEST_OBJECT_STORE_ROOT = Path(tempfile.mkdtemp(prefix="dclab-test-object-store-"))
+os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+
+
+def _clear_test_object_store() -> None:
+    if not _TEST_OBJECT_STORE_ROOT.exists():
+        return
+    for child in _TEST_OBJECT_STORE_ROOT.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            child.unlink(missing_ok=True)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    shutil.rmtree(_TEST_OBJECT_STORE_ROOT, ignore_errors=True)
 
 
 def _ensure_database() -> None:
@@ -33,6 +63,7 @@ def _ensure_database() -> None:
 @pytest.fixture(scope="session")
 def test_engine():
     _ensure_database()
+    os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
     os.environ["DATABASE_URL"] = TEST_URL
     from app.config import get_settings
     from app.db.session import get_engine
@@ -82,10 +113,8 @@ def db_session(test_engine) -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
-        # Upload endpoints intentionally launch daemon workers. Wait for any job
-        # started by this test before taking PostgreSQL ACCESS EXCLUSIVE locks for
-        # cleanup; otherwise teardown can deadlock with a worker committing an
-        # observability event on a related table.
+        # Opt-in thread dispatcher still uses this name. Wait before TRUNCATE
+        # so a local-dev worker cannot deadlock cleanup.
         for thread in list(threading.enumerate()):
             if thread.name.startswith("auto-train-") and thread.is_alive():
                 thread.join()
@@ -94,7 +123,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
         with test_engine.begin() as conn:
             conn.execute(text(
                 "TRUNCATE TABLE evaluation_metrics, model_evaluations, cv_fold_runs, "
-                "model_hyperparameters, model_selection_decisions, "
+                "model_hyperparameters, model_selection_decisions, pipeline_scientific_plans, "
                 "feature_lineage, feature_transformations, features, "
                 "feature_set_versions, feature_sets, data_preparation_decisions, "
                 "data_quality_findings, preprocessing_steps, "
@@ -109,7 +138,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 "ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
                 "lab_decision_records, client_lab_run_audits, client_lab_runs, "
-                "client_lab_uploads, "
+                "ml_jobs, client_lab_uploads, "
                 "decisions, predictions, opportunities, users RESTART IDENTITY CASCADE"
             ))
             # Keep the well-known default workspace; drop any extra workspaces a
@@ -118,6 +147,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 text("DELETE FROM workspaces WHERE id != :default_id"),
                 {"default_id": DEFAULT_WORKSPACE_ID},
             )
+        _clear_test_object_store()
 
 
 @pytest.fixture()

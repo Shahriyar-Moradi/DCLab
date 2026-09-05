@@ -253,9 +253,9 @@ def _persist_pipeline_stage_runs(db: Session, experiment: Experiment, result: di
     timings = list(result.get("stage_timings") or result.get("execution_stage_timings") or [])
     if not timings:
         return
-    from app.services.workflow_execution_service import replace_pipeline_stage_runs
+    from app.services.workflow_execution_service import reconcile_pipeline_stage_runs
 
-    replace_pipeline_stage_runs(db, experiment, timings)
+    reconcile_pipeline_stage_runs(db, experiment, timings)
 
 
 def _persist_experiment_test_predictions(db: Session, experiment_id, result: dict) -> None:
@@ -341,6 +341,7 @@ def execute_experiment(
             cfg,
             artifact_dir=artifacts,
             dataset_version=dataset.version,
+            dataset_content_digest=dataset.content_digest,
             on_stage=on_stage,
             on_checkpoint=_persist_checkpoint,
             on_event=on_event,
@@ -350,6 +351,15 @@ def execute_experiment(
         experiment.status = "FAILED"
         experiment.result = {"status": "FAILED", "error": str(exc)}
         experiment.ended_at = datetime.now(timezone.utc)
+        experiment.failure_reason = str(exc)[:2048]
+        from app.services.workflow_execution_service import fail_open_pipeline_stage_runs
+
+        fail_open_pipeline_stage_runs(
+            db,
+            experiment,
+            reason=str(exc),
+            failure_code="process_failure",
+        )
         db.commit()
         db.refresh(experiment)
         return experiment

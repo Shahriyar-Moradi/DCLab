@@ -84,7 +84,10 @@ from app.domain.technical_explorer import (
     WorkspaceListItem,
 )
 from app.services.authorization_service import can_read_platform, can_read_workspace
-from app.services.reproducibility_service import artifacts_for_model_version
+from app.services.reproducibility_service import (
+    artifacts_for_model_version,
+    artifacts_for_pipeline_run,
+)
 from app.services.workspace_capability_service import (
     OPENAI_PIPELINE_AUDIT,
     SEMANTIC_LLM_AUDIT,
@@ -338,25 +341,79 @@ def _feature_engineering(feature_set: FeatureSet | None) -> FeatureEngineeringSe
     )
 
 
-def _development_plan(result: dict[str, Any]) -> DevelopmentPlanSection:
-    plan = _as_dict(result.get("model_development_plan"))
-    task = _as_dict(result.get("task"))
+def _candidate_algorithms(plan: dict[str, Any]) -> list[Any]:
     algorithms = (
-        plan.get("candidate_algorithms")
+        plan.get("recommended_model_family_hints")
+        or plan.get("candidate_algorithms")
         or plan.get("families")
         or plan.get("model_families")
         or []
     )
+    return list(algorithms) if isinstance(algorithms, list) else []
+
+
+def _development_plan(experiment: Experiment, result: dict[str, Any]) -> DevelopmentPlanSection:
+    row = experiment.scientific_plan
+    task = _as_dict(result.get("task"))
+    if row is not None:
+        full = _as_dict(row.full_plan)
+        plan = _as_dict(full.get("model_development_plan"))
+        metric = _as_dict(full.get("metric_plan") or plan.get("metric_plan"))
+        return DevelopmentPlanSection(
+            task_type=row.task_type or plan.get("task_type") or task.get("task_type"),
+            primary_metric=(
+                row.primary_metric
+                or metric.get("primary_metric")
+                or plan.get("primary_metric")
+                or task.get("evaluation_metric")
+            ),
+            excluded_features=list(plan.get("excluded_features") or []),
+            candidate_algorithms=_candidate_algorithms(plan),
+            plan_version=plan.get("plan_version") or plan.get("version"),
+        )
+    plan = _as_dict(result.get("model_development_plan"))
+    metric = _as_dict(plan.get("metric_plan") or result.get("metric_plan"))
+    profile = _as_dict(plan.get("problem_profile"))
     return DevelopmentPlanSection(
-        task_type=plan.get("task_type") or task.get("task_type"),
-        primary_metric=plan.get("primary_metric") or task.get("evaluation_metric"),
+        task_type=plan.get("task_type") or profile.get("task_type") or task.get("task_type"),
+        primary_metric=(
+            plan.get("primary_metric")
+            or metric.get("primary_metric")
+            or task.get("evaluation_metric")
+        ),
         excluded_features=list(plan.get("excluded_features") or []),
-        candidate_algorithms=list(algorithms) if isinstance(algorithms, list) else [],
+        candidate_algorithms=_candidate_algorithms(plan),
         plan_version=plan.get("plan_version") or plan.get("version"),
     )
 
 
-def _split_validation(result: dict[str, Any]) -> SplitValidationSection:
+def _split_validation(experiment: Experiment, result: dict[str, Any]) -> SplitValidationSection:
+    row = experiment.scientific_plan
+    if row is not None:
+        full = _as_dict(row.full_plan)
+        holdout = _as_dict(full.get("holdout_plan") or result.get("holdout_plan"))
+        validation = _as_dict(full.get("validation_plan") or result.get("validation_plan"))
+        split = _as_dict(full.get("split") or result.get("split"))
+        holdout = {
+            **holdout,
+            "strategy": row.holdout_strategy,
+            "test_size": row.holdout_test_size,
+            "group_column": row.group_column,
+            "time_column": row.time_column,
+        }
+        validation = {
+            **validation,
+            "strategy": row.validation_strategy,
+            "requested_folds": row.requested_folds,
+            "actual_folds": row.actual_folds,
+            "group_column": row.group_column,
+            "time_column": row.time_column,
+        }
+        return SplitValidationSection(
+            split=split,
+            holdout_plan=holdout,
+            validation_plan=validation,
+        )
     return SplitValidationSection(
         split=_as_dict(result.get("split")),
         holdout_plan=_as_dict(result.get("holdout_plan")),
@@ -413,17 +470,7 @@ def _code_runtime(
 
 
 def _run_artifacts(db: Session, experiment: Experiment) -> list[Artifact]:
-    run_id = str(experiment.id)
-    rows = list(
-        db.scalars(
-            select(Artifact)
-            .where(
-                Artifact.workspace_id == experiment.workspace_id,
-                Artifact.extra_metadata["pipeline_run_id"].as_string() == run_id,
-            )
-            .order_by(Artifact.created_at, Artifact.id)
-        )
-    )
+    rows = artifacts_for_pipeline_run(db, experiment)
     model_version = experiment.model_version
     extra = artifacts_for_model_version(db, model_version) if model_version is not None else []
     by_id = {row.id: row for row in [*rows, *extra]}
@@ -453,6 +500,7 @@ _PIPELINE_RUN_LOAD = (
     selectinload(Experiment.preprocessing_steps),
     selectinload(Experiment.candidates).options(*_CANDIDATE_LOAD),
     selectinload(Experiment.model_selection_decisions),
+    joinedload(Experiment.scientific_plan),
     selectinload(Experiment.code_snapshots).joinedload(CodeSnapshot.runtime_environment),
     selectinload(Experiment.llm_invocations),
     joinedload(Experiment.model_version).options(
@@ -838,8 +886,8 @@ class PipelineRunDetailQuery:
                 PreprocessingStepRead.model_validate(row)
                 for row in sorted(experiment.preprocessing_steps, key=lambda item: item.sequence)
             ],
-            development_plan=_development_plan(result),
-            split_validation=_split_validation(result),
+            development_plan=_development_plan(experiment, result),
+            split_validation=_split_validation(experiment, result),
             model_candidates=[
                 _candidate_summary(row)
                 for row in sorted(experiment.candidates, key=lambda item: item.candidate_key)

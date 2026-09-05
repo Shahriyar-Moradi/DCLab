@@ -168,7 +168,7 @@ off already tenant-checked parents.
 | `llm_invocations.safe_output` / `final_decision` | Provider-shaped evidence. |
 | `artifacts.metadata` | Small registry extras. Bytes are in object storage. |
 | `problem_specs.constraints` / `success_criteria` | Variable intent documents; status/version/task_type are columns. |
-| `runtime_environments.hardware` | Heterogeneous machine facts. |
+| `runtime_environments.hardware` | Heterogeneous machine facts. RuntimeEnvironment is a global fingerprint; dependency-lock Artifact ids are workspace-scoped on CodeSnapshot. |
 
 GIN indexes on JSONB are **not** justified at MVP. Add an expression GIN only
 after a concrete predicate (e.g. `payload ->> 'event_type'`) shows up in
@@ -223,11 +223,14 @@ When RLS is considered later:
 
 Until that pooling model exists, do not add RLS.
 
-## Entitlement semantics (Prompt 9 freeze)
+## Entitlement semantics
 
-`workspace_entitlements.max_members` counts **all** `workspace_memberships` rows
-for the workspace (owner, admins, engineers, viewers). It does **not** mean
-“N ML-engineer seats plus admins”. Personal default is 1; business default is 5.
+`workspace_entitlements.max_ml_engineer_seats` is the Business technical-seat
+cap (default 5). It counts canonical `ml_engineer` memberships only. Owner,
+admin, and viewer rows do not consume it.
+
+`workspace_entitlements.max_members` is a separate overall membership cap when
+present. Personal default is 1. Business does not seed `max_members`.
 
 ## Prompt 9 query benchmark
 

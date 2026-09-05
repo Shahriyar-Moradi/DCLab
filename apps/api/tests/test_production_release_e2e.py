@@ -45,7 +45,7 @@ from app.db.models import (
     WorkspaceRole,
 )
 from app.services.auth_service import create_access_token, create_user
-from app.services.workspace_entitlement_service import member_count
+from app.services.workspace_entitlement_service import member_count, technical_seat_count
 from app.services.workspace_service import add_workspace_member, create_business_workspace
 
 
@@ -289,7 +289,7 @@ def test_business_total_member_cap_and_shared_canonical_objects(
     db_session.commit()
     workspace = create_business_workspace(db_session, owner=owner, name="Shared Co")
     db_session.commit()
-    # Product decision: max_members=5 is 5 total memberships, not 5 engineers plus admins.
+    # Product decision: 5 ML-engineer seats. Owner/admin do not consume them.
     admin = add_workspace_member(
         db_session,
         actor=owner,
@@ -300,7 +300,7 @@ def test_business_total_member_cap_and_shared_canonical_objects(
         full_name="Workspace Admin",
     )
     engineers = []
-    for index in range(3):
+    for index in range(5):
         engineers.append(
             add_workspace_member(
                 db_session,
@@ -313,7 +313,8 @@ def test_business_total_member_cap_and_shared_canonical_objects(
             )
         )
     db_session.commit()
-    assert member_count(db_session, workspace.id) == 5
+    assert member_count(db_session, workspace.id) == 7
+    assert technical_seat_count(db_session, workspace.id) == 5
     sixth = client.post(
         f"/workspaces/{workspace.id}/members",
         headers=_headers(create_access_token(owner), workspace.id),
@@ -324,7 +325,17 @@ def test_business_total_member_cap_and_shared_canonical_objects(
         },
     )
     assert sixth.status_code == 409, sixth.text
-    assert "all memberships" in sixth.json()["detail"]
+    assert "ML engineer seat" in sixth.json()["detail"]
+    viewer = client.post(
+        f"/workspaces/{workspace.id}/members",
+        headers=_headers(create_access_token(owner), workspace.id),
+        json={
+            "email": f"viewer-{uuid4().hex}@test.invalid",
+            "password": "test-password",
+            "role": WorkspaceRole.VIEWER.value,
+        },
+    )
+    assert viewer.status_code == 200, viewer.text
 
     engineer_user = db_session.get(User, engineers[0].user_id)
     other_engineer = db_session.get(User, engineers[1].user_id)

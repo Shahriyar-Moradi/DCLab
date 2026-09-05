@@ -42,7 +42,7 @@ function Hero() {
       <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
         <div>
           <Eyebrow className="inline-flex items-center gap-1.5">
-            <Sparkles size={14} /> The AI Decision Intelligence Company
+            <Sparkles size={14} /> The DCLab decision platform
           </Eyebrow>
           <h1 className="mt-4 text-display text-ink">
             We Build AI That <span className="text-brand-gradient">Grows Businesses.</span>
@@ -55,7 +55,7 @@ function Hero() {
             Instead of replacing your team, our AI becomes a decision-making partner that learns from your business
             every day.
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="mt-8 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap">
             <MarketingButton href={BOOK_A_DEMO_HREF}>
               Book a Demo <ArrowRight size={16} />
             </MarketingButton>
@@ -64,7 +64,7 @@ function Hero() {
             </MarketingButton>
           </div>
         </div>
-        <div className="surface-glass rounded-2xl p-6">
+        <div className="surface-glass rounded-2xl p-5 sm:p-6">
           {showWorkspace && data ? (
             <>
               <p className="text-eyebrow uppercase tracking-[0.18em] text-ink-muted">Your workspace</p>

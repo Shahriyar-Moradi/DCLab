@@ -237,8 +237,13 @@ class PipelineRunObserver:
         payload: dict[str, Any] | None = None,
         duration_ms: float | None = None,
     ) -> None:
+        from app.services.workflow_execution_service import apply_live_stage_from_event
+
         session = get_session_factory()()
         try:
+            pipeline = session.get(Experiment, self.experiment_id)
+            if pipeline is None:
+                return
             append_ml_run_event(
                 session,
                 workspace_id=self.workspace_id,
@@ -249,7 +254,18 @@ class PipelineRunObserver:
                 status=status,
                 payload=payload,
                 duration_ms=duration_ms,
+                commit=False,
             )
+            apply_live_stage_from_event(
+                session,
+                pipeline,
+                stage=stage,
+                event_type=event_type,
+                status=status,
+                payload=payload,
+                duration_ms=duration_ms,
+            )
+            session.commit()
         except Exception:  # observability cannot change ML behavior
             session.rollback()
             logger.exception("could not persist ML run event for %s", self.experiment_id)

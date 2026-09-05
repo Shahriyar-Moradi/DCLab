@@ -43,9 +43,11 @@ export function AppMobileDrawer({ open, onClose }: AppMobileDrawerProps) {
         aria-modal="true"
         aria-label="Application navigation"
       >
-        <button type="button" className="app-mobile-drawer-close" aria-label="Close navigation" onClick={onClose}>
-          <X size={20} aria-hidden />
-        </button>
+        <div className="app-mobile-drawer-toolbar">
+          <button type="button" className="app-mobile-drawer-close" aria-label="Close navigation" onClick={onClose}>
+            <X size={20} aria-hidden />
+          </button>
+        </div>
         <AppSidebar mobile onNavigate={onClose} />
       </div>
     </div>

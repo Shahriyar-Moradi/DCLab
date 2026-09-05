@@ -46,7 +46,6 @@ class RuntimeEnvironmentRead(BaseModel):
     architecture: str
     container_image: str | None
     container_digest: str | None
-    dependency_lock_artifact_id: UUID | None
     hardware: dict[str, Any]
     environment_digest: str
     created_at: datetime
@@ -67,6 +66,7 @@ class CodeSnapshotRead(BaseModel):
     git_commit: str | None
     code_digest: str
     dependency_lock_digest: str | None
+    dependency_lock_artifact_id: UUID | None
     runtime_environment_id: UUID
     created_at: datetime
 

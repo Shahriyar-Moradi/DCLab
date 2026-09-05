@@ -35,7 +35,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative flex max-h-[min(90dvh,40rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-hairline bg-paper-raised p-5 shadow-lg"
+        className="relative flex max-h-[min(90dvh,40rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-hairline bg-paper-raised p-5 shadow-lg sm:rounded-2xl"
       >
         <div className="flex shrink-0 items-start justify-between gap-3">
           <h2 id={titleId} className="min-w-0 break-words font-sans text-section text-ink">

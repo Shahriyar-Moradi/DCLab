@@ -24,10 +24,70 @@ ALGORITHM = "HS256"
 # development database only — never use these outside this machine.
 DEMO_ADMIN_EMAIL = "admin@dclab.io"
 DEMO_ADMIN_PASSWORD = "AdminPass123"
-DEMO_ADMIN_NAME = "Admin"
+DEMO_ADMIN_NAME = "DCLab Admin"
+DEMO_DEVELOPER_EMAIL = "developer@dclab.io"
+DEMO_DEVELOPER_PASSWORD = "DeveloperPass123"
+DEMO_DEVELOPER_NAME = "DCLab Developer"
 DEMO_CLIENT_EMAIL = "demo@client.io"
 DEMO_CLIENT_PASSWORD = "ClientPass123"
 DEMO_CLIENT_NAME = "Business Client"
+DEMO_BUSINESS_ADMIN_EMAIL = "business-admin@dclab.io"
+DEMO_BUSINESS_ADMIN_PASSWORD = "BusinessAdminPass123"
+DEMO_BUSINESS_ADMIN_NAME = "Business Admin"
+DEMO_BUSINESS_DEVELOPER_EMAIL = "business-developer@dclab.io"
+DEMO_BUSINESS_DEVELOPER_PASSWORD = "BusinessDevPass123"
+DEMO_BUSINESS_DEVELOPER_NAME = "Business Developer"
+DEMO_PERSONAL_EMAIL = "personal@dclab.io"
+DEMO_PERSONAL_PASSWORD = "PersonalPass123"
+DEMO_PERSONAL_NAME = "Personal Developer"
+DEMO_PERSONAL_WORKSPACE_SLUG = "demo-personal"
+DEMO_PERSONAL_WORKSPACE_NAME = "Personal Lab"
+
+# home: platform | default | personal
+DEMO_ACCOUNTS: tuple[dict[str, object], ...] = (
+    {
+        "email": DEMO_ADMIN_EMAIL,
+        "password": DEMO_ADMIN_PASSWORD,
+        "role": UserRole.DCLAB_ADMIN,
+        "full_name": DEMO_ADMIN_NAME,
+        "home": "platform",
+    },
+    {
+        "email": DEMO_DEVELOPER_EMAIL,
+        "password": DEMO_DEVELOPER_PASSWORD,
+        "role": UserRole.DCLAB_DEVELOPER,
+        "full_name": DEMO_DEVELOPER_NAME,
+        "home": "platform",
+    },
+    {
+        "email": DEMO_CLIENT_EMAIL,
+        "password": DEMO_CLIENT_PASSWORD,
+        "role": UserRole.CLIENT_USER,
+        "full_name": DEMO_CLIENT_NAME,
+        "home": "default",
+    },
+    {
+        "email": DEMO_BUSINESS_ADMIN_EMAIL,
+        "password": DEMO_BUSINESS_ADMIN_PASSWORD,
+        "role": UserRole.BUSINESS_ADMIN,
+        "full_name": DEMO_BUSINESS_ADMIN_NAME,
+        "home": "default",
+    },
+    {
+        "email": DEMO_BUSINESS_DEVELOPER_EMAIL,
+        "password": DEMO_BUSINESS_DEVELOPER_PASSWORD,
+        "role": UserRole.BUSINESS_DEVELOPER,
+        "full_name": DEMO_BUSINESS_DEVELOPER_NAME,
+        "home": "default",
+    },
+    {
+        "email": DEMO_PERSONAL_EMAIL,
+        "password": DEMO_PERSONAL_PASSWORD,
+        "role": UserRole.WORKSPACE_OWNER,
+        "full_name": DEMO_PERSONAL_NAME,
+        "home": "personal",
+    },
+)
 
 
 class AuthError(Exception):
@@ -174,74 +234,136 @@ def create_user(
     return user
 
 
+def demo_logins() -> list[dict[str, str]]:
+    """Plain-text local logins printed by `dclab user seed` and shown on /login."""
+    return [
+        {
+            "email": str(spec["email"]),
+            "password": str(spec["password"]),
+            "role": spec["role"].value if isinstance(spec["role"], UserRole) else str(spec["role"]),
+            "name": str(spec["full_name"]),
+        }
+        for spec in DEMO_ACCOUNTS
+    ]
+
+
+def _platform_role_for(role: UserRole) -> PlatformRole | None:
+    mapping = {
+        UserRole.DCLAB_ADMIN: PlatformRole.DCLAB_ADMIN,
+        UserRole.DCLAB_DEVELOPER: PlatformRole.DCLAB_DEVELOPER,
+    }
+    return mapping.get(role)
+
+
+def _workspace_role_for(role: UserRole) -> WorkspaceRole | None:
+    mapping = {
+        UserRole.CLIENT_USER: WorkspaceRole.BUSINESS_ADMIN,
+        UserRole.BUSINESS_ADMIN: WorkspaceRole.BUSINESS_ADMIN,
+        UserRole.BUSINESS_DEVELOPER: WorkspaceRole.BUSINESS_DEVELOPER,
+        UserRole.WORKSPACE_OWNER: WorkspaceRole.WORKSPACE_OWNER,
+        UserRole.WORKSPACE_ADMIN: WorkspaceRole.WORKSPACE_ADMIN,
+        UserRole.ML_ENGINEER: WorkspaceRole.ML_ENGINEER,
+        UserRole.VIEWER: WorkspaceRole.VIEWER,
+    }
+    return mapping.get(role)
+
+
+def _sync_platform_membership(db: Session, user: User, role: UserRole) -> None:
+    wanted = _platform_role_for(role)
+    membership = db.query(PlatformMembership).filter_by(user_id=user.id).one_or_none()
+    if wanted is None:
+        if membership is not None:
+            db.delete(membership)
+        return
+    if membership is None:
+        db.add(PlatformMembership(user_id=user.id, role=wanted.value))
+        return
+    membership.role = wanted.value
+
+
+def _sync_workspace_membership(
+    db: Session,
+    user: User,
+    role: UserRole,
+    workspace_id: uuid.UUID | None,
+) -> None:
+    wanted = _workspace_role_for(role)
+    if wanted is None or workspace_id is None:
+        return
+    membership = (
+        db.query(WorkspaceMembership)
+        .filter_by(user_id=user.id, workspace_id=workspace_id)
+        .one_or_none()
+    )
+    if membership is None:
+        db.add(
+            WorkspaceMembership(
+                user_id=user.id,
+                workspace_id=workspace_id,
+                role=wanted.value,
+            )
+        )
+        return
+    membership.role = wanted.value
+
+
+def _ensure_personal_workspace(db: Session, owner: User) -> uuid.UUID:
+    from app.db.models import Workspace
+    from app.services.workspace_service import create_personal_workspace
+
+    workspace = (
+        db.query(Workspace)
+        .filter_by(slug=DEMO_PERSONAL_WORKSPACE_SLUG)
+        .one_or_none()
+    )
+    if workspace is None:
+        created = create_personal_workspace(
+            db,
+            owner=owner,
+            name=DEMO_PERSONAL_WORKSPACE_NAME,
+            slug=DEMO_PERSONAL_WORKSPACE_SLUG,
+        )
+        return created.id
+    owner.workspace_id = workspace.id
+    _sync_workspace_membership(db, owner, UserRole.WORKSPACE_OWNER, workspace.id)
+    db.flush()
+    return workspace.id
+
+
 def ensure_demo_users(db: Session) -> list[User]:
-    """Create or refresh the two local logins: one staff, one customer."""
+    """Create or refresh local logins for every product role used in development."""
     from app.db.models import DEFAULT_WORKSPACE_ID
 
-    specs = (
-        {
-            "email": DEMO_ADMIN_EMAIL,
-            "password": DEMO_ADMIN_PASSWORD,
-            "role": UserRole.DCLAB_ADMIN,
-            "full_name": DEMO_ADMIN_NAME,
-            "workspace_id": None,
-        },
-        {
-            "email": DEMO_CLIENT_EMAIL,
-            "password": DEMO_CLIENT_PASSWORD,
-            "role": UserRole.CLIENT_USER,
-            "full_name": DEMO_CLIENT_NAME,
-            "workspace_id": DEFAULT_WORKSPACE_ID,
-        },
-    )
     users: list[User] = []
-    for spec in specs:
-        email = spec["email"].strip().lower()
+    for spec in DEMO_ACCOUNTS:
+        email = str(spec["email"]).strip().lower()
+        raw_role = spec["role"]
+        role = raw_role if isinstance(raw_role, UserRole) else UserRole(str(raw_role))
+        home = str(spec["home"])
+        workspace_id = DEFAULT_WORKSPACE_ID if home == "default" else None
         existing = db.query(User).filter(User.email == email).one_or_none()
         if existing is None:
-            users.append(
-                create_user(
-                    db,
-                    email=email,
-                    password=spec["password"],
-                    role=spec["role"],
-                    full_name=spec["full_name"],
-                    workspace_id=spec["workspace_id"],
-                )
+            user = create_user(
+                db,
+                email=email,
+                password=str(spec["password"]),
+                role=role,
+                full_name=str(spec["full_name"]),
+                workspace_id=workspace_id,
             )
-            continue
-        existing.password_hash = hash_password(spec["password"])
-        existing.role = spec["role"].value
-        existing.full_name = spec["full_name"]
-        existing.workspace_id = spec["workspace_id"]
-        existing.is_active = True
-        if spec["role"] is UserRole.DCLAB_ADMIN:
-            membership = db.query(PlatformMembership).filter_by(user_id=existing.id).one_or_none()
-            if membership is None:
-                db.add(
-                    PlatformMembership(
-                        user_id=existing.id,
-                        role=PlatformRole.DCLAB_ADMIN.value,
-                    )
-                )
-            else:
-                membership.role = PlatformRole.DCLAB_ADMIN.value
         else:
-            membership = (
-                db.query(WorkspaceMembership)
-                .filter_by(user_id=existing.id, workspace_id=spec["workspace_id"])
-                .one_or_none()
-            )
-            if membership is None:
-                db.add(
-                    WorkspaceMembership(
-                        user_id=existing.id,
-                        workspace_id=spec["workspace_id"],
-                        role=WorkspaceRole.BUSINESS_ADMIN.value,
-                    )
-                )
-            else:
-                membership.role = WorkspaceRole.BUSINESS_ADMIN.value
-        users.append(existing)
+            user = existing
+            user.password_hash = hash_password(str(spec["password"]))
+            user.role = role.value
+            user.full_name = str(spec["full_name"])
+            user.workspace_id = workspace_id
+            user.is_active = True
+            _sync_platform_membership(db, user, role)
+            _sync_workspace_membership(db, user, role, workspace_id)
+        if home == "personal":
+            user.role = UserRole.WORKSPACE_OWNER.value
+            personal_id = _ensure_personal_workspace(db, user)
+            user.workspace_id = personal_id
+        users.append(user)
     db.flush()
     return users

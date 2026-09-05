@@ -52,6 +52,7 @@ Workflow
 Pipeline
   → PipelineVersion
       → PipelineRun          (physical table: experiments)
+          → PipelineScientificPlan
           → PipelineStageRun
 ```
 
@@ -65,6 +66,7 @@ Dataset
   → DataPreparationDecision / DataQualityFinding
   → FeatureSet → FeatureSetVersion → Feature → FeatureLineage / FeatureTransformation
   → PreprocessingStep
+  → PipelineScientificPlan   (one holdout/validation/metric lock per run)
   → Candidate                (physical table: experiment_candidates)
       → ModelHyperparameter
       → CVFoldRun
@@ -72,12 +74,15 @@ Dataset
   → ModelSelectionDecision   (explicit winner lock; CV-only)
   → ModelAsset → ModelVersion
       → Artifact
-      → CodeSnapshot
-      → RuntimeEnvironment
+      → CodeSnapshot (workspace-owned source + dependency-lock Artifact)
+      → RuntimeEnvironment (global fingerprint; no workspace Artifact FK)
 ```
 
 Winner selection is a row, not an inferred JSON field. Final holdout is a
 `ModelEvaluation` with `evaluation_scope = final_holdout` after the lock.
+Holdout strategy, validation folds, and the primary metric are queryable
+columns on `PipelineScientificPlan`; `experiments.result` JSON is compatibility
+evidence beside that row.
 
 ## Roles
 
@@ -86,8 +91,23 @@ Winner selection is a row, not an inferred JSON field. Final holdout is a
 | Customer workspace | `workspace_owner`, `workspace_admin`, `ml_engineer`, `viewer` | Stored on `workspace_memberships`. Legacy `business_admin` / `business_developer` / `client_user` still resolve. |
 | Platform | `dclab_admin`, `dclab_developer` | Stored on `platform_memberships`. Never a customer seat. |
 
-`max_members` counts **every** workspace membership, including owner and admins.
-A business default of 5 is five total seats, not five ML-engineer seats plus admins.
+`max_ml_engineer_seats` is the Business technical-seat cap (default **5**). It
+counts canonical `ml_engineer` memberships, including stored roles that
+translate to that role. `workspace_owner`, `workspace_admin`, `viewer`, and
+legacy `business_admin` / `business_developer` do **not** consume those seats.
+
+`max_members` is a separate overall membership cap. Personal workspaces seed
+`max_members = 1` (one owner/user). Business workspaces do not seed
+`max_members`; it is only a safety cap if an operator sets it.
+
+Membership assignment is centralized in `authorization_service`. New APIs assign
+only canonical roles: `workspace_owner` may assign `workspace_admin`,
+`ml_engineer`, and `viewer`; `workspace_admin` may assign `ml_engineer` and
+`viewer` and must not create `workspace_owner`; `dclab_admin` may perform the
+same assignments as an owner. `ml_engineer`, `viewer`, and `dclab_developer`
+cannot manage memberships. Legacy `business_admin` / `business_developer` remain
+readable; they are not accepted as assignment targets. Ownership is created with
+the workspace; membership APIs do not transfer it.
 
 ## One ML core
 

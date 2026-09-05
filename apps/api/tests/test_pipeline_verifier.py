@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
+import pandas as pd
 import pytest
 
 from app.services.pipeline_verifier import PipelineVerifier
@@ -388,6 +390,84 @@ def test_valid_evidence_is_verified(tmp_path):
         "task_metric_matches_plan",
         "candidate_fingerprint_contains_plan_identity",
     } <= {row["check_id"] for row in result["checks"]}
+
+
+def _rename_profile_column(report: dict, old: str, new: str) -> None:
+    profile = report["raw_profile"]
+    profile["column_names"] = [new if name == old else name for name in profile["column_names"]]
+    for row in profile["columns"]:
+        if row.get("name") == old:
+            row["name"] = new
+    report["cleaning"]["columns_in"] = [new if name == old else name for name in report["cleaning"]["columns_in"]]
+    report["cleaning"]["columns_out"] = [new if name == old else name for name in report["cleaning"]["columns_out"]]
+    for row in report["column_role_evidence"]["columns"]:
+        if row.get("column") == old:
+            row["column"] = new
+
+
+def _regression_report(tmp_path):
+    report = _valid_report(tmp_path)
+    csv = (
+        "measure,segment,revenue\n"
+        "1,a,10.0\n"
+        "2,b,20.5\n"
+        "3,a,30.25\n"
+        "4,b,40.125\n"
+        "5,a,50.0625\n"
+        "6,b,228.54120937279944\n"
+    )
+    input_path = tmp_path / "input.csv"
+    input_path.write_text(csv)
+    report["artifacts"]["input"] = str(input_path)
+    _rename_profile_column(report, "outcome", "revenue")
+    report["target_decision"]["target_column"] = "revenue"
+    report["target_decision"]["task_type"] = "regression"
+    report["task"]["task_type"] = "regression"
+    report["task"]["target"] = "revenue"
+    parsed = pd.read_csv(input_path)
+    report["prediction_evidence"] = [
+        {"source_row_index": 4, "y_true": float(parsed.iloc[4]["revenue"]), "y_pred": 50.0},
+        {"source_row_index": 5, "y_true": float(parsed.iloc[5]["revenue"]), "y_pred": 228.0},
+    ]
+    return report
+
+
+def test_regression_float_serialization_difference_passes_prediction_provenance(tmp_path):
+    report = _regression_report(tmp_path)
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "PASS"
+    true = float(report["prediction_evidence"][1]["y_true"])
+    serialized = math.nextafter(true, math.inf)
+    assert serialized != true
+    report["prediction_evidence"][1]["y_true"] = serialized
+    tolerated = PipelineVerifier().verify(report)
+    assert _status_for(tolerated, "prediction_provenance_complete") == "PASS"
+
+
+def test_meaningful_regression_y_true_change_fails_prediction_provenance(tmp_path):
+    report = _regression_report(tmp_path)
+    report["prediction_evidence"][1]["y_true"] = float(report["prediction_evidence"][1]["y_true"]) + 0.01
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "FAIL"
+    message = next(row["message"] for row in result["checks"] if row["check_id"] == "prediction_provenance_complete")
+    assert "5" in message
+
+
+def test_wrong_source_row_provenance_fails_prediction_provenance(tmp_path):
+    report = _regression_report(tmp_path)
+    report["prediction_evidence"][0]["source_row_index"] = 5
+    report["prediction_evidence"][1]["source_row_index"] = 4
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "FAIL"
+
+
+def test_binary_label_mismatch_still_fails_prediction_provenance(tmp_path):
+    report = _valid_report(tmp_path)
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "PASS"
+    report["prediction_evidence"][0]["y_true"] = 1
+    corrupted = PipelineVerifier().verify(report)
+    assert _status_for(corrupted, "prediction_provenance_complete") == "FAIL"
 
 
 def test_encoded_binary_labels_still_match_the_input_artifact(tmp_path):

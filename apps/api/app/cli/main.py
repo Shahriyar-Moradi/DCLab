@@ -64,23 +64,11 @@ def cmd_user_create(args: argparse.Namespace) -> int:
 
 
 def cmd_user_seed(_args: argparse.Namespace) -> int:
-    from app.services.auth_service import (
-        DEMO_ADMIN_EMAIL,
-        DEMO_ADMIN_NAME,
-        DEMO_ADMIN_PASSWORD,
-        DEMO_CLIENT_EMAIL,
-        DEMO_CLIENT_NAME,
-        DEMO_CLIENT_PASSWORD,
-        ensure_demo_users,
-    )
+    from app.services.auth_service import demo_logins, ensure_demo_users
 
     db = _session()
     users = ensure_demo_users(db)
     db.commit()
-    accounts = [
-        {"email": DEMO_ADMIN_EMAIL, "password": DEMO_ADMIN_PASSWORD, "role": "dclab_admin", "name": DEMO_ADMIN_NAME},
-        {"email": DEMO_CLIENT_EMAIL, "password": DEMO_CLIENT_PASSWORD, "role": "client_user", "name": DEMO_CLIENT_NAME},
-    ]
     print(
         json.dumps(
             {
@@ -88,7 +76,7 @@ def cmd_user_seed(_args: argparse.Namespace) -> int:
                     {"id": str(row.id), "email": row.email, "role": row.role, "full_name": row.full_name}
                     for row in users
                 ],
-                "logins": accounts,
+                "logins": demo_logins(),
             }
         )
     )
@@ -256,6 +244,47 @@ def cmd_verify_openai_smoke(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_worker_run(args: argparse.Namespace) -> int:
+    """Claim queued ml_jobs and run them. Production companion to the API process."""
+    import time
+
+    from app.config import get_settings
+    from app.services.ml_job_service import process_next_job
+
+    poll = (
+        args.poll_seconds
+        if args.poll_seconds is not None
+        else get_settings().ml_job_poll_seconds
+    )
+    while True:
+        db = _session()
+        try:
+            job = process_next_job(db)
+        except Exception as exc:  # noqa: BLE001
+            print(json.dumps({"error": str(exc)}), file=sys.stderr)
+            db.rollback()
+            job = None
+        finally:
+            db.close()
+        if args.once:
+            if job is None:
+                print(json.dumps({"claimed": False}))
+            else:
+                print(
+                    json.dumps(
+                        {
+                            "claimed": True,
+                            "id": str(job.id),
+                            "status": job.status,
+                            "attempts": job.attempts,
+                        }
+                    )
+                )
+            return 0
+        if job is None:
+            time.sleep(max(0.1, float(poll)))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from app.db.models import UserRole
 
@@ -319,6 +348,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="call the production OpenAI verifier once with synthetic bounded evidence",
     )
     smoke.set_defaults(func=cmd_verify_openai_smoke)
+
+    worker = sub.add_parser(
+        "worker",
+        help="claim and run durable ml_jobs with PostgreSQL SKIP LOCKED",
+    )
+    worker_sub = worker.add_subparsers(dest="worker_cmd", required=True)
+    worker_run = worker_sub.add_parser("run")
+    worker_run.add_argument(
+        "--once",
+        action="store_true",
+        help="recover, claim at most one job, run it, then exit",
+    )
+    worker_run.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=None,
+        help="sleep between empty polls (default: settings.ml_job_poll_seconds)",
+    )
+    worker_run.set_defaults(func=cmd_worker_run)
     return parser
 
 

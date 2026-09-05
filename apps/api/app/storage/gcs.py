@@ -8,7 +8,7 @@ from typing import Any, BinaryIO, Iterator
 
 from app.storage._hashing import as_bytes, sha256_bytes
 from app.storage.base import ObjectMetadata, ObjectPutResult
-from app.storage.exceptions import ObjectNotFoundError, ObjectStorageError
+from app.storage.exceptions import GCS_SDK_INSTALL, ObjectNotFoundError, ObjectStorageError
 
 
 class GCSStorage:
@@ -27,7 +27,8 @@ class GCSStorage:
             from google.cloud import storage as gcs
         except ImportError as exc:
             raise ObjectStorageError(
-                "google.cloud.storage is required for GCSStorage when no client is injected"
+                "google.cloud.storage is required for GCSStorage when no client is injected. "
+                f"Install with: {GCS_SDK_INSTALL}"
             ) from exc
         return gcs.Client()
 

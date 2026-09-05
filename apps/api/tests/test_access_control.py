@@ -152,7 +152,7 @@ def test_demo_staff_and_customer_have_separate_access(client, db_session):
     assert staff.status_code == 200
     assert customer.status_code == 200
     assert staff.json()["user"]["role"] == "dclab_admin"
-    assert staff.json()["user"]["full_name"] == "Admin"
+    assert staff.json()["user"]["full_name"] == "DCLab Admin"
     assert customer.json()["user"]["role"] == "client_user"
     assert customer.json()["user"]["full_name"] == "Business Client"
 
@@ -170,6 +170,53 @@ def test_demo_staff_and_customer_have_separate_access(client, db_session):
         client.get("/app/opportunities", headers={"Authorization": f"Bearer {customer_token}"}).status_code
         == 200
     )
+
+
+def test_demo_seed_covers_platform_business_and_personal_roles(client, db_session):
+    from app.db.models import Workspace, WorkspaceKind
+    from app.services.auth_service import (
+        DEMO_ACCOUNTS,
+        DEMO_PERSONAL_WORKSPACE_SLUG,
+        demo_logins,
+        ensure_demo_users,
+    )
+
+    users = ensure_demo_users(db_session)
+    db_session.commit()
+    logins = demo_logins()
+    assert {row["email"] for row in logins} == {spec["email"] for spec in DEMO_ACCOUNTS}
+    assert {row.role for row in users} == {
+        "dclab_admin",
+        "dclab_developer",
+        "client_user",
+        "business_admin",
+        "business_developer",
+        "workspace_owner",
+    }
+
+    platform_emails = {"admin@dclab.io", "developer@dclab.io"}
+    client_email = "demo@client.io"
+    for login in logins:
+        response = client.post(
+            "/auth/login",
+            json={"email": login["email"], "password": login["password"]},
+        )
+        assert response.status_code == 200, login["email"]
+        assert response.json()["user"]["role"] == login["role"]
+        token = response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        admin_status = 200 if login["email"] in platform_emails else 403
+        business_status = 403 if login["email"] == client_email else 200
+        assert client.get("/admin/experiments", headers=headers).status_code == admin_status
+        assert client.get("/app/opportunities", headers=headers).status_code == 200
+        assert client.get("/business/workspaces", headers=headers).status_code == business_status
+
+    personal = db_session.query(Workspace).filter_by(slug=DEMO_PERSONAL_WORKSPACE_SLUG).one()
+    assert personal.kind == WorkspaceKind.PERSONAL.value
+
+    ensure_demo_users(db_session)
+    db_session.commit()
+    assert db_session.query(Workspace).filter_by(slug=DEMO_PERSONAL_WORKSPACE_SLUG).count() == 1
 
 
 def test_login_returns_a_usable_token(client, client_user):

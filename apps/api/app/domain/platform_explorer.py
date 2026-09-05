@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BusinessSummaryRead(BaseModel):
@@ -99,6 +99,8 @@ class PipelineRunRead(BaseModel):
     model_version: str | None
     started_at: datetime | None
     ended_at: datetime | None
+    current_stage: str | None = None
+    current_stage_status: str | None = None
 
 
 class ModelVersionRead(BaseModel):
@@ -196,6 +198,7 @@ class PipelineMonitorRead(BaseModel):
     capabilities: dict[str, bool]
     hierarchy: dict[str, Any]
     summary: PipelineRunRead
+    stages: list[dict[str, Any]] = Field(default_factory=list)
     events: list[dict[str, Any]]
     llm_invocations: list[dict[str, Any]]
     candidates: list[dict[str, Any]]
