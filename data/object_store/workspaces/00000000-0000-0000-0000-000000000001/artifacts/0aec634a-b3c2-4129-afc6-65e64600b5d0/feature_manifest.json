@@ -1,0 +1,9 @@
+{
+  "pipeline_run_id": "d278e712-2190-412f-b11f-436fb1e478b9",
+  "feature_set_version_id": "95aa742d-832c-41ad-ab07-bce29c5a82d8",
+  "features": [
+    "feature",
+    "segment"
+  ],
+  "candidate_id": "logistic_regression"
+}

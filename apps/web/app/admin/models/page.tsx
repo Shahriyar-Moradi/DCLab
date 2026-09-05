@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/app/components/ui/Badge";
+import { GlassPanel, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
@@ -44,13 +45,12 @@ export default function ModelRegistryPage() {
 
   return (
     <div>
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">DCLab Admin</p>
-      <h1 className="mt-2 font-display text-title text-ink">Model registry</h1>
-      <p className="mt-2 max-w-2xl font-body text-body text-ink-muted">
-        Every model this system has trained — Lab experiments (client/uploaded data) and the bundled
-        simulation pack. Full, unrestricted detail; nothing here goes through the translation layer.
-      </p>
-      <div className="mt-8">
+      <ProductPageHeader
+        eyebrow="DCLab Admin · Registry"
+        title="Model registry"
+        description="Every trained model across Labs, uploaded data, and the bundled simulation pack."
+      />
+      <GlassPanel title="Registered models" description="Technical registry entries are retained with their source, metrics, and candidate portfolio.">
         <Table>
           <thead>
             <tr>
@@ -93,10 +93,8 @@ export default function ModelRegistryPage() {
             ))}
           </tbody>
         </Table>
-        {rows.length === 0 ? (
-          <p className="mt-6 font-body text-body text-ink-muted">No models trained yet.</p>
-        ) : null}
-      </div>
+        {rows.length === 0 ? <p className="mt-6 font-body text-body text-ink-muted">No models trained yet.</p> : null}
+      </GlassPanel>
     </div>
   );
 }

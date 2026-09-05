@@ -23,7 +23,6 @@ from app.db.models import (
     DatasetProfile,
     Environment,
     Experiment,
-    ExperimentCandidate,
     ExperimentTestPrediction,
     PredictionTask,
     WorkflowRun,
@@ -72,6 +71,9 @@ def ingest_dataset(
     workspace_id: UUID = DEFAULT_WORKSPACE_ID,
     dataset_asset: DatasetAsset | None = None,
     created_by: UUID | None = None,
+    project_id: UUID | None = None,
+    ingestion_run_id: UUID | None = None,
+    artifact_id: UUID | None = None,
 ) -> Dataset:
     frame = load_table(location)
     schema = infer_schema(frame)
@@ -82,6 +84,7 @@ def ingest_dataset(
 
         dataset_asset = DatasetAsset(
             workspace_id=workspace_id,
+            project_id=project_id,
             name=name,
             slug=f"{slugify(name)}-{uuid4().hex[:8]}",
             created_by=created_by,
@@ -89,20 +92,37 @@ def ingest_dataset(
         db.add(dataset_asset)
         db.flush()
     digest = hashlib.sha256(Path(location).read_bytes()).hexdigest()
+    size_bytes = Path(location).stat().st_size
+    from app.services.dataset_column_service import persist_dataset_columns, schema_digest_from_columns
+
+    schema_digest = schema_digest_from_columns(list((schema or {}).get("columns") or []))
     row = Dataset(
         workspace_id=workspace_id,
         dataset_asset_id=dataset_asset.id,
         environment_id=environment.id,
+        project_id=project_id if project_id is not None else dataset_asset.project_id,
+        ingestion_run_id=ingestion_run_id,
+        artifact_id=artifact_id,
         name=name,
         source_type=source_type,
         location=str(location),
         version=version,
         content_digest=digest,
+        schema_digest=schema_digest,
+        size_bytes=size_bytes,
         schema_json=schema,
         row_count=int(len(frame)),
         column_count=int(frame.shape[1]),
     )
     db.add(row)
+    db.flush()
+    persist_dataset_columns(
+        db,
+        workspace_id=workspace_id,
+        dataset_id=row.id,
+        schema=schema,
+        frame=frame,
+    )
     db.commit()
     db.refresh(row)
     return row
@@ -192,13 +212,23 @@ def create_experiment(
     pipeline_index: int = 0,
     pipeline_purpose: str = "training",
     commit: bool = True,
+    project_id: UUID | None = None,
+    pipeline_id: UUID | None = None,
+    pipeline_version_id: UUID | None = None,
+    run_number: int | None = None,
 ) -> Experiment:
     if workflow_run is not None and workflow_run.workspace_id != dataset.workspace_id:
         raise ValueError("workflow run and dataset belong to different workspaces")
     cfg = config or SearchConfig()
     row = Experiment(
         workspace_id=dataset.workspace_id,
+        project_id=project_id if project_id is not None else (
+            workflow_run.project_id if workflow_run is not None else dataset.project_id
+        ),
         workflow_run_id=workflow_run.id if workflow_run is not None else None,
+        pipeline_id=pipeline_id,
+        pipeline_version_id=pipeline_version_id,
+        run_number=run_number,
         pipeline_name=pipeline_name,
         pipeline_index=pipeline_index,
         pipeline_purpose=pipeline_purpose,
@@ -217,6 +247,15 @@ def create_experiment(
     else:
         db.flush()
     return row
+
+
+def _persist_pipeline_stage_runs(db: Session, experiment: Experiment, result: dict) -> None:
+    timings = list(result.get("stage_timings") or result.get("execution_stage_timings") or [])
+    if not timings:
+        return
+    from app.services.workflow_execution_service import replace_pipeline_stage_runs
+
+    replace_pipeline_stage_runs(db, experiment, timings)
 
 
 def _persist_experiment_test_predictions(db: Session, experiment_id, result: dict) -> None:
@@ -261,6 +300,7 @@ def execute_experiment(
     *,
     on_stage: Callable[[str], None] | None = None,
     on_event: Callable[[str, dict], None] | None = None,
+    persist_scientific: bool = True,
 ) -> Experiment:
     dataset = db.get(Dataset, experiment.dataset_id)
     task_row = db.get(PredictionTask, experiment.task_id)
@@ -322,18 +362,15 @@ def execute_experiment(
         experiment.status,
         (result.get("funnel") or {}).get("trained"),
     )
-    db.query(ExperimentCandidate).filter(ExperimentCandidate.experiment_id == experiment.id).delete()
-    for row in result.get("candidates") or []:
-        db.add(
-            ExperimentCandidate(
-                experiment_id=experiment.id,
-                candidate_key=str(row.get("candidate_id")),
-                fingerprint=str(row.get("fingerprint") or ""),
-                status=str(row.get("status") or "generated"),
-                payload=row,
-            )
-        )
     _persist_experiment_test_predictions(db, experiment.id, result)
+    _persist_pipeline_stage_runs(db, experiment, result)
+    if persist_scientific:
+        from app.services.scientific_lineage_service import persist_scientific_lineage_from_result
+
+        persist_scientific_lineage_from_result(db, experiment, result)
+    from app.services.candidate_modeling_service import persist_candidate_modeling
+
+    persist_candidate_modeling(db, experiment, result)
     db.commit()
     db.refresh(experiment)
     return experiment

@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     pipeline_llm_verifier_model: str = "gpt-5.6-luna"
     pipeline_llm_verifier_deep_model: str = "gpt-5.6-terra"
     pipeline_llm_timeout_seconds: float = 30.0
+    # Application-level object storage. Default is local disk for tests/dev.
+    # S3/GCS adapters live behind ObjectStorage; core services never import SDKs.
+    object_storage_provider: str = "local"
+    object_storage_root: Path = REPO_ROOT / "data" / "object_store"
+    object_storage_bucket: str = ""
+    object_storage_region: str = "us-east-1"
+    # Zip training-engine source into object storage as a CodeSnapshot artifact.
+    reproducible_code_export_enabled: bool = True
 
 
 @lru_cache

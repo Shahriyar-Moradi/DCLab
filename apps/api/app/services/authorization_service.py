@@ -2,6 +2,13 @@
 
 Membership rows are authoritative when present. Legacy ``users.role`` fallback
 exists only for pre-migration ``dclab_admin`` and ``client_user`` accounts.
+
+Customer workspace roles are canonicalized at the permission check, not by
+rewriting stored membership rows:
+
+* ``business_admin`` → ``workspace_admin``
+* ``business_developer`` → ``viewer`` (read-only; never ``ml_engineer``)
+* ``client_user`` keeps the existing no-membership fallback path
 """
 
 from __future__ import annotations
@@ -35,6 +42,46 @@ class WorkspaceAccess:
     workspace_id: UUID
     platform_role: PlatformRole | None
     workspace_role: WorkspaceRole | None
+
+
+_LEGACY_WORKSPACE_ROLE = {
+    WorkspaceRole.BUSINESS_ADMIN: WorkspaceRole.WORKSPACE_ADMIN,
+    WorkspaceRole.BUSINESS_DEVELOPER: WorkspaceRole.VIEWER,
+}
+
+_ML_WRITE_ROLES = frozenset(
+    {
+        WorkspaceRole.WORKSPACE_OWNER,
+        WorkspaceRole.WORKSPACE_ADMIN,
+        WorkspaceRole.ML_ENGINEER,
+    }
+)
+
+_MEMBER_ADMIN_ROLES = frozenset(
+    {
+        WorkspaceRole.WORKSPACE_OWNER,
+        WorkspaceRole.WORKSPACE_ADMIN,
+    }
+)
+
+BUSINESS_PLANE_USER_ROLES = frozenset(
+    {
+        UserRole.BUSINESS_ADMIN.value,
+        UserRole.BUSINESS_DEVELOPER.value,
+        UserRole.WORKSPACE_OWNER.value,
+        UserRole.WORKSPACE_ADMIN.value,
+        UserRole.ML_ENGINEER.value,
+        UserRole.VIEWER.value,
+    }
+)
+
+
+def canonical_workspace_role(role: WorkspaceRole | None) -> WorkspaceRole | None:
+    """Translate stored membership roles onto the canonical customer model."""
+
+    if role is None:
+        return None
+    return _LEGACY_WORKSPACE_ROLE.get(role, role)
 
 
 def platform_role_for(db: Session, user: User) -> PlatformRole | None:
@@ -88,7 +135,23 @@ def can_write_workspace(db: Session, user: User, workspace_id: UUID) -> bool:
     platform_role = platform_role_for(db, user)
     if platform_role is not None:
         return platform_role is PlatformRole.DCLAB_ADMIN
-    return workspace_role_for(db, user, workspace_id) is WorkspaceRole.BUSINESS_ADMIN
+    return canonical_workspace_role(workspace_role_for(db, user, workspace_id)) in _ML_WRITE_ROLES
+
+
+def can_perform_ml_write(db: Session, user: User, workspace_id: UUID) -> bool:
+    """Customer ML writes: projects, datasets, workflows, runs, experiments."""
+
+    return can_write_workspace(db, user, workspace_id)
+
+
+def can_manage_workspace_members(db: Session, user: User, workspace_id: UUID) -> bool:
+    platform_role = platform_role_for(db, user)
+    if platform_role is not None:
+        return platform_role is PlatformRole.DCLAB_ADMIN
+    return (
+        canonical_workspace_role(workspace_role_for(db, user, workspace_id))
+        in _MEMBER_ADMIN_ROLES
+    )
 
 
 def resolve_workspace_access(

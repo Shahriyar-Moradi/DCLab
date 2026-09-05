@@ -11,7 +11,10 @@ from app.db.models import User
 from app.db.session import get_db
 from app.domain.client_lab import ClientLabProblem, ClientLabQuotaRead, ClientLabRunRead, ClientLabUploadRead
 from app.domain.errors import (
+    IdentityError,
     OpenLabFileError,
+    ProblemSpecNotFoundError,
+    ProjectNotFoundError,
     TrialDatasetColumnsError,
     TrialDatasetTooLargeError,
     TrialQuotaExceededError,
@@ -77,12 +80,23 @@ async def create_run(
     return ClientLabRunRead.model_validate(row)
 
 
+def _optional_uuid(raw: str | None) -> UUID | None:
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return UUID(raw.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="must be a UUID") from exc
+
+
 @router.post("/uploads", response_model=ClientLabUploadRead)
 async def create_upload(
     request: Request,
     category: str = Form(...),
     file: UploadFile = File(...),
     target_column: str | None = Form(None),
+    project_id: str | None = Form(None),
+    problem_spec_id: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ClientLabUploadRead:
@@ -100,11 +114,17 @@ async def create_upload(
             upload_stream=file.file,
             target_column=target_column,
             workspace_id=request_workspace_id(request),
+            project_id=_optional_uuid(project_id),
+            problem_spec_id=_optional_uuid(problem_spec_id),
         )
     except UnknownLabCategoryError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except OpenLabFileError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IdentityError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except (ProjectNotFoundError, ProblemSpecNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/uploads", response_model=list[ClientLabUploadRead])

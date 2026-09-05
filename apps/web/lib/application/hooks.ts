@@ -44,6 +44,7 @@ import {
   BusinessWorkflowRunDetailSchema,
   BusinessModelDetailSchema,
   UploadResultSchema,
+  VerificationAttemptSchema,
   type AdminClientUploadDetail,
   type AdminClientUploadSummary,
   type ClientLabProblem,
@@ -104,6 +105,10 @@ const LoginResponseSchema = z.object({
       "business_admin",
       "business_developer",
       "client_user",
+      "workspace_owner",
+      "workspace_admin",
+      "ml_engineer",
+      "viewer",
     ]),
     full_name: z.string(),
     workspace_id: z.string().nullable(),
@@ -584,7 +589,7 @@ export function usePipelineMonitor(id: string | undefined, businessId?: string):
     enabled: Boolean(id),
     refetchInterval: (query) => {
       const status = query.state.data?.summary.status.toLowerCase();
-      return status && !["completed", "failed"].includes(status) ? 1000 : false;
+      return status && !["completed", "failed", "skipped"].includes(status) ? 1000 : false;
     },
   });
 }
@@ -598,10 +603,12 @@ export function useBusinessWorkspaces(): ReturnType<typeof useQuery<BusinessWork
 
 export function useBusinessDeepAudit() {
   return useMutation({
-    mutationFn: ({ businessId, runId }: { businessId: string; runId: string }) =>
+    mutationFn: ({ businessId, runId }: { businessId?: string; runId: string }) =>
       apiPost(
-        `/business/workspaces/${businessId}/lab-runs/${runId}/verification/deep`,
-        z.record(z.string(), z.unknown()),
+        businessId
+          ? `/business/workspaces/${businessId}/lab-runs/${runId}/verification/deep`
+          : `/admin/lab/runs/${runId}/verification/deep`,
+        VerificationAttemptSchema,
         {},
       ),
   });

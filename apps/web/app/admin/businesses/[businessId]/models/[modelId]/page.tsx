@@ -1,6 +1,7 @@
 "use client";
 
 import { ErrorState } from "@/app/components/ui/ErrorState";
+import { MetricCard, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
 import { usePlatformModel } from "@/lib/application";
@@ -18,8 +19,12 @@ export default function ModelPage() {
   const base = businessMode ? `/business/workspaces/${businessId}` : `/admin/businesses/${businessId}`;
   const canMonitor = !businessMode || ("capabilities" in model && model.capabilities.pipeline_monitor === true);
   return <div>
-    <p className="text-eyebrow uppercase tracking-[0.08em] text-ink-muted"><Link href={root}>{businessMode ? "Business administration" : "Businesses"}</Link> → <Link href={base}>{model.business_name}</Link> → {model.domain_name} → {model.workflow_name} → Model</p>
-    <h1 className="mt-3 font-display text-title">{model.name}</h1><p className="mt-2 font-mono text-data text-ink-muted">{model.slug} · {model.status}</p>
+    <ProductPageHeader
+      breadcrumbs={[{ label: businessMode ? "Business administration" : "Businesses", href: root }, { label: model.business_name, href: base }, { label: model.domain_name }, { label: model.workflow_name }, { label: "Model" }]}
+      title={model.name}
+      description={`${model.slug} · ${model.status}`}
+    />
+    <div className="mb-8 grid gap-3 sm:grid-cols-3"><MetricCard label="Status" value={model.status} /><MetricCard label="Versions" value={String(model.versions.length)} /><MetricCard label="Pipeline monitor" value={canMonitor ? "Available" : "Not enabled"} /></div>
     <h2 className="mb-4 mt-12 font-display text-section">Immutable selected versions</h2>
     <Table><thead><tr><Th>Version</Th><Th>Selected candidate</Th><Th>Workflow run</Th><Th>Pipeline</Th><Th>Created</Th></tr></thead><tbody>{model.versions.map((version) => <tr key={version.id}><Td mono>{version.version}</Td><Td mono>{version.selected_candidate_id}</Td><Td><Link className="font-mono text-data text-navy hover:underline" href={`${base}/workflow-runs/${version.workflow_run_id}`}>{version.workflow_run_id}</Link></Td><Td>{canMonitor ? <Link className="font-semibold text-navy hover:underline" href={businessMode ? `${base}/pipeline-runs/${version.pipeline_run_id}/monitor` : `/admin/pipeline-runs/${version.pipeline_run_id}/monitor`}>Pipeline Monitor</Link> : <span className="text-ink-muted">Not enabled</span>}</Td><Td mono>{new Date(version.created_at).toLocaleString()}</Td></tr>)}</tbody></Table>
   </div>;

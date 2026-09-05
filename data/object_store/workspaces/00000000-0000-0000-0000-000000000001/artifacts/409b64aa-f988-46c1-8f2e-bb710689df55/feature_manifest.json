@@ -1,0 +1,10 @@
+{
+  "pipeline_run_id": "7f89af68-9563-4772-868a-c2adc75aa6d9",
+  "feature_set_version_id": null,
+  "features": [
+    "temperature",
+    "humidity",
+    "pressure"
+  ],
+  "candidate_id": "linear_regression"
+}

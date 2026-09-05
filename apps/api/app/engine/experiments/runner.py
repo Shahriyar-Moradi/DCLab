@@ -627,6 +627,15 @@ def _run_open_ingest_candidates(
                     if SOURCE_ROW_COLUMN in pool.columns
                     else [int(value) for value in fold_holdout_idx]
                 )
+                group_col = validation_plan.group_column
+                train_group_count = validation_group_count = None
+                if group_col and group_col in pool.columns:
+                    train_group_count = int(
+                        pool.iloc[fold_train_idx][group_col].nunique(dropna=True)
+                    )
+                    validation_group_count = int(
+                        pool.iloc[fold_holdout_idx][group_col].nunique(dropna=True)
+                    )
                 duration = max(0.001, (time.perf_counter() - fold_timer) * 1000.0)
                 fold_evidence.append(
                     {
@@ -637,6 +646,8 @@ def _run_open_ingest_candidates(
                         "validation_count": fold.validation_count,
                         "train_row_count": fold.train_count,
                         "validation_row_count": fold.validation_count,
+                        "train_group_count": train_group_count,
+                        "validation_group_count": validation_group_count,
                         "group_overlap": list(fold.group_overlap),
                         "group_overlap_count": len(fold.group_overlap),
                         "train_time_min": fold.train_time_min,

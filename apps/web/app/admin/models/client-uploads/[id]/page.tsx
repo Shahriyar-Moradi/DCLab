@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/app/components/ui/Badge";
+import { ProductPageHeader } from "@/app/components/product/ProductPrimitives";
 import { Button } from "@/app/components/ui/Button";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
@@ -142,30 +143,17 @@ export default function ClientUploadAutoTrainPage() {
 
   return (
     <div>
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">
-        DCLab Admin · Run overview
-      </p>
-      <h1 className="mt-2 font-display text-title text-ink">{upload.original_filename}</h1>
-      <p className="mt-2 font-mono text-data text-ink-muted">
-        {upload.category} · {upload.kind} · {formatTimestamp(upload.created_at)}
-      </p>
-      <p className="mt-3 font-body text-body">
-        <Link className="text-navy underline-offset-2 hover:underline" href={`/lab/runs/${upload.id}`}>
-          Open client run page
-        </Link>
-        {upload.experiment_id ? (
-          <>
-            {" · "}
-            <Link
-              className="text-navy underline-offset-2 hover:underline"
-              href={`/admin/pipeline-runs/${upload.experiment_id}/monitor`}
-            >
-              Open Pipeline Monitor
-            </Link>
-            {upload.workflow_run_id ? <>{" · "}<Link className="text-navy underline-offset-2 hover:underline" href={`/admin/businesses/${upload.workspace_id}/workflow-runs/${upload.workflow_run_id}`}>Open Workflow Run</Link></> : null}
-          </>
-        ) : null}
-      </p>
+      <ProductPageHeader
+        eyebrow="DCLab Admin · Run overview"
+        title={upload.original_filename}
+        description={`${upload.category} · ${upload.kind} · ${formatTimestamp(upload.created_at)}`}
+        status={{ label: upload.pipeline_status, tone: STATUS_TONE[upload.pipeline_status] ?? "amber" }}
+        actions={<>
+          <Link className="text-navy underline-offset-2 hover:underline" href={`/lab/runs/${upload.id}`}>Open client run</Link>
+          {upload.experiment_id ? <Link className="text-navy underline-offset-2 hover:underline" href={`/admin/pipeline-runs/${upload.experiment_id}/monitor`}>Pipeline Monitor</Link> : null}
+          {upload.workflow_run_id ? <Link className="text-navy underline-offset-2 hover:underline" href={`/admin/businesses/${upload.workspace_id}/workflow-runs/${upload.workflow_run_id}`}>Workflow Run</Link> : null}
+        </>}
+      />
 
       <Section title="Run Overview">
         <div className="grid gap-4 md:grid-cols-3">

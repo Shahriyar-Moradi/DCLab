@@ -43,6 +43,10 @@ def cmd_user_create(args: argparse.Namespace) -> int:
         UserRole.CLIENT_USER,
         UserRole.BUSINESS_ADMIN,
         UserRole.BUSINESS_DEVELOPER,
+        UserRole.WORKSPACE_OWNER,
+        UserRole.WORKSPACE_ADMIN,
+        UserRole.ML_ENGINEER,
+        UserRole.VIEWER,
     }
     workspace_id = DEFAULT_WORKSPACE_ID if role in workspace_roles else None
     user = create_user(
@@ -253,6 +257,8 @@ def cmd_verify_openai_smoke(_args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from app.db.models import UserRole
+
     parser = argparse.ArgumentParser(prog="dclab")
     sub = parser.add_subparsers(dest="cmd", required=True)
 

@@ -97,6 +97,33 @@ def user_from_token(db: Session, token: str) -> User:
     return user
 
 
+def register_customer(
+    db: Session,
+    *,
+    email: str,
+    password: str,
+    full_name: str = "",
+) -> User:
+    """Create a customer login with no workspace. They then create a personal or business workspace."""
+
+    from app.domain.errors import IdentityError
+
+    normalized = email.strip().lower()
+    if len(password) < 8:
+        raise IdentityError("password must be at least 8 characters", status_code=400)
+    existing = db.query(User).filter(User.email == normalized).one_or_none()
+    if existing is not None:
+        raise IdentityError("email already registered", status_code=409)
+    return create_user(
+        db,
+        email=normalized,
+        password=password,
+        role=UserRole.WORKSPACE_OWNER,
+        full_name=full_name,
+        workspace_id=None,
+    )
+
+
 def create_user(
     db: Session,
     *,
@@ -106,16 +133,23 @@ def create_user(
     full_name: str = "",
     workspace_id: uuid.UUID | None = None,
 ) -> User:
-    workspace_roles = {
+    legacy_workspace_roles = {
         UserRole.CLIENT_USER: WorkspaceRole.BUSINESS_ADMIN,
         UserRole.BUSINESS_ADMIN: WorkspaceRole.BUSINESS_ADMIN,
         UserRole.BUSINESS_DEVELOPER: WorkspaceRole.BUSINESS_DEVELOPER,
     }
+    canonical_workspace_roles = {
+        UserRole.WORKSPACE_OWNER: WorkspaceRole.WORKSPACE_OWNER,
+        UserRole.WORKSPACE_ADMIN: WorkspaceRole.WORKSPACE_ADMIN,
+        UserRole.ML_ENGINEER: WorkspaceRole.ML_ENGINEER,
+        UserRole.VIEWER: WorkspaceRole.VIEWER,
+    }
+    workspace_roles = {**legacy_workspace_roles, **canonical_workspace_roles}
     platform_roles = {
         UserRole.DCLAB_ADMIN: PlatformRole.DCLAB_ADMIN,
         UserRole.DCLAB_DEVELOPER: PlatformRole.DCLAB_DEVELOPER,
     }
-    if role in workspace_roles and workspace_id is None:
+    if role in legacy_workspace_roles and workspace_id is None:
         raise ValueError(f"{role.value} requires a workspace_id")
     user = User(
         email=email.strip().lower(),
@@ -128,7 +162,7 @@ def create_user(
     db.flush()
     if role in platform_roles:
         db.add(PlatformMembership(user_id=user.id, role=platform_roles[role].value))
-    else:
+    elif role in workspace_roles and workspace_id is not None:
         db.add(
             WorkspaceMembership(
                 workspace_id=workspace_id,

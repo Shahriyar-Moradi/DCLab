@@ -26,6 +26,7 @@ from app.services.lineage_service import (
     seed_business_domains,
 )
 from app.services.observability_service import append_ml_run_event
+from app.services.project_service import create_project
 
 POSTGRES_URL = os.environ.get(
     "MIGRATION_TEST_DATABASE_URL",
@@ -93,10 +94,18 @@ def test_postgres_append_only_trigger_and_sequence_uniqueness(monkeypatch, tmp_p
                 domain_slug="labs",
                 actor=actor,
             )
+            project = create_project(
+                db,
+                actor=actor,
+                workspace_id=workspace.id,
+                name="Events project",
+                slug="events-project",
+            )
             workflow = create_workflow(
                 db,
                 workspace_id=workspace.id,
                 workspace_domain=domain,
+                project_id=project.id,
                 name="Events",
                 slug="events",
                 actor=actor,

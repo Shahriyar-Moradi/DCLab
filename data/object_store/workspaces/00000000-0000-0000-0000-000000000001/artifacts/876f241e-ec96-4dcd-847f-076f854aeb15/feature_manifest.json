@@ -1,0 +1,9 @@
+{
+  "pipeline_run_id": "6dc2a9b8-8d98-4655-b8e9-6665c16c5312",
+  "feature_set_version_id": null,
+  "features": [
+    "feature",
+    "outcome_x"
+  ],
+  "candidate_id": "linear_regression"
+}

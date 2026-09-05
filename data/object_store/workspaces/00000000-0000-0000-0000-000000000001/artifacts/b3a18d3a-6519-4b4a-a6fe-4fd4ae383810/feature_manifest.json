@@ -1,0 +1,10 @@
+{
+  "pipeline_run_id": "febf9db1-a330-4c5f-9490-93294f2ba76a",
+  "feature_set_version_id": "62bb2a19-773d-4a81-8c8d-e20d5e9d7227",
+  "features": [
+    "tenure",
+    "monthly",
+    "segment"
+  ],
+  "candidate_id": "logistic_regression"
+}

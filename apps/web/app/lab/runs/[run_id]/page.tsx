@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/app/components/ui/Button";
+import { GlassPanel, MetricCard, ProductPageHeader, RunProgress } from "@/app/components/product/ProductPrimitives";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
@@ -20,12 +21,6 @@ const STATUS_LABEL: Record<LabRunStatus, string> = {
   failed: "Could not finish",
 };
 
-function stepMarker(state: LabRunStep["state"]): string {
-  if (state === "done") return "✓";
-  if (state === "current") return "●";
-  return "○";
-}
-
 function ProcessingChecklist({
   milestone,
   steps,
@@ -34,43 +29,15 @@ function ProcessingChecklist({
   steps: LabRunStep[];
 }) {
   return (
-    <div className="mt-8 rounded bg-paper-raised p-8">
-      {milestone ? <p className="font-display text-section text-ink">{milestone}</p> : null}
-      <p className="mt-3 font-body text-body text-ink-muted">{PROCESSING_HINT}</p>
-      {steps.length > 0 ? (
-        <ol className="mt-6 space-y-3">
-          {steps.map((step) => (
-            <li
-              key={step.id}
-              className="flex items-baseline gap-3 font-body text-body"
-              aria-current={step.state === "current" ? "step" : undefined}
-            >
-              <span className="w-6 shrink-0 text-center font-mono text-data text-ink-muted" aria-hidden>
-                {stepMarker(step.state)}
-              </span>
-              <span className={step.state === "upcoming" ? "text-ink-muted" : "text-ink"}>
-                {step.label}
-              </span>
-            </li>
-          ))}
-        </ol>
-      ) : null}
-    </div>
+    <GlassPanel className="mt-6" title={milestone || "Processing run"} description={PROCESSING_HINT}>
+      {steps.length > 0 ? <RunProgress items={steps.map((step) => ({ id: step.id, label: step.label, state: step.state }))} /> : null}
+    </GlassPanel>
   );
 }
 
 function formatChance(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "—";
   return `${(value * 100).toFixed(1)}%`;
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">{label}</dt>
-      <dd className="mt-2 font-body text-body text-ink">{value}</dd>
-    </div>
-  );
 }
 
 function CompletedOutcome({
@@ -99,19 +66,17 @@ function CompletedOutcome({
 
   return (
     <div className="mt-8 space-y-8">
-      <section className="rounded bg-paper-raised p-6">
-        <h2 className="font-display text-section text-ink">Overview</h2>
-        <dl className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
-          <Fact label="Dataset" value={outcome.dataset_name} />
-          <Fact label="Records" value={outcome.record_count.toLocaleString()} />
-          <Fact label="Features" value={outcome.feature_count.toLocaleString()} />
-          <Fact label="Target" value={outcome.target_label} />
-          <Fact label="Status" value={STATUS_LABEL[status]} />
-        </dl>
-      </section>
+      <GlassPanel title="Run overview">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <MetricCard label="Dataset" value={outcome.dataset_name} />
+          <MetricCard label="Records" value={outcome.record_count.toLocaleString()} />
+          <MetricCard label="Features" value={outcome.feature_count.toLocaleString()} />
+          <MetricCard label="Target" value={outcome.target_label} />
+          <MetricCard label="Status" value={STATUS_LABEL[status]} />
+        </div>
+      </GlassPanel>
 
-      <section className="rounded bg-paper-raised p-6">
-        <h2 className="font-display text-section text-ink">Result</h2>
+      <GlassPanel title="Result">
         <dl className="mt-6 grid gap-6 sm:grid-cols-3">
           <div>
             <dt className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">Metric</dt>
@@ -126,11 +91,10 @@ function CompletedOutcome({
             <dd className="mt-2 font-display text-title text-ink">{outcome.prediction_count.toLocaleString()}</dd>
           </div>
         </dl>
-      </section>
+      </GlassPanel>
 
-      <section className="rounded bg-paper-raised p-6">
+      <GlassPanel title="Predictions">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 className="font-display text-section text-ink">Predictions</h2>
           {outcome.download_available ? (
             <Button variant="secondary" onClick={() => void onDownload()} disabled={busy}>
               {busy ? "Preparing…" : "Download results"}
@@ -160,12 +124,11 @@ function CompletedOutcome({
             </Table>
           </div>
         ) : null}
-      </section>
+      </GlassPanel>
 
-      <section className="rounded bg-paper-raised p-6">
-        <h2 className="font-display text-section text-ink">Summary</h2>
+      <GlassPanel title="Summary">
         <p className="mt-4 max-w-2xl font-body text-body text-ink">{outcome.summary}</p>
-      </section>
+      </GlassPanel>
     </div>
   );
 }
@@ -192,16 +155,12 @@ export default function LabRunPage() {
 
   return (
     <div>
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">Labs</p>
-      <h1 className="mt-2 font-display text-title text-ink">{run.filename}</h1>
+      <ProductPageHeader eyebrow="ML workspace · Labs" title={run.filename} status={{ label: STATUS_LABEL[run.status] }} description={run.headline || run.message} />
 
       {inProgress ? <ProcessingChecklist milestone={run.milestone || run.headline} steps={run.steps} /> : null}
 
       {run.status === "failed" ? (
-        <div className="mt-8 rounded bg-paper-raised p-8">
-          <p className="font-display text-section text-ink">Could not finish this analysis.</p>
-          <p className="mt-3 font-body text-body text-ink">{run.message}</p>
-        </div>
+        <GlassPanel className="mt-6" title="Could not finish this analysis."><p className="text-body text-ink">{run.message}</p></GlassPanel>
       ) : null}
 
       {run.status === "completed" && run.outcome ? (
@@ -209,18 +168,16 @@ export default function LabRunPage() {
       ) : null}
 
       {run.status === "completed" && !run.outcome ? (
-        <div className="mt-8 rounded bg-paper-raised p-8">
-          <p className="font-body text-body text-ink">{run.message}</p>
-        </div>
+        <GlassPanel className="mt-6"><p className="text-body text-ink">{run.message}</p></GlassPanel>
       ) : null}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        <Link href="/app/labs">
-          <Button variant="secondary">Back to Labs</Button>
+        <Link href="/app/labs" className="inline-flex items-center justify-center rounded border border-hairline bg-paper-raised px-4 py-2 font-body text-body font-medium text-ink transition-colors hover:bg-navy-soft">
+          Back to Labs
         </Link>
         {isPlatformMember ? (
-          <Link href={`/admin/models/client-uploads/${run.id}`}>
-            <Button variant="secondary">Admin record</Button>
+          <Link href={`/admin/models/client-uploads/${run.id}`} className="inline-flex items-center justify-center rounded border border-hairline bg-paper-raised px-4 py-2 font-body text-body font-medium text-ink transition-colors hover:bg-navy-soft">
+            Admin record
           </Link>
         ) : null}
       </div>

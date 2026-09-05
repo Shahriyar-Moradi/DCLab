@@ -44,8 +44,17 @@ def test_engine():
     from app.db.models import DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_SLUG
 
     engine = create_engine(TEST_URL, pool_pre_ping=True)
-    Base.metadata.drop_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
     Base.metadata.create_all(engine)
+    from app.db.integrity import install_immutability_triggers
+
+    # create_all doesn't run Alembic trigger DDL. Install the same immutability
+    # functions 0035 applies so pytest covers PostgreSQL-level enforcement.
+    with engine.begin() as conn:
+        install_immutability_triggers(conn)
     # create_all doesn't run data migrations, so seed the same well-known default
     # workspace the 0005_workspaces migration creates in real environments — every
     # Opportunity/Prediction/Decision row defaults its workspace_id FK to this row.
@@ -84,10 +93,19 @@ def db_session(test_engine) -> Generator[Session, None, None]:
 
         with test_engine.begin() as conn:
             conn.execute(text(
-                "TRUNCATE TABLE ml_run_events, llm_invocations, model_versions, model_assets, "
+                "TRUNCATE TABLE evaluation_metrics, model_evaluations, cv_fold_runs, "
+                "model_hyperparameters, model_selection_decisions, "
+                "feature_lineage, feature_transformations, features, "
+                "feature_set_versions, feature_sets, data_preparation_decisions, "
+                "data_quality_findings, preprocessing_steps, "
+                "ml_run_events, llm_invocations, model_versions, code_snapshots, "
+                "runtime_environments, model_assets, "
+                "pipeline_stage_runs, pipeline_versions, pipelines, workflow_versions, "
                 "workflow_run_inputs, workflow_runs, "
-                "ml_workflows, workspace_domains, business_domains, dataset_assets, "
-                "workspace_capabilities, workspace_memberships, platform_memberships, "
+                "ml_workflows, workspace_domains, business_domains, "
+                "dataset_columns, artifacts, ingestion_runs, data_sources, dataset_assets, "
+                "workspace_capabilities, workspace_entitlements, workspace_memberships, platform_memberships, "
+                "problem_specs, projects, "
                 "ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
                 "lab_decision_records, client_lab_run_audits, client_lab_runs, "

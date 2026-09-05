@@ -1,0 +1,81 @@
+tenure,MonthlyCharges,gender,contract,churn
+,23.30746873774287,,Week-to-week,Yes
+10.0,40.07689541612193,Male,Week-to-week,Yes
+57.0,54.57478737556395,Male,One year,No
+36.0,66.89081634224847,Female,Month-to-month,Yes
+42.0,110.61343388955606,Female,Two year,No
+43.0,89.73610887362977,Male,One year,Yes
+51.0,53.932066074244524,Female,Month-to-month,Yes
+3.0,21.687721509749785,Female,One year,No
+35.0,35.9823694104981,Female,Month-to-month,Yes
+11.0,119.64358755396705,Female,Month-to-month,Yes
+29.0,65.97159798931845,Female,One year,No
+66.0,89.10399163187593,Female,One year,No
+39.0,25.4668061401838,Male,Month-to-month,Yes
+5.0,23.40502789470376,Male,One year,Yes
+39.0,104.58901064450575,Male,Month-to-month,Yes
+10.0,78.78819406668605,Female,Month-to-month,Yes
+54.0,50.8709743204562,Male,Month-to-month,Yes
+,51.73766382813375,Male,Month-to-month,Yes
+70.0,28.923725441774877,Female,Two year,Yes
+45.0,37.266960110857546,,One year,No
+62.0,22.45861074651863,Male,Month-to-month,No
+27.0,103.91248483727817,Female,Two year,No
+11.0,66.63031972031652,Female,One year,No
+37.0,32.72029160585304,Male,Month-to-month,Yes
+32.0,93.9246874033692,Male,Month-to-month,Yes
+48.0,39.5652829945321,Male,Month-to-month,No
+71.0,26.192023514845257,Female,Two year,No
+20.0,79.83921073240381,Female,One year,No
+61.0,109.57577517412815,Female,Two year,No
+10.0,22.69434113847028,Female,Two year,Yes
+25.0,100.51359898916692,Male,One year,No
+56.0,39.01700167283408,Female,Two year,No
+18.0,29.290142163654714,Female,One year,No
+48.0,21.796203565255617,Female,Two year,No
+,49.2975067012086,Female,Two year,Yes
+37.0,92.71117439819182,Female,Month-to-month,Yes
+67.0,69.3178951008117,Male,Two year,No
+58.0,105.29199944545277,Male,Two year,No
+60.0,41.72113035214903,,Two year,No
+39.0,51.518274714343164,Female,Two year,No
+70.0,45.814085185458836,Female,One year,No
+70.0,117.8301137314217,Male,Month-to-month,Yes
+10.0,114.10059946514349,Male,Two year,No
+15.0,54.068617585650905,Female,One year,No
+22.0,63.600150359233105,Male,Two year,No
+40.0,51.43196287038529,Male,Month-to-month,Yes
+59.0,94.65089173054106,Male,One year,No
+35.0,24.001310255319023,Male,Two year,No
+70.0,26.74389330920261,Female,One year,Yes
+26.0,60.40375874684062,Female,Two year,Yes
+66.0,44.5094051114064,Male,One year,No
+,104.52249817012269,Female,Two year,Yes
+52.0,94.18070964752901,Female,Two year,Yes
+17.0,74.57939825229568,Female,Two year,No
+43.0,86.14755143135007,Female,One year,No
+57.0,89.22791066849238,Female,Month-to-month,Yes
+63.0,98.10548233983421,Male,Month-to-month,Yes
+62.0,112.75025971156828,,Two year,No
+69.0,34.973517378773295,Male,One year,No
+10.0,82.61301577453816,Male,Month-to-month,No
+56.0,34.36214431133551,Female,Month-to-month,No
+34.0,64.31309412846969,Female,Month-to-month,No
+49.0,98.6284788623732,Male,Month-to-month,Yes
+20.0,109.46977936861454,Male,One year,No
+2.0,95.92281541245298,Male,Month-to-month,No
+6.0,23.540820408159373,Female,One year,Yes
+70.0,55.94120764337767,Female,One year,Yes
+64.0,36.30568324215289,Female,Month-to-month,No
+,119.88024876324017,Male,One year,No
+31.0,34.401535763003736,Female,One year,No
+18.0,44.43144428464829,Female,Two year,No
+11.0,55.721971277952704,Female,One year,No
+61.0,26.088670290918795,Male,Month-to-month,No
+48.0,107.03849170433338,Male,Month-to-month,Yes
+6.0,83.63614218631243,Male,Two year,No
+15.0,35.974823995841994,Female,One year,No
+41.0,69.82685577125501,,Month-to-month,Yes
+65.0,27.86697586349576,Male,One year,Yes
+71.0,81.09797873598957,Female,Two year,No
+16.0,43.166322809745765,Female,Two year,No

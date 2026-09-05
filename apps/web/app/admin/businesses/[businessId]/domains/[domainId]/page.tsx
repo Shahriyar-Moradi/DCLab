@@ -1,6 +1,7 @@
 "use client";
 
 import { ErrorState } from "@/app/components/ui/ErrorState";
+import { MetricCard, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
 import { usePlatformDomain } from "@/lib/application";
@@ -17,9 +18,11 @@ export default function DomainPage() {
   const root = businessMode ? "/business" : "/admin/businesses";
   const base = businessMode ? `/business/workspaces/${businessId}` : `/admin/businesses/${businessId}`;
   return <div>
-    <p className="text-eyebrow uppercase tracking-[0.08em] text-ink-muted"><Link href={root}>{businessMode ? "Business administration" : "Businesses"}</Link> → <Link href={base}>{domain.business_name}</Link> → {domain.name}</p>
-    <h1 className="mt-3 font-display text-title">{domain.name}</h1>
-    <p className="mt-2 max-w-3xl text-body text-ink-muted">{domain.description || "Configurable business domain"}</p>
+    <ProductPageHeader
+      breadcrumbs={[{ label: businessMode ? "Business administration" : "Businesses", href: root }, { label: domain.business_name, href: base }, { label: domain.name }]}
+      title={domain.name}
+      description={domain.description || "Configurable business domain"}
+    />
     <div className="mt-8 grid gap-4 md:grid-cols-2"><Metric label="Workflows" value={domain.workflow_count} /><Metric label="Runs" value={domain.run_count} /></div>
     <h2 className="mb-4 mt-12 font-display text-section">Workflows</h2>
     <Table><thead><tr><Th>Workflow</Th><Th>Objective</Th><Th>Status</Th><Th>Runs</Th></tr></thead><tbody>{domain.workflows.map((row) => <tr key={row.id}><Td><Link className="font-semibold text-navy hover:underline" href={`${base}/workflows/${row.id}`}>{row.name}</Link></Td><Td>{row.business_objective || row.description || "—"}</Td><Td>{row.status}</Td><Td mono>{row.run_count}</Td></tr>)}</tbody></Table>
@@ -27,4 +30,4 @@ export default function DomainPage() {
     <Table><thead><tr><Th>Workflow</Th><Th>Run</Th><Th>Status</Th><Th>Pipelines</Th></tr></thead><tbody>{domain.runs.map((row) => <tr key={row.id}><Td>{row.workflow_name}</Td><Td><Link className="font-mono text-data text-navy hover:underline" href={`${base}/workflow-runs/${row.id}`}>{row.id}</Link></Td><Td>{row.status}</Td><Td mono>{row.pipeline_count}</Td></tr>)}</tbody></Table>
   </div>;
 }
-function Metric({ label, value }: { label: string; value: number }) { return <div className="rounded bg-paper-raised p-6"><p className="text-eyebrow uppercase text-ink-muted">{label}</p><p className="mt-2 font-mono text-title">{value}</p></div>; }
+function Metric({ label, value }: { label: string; value: number }) { return <MetricCard label={label} value={String(value)} />; }

@@ -1,29 +1,20 @@
 import type { Metadata } from "next";
-import { Fraunces, IBM_Plex_Mono, Public_Sans } from "next/font/google";
-import { SiteFooter } from "@/app/components/layout/SiteFooter";
-import { SiteHeader } from "@/app/components/layout/SiteHeader";
-import { SiteMain } from "@/app/components/layout/SiteMain";
+import localFont from "next/font/local";
+import { RouteShell } from "@/app/components/layout/RouteShell";
 import { QueryProvider } from "@/lib/application";
 import "./globals.css";
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: ["500", "600"],
-  variable: "--font-display",
+const geistSans = localFont({
+  src: "./fonts/GeistVF.woff",
+  variable: "--font-sans",
+  weight: "100 900",
   display: "swap",
 });
 
-const publicSans = Public_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-body",
-  display: "swap",
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const geistMono = localFont({
+  src: "./fonts/GeistMonoVF.woff",
   variable: "--font-mono",
+  weight: "100 900",
   display: "swap",
 });
 
@@ -39,15 +30,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${fraunces.variable} ${publicSans.variable} ${ibmPlexMono.variable} bg-paper font-body text-ink antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className="bg-paper font-sans text-ink antialiased">
         <QueryProvider>
-          <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-navy focus:px-3 focus:py-2 focus:text-white">
+          <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-navy focus:px-3 focus:py-2 focus:text-white">
             Skip to content
           </a>
-          <SiteHeader />
-          <SiteMain>{children}</SiteMain>
-          <SiteFooter />
+          <RouteShell>{children}</RouteShell>
         </QueryProvider>
       </body>
     </html>

@@ -248,6 +248,7 @@ export const ClientLabUploadSchema = z.object({
   structured: z.boolean(),
   progress: z.enum(["looking", "ready", "saved"]),
   message: z.string(),
+  pipeline_status: LabRunStatusSchema,
   insights: z.array(ClientInsightSchema),
   outcome: LabRunOutcomeSchema.nullable(),
   created_at: z.string(),
@@ -736,3 +737,26 @@ export type BusinessWorkflowRunDetail = z.infer<typeof BusinessWorkflowRunDetail
 export type PlatformModelDetail = z.infer<typeof PlatformModelDetailSchema>;
 export type BusinessModelDetail = z.infer<typeof BusinessModelDetailSchema>;
 export type PipelineMonitor = z.infer<typeof PipelineMonitorSchema>;
+
+export const VerificationAttemptSchema = z.object({
+  id: z.uuid(),
+  run_id: z.uuid(),
+  experiment_id: z.uuid().nullable(),
+  audit_mode: z.string(),
+  deterministic_status: z.string(),
+  deterministic_schema_version: z.number(),
+  llm_status: z.string(),
+  llm_model: z.string(),
+  llm_provider: z.string(),
+  prompt_version: z.string(),
+  schema_version: z.number(),
+  input_digest: z.string(),
+  redaction_summary: z.record(z.string(), z.unknown()),
+  llm_report: z.record(z.string(), z.unknown()).nullable(),
+  error: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  started_at: z.string(),
+  completed_at: z.string().nullable(),
+  created_at: z.string(),
+});
+export type VerificationAttempt = z.infer<typeof VerificationAttemptSchema>;

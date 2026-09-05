@@ -2,11 +2,11 @@
 
 import { BrandLogo } from "@/app/components/brand/BrandLogo";
 import { useSession } from "@/lib/application";
-import { displayName, isPlatformRole, roleLabel } from "@/lib/infrastructure/session";
+import { defaultProductRoute } from "@/app/components/layout/app-navigation";
 import { cn } from "@/lib/cn";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 const MARKETING = [
@@ -18,58 +18,20 @@ const MARKETING = [
   { href: "/pricing", label: "Pricing" },
 ];
 
-// Business-facing workspace. Everything here is client-safe.
-const WORKSPACE = [
-  { href: "/app/dashboards", label: "Dashboard" },
-  { href: "/app/insights", label: "Insights" },
-  { href: "/app/opportunities", label: "Opportunities" },
-  { href: "/app/decisions", label: "Decisions" },
-  { href: "/app/opportunities/upload", label: "Upload" },
-  { href: "/app/labs", label: "Labs" },
-];
-
-// DCLab staff only. Never rendered for a client user, and the middleware plus
-// the API both reject the routes independently of what the nav shows.
-const ADMIN = [
-  { href: "/admin/businesses", label: "Businesses" },
-  { href: "/admin/lab", label: "Labs & Experiments" },
-  { href: "/admin/models", label: "Registry" },
-  { href: "/admin/monitoring", label: "Monitoring" },
-];
-
-const BUSINESS_ADMIN = [{ href: "/business", label: "Business Admin" }];
-
 const BOOK_A_DEMO_HREF = "mailto:hello@decision.ai?subject=Book%20a%20demo";
 
-function isActive(pathname: string, href: string) {
-  if (href === "/app/labs") {
-    return pathname.startsWith("/app/labs") || pathname.startsWith("/lab/runs");
-  }
-  if (href === "/app/opportunities") {
-    return pathname.startsWith("/app/opportunities") && !pathname.startsWith("/app/opportunities/upload");
-  }
-  if (href === "/admin/lab") return pathname.startsWith("/admin/lab");
+function isMarketingActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function SiteHeader() {
   const pathname = usePathname();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { user, loaded, signOut } = useSession();
-  const isPlatformMember = user ? isPlatformRole(user.role) : false;
-  const isBusinessMember = user?.role === "business_admin" || user?.role === "business_developer";
-  const workspaceNav = isPlatformMember ? [...WORKSPACE, ...ADMIN] : isBusinessMember ? [...WORKSPACE, ...BUSINESS_ADMIN] : WORKSPACE;
-
-  function handleSignOut() {
-    signOut();
-    router.push("/login");
-    router.refresh();
-  }
+  const { user, loaded } = useSession();
 
   return (
     <header className="relative z-40 border-b border-hairline bg-paper/85 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3 lg:px-8">
+      <div className="mx-auto flex max-w-page items-center justify-between gap-4 px-page-x py-3 lg:px-page-x-lg">
         <BrandLogo />
         <nav className="hidden items-center gap-5 xl:flex" aria-label="Marketing">
           {MARKETING.map((item) => (
@@ -78,7 +40,7 @@ export function SiteHeader() {
               href={item.href}
               className={cn(
                 "text-[0.82rem] font-medium",
-                isActive(pathname, item.href) ? "text-ink" : "text-ink-muted hover:text-ink",
+                isMarketingActive(pathname, item.href) ? "text-ink" : "text-ink-muted hover:text-ink",
               )}
             >
               {item.label}
@@ -86,22 +48,10 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="hidden items-center gap-4 md:flex">
-          {user ? (
-            <>
-              <div className="text-right">
-                <p className="text-[0.82rem] font-medium text-ink">Signed in as {displayName(user)}</p>
-                <p className="text-[0.68rem] text-ink-muted">
-                  {user.email} · {roleLabel(user.role)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="text-[0.82rem] font-medium text-ink-muted hover:text-ink"
-              >
-                Sign out
-              </button>
-            </>
+          {loaded && user ? (
+            <Link href={defaultProductRoute(user.role)} className="text-[0.82rem] font-medium text-ink-muted hover:text-ink">
+              Open workspace
+            </Link>
           ) : (
             <Link href="/login" className="text-[0.82rem] font-medium text-ink-muted hover:text-ink">
               Sign In
@@ -118,30 +68,9 @@ export function SiteHeader() {
           <Menu size={22} className="text-ink" />
         </button>
       </div>
-      {loaded && user ? (
-      <div className="border-t border-hairline bg-navy-soft/40">
-        <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-5 gap-y-2 px-5 py-2 lg:px-8" aria-label="Workspace">
-          <span className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-brand">
-            {isPlatformMember ? "DCLab Platform" : "Business Workspace"}
-          </span>
-          {workspaceNav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "text-[0.82rem] font-medium",
-                isActive(pathname, item.href) ? "text-ink" : "text-ink-muted hover:text-ink",
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
-      ) : null}
       {open ? (
-        <div className="fixed inset-0 z-50 bg-black/60 xl:hidden">
-          <aside className="h-full w-72 bg-paper-raised p-5">
+        <div className="app-overlay fixed inset-0 z-50 bg-black/60 xl:hidden">
+          <aside className="app-drawer-enter h-full w-sidebar bg-paper-raised p-5">
             <div className="flex items-center justify-between">
               <BrandLogo />
               <button type="button" aria-label="Close menu" onClick={() => setOpen(false)}>
@@ -149,28 +78,15 @@ export function SiteHeader() {
               </button>
             </div>
             <nav className="mt-8 flex flex-col gap-3">
-              {[...MARKETING, ...(user ? workspaceNav : [])].map((item) => (
+              {MARKETING.map((item) => (
                 <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="text-ink">
                   {item.label}
                 </Link>
               ))}
-              {user ? (
-                <>
-                  <p className="mt-6 font-body text-body text-ink">Signed in as {displayName(user)}</p>
-                  <p className="font-body text-body text-ink-muted">
-                    {user.email} · {roleLabel(user.role)}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpen(false);
-                      handleSignOut();
-                    }}
-                    className="text-left text-ink-muted"
-                  >
-                    Sign out
-                  </button>
-                </>
+              {loaded && user ? (
+                <Link href={defaultProductRoute(user.role)} onClick={() => setOpen(false)} className="mt-4 text-ink">
+                  Open workspace
+                </Link>
               ) : (
                 <Link href="/login" onClick={() => setOpen(false)} className="text-ink-muted">
                   Sign In

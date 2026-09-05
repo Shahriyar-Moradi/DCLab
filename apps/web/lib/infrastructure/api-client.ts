@@ -133,6 +133,7 @@ export function uploadFile<T>(
         /* keep text */
       }
       if (xhr.status < 200 || xhr.status >= 300) {
+        if (xhr.status === 401) clearToken();
         reject(new ApiError(xhr.status, body, "Upload failed"));
         return;
       }

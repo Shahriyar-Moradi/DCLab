@@ -2,6 +2,7 @@
 
 import { InsightCard } from "@/app/components/insights/InsightCard";
 import { CATEGORY_META, CATEGORY_ORDER } from "@/app/components/insights/categoryMeta";
+import { GlassPanel, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
 import { Button } from "@/app/components/ui/Button";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
@@ -12,7 +13,7 @@ import {
   type InsightCategoryValue,
 } from "@/lib/domain";
 import Link from "next/link";
-import { isPlatformRole } from "@/lib/infrastructure/session";
+import { canWriteWorkspaceSession, isPlatformRole } from "@/lib/infrastructure/session";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -81,8 +82,8 @@ export default function ClientLabsPage() {
   if (problems.isPending) {
     return (
       <div>
-        <LabsHero />
-        <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8">
+        <ProductPageHeader eyebrow="ML workspace" title="Labs" description="Loading available ML workflows and saved datasets." />
+        <div>
           <div className="grid gap-4 md:grid-cols-2">
             <Skeleton className="h-48" />
             <Skeleton className="h-48" />
@@ -95,8 +96,8 @@ export default function ClientLabsPage() {
   if (problems.isError) {
     return (
       <div>
-        <LabsHero />
-        <div className="mx-auto max-w-3xl px-5 py-12">
+        <ProductPageHeader eyebrow="ML workspace" title="Labs" description="Upload data or run a bounded business problem trial." />
+        <div className="max-w-3xl">
           <ErrorState
             body="Could not load the trial problems from the backend. Check that the API is running."
             onRetry={() => void problems.refetch()}
@@ -115,8 +116,12 @@ export default function ClientLabsPage() {
 
   return (
     <div>
-      <LabsHero />
-      <div className="mx-auto max-w-7xl px-5 pb-16 lg:px-8">
+      <ProductPageHeader
+        eyebrow="ML workspace"
+        title="Labs"
+        description="Upload a dataset for automatic analysis, or run a bounded problem trial on sample data or a matching CSV."
+      />
+      <div className="pb-8">
         <div className="space-y-12">
           {CATEGORY_ORDER.map((category) => {
             const items = byCategory.get(category) ?? [];
@@ -150,20 +155,6 @@ export default function ClientLabsPage() {
   );
 }
 
-function LabsHero() {
-  return (
-    <section className="bg-midnight px-5 pb-10 pt-16 text-center lg:px-8 lg:pt-20">
-      <p className="text-eyebrow uppercase text-cyan">Labs</p>
-      <h1 className="mt-4 text-4xl font-bold text-white lg:text-5xl">Try DCLab Before You Commit.</h1>
-      <p className="mx-auto mt-3 max-w-2xl text-white/65">
-        At the top of each category, drop any usual data file — no particular field names required. Below that, pick a
-        business problem and run it on sample data or a matching file. Trials stay bounded so they never turn into a
-        bill.
-      </p>
-    </section>
-  );
-}
-
 function runPath(runId: string): string {
   return `/lab/runs/${runId}`;
 }
@@ -176,9 +167,9 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [targetColumn, setTargetColumn] = useState("");
   const [targetOptions, setTargetOptions] = useState<string[]>([]);
-  const { user } = useSession();
+  const { user, loaded } = useSession();
   const isPlatformMember = user ? isPlatformRole(user.role) : false;
-  const canWrite = user?.role !== "dclab_developer" && user?.role !== "business_developer";
+  const canWrite = loaded && user != null && canWriteWorkspaceSession(user.role);
 
   async function onFileChange(file: File | undefined) {
     setFileName(file?.name ?? null);
@@ -205,7 +196,7 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
   const recent = uploads.data ?? [];
 
   return (
-    <article className="mt-4 rounded bg-paper-raised p-6">
+    <GlassPanel className="mt-4" title="Dataset input" description={`Save a source file for ${category}; DCLab preserves it before analysis.`}>
       <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">Your file · any usual format</p>
       <h3 className="mt-2 font-display text-lg text-ink">No template required</h3>
       <p className="mt-2 font-body text-body text-ink-muted">
@@ -288,7 +279,7 @@ function OpenFileCard({ category }: { category: InsightCategoryValue }) {
           ))}
         </ul>
       ) : null}
-    </article>
+    </GlassPanel>
   );
 }
 
@@ -298,8 +289,8 @@ function LabProblemCard({ problem }: { problem: ClientLabProblem }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<ClientLabRun | null>(null);
-  const { user } = useSession();
-  const canWrite = user?.role !== "dclab_developer" && user?.role !== "business_developer";
+  const { user, loaded } = useSession();
+  const canWrite = loaded && user != null && canWriteWorkspaceSession(user.role);
 
   const remaining = quota.data?.runs_remaining ?? problem.max_trial_runs;
   const exhausted = remaining <= 0;
@@ -315,11 +306,10 @@ function LabProblemCard({ problem }: { problem: ClientLabProblem }) {
   }
 
   return (
-    <article className="rounded bg-paper-raised p-6">
+    <GlassPanel title={problem.question} description={`Sample data: ${problem.sample_scenario}`}>
       <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">
         Sample data: {problem.sample_scenario}
       </p>
-      <h3 className="mt-2 font-display text-lg text-ink">{problem.question}</h3>
       <p className="mt-3 font-mono text-data text-ink-muted">
         {exhausted ? "No trial runs left for this problem" : `${remaining} of ${problem.max_trial_runs} trial runs left`}
         {" · "}up to {problem.max_upload_rows.toLocaleString()} rows per upload
@@ -350,7 +340,7 @@ function LabProblemCard({ problem }: { problem: ClientLabProblem }) {
       {runTrial.isError ? <p className="mt-3 font-body text-body text-oxblood">{runTrial.error.message}</p> : null}
 
       {lastRun ? <LabRunResult run={lastRun} /> : null}
-    </article>
+    </GlassPanel>
   );
 }
 

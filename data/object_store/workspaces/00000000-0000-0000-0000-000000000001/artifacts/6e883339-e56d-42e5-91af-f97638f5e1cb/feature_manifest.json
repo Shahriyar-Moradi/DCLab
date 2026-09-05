@@ -1,0 +1,10 @@
+{
+  "pipeline_run_id": "d51cd036-4d3c-4422-8b06-64ccf981c1cf",
+  "feature_set_version_id": "38ead6df-8b08-473a-a671-61df19dd8da2",
+  "features": [
+    "tenure",
+    "MonthlyCharges",
+    "segment"
+  ],
+  "candidate_id": "linear_regression"
+}

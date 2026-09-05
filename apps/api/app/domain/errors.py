@@ -35,3 +35,47 @@ class UnknownLabCategoryError(ValueError):
 
 class OpenLabFileError(ValueError):
     """The uploaded Labs file could not be taken in (empty, too large, or unreadable)."""
+
+
+class IdentityError(Exception):
+    """Workspace identity, membership, or entitlement rule was violated."""
+
+    def __init__(self, message: str, *, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class ProjectNotFoundError(LookupError):
+    """No project matches the given workspace-scoped id."""
+
+
+class ProblemSpecNotFoundError(LookupError):
+    """No problem spec matches the given workspace-scoped id."""
+
+
+class ArtifactNotFoundError(LookupError):
+    """No artifact matches the given workspace-scoped id."""
+
+
+class DataSourceNotFoundError(LookupError):
+    """No data source matches the given workspace-scoped id."""
+
+
+class DataSourceConfigurationError(ValueError):
+    """DataSource.configuration contained a secret or an invalid source_type."""
+
+
+class IngestionRunNotFoundError(LookupError):
+    """No ingestion run matches the given workspace-scoped id."""
+
+
+class WorkflowVersionNotFoundError(LookupError):
+    """No workflow version matches the given workspace-scoped id."""
+
+
+class PipelineDefinitionNotFoundError(LookupError):
+    """No pipeline definition matches the given workspace-scoped id."""
+
+
+class PipelineVersionNotFoundError(LookupError):
+    """No pipeline version matches the given workspace-scoped id."""

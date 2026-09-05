@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/app/components/ui/Badge";
+import { GlassPanel, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
@@ -18,15 +19,9 @@ export default function MonitoringPage() {
 
   return (
     <div>
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">DCLab Admin</p>
-      <h1 className="mt-2 font-display text-title text-ink">Monitoring</h1>
-      <p className="mt-2 max-w-2xl font-body text-body text-ink-muted">
-        Retrain history, metric deltas between consecutive runs of the same task or use case, and
-        dataset sync health.
-      </p>
+      <ProductPageHeader eyebrow="DCLab Admin · Operations" title="Monitoring" description="Retrain history, evaluation deltas, and dataset synchronization health." />
 
-      <h2 className="mt-10 font-display text-section text-ink">Retrain history &amp; metric deltas</h2>
-      <div className="mt-4">
+      <GlassPanel className="mt-6" title="Retrain history &amp; metric deltas">
         <Table>
           <thead>
             <tr>
@@ -69,10 +64,9 @@ export default function MonitoringPage() {
         {retrainEvents.length === 0 ? (
           <p className="mt-6 font-body text-body text-ink-muted">No retrains recorded yet.</p>
         ) : null}
-      </div>
+      </GlassPanel>
 
-      <h2 className="mt-10 font-display text-section text-ink">Dataset sync health</h2>
-      <div className="mt-4">
+      <GlassPanel className="mt-6" title="Dataset sync health">
         <Table>
           <thead>
             <tr>
@@ -102,9 +96,9 @@ export default function MonitoringPage() {
         {datasetHealth.length === 0 ? (
           <p className="mt-6 font-body text-body text-ink-muted">No datasets ingested yet.</p>
         ) : null}
-      </div>
+      </GlassPanel>
 
-      <p className="mt-10 rounded bg-paper-raised p-4 font-body text-body text-ink-muted">{driftNote}</p>
+      <GlassPanel className="mt-6"><p className="text-body text-ink-muted">{driftNote}</p></GlassPanel>
     </div>
   );
 }

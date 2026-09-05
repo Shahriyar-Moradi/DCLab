@@ -4,9 +4,8 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 // Marketing pages manage their own full-bleed sections and inner max-width
-// containers. Workspace pages (opportunities, decisions, lab, upload) render a
-// bare page body and rely on the shell for consistent padding.
-const FULL_BLEED_ROUTES = ["/company", "/solutions", "/platform", "/industries", "/resources", "/pricing", "/app/dashboards"];
+// containers. Authenticated product routes use AppShell instead of this main.
+const FULL_BLEED_ROUTES = ["/company", "/solutions", "/platform", "/industries", "/resources", "/pricing"];
 
 function isFullBleed(pathname: string) {
   if (pathname === "/") return true;
@@ -16,7 +15,7 @@ function isFullBleed(pathname: string) {
 export function SiteMain({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   return (
-    <main id="main" className={isFullBleed(pathname) ? undefined : "mx-auto max-w-7xl px-5 py-10 lg:px-8 lg:py-14"}>
+    <main id="main" className={isFullBleed(pathname) ? undefined : "site-page"}>
       {children}
     </main>
   );

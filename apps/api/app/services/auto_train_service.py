@@ -28,11 +28,13 @@ from sqlalchemy.orm import Session
 from app.config import REPO_ROOT, get_settings
 from app.db.models import (
     ClientLabUpload,
+    Dataset,
     Experiment,
     ExperimentCandidate,
     LabDecisionRecord,
     ModelAsset,
     ModelVersion,
+    Project,
     WorkflowRun,
 )
 from app.db.session import get_session_factory
@@ -93,6 +95,28 @@ SIMPLE_KINDS = {"spreadsheet", "json", "table_file"}
 
 def is_simple_tabular(upload: ClientLabUpload) -> bool:
     return upload.kind in SIMPLE_KINDS and upload.has_named_fields and upload.record_count >= MIN_TRAIN_ROWS
+
+
+def _resolve_auto_train_project_id(
+    db: Session,
+    upload: ClientLabUpload,
+    workflow_run: WorkflowRun | None,
+) -> UUID | None:
+    if workflow_run is not None and workflow_run.project_id is not None:
+        return workflow_run.project_id
+    if upload.dataset_id is not None:
+        source = db.get(Dataset, upload.dataset_id)
+        if source is not None and source.project_id is not None:
+            return source.project_id
+    from app.domain.data_plane import LABS_PROJECT_SLUG
+
+    labs = db.scalar(
+        select(Project).where(
+            Project.workspace_id == upload.workspace_id,
+            Project.slug == LABS_PROJECT_SLUG,
+        )
+    )
+    return labs.id if labs is not None else None
 
 
 def _load_upload_frame(stored_path: str) -> pd.DataFrame:
@@ -419,6 +443,9 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             partial_result["error"] = reason
             experiment.result = partial_result
             experiment.failure_reason = reason[:2048]
+            from app.services.workflow_execution_service import replace_pipeline_stage_runs
+
+            replace_pipeline_stage_runs(db, experiment, final_timings)
         _mark(
             db,
             row,
@@ -880,6 +907,9 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         frame.to_csv(dataset_path, index=False)
 
         env = seed_dogfood(db)
+        # Prepared CSV is a new Dataset version. Keep the Labs ingest lineage:
+        # same IngestionRun/DataSource as the original upload Dataset. Do not
+        # invent a second ingest engine or a second training runner.
         dataset = ingest_dataset(
             db,
             environment=env,
@@ -888,6 +918,8 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             source_type="csv",
             version="v1",
             workspace_id=upload.workspace_id,
+            project_id=_resolve_auto_train_project_id(db, upload, workflow_run),
+            ingestion_run_id=upload.ingestion_run_id,
         )
 
         task_type = target.task_type
@@ -987,6 +1019,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             experiment,
             on_stage=_experiment_stage,
             on_event=observer.callback if observer is not None else None,
+            persist_scientific=False,
         )
         if experiment.status != "COMPLETED":
             result = dict(experiment.result or {})
@@ -1170,6 +1203,120 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             log["stage_timings"] = list(result["stage_timings"])
             experiment.result = result
             db.commit()
+            from app.services.scientific_lineage_service import (
+                ScientificRunEvidence,
+                lab_decision_sources_for_upload,
+                persist_scientific_lineage,
+            )
+
+            result_prep = (
+                result.get("preprocessing")
+                if isinstance(result.get("preprocessing"), dict)
+                else {}
+            )
+            persist_scientific_lineage(
+                db,
+                experiment,
+                ScientificRunEvidence(
+                    quality=quality,
+                    missing_plan=missing_plan,
+                    leakage_exclusions=list(development_plan.excluded_features),
+                    feature_actions=list(fe_transformations),
+                    numerical_cols=[
+                        str(name)
+                        for name in (result_prep.get("numeric_columns") or num_cols)
+                    ],
+                    categorical_cols=[
+                        str(name)
+                        for name in (result_prep.get("categorical_columns") or cat_cols)
+                    ],
+                    modeled_features=list(modeled_cols),
+                    dropped_columns=list(missing_plan.dropped_columns),
+                    source_dataset_id=upload.dataset_id,
+                    lab_decision_sources=lab_decision_sources_for_upload(db, upload.id),
+                    fit_scope="fold_train",
+                ),
+            )
+            from app.services.candidate_modeling_service import (
+                link_candidates_to_feature_set_version,
+                link_holdout_evaluation_to_model_version,
+            )
+            from app.services.reproducibility_service import (
+                persist_reproducibility,
+                store_report_artifacts,
+            )
+
+            link_candidates_to_feature_set_version(db, experiment)
+            repro = persist_reproducibility(db, experiment, result)
+            if workflow_run is not None:
+                from app.services.lineage_service import (
+                    create_model_asset,
+                    create_model_version,
+                )
+
+                model_asset = db.scalar(
+                    select(ModelAsset).where(
+                        ModelAsset.workflow_id == workflow_run.workflow_id,
+                    )
+                )
+                if model_asset is None:
+                    slug = "client-lab-selected-model"
+                    taken = db.scalar(
+                        select(ModelAsset.id).where(
+                            ModelAsset.workspace_id == upload.workspace_id,
+                            ModelAsset.slug == slug,
+                        )
+                    )
+                    if taken is not None:
+                        slug = f"client-lab-selected-model-{workflow_run.workflow.slug}"
+                    model_asset = create_model_asset(
+                        db,
+                        workspace_id=upload.workspace_id,
+                        workflow=workflow_run.workflow,
+                        name="Client Lab Selected Model",
+                        slug=slug,
+                    )
+                selected_key = (result.get("selection") or {}).get(
+                    "selected_candidate_id"
+                ) or (result.get("best_single") or {}).get("candidate_id")
+                selected_candidate = db.scalar(
+                    select(ExperimentCandidate).where(
+                        ExperimentCandidate.experiment_id == experiment.id,
+                        ExperimentCandidate.candidate_key == selected_key,
+                    )
+                )
+                if selected_candidate is None:
+                    raise RuntimeError("selected candidate was not persisted")
+                version_count = db.query(ModelVersion).filter(
+                    ModelVersion.model_asset_id == model_asset.id
+                ).count()
+                model_version = create_model_version(
+                    db,
+                    model_asset=model_asset,
+                    pipeline_run=experiment,
+                    selected_candidate=selected_candidate,
+                    version=f"v{version_count + 1}",
+                    runtime_environment_id=repro.runtime_environment.id,
+                    code_snapshot_id=(
+                        repro.code_snapshot.id if repro.code_snapshot is not None else None
+                    ),
+                    model_artifact_id=(
+                        repro.model_artifact.id if repro.model_artifact is not None else None
+                    ),
+                    preprocessor_artifact_id=(
+                        repro.preprocessor_artifact.id
+                        if repro.preprocessor_artifact is not None
+                        else None
+                    ),
+                    feature_manifest_artifact_id=(
+                        repro.feature_manifest_artifact.id
+                        if repro.feature_manifest_artifact is not None
+                        else None
+                    ),
+                    feature_set_version_id=repro.feature_set_version_id,
+                )
+                link_holdout_evaluation_to_model_version(db, experiment, model_version)
+            db.commit()
             preliminary_report = build_technical_run_report(
                 db,
                 upload=upload,
@@ -1178,7 +1325,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 pipeline_log=log,
             )
             verification_timer = _evidence_start("deterministic_verification")
-            verification = verify_pipeline(preliminary_report)
+            verification = verify_pipeline(preliminary_report, db=db)
             _evidence_finish(verification_timer)
             result["deterministic_verification"] = verification
             log["deterministic_verification"] = verification
@@ -1214,48 +1361,10 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 encoding="utf-8",
             )
             experiment.result = result
-            db.commit()
-            if workflow_run is not None:
-                from app.services.lineage_service import (
-                    create_model_asset,
-                    create_model_version,
-                )
+            from app.services.workflow_execution_service import replace_pipeline_stage_runs
 
-                model_asset = db.scalar(
-                    select(ModelAsset).where(
-                        ModelAsset.workflow_id == workflow_run.workflow_id,
-                        ModelAsset.slug == "client-lab-selected-model",
-                    )
-                )
-                if model_asset is None:
-                    model_asset = create_model_asset(
-                        db,
-                        workspace_id=upload.workspace_id,
-                        workflow=workflow_run.workflow,
-                        name="Client Lab Selected Model",
-                        slug="client-lab-selected-model",
-                    )
-                selected_key = (result.get("selection") or {}).get(
-                    "selected_candidate_id"
-                ) or (result.get("best_single") or {}).get("candidate_id")
-                selected_candidate = db.scalar(
-                    select(ExperimentCandidate).where(
-                        ExperimentCandidate.experiment_id == experiment.id,
-                        ExperimentCandidate.candidate_key == selected_key,
-                    )
-                )
-                if selected_candidate is None:
-                    raise RuntimeError("selected candidate was not persisted")
-                version_count = db.query(ModelVersion).filter(
-                    ModelVersion.model_asset_id == model_asset.id
-                ).count()
-                create_model_version(
-                    db,
-                    model_asset=model_asset,
-                    pipeline_run=experiment,
-                    selected_candidate=selected_candidate,
-                    version=f"v{version_count + 1}",
-                )
+            replace_pipeline_stage_runs(db, experiment, list(result["stage_timings"]))
+            store_report_artifacts(db, experiment)
             _mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)
             _emit_event(
                 "terminal",

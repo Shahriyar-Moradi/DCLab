@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+from sqlalchemy.orm import Session
 
 from app.engine.features.encode import coerce_binary_target
 from app.engine.modeling.holdout_planner import (
@@ -921,13 +922,192 @@ def _verify_scientific_plan(
         )
 
 
+def _verify_reproducibility_lineage(add, report: dict[str, Any], db: Session) -> None:
+    """DB-backed lineage checks. Skipped when verify() is called without a session."""
+
+    from uuid import UUID
+
+    from app.config import get_settings
+    from app.db.models import Dataset, Experiment, ExperimentCandidate, ModelVersion
+    from app.storage.factory import get_object_storage
+
+    run = _as_dict(report.get("run"))
+    raw_experiment_id = run.get("experiment_id")
+    if not raw_experiment_id:
+        return
+    try:
+        experiment_id = UUID(str(raw_experiment_id))
+    except ValueError:
+        add(
+            "model_version_candidate_lineage",
+            "reproducibility",
+            CHECK_FAIL,
+            "Pipeline run id in the technical report is not a UUID.",
+            "run.experiment_id",
+        )
+        return
+    experiment = db.get(Experiment, experiment_id)
+    model_version = db.query(ModelVersion).filter(
+        ModelVersion.pipeline_run_id == experiment_id
+    ).one_or_none()
+    if model_version is None:
+        # Completed Labs runs without a workflow do not publish a ModelVersion.
+        # Filesystem evidence already decided overall status; do not downgrade it.
+        return
+    candidate = db.get(ExperimentCandidate, model_version.selected_candidate_id)
+    if (
+        candidate is None
+        or candidate.experiment_id != model_version.pipeline_run_id
+        or experiment is None
+    ):
+        add(
+            "model_version_candidate_lineage",
+            "reproducibility",
+            CHECK_FAIL,
+            "ModelVersion is not linked to the selected candidate of this pipeline run.",
+            "model_versions.selected_candidate_id",
+        )
+    else:
+        add(
+            "model_version_candidate_lineage",
+            "reproducibility",
+            CHECK_PASS,
+            "ModelVersion points at the selected candidate of this pipeline run.",
+            "model_versions.selected_candidate_id",
+        )
+    dataset = db.get(Dataset, model_version.dataset_id)
+    if dataset is None or dataset.id != model_version.dataset_id:
+        add(
+            "dataset_lineage_exists",
+            "reproducibility",
+            CHECK_FAIL,
+            "ModelVersion is missing dataset lineage.",
+            "model_versions.dataset_id",
+        )
+    else:
+        add(
+            "dataset_lineage_exists",
+            "reproducibility",
+            CHECK_PASS,
+            "ModelVersion is linked to the training dataset.",
+            "model_versions.dataset_id",
+        )
+    if model_version.feature_set_version_id is None:
+        add(
+            "feature_set_lineage_exists",
+            "reproducibility",
+            CHECK_WARN,
+            "Feature-set version is not linked on ModelVersion.",
+            "model_versions.feature_set_version_id",
+        )
+    else:
+        add(
+            "feature_set_lineage_exists",
+            "reproducibility",
+            CHECK_PASS,
+            "ModelVersion is linked to a FeatureSetVersion.",
+            "model_versions.feature_set_version_id",
+        )
+    model_artifact = model_version.model_artifact
+    if model_artifact is None:
+        add(
+            "model_artifact_registered",
+            "reproducibility",
+            CHECK_FAIL,
+            "Published ModelVersion has no model Artifact.",
+            "model_versions.model_artifact_id",
+        )
+        add(
+            "model_artifact_digest_exists",
+            "reproducibility",
+            CHECK_FAIL,
+            "Model artifact digest is missing because the Artifact row is missing.",
+            "artifacts.content_digest",
+        )
+    else:
+        storage = get_object_storage()
+        if not storage.exists(model_artifact.object_key):
+            add(
+                "model_artifact_registered",
+                "reproducibility",
+                CHECK_FAIL,
+                "Model Artifact is registered but the blob is missing from object storage.",
+                "artifacts.object_key",
+            )
+        else:
+            add(
+                "model_artifact_registered",
+                "reproducibility",
+                CHECK_PASS,
+                "Model Artifact exists in the registry and object storage.",
+                "model_versions.model_artifact_id",
+            )
+        if not model_artifact.content_digest:
+            add(
+                "model_artifact_digest_exists",
+                "reproducibility",
+                CHECK_FAIL,
+                "Model Artifact is missing a content digest.",
+                "artifacts.content_digest",
+            )
+        else:
+            add(
+                "model_artifact_digest_exists",
+                "reproducibility",
+                CHECK_PASS,
+                "Model Artifact has a content digest.",
+                "artifacts.content_digest",
+            )
+    if model_version.runtime_environment_id is None:
+        add(
+            "runtime_environment_exists",
+            "reproducibility",
+            CHECK_FAIL,
+            "ModelVersion has no RuntimeEnvironment.",
+            "model_versions.runtime_environment_id",
+        )
+    else:
+        add(
+            "runtime_environment_exists",
+            "reproducibility",
+            CHECK_PASS,
+            "ModelVersion is linked to a RuntimeEnvironment.",
+            "model_versions.runtime_environment_id",
+        )
+    if get_settings().reproducible_code_export_enabled:
+        if model_version.code_snapshot_id is None:
+            add(
+                "code_snapshot_exists",
+                "reproducibility",
+                CHECK_FAIL,
+                "Reproducible code export is enabled but no CodeSnapshot was persisted.",
+                "model_versions.code_snapshot_id",
+            )
+        else:
+            add(
+                "code_snapshot_exists",
+                "reproducibility",
+                CHECK_PASS,
+                "ModelVersion is linked to a CodeSnapshot.",
+                "model_versions.code_snapshot_id",
+            )
+    else:
+        add(
+            "code_snapshot_exists",
+            "reproducibility",
+            CHECK_PASS,
+            "Reproducible code export is disabled; CodeSnapshot is not required.",
+            "model_versions.code_snapshot_id",
+        )
+
+
 class PipelineVerifier:
     """Verify persisted evidence without trusting the run's completion label."""
 
     def __init__(self, artifacts: ArtifactAccess | None = None) -> None:
         self.artifacts = artifacts or LocalArtifactAccess()
 
-    def verify(self, report: dict[str, Any]) -> dict[str, Any]:
+    def verify(self, report: dict[str, Any], *, db: Session | None = None) -> dict[str, Any]:
         checks: list[dict[str, Any]] = []
 
         def add(
@@ -1467,6 +1647,9 @@ class PipelineVerifier:
         else:
             add("model_artifacts_persisted", "artifact_persistence", CHECK_PASS, "Model, result, and prediction artifacts exist.", "artifacts")
 
+        if db is not None:
+            _verify_reproducibility_lineage(add, report, db)
+
         failures = [row for row in checks if row["status"] == CHECK_FAIL]
         missing = [row for row in checks if row["status"] == CHECK_NOT_VERIFIABLE]
         warnings = [row for row in checks if row["status"] == CHECK_WARN]
@@ -1515,5 +1698,5 @@ class PipelineVerifier:
         }
 
 
-def verify_pipeline(report: dict[str, Any]) -> dict[str, Any]:
-    return PipelineVerifier().verify(report)
+def verify_pipeline(report: dict[str, Any], *, db: Session | None = None) -> dict[str, Any]:
+    return PipelineVerifier().verify(report, db=db)

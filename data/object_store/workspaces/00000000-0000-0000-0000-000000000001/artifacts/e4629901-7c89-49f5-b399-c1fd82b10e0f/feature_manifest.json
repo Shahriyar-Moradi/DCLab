@@ -1,0 +1,10 @@
+{
+  "pipeline_run_id": "91a5da87-2483-408d-8bed-e99b3efa0537",
+  "feature_set_version_id": null,
+  "features": [
+    "age",
+    "income",
+    "region"
+  ],
+  "candidate_id": "logistic_regression"
+}

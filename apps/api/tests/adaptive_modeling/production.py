@@ -51,10 +51,17 @@ def post_labs_csv(
     filename: str,
     target: str,
     category: str = "Revenue",
+    project_id=None,
+    problem_spec_id=None,
 ):
+    data = {"category": category, "target_column": target}
+    if project_id is not None:
+        data["project_id"] = str(project_id)
+    if problem_spec_id is not None:
+        data["problem_spec_id"] = str(problem_spec_id)
     return auth_client.post(
         "/app/labs/uploads",
-        data={"category": category, "target_column": target},
+        data=data,
         files={
             "file": (
                 filename,
@@ -74,11 +81,19 @@ def labs_upload_and_train(
     filename: str,
     target: str,
     category: str = "Revenue",
+    project_id=None,
+    problem_spec_id=None,
 ) -> tuple[ClientLabUpload, WorkflowRun, Experiment, ModelVersion]:
     """The real product path: Labs upload API → run_auto_train_job."""
     disable_background_job(monkeypatch)
     created = post_labs_csv(
-        auth_client, frame, filename=filename, target=target, category=category
+        auth_client,
+        frame,
+        filename=filename,
+        target=target,
+        category=category,
+        project_id=project_id,
+        problem_spec_id=problem_spec_id,
     )
     assert created.status_code == 200, created.text
     body = created.json()

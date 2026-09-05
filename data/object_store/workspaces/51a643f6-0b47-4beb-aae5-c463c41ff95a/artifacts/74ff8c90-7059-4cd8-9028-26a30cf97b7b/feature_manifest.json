@@ -1,0 +1,10 @@
+{
+  "pipeline_run_id": "992036ce-1ba9-4305-958a-3fe903408e58",
+  "feature_set_version_id": "bba2819b-9efd-4539-8675-358ef1de439a",
+  "features": [
+    "age",
+    "income",
+    "region"
+  ],
+  "candidate_id": "xgboost"
+}

@@ -9,7 +9,11 @@ type Role =
   | "dclab_developer"
   | "business_admin"
   | "business_developer"
-  | "client_user";
+  | "client_user"
+  | "workspace_owner"
+  | "workspace_admin"
+  | "ml_engineer"
+  | "viewer";
 
 const ROLES: Role[] = [
   "dclab_admin",
@@ -17,6 +21,10 @@ const ROLES: Role[] = [
   "business_admin",
   "business_developer",
   "client_user",
+  "workspace_owner",
+  "workspace_admin",
+  "ml_engineer",
+  "viewer",
 ];
 
 async function roleFromRequest(request: NextRequest): Promise<Role | null> {
@@ -72,7 +80,11 @@ export async function middleware(request: NextRequest) {
     role !== "dclab_admin" &&
     role !== "dclab_developer" &&
     role !== "business_admin" &&
-    role !== "business_developer"
+    role !== "business_developer" &&
+    role !== "workspace_owner" &&
+    role !== "workspace_admin" &&
+    role !== "ml_engineer" &&
+    role !== "viewer"
   ) {
     return forbidden("the business administration area");
   }

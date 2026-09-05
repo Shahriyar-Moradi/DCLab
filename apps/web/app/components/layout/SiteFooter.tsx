@@ -5,7 +5,7 @@ import Link from "next/link";
 export function SiteFooter() {
   return (
     <footer className="border-t border-hairline bg-midnight text-white">
-      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 lg:grid-cols-4 lg:px-8">
+      <div className="mx-auto grid max-w-page gap-10 px-page-x py-14 lg:grid-cols-4 lg:px-page-x-lg">
         <div className="lg:col-span-1">
           <BrandLogo />
           <p className="mt-4 max-w-xs text-sm leading-6 text-white/65">
@@ -21,7 +21,7 @@ export function SiteFooter() {
           <ul className="mt-3 space-y-2 text-sm text-white/70">
             <li><Link href="/platform">How it works</Link></li>
             <li><Link href="/app/dashboards">Dashboard</Link></li>
-            <li><Link href="/admin/lab">Experimentation Lab</Link></li>
+            <li><Link href="/app/labs">Labs</Link></li>
             <li><Link href="/resources">Integrations &amp; benchmarks</Link></li>
           </ul>
         </div>
@@ -31,7 +31,7 @@ export function SiteFooter() {
             <li><Link href="/app/opportunities">Opportunities</Link></li>
             <li><Link href="/app/decisions">Decisions</Link></li>
             <li><Link href="/app/opportunities/upload">Upload opportunities</Link></li>
-            <li><Link href="/admin/lab">Experimentation Lab</Link></li>
+            <li><Link href="/app/labs">Labs</Link></li>
           </ul>
         </div>
         <div>
@@ -44,8 +44,8 @@ export function SiteFooter() {
           </ul>
         </div>
       </div>
-      <div className="border-t border-white/10 px-5 py-4 text-center text-xs text-white/40 lg:px-8">
-        Decision.ai — internal decision layer. No roles or auth in this build; every workspace page is open.
+      <div className="border-t border-white/10 px-page-x py-4 text-center text-xs text-white/40 lg:px-page-x-lg">
+        Decision.ai — internal decision layer for secure, role-aware workspaces.
       </div>
     </footer>
   );

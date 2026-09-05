@@ -1,0 +1,53 @@
+"use client";
+
+import { X } from "lucide-react";
+import { useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { IconButton } from "./IconButton";
+import { useBodyScrollLock, useEscape, useFocusTrap } from "./overlay";
+
+export function Dialog({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useBodyScrollLock(open);
+  useEscape(open, onClose);
+  useFocusTrap(open, panelRef);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="app-overlay fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center">
+      <button type="button" className="absolute inset-0 bg-midnight/40" aria-label="Close dialog" onClick={onClose} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ui-dialog-title"
+        className="relative w-full max-w-lg rounded-2xl border border-hairline bg-paper-raised p-5 shadow-lg"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="ui-dialog-title" className="font-sans text-section text-ink">
+            {title}
+          </h2>
+          <IconButton label="Close" onClick={onClose}>
+            <X size={18} aria-hidden />
+          </IconButton>
+        </div>
+        <div className="mt-4 text-body text-ink">{children}</div>
+        {footer ? <div className="mt-6 flex flex-wrap justify-end gap-2">{footer}</div> : null}
+      </div>
+    </div>,
+    document.body,
+  );
+}

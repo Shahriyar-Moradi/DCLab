@@ -22,6 +22,8 @@ from app.db.models import (
     ModelAsset,
     ModelVersion,
     PredictionTask,
+    ProblemSpec,
+    Project,
     User,
     WorkflowRun,
     WorkflowRunInput,
@@ -30,6 +32,7 @@ from app.db.models import (
 )
 from app.engine.types import SearchConfig
 from app.services.authorization_service import can_write_workspace
+from app.domain.execution_plane import CREATABLE_INITIATED_BY_TYPES
 
 DOMAIN_SEEDS = (
     ("labs", "Labs"),
@@ -47,6 +50,22 @@ class LineageError(ValueError):
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
     return slug[:128] or "asset"
+
+
+_TRIGGER_TO_INITIATOR = {
+    "upload": "human",
+    "manual": "human",
+    "api": "api",
+    "schedule": "schedule",
+    "system": "system",
+}
+
+
+def _require_project(db: Session, workspace_id: UUID, project_id: UUID) -> Project:
+    project = db.get(Project, project_id)
+    if project is None or project.workspace_id != workspace_id:
+        raise LineageError("project does not belong to this workspace")
+    return project
 
 
 def _require_workspace(db: Session, workspace_id: UUID) -> Workspace:
@@ -156,11 +175,19 @@ def create_dataset_asset(
     slug: str | None = None,
     description: str = "",
     actor: User | None = None,
+    project_id: UUID | None = None,
 ) -> DatasetAsset:
     _require_workspace(db, workspace_id)
     _require_actor_write(db, actor, workspace_id)
+    if project_id is not None:
+        from app.db.models import Project
+
+        project = db.get(Project, project_id)
+        if project is None or project.workspace_id != workspace_id:
+            raise LineageError("project does not belong to this workspace")
     row = DatasetAsset(
         workspace_id=workspace_id,
+        project_id=project_id,
         name=name,
         slug=slugify(slug or name),
         description=description,
@@ -178,6 +205,7 @@ def create_workflow(
     workspace_domain: WorkspaceDomain,
     name: str,
     slug: str,
+    project_id: UUID,
     description: str = "",
     business_objective: str = "",
     status: str = "active",
@@ -188,8 +216,10 @@ def create_workflow(
     _require_actor_write(db, actor, workspace_id)
     if workspace_domain.workspace_id != workspace_id:
         raise LineageError("workspace domain belongs to another workspace")
+    _require_project(db, workspace_id, project_id)
     row = MlWorkflow(
         workspace_id=workspace_id,
+        project_id=project_id,
         workspace_domain_id=workspace_domain.id,
         name=name,
         slug=slugify(slug),
@@ -205,28 +235,70 @@ def create_workflow(
 
 
 def get_or_create_labs_workflow(
-    db: Session, *, workspace_id: UUID, actor: User | None = None
+    db: Session,
+    *,
+    workspace_id: UUID,
+    actor: User | None = None,
+    project: Project | None = None,
 ) -> MlWorkflow:
+    from app.services.project_service import get_or_create_labs_project
+
     link = enable_workspace_domain(
         db,
         workspace_id=workspace_id,
         domain_slug="labs",
         actor=actor,
     )
+    if project is not None:
+        if project.workspace_id != workspace_id:
+            raise LineageError("project belongs to another workspace")
+    elif actor is None:
+        from app.domain.data_plane import LABS_PROJECT_SLUG
+
+        project = db.scalar(
+            select(Project).where(
+                Project.workspace_id == workspace_id,
+                Project.slug == LABS_PROJECT_SLUG,
+            )
+        )
+        if project is None:
+            raise LineageError("labs project is required before creating a labs workflow")
+    else:
+        project = get_or_create_labs_project(
+            db, workspace_id=workspace_id, actor=actor
+        )
     existing = db.scalar(
+        select(MlWorkflow).where(
+            MlWorkflow.workspace_id == workspace_id,
+            MlWorkflow.project_id == project.id,
+            MlWorkflow.slug.in_(
+                ("client-lab-analysis", f"client-lab-analysis-{project.slug}")
+            ),
+        )
+    )
+    if existing is not None:
+        return existing
+    canonical = db.scalar(
         select(MlWorkflow).where(
             MlWorkflow.workspace_id == workspace_id,
             MlWorkflow.slug == "client-lab-analysis",
         )
     )
-    if existing is not None:
-        return existing
+    if canonical is not None:
+        if canonical.project_id is None:
+            canonical.project_id = project.id
+            db.flush()
+            return canonical
+        slug = f"client-lab-analysis-{project.slug}"
+    else:
+        slug = "client-lab-analysis"
     return create_workflow(
         db,
         workspace_id=workspace_id,
+        project_id=project.id,
         workspace_domain=link,
         name="Client Lab Analysis",
-        slug="client-lab-analysis",
+        slug=slug,
         description="Analyze a customer-provided Labs dataset.",
         business_objective="Produce a bounded prediction analysis from an uploaded dataset.",
         config={"pipeline": "deterministic_ml"},
@@ -278,17 +350,57 @@ def create_workflow_run(
     task_type: str | None = None,
     status: str = "queued",
     inputs: list[tuple[Dataset, str]] | None = None,
+    workflow_version_id: UUID | None = None,
+    problem_spec_id: UUID | None = None,
+    initiated_by_type: str | None = None,
 ) -> WorkflowRun:
+    from app.services.workflow_execution_service import (
+        get_or_create_current_workflow_version,
+        get_workflow_version,
+    )
+
     _require_workspace(db, workspace_id)
     _require_actor_write(db, requester, workspace_id)
     if workflow.workspace_id != workspace_id:
         raise LineageError("workflow belongs to another workspace")
     if source_upload is not None and source_upload.workspace_id != workspace_id:
         raise LineageError("source upload belongs to another workspace")
+    project_id = workflow.project_id
+    if project_id is not None:
+        _require_project(db, workspace_id, project_id)
+    initiator = initiated_by_type or _TRIGGER_TO_INITIATOR.get(trigger_type)
+    if initiator is None:
+        initiator = "human" if requester is not None else "system"
+    initiator = str(initiator).strip().lower()
+    if initiator == "agent":
+        raise LineageError("initiated_by_type agent is reserved")
+    if initiator not in CREATABLE_INITIATED_BY_TYPES:
+        raise LineageError(f"unsupported initiated_by_type: {initiator}")
+    version = None
+    if workflow_version_id is not None:
+        version = get_workflow_version(
+            db, workspace_id=workspace_id, workflow_version_id=workflow_version_id
+        )
+        if version.workflow_id != workflow.id:
+            raise LineageError("workflow version belongs to another workflow")
+    elif project_id is not None:
+        version = get_or_create_current_workflow_version(
+            db, workflow=workflow, actor=requester
+        )
+    if problem_spec_id is not None:
+        spec = db.get(ProblemSpec, problem_spec_id)
+        if spec is None or spec.workspace_id != workspace_id:
+            raise LineageError("problem spec belongs to another workspace")
+        if project_id is not None and spec.project_id != project_id:
+            raise LineageError("problem spec belongs to another project")
     row = WorkflowRun(
         workspace_id=workspace_id,
+        project_id=project_id,
         workflow_id=workflow.id,
+        workflow_version_id=version.id if version is not None else None,
+        problem_spec_id=problem_spec_id,
         requested_by=requester.id if requester is not None else None,
+        initiated_by_type=initiator,
         trigger_type=trigger_type,
         source_type=source_type,
         source_upload_id=source_upload.id if source_upload is not None else None,
@@ -335,6 +447,45 @@ def create_pipeline_run(
             input_role=input_role,
         )
     from app.services.lab_service import create_experiment
+    from app.services.workflow_execution_service import (
+        get_or_create_current_pipeline_version,
+        get_or_create_pipeline,
+        get_workflow_version,
+        next_pipeline_run_number,
+    )
+
+    pipeline = None
+    pipeline_version = None
+    run_number = None
+    project_id = workflow_run.project_id or dataset.project_id
+    workflow = workflow_run.workflow
+    workflow_version = workflow_run.workflow_version
+    if workflow_version is None and workflow_run.workflow_version_id is not None:
+        workflow_version = get_workflow_version(
+            db,
+            workspace_id=workflow_run.workspace_id,
+            workflow_version_id=workflow_run.workflow_version_id,
+        )
+    if workflow is not None and workflow.project_id is not None and workflow_version is not None:
+        pipeline = get_or_create_pipeline(
+            db,
+            workflow=workflow,
+            name=pipeline_name,
+            slug=pipeline_name,
+            purpose=pipeline_purpose,
+            actor=None,
+        )
+        pipeline_version = get_or_create_current_pipeline_version(
+            db,
+            pipeline=pipeline,
+            workflow_version=workflow_version,
+            graph_definition={
+                "pipeline_name": pipeline_name,
+                "pipeline_purpose": pipeline_purpose,
+            },
+            config=(config.to_dict() if config is not None else {}),
+        )
+        run_number = next_pipeline_run_number(db, pipeline.id)
 
     return create_experiment(
         db,
@@ -347,6 +498,10 @@ def create_pipeline_run(
         pipeline_purpose=pipeline_purpose,
         config=config,
         commit=commit,
+        project_id=project_id,
+        pipeline_id=pipeline.id if pipeline is not None else None,
+        pipeline_version_id=pipeline_version.id if pipeline_version is not None else None,
+        run_number=run_number,
     )
 
 
@@ -374,6 +529,8 @@ def bind_pipeline_run(
         dataset=dataset,
         input_role="training",
     )
+    if pipeline_run.project_id is None:
+        pipeline_run.project_id = workflow_run.project_id
     pipeline_run.environment_id = environment.id
     pipeline_run.dataset_id = dataset.id
     pipeline_run.task_id = task.id
@@ -427,6 +584,12 @@ def create_model_version(
     selected_candidate: ExperimentCandidate,
     version: str,
     artifact_uri: str | None = None,
+    runtime_environment_id: UUID | None = None,
+    code_snapshot_id: UUID | None = None,
+    model_artifact_id: UUID | None = None,
+    preprocessor_artifact_id: UUID | None = None,
+    feature_manifest_artifact_id: UUID | None = None,
+    feature_set_version_id: UUID | None = None,
 ) -> ModelVersion:
     workflow_run = pipeline_run.workflow_run
     if workflow_run is None:
@@ -460,6 +623,13 @@ def create_model_version(
     )
     if has_dataset_input is None:
         raise LineageError("pipeline dataset is missing from workflow run inputs")
+    if feature_set_version_id is None:
+        from app.services.scientific_lineage_service import (
+            latest_pipeline_run_feature_set_version,
+        )
+
+        feature_set = latest_pipeline_run_feature_set_version(db, pipeline_run)
+        feature_set_version_id = feature_set.id if feature_set is not None else None
 
     digest_payload = {
         "pipeline_run_id": str(pipeline_run.id),
@@ -478,11 +648,21 @@ def create_model_version(
         model_asset_id=model_asset.id,
         version=version,
         workspace_id=pipeline_run.workspace_id,
+        project_id=pipeline_run.project_id,
         workflow_id=workflow_run.workflow_id,
+        workflow_version_id=workflow_run.workflow_version_id,
         workflow_run_id=workflow_run.id,
+        pipeline_id=pipeline_run.pipeline_id,
+        pipeline_version_id=pipeline_run.pipeline_version_id,
         pipeline_run_id=pipeline_run.id,
         selected_candidate_id=selected_candidate.id,
         dataset_id=pipeline_run.dataset_id,
+        feature_set_version_id=feature_set_version_id,
+        runtime_environment_id=runtime_environment_id,
+        code_snapshot_id=code_snapshot_id,
+        model_artifact_id=model_artifact_id,
+        preprocessor_artifact_id=preprocessor_artifact_id,
+        feature_manifest_artifact_id=feature_manifest_artifact_id,
         artifact_uri=artifact_uri or pipeline_run.artifact_dir,
         content_digest=content_digest,
         metrics=dict(metrics),

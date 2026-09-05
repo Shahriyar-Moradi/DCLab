@@ -12,10 +12,26 @@ export type SessionUser = {
     | "dclab_developer"
     | "business_admin"
     | "business_developer"
-    | "client_user";
+    | "client_user"
+    | "workspace_owner"
+    | "workspace_admin"
+    | "ml_engineer"
+    | "viewer";
   full_name: string;
   workspace_id: string | null;
 };
+
+export const SESSION_ROLES: SessionUser["role"][] = [
+  "dclab_admin",
+  "dclab_developer",
+  "business_admin",
+  "business_developer",
+  "client_user",
+  "workspace_owner",
+  "workspace_admin",
+  "ml_engineer",
+  "viewer",
+];
 
 type TokenPayload = {
   sub: string;
@@ -78,12 +94,31 @@ export function roleLabel(role: SessionUser["role"]): string {
     business_admin: "Business Admin",
     business_developer: "Business Developer",
     client_user: "Business Client",
+    workspace_owner: "Workspace Owner",
+    workspace_admin: "Workspace Admin",
+    ml_engineer: "ML Engineer",
+    viewer: "Viewer",
   };
   return labels[role];
 }
 
 export function isPlatformRole(role: SessionUser["role"]): boolean {
   return role === "dclab_admin" || role === "dclab_developer";
+}
+
+export function isBusinessAdministrationRole(role: SessionUser["role"]): boolean {
+  return (
+    role === "business_admin" ||
+    role === "business_developer" ||
+    role === "workspace_owner" ||
+    role === "workspace_admin" ||
+    role === "ml_engineer" ||
+    role === "viewer"
+  );
+}
+
+export function canWriteWorkspaceSession(role: SessionUser["role"]): boolean {
+  return role !== "dclab_developer" && role !== "business_developer" && role !== "viewer";
 }
 
 export function displayName(user: SessionUser): string {
@@ -100,15 +135,7 @@ export function readSessionUser(): SessionUser | null {
     clearToken();
     return null;
   }
-  if (
-    ![
-      "dclab_admin",
-      "dclab_developer",
-      "business_admin",
-      "business_developer",
-      "client_user",
-    ].includes(decoded.role)
-  ) {
+  if (!(SESSION_ROLES as string[]).includes(decoded.role)) {
     return null;
   }
   return {

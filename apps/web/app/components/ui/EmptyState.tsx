@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { buttonClassName } from "./Button";
 import { Button } from "./Button";
+import { Card } from "./Card";
 
 export function EmptyState({
   title,
@@ -15,14 +17,11 @@ export function EmptyState({
   actionHref?: string;
 }) {
   return (
-    <div className="rounded bg-paper-raised px-8 py-16 text-center">
-      <h2 className="font-display text-section text-ink">{title}</h2>
-      <p className="mx-auto mt-3 max-w-md font-body text-body text-ink-muted">{body}</p>
-      {actionHref ? (
-        <Link
-          href={actionHref}
-          className="mt-6 inline-flex items-center justify-center rounded bg-navy px-4 py-2 font-body text-body font-medium text-paper-raised hover:bg-navy/90"
-        >
+    <Card className="px-8 py-16 text-center">
+      <h2 className="font-sans text-section text-ink">{title}</h2>
+      <p className="mx-auto mt-3 max-w-md font-sans text-body text-ink-muted">{body}</p>
+      {actionHref && actionLabel ? (
+        <Link href={actionHref} className={buttonClassName({ className: "mt-6" })}>
           {actionLabel}
         </Link>
       ) : actionLabel && onAction ? (
@@ -30,6 +29,6 @@ export function EmptyState({
           {actionLabel}
         </Button>
       ) : null}
-    </div>
+    </Card>
   );
 }

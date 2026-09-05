@@ -30,6 +30,7 @@ from app.services.lineage_service import (
     enable_workspace_domain,
     seed_business_domains,
 )
+from app.services.project_service import create_project
 
 
 def _create_publishable_pipeline(
@@ -58,6 +59,8 @@ def _create_publishable_pipeline(
         pipeline_index=pipeline_index,
     )
     candidate = ExperimentCandidate(
+        workspace_id=pipeline.workspace_id,
+        project_id=pipeline.project_id,
         experiment_id=pipeline.id,
         candidate_key=candidate_key,
         fingerprint=uuid4().hex[:40],
@@ -74,8 +77,7 @@ def _create_publishable_pipeline(
     return run, pipeline, candidate
 
 
-@pytest.fixture()
-def lineage_setup(db_session, tmp_path):
+def make_lineage_setup(db_session, tmp_path):
     alpha = Workspace(slug=f"lineage-alpha-{uuid4().hex}", name="Lineage Alpha")
     beta = Workspace(slug=f"lineage-beta-{uuid4().hex}", name="Lineage Beta")
     db_session.add_all([alpha, beta])
@@ -107,10 +109,25 @@ def lineage_setup(db_session, tmp_path):
         domain_slug="sales",
         actor=beta_admin,
     )
+    alpha_project = create_project(
+        db_session,
+        actor=alpha_admin,
+        workspace_id=alpha.id,
+        name="Alpha project",
+        slug="alpha-project",
+    )
+    beta_project = create_project(
+        db_session,
+        actor=beta_admin,
+        workspace_id=beta.id,
+        name="Beta project",
+        slug="beta-project",
+    )
     alpha_workflow = create_workflow(
         db_session,
         workspace_id=alpha.id,
         workspace_domain=alpha_domain,
+        project_id=alpha_project.id,
         name="Lead conversion",
         slug="lead-conversion",
         description="Score inbound leads.",
@@ -121,6 +138,7 @@ def lineage_setup(db_session, tmp_path):
         db_session,
         workspace_id=beta.id,
         workspace_domain=beta_domain,
+        project_id=beta_project.id,
         name="Lead conversion",
         slug="lead-conversion",
         actor=beta_admin,
@@ -184,6 +202,8 @@ def lineage_setup(db_session, tmp_path):
         "beta_admin": beta_admin,
         "alpha_domain": alpha_domain,
         "beta_domain": beta_domain,
+        "alpha_project": alpha_project,
+        "beta_project": beta_project,
         "alpha_workflow": alpha_workflow,
         "beta_workflow": beta_workflow,
         "alpha_asset": alpha_asset,
@@ -193,6 +213,11 @@ def lineage_setup(db_session, tmp_path):
         "task": task,
         "seeded": seeded,
     }
+
+
+@pytest.fixture()
+def lineage_setup(db_session, tmp_path):
+    return make_lineage_setup(db_session, tmp_path)
 
 
 def test_domains_are_configurable_seed_data(db_session, lineage_setup):
@@ -279,6 +304,7 @@ def test_two_businesses_cannot_cross_link_workflows_or_datasets(
             db_session,
             workspace_id=setup["alpha"].id,
             workspace_domain=setup["beta_domain"],
+            project_id=setup["alpha_project"].id,
             name="Invalid",
             slug="invalid",
             actor=setup["alpha_admin"],
@@ -415,6 +441,8 @@ def test_selected_model_version_has_exact_pipeline_candidate_and_dataset_lineage
         pipeline_index=0,
     )
     winner = ExperimentCandidate(
+        workspace_id=pipeline.workspace_id,
+        project_id=pipeline.project_id,
         experiment_id=pipeline.id,
         candidate_key="winner",
         fingerprint="a" * 40,
@@ -422,6 +450,8 @@ def test_selected_model_version_has_exact_pipeline_candidate_and_dataset_lineage
         payload={"test_metrics": {"pr_auc": 0.82}},
     )
     challenger = ExperimentCandidate(
+        workspace_id=pipeline.workspace_id,
+        project_id=pipeline.project_id,
         experiment_id=pipeline.id,
         candidate_key="challenger",
         fingerprint="b" * 40,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from sklearn.dummy import DummyClassifier, DummyRegressor
@@ -152,6 +153,106 @@ def make_model(family: str, *, seed: int = 42, hyperparameters: dict[str, Any] |
             iterations=hp.get("n_estimators", 80), random_seed=seed, verbose=False
         )
     raise ValueError(f"Unknown model family: {family}")
+
+
+def applied_hyperparameters(
+    family: str, *, seed: int = 42, hyperparameters: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Constructor values `make_model` actually applies. Keep in sync with make_model."""
+
+    hp = dict(hyperparameters or {})
+    if family == "majority":
+        return {"strategy": "most_frequent"}
+    if family == "mean":
+        return {"strategy": "mean"}
+    if family == "logistic_regression":
+        return {"max_iter": hp.get("max_iter", 1000), "random_state": seed}
+    if family in {"random_forest", "extra_trees", "random_forest_regressor", "extra_trees_regressor"}:
+        return {
+            "n_estimators": hp.get("n_estimators", 80),
+            "random_state": seed,
+            "n_jobs": 1,
+        }
+    if family in {"gradient_boosting", "gradient_boosting_regressor"}:
+        return {"random_state": seed}
+    if family in {"linear_regression"}:
+        return {"fit_intercept": hp.get("fit_intercept", True)}
+    if family in {"ridge", "lasso", "elasticnet"}:
+        return {"random_state": seed}
+    if family in {"xgboost", "xgboost_regressor"}:
+        values: dict[str, Any] = {
+            "n_estimators": hp.get("n_estimators", 80),
+            "max_depth": hp.get("max_depth", 4),
+            "random_state": seed,
+            "n_jobs": 1,
+        }
+        if family == "xgboost":
+            values["eval_metric"] = "logloss"
+        return values
+    if family in {"lightgbm", "lightgbm_regressor"}:
+        return {"n_estimators": hp.get("n_estimators", 80), "random_state": seed, "verbose": -1}
+    if family in {"catboost", "catboost_regressor"}:
+        return {
+            "iterations": hp.get("n_estimators", 80),
+            "random_seed": seed,
+            "verbose": False,
+        }
+    return dict(hp)
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
+
+
+def implementation_for_family(family: str) -> tuple[str, str, str | None]:
+    """Return (library, implementation class, library version) for a registry family."""
+
+    mapping = {
+        "majority": ("sklearn", "sklearn.dummy.DummyClassifier", "scikit-learn"),
+        "mean": ("sklearn", "sklearn.dummy.DummyRegressor", "scikit-learn"),
+        "logistic_regression": (
+            "sklearn",
+            "sklearn.linear_model.LogisticRegression",
+            "scikit-learn",
+        ),
+        "random_forest": ("sklearn", "sklearn.ensemble.RandomForestClassifier", "scikit-learn"),
+        "extra_trees": ("sklearn", "sklearn.ensemble.ExtraTreesClassifier", "scikit-learn"),
+        "gradient_boosting": (
+            "sklearn",
+            "sklearn.ensemble.GradientBoostingClassifier",
+            "scikit-learn",
+        ),
+        "linear_regression": ("sklearn", "sklearn.linear_model.LinearRegression", "scikit-learn"),
+        "ridge": ("sklearn", "sklearn.linear_model.Ridge", "scikit-learn"),
+        "lasso": ("sklearn", "sklearn.linear_model.Lasso", "scikit-learn"),
+        "elasticnet": ("sklearn", "sklearn.linear_model.ElasticNet", "scikit-learn"),
+        "random_forest_regressor": (
+            "sklearn",
+            "sklearn.ensemble.RandomForestRegressor",
+            "scikit-learn",
+        ),
+        "extra_trees_regressor": (
+            "sklearn",
+            "sklearn.ensemble.ExtraTreesRegressor",
+            "scikit-learn",
+        ),
+        "gradient_boosting_regressor": (
+            "sklearn",
+            "sklearn.ensemble.GradientBoostingRegressor",
+            "scikit-learn",
+        ),
+        "xgboost": ("xgboost", "xgboost.XGBClassifier", "xgboost"),
+        "xgboost_regressor": ("xgboost", "xgboost.XGBRegressor", "xgboost"),
+        "lightgbm": ("lightgbm", "lightgbm.LGBMClassifier", "lightgbm"),
+        "lightgbm_regressor": ("lightgbm", "lightgbm.LGBMRegressor", "lightgbm"),
+        "catboost": ("catboost", "catboost.CatBoostClassifier", "catboost"),
+        "catboost_regressor": ("catboost", "catboost.CatBoostRegressor", "catboost"),
+    }
+    library, cls, package = mapping.get(family, ("unknown", family, None))
+    return library, cls, _package_version(package) if package else None
 
 
 def is_classifier(family: str) -> bool:

@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/app/components/ui/Badge";
+import { GlassPanel, MetricCard, ProductPageHeader } from "@/app/components/product/ProductPrimitives";
 import { ErrorState } from "@/app/components/ui/ErrorState";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import {
@@ -29,27 +30,35 @@ export default function LabDashboard() {
   const experiments = useLabExperiments();
   const clientUploads = useAdminClientUploads();
 
-  if (env.isError || datasets.isError) {
-    return <ErrorState body="Could not load the Lab. Is the API running?" onRetry={() => void env.refetch()} />;
+  if (env.isError || datasets.isError || tasks.isError || experiments.isError || clientUploads.isError) {
+    return (
+      <ErrorState
+        body="Could not load the Lab. Is the API running?"
+        onRetry={() => {
+          void env.refetch();
+          void datasets.refetch();
+          void tasks.refetch();
+          void experiments.refetch();
+          void clientUploads.refetch();
+        }}
+      />
+    );
   }
-  if (env.isPending || datasets.isPending || tasks.isPending || experiments.isPending) {
+  if (env.isPending || datasets.isPending || tasks.isPending || experiments.isPending || clientUploads.isPending) {
     return <Skeleton className="h-64" />;
   }
 
   return (
     <div>
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">DCLab Internal Dogfood</p>
-      <h1 className="mt-2 font-display text-title text-ink">Labs</h1>
-      <p className="mt-2 max-w-2xl font-body text-body text-ink-muted">
-        Upload a CSV. The lab maps columns onto five use cases — churn, conversion, lead conversion, purchase
-        probability, and customer value — then trains five model families on useful feature combinations.
-      </p>
-      <ol className="mt-6 max-w-2xl list-decimal space-y-1 pl-5 font-body text-body text-ink">
+      <ProductPageHeader eyebrow="DCLab internal ML workspace" title="Labs" description="Upload datasets, inspect use cases, and trace experiments through their candidate models and results." />
+      <GlassPanel title="Lab workflow" description="The internal experimentation path maps eligible columns onto supported use cases before training.">
+      <ol className="max-w-2xl list-decimal space-y-1 pl-5 font-body text-body text-ink">
         <li>Upload a spreadsheet (or load the sample workbook with all five labels).</li>
         <li>Confirm which use cases have a label column in that file.</li>
         <li>Train. Each use case fits five models across feature groups, then keeps the useful ones.</li>
         <li>Open the experiment report for metrics, candidates, and the ensemble.</li>
       </ol>
+      </GlassPanel>
       <div className="mt-8 grid gap-4 md:grid-cols-3">
         <Stat label="Datasets" value={String(datasets.data?.length ?? 0)} href="/admin/lab/datasets" />
         <Stat label="Experiments" value={String(experiments.data?.length ?? 0)} href="/admin/lab/experiments" />
@@ -64,7 +73,7 @@ export default function LabDashboard() {
         </Link>
       </p>
       <h2 className="mt-12 font-display text-section text-ink">Recent experiments</h2>
-      <ul className="mt-4 divide-y divide-hairline rounded bg-paper-raised">
+      <ul className="mt-4 divide-y divide-hairline rounded-xl border border-hairline bg-paper-raised">
         {(experiments.data ?? []).slice(0, 8).map((row) => (
           <li key={row.id} className="px-4 py-3">
             <Link className="font-body text-body text-navy underline-offset-2 hover:underline" href={`/admin/lab/experiments/${row.id}`}>
@@ -82,7 +91,7 @@ export default function LabDashboard() {
         Simple-case auto-train runs behind every Labs custom-box upload (spreadsheet/JSON/table file, named
         columns, 40+ rows). See docs/LABS_DATA_UNDERSTANDING.md.
       </p>
-      <ul className="mt-4 divide-y divide-hairline rounded bg-paper-raised">
+      <ul className="mt-4 divide-y divide-hairline rounded-xl border border-hairline bg-paper-raised">
         {(clientUploads.data ?? []).slice(0, 10).map((row) => (
           <li key={row.id} className="flex items-center justify-between px-4 py-3">
             <div>
@@ -109,9 +118,6 @@ export default function LabDashboard() {
 
 function Stat({ label, value, href }: { label: string; value: string; href: string }) {
   return (
-    <Link href={href} className="rounded bg-paper-raised p-6">
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">{label}</p>
-      <p className="mt-2 font-mono text-title text-ink">{value}</p>
-    </Link>
+    <Link href={href}><MetricCard label={label} value={value} /></Link>
   );
 }

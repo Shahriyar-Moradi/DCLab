@@ -1,0 +1,121 @@
+customer_id,tenure,MonthlyCharges,TotalCharges,gender,contract,churn
+C000,7,86.84,614.28,Male,Two year,No
+C001,55,67.11,3686.28,Female,Two year,No
+C002,47,76.52,3608.04,Female,Two year,No
+C003,32,96.5,3140.24,Female,Two year,No
+C004,31,83.47,2596.40,Female,Month-to-month,No
+C005,61,75.36,4580.40,Female,Two year,No
+C006,7,75.92,575.70,Female,Two year,No
+C007,50,50.4,2536.90,Female,Two year,No
+C008,15,23.08,407.66,Female,Two year,No
+C009,7,63.67,453.03,Male,Two year,No
+C010,38,41.46,1526.44,Male,One year,No
+C011,70,60.85,4204.97,Female,Month-to-month,Yes
+C012,53,105.34,5649.07,Male,One year,No
+C013,55,43.39,2455.61,Female,Month-to-month,No
+C014,51,25.83,1310.16,Male,Month-to-month,No
+C015,56,48.14,2680.42,Male,Month-to-month,No
+C016,37,49.36,1884.75,Female,Two year,No
+C017,10,86.19,817.63,Female,One year,No
+C018,60,75.7,4506.40,Female,One year,No
+C019,32,98.39,3174.21,Male,Two year,No
+C020,36,86.43,3095.74,Female,One year,No
+C021,27,60.64,1637.04,Female,One year,No
+C022,13,101.4,1311.69,Female,Month-to-month,No
+C023,66,36.7,2435.52,Female,Two year,No
+C024,56,22.27,1303.49,Female,One year,No
+C025,46,29.0,1337.84,Female,Month-to-month,No
+C026,29,92.24,2700.60,Male,Two year,No
+C027,59,66.19,3823.07,Female,Two year,Yes
+C028,39,36.13,1407.01,Female,Month-to-month,No
+C029,32,70.1,2209.61,Female,Month-to-month,No
+C030,32,35.23,1078.65,Female,Month-to-month,Yes
+C031,17,89.63,1488.62,Female,Month-to-month,Yes
+C032,7,64.62,438.94,Male,Month-to-month,Yes
+C033,40,58.1,2360.72,Female,Two year,No
+C034,64,50.15,3156.62,Male,One year,No
+C035,5,83.03,416.37,Male,Two year,Yes
+C036,61,56.18,3407.69,Female,Two year,No
+C037,59,28.76,1684.03,Female,One year,No
+C038,20,31.8,676.12,Male,One year,No
+C039,45,116.19,5250.06,Male,Month-to-month,Yes
+C040,12,110.86,1383.79,Male,Month-to-month,Yes
+C041,54,89.97,4852.24,Male,One year,Yes
+C042,50,46.59,2301.51,Male,Month-to-month,Yes
+C043,26,116.92,3030.90,Male,Month-to-month,Yes
+C044,5,97.88,499.08,Female,Month-to-month,No
+C045,69,91.69,6333.61,Female,Two year,No
+C046,32,64.94,2034.58,Female,One year,No
+C047,64,47.22,3025.97,Male,Two year,No
+C048,49,29.64,1461.44,Male,One year,No
+C049,56,110.26,6275.27,Male,Month-to-month,No
+C050,54,65.58,3616.27,Female,One year,No
+C051,14,40.24,529.18,Male,Month-to-month,Yes
+C052,26,50.6,1303.99,Male,Two year,No
+C053,34,77.92,2590.81,Male,Month-to-month,No
+C054,36,37.68,1332.75,Female,One year,No
+C055,4,105.66,435.27,Male,Two year,Yes
+C056,39,95.85,3786.46,Male,One year,No
+C057,11,91.95,982.25,Female,One year,Yes
+C058,53,63.21,3323.93,Female,One year,No
+C059,49,82.73,3967.92,Male,Two year,No
+C060,66,78.41,5168.54,Male,Month-to-month,Yes
+C061,53,84.98,4461.69,Female,One year,No
+C062,27,28.44,746.82,Female,Two year,No
+C063,69,61.58,4214.00,Female,One year,Yes
+C064,30,24.16,721.07,Male,One year,Yes
+C065,24,69.4,1595.27,Male,Month-to-month,Yes
+C066,65,52.99,3385.42,Female,Month-to-month,No
+C067,27,34.45,1015.39,Male,Two year,No
+C068,6,30.34,130.54,Male,One year,No
+C069,34,78.76,2634.12,Female,Month-to-month,Yes
+C070,57,37.06,2185.86,Female,One year,No
+C071,14,112.51,1691.37,Male,One year,No
+C072,33,78.11,2530.64,Female,One year,No
+C073,10,54.69,532.14,Male,Two year,Yes
+C074,49,79.09,3889.15,Female,Month-to-month,Yes
+C075,34,22.28,826.68,Female,One year,Yes
+C076,24,115.86,2741.07,Male,One year,No
+C077,17,68.23,1150.10,Female,Two year,No
+C078,41,98.27,4060.31,Male,Month-to-month,Yes
+C079,48,28.27,1374.49,Female,Month-to-month,No
+C080,67,68.67,4585.56,Male,One year,No
+C081,32,69.07,2204.91,Male,One year,Yes
+C082,12,113.78,1310.40,Female,Two year,No
+C083,60,77.17,4620.84,Female,One year,No
+C084,45,67.35,3020.05,Male,Two year,No
+C085,50,46.7, ,Female,One year,No
+C086,7,53.16,349.89,Female,Month-to-month,Yes
+C087,23,72.07,1676.41,Male,Month-to-month,No
+C088,55,63.89,3554.52,Female,Two year,No
+C089,60,22.16,1335.89,Female,Month-to-month,No
+C090,31,102.63,3195.58,Male,Two year,Yes
+C091,58,109.62,6359.86,Male,Month-to-month,No
+C092,60,34.02,2041.50,Female,Month-to-month,No
+C093,28,75.4,2082.44,Male,Month-to-month,Yes
+C094,64,30.86,1987.54,Female,One year,No
+C095,21,87.22,1827.81,Female,One year,No
+C096,18,48.12,949.95,Male,Two year,Yes
+C097,49,85.94,4274.11,Male,One year,No
+C098,46,92.7,4279.61,Female,One year,No
+C099,10,96.86,938.13,Male,One year,No
+C100,60,30.77,1801.95,Male,Two year,No
+C101,15,111.6,1721.66,Female,One year,No
+C102,58,43.02,2505.75,Female,Month-to-month,No
+C103,1,23.74,42.95,Female,One year,No
+C104,57,75.49,4232.88,Female,Two year,No
+C105,56,57.09, ,Female,Month-to-month,No
+C106,56,102.98,5785.00,Male,Two year,No
+C107,48,100.83,4795.19,Female,One year,Yes
+C108,34,51.71,1739.41,Female,One year,No
+C109,51,115.29,5890.34,Female,Month-to-month,No
+C110,20,49.09,983.93,Female,Two year,No
+C111,56,71.51,3992.63,Male,Month-to-month,Yes
+C112,40,45.6, ,Female,Month-to-month,No
+C113,33,113.6, ,Male,One year,No
+C114,36,36.46, ,Female,One year,No
+C115,41,24.49,1062.99,Male,One year,No
+C116,3,63.51,87.86,Male,Month-to-month,No
+C117,10,119.24,1182.90,Male,Month-to-month,No
+C118,18,109.17,1972.08,Female,Month-to-month,No
+C119,9,94.86, ,Female,One year,No
