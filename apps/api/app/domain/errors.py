@@ -79,3 +79,18 @@ class PipelineDefinitionNotFoundError(LookupError):
 
 class PipelineVersionNotFoundError(LookupError):
     """No pipeline version matches the given workspace-scoped id."""
+
+
+class ScientificEvidenceLockedError(Exception):
+    """This PipelineRun's canonical scientific evidence is frozen.
+
+    Re-running would rewrite CV folds, hyperparameters, the winner decision, or
+    the final holdout. PostgreSQL rejects that too; this is the readable form.
+    """
+
+    def __init__(self, pipeline_run_id) -> None:
+        super().__init__(
+            f"scientific evidence for pipeline run {pipeline_run_id} is locked"
+        )
+        self.pipeline_run_id = pipeline_run_id
+        self.status_code = 409

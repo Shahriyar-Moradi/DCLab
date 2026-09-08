@@ -2,6 +2,10 @@
 
 Canonical scientific/version rows are frozen after insert or after lock.
 Execution state (PipelineRun status, stage runs, events' parent runs) stays mutable.
+
+Canonical reproducibility rows are frozen wholesale. Artifact rows are frozen
+only across stored-object identity columns so retention metadata and existing
+foreign-key deletion semantics remain available.
 """
 
 from __future__ import annotations
@@ -37,6 +41,27 @@ END;
 $$ LANGUAGE plpgsql
 """
 
+# Column-scoped guard for rows, such as Artifact registry entries, whose
+# retention metadata stays writable while the stored-object identity does not.
+PREVENT_COLUMN_MUTATION_SQL = """
+CREATE OR REPLACE FUNCTION prevent_canonical_column_mutation()
+RETURNS trigger AS $$
+DECLARE
+    frozen_columns text[] := string_to_array(TG_ARGV[0], ',');
+    old_row jsonb := to_jsonb(OLD);
+    new_row jsonb := to_jsonb(NEW);
+    guarded text;
+BEGIN
+    FOREACH guarded IN ARRAY frozen_columns LOOP
+        IF old_row -> guarded IS DISTINCT FROM new_row -> guarded THEN
+            RAISE EXCEPTION '%.% is immutable', TG_TABLE_NAME, guarded;
+        END IF;
+    END LOOP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
 ALWAYS_IMMUTABLE_TABLES = (
     "datasets",
     "model_versions",
@@ -50,6 +75,21 @@ LOCKED_IMMUTABLE_TABLES = (
     "problem_specs",
 )
 
+# 0042 reproducibility scope. Deliberately separate from the tuples above: those
+# are frozen inputs to 0035/0036 and to `immutability_disable_trigger_statements`,
+# and the tables below do not exist yet when those revisions run.
+PROVENANCE_IMMUTABLE_TABLES = ("runtime_environments", "code_snapshots")
+
+PROVENANCE_LOCKED_TABLES = ("pipeline_scientific_plans",)
+
+# table -> columns whose values may never change
+PROVENANCE_COLUMN_IMMUTABLE_TABLES: dict[str, tuple[str, ...]] = {
+    # Identity of the stored bytes only. `pipeline_run_id`, `project_id`,
+    # `artifact_type`, `mime_type`, and `metadata` stay writable so association
+    # backfills and retention tooling keep working, and DELETE is not blocked.
+    "artifacts": ("provider", "bucket", "object_key", "content_digest", "size_bytes"),
+}
+
 
 def _always_trigger_name(table: str) -> str:
     return f"{table}_immutable"
@@ -57,6 +97,10 @@ def _always_trigger_name(table: str) -> str:
 
 def _locked_trigger_name(table: str) -> str:
     return f"{table}_locked_immutable"
+
+
+def _column_trigger_name(table: str) -> str:
+    return f"{table}_columns_immutable"
 
 
 def immutability_upgrade_statements() -> list[str]:
@@ -99,10 +143,77 @@ def immutability_downgrade_statements() -> list[str]:
     return statements
 
 
+def provenance_immutability_upgrade_statements() -> list[str]:
+    """Trigger DDL Alembic 0042 installs for canonical reproducibility records."""
+
+    statements = [
+        PREVENT_CANONICAL_MUTATION_SQL,
+        PREVENT_LOCKED_MUTATION_SQL,
+        PREVENT_COLUMN_MUTATION_SQL,
+    ]
+    for table in PROVENANCE_IMMUTABLE_TABLES:
+        trigger = _always_trigger_name(table)
+        statements.append(f"DROP TRIGGER IF EXISTS {trigger} ON {table}")
+        statements.append(
+            f"""
+CREATE TRIGGER {trigger}
+BEFORE UPDATE OR DELETE ON {table}
+FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()
+"""
+        )
+    for table in PROVENANCE_LOCKED_TABLES:
+        trigger = _locked_trigger_name(table)
+        statements.append(f"DROP TRIGGER IF EXISTS {trigger} ON {table}")
+        statements.append(
+            f"""
+CREATE TRIGGER {trigger}
+BEFORE UPDATE OR DELETE ON {table}
+FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()
+"""
+        )
+    for table, frozen in PROVENANCE_COLUMN_IMMUTABLE_TABLES.items():
+        trigger = _column_trigger_name(table)
+        statements.append(f"DROP TRIGGER IF EXISTS {trigger} ON {table}")
+        statements.append(
+            f"""
+CREATE TRIGGER {trigger}
+BEFORE UPDATE ON {table}
+FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation(
+    '{",".join(frozen)}'
+)
+"""
+        )
+    return statements
+
+
+def provenance_immutability_downgrade_statements() -> list[str]:
+    statements = [
+        f"DROP TRIGGER IF EXISTS {_always_trigger_name(table)} ON {table}"
+        for table in PROVENANCE_IMMUTABLE_TABLES
+    ]
+    statements.extend(
+        f"DROP TRIGGER IF EXISTS {_locked_trigger_name(table)} ON {table}"
+        for table in PROVENANCE_LOCKED_TABLES
+    )
+    statements.extend(
+        f"DROP TRIGGER IF EXISTS {_column_trigger_name(table)} ON {table}"
+        for table in PROVENANCE_COLUMN_IMMUTABLE_TABLES
+    )
+    # prevent_canonical_row_mutation / prevent_locked_row_mutation stay: 0035 owns them.
+    statements.append("DROP FUNCTION IF EXISTS prevent_canonical_column_mutation()")
+    return statements
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the same trigger DDL Alembic 0035 installs (for metadata create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, and 0043 install (for create_all)."""
+
+    from app.db.evidence_lock import evidence_lock_upgrade_statements
 
     for statement in immutability_upgrade_statements():
+        connection.execute(text(statement))
+    for statement in provenance_immutability_upgrade_statements():
+        connection.execute(text(statement))
+    for statement in evidence_lock_upgrade_statements():
         connection.execute(text(statement))
 
 

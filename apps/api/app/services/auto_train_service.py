@@ -74,15 +74,25 @@ from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
 from app.engine.types import SearchConfig, TaskSpec
 from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
+from app.services.evidence_lock_service import (
+    lock_scientific_evidence,
+    missing_scientific_evidence,
+)
 from app.services.lab_decision_ledger import (
     record_column_type_decisions,
     record_missing_value_decisions,
     resolve_target_selection,
 )
-from app.services.lab_service import create_experiment, execute_experiment, ingest_dataset, seed_dogfood, upsert_task
+from app.services.lab_service import (
+    create_experiment,
+    execute_experiment,
+    ingest_dataset,
+    seed_dogfood,
+    upsert_task,
+)
 from app.services.observability_service import PipelineRunObserver
-from app.services.pipeline_verifier import verify_pipeline
 from app.services.pipeline_audit_service import request_pipeline_verification
+from app.services.pipeline_verifier import verify_pipeline
 from app.services.technical_run_report import build_technical_run_report
 
 logger = logging.getLogger(__name__)
@@ -1346,6 +1356,14 @@ def run_auto_train_job(
                     feature_set_version_id=repro.feature_set_version_id,
                 )
                 link_holdout_evaluation_to_model_version(db, experiment, model_version)
+            # Last statement before the commit: the triggers this arms read the
+            # stamp inside this transaction.
+            if lock_scientific_evidence(db, experiment) is None:
+                missing = ", ".join(missing_scientific_evidence(db, experiment))
+                raise RuntimeError(
+                    "cannot finish pipeline run before scientific evidence is complete: "
+                    f"{missing}"
+                )
             db.commit()
             preliminary_report = build_technical_run_report(
                 db,

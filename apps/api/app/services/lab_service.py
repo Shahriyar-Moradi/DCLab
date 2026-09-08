@@ -27,6 +27,7 @@ from app.db.models import (
     PredictionTask,
     WorkflowRun,
 )
+from app.domain.errors import ScientificEvidenceLockedError
 from app.engine.data.loaders import infer_schema, load_table
 from app.engine.datasets.synthetic import make_synthetic_customers
 from app.engine.experiments.runner import run_experiment
@@ -302,6 +303,10 @@ def execute_experiment(
     on_event: Callable[[str, dict], None] | None = None,
     persist_scientific: bool = True,
 ) -> Experiment:
+    if experiment.scientific_evidence_locked_at is not None:
+        # Re-running replaces preprocessing, findings, and stage facts. PostgreSQL
+        # would reject that; fail before touching the run's status.
+        raise ScientificEvidenceLockedError(experiment.id)
     dataset = db.get(Dataset, experiment.dataset_id)
     task_row = db.get(PredictionTask, experiment.task_id)
     if dataset is None or task_row is None:

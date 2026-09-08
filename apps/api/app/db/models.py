@@ -2380,6 +2380,11 @@ class Experiment(Base):
     seed: Mapped[int] = mapped_column(Integer, nullable=False, default=42)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Stamped only once every canonical scientific child row exists. PostgreSQL then
+    # rejects mutations to this run's evidence; status/result stay writable.
+    scientific_evidence_locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -2947,6 +2952,7 @@ class FeatureSetVersion(Base):
     candidates: Mapped[list["ExperimentCandidate"]] = relationship(
         back_populates="feature_set_version",
         foreign_keys="ExperimentCandidate.feature_set_version_id",
+        passive_deletes=True,
     )
     model_versions: Mapped[list["ModelVersion"]] = relationship(
         back_populates="feature_set_version",
