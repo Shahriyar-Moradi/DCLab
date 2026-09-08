@@ -332,7 +332,8 @@ def _isolated_database(monkeypatch):
     admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
     with admin_engine.connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{name}"'))
-    database_url = str(admin_url.set(database=name))
+    # URL.__str__ masks the password. This value is used to connect, not log.
+    database_url = admin_url.set(database=name).render_as_string(hide_password=False)
     monkeypatch.setenv("DATABASE_URL", database_url)
     return admin_engine, name, database_url
 

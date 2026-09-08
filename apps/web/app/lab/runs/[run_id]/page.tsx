@@ -4,7 +4,7 @@ import { InsightCard } from "@/app/components/insights/InsightCard";
 import { KIND_LABELS, LAB_RUN_STATUS_LABEL } from "@/app/components/labs/status";
 import { adminClientUploadHref } from "@/app/components/admin/paths";
 import { RunProgress } from "@/app/components/product/ProductPrimitives";
-import { ModelBuildInspector } from "@/app/components/model-build/ModelBuildInspector";
+import { TechnicalRunDetails } from "@/app/components/explorer/TechnicalRunDetails";
 import { Button, buttonClassName } from "@/app/components/ui/Button";
 import { Fact, FactGrid, Panel } from "@/app/components/ui/Card";
 import { DataTable } from "@/app/components/ui/DataTable";
@@ -250,7 +250,7 @@ export default function LabRunPage() {
         {inProgress ? <ExecutionProgress run={run} /> : null}
 
         {run.pipeline_run_id ? (
-          <ModelBuildInspector workspaceId={run.workspace_id} pipelineRunId={run.pipeline_run_id} />
+          <TechnicalRunDetails workspaceId={run.workspace_id} pipelineRunId={run.pipeline_run_id} />
         ) : null}
 
         {showSummary ? (
