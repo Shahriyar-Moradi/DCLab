@@ -5,12 +5,20 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_platform_read
 from app.db.models import User
 from app.db.session import get_db
+from app.domain.data_plane import REPRODUCTION_NOTEBOOK_TYPE, REPRODUCTION_SCRIPT_TYPE
 from app.domain.errors import IdentityError
+from app.domain.model_build import (
+    ModelBuildReproductionArtifactRead,
+    ModelBuildReproductionArtifactsRead,
+    PipelineModelBuildRead,
+)
+from app.domain.model_build_reproduction import ModelBuildReproductionSpec
 from app.domain.technical_explorer import (
     DatasetListItem,
     ModelCandidateDetailRead,
@@ -24,6 +32,13 @@ from app.domain.technical_explorer import (
     WorkflowListItem,
     WorkspaceListItem,
 )
+from app.services.model_build_reproduction_service import (
+    download_model_build_reproduction_artifact,
+    get_pipeline_model_build_reproduction,
+    list_model_build_reproduction_artifacts,
+    reproduction_artifact_read,
+)
+from app.services.model_build_service import get_pipeline_model_build
 from app.services.technical_explorer_service import (
     list_datasets,
     list_workspaces,
@@ -46,6 +61,17 @@ def _required(value):
     if value is None:
         raise HTTPException(status_code=404, detail="not found")
     return value
+
+
+def _reproduction_download(artifact, payload: bytes) -> Response:
+    meta = reproduction_artifact_read(artifact)
+    filename = meta.filename if meta is not None else "reproduction"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(
+        content=payload,
+        media_type=artifact.mime_type or "application/octet-stream",
+        headers=headers,
+    )
 
 
 def _limit(limit: int | None) -> int | None:
@@ -164,6 +190,152 @@ def workspace_pipeline_run(
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
+
+
+@workspace_router.get(
+    "/{workspace_id}/pipeline-runs/{pipeline_run_id}/model-build",
+    response_model=PipelineModelBuildRead,
+)
+def workspace_pipeline_run_model_build(
+    workspace_id: UUID,
+    pipeline_run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PipelineModelBuildRead:
+    try:
+        return _required(
+            get_pipeline_model_build(
+                db,
+                user,
+                workspace_id,
+                pipeline_run_id,
+            )
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+
+
+@workspace_router.get(
+    "/{workspace_id}/pipeline-runs/{pipeline_run_id}/model-build/reproduction",
+    response_model=ModelBuildReproductionSpec,
+)
+def workspace_pipeline_run_model_build_reproduction(
+    workspace_id: UUID,
+    pipeline_run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ModelBuildReproductionSpec:
+    try:
+        return _required(
+            get_pipeline_model_build_reproduction(
+                db,
+                user,
+                workspace_id,
+                pipeline_run_id,
+            )
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+
+
+@workspace_router.get(
+    "/{workspace_id}/pipeline-runs/{pipeline_run_id}/model-build/reproduction/artifacts",
+    response_model=ModelBuildReproductionArtifactsRead,
+)
+def workspace_pipeline_run_reproduction_artifacts(
+    workspace_id: UUID,
+    pipeline_run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ModelBuildReproductionArtifactsRead:
+    try:
+        return _required(
+            list_model_build_reproduction_artifacts(
+                db, user, workspace_id, pipeline_run_id
+            )
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+
+
+@workspace_router.get(
+    "/{workspace_id}/pipeline-runs/{pipeline_run_id}/model-build/reproduction/notebook",
+    response_model=ModelBuildReproductionArtifactRead,
+)
+def workspace_pipeline_run_reproduction_notebook(
+    workspace_id: UUID,
+    pipeline_run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ModelBuildReproductionArtifactRead:
+    try:
+        listed = _required(
+            list_model_build_reproduction_artifacts(
+                db, user, workspace_id, pipeline_run_id
+            )
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    return _required(listed.notebook)
+
+
+@workspace_router.get(
+    "/{workspace_id}/pipeline-runs/{pipeline_run_id}/model-build/reproduction/notebook/download",
+)
+def workspace_pipeline_run_reproduction_notebook_download(
+    workspace_id: UUID,
+    pipeline_run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        pair = download_model_build_reproduction_artifact(
+            db, user, workspace_id, pipeline_run_id, REPRODUCTION_NOTEBOOK_TYPE
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    artifact, payload = _required(pair)
+    return _reproduction_download(artifact, payload)
+
+
+@workspace_router.get(
+    "/{workspace_id}/pipeline-runs/{pipeline_run_id}/model-build/reproduction/script",
+    response_model=ModelBuildReproductionArtifactRead,
+)
+def workspace_pipeline_run_reproduction_script(
+    workspace_id: UUID,
+    pipeline_run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ModelBuildReproductionArtifactRead:
+    try:
+        listed = _required(
+            list_model_build_reproduction_artifacts(
+                db, user, workspace_id, pipeline_run_id
+            )
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    return _required(listed.script)
+
+
+@workspace_router.get(
+    "/{workspace_id}/pipeline-runs/{pipeline_run_id}/model-build/reproduction/script/download",
+)
+def workspace_pipeline_run_reproduction_script_download(
+    workspace_id: UUID,
+    pipeline_run_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        pair = download_model_build_reproduction_artifact(
+            db, user, workspace_id, pipeline_run_id, REPRODUCTION_SCRIPT_TYPE
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    artifact, payload = _required(pair)
+    return _reproduction_download(artifact, payload)
 
 
 @workspace_router.get(

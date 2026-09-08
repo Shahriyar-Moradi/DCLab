@@ -1,5 +1,6 @@
 "use client";
 
+import { ModelBuildInspector } from "@/app/components/model-build/ModelBuildInspector";
 import { Badge } from "@/app/components/ui/Badge";
 import { Button } from "@/app/components/ui/Button";
 import { GlassPanel } from "@/app/components/ui/GlassPanel";
@@ -136,6 +137,10 @@ export function PipelineMonitorView({
         {monitor.summary.started_at ? <Metric label="Started" value={formatWhen(monitor.summary.started_at)} /> : null}
         {monitor.summary.ended_at ? <Metric label="Ended" value={formatWhen(monitor.summary.ended_at)} /> : null}
         {elapsed ? <Metric label="Duration" value={elapsed} /> : null}
+      </div>
+
+      <div className="mt-8">
+        <ModelBuildInspector workspaceId={monitor.summary.workspace_id} pipelineRunId={monitor.summary.id} />
       </div>
 
       <Section title="Pipeline stage coverage" subtitle="Persisted stage events make fast and completed runs fully replayable.">

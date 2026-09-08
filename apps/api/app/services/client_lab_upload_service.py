@@ -166,6 +166,8 @@ def _to_read(
     return ClientLabUploadRead(
         id=row.id,
         run_id=row.run_id,
+        workspace_id=row.workspace_id,
+        pipeline_run_id=row.experiment_id,
         dataset_id=row.dataset_id,
         status=coarse,
         stage=client_stage(row.pipeline_status),

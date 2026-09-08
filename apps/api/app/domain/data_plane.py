@@ -13,7 +13,12 @@ ARTIFACT_TYPES = (
     "result_json",
     "feature_manifest",
     "dependency_lock",
+    "reproduction_notebook",
+    "reproduction_script",
 )
+
+REPRODUCTION_NOTEBOOK_TYPE = "reproduction_notebook"
+REPRODUCTION_SCRIPT_TYPE = "reproduction_script"
 
 DATA_SOURCE_TYPES = (
     "upload",

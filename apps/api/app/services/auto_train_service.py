@@ -1356,6 +1356,11 @@ def run_auto_train_job(
                     feature_set_version_id=repro.feature_set_version_id,
                 )
                 link_holdout_evaluation_to_model_version(db, experiment, model_version)
+            from app.services.model_build_reproduction_service import (
+                persist_model_build_reproduction_artifacts,
+            )
+
+            persist_model_build_reproduction_artifacts(db, experiment)
             # Last statement before the commit: the triggers this arms read the
             # stamp inside this transaction.
             if lock_scientific_evidence(db, experiment) is None:

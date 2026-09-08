@@ -1076,6 +1076,183 @@ body {
     background: var(--color-navy);
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
   }
+
+  .product-run-step-failed {
+    color: var(--color-oxblood);
+  }
+
+  .product-run-step-failed .product-run-step-marker {
+    border-color: var(--color-oxblood);
+    background: var(--color-oxblood);
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+  }
+
+  .model-build-progress {
+    height: 0.4rem;
+    overflow: hidden;
+    border-radius: var(--radius-pill);
+    background: var(--color-navy-soft);
+  }
+
+  .model-build-progress-fill {
+    height: 100%;
+    border-radius: var(--radius-pill);
+    background: var(--color-navy);
+    transition: width var(--motion-base) var(--ease-out);
+  }
+
+  .model-build-rail {
+    display: flex;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0.15rem 0 0.35rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    list-style: none;
+  }
+
+  .model-build-step {
+    display: flex;
+    min-width: 7.5rem;
+    max-width: 9.5rem;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 0.35rem;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-card);
+    background: var(--color-paper-raised);
+    padding: 0.65rem 0.7rem;
+    color: var(--color-ink-muted);
+    text-align: left;
+    transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+  }
+
+  .model-build-step:hover {
+    border-color: var(--color-navy);
+  }
+
+  .model-build-step-upcoming {
+    opacity: 0.55;
+  }
+
+  .model-build-step-completed {
+    color: var(--color-ink);
+    border-color: rgba(22, 163, 74, 0.28);
+  }
+
+  .model-build-step-running {
+    color: var(--color-ink);
+    border-color: rgba(37, 99, 235, 0.45);
+    background: var(--color-navy-soft);
+    font-weight: 600;
+  }
+
+  .model-build-step-failed {
+    color: var(--color-oxblood);
+    border-color: rgba(220, 38, 38, 0.35);
+  }
+
+  .model-build-step-selected {
+    outline: 2px solid var(--color-navy);
+    outline-offset: 1px;
+  }
+
+  .model-build-step-marker {
+    height: 0.55rem;
+    width: 0.55rem;
+    flex: 0 0 auto;
+    border: 2px solid var(--color-hairline);
+    border-radius: var(--radius-pill);
+    background: transparent;
+  }
+
+  .model-build-step-completed .model-build-step-marker {
+    border-color: var(--color-green);
+    background: var(--color-green);
+  }
+
+  .model-build-step-running .model-build-step-marker {
+    border-color: var(--color-navy);
+    background: var(--color-navy);
+    animation: model-build-live 1.2s var(--ease-out) infinite;
+  }
+
+  .model-build-step-failed .model-build-step-marker {
+    border-color: var(--color-oxblood);
+    background: var(--color-oxblood);
+  }
+
+  .model-build-lock-banner {
+    border: 1px solid rgba(37, 99, 235, 0.28);
+    border-radius: var(--radius-card);
+    background: var(--color-navy-soft);
+    padding: 1rem 1.1rem;
+  }
+
+  .model-build-code {
+    margin-top: 1.25rem;
+    overflow: hidden;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-card);
+    background: var(--color-paper-raised);
+    color: var(--color-ink);
+  }
+
+  .model-build-code-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem 0.7rem;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+
+  .model-build-code-helpers {
+    margin: 0;
+    padding: 0.75rem 1.1rem;
+    border-bottom: 1px solid var(--color-hairline);
+    background: #f8fafc;
+    color: var(--color-ink);
+    font-size: 0.75rem;
+    line-height: 1.45;
+  }
+
+  .model-build-code-source {
+    margin: 0;
+    padding: 0.95rem 1.1rem 1.1rem;
+    overflow-x: auto;
+    background: #f8fafc;
+    color: var(--color-ink);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    white-space: pre;
+  }
+
+  @media (max-width: 767px) {
+    .model-build-rail {
+      display: grid;
+      overflow-x: visible;
+    }
+
+    .model-build-step {
+      min-width: 0;
+      max-width: none;
+      flex-direction: row;
+      align-items: center;
+    }
+  }
+}
+
+@keyframes model-build-live {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0);
+  }
 }
 
 @keyframes app-drawer-in {

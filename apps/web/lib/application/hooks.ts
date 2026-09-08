@@ -33,6 +33,7 @@ import {
   OrganizationSummarySchema,
   RegisteredModelSchema,
   PipelineMonitorSchema,
+  PipelineModelBuildSchema,
   PlatformBusinessDetailSchema,
   PlatformBusinessSummarySchema,
   PlatformDomainDetailSchema,
@@ -64,6 +65,7 @@ import {
   type OrganizationSummary,
   type RegisteredModel,
   type PipelineMonitor,
+  type PipelineModelBuild,
   type PlatformBusinessDetail,
   type PlatformBusinessSummary,
   type PlatformDomainDetail,
@@ -304,7 +306,28 @@ export async function downloadAdminRunPredictions(runId: string): Promise<void> 
 }
 
 async function saveDownloadedCsv(path: string): Promise<void> {
-  const { blob, filename } = await apiDownload(path);
+  await saveDownloadedFile(path, { accept: "text/csv", fallbackFilename: "predictions.csv" });
+}
+
+export async function downloadModelBuildReproduction(
+  workspaceId: string,
+  pipelineRunId: string,
+  kind: "notebook" | "script",
+): Promise<void> {
+  const suffix = kind === "notebook" ? "notebook" : "script";
+  await saveDownloadedFile(
+    `/workspaces/${workspaceId}/pipeline-runs/${pipelineRunId}/model-build/reproduction/${suffix}/download`,
+    {
+      fallbackFilename: kind === "notebook" ? "reproduction.ipynb" : "reproduction.py",
+    },
+  );
+}
+
+async function saveDownloadedFile(
+  path: string,
+  options?: { accept?: string; fallbackFilename?: string },
+): Promise<void> {
+  const { blob, filename } = await apiDownload(path, options);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -603,6 +626,42 @@ export function usePipelineMonitor(id: string | undefined, businessId?: string):
       const status = query.state.data?.summary.status.toLowerCase();
       return status && !["completed", "failed", "skipped"].includes(status) ? 1000 : false;
     },
+  });
+}
+
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "skipped", "cancelled", "canceled"]);
+const RUNNING_STAGE_STATUSES = new Set(["running", "started", "in_progress"]);
+const PENDING_STAGE_STATUSES = new Set(["pending", "queued", "created"]);
+
+function modelBuildIsLive(build: PipelineModelBuild | undefined): boolean {
+  if (!build) return false;
+  const status = build.pipeline_run_status.toLowerCase();
+  if (["failed", "skipped", "cancelled", "canceled"].includes(status)) return false;
+  if (build.stages.some((stage) => RUNNING_STAGE_STATUSES.has(stage.status.toLowerCase()))) {
+    return true;
+  }
+  if (build.stages.some((stage) => PENDING_STAGE_STATUSES.has(stage.status.toLowerCase()))) {
+    return true;
+  }
+  if (status === "completed" && (!build.reproduction_notebook || !build.reproduction_script)) {
+    return true;
+  }
+  return !TERMINAL_RUN_STATUSES.has(status);
+}
+
+export function useModelBuild(
+  workspaceId: string | undefined,
+  pipelineRunId: string | undefined,
+): ReturnType<typeof useQuery<PipelineModelBuild>> {
+  return useQuery({
+    queryKey: ["model-build", workspaceId, pipelineRunId],
+    queryFn: () =>
+      apiGet(
+        `/workspaces/${workspaceId}/pipeline-runs/${pipelineRunId}/model-build`,
+        PipelineModelBuildSchema,
+      ),
+    enabled: Boolean(workspaceId && pipelineRunId),
+    refetchInterval: (query) => (modelBuildIsLive(query.state.data) ? 1000 : false),
   });
 }
 

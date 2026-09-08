@@ -6,14 +6,18 @@ Create Date: 2026-09-05
 
 Queryable holdout/validation/metric facts live on pipeline_scientific_plans.
 experiments.result JSON remains compatibility evidence beside the row.
+
+The backfill mapper is frozen in this file. It must not import live service
+modules; later changes to scientific persistence must not alter 0039 output.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import Sequence, Union
+from typing import Any, Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
@@ -24,10 +28,132 @@ down_revision: Union[str, Sequence[str], None] = "0038_runtime_env_lock_scope"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+# Frozen 0039 backfill mapper. Copied from scientific_lineage_service at the
+# revision that created this table. Do not import the live service, and do not
+# update this copy when that service later changes.
+
+
+def _content_digest(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _as_plan_dict(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        return dict(payload) if isinstance(payload, dict) else {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _json_ready(payload: Any) -> Any:
+    return json.loads(json.dumps(payload, default=str))
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _required_str(value: Any) -> str | None:
+    return _optional_str(value)
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def scientific_plan_columns_from_payloads(
+    *,
+    holdout_plan: Any,
+    development_plan: Any,
+    split: Any = None,
+    validation_plan: Any = None,
+    metric_plan: Any = None,
+) -> dict[str, Any] | None:
+    """Map HoldoutPlan / ModelDevelopmentPlan JSON into queryable columns.
+
+    Frozen as of 0039. Byte-identical to the live mapper at that revision.
+    """
+
+    holdout = _as_plan_dict(holdout_plan)
+    development = _as_plan_dict(development_plan)
+    if not holdout or not development:
+        return None
+    nested_validation = _as_plan_dict(development.get("validation_plan"))
+    nested_metric = _as_plan_dict(development.get("metric_plan"))
+    validation = nested_validation or _as_plan_dict(validation_plan)
+    metric = nested_metric or _as_plan_dict(metric_plan)
+    profile = _as_plan_dict(development.get("problem_profile"))
+    split_payload = _as_plan_dict(split)
+    task_type = _required_str(profile.get("task_type"))
+    holdout_strategy = _required_str(holdout.get("strategy"))
+    validation_strategy = _required_str(validation.get("strategy"))
+    primary_metric = _required_str(metric.get("primary_metric"))
+    if not task_type or not holdout_strategy or not validation_strategy or not primary_metric:
+        return None
+    try:
+        holdout_test_size = float(holdout.get("test_size"))
+    except (TypeError, ValueError):
+        return None
+    requested = _optional_int(validation.get("requested_folds"))
+    requested_folds = 5 if requested is None else requested
+    development_payload = dict(development)
+    if validation and not nested_validation:
+        development_payload["validation_plan"] = validation
+    if metric and not nested_metric:
+        development_payload["metric_plan"] = metric
+    allowed = list(development.get("allowed_features") or [])
+    excluded = list(development.get("excluded_features") or [])
+    group_column = (
+        _optional_str(holdout.get("group_column"))
+        or _optional_str(development.get("group_column"))
+        or _optional_str(validation.get("group_column"))
+    )
+    time_column = (
+        _optional_str(holdout.get("time_column"))
+        or _optional_str(development.get("time_column"))
+        or _optional_str(validation.get("time_column"))
+    )
+    full_plan = _json_ready(
+        {
+            "holdout_plan": holdout,
+            "model_development_plan": development_payload,
+            "validation_plan": validation,
+            "metric_plan": metric,
+            "split": split_payload,
+        }
+    )
+    return {
+        "task_type": task_type,
+        "holdout_strategy": holdout_strategy,
+        "holdout_test_size": holdout_test_size,
+        "validation_strategy": validation_strategy,
+        "requested_folds": requested_folds,
+        "actual_folds": _optional_int(validation.get("actual_folds")),
+        "primary_metric": primary_metric,
+        "group_column": group_column,
+        "time_column": time_column,
+        "allowed_feature_count": len(allowed),
+        "excluded_feature_count": len(excluded),
+        "holdout_plan_digest": _content_digest(_json_ready(holdout)),
+        "model_development_plan_digest": _content_digest(_json_ready(development_payload)),
+        "full_plan": full_plan,
+    }
+
 
 def _backfill_scientific_plans() -> None:
-    from app.services.scientific_lineage_service import scientific_plan_columns_from_payloads
-
     connection = op.get_bind()
     existing = {
         row[0]

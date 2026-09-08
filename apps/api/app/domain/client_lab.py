@@ -86,8 +86,9 @@ class ClientLabUploadRead(BaseModel):
     ready / saved. Engine internals never appear on this payload.
 
     `run_id` is this upload's ML-run identity (persisted on the row, currently
-    the same UUID as `id`). `status` is the stored coarse `client_status`
-    (queued / processing / completed / failed). `stage` and `pipeline_status` on
+    the same UUID as `id`). `workspace_id` and `pipeline_run_id` identify the
+    canonical model-build timeline for this upload. `status` is the stored coarse
+    `client_status` (queued / processing / completed / failed). `stage` and `pipeline_status` on
     this payload stay that same four-state view. Fine-grained execution lives
     only on the stored `pipeline_status` column. `milestone` is the current
     client-safe progress label; `steps` is the five-item checklist. When the
@@ -99,6 +100,8 @@ class ClientLabUploadRead(BaseModel):
 
     id: UUID
     run_id: UUID
+    workspace_id: UUID
+    pipeline_run_id: UUID | None = None
     dataset_id: UUID | None = None
     status: str
     stage: str

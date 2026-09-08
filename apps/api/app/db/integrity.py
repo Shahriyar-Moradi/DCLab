@@ -62,6 +62,27 @@ END;
 $$ LANGUAGE plpgsql
 """
 
+# CodeSnapshot is immutable to direct writes, but its optional stage association
+# is explicitly cleared by PostgreSQL when that stage is removed. The nested
+# trigger-depth check distinguishes that referential action from direct SQL.
+PREVENT_CODE_SNAPSHOT_MUTATION_SQL = """
+CREATE OR REPLACE FUNCTION prevent_code_snapshot_mutation()
+RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'UPDATE'
+        AND pg_trigger_depth() > 1
+        AND OLD.pipeline_stage_run_id IS NOT NULL
+        AND NEW.pipeline_stage_run_id IS NULL
+        AND (to_jsonb(OLD) - 'pipeline_stage_run_id')
+            IS NOT DISTINCT FROM (to_jsonb(NEW) - 'pipeline_stage_run_id')
+    THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION '% rows are immutable', TG_TABLE_NAME;
+END;
+$$ LANGUAGE plpgsql
+"""
+
 ALWAYS_IMMUTABLE_TABLES = (
     "datasets",
     "model_versions",
@@ -150,15 +171,21 @@ def provenance_immutability_upgrade_statements() -> list[str]:
         PREVENT_CANONICAL_MUTATION_SQL,
         PREVENT_LOCKED_MUTATION_SQL,
         PREVENT_COLUMN_MUTATION_SQL,
+        PREVENT_CODE_SNAPSHOT_MUTATION_SQL,
     ]
     for table in PROVENANCE_IMMUTABLE_TABLES:
         trigger = _always_trigger_name(table)
+        function = (
+            "prevent_code_snapshot_mutation"
+            if table == "code_snapshots"
+            else "prevent_canonical_row_mutation"
+        )
         statements.append(f"DROP TRIGGER IF EXISTS {trigger} ON {table}")
         statements.append(
             f"""
 CREATE TRIGGER {trigger}
 BEFORE UPDATE OR DELETE ON {table}
-FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()
+FOR EACH ROW EXECUTE FUNCTION {function}()
 """
         )
     for table in PROVENANCE_LOCKED_TABLES:
@@ -201,6 +228,7 @@ def provenance_immutability_downgrade_statements() -> list[str]:
     )
     # prevent_canonical_row_mutation / prevent_locked_row_mutation stay: 0035 owns them.
     statements.append("DROP FUNCTION IF EXISTS prevent_canonical_column_mutation()")
+    statements.append("DROP FUNCTION IF EXISTS prevent_code_snapshot_mutation()")
     return statements
 
 
