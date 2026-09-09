@@ -35,6 +35,23 @@ EXPECTED_ACTION_COLUMNS = {
     "fk_client_lab_uploads_workspace_data_source": ["data_source_id"],
     "fk_client_lab_uploads_workspace_ingestion_run": ["ingestion_run_id"],
     "fk_ml_jobs_workspace_project": ["project_id"],
+    "fk_ml_jobs_workspace_execution_request": ["execution_request_id"],
+    "fk_ml_jobs_workspace_workflow_run": ["workflow_run_id"],
+    "fk_ml_jobs_workspace_pipeline_run": ["pipeline_run_id"],
+    "fk_execution_requests_workspace_parent": ["parent_request_id"],
+    "fk_execution_requests_workspace_pipeline_run": ["pipeline_run_id"],
+    "fk_execution_requests_workspace_project": ["project_id"],
+    "fk_execution_requests_workspace_workflow_run": ["workflow_run_id"],
+    "fk_data_accesses_workspace_project": ["project_id"],
+    "fk_ingestion_runs_workspace_data_access": ["data_access_id"],
+    "fk_ingestion_runs_data_source_data_access": ["data_access_id"],
+    "fk_ingestion_runs_workspace_execution_request": ["execution_request_id"],
+    "fk_data_access_events_workspace_execution_request": ["execution_request_id"],
+    "fk_data_access_events_workspace_ingestion_run": ["ingestion_run_id"],
+    "fk_visualizations_workspace_project": ["project_id"],
+    "fk_visualizations_workspace_stage": ["pipeline_stage_run_id"],
+    "fk_visualizations_workspace_candidate": ["candidate_id"],
+    "fk_visualizations_workspace_evaluation": ["model_evaluation_id"],
 }
 
 

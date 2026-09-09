@@ -17,7 +17,7 @@ from app.db.models import (
     UserRole,
     Workspace,
 )
-from app.domain.ml_jobs import JOB_QUEUED, JOB_TYPE_AUTO_TRAIN
+from app.domain.ml_jobs import HANDLER_LABS_AUTO_TRAIN, JOB_QUEUED, JOB_TYPE_AUTO_TRAIN
 from app.services.auth_service import create_user
 from app.services.data_source_service import create_data_source
 from app.services.ingestion_run_service import start_ingestion_run
@@ -188,17 +188,18 @@ def _insert_ml_job(workspace_id, project_id, upload_id):
     return (
         """
         INSERT INTO ml_jobs (
-            id, workspace_id, project_id, job_type, target_id, upload_id, status,
-            attempts, max_attempts
+            id, workspace_id, project_id, job_type, handler_key, target_id,
+            upload_id, status, attempts, max_attempts
         ) VALUES (
-            gen_random_uuid(), :workspace_id, :project_id, :job_type, :target_id,
-            :upload_id, :status, 0, 3
+            gen_random_uuid(), :workspace_id, :project_id, :job_type, :handler_key,
+            :target_id, :upload_id, :status, 0, 3
         )
         """,
         {
             "workspace_id": workspace_id,
             "project_id": project_id,
             "job_type": JOB_TYPE_AUTO_TRAIN,
+            "handler_key": HANDLER_LABS_AUTO_TRAIN,
             "target_id": uuid4(),
             "upload_id": upload_id,
             "status": JOB_QUEUED,
@@ -504,6 +505,7 @@ def test_orm_same_workspace_relationships_still_flush(db_session, ingest_tenants
         workspace_id=alpha.workspace.id,
         project_id=alpha.project.id,
         job_type=JOB_TYPE_AUTO_TRAIN,
+        handler_key=HANDLER_LABS_AUTO_TRAIN,
         target_id=upload.id,
         upload_id=upload.id,
         status=JOB_QUEUED,

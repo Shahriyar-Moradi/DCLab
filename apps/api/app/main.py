@@ -37,6 +37,7 @@ from app.api.technical_explorer import (
     admin_router as admin_technical_explorer_router,
     workspace_router as technical_explorer_workspace_router,
 )
+from app.api.v1 import router as v1_router
 from app.config import get_settings
 from app.db.session import get_engine
 from app.services.job_dispatcher import start_local_ml_worker
@@ -104,6 +105,7 @@ client_api.include_router(decisions_router)
 client_api.include_router(insights_router)
 client_api.include_router(client_labs_router)
 
+app.include_router(v1_router)
 app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(reproducibility_workspace_router)
