@@ -197,6 +197,7 @@ def create_user(
         UserRole.CLIENT_USER: WorkspaceRole.BUSINESS_ADMIN,
         UserRole.BUSINESS_ADMIN: WorkspaceRole.BUSINESS_ADMIN,
         UserRole.BUSINESS_DEVELOPER: WorkspaceRole.BUSINESS_DEVELOPER,
+        UserRole.PERSONAL_DEVELOPER: WorkspaceRole.PERSONAL_DEVELOPER,
     }
     canonical_workspace_roles = {
         UserRole.WORKSPACE_OWNER: WorkspaceRole.WORKSPACE_OWNER,
@@ -260,6 +261,7 @@ def _workspace_role_for(role: UserRole) -> WorkspaceRole | None:
         UserRole.CLIENT_USER: WorkspaceRole.BUSINESS_ADMIN,
         UserRole.BUSINESS_ADMIN: WorkspaceRole.BUSINESS_ADMIN,
         UserRole.BUSINESS_DEVELOPER: WorkspaceRole.BUSINESS_DEVELOPER,
+        UserRole.PERSONAL_DEVELOPER: WorkspaceRole.PERSONAL_DEVELOPER,
         UserRole.WORKSPACE_OWNER: WorkspaceRole.WORKSPACE_OWNER,
         UserRole.WORKSPACE_ADMIN: WorkspaceRole.WORKSPACE_ADMIN,
         UserRole.ML_ENGINEER: WorkspaceRole.ML_ENGINEER,

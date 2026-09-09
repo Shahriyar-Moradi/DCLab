@@ -154,11 +154,17 @@ def read_artifact_bytes(
 
 
 def list_artifacts(
-    db: Session, *, workspace_id: UUID, project_id: UUID | None = None
+    db: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID | None = None,
+    pipeline_run_id: UUID | None = None,
 ) -> list[Artifact]:
     _require_workspace(db, workspace_id)
     stmt = select(Artifact).where(Artifact.workspace_id == workspace_id)
     if project_id is not None:
         stmt = stmt.where(Artifact.project_id == project_id)
+    if pipeline_run_id is not None:
+        stmt = stmt.where(Artifact.pipeline_run_id == pipeline_run_id)
     stmt = stmt.order_by(Artifact.created_at.desc(), Artifact.id)
     return list(db.scalars(stmt))

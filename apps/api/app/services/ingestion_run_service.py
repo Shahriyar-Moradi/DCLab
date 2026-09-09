@@ -7,7 +7,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.db.models import DataSource, IngestionRun, Project
+from app.db.models import DataAccess, DataSource, ExecutionRequest, IngestionRun, Project
 from app.domain.data_plane import INGESTION_RUN_STATUSES
 from app.domain.errors import IdentityError, IngestionRunNotFoundError
 
@@ -32,6 +32,34 @@ def _require_project(db: Session, workspace_id: UUID, project_id: UUID) -> Proje
     return project
 
 
+def _require_access(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    data_source_id: UUID,
+    data_access_id: UUID | None,
+) -> None:
+    if data_access_id is None:
+        return
+    access = db.get(DataAccess, data_access_id)
+    if access is None or access.workspace_id != workspace_id:
+        raise IdentityError("data access does not belong to this workspace", status_code=404)
+    if access.data_source_id != data_source_id:
+        raise IdentityError("data access does not belong to this data source", status_code=400)
+
+
+def _require_execution_request(
+    db: Session, workspace_id: UUID, execution_request_id: UUID | None
+) -> None:
+    if execution_request_id is None:
+        return
+    request = db.get(ExecutionRequest, execution_request_id)
+    if request is None or request.workspace_id != workspace_id:
+        raise IdentityError(
+            "execution request does not belong to this workspace", status_code=404
+        )
+
+
 def start_ingestion_run(
     db: Session,
     *,
@@ -39,16 +67,27 @@ def start_ingestion_run(
     project_id: UUID,
     data_source_id: UUID,
     status: str = "running",
+    data_access_id: UUID | None = None,
+    execution_request_id: UUID | None = None,
 ) -> IngestionRun:
     if status not in INGESTION_RUN_STATUSES:
         raise IdentityError(f"unsupported ingestion status: {status}", status_code=400)
     _require_project(db, workspace_id, project_id)
     _require_source(db, workspace_id, data_source_id)
+    _require_access(
+        db,
+        workspace_id=workspace_id,
+        data_source_id=data_source_id,
+        data_access_id=data_access_id,
+    )
+    _require_execution_request(db, workspace_id, execution_request_id)
     now = _now()
     row = IngestionRun(
         workspace_id=workspace_id,
         project_id=project_id,
         data_source_id=data_source_id,
+        data_access_id=data_access_id,
+        execution_request_id=execution_request_id,
         status=status,
         started_at=now,
         rows_read=0,

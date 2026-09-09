@@ -180,12 +180,15 @@ async function downloadLabResultsCsv(
   ]);
   expect(response.status(), await response.text()).toBe(200);
   expect(response.headers()["content-type"] ?? "").toMatch(/text\/csv/);
+  expect(response.headers()["content-disposition"] ?? "").toMatch(
+    /filename="[^"]+-predictions\.csv"/i,
+  );
   expect(new URL(response.url()).pathname).toMatch(
     /\/app\/labs\/uploads\/[^/]+\/predictions\.csv$/,
   );
   await download.saveAs(destination);
   const csv = await readFile(destination, "utf8");
-  expect(download.suggestedFilename()).toMatch(/\.csv$/i);
+  expect(download.suggestedFilename()).toMatch(/-predictions\.csv$/i);
   return { filename: download.suggestedFilename(), csv };
 }
 
@@ -406,7 +409,12 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await login(page, "client-user@verification.invalid");
     await expect(page).toHaveURL(/\/app\/dashboards/);
     await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
-    await expect(\n      page.getByRole("group", { name: "Account" }).getByText("Client User", { exact: true }),\n    ).toBeVisible();
+    await expect(
+      page.getByRole("group", { name: "Account" }).getByText("Client User", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("group", { name: "Account" }).getByText("client-user@verification.invalid"),
+    ).toBeVisible();
 
     const navigation = page.getByRole("navigation", {
       name: "Application navigation",
@@ -1042,9 +1050,9 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
           page.getByRole("button", { name: "Download results" }).click(),
         ]);
         expect(deniedClick.status()).toBe(403);
-        await expect(page.getByRole("alert")).toHaveText(
-          "Could not download the results.",
-        );
+        await expect(
+          page.getByRole("alert").filter({ hasText: "Could not download the results." }),
+        ).toBeVisible();
       }
       if (capability === "deep_audit") {
         const denied = await page.request.post(

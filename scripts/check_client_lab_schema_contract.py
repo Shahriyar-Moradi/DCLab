@@ -82,7 +82,11 @@ def _type_compatible(annotation: Any, zod_expr: str) -> bool:
     if origin is list:
         return "z.array(" in expr or "array(" in expr
     if inner is UUID:
-        return "uuid" in expr or "z.string(" in expr
+        # Labs IDs must stay `z.uuid()`. `z.guid()` is a different Zod type used
+        # for sentinel workspace ids; do not treat it as compatible via substring.
+        if "z.guid(" in expr:
+            return False
+        return "z.uuid(" in expr or "z.string(" in expr
     if inner is datetime:
         return "z.string(" in expr
     if inner is bool:
@@ -115,6 +119,14 @@ def collect_mismatches(source: str | None = None) -> list[str]:
                 )
                 continue
             annotation = py_fields[name].annotation
+            if name == "workspace_id":
+                expr = zod_expr.replace(" ", "")
+                if "z.guid(" not in expr:
+                    mismatches.append(
+                        f"{zod_name}.{name} must use z.guid() for the demo "
+                        f"sentinel workspace id, got `{zod_expr}`"
+                    )
+                continue
             if not _type_compatible(annotation, zod_expr):
                 mismatches.append(
                     f"{zod_name}.{name}: Zod `{zod_expr}` is not compatible with "

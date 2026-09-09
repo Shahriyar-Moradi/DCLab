@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ClientLabUpload, Dataset, DatasetAsset, User
 from app.domain.client_lab import ClientLabUploadRead
+from app.domain.data_access import ACCESS_TYPE_UPLOAD, EXECUTION_MODE_COPY
 from app.domain.errors import OpenLabFileError, UnknownLabCategoryError
 from app.domain.lab_run_stages import (
     IN_PROGRESS_STAGES,
@@ -28,11 +29,19 @@ from app.domain.lab_run_stages import (
     public_pipeline_status,
     steps_for,
 )
+from app.domain.privacy_audit import (
+    ACTOR_USER,
+    EVENT_COMPLETED,
+    OPERATION_COPY,
+    PURPOSE_INGEST,
+)
 from app.engine.data.loaders import infer_schema, load_table
 from app.engine.lab.open_ingest import OpenIngestError, OpenIngestPreview, preview_upload_path
 from app.services.artifact_service import artifact_object_key, record_artifact
 from app.services.auto_train_service import enqueue_auto_train
 from app.services.client_upload_insights import insights_for_upload, outcome_for_upload, predictions_csv_text
+from app.services.data_access_event_service import append_data_access_event
+from app.services.data_access_service import create_data_access
 from app.services.data_source_service import create_data_source
 from app.services.dataset_column_service import persist_dataset_columns, schema_digest_from_columns
 from app.services.ingestion_run_service import complete_ingestion_run, start_ingestion_run
@@ -274,11 +283,29 @@ def save_upload(
                     "artifact_id": str(artifact.id),
                 },
             )
+            access = create_data_access(
+                db,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                data_source_id=source.id,
+                name=filename,
+                access_type=ACCESS_TYPE_UPLOAD,
+                provider=put.provider,
+                execution_mode=EXECUTION_MODE_COPY,
+                created_by=user.id,
+                resource_locator={
+                    "original_filename": filename,
+                    "kind": preview.kind,
+                    "object_key": put.key,
+                    "artifact_id": str(artifact.id),
+                },
+            )
             ingestion = start_ingestion_run(
                 db,
                 workspace_id=workspace_id,
                 project_id=project.id,
                 data_source_id=source.id,
+                data_access_id=access.id,
                 status="running",
             )
 
@@ -360,13 +387,59 @@ def save_upload(
                 commit=False,
             )
             row.experiment_id = pipeline_run.id
+            from app.services.execution_request_service import (
+                attach_legacy_labs_model_build_request,
+            )
             from app.services.ml_job_service import create_auto_train_job
 
+            request = attach_legacy_labs_model_build_request(
+                db,
+                upload=row,
+                actor=user,
+                project_id=project.id,
+                workflow_run_id=workflow_run.id,
+                pipeline_run_id=pipeline_run.id,
+            )
+            ingestion.execution_request_id = request.id
+            append_data_access_event(
+                db,
+                workspace_id=workspace_id,
+                data_access_id=access.id,
+                execution_request_id=request.id,
+                ingestion_run_id=ingestion.id,
+                actor_type=ACTOR_USER,
+                actor_user_id=user.id,
+                purpose=PURPOSE_INGEST,
+                operation=OPERATION_COPY,
+                status=EVENT_COMPLETED,
+                resource_summary={
+                    "data_source_id": str(source.id),
+                    "data_access_id": str(access.id),
+                    "artifact_id": str(artifact.id),
+                    "object_key": put.key,
+                    "filename": filename,
+                    "provider": put.provider,
+                    "access_type": ACCESS_TYPE_UPLOAD,
+                    "execution_mode": EXECUTION_MODE_COPY,
+                },
+                column_summary={
+                    "column_names": list(preview.fields_noticed or []),
+                    "column_count": len(preview.fields_noticed or []),
+                },
+                rows_read=ingestion.rows_read,
+                bytes_read=ingestion.bytes_read,
+                started_at=ingestion.started_at,
+                completed_at=ingestion.completed_at,
+            )
+            db.flush()
             create_auto_train_job(
                 db,
                 workspace_id=workspace_id,
                 project_id=project.id,
                 upload_id=row.id,
+                execution_request_id=request.id,
+                workflow_run_id=workflow_run.id,
+                pipeline_run_id=pipeline_run.id,
             )
             db.commit()
             db.refresh(row)

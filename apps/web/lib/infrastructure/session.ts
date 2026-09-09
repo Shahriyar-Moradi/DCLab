@@ -12,6 +12,7 @@ export type SessionUser = {
     | "dclab_developer"
     | "business_admin"
     | "business_developer"
+    | "personal_developer"
     | "client_user"
     | "workspace_owner"
     | "workspace_admin"
@@ -26,6 +27,7 @@ export const SESSION_ROLES: SessionUser["role"][] = [
   "dclab_developer",
   "business_admin",
   "business_developer",
+  "personal_developer",
   "client_user",
   "workspace_owner",
   "workspace_admin",
@@ -63,12 +65,6 @@ function notifySessionChanged(): void {
   window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
 }
 
-/**
- * The token lives in a cookie rather than localStorage so Next middleware can
- * verify it before an /admin page is ever rendered. Max-Age matches the JWT
- * expiry so the browser keeps the person signed in until they click Sign out
- * (or the token actually expires).
- */
 export function storeToken(token: string): void {
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   const maxAge = cookieMaxAgeSeconds(token);
@@ -93,6 +89,7 @@ export function roleLabel(role: SessionUser["role"]): string {
     dclab_developer: "DCLab Developer",
     business_admin: "Business Admin",
     business_developer: "Business Developer",
+    personal_developer: "Personal Developer",
     client_user: "Business Client",
     workspace_owner: "Workspace Owner",
     workspace_admin: "Workspace Admin",
@@ -104,6 +101,20 @@ export function roleLabel(role: SessionUser["role"]): string {
 
 export function isPlatformRole(role: SessionUser["role"]): boolean {
   return role === "dclab_admin" || role === "dclab_developer";
+}
+
+export function isDevelopmentRole(role: SessionUser["role"]): boolean {
+  return (
+    role === "personal_developer" ||
+    role === "business_admin" ||
+    role === "business_developer" ||
+    role === "workspace_owner" ||
+    role === "workspace_admin" ||
+    role === "ml_engineer" ||
+    role === "viewer" ||
+    role === "dclab_admin" ||
+    role === "dclab_developer"
+  );
 }
 
 export function isBusinessAdministrationRole(role: SessionUser["role"]): boolean {
@@ -118,7 +129,11 @@ export function isBusinessAdministrationRole(role: SessionUser["role"]): boolean
 }
 
 export function canWriteWorkspaceSession(role: SessionUser["role"]): boolean {
-  return role !== "dclab_developer" && role !== "business_developer" && role !== "viewer";
+  return (
+    role !== "dclab_developer" &&
+    role !== "business_developer" &&
+    role !== "viewer"
+  );
 }
 
 export function displayName(user: SessionUser): string {

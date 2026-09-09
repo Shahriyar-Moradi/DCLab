@@ -26,6 +26,136 @@
       "definition": "CHECK (((status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'running'::character varying])::text[])))"
     },
     {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_actor_type",
+      "definition": "CHECK (((actor_type)::text = ANY ((ARRAY['user'::character varying, 'system'::character varying, 'worker'::character varying, 'service'::character varying])::text[])))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_column_bounded",
+      "definition": "CHECK ((octet_length((column_summary)::text) <= 16384))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_column_no_rows",
+      "definition": "CHECK ((NOT jsonb_exists_any(column_summary, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text, 'values'::text, 'samples'::text])))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_column_object",
+      "definition": "CHECK ((jsonb_typeof(column_summary) = 'object'::text))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_completed",
+      "definition": "CHECK ((((status)::text = 'started'::text) OR (completed_at IS NOT NULL)))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_failure",
+      "definition": "CHECK ((((status)::text <> 'failed'::text) OR (failure_code IS NOT NULL)))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_operation",
+      "definition": "CHECK (((operation)::text = ANY ((ARRAY['read'::character varying, 'copy'::character varying, 'query'::character varying, 'ingest'::character varying, 'inspect'::character varying])::text[])))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_purpose",
+      "definition": "CHECK (((purpose)::text = ANY ((ARRAY['ingest'::character varying, 'model_build'::character varying, 'scoring'::character varying, 'exploration'::character varying, 'audit'::character varying, 'other'::character varying])::text[])))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_resource_bounded",
+      "definition": "CHECK ((octet_length((resource_summary)::text) <= 16384))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_resource_no_rows",
+      "definition": "CHECK ((NOT jsonb_exists_any(resource_summary, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text, 'values'::text, 'samples'::text])))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_resource_object",
+      "definition": "CHECK ((jsonb_typeof(resource_summary) = 'object'::text))"
+    },
+    {
+      "table": "data_access_events",
+      "name": "ck_data_access_events_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['started'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_access_type",
+      "definition": "CHECK (((access_type)::text = ANY ((ARRAY['upload'::character varying, 'object_storage'::character varying, 'database'::character varying, 'api'::character varying, 'customer_runner'::character varying])::text[])))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_credential_opaque",
+      "definition": "CHECK (((credential_reference IS NULL) OR (((char_length((credential_reference)::text) >= 1) AND (char_length((credential_reference)::text) <= 512)) AND ((credential_reference)::text ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]*$'::text) AND (POSITION(('://'::text) IN (credential_reference)) = 0))))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_execution_mode",
+      "definition": "CHECK (((execution_mode)::text = ANY ((ARRAY['copy'::character varying, 'query'::character varying, 'pushdown'::character varying, 'customer_runner'::character varying])::text[])))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_locator_bounded",
+      "definition": "CHECK ((octet_length((resource_locator)::text) <= 16384))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_locator_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(resource_locator, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'private_key'::text, 'connection_string'::text, 'dsn'::text])))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_locator_object",
+      "definition": "CHECK ((jsonb_typeof(resource_locator) = 'object'::text))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_privacy_bounded",
+      "definition": "CHECK ((octet_length((privacy_policy)::text) <= 16384))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_privacy_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(privacy_policy, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'private_key'::text, 'connection_string'::text, 'dsn'::text])))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_privacy_object",
+      "definition": "CHECK ((jsonb_typeof(privacy_policy) = 'object'::text))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_retention_bounded",
+      "definition": "CHECK ((octet_length((retention_policy)::text) <= 16384))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_retention_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(retention_policy, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'private_key'::text, 'connection_string'::text, 'dsn'::text])))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_retention_object",
+      "definition": "CHECK ((jsonb_typeof(retention_policy) = 'object'::text))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'disabled'::character varying, 'error'::character varying])::text[])))"
+    },
+    {
+      "table": "data_accesses",
+      "name": "ck_data_accesses_upload_is_copy",
+      "definition": "CHECK ((((access_type)::text <> 'upload'::text) OR ((execution_mode)::text = 'copy'::text)))"
+    },
+    {
       "table": "data_preparation_decisions",
       "name": "ck_data_preparation_decisions_source_valid",
       "definition": "CHECK (((decision_source)::text = ANY ((ARRAY['deterministic'::character varying, 'user'::character varying, 'llm'::character varying, 'fallback'::character varying])::text[])))"
@@ -49,6 +179,96 @@
       "table": "data_sources",
       "name": "ck_data_sources_type_valid",
       "definition": "CHECK (((source_type)::text = ANY ((ARRAY['upload'::character varying, 'database'::character varying, 'object_storage'::character varying, 'api'::character varying, 'crm'::character varying, 'logs'::character varying, 'other'::character varying])::text[])))"
+    },
+    {
+      "table": "dataset_columns",
+      "name": "ck_dataset_columns_classification_source",
+      "definition": "CHECK (((classification_source IS NULL) OR ((classification_source)::text = ANY ((ARRAY['manual'::character varying, 'system'::character varying, 'policy'::character varying, 'import'::character varying])::text[]))))"
+    },
+    {
+      "table": "dataset_columns",
+      "name": "ck_dataset_columns_llm_exposure_policy",
+      "definition": "CHECK (((llm_exposure_policy IS NULL) OR ((llm_exposure_policy)::text = ANY ((ARRAY['allow'::character varying, 'deny'::character varying, 'aggregate_only'::character varying, 'metadata_only'::character varying])::text[]))))"
+    },
+    {
+      "table": "dataset_columns",
+      "name": "ck_dataset_columns_model_use_policy",
+      "definition": "CHECK (((model_use_policy IS NULL) OR ((model_use_policy)::text = ANY ((ARRAY['allow'::character varying, 'deny'::character varying, 'aggregate_only'::character varying, 'metadata_only'::character varying])::text[]))))"
+    },
+    {
+      "table": "dataset_columns",
+      "name": "ck_dataset_columns_sensitivity_class",
+      "definition": "CHECK (((sensitivity_class IS NULL) OR ((sensitivity_class)::text = ANY ((ARRAY['public'::character varying, 'internal'::character varying, 'identifier'::character varying, 'pii'::character varying, 'sensitive'::character varying, 'restricted'::character varying])::text[]))))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_operation",
+      "definition": "CHECK (((operation)::text = 'model_build'::text))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_parent_not_self",
+      "definition": "CHECK (((parent_request_id IS NULL) OR (parent_request_id <> id)))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_result_bounded",
+      "definition": "CHECK (((result_summary IS NULL) OR (octet_length((result_summary)::text) <= 16384)))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_result_no_secrets",
+      "definition": "CHECK (((result_summary IS NULL) OR (NOT jsonb_exists_any(result_summary, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text]))))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_result_object",
+      "definition": "CHECK (((result_summary IS NULL) OR (jsonb_typeof(result_summary) = 'object'::text)))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_source",
+      "definition": "CHECK (((source_surface)::text = ANY ((ARRAY['api'::character varying, 'studio'::character varying, 'system'::character varying, 'legacy_labs'::character varying, 'mcp'::character varying, 'cli'::character varying])::text[])))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_spec_bounded",
+      "definition": "CHECK ((octet_length((request_spec)::text) <= 16384))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_spec_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(request_spec, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_spec_object",
+      "definition": "CHECK ((jsonb_typeof(request_spec) = 'object'::text))"
+    },
+    {
+      "table": "execution_requests",
+      "name": "ck_execution_requests_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['accepted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_branch_key",
+      "definition": "CHECK (((branch_key IS NULL) OR ((branch_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_branch_reason",
+      "definition": "CHECK (((branch_reason IS NULL) OR ((char_length((branch_reason)::text) >= 1) AND (char_length((branch_reason)::text) <= 512))))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_branch_requires_parent",
+      "definition": "CHECK (((parent_pipeline_run_id IS NOT NULL) OR ((branch_key IS NULL) AND (branch_reason IS NULL))))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_parent_not_self",
+      "definition": "CHECK (((parent_pipeline_run_id IS NULL) OR (parent_pipeline_run_id <> id)))"
     },
     {
       "table": "feature_lineage",
@@ -87,8 +307,43 @@
     },
     {
       "table": "ml_jobs",
+      "name": "ck_ml_jobs_auto_train_upload",
+      "definition": "CHECK ((((job_type)::text <> 'auto_train'::text) OR (upload_id IS NOT NULL)))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_handler_key_valid",
+      "definition": "CHECK (((handler_key)::text ~ '^[a-z][a-z0-9_.]{0,63}$'::text))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_handler_version_valid",
+      "definition": "CHECK (((handler_version IS NULL) OR ((handler_version)::text ~ '^[a-zA-Z0-9._-]{1,32}$'::text)))"
+    },
+    {
+      "table": "ml_jobs",
       "name": "ck_ml_jobs_max_attempts_positive",
       "definition": "CHECK ((max_attempts >= 1))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_payload_bounded",
+      "definition": "CHECK ((octet_length((payload)::text) <= 16384))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_payload_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(payload, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_payload_object",
+      "definition": "CHECK ((jsonb_typeof(payload) = 'object'::text))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_priority_range",
+      "definition": "CHECK (((priority >= '-1000'::integer) AND (priority <= 1000)))"
     },
     {
       "table": "ml_jobs",
@@ -98,7 +353,7 @@
     {
       "table": "ml_jobs",
       "name": "ck_ml_jobs_type_valid",
-      "definition": "CHECK (((job_type)::text = 'auto_train'::text))"
+      "definition": "CHECK (((job_type)::text ~ '^[a-z][a-z0-9_]{0,31}$'::text))"
     },
     {
       "table": "ml_run_verifications",
@@ -183,12 +438,47 @@
     {
       "table": "users",
       "name": "ck_users_client_requires_workspace",
-      "definition": "CHECK ((((role)::text <> 'client_user'::text) OR (workspace_id IS NOT NULL)))"
+      "definition": "CHECK ((((role)::text <> ALL ((ARRAY['client_user'::character varying, 'personal_developer'::character varying])::text[])) OR (workspace_id IS NOT NULL)))"
     },
     {
       "table": "users",
       "name": "ck_users_role_valid",
-      "definition": "CHECK (((role)::text = ANY ((ARRAY['dclab_admin'::character varying, 'dclab_developer'::character varying, 'business_admin'::character varying, 'business_developer'::character varying, 'client_user'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
+      "definition": "CHECK (((role)::text = ANY ((ARRAY['dclab_admin'::character varying, 'dclab_developer'::character varying, 'business_admin'::character varying, 'business_developer'::character varying, 'personal_developer'::character varying, 'client_user'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
+    },
+    {
+      "table": "visualizations",
+      "name": "ck_visualizations_digest",
+      "definition": "CHECK (((content_digest)::text ~ '^[a-f0-9]{64}$'::text))"
+    },
+    {
+      "table": "visualizations",
+      "name": "ck_visualizations_renderer",
+      "definition": "CHECK (((renderer_hint IS NULL) OR ((renderer_hint)::text ~ '^[a-z][a-z0-9_]{0,31}$'::text)))"
+    },
+    {
+      "table": "visualizations",
+      "name": "ck_visualizations_spec_bounded",
+      "definition": "CHECK ((octet_length((spec)::text) <= 16384))"
+    },
+    {
+      "table": "visualizations",
+      "name": "ck_visualizations_spec_no_bulk",
+      "definition": "CHECK ((NOT jsonb_exists_any(spec, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text, 'points'::text, 'values'::text, 'samples'::text, 'bins'::text, 'y_true'::text, 'y_pred'::text, 'x_values'::text, 'y_values'::text, 'shap_values'::text, 'probabilities'::text, 'embeddings'::text, 'series_data'::text])))"
+    },
+    {
+      "table": "visualizations",
+      "name": "ck_visualizations_spec_object",
+      "definition": "CHECK ((jsonb_typeof(spec) = 'object'::text))"
+    },
+    {
+      "table": "visualizations",
+      "name": "ck_visualizations_spec_version",
+      "definition": "CHECK (((spec_version)::text ~ '^[a-zA-Z0-9._-]{1,32}$'::text))"
+    },
+    {
+      "table": "visualizations",
+      "name": "ck_visualizations_type",
+      "definition": "CHECK (((visualization_type)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))"
     },
     {
       "table": "workflow_runs",
@@ -203,7 +493,7 @@
     {
       "table": "workspace_memberships",
       "name": "ck_workspace_memberships_role_valid",
-      "definition": "CHECK (((role)::text = ANY ((ARRAY['business_admin'::character varying, 'business_developer'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
+      "definition": "CHECK (((role)::text = ANY ((ARRAY['business_admin'::character varying, 'business_developer'::character varying, 'personal_developer'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
     },
     {
       "table": "workspaces",
@@ -226,6 +516,11 @@
       "table": "cv_fold_runs",
       "name": "cv_fold_runs_evidence_locked",
       "definition": "CREATE TRIGGER cv_fold_runs_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.cv_fold_runs FOR EACH ROW EXECUTE FUNCTION prevent_locked_candidate_evidence_mutation('candidate_id')"
+    },
+    {
+      "table": "data_access_events",
+      "name": "data_access_events_append_only",
+      "definition": "CREATE TRIGGER data_access_events_append_only BEFORE DELETE OR UPDATE ON public.data_access_events FOR EACH ROW EXECUTE FUNCTION prevent_data_access_event_mutation()"
     },
     {
       "table": "data_preparation_decisions",
@@ -343,6 +638,11 @@
       "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
+      "table": "visualizations",
+      "name": "visualizations_immutable",
+      "definition": "CREATE TRIGGER visualizations_immutable BEFORE DELETE OR UPDATE ON public.visualizations FOR EACH ROW EXECUTE FUNCTION prevent_visualization_mutation()"
+    },
+    {
       "table": "workflow_versions",
       "name": "workflow_versions_locked_immutable",
       "definition": "CREATE TRIGGER workflow_versions_locked_immutable BEFORE DELETE OR UPDATE ON public.workflow_versions FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()"
@@ -390,6 +690,10 @@
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_code_snapshot_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'UPDATE'\n        AND pg_trigger_depth() > 1\n        AND OLD.pipeline_stage_run_id IS NOT NULL\n        AND NEW.pipeline_stage_run_id IS NULL\n        AND (to_jsonb(OLD) - 'pipeline_stage_run_id')\n            IS NOT DISTINCT FROM (to_jsonb(NEW) - 'pipeline_stage_run_id')\n    THEN\n        RETURN NEW;\n    END IF;\n    RAISE EXCEPTION '% rows are immutable', TG_TABLE_NAME;\nEND;\n$function$\n"
     },
     {
+      "name": "prevent_data_access_event_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_data_access_event_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    RAISE EXCEPTION 'data_access_events is append-only';\nEND;\n$function$\n"
+    },
+    {
       "name": "prevent_evidence_lock_reset",
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_evidence_lock_reset()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'INSERT' THEN\n        IF NEW.scientific_evidence_locked_at IS NOT NULL THEN\n            RAISE EXCEPTION\n                'experiments.scientific_evidence_locked_at cannot be set before scientific evidence is complete';\n        END IF;\n        RETURN NEW;\n    END IF;\n    IF OLD.scientific_evidence_locked_at IS NULL AND NEW.scientific_evidence_locked_at IS NOT NULL THEN\n        IF NOT pipeline_run_scientific_evidence_complete(OLD.id) THEN\n            RAISE EXCEPTION\n                'experiments.scientific_evidence_locked_at cannot be set before scientific evidence is complete';\n        END IF;\n        NEW.scientific_evidence_locked_at := statement_timestamp();\n    ELSIF OLD.scientific_evidence_locked_at IS NOT NULL\n        AND NEW.scientific_evidence_locked_at IS DISTINCT FROM OLD.scientific_evidence_locked_at THEN\n        RAISE EXCEPTION\n            'experiments.scientific_evidence_locked_at cannot be changed once the run is locked';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
@@ -428,6 +732,10 @@
     {
       "name": "prevent_ml_run_event_mutation",
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_ml_run_event_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n        BEGIN\n            RAISE EXCEPTION 'ml_run_events is append-only';\n        END;\n        $function$\n"
+    },
+    {
+      "name": "prevent_visualization_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_visualization_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'DELETE' THEN\n        RAISE EXCEPTION 'visualizations rows are immutable';\n    END IF;\n    IF (to_jsonb(OLD) - 'project_id' - 'pipeline_stage_run_id'\n            - 'candidate_id' - 'model_evaluation_id')\n        IS DISTINCT FROM\n       (to_jsonb(NEW) - 'project_id' - 'pipeline_stage_run_id'\n            - 'candidate_id' - 'model_evaluation_id')\n    THEN\n        RAISE EXCEPTION 'visualizations identity/spec is immutable';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     }
   ]
 }

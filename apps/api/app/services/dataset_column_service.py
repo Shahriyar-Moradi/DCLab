@@ -13,6 +13,12 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.db.models import DatasetColumn
+from app.domain.errors import IdentityError
+from app.domain.privacy_audit import (
+    CLASSIFICATION_SOURCES,
+    DATA_USE_POLICIES,
+    SENSITIVITY_CLASSES,
+)
 from app.engine.schema.profiler import profile_frame
 
 
@@ -130,9 +136,50 @@ def persist_dataset_columns(
             mean_value=float(mean) if isinstance(mean, (int, float)) else None,
             median_value=float(median) if isinstance(median, (int, float)) else None,
             stats=extra,
+            # Policy fields stay NULL. This service does not classify columns.
         )
         db.add(row)
         rows.append(row)
     if rows:
         db.flush()
     return rows
+
+
+def set_dataset_column_policy(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    column_id: UUID,
+    sensitivity_class: str | None = None,
+    classification_source: str | None = None,
+    model_use_policy: str | None = None,
+    llm_exposure_policy: str | None = None,
+) -> DatasetColumn:
+    """Store declared policy labels. Does not infer or classify."""
+
+    row = db.get(DatasetColumn, column_id)
+    if row is None or row.workspace_id != workspace_id:
+        raise IdentityError("dataset column not found", status_code=404)
+    if sensitivity_class is not None and sensitivity_class not in SENSITIVITY_CLASSES:
+        raise IdentityError(f"unsupported sensitivity_class: {sensitivity_class}", status_code=400)
+    if (
+        classification_source is not None
+        and classification_source not in CLASSIFICATION_SOURCES
+    ):
+        raise IdentityError(
+            f"unsupported classification_source: {classification_source}",
+            status_code=400,
+        )
+    if model_use_policy is not None and model_use_policy not in DATA_USE_POLICIES:
+        raise IdentityError(f"unsupported model_use_policy: {model_use_policy}", status_code=400)
+    if llm_exposure_policy is not None and llm_exposure_policy not in DATA_USE_POLICIES:
+        raise IdentityError(
+            f"unsupported llm_exposure_policy: {llm_exposure_policy}",
+            status_code=400,
+        )
+    row.sensitivity_class = sensitivity_class
+    row.classification_source = classification_source
+    row.model_use_policy = model_use_policy
+    row.llm_exposure_policy = llm_exposure_policy
+    db.flush()
+    return row

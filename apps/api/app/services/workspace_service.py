@@ -146,6 +146,28 @@ def workspace_to_read(db: Session, workspace: Workspace) -> WorkspaceRead:
     return _to_read(db, workspace)
 
 
+def list_workspaces_for_actor(db: Session, actor: User) -> list[WorkspaceRead]:
+    """Workspaces the actor may read. Platform members see every workspace."""
+
+    if platform_role_for(db, actor) is not None:
+        rows = list(db.scalars(select(Workspace).order_by(Workspace.name, Workspace.id)))
+    else:
+        membership_ids = select(WorkspaceMembership.workspace_id).where(
+            WorkspaceMembership.user_id == actor.id
+        )
+        rows = list(
+            db.scalars(
+                select(Workspace)
+                .where(Workspace.id.in_(membership_ids))
+                .order_by(Workspace.name, Workspace.id)
+            )
+        )
+        if not rows and actor.role == UserRole.CLIENT_USER.value and actor.workspace_id:
+            legacy = db.get(Workspace, actor.workspace_id)
+            rows = [legacy] if legacy is not None else []
+    return [workspace_to_read(db, row) for row in rows]
+
+
 def _parse_and_authorize_member_role(
     db: Session, actor: User, workspace_id: UUID, raw: str
 ) -> WorkspaceRole:

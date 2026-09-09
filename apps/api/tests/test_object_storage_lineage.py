@@ -250,6 +250,9 @@ def test_csv_labs_upload_produces_canonical_lineage(
     assert source.source_type == "upload"
     assert "password" not in (source.configuration or {})
     assert ingestion.status == "completed"
+    assert ingestion.data_source_id == source.id
+    assert ingestion.data_access_id is not None
+    assert ingestion.execution_request_id is not None
     assert ingestion.content_digest == artifact.content_digest
     assert project is not None
     assert project.slug == LABS_PROJECT_SLUG
@@ -264,6 +267,8 @@ def test_csv_labs_upload_produces_canonical_lineage(
         .all()
     )
     assert [column.name for column in columns] == ["channel", "spend"]
+    assert all(column.sensitivity_class is None for column in columns)
+    assert all(column.llm_exposure_policy is None for column in columns)
     assert dataset.schema_digest
 
 

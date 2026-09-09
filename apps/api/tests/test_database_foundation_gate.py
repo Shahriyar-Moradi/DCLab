@@ -1,4 +1,4 @@
-"""Physical database foundation gate for Alembic head 0046.
+"""Physical database foundation gate for Alembic head 0053.
 
 Cross-tenant and delete assertions go through raw SQL. Alembic current/check
 and compare_metadata live in test_historical_alembic_revisions.py against
@@ -24,8 +24,9 @@ from app.db.models import (
     MlJob,
     PipelineScientificPlan,
 )
-from app.domain.ml_jobs import JOB_QUEUED, JOB_TYPE_AUTO_TRAIN
+from app.domain.ml_jobs import HANDLER_LABS_AUTO_TRAIN, JOB_QUEUED, JOB_TYPE_AUTO_TRAIN
 from app.services.artifact_service import store_artifact
+from app.services.data_access_service import create_data_access
 from app.services.data_source_service import create_data_source
 from app.services.ingestion_run_service import start_ingestion_run
 from app.services.lineage_service import (
@@ -36,20 +37,43 @@ from app.services.lineage_service import (
 from app.storage.local import LocalStorage
 from test_data_model_lineage import make_lineage_setup
 
-CURRENT_HEAD = "0046_ingestion_job_tenant_fks"
+CURRENT_HEAD = "0053_pipeline_run_branch"
 
 IMPORTANT_DELETE_ACTIONS = {
     "fk_ingestion_runs_workspace_data_source": "c",
+    "fk_data_accesses_workspace_data_source": "c",
+    "fk_ingestion_runs_workspace_data_access": "n",
+    "fk_ingestion_runs_data_source_data_access": "n",
+    "fk_ingestion_runs_workspace_execution_request": "n",
+    "fk_data_accesses_workspace_project": "n",
+    "fk_data_access_events_workspace_data_access": "a",
+    "fk_data_access_events_workspace_execution_request": "n",
+    "fk_data_access_events_workspace_ingestion_run": "n",
     "fk_datasets_workspace_ingestion_run": "a",
     "fk_client_lab_uploads_workspace_data_source": "n",
     "fk_client_lab_uploads_workspace_ingestion_run": "n",
     "fk_ml_jobs_workspace_project": "n",
     "fk_ml_jobs_workspace_upload": "c",
+    "fk_ml_jobs_workspace_execution_request": "n",
+    "fk_ml_jobs_workspace_workflow_run": "n",
+    "fk_ml_jobs_workspace_pipeline_run": "n",
+    "fk_execution_requests_workspace_project": "n",
+    "fk_execution_requests_workspace_parent": "n",
+    "fk_execution_requests_workspace_workflow_run": "n",
+    "fk_execution_requests_workspace_pipeline_run": "n",
     "fk_workflow_runs_workspace_source_upload": "n",
     "fk_artifacts_workspace_pipeline_run": "n",
     "fk_pipeline_scientific_plans_workspace_pipeline_run": "c",
     "fk_experiment_candidates_workspace_pipeline_run": "c",
     "fk_code_snapshots_workspace_pipeline_run": "c",
+    "fk_visualizations_workspace_pipeline_run": "a",
+    "fk_visualizations_workspace_project": "n",
+    "fk_visualizations_workspace_stage": "n",
+    "fk_visualizations_workspace_candidate": "n",
+    "fk_visualizations_workspace_evaluation": "n",
+    "fk_visualizations_workspace_data_artifact": "a",
+    "fk_visualizations_workspace_image_artifact": "a",
+    "fk_experiments_workspace_parent_pipeline_run": "a",
 }
 
 
@@ -122,17 +146,41 @@ def foundation(db_session, tmp_path):
         provider="local",
         created_by=setup["beta_admin"].id,
     )
+    alpha_access = create_data_access(
+        db_session,
+        workspace_id=setup["alpha"].id,
+        project_id=setup["alpha_project"].id,
+        data_source_id=alpha_source.id,
+        name="alpha access",
+        access_type="upload",
+        provider="local",
+        execution_mode="copy",
+        created_by=setup["alpha_admin"].id,
+    )
+    beta_access = create_data_access(
+        db_session,
+        workspace_id=setup["beta"].id,
+        project_id=setup["beta_project"].id,
+        data_source_id=beta_source.id,
+        name="beta access",
+        access_type="upload",
+        provider="local",
+        execution_mode="copy",
+        created_by=setup["beta_admin"].id,
+    )
     alpha_ingest = start_ingestion_run(
         db_session,
         workspace_id=setup["alpha"].id,
         project_id=setup["alpha_project"].id,
         data_source_id=alpha_source.id,
+        data_access_id=alpha_access.id,
     )
     beta_ingest = start_ingestion_run(
         db_session,
         workspace_id=setup["beta"].id,
         project_id=setup["beta_project"].id,
         data_source_id=beta_source.id,
+        data_access_id=beta_access.id,
     )
     storage = LocalStorage(root=tmp_path / "objects")
     alpha_artifact = store_artifact(
@@ -208,6 +256,7 @@ def foundation(db_session, tmp_path):
         workspace_id=setup["alpha"].id,
         project_id=setup["alpha_project"].id,
         job_type=JOB_TYPE_AUTO_TRAIN,
+        handler_key=HANDLER_LABS_AUTO_TRAIN,
         target_id=alpha_upload.id,
         upload_id=alpha_upload.id,
         status=JOB_QUEUED,
@@ -226,6 +275,8 @@ def foundation(db_session, tmp_path):
         beta_candidate=beta_candidate,
         alpha_source=alpha_source,
         beta_source=beta_source,
+        alpha_access=alpha_access,
+        beta_access=beta_access,
         alpha_ingest=alpha_ingest,
         beta_ingest=beta_ingest,
         alpha_artifact=alpha_artifact,
@@ -276,6 +327,41 @@ def test_postgres_rejects_cross_tenant_canonical_corruption(db_session, foundati
         "UPDATE ingestion_runs SET data_source_id = :source WHERE id = :id",
         source=a.beta_source.id,
         id=a.alpha_ingest.id,
+    )
+    _reject(
+        db_session,
+        "UPDATE ingestion_runs SET data_access_id = :access WHERE id = :id",
+        access=a.beta_access.id,
+        id=a.alpha_ingest.id,
+    )
+    _reject(
+        db_session,
+        """
+        INSERT INTO data_accesses (
+            id, workspace_id, data_source_id, name, access_type, provider,
+            execution_mode, created_by
+        ) VALUES (
+            gen_random_uuid(), :workspace, :source, 'cross', 'upload', 'local',
+            'copy', :actor
+        )
+        """,
+        workspace=s["alpha"].id,
+        source=a.beta_source.id,
+        actor=s["alpha_admin"].id,
+    )
+    _reject(
+        db_session,
+        """
+        INSERT INTO data_access_events (
+            id, workspace_id, data_access_id, actor_type, purpose, operation,
+            status, started_at, completed_at
+        ) VALUES (
+            gen_random_uuid(), :workspace, :access, 'user', 'ingest', 'copy',
+            'completed', now(), now()
+        )
+        """,
+        workspace=s["alpha"].id,
+        access=a.beta_access.id,
     )
     _reject(
         db_session,
@@ -374,6 +460,165 @@ def test_postgres_rejects_cross_tenant_canonical_corruption(db_session, foundati
         project=s["beta_project"].id,
         id=a.alpha_job.id,
     )
+    _reject(
+        db_session,
+        """
+        INSERT INTO execution_requests (
+            id, workspace_id, project_id, operation, source_surface, status,
+            request_spec, pipeline_run_id
+        ) VALUES (
+            gen_random_uuid(), :workspace, :project, 'model_build', 'legacy_labs',
+            'accepted', '{}'::jsonb, :pipeline_run
+        )
+        """,
+        workspace=s["alpha"].id,
+        project=s["alpha_project"].id,
+        pipeline_run=a.beta_pipeline.id,
+    )
+    _reject(
+        db_session,
+        """
+        INSERT INTO execution_requests (
+            id, workspace_id, project_id, operation, source_surface, status,
+            request_spec, workflow_run_id
+        ) VALUES (
+            gen_random_uuid(), :workspace, :project, 'model_build', 'legacy_labs',
+            'accepted', '{}'::jsonb, :workflow_run
+        )
+        """,
+        workspace=s["alpha"].id,
+        project=s["alpha_project"].id,
+        workflow_run=a.beta_run.id,
+    )
+    _reject(
+        db_session,
+        """
+        INSERT INTO execution_requests (
+            id, workspace_id, project_id, operation, source_surface, status,
+            request_spec
+        ) VALUES (
+            gen_random_uuid(), :workspace, :project, 'model_build', 'legacy_labs',
+            'accepted', '{}'::jsonb
+        )
+        """,
+        workspace=s["alpha"].id,
+        project=s["beta_project"].id,
+    )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO execution_requests (
+                id, workspace_id, project_id, operation, source_surface, status,
+                request_spec
+            ) VALUES (
+                :id, :workspace, :project, 'model_build', 'legacy_labs',
+                'accepted', '{}'::jsonb
+            )
+            """
+        ),
+        {
+            "id": uuid4(),
+            "workspace": s["beta"].id,
+            "project": s["beta_project"].id,
+        },
+    )
+    db_session.commit()
+    beta_request = db_session.execute(
+        text(
+            "SELECT id FROM execution_requests WHERE workspace_id = :workspace LIMIT 1"
+        ),
+        {"workspace": s["beta"].id},
+    ).scalar()
+    _reject(
+        db_session,
+        """
+        INSERT INTO execution_requests (
+            id, workspace_id, project_id, operation, source_surface, status,
+            request_spec, parent_request_id
+        ) VALUES (
+            gen_random_uuid(), :workspace, :project, 'model_build', 'legacy_labs',
+            'accepted', '{}'::jsonb, :parent
+        )
+        """,
+        workspace=s["alpha"].id,
+        project=s["alpha_project"].id,
+        parent=beta_request,
+    )
+    _reject(
+        db_session,
+        "UPDATE ingestion_runs SET execution_request_id = :request WHERE id = :id",
+        request=beta_request,
+        id=a.alpha_ingest.id,
+    )
+    _reject(
+        db_session,
+        "UPDATE ml_jobs SET execution_request_id = :request WHERE id = :id",
+        request=beta_request,
+        id=a.alpha_job.id,
+    )
+    _reject(
+        db_session,
+        "UPDATE ml_jobs SET workflow_run_id = :run WHERE id = :id",
+        run=a.beta_run.id,
+        id=a.alpha_job.id,
+    )
+    _reject(
+        db_session,
+        "UPDATE ml_jobs SET pipeline_run_id = :run WHERE id = :id",
+        run=a.beta_pipeline.id,
+        id=a.alpha_job.id,
+    )
+    _reject(
+        db_session,
+        """
+        INSERT INTO ml_jobs (
+            id, workspace_id, job_type, handler_key, target_id, status,
+            execution_request_id, attempts, max_attempts
+        ) VALUES (
+            gen_random_uuid(), :workspace, 'inspect', 'future.inspect',
+            gen_random_uuid(), 'queued', :request, 0, 3
+        )
+        """,
+        workspace=s["alpha"].id,
+        request=beta_request,
+    )
+    _reject(
+        db_session,
+        """
+        INSERT INTO visualizations (
+            id, workspace_id, pipeline_run_id, visualization_type, spec_version,
+            spec, content_digest
+        ) VALUES (
+            gen_random_uuid(), :workspace, :pipeline_run, 'roc_curve', '1',
+            '{}'::jsonb, :digest
+        )
+        """,
+        workspace=s["alpha"].id,
+        pipeline_run=a.beta_pipeline.id,
+        digest="a" * 64,
+    )
+    _reject(
+        db_session,
+        """
+        INSERT INTO visualizations (
+            id, workspace_id, pipeline_run_id, data_artifact_id,
+            visualization_type, spec_version, spec, content_digest
+        ) VALUES (
+            gen_random_uuid(), :workspace, :pipeline_run, :artifact,
+            'roc_curve', '1', '{}'::jsonb, :digest
+        )
+        """,
+        workspace=s["alpha"].id,
+        pipeline_run=a.alpha_pipeline.id,
+        artifact=a.beta_artifact.id,
+        digest="b" * 64,
+    )
+    _reject(
+        db_session,
+        "UPDATE experiments SET parent_pipeline_run_id = :parent WHERE id = :id",
+        parent=a.beta_pipeline.id,
+        id=a.alpha_pipeline.id,
+    )
     asset = create_model_asset(
         db_session,
         workspace_id=s["alpha"].id,
@@ -436,6 +681,40 @@ def test_same_workspace_canonical_links_remain_valid(db_session, foundation):
     stored = db_session.get(Artifact, a.alpha_artifact.id)
     assert stored.pipeline_run_id == a.alpha_pipeline.id
     assert stored.workspace_id == s["alpha"].id
+    db_session.execute(
+        text(
+            """
+            INSERT INTO execution_requests (
+                id, workspace_id, project_id, operation, source_surface, status,
+                request_spec, workflow_run_id, pipeline_run_id
+            ) VALUES (
+                gen_random_uuid(), :workspace, :project, 'model_build', 'legacy_labs',
+                'accepted', '{}'::jsonb, :workflow_run, :pipeline_run
+            )
+            """
+        ),
+        {
+            "workspace": s["alpha"].id,
+            "project": s["alpha_project"].id,
+            "workflow_run": a.alpha_run.id,
+            "pipeline_run": a.alpha_pipeline.id,
+        },
+    )
+    db_session.commit()
+    stored_request = db_session.execute(
+        text(
+            "SELECT id FROM execution_requests WHERE workspace_id = :workspace "
+            "AND pipeline_run_id = :pipeline_run"
+        ),
+        {"workspace": s["alpha"].id, "pipeline_run": a.alpha_pipeline.id},
+    ).scalar()
+    db_session.execute(
+        text(
+            "UPDATE ingestion_runs SET execution_request_id = :request WHERE id = :id"
+        ),
+        {"request": stored_request, "id": a.alpha_ingest.id},
+    )
+    db_session.commit()
 
 
 def test_important_delete_actions_match_catalog(test_engine):
@@ -603,6 +882,15 @@ def test_explain_uses_measured_hot_path_indexes(db_session, foundation):
     )
     assert "ix_ml_jobs_status_queued_at" in claiming
 
+    due = _plan(
+        db_session,
+        "SELECT id FROM ml_jobs WHERE status = 'queued' "
+        "AND available_at <= now() "
+        "ORDER BY priority DESC, available_at, queued_at "
+        "FOR UPDATE SKIP LOCKED LIMIT 1",
+    )
+    assert "ix_ml_jobs_queued_claim" in due or "ix_ml_jobs_status_queued_at" in due
+
     stages = _plan(
         db_session,
         "SELECT id FROM pipeline_stage_runs WHERE pipeline_run_id = :run "
@@ -678,3 +966,57 @@ def test_explain_uses_measured_hot_path_indexes(db_session, foundation):
         source=a.alpha_source.id,
     )
     assert "ix_ingestion_runs_data_source_id" in ingest
+
+    accesses = _plan(
+        db_session,
+        "SELECT id FROM data_accesses WHERE workspace_id = :workspace_id "
+        "AND status = 'active' ORDER BY created_at",
+        workspace_id=workspace_id,
+    )
+    assert "ix_data_accesses_workspace_status_created_at" in accesses
+
+    requests = _plan(
+        db_session,
+        "SELECT id FROM execution_requests WHERE workspace_id = :workspace_id "
+        "AND status = 'accepted' ORDER BY created_at",
+        workspace_id=workspace_id,
+    )
+    assert "ix_execution_requests_workspace_status_created_at" in requests
+
+    events = _plan(
+        db_session,
+        "SELECT id FROM data_access_events WHERE workspace_id = :workspace_id "
+        "ORDER BY created_at",
+        workspace_id=workspace_id,
+    )
+    assert "ix_data_access_events_workspace_created_at" in events
+
+    classified = _plan(
+        db_session,
+        "SELECT id FROM dataset_columns WHERE workspace_id = :workspace_id "
+        "AND sensitivity_class = 'pii'",
+        workspace_id=workspace_id,
+    )
+    assert "ix_dataset_columns_workspace_sensitivity_class" in classified
+
+    charts = _plan(
+        db_session,
+        "SELECT id FROM visualizations WHERE workspace_id = :workspace_id "
+        "ORDER BY created_at",
+        workspace_id=workspace_id,
+    )
+    assert "ix_visualizations_workspace_created_at" in charts
+
+    run_charts = _plan(
+        db_session,
+        "SELECT id FROM visualizations WHERE pipeline_run_id = :run",
+        run=a.alpha_pipeline.id,
+    )
+    assert "ix_visualizations_pipeline_run_id" in run_charts
+
+    branches = _plan(
+        db_session,
+        "SELECT id FROM experiments WHERE parent_pipeline_run_id = :parent",
+        parent=a.alpha_pipeline.id,
+    )
+    assert "ix_experiments_parent_pipeline_run_id" in branches

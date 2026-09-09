@@ -96,10 +96,12 @@ export async function apiDownload(
     throw new ApiError(response.status, null, response.statusText || `Request failed (${response.status})`);
   }
   const disposition = response.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(disposition);
+  const quoted = /filename="([^"]+)"/i.exec(disposition);
+  const unquoted = /filename=([^;]+)/i.exec(disposition);
+  const filename = (quoted?.[1] || unquoted?.[1] || "").trim();
   return {
     blob: await response.blob(),
-    filename: match?.[1] || options?.fallbackFilename || "download",
+    filename: filename || options?.fallbackFilename || "download",
   };
 }
 

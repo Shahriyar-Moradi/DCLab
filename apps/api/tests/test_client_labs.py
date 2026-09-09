@@ -706,9 +706,20 @@ def test_upload_shows_real_outcome_once_trained(auth_client, db_session, monkeyp
     assert "fold_metrics" not in text
     assert "experiment_id" not in body
 
-    csv_response = auth_client.get(f"/app/labs/uploads/{upload_id}/predictions.csv")
+    csv_response = auth_client.get(
+        f"/app/labs/uploads/{upload_id}/predictions.csv",
+        headers={"Origin": "http://localhost:3001"},
+    )
     assert csv_response.status_code == 200
     assert "text/csv" in csv_response.headers.get("content-type", "")
+    disposition = csv_response.headers.get("content-disposition", "")
+    assert 'filename="telco-predictions.csv"' in disposition
+    exposed = {
+        part.strip().lower()
+        for part in (csv_response.headers.get("access-control-expose-headers") or "").split(",")
+        if part.strip()
+    }
+    assert "content-disposition" in exposed
     lines = [line for line in csv_response.text.strip().splitlines() if line]
     assert lines[0].startswith("record")
     assert "prediction" in lines[0]
@@ -722,3 +733,63 @@ def test_upload_shows_real_outcome_once_trained(auth_client, db_session, monkeyp
     assert match["outcome"]["record_count"] == expected_records
     assert match["outcome"]["prediction_count"] == persisted_n
     assert match["outcome"]["performance_percent"] == expected_percent
+
+
+def test_retried_auto_train_does_not_rewrite_locked_pipeline_run(
+    auth_client, db_session, monkeypatch
+):
+    """A second worker claim must finish the client job without retraining a frozen run."""
+    import numpy as np
+    import pandas as pd
+
+    from app.db.models import ClientLabUpload, Experiment
+    from app.services.auto_train_service import run_auto_train_job
+
+    monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
+
+    rng = np.random.default_rng(7)
+    n = 200
+    tenure = rng.integers(1, 72, n)
+    monthly = rng.uniform(20, 120, n)
+    contract = rng.choice(["Month-to-month", "One year", "Two year"], n)
+    churn_p = np.where(contract == "Month-to-month", 0.55, 0.15)
+    churn = np.where(rng.binomial(1, churn_p) == 1, "Yes", "No")
+    frame = pd.DataFrame(
+        {
+            "tenure": tenure,
+            "MonthlyCharges": monthly,
+            "contract": contract,
+            "churn": churn,
+        }
+    )
+    created = auth_client.post(
+        "/app/labs/uploads",
+        data={"category": "Custom"},
+        files={"file": ("locked-retry.csv", frame.to_csv(index=False).encode(), "text/csv")},
+    )
+    assert created.status_code == 200, created.text
+    upload_id = UUID(created.json()["id"])
+
+    run_auto_train_job(db_session, upload_id)
+    db_session.expire_all()
+    upload = db_session.get(ClientLabUpload, upload_id)
+    assert upload is not None
+    assert upload.pipeline_status == "completed"
+    experiment = db_session.get(Experiment, upload.experiment_id)
+    assert experiment is not None
+    locked_at = experiment.scientific_evidence_locked_at
+    assert locked_at is not None
+    pipeline_run_id = experiment.id
+
+    run_auto_train_job(db_session, upload_id)
+    db_session.expire_all()
+    upload = db_session.get(ClientLabUpload, upload_id)
+    assert upload is not None
+    assert upload.pipeline_status == "completed"
+    reason = str((upload.pipeline_log or {}).get("reason") or "")
+    assert "is locked" not in reason
+    assert "unexpected error" not in reason
+    assert upload.experiment_id == pipeline_run_id
+    experiment = db_session.get(Experiment, pipeline_run_id)
+    assert experiment is not None
+    assert experiment.scientific_evidence_locked_at == locked_at

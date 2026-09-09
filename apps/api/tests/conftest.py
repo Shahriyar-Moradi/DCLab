@@ -86,6 +86,20 @@ def test_engine():
     # functions 0035 applies so pytest covers PostgreSQL-level enforcement.
     with engine.begin() as conn:
         install_immutability_triggers(conn)
+    from alembic_frozen.rev_0050_privacy_audit import (
+        DATA_ACCESS_EVENTS_APPEND_ONLY_TRIGGER_SQL,
+        PREVENT_DATA_ACCESS_EVENT_MUTATION_SQL,
+    )
+    from alembic_frozen.rev_0052_visualizations import (
+        PREVENT_VISUALIZATION_MUTATION_SQL,
+        VISUALIZATIONS_IMMUTABLE_TRIGGER_SQL,
+    )
+
+    with engine.begin() as conn:
+        conn.execute(text(PREVENT_DATA_ACCESS_EVENT_MUTATION_SQL))
+        conn.execute(text(DATA_ACCESS_EVENTS_APPEND_ONLY_TRIGGER_SQL))
+        conn.execute(text(PREVENT_VISUALIZATION_MUTATION_SQL))
+        conn.execute(text(VISUALIZATIONS_IMMUTABLE_TRIGGER_SQL))
     # create_all doesn't run data migrations, so seed the same well-known default
     # workspace the 0005_workspaces migration creates in real environments — every
     # Opportunity/Prediction/Decision row defaults its workspace_id FK to this row.
@@ -132,13 +146,13 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 "pipeline_stage_runs, pipeline_versions, pipelines, workflow_versions, "
                 "workflow_run_inputs, workflow_runs, "
                 "ml_workflows, workspace_domains, business_domains, "
-                "dataset_columns, artifacts, ingestion_runs, data_sources, dataset_assets, "
+                "dataset_columns, visualizations, artifacts, ingestion_runs, data_access_events, data_accesses, data_sources, dataset_assets, "
                 "workspace_capabilities, workspace_entitlements, workspace_memberships, platform_memberships, "
                 "problem_specs, projects, "
                 "ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
                 "lab_decision_records, client_lab_run_audits, client_lab_runs, "
-                "ml_jobs, client_lab_uploads, "
+                "ml_jobs, execution_requests, client_lab_uploads, "
                 "decisions, predictions, opportunities, users RESTART IDENTITY CASCADE"
             ))
             # Keep the well-known default workspace; drop any extra workspaces a
