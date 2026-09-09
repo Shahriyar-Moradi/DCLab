@@ -99,6 +99,35 @@ def test_pick_target_ignores_high_cardinality_identifier_columns():
     assert choice.column is None
 
 
+def test_pick_target_does_not_treat_a_lone_numeric_feature_as_a_label():
+    n = 50
+    frame = pd.DataFrame(
+        {
+            "record_uuid": [f"id-{i}" for i in range(n)],
+            "amount": np.linspace(1.5, 99.5, n),
+        }
+    )
+    choice = pick_target_heuristic(frame, list(frame.columns))
+    assert choice.column is None
+    assert choice.source == "fallback"
+    assert "target selection is ambiguous" in choice.reason
+
+
+def test_pick_target_does_not_treat_a_two_value_category_as_a_label():
+    n = 50
+    frame = pd.DataFrame(
+        {
+            "customer_id": [f"C{i}" for i in range(n)],
+            "amount": list(range(n)),
+            "plan_name": ["Gold", "Silver"] * (n // 2),
+        }
+    )
+    choice = pick_target_heuristic(frame, list(frame.columns))
+    assert choice.column is None
+    assert choice.source == "fallback"
+    assert "target selection is ambiguous" in choice.reason
+
+
 def test_plan_missing_values_drops_mostly_empty_columns():
     n = 20
     frame = pd.DataFrame(
