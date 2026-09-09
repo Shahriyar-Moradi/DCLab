@@ -6,11 +6,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, select, update
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.db.models import ClientLabUpload, MlJob
+from app.db.session import get_session_factory
 from app.domain.lab_run_stages import COMPLETED, SKIPPED
 from app.domain.ml_jobs import (
     DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
@@ -73,9 +75,50 @@ def create_auto_train_job(
     return job
 
 
+def _heartbeat_engine(bind: Engine | Connection | None) -> Engine | None:
+    if bind is None:
+        return None
+    if isinstance(bind, Connection):
+        return bind.engine
+    return bind
+
+
 def touch_heartbeat(db: Session, job: MlJob, *, now: datetime | None = None) -> None:
+    """In-session heartbeat for tests that already own the job row."""
     job.heartbeat_at = now or _now()
     db.flush()
+
+
+def commit_job_heartbeat(
+    job_id: UUID,
+    *,
+    now: datetime | None = None,
+    bind: Engine | Connection | None = None,
+) -> None:
+    """Persist only lease/heartbeat on a short-lived session and commit it.
+
+    Must not share the long-running training transaction or flush scientific rows.
+    """
+    moment = now or _now()
+    engine = _heartbeat_engine(bind)
+    factory = (
+        sessionmaker(bind=engine, autocommit=False, autoflush=False)
+        if engine is not None
+        else get_session_factory()
+    )
+    session = factory()
+    try:
+        session.execute(
+            update(MlJob)
+            .where(MlJob.id == job_id, MlJob.status == JOB_RUNNING)
+            .values(heartbeat_at=moment)
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def recover_abandoned_jobs(
@@ -195,19 +238,16 @@ def execute_job(
     job: MlJob,
     *,
     runner: JobRunner | None = None,
-    now: datetime | None = None,
 ) -> MlJob:
     """Run a claimed job, then persist completed / failed / requeued state."""
 
-    moment = now or _now()
     job_id = job.id
     target_id = job.target_id
     job_type = job.job_type
+    heartbeat_bind = _heartbeat_engine(db.get_bind())
 
     def _heartbeat() -> None:
-        current = db.get(MlJob, job_id)
-        if current is not None:
-            touch_heartbeat(db, current)
+        commit_job_heartbeat(job_id, bind=heartbeat_bind)
 
     try:
         if job_type == JOB_TYPE_AUTO_TRAIN:
@@ -226,7 +266,7 @@ def execute_job(
         current = db.get(MlJob, job_id)
         if current is None:
             raise
-        fail_or_retry_job(db, current, str(exc), now=moment)
+        fail_or_retry_job(db, current, str(exc), now=_now())
         db.commit()
         db.refresh(current)
         return current
@@ -234,11 +274,12 @@ def execute_job(
     current = db.get(MlJob, job_id)
     if current is None:
         raise RuntimeError("ml job disappeared during execution")
+    terminal_at = _now()
     if job_type == JOB_TYPE_AUTO_TRAIN:
         upload = db.get(ClientLabUpload, target_id)
         status = str(upload.pipeline_status or "") if upload is not None else ""
         if status in {COMPLETED, SKIPPED}:
-            complete_job(db, current, now=moment)
+            complete_job(db, current, now=terminal_at)
         else:
             reason = ""
             if upload is not None and isinstance(upload.pipeline_log, dict):
@@ -247,10 +288,10 @@ def execute_job(
                 db,
                 current,
                 reason or f"auto-train ended with status {status or 'missing'}",
-                now=moment,
+                now=terminal_at,
             )
     else:
-        complete_job(db, current, now=moment)
+        complete_job(db, current, now=terminal_at)
     db.commit()
     db.refresh(current)
     return current
@@ -275,4 +316,4 @@ def process_next_job(
         db.commit()
         return None
     db.commit()
-    return execute_job(db, job, runner=runner, now=now)
+    return execute_job(db, job, runner=runner)

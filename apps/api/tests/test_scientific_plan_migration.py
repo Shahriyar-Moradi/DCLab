@@ -362,7 +362,8 @@ def _isolated_database(monkeypatch):
     except Exception as exc:  # pragma: no cover - environment availability
         admin_engine.dispose()
         pytest.skip(f"cannot create isolated scientific-plan database: {exc}")
-    monkeypatch.setenv("DATABASE_URL", database_url.render_as_string(hide_password=False))
+    rendered = database_url.render_as_string(hide_password=False)
+    monkeypatch.setenv("DATABASE_URL", rendered)
     from app.config import get_settings
 
     get_settings.cache_clear()

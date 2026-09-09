@@ -179,6 +179,17 @@ def _search_config(*, holdout_plan=None, development_plan=None) -> SearchConfig:
     )
 
 
+HEARTBEAT_PROGRESS_EVENTS = frozenset(
+    {
+        "candidate_started",
+        "candidate_completed",
+        "candidate_failed",
+        "cv_fold_started",
+        "cv_fold_completed",
+    }
+)
+
+
 def _mark(
     db: Session,
     upload: ClientLabUpload,
@@ -1045,11 +1056,17 @@ def run_auto_train_job(
             if stage != SPLITTING:
                 _stage(stage)
 
+        def _on_model_event(event_type: str, payload: dict[str, Any]) -> None:
+            if observer is not None:
+                observer.callback(event_type, payload)
+            if on_heartbeat is not None and event_type in HEARTBEAT_PROGRESS_EVENTS:
+                on_heartbeat()
+
         experiment = execute_experiment(
             db,
             experiment,
             on_stage=_experiment_stage,
-            on_event=observer.callback if observer is not None else None,
+            on_event=_on_model_event,
             persist_scientific=False,
         )
         if experiment.status != "COMPLETED":

@@ -82,8 +82,7 @@ def _type_compatible(annotation: Any, zod_expr: str) -> bool:
     if origin is list:
         return "z.array(" in expr or "array(" in expr
     if inner is UUID:
-        # z.guid() accepts nil-version workspace ids that fail RFC 4122 z.uuid().
-        return "uuid" in expr or "z.guid(" in expr or "z.string(" in expr
+        return "uuid" in expr or "z.string(" in expr
     if inner is datetime:
         return "z.string(" in expr
     if inner is bool:

@@ -233,7 +233,7 @@ export type LabRunOutcome = z.infer<typeof LabRunOutcomeSchema>;
 export const ClientLabUploadSchema = z.object({
   id: z.uuid(),
   run_id: z.uuid(),
-  workspace_id: z.guid(),
+  workspace_id: z.uuid(),
   pipeline_run_id: z.uuid().nullable(),
   dataset_id: z.uuid().nullable(),
   status: LabRunStatusSchema,

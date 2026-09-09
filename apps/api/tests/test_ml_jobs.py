@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -24,6 +25,7 @@ from app.services.job_dispatcher import (
 )
 from app.services.ml_job_service import (
     claim_next_queued_job,
+    commit_job_heartbeat,
     create_auto_train_job,
     execute_job,
     process_next_job,
@@ -222,3 +224,93 @@ def test_abandoned_running_job_is_requeued_then_failed_at_max_attempts(db_sessio
     assert job.status == JOB_FAILED
     assert "abandoned" in (job.failure_reason or "")
     assert job.completed_at is not None
+
+
+def _complete_upload(db, upload_id):
+    upload = db.get(ClientLabUpload, upload_id)
+    assert upload is not None
+    upload.pipeline_status = "completed"
+
+
+def test_long_runner_gets_real_terminal_timestamp(db_session):
+    job = _queued_job(db_session)
+    db_session.commit()
+
+    def runner(db, upload_id):
+        time.sleep(0.05)
+        _complete_upload(db, upload_id)
+
+    result = process_next_job(db_session, runner=runner)
+    assert result is not None
+    assert result.status == JOB_COMPLETED
+    assert result.queued_at is not None
+    assert result.started_at is not None
+    assert result.completed_at is not None
+    assert result.queued_at <= result.started_at <= result.completed_at
+    assert result.completed_at - result.started_at >= timedelta(milliseconds=40)
+
+
+def test_heartbeat_is_visible_on_second_connection_before_training_commits(
+    db_session, test_engine
+):
+    job = _queued_job(db_session)
+    db_session.commit()
+    claimed = claim_next_queued_job(db_session)
+    assert claimed is not None
+    db_session.commit()
+    job_id = claimed.id
+    before = claimed.heartbeat_at
+    seen: dict[str, object] = {}
+
+    def runner(db, upload_id):
+        upload = db.get(ClientLabUpload, upload_id)
+        assert upload is not None
+        upload.pipeline_status = "training"
+        db.flush()
+        commit_job_heartbeat(job_id, bind=db.get_bind())
+        other = sessionmaker(bind=test_engine)()
+        try:
+            visible = other.get(MlJob, job_id)
+            leaked = other.get(ClientLabUpload, upload_id)
+            assert visible is not None
+            assert leaked is not None
+            seen["heartbeat"] = visible.heartbeat_at
+            seen["upload_status"] = leaked.pipeline_status
+        finally:
+            other.close()
+        _complete_upload(db, upload_id)
+
+    result = execute_job(db_session, claimed, runner=runner)
+    assert result.status == JOB_COMPLETED
+    assert seen["heartbeat"] is not None
+    assert before is not None
+    assert seen["heartbeat"] >= before
+    assert seen["upload_status"] == "queued"
+
+
+def test_live_job_with_independent_heartbeat_is_not_recovered(db_session, test_engine):
+    job = _queued_job(db_session)
+    db_session.commit()
+    claimed = claim_next_queued_job(db_session)
+    assert claimed is not None
+    db_session.commit()
+    job_id = claimed.id
+    seen: dict[str, list] = {}
+
+    def runner(db, upload_id):
+        time.sleep(0.05)
+        commit_job_heartbeat(job_id, bind=db.get_bind())
+        other = sessionmaker(bind=test_engine)()
+        try:
+            recovered = recover_abandoned_jobs(
+                other, now=datetime.now(UTC), heartbeat_timeout_seconds=0.02
+            )
+            seen["recovered"] = [row.id for row in recovered]
+        finally:
+            other.rollback()
+            other.close()
+        _complete_upload(db, upload_id)
+
+    result = execute_job(db_session, claimed, runner=runner)
+    assert result.status == JOB_COMPLETED
+    assert seen["recovered"] == []

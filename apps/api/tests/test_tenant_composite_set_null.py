@@ -327,25 +327,51 @@ def test_pg_constraint_has_no_unsafe_composite_set_null_tenant_fk(test_engine):
 
 
 def _isolated_database(monkeypatch):
-    name = f"decisionai_tenant_fk_{uuid4().hex[:12]}"
-    admin_url = make_url(ADMIN_URL).set(database="postgres")
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    admin_url = make_url(ADMIN_URL)
+    database_name = f"decisionai_tenant_fk_{uuid4().hex[:12]}"
+    database_url = admin_url.set(database=database_name)
+    admin_engine = create_engine(
+        admin_url.set(database="postgres"), isolation_level="AUTOCOMMIT"
+    )
+    try:
+        with admin_engine.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+    except Exception:
+        admin_engine.dispose()
+        raise
+    # URL.__str__ masks the password. Render only for the temporary env.
+    rendered = database_url.render_as_string(hide_password=False)
+    monkeypatch.setenv("DATABASE_URL", rendered)
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    return admin_engine, database_name, database_url
+
+
+def _drop_isolated(admin_engine, database_name: str) -> None:
+    from app.config import get_settings
+
+    get_settings.cache_clear()
     with admin_engine.connect() as connection:
-        connection.execute(text(f'CREATE DATABASE "{name}"'))
-    # URL.__str__ masks the password. This value is used to connect, not log.
-    database_url = admin_url.set(database=name).render_as_string(hide_password=False)
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    return admin_engine, name, database_url
+        connection.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = :database_name"
+            ),
+            {"database_name": database_name},
+        )
+        connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+    admin_engine.dispose()
 
 
 def test_alembic_existing_and_fresh_upgrade_remove_all_unsafe_constraints(monkeypatch):
     admin_engine, database_name, database_url = _isolated_database(monkeypatch)
     from app.config import get_settings
 
-    engine = create_engine(database_url)
-    config = Config("alembic.ini")
+    engine = None
     try:
-        get_settings.cache_clear()
+        engine = create_engine(database_url)
+        config = Config("alembic.ini")
         command.upgrade(config, "0043_evidence_lock")
         with engine.connect() as connection:
             assert set(_composite_set_null_actions(connection)) == set(
@@ -367,15 +393,7 @@ def test_alembic_existing_and_fresh_upgrade_remove_all_unsafe_constraints(monkey
             assert _composite_set_null_actions(connection) == EXPECTED_ACTION_COLUMNS
         command.check(config)
     finally:
-        engine.dispose()
+        if engine is not None:
+            engine.dispose()
         get_settings.cache_clear()
-        with admin_engine.connect() as connection:
-            connection.execute(
-                text(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = :database_name"
-                ),
-                {"database_name": database_name},
-            )
-            connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
-        admin_engine.dispose()
+        _drop_isolated(admin_engine, database_name)

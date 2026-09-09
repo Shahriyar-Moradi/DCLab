@@ -36,7 +36,8 @@ def test_legacy_upload_lineage_is_repaired_without_moving_unlinked_rows(
         pytest.skip(f"isolated PostgreSQL on 55432 is unavailable: {exc}")
 
     try:
-        monkeypatch.setenv("DATABASE_URL", database_url.render_as_string(hide_password=False))
+        rendered = database_url.render_as_string(hide_password=False)
+        monkeypatch.setenv("DATABASE_URL", rendered)
         from app.config import get_settings
 
         get_settings.cache_clear()
