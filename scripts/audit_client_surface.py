@@ -33,6 +33,10 @@ Requires:
                  (`next build && next start`, not `next dev` -- dev mode
                  injects React Refresh scaffolding this audit has no reason
                  to scan)
+  A conversion serving artifact at the API's model_dir (CI seeds this
+  before the API starts; the crawl also seeds if the files are missing).
+  Generate is 503 without it, and this script fails on that 503 immediately
+  rather than reporting later missing GET /app/decisions/{decision_id}.
 
 Prints status codes and banned-term hits only -- never tokens, never full
 response bodies.
@@ -52,6 +56,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
 from app.translation.banned_terms import find_banned_terms  # noqa: E402
+from scripts.seed_conversion_model import seed_conversion_artifact  # noqa: E402
 
 API = os.environ.get("DCLAB_API_URL", "http://127.0.0.1:8001")
 WEB = os.environ.get("DCLAB_WEB_URL", "http://127.0.0.1:3001")
@@ -93,6 +98,30 @@ SAMPLE_CSV = (
     b"audit-seed-1,cust-audit-1,42000,AED,proposal,inbound,rep_1,2026-01-15,"
     b"2026-09-01,5,0.82,true,retail,9,1\n"
 )
+
+
+def _response_detail(raw: bytes, limit: int = 300) -> str:
+    """Short error text for a failed HTTP call. Never dump the full body."""
+    text = raw.decode("utf-8", errors="replace").strip()
+    try:
+        payload = json.loads(text)
+        detail = payload.get("detail", text)
+        text = json.dumps(detail) if isinstance(detail, (dict, list)) else str(detail)
+    except json.JSONDecodeError:
+        pass
+    text = " ".join(text.split())
+    return text[:limit]
+
+
+def fail_if_generate_unsuccessful(status: int, raw: bytes) -> None:
+    """Exit immediately on generate failure so a 503 is not reported as missing GET coverage."""
+    if status == 200:
+        return
+    print(
+        f"FAIL — POST /app/decisions/generate returned HTTP {status}: {_response_detail(raw)}",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
 
 
 def _json_request(method: str, path: str, token: str | None = None, body: dict | None = None):
@@ -197,23 +226,37 @@ def crawl_api(token: str) -> tuple[dict[str, list[str]], set[tuple[str, str]], d
         covered.add(("POST", "/app/opportunities/upload"))  # not exercised this run; a real upload already exists
 
     opportunity_id = items[0]["id"] if items else None
-    if opportunity_id:
-        discovered_ids["opportunities"] = opportunity_id
-        get(f"/app/opportunities/{opportunity_id}", "/app/opportunities/{opportunity_id}")
-        status, raw = _json_request(
-            "POST", "/app/decisions/generate", token=token, body={"opportunity_id": opportunity_id}
-        )
-        covered.add(("POST", "/app/decisions/generate"))
-        if status == 200:
-            hits = find_banned_terms(raw.decode("utf-8", errors="replace"))
-            if hits:
-                findings["POST /app/decisions/generate"] = hits
+    if not opportunity_id:
+        print("FAIL — no opportunity available to generate a decision from", file=sys.stderr)
+        raise SystemExit(2)
+
+    discovered_ids["opportunities"] = opportunity_id
+    get(f"/app/opportunities/{opportunity_id}", "/app/opportunities/{opportunity_id}")
+
+    # Serving artifact lives on disk, not in the database. Seed before generate
+    # so a missing model is not reported later as uncovered GET /decisions/{id}.
+    seed_conversion_artifact()
+    status, raw = _json_request(
+        "POST", "/app/decisions/generate", token=token, body={"opportunity_id": opportunity_id}
+    )
+    covered.add(("POST", "/app/decisions/generate"))
+    fail_if_generate_unsuccessful(status, raw)
+    hits = find_banned_terms(raw.decode("utf-8", errors="replace"))
+    if hits:
+        findings["POST /app/decisions/generate"] = hits
 
     status, raw = get("/app/decisions", "/app/decisions")
     decisions = json.loads(raw).get("items", []) if status == 200 else []
-    if decisions:
-        discovered_ids["decisions"] = decisions[0]["id"]
-        get(f"/app/decisions/{decisions[0]['id']}", "/app/decisions/{decision_id}")
+    if not decisions:
+        print(
+            "FAIL — POST /app/decisions/generate did not create a decision; "
+            "cannot exercise GET /app/decisions/{decision_id}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    decision_id = str(decisions[0]["id"])
+    discovered_ids["decisions"] = decision_id
+    get(f"/app/decisions/{decision_id}", "/app/decisions/{decision_id}")
 
     get("/app/insights", "/app/insights")
 

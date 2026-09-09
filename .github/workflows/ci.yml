@@ -103,6 +103,11 @@ jobs:
           dclab user create --email "$DCLAB_ADMIN_EMAIL" --password "$DCLAB_ADMIN_PASSWORD" --role dclab_admin
           dclab user create --email "$DCLAB_CLIENT_EMAIL" --password "$DCLAB_CLIENT_PASSWORD" --role client_user
 
+      # Fresh checkouts have no conversion artifact. Generate is 503 without it,
+      # and the client-surface audit then never gets a decision_id to GET.
+      - name: Seed conversion model artifact
+        run: python -m scripts.seed_conversion_model
+
       - name: Start API server
         run: |
           nohup uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port 8001 > /tmp/api.log 2>&1 &

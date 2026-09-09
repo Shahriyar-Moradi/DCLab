@@ -219,6 +219,12 @@ def generate_target_candidates(frame: pd.DataFrame, columns: list[str]) -> list[
 
     binary_count = sum(item["task_type"] == "binary" for item in provisional)
     regression_count = sum(item["task_type"] == "regression" for item in provisional)
+    column_index = {name: index for index, name in enumerate(columns)}
+    rightmost_candidate = max(
+        (item["column"] for item in provisional),
+        key=lambda name: column_index.get(name, -1),
+        default=None,
+    )
     candidates: list[TargetCandidate] = []
     for item in provisional:
         name = item["column"]
@@ -246,6 +252,11 @@ def generate_target_candidates(frame: pd.DataFrame, columns: list[str]) -> list[
         name_score, name_reasons = _name_role_score(name)
         score += name_score
         reasons.extend(name_reasons)
+        # Layout prior, not a business-name alias: many CSVs put the label last.
+        # This only matters when several columns share the same evidence score.
+        if name == rightmost_candidate:
+            score += 0.10
+            reasons.append("rightmost candidate column (common CSV target placement)")
         score *= max(0.7, 1.0 - item["missing_ratio"])
         score = round(min(score, 0.99), 4)
         evidence = {
@@ -332,6 +343,23 @@ def choose_target_deterministically(
             confidence=best.confidence,
             source="rule",
             evidence={**best.evidence, "runner_up_margin": round(margin, 4)},
+            candidates=candidates,
+        )
+    tied = [item for item in candidates if item.confidence == best.confidence]
+    if best.confidence >= TARGET_CONFIDENCE_THRESHOLD and len(tied) > 1:
+        order = {name: index for index, name in enumerate(columns)}
+        winner = max(tied, key=lambda item: order.get(item.column, -1))
+        return TargetChoice(
+            column=winner.column,
+            reason=(
+                f"tied deterministic candidates at {best.confidence:.2f}; "
+                f"chose rightmost column {winner.column!r}"
+            ),
+            task_type=winner.probable_task_type,
+            evaluation_metric=metric_for_task(winner.probable_task_type),
+            confidence=winner.confidence,
+            source="rule",
+            evidence={**winner.evidence, "runner_up_margin": round(margin, 4)},
             candidates=candidates,
         )
     return TargetChoice(

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from app.config import get_settings
 from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, MlJob
 from app.domain.ml_jobs import (
     JOB_COMPLETED,
@@ -15,7 +16,12 @@ from app.domain.ml_jobs import (
     JOB_RUNNING,
     JOB_TYPE_AUTO_TRAIN,
 )
-from app.services.job_dispatcher import PostgresJobDispatcher, get_job_dispatcher
+from app.services.job_dispatcher import (
+    PostgresJobDispatcher,
+    get_job_dispatcher,
+    start_local_ml_worker,
+    uses_in_process_worker,
+)
 from app.services.ml_job_service import (
     claim_next_queued_job,
     create_auto_train_job,
@@ -53,12 +59,33 @@ def _queued_job(db_session, *, max_attempts: int = 3) -> MlJob:
     )
 
 
+def test_thread_dispatcher_starts_in_process_worker(monkeypatch):
+    from app.services import job_dispatcher as jd
+
+    monkeypatch.setattr(get_settings(), "ml_job_dispatcher", "thread")
+    with jd._local_worker_lock:
+        previous = jd._local_worker_stop
+        jd._local_worker_stop = None
+    try:
+        assert uses_in_process_worker() is True
+        stop = start_local_ml_worker()
+        assert stop is not None
+        assert start_local_ml_worker() is stop
+    finally:
+        if jd._local_worker_stop is not None:
+            jd._local_worker_stop.set()
+        with jd._local_worker_lock:
+            jd._local_worker_stop = previous
+
+
 def test_production_dispatcher_is_postgres_not_a_thread():
     dispatcher = get_job_dispatcher()
     assert dispatcher.name == "postgres"
     assert isinstance(dispatcher, PostgresJobDispatcher)
     dispatcher.dispatch(upload_id=DEFAULT_WORKSPACE_ID)
     assert dispatcher.dispatch(upload_id=DEFAULT_WORKSPACE_ID) is None
+    assert uses_in_process_worker() is False
+    assert start_local_ml_worker() is None
 
 
 def test_upload_persists_queued_job_and_request_return_does_not_run_it(
