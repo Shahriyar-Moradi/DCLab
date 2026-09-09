@@ -178,6 +178,12 @@ def test_cors_allows_local_frontend(client):
     response = client.get("/health", headers={"Origin": "http://localhost:3001"})
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "http://localhost:3001"
+    exposed = {
+        part.strip().lower()
+        for part in (response.headers.get("access-control-expose-headers") or "").split(",")
+        if part.strip()
+    }
+    assert "content-disposition" in exposed
 
 
 def test_get_decision_missing(auth_client):

@@ -62,6 +62,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 admin_api = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
