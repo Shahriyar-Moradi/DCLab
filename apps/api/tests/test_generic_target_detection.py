@@ -172,6 +172,48 @@ def test_ambiguous_target_uses_existing_configured_llm_path(monkeypatch):
     assert "measure_b is the intended response" == choice.reason
 
 
+def test_rightmost_yes_no_column_breaks_a_binary_tie():
+    """IBM Telco-style files have several Yes/No flags; Churn is last and should win.
+
+    Without a layout prior every Yes/No column scores 0.65 with margin 0, so
+    the run fails closed even though the label is the conventional last column.
+    """
+    rng, n = _rng_frame()
+    frame = pd.DataFrame(
+        {
+            "customerID": [f"C{i}" for i in range(n)],
+            "tenure": rng.integers(1, 72, n),
+            "SeniorCitizen": rng.integers(0, 2, n),
+            "Partner": rng.choice(["Yes", "No"], n),
+            "Dependents": rng.choice(["Yes", "No"], n),
+            "PhoneService": rng.choice(["Yes", "No"], n),
+            "PaperlessBilling": rng.choice(["Yes", "No"], n),
+            "MonthlyCharges": rng.uniform(20, 120, n),
+            "Churn": rng.choice(["Yes", "No"], n),
+        }
+    )
+    choice = choose_target_deterministically(frame, list(frame.columns))
+    assert choice.column == "Churn"
+    assert choice.task_type == "binary"
+    assert choice.source == "rule"
+    assert choice.confidence >= 0.65
+
+
+def test_rightmost_tied_candidate_wins_when_file_has_a_trailing_empty_column():
+    rng, n = _rng_frame()
+    frame = pd.DataFrame(
+        {
+            "Partner": rng.choice(["Yes", "No"], n),
+            "PhoneService": rng.choice(["Yes", "No"], n),
+            "Churn": rng.choice(["Yes", "No"], n),
+            "Unnamed: 21": [pd.NA] * n,
+        }
+    )
+    choice = choose_target_deterministically(frame, list(frame.columns))
+    assert choice.column == "Churn"
+    assert choice.source == "rule"
+
+
 def test_llm_disabled_preserves_safe_ambiguous_failure(monkeypatch):
     from app.services import lab_decision_ledger
 

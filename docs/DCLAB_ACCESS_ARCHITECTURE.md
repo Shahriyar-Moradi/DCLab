@@ -53,6 +53,16 @@ to FastAPI through `app.api.deps`. The canonical primitives are:
 - `require_workspace_admin`
 - `can_write_platform`
 - `can_write_workspace`
+- `can_manage_workspace_members`
+- `assert_can_assign_workspace_role`
+
+`POST /workspaces/{id}/members` assigns only canonical customer roles.
+`dclab_admin` and `workspace_owner` may assign `workspace_admin`, `ml_engineer`,
+and `viewer`. `workspace_admin` may assign `ml_engineer` and `viewer` and must
+not create or elevate `workspace_owner`. `ml_engineer`, `viewer`, and
+`dclab_developer` cannot manage memberships. Legacy `business_admin` /
+`business_developer` values remain valid on existing rows and are rejected as
+assignment targets. There is no ownership-transfer API.
 
 The `/admin` parent router uses a method-aware platform guard: platform developers
 may read, while only platform admins may use unsafe methods. The `/app` parent

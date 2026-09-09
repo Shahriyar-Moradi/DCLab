@@ -43,6 +43,7 @@ export default defineConfig({
         CORS_ORIGINS: webUrl,
         PIPELINE_LLM_VERIFIER_ENABLED: "false",
         DECISION_AGENT_ENABLED: "false",
+        ML_JOB_DISPATCHER: "thread",
       },
     },
     {

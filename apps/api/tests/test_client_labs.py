@@ -559,6 +559,8 @@ def test_open_ingest_upload_stays_free_of_auto_train_pipeline_fields(auth_client
     assert set(body.keys()) == {
         "id",
         "run_id",
+        "workspace_id",
+        "pipeline_run_id",
         "dataset_id",
         "status",
         "stage",

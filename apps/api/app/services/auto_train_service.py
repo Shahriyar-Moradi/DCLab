@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,14 +28,15 @@ from sqlalchemy.orm import Session
 from app.config import REPO_ROOT, get_settings
 from app.db.models import (
     ClientLabUpload,
+    Dataset,
     Experiment,
     ExperimentCandidate,
     LabDecisionRecord,
     ModelAsset,
     ModelVersion,
+    Project,
     WorkflowRun,
 )
-from app.db.session import get_session_factory
 from app.domain.lab_run_stages import (
     ANALYZING,
     CLEANING,
@@ -48,6 +49,7 @@ from app.domain.lab_run_stages import (
     SKIPPED,
     SPLITTING,
 )
+from app.engine.data.loaders import load_table
 from app.engine.data.quality import quality_report
 from app.engine.features.combinations import features_for_groups, generate_group_combinations
 from app.engine.lab.auto_prepare import (
@@ -61,19 +63,38 @@ from app.engine.lab.auto_prepare import (
 )
 from app.engine.features.encode import coerce_binary_target
 from app.engine.lab.schema_inference import MIN_TRAIN_ROWS, infer_entity_column
+from app.engine.modeling.holdout_planner import (
+    HoldoutUnsupportedError,
+    holdout_locked_event_payload,
+    holdout_plan_event_payload,
+    plan_holdout,
+    require_supported_holdout,
+)
+from app.engine.modeling.leakage_auditor import consult_leakage_llm, plan_model_development
 from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
 from app.engine.types import SearchConfig, TaskSpec
 from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
+from app.services.dataset_materialization import materialize_client_upload
+from app.services.evidence_lock_service import (
+    lock_scientific_evidence,
+    missing_scientific_evidence,
+)
 from app.services.lab_decision_ledger import (
     record_column_type_decisions,
     record_missing_value_decisions,
     resolve_target_selection,
 )
-from app.services.lab_service import create_experiment, execute_experiment, ingest_dataset, seed_dogfood, upsert_task
+from app.services.lab_service import (
+    create_experiment,
+    execute_experiment,
+    ingest_dataset,
+    seed_dogfood,
+    upsert_task,
+)
 from app.services.observability_service import PipelineRunObserver
-from app.services.pipeline_verifier import verify_pipeline
 from app.services.pipeline_audit_service import request_pipeline_verification
+from app.services.pipeline_verifier import verify_pipeline
 from app.services.technical_run_report import build_technical_run_report
 
 logger = logging.getLogger(__name__)
@@ -87,41 +108,34 @@ def is_simple_tabular(upload: ClientLabUpload) -> bool:
     return upload.kind in SIMPLE_KINDS and upload.has_named_fields and upload.record_count >= MIN_TRAIN_ROWS
 
 
+def _resolve_auto_train_project_id(
+    db: Session,
+    upload: ClientLabUpload,
+    workflow_run: WorkflowRun | None,
+) -> UUID | None:
+    if workflow_run is not None and workflow_run.project_id is not None:
+        return workflow_run.project_id
+    if upload.dataset_id is not None:
+        source = db.get(Dataset, upload.dataset_id)
+        if source is not None and source.project_id is not None:
+            return source.project_id
+    from app.domain.data_plane import LABS_PROJECT_SLUG
+
+    labs = db.scalar(
+        select(Project).where(
+            Project.workspace_id == upload.workspace_id,
+            Project.slug == LABS_PROJECT_SLUG,
+        )
+    )
+    return labs.id if labs is not None else None
+
+
 def _load_upload_frame(stored_path: str) -> pd.DataFrame:
-    """Re-read the saved file as a DataFrame regardless of format. `load_table`
-    (used by every other Lab dataset) only understands CSV/Parquet, so this
-    mirrors `open_ingest`'s format coverage and normalizes to CSV afterwards.
-    """
-    path = Path(stored_path)
-    suffix = path.suffix.lower()
-    if suffix == ".csv":
-        return pd.read_csv(path)
-    if suffix in {".tsv", ".tab"}:
-        return pd.read_csv(path, sep="\t")
-    if suffix in {".parquet", ".pq"}:
-        return pd.read_parquet(path)
-    if suffix in {".xlsx", ".xls"}:
-        return pd.read_excel(path)
-    if suffix in {".json", ".jsonl", ".ndjson"}:
-        text = path.read_text(encoding="utf-8", errors="replace").strip()
-        if not text:
-            return pd.DataFrame()
-        if text[0] != "[" and "\n" in text:
-            rows = [json.loads(line) for line in text.splitlines() if line.strip()]
-            return pd.json_normalize(rows)
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return pd.json_normalize(parsed)
-        if isinstance(parsed, dict):
-            for key in ("records", "data", "rows", "items"):
-                if isinstance(parsed.get(key), list):
-                    return pd.json_normalize(parsed[key])
-            return pd.json_normalize([parsed])
-        return pd.DataFrame()
-    return pd.read_csv(path, sep=None, engine="python")
+    """Load a materialized local path. Canonical bytes come from ObjectStorage."""
+    return load_table(stored_path)
 
 
-def _search_config() -> SearchConfig:
+def _search_config(*, holdout_plan=None, development_plan=None) -> SearchConfig:
     return SearchConfig(
         strategy="open_ingest",
         max_candidates=8,
@@ -133,7 +147,20 @@ def _search_config() -> SearchConfig:
         retain_min=1,
         retain_max=1,
         seed=42,
+        holdout_plan=None if holdout_plan is None else holdout_plan.to_dict(),
+        model_development_plan=None if development_plan is None else development_plan.to_dict(),
     )
+
+
+HEARTBEAT_PROGRESS_EVENTS = frozenset(
+    {
+        "candidate_started",
+        "candidate_completed",
+        "candidate_failed",
+        "cv_fold_started",
+        "cv_fold_completed",
+    }
+)
 
 
 def _mark(
@@ -192,10 +219,16 @@ def _mark(
     db.commit()
 
 
-def run_auto_train_job(db: Session, upload_id: UUID) -> None:
-    """Runs synchronously against the given session. In production this is
-    called from `enqueue_auto_train`'s background thread (its own session) so
-    `POST /app/labs/uploads` is never blocked on training.
+def run_auto_train_job(
+    db: Session,
+    upload_id: UUID,
+    *,
+    on_heartbeat: Callable[[], None] | None = None,
+) -> None:
+    """Runs synchronously against the given session.
+
+    Production callers are durable workers that claimed an ``ml_jobs`` row.
+    The API request only persists that row and returns.
     """
     total_started_at = datetime.now(UTC)
     total_timer = time.perf_counter()
@@ -238,6 +271,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         "profiling": "profiling_eda",
         "target_task_resolution": "target_task",
         "structural_cleaning": "structural_cleaning",
+        "holdout_plan": "holdout_plan",
         "splitting": "holdout_lock",
         "train_only_decisions": "train_only_decisions",
         "column_roles": "column_roles",
@@ -250,10 +284,11 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
     def _evidence_start(stage: str) -> dict[str, Any]:
         event_stage = event_stage_names.get(stage, stage)
         _emit_event(event_stage, "operation_started", "started")
+        started_at = datetime.now(UTC)
         return {
             "stage": stage,
             "event_stage": event_stage,
-            "started_at": datetime.now(UTC),
+            "started_at": started_at,
             "timer": time.perf_counter(),
             "rows_in": current_rows,
         }
@@ -279,21 +314,35 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         )
         return record
 
-    def _finish_stage(*, status: str = "completed") -> None:
+    def _finish_stage(*, status: str = "completed", reason: str | None = None) -> None:
         nonlocal active_stage
         if active_stage is None:
             return
         ended = datetime.now(UTC)
+        duration_ms = max(0.001, (time.perf_counter() - active_stage["timer"]) * 1000.0)
         stage_timings.append(
             {
                 "stage": active_stage["stage"],
                 "started_at": active_stage["started_at"],
                 "ended_at": ended.isoformat(),
-                "duration_ms": max(0.001, (time.perf_counter() - active_stage["timer"]) * 1000.0),
+                "duration_ms": duration_ms,
                 "rows_in": active_stage["rows_in"],
                 "rows_out": current_rows,
                 "status": status,
             }
+        )
+        payload = {
+            "rows_in": active_stage["rows_in"],
+            "rows_out": current_rows,
+        }
+        if status == "failed" and reason:
+            payload["failure_reason"] = reason
+        _emit_event(
+            str(active_stage["stage"]),
+            "operation_completed",
+            status,
+            payload,
+            duration_ms,
         )
         active_stage = None
 
@@ -309,9 +358,12 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "timer": time.perf_counter(),
             "rows_in": current_rows,
         }
+        _emit_event(stage, "operation_started", "started", {"rows_in": current_rows})
         row = db.get(ClientLabUpload, upload_id)
         if row is not None:
             _mark(db, row, status=stage)
+        if on_heartbeat is not None:
+            on_heartbeat()
 
     def _trace(step: str, fn: str, **payload: Any) -> None:
         entry = {"step": step, "fn": fn, **payload}
@@ -335,7 +387,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         row = db.get(ClientLabUpload, upload_id)
         if row is None:
             return
-        _finish_stage(status="failed")
+        _finish_stage(status="failed", reason=reason)
         payload = {**dict(row.pipeline_log or {}), **dict(extra or {})}
         payload["reason"] = reason
         payload["failed_at"] = current_stage
@@ -408,6 +460,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             partial_result["error"] = reason
             experiment.result = partial_result
             experiment.failure_reason = reason[:2048]
+            experiment.result = partial_result
         _mark(
             db,
             row,
@@ -426,7 +479,8 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
     _stage(INGESTING)
     try:
         evidence_timer = _evidence_start("file_ingestion")
-        frame = _load_upload_frame(upload.stored_path)
+        with materialize_client_upload(db, upload) as source:
+            frame = _load_upload_frame(str(source))
         current_rows = int(len(frame))
         frame.columns = [str(c) for c in frame.columns]
         columns = list(frame.columns)
@@ -531,15 +585,59 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             )
             return
 
-        # The final holdout is locked before any modeling decision is derived.
-        _stage(SPLITTING)
-        evidence_timer = _evidence_start("splitting")
-        locked_train, _locked_val, _locked_test, locked_split = split_train_test_holdout(
+        # The final holdout is locked after pre-split structural analysis and
+        # before any modeling decision is derived.
+        holdout_plan = plan_holdout(
             frame,
             target=target.column,
+            task_type=target.task_type,
             test_size=0.2,
-            seed=42,
-            stratify=target.task_type == "binary",
+            random_state=42,
+        )
+        _emit_event(
+            "holdout_plan",
+            "holdout_plan_selected",
+            "completed",
+            holdout_plan_event_payload(holdout_plan),
+        )
+        if holdout_plan.strategy == "unsupported":
+            _fail(
+                holdout_plan.reason,
+                extra={
+                    "target": target_evidence,
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
+                    "holdout_plan": holdout_plan.to_dict(),
+                },
+            )
+            return
+        _stage(SPLITTING)
+        evidence_timer = _evidence_start("splitting")
+        try:
+            require_supported_holdout(holdout_plan)
+            locked_train, _locked_val, _locked_test, locked_split = split_train_test_holdout(
+                frame,
+                target=target.column,
+                test_size=holdout_plan.test_size,
+                seed=holdout_plan.random_state,
+                plan=holdout_plan,
+            )
+        except (HoldoutUnsupportedError, ValueError) as exc:
+            _fail(
+                str(exc),
+                extra={
+                    "target": target_evidence,
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
+                    "holdout_plan": holdout_plan.to_dict(),
+                },
+            )
+            return
+        _emit_event(
+            "holdout_lock",
+            "holdout_locked",
+            "completed",
+            holdout_locked_event_payload(locked_split),
         )
         _trace(
             "splitting",
@@ -548,10 +646,58 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             n_train=locked_split.get("n_train"),
             n_test=locked_split.get("n_test"),
             provenance_disjoint=locked_split.get("provenance_disjoint"),
+            group_column=locked_split.get("group_column"),
+            time_column=locked_split.get("time_column"),
         )
         _evidence_finish(evidence_timer)
 
         evidence_timer = _evidence_start("train_only_decisions")
+
+        def _planning_on_event(event_type: str, payload: dict[str, Any]) -> None:
+            data = dict(payload)
+            stage = str(data.pop("stage", event_type))
+            status = str(data.pop("status", "completed"))
+            duration_ms = data.pop("duration_ms", None)
+            _emit_event(stage, event_type, status, data, duration_ms)
+
+        (
+            _problem_profile,
+            _validation_plan,
+            _metric_plan,
+            _leakage_audit,
+            development_plan,
+        ) = plan_model_development(
+            locked_train,
+            target=target.column,
+            task_type=target.task_type,
+            requested_folds=5,
+            random_state=42,
+            reviewer=consult_leakage_llm,
+            conservative_auto_train=True,
+            on_event=_planning_on_event,
+        )
+        if _validation_plan.strategy == "unsupported" or not _validation_plan.actual_folds:
+            _evidence_finish(evidence_timer, status="failed")
+            _fail(
+                _validation_plan.reason
+                or _validation_plan.fallback_reason
+                or "Validation plan is unsupported.",
+                extra={
+                    "target": target_evidence,
+                    "analysis": profile,
+                    "cleaning": cleaning_log,
+                    "holdout_plan": holdout_plan.to_dict(),
+                    "model_development_plan": development_plan.to_dict(),
+                },
+            )
+            return
+        allowed_predictors = set(development_plan.allowed_features)
+        leakage_excluded = [item["column"] for item in development_plan.excluded_features]
+        leakage_blocked = {
+            item["column"]
+            for item in development_plan.excluded_features
+            if item["risk"] in {"HIGH", "CRITICAL"}
+        }
         decision_columns = [
             c for c in feature_columns if c in locked_train.columns and c != SOURCE_ROW_COLUMN
         ]
@@ -586,8 +732,10 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             for c in decision_columns
             if c not in missing_plan.dropped_columns and c in locked_train.columns
         ]
+        modeled_kept_columns = [c for c in kept_columns if c not in leakage_blocked]
         cleaning_log["decision_scope"] = "locked_training_partition_only"
         cleaning_log["dropped_columns"] = list(missing_plan.dropped_columns)
+        cleaning_log["leakage_excluded_predictors"] = list(leakage_excluded)
         cleaning_log["missing_value_plan"] = {
             "evidence_rows": int(len(locked_train)),
             "decision_partition": "train",
@@ -617,7 +765,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
 
         _stage(FEATURE_ENGINEERING)
         evidence_timer = _evidence_start("feature_engineering")
-        engineered_train, fe_transformations = engineer_features(locked_train, kept_columns)
+        engineered_train, fe_transformations = engineer_features(locked_train, modeled_kept_columns)
         frame = apply_feature_engineering_actions(frame, fe_transformations)
         _evidence_finish(evidence_timer)
         _trace(
@@ -645,6 +793,8 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         ]
         identifier_cols = list(dict.fromkeys(final_roles.identifier + llm_identifier_cols))
         entity_column = infer_entity_column(engineered_train, kept_columns)
+        num_cols = [name for name in num_cols if name in allowed_predictors]
+        cat_cols = [name for name in cat_cols if name in allowed_predictors]
         _evidence_finish(evidence_timer)
         transformed_datetime = {
             str(name)
@@ -676,6 +826,15 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 final_role = "ignored/free_text"
                 source = "rule"
                 reason = "Excluded by the train-only missing-value policy before modeling."
+                confidence = 1.0
+                verdict = "not_run"
+                llm_used = False
+            elif column in {item["column"] for item in development_plan.excluded_features}:
+                exclusion = next(item for item in development_plan.excluded_features if item["column"] == column)
+                identifier_excluded = "identifier_not_a_predictor" in (exclusion.get("reasons") or [])
+                final_role = "identifier" if identifier_excluded else "ignored/free_text"
+                source = "rule"
+                reason = f"Excluded from estimators by the train-only leakage plan: {exclusion.get('reason')}."
                 confidence = 1.0
                 verdict = "not_run"
                 llm_used = False
@@ -731,7 +890,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             )
             return
 
-        search = _search_config()
+        search = _search_config(holdout_plan=holdout_plan, development_plan=development_plan)
         groups_map = {"features": num_cols + cat_cols}
         combos = generate_group_combinations(
             list(groups_map.keys()),
@@ -764,6 +923,9 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         frame.to_csv(dataset_path, index=False)
 
         env = seed_dogfood(db)
+        # Prepared CSV is a new Dataset version. Keep the Labs ingest lineage:
+        # same IngestionRun/DataSource as the original upload Dataset. Do not
+        # invent a second ingest engine or a second training runner.
         dataset = ingest_dataset(
             db,
             environment=env,
@@ -772,10 +934,12 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             source_type="csv",
             version="v1",
             workspace_id=upload.workspace_id,
+            project_id=_resolve_auto_train_project_id(db, upload, workflow_run),
+            ingestion_run_id=upload.ingestion_run_id,
         )
 
         task_type = target.task_type
-        metric = target.evaluation_metric if task_type == "regression" else "pr_auc"
+        metric = _metric_plan.primary_metric
         transformed_features = [
             str(name)
             for action in fe_transformations
@@ -786,6 +950,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 list(missing_plan.dropped_columns)
                 + list(identifier_cols)
                 + list(final_roles.ignored_free_text)
+                + list(leakage_excluded)
             )
         )
         feature_report = {
@@ -795,17 +960,23 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "removed_features": removed_features,
             "feature_engineering_actions": list(fe_transformations),
         }
+        group_column = development_plan.group_column
+        time_column = development_plan.time_column
         task_spec = TaskSpec(
             id=f"open_ingest_{upload.id.hex[:12]}",
             name=f"Auto-train: {upload.original_filename}",
             description="Automatic training job for a Labs custom-box upload (simple tabular file).",
             task_type=task_type,
             target=target.column,
-            entity_id=entity_column if entity_column in frame.columns else None,
-            prediction_time_column=None,
+            entity_id=(
+                group_column
+                if group_column and group_column in frame.columns
+                else (entity_column if entity_column in frame.columns else None)
+            ),
+            prediction_time_column=time_column if time_column and time_column in frame.columns else None,
             evaluation_metric=metric,
             feature_groups={"features": list(modeled_cols)},
-            validation_strategy="stratified" if task_type == "binary" else "random",
+            validation_strategy=_validation_plan.strategy,
             column_roles={"numerical": num_cols, "categorical": cat_cols},
             feature_engineering=feature_report,
         )
@@ -859,11 +1030,18 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             if stage != SPLITTING:
                 _stage(stage)
 
+        def _on_model_event(event_type: str, payload: dict[str, Any]) -> None:
+            if observer is not None:
+                observer.callback(event_type, payload)
+            if on_heartbeat is not None and event_type in HEARTBEAT_PROGRESS_EVENTS:
+                on_heartbeat()
+
         experiment = execute_experiment(
             db,
             experiment,
             on_stage=_experiment_stage,
-            on_event=observer.callback if observer is not None else None,
+            on_event=_on_model_event,
+            persist_scientific=False,
         )
         if experiment.status != "COMPLETED":
             result = dict(experiment.result or {})
@@ -883,6 +1061,8 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
         result = dict(experiment.result or {})
         result["analysis"] = profile
         result["cleaning"] = cleaning_log
+        result.setdefault("holdout_plan", holdout_plan.to_dict())
+        result.setdefault("model_development_plan", development_plan.to_dict())
         result["feature_engineering"] = {
             **feature_report,
             "transformations": list(fe_transformations),
@@ -1022,6 +1202,11 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             "experiment_status": experiment.status,
             "pipeline_trace": list(trace),
             "stage_timings": list(result.get("stage_timings") or []),
+            "problem_profile": result.get("problem_profile") or {},
+            "holdout_plan": result.get("holdout_plan") or holdout_plan.to_dict(),
+            "validation_plan": result.get("validation_plan") or {},
+            "metric_plan": result.get("metric_plan") or {},
+            "model_development_plan": result.get("model_development_plan") or development_plan.to_dict(),
         }
         upload = db.get(ClientLabUpload, upload_id)
         if upload is not None:
@@ -1040,6 +1225,142 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
             log["stage_timings"] = list(result["stage_timings"])
             experiment.result = result
             db.commit()
+            from app.services.scientific_lineage_service import (
+                lab_decision_sources_for_upload,
+                persist_scientific_lineage_from_result,
+            )
+
+            result_prep = (
+                result.get("preprocessing")
+                if isinstance(result.get("preprocessing"), dict)
+                else {}
+            )
+            evidence = (
+                dict(result["scientific_evidence"])
+                if isinstance(result.get("scientific_evidence"), dict)
+                else {}
+            )
+            evidence.update(
+                {
+                    "quality": quality,
+                    "missing_value_plan": missing_plan.to_dict(),
+                    "leakage_exclusions": list(development_plan.excluded_features),
+                    "feature_actions": list(fe_transformations),
+                    "numerical_columns": [
+                        str(name)
+                        for name in (result_prep.get("numeric_columns") or num_cols)
+                    ],
+                    "categorical_columns": [
+                        str(name)
+                        for name in (result_prep.get("categorical_columns") or cat_cols)
+                    ],
+                    "modeled_features": list(modeled_cols),
+                    "dropped_columns": list(missing_plan.dropped_columns),
+                    "preprocessing_fit_scope": "fold_train",
+                }
+            )
+            result["scientific_evidence"] = evidence
+            persist_scientific_lineage_from_result(
+                db,
+                experiment,
+                result,
+                missing_plan=missing_plan,
+                lab_decision_sources=lab_decision_sources_for_upload(db, upload.id),
+                source_dataset_id=upload.dataset_id,
+            )
+            from app.services.candidate_modeling_service import (
+                link_candidates_to_feature_set_version,
+                link_holdout_evaluation_to_model_version,
+            )
+            from app.services.reproducibility_service import (
+                persist_reproducibility,
+                store_report_artifacts,
+            )
+
+            link_candidates_to_feature_set_version(db, experiment)
+            repro = persist_reproducibility(db, experiment, result)
+            if workflow_run is not None:
+                from app.services.lineage_service import (
+                    create_model_asset,
+                    create_model_version,
+                )
+
+                model_asset = db.scalar(
+                    select(ModelAsset).where(
+                        ModelAsset.workflow_id == workflow_run.workflow_id,
+                    )
+                )
+                if model_asset is None:
+                    slug = "client-lab-selected-model"
+                    taken = db.scalar(
+                        select(ModelAsset.id).where(
+                            ModelAsset.workspace_id == upload.workspace_id,
+                            ModelAsset.slug == slug,
+                        )
+                    )
+                    if taken is not None:
+                        slug = f"client-lab-selected-model-{workflow_run.workflow.slug}"
+                    model_asset = create_model_asset(
+                        db,
+                        workspace_id=upload.workspace_id,
+                        workflow=workflow_run.workflow,
+                        name="Client Lab Selected Model",
+                        slug=slug,
+                    )
+                selected_key = (result.get("selection") or {}).get(
+                    "selected_candidate_id"
+                ) or (result.get("best_single") or {}).get("candidate_id")
+                selected_candidate = db.scalar(
+                    select(ExperimentCandidate).where(
+                        ExperimentCandidate.experiment_id == experiment.id,
+                        ExperimentCandidate.candidate_key == selected_key,
+                    )
+                )
+                if selected_candidate is None:
+                    raise RuntimeError("selected candidate was not persisted")
+                version_count = db.query(ModelVersion).filter(
+                    ModelVersion.model_asset_id == model_asset.id
+                ).count()
+                model_version = create_model_version(
+                    db,
+                    model_asset=model_asset,
+                    pipeline_run=experiment,
+                    selected_candidate=selected_candidate,
+                    version=f"v{version_count + 1}",
+                    runtime_environment_id=repro.runtime_environment.id,
+                    code_snapshot_id=(
+                        repro.code_snapshot.id if repro.code_snapshot is not None else None
+                    ),
+                    model_artifact_id=(
+                        repro.model_artifact.id if repro.model_artifact is not None else None
+                    ),
+                    preprocessor_artifact_id=(
+                        repro.preprocessor_artifact.id
+                        if repro.preprocessor_artifact is not None
+                        else None
+                    ),
+                    feature_manifest_artifact_id=(
+                        repro.feature_manifest_artifact.id
+                        if repro.feature_manifest_artifact is not None
+                        else None
+                    ),
+                    feature_set_version_id=repro.feature_set_version_id,
+                )
+                link_holdout_evaluation_to_model_version(db, experiment, model_version)
+            from app.services.model_build_reproduction_service import (
+                persist_model_build_reproduction_artifacts,
+            )
+
+            persist_model_build_reproduction_artifacts(db, experiment)
+            # Last statement before the commit: the triggers this arms read the
+            # stamp inside this transaction.
+            if lock_scientific_evidence(db, experiment) is None:
+                missing = ", ".join(missing_scientific_evidence(db, experiment))
+                raise RuntimeError(
+                    "cannot finish pipeline run before scientific evidence is complete: "
+                    f"{missing}"
+                )
+            db.commit()
             preliminary_report = build_technical_run_report(
                 db,
                 upload=upload,
@@ -1048,7 +1369,7 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 pipeline_log=log,
             )
             verification_timer = _evidence_start("deterministic_verification")
-            verification = verify_pipeline(preliminary_report)
+            verification = verify_pipeline(preliminary_report, db=db)
             _evidence_finish(verification_timer)
             result["deterministic_verification"] = verification
             log["deterministic_verification"] = verification
@@ -1084,48 +1405,8 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
                 encoding="utf-8",
             )
             experiment.result = result
-            db.commit()
-            if workflow_run is not None:
-                from app.services.lineage_service import (
-                    create_model_asset,
-                    create_model_version,
-                )
-
-                model_asset = db.scalar(
-                    select(ModelAsset).where(
-                        ModelAsset.workflow_id == workflow_run.workflow_id,
-                        ModelAsset.slug == "client-lab-selected-model",
-                    )
-                )
-                if model_asset is None:
-                    model_asset = create_model_asset(
-                        db,
-                        workspace_id=upload.workspace_id,
-                        workflow=workflow_run.workflow,
-                        name="Client Lab Selected Model",
-                        slug="client-lab-selected-model",
-                    )
-                selected_key = (result.get("selection") or {}).get(
-                    "selected_candidate_id"
-                ) or (result.get("best_single") or {}).get("candidate_id")
-                selected_candidate = db.scalar(
-                    select(ExperimentCandidate).where(
-                        ExperimentCandidate.experiment_id == experiment.id,
-                        ExperimentCandidate.candidate_key == selected_key,
-                    )
-                )
-                if selected_candidate is None:
-                    raise RuntimeError("selected candidate was not persisted")
-                version_count = db.query(ModelVersion).filter(
-                    ModelVersion.model_asset_id == model_asset.id
-                ).count()
-                create_model_version(
-                    db,
-                    model_asset=model_asset,
-                    pipeline_run=experiment,
-                    selected_candidate=selected_candidate,
-                    version=f"v{version_count + 1}",
-                )
+            _finish_stage()
+            store_report_artifacts(db, experiment)
             _mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)
             _emit_event(
                 "terminal",
@@ -1144,16 +1425,12 @@ def run_auto_train_job(db: Session, upload_id: UUID) -> None:
 
 
 def enqueue_auto_train(upload_id: UUID) -> None:
-    """Fire-and-forget: runs in a background thread with its own DB session so
-    the upload request is never blocked on training."""
+    """Dispatch an already-persisted auto-train job.
 
-    def _worker() -> None:
-        session = get_session_factory()()
-        try:
-            run_auto_train_job(session, upload_id)
-        except Exception:  # noqa: BLE001
-            logger.exception("auto-train worker crashed for upload %s", upload_id)
-        finally:
-            session.close()
+    Production default is a no-op: a worker claims the ``ml_jobs`` row.
+    ``inline`` / ``thread`` dispatchers are explicit local adapters only.
+    """
 
-    threading.Thread(target=_worker, daemon=True, name=f"auto-train-{upload_id}").start()
+    from app.services.job_dispatcher import get_job_dispatcher
+
+    get_job_dispatcher().dispatch(upload_id)

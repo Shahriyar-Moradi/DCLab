@@ -33,6 +33,7 @@ import {
   OrganizationSummarySchema,
   RegisteredModelSchema,
   PipelineMonitorSchema,
+  PipelineModelBuildSchema,
   PlatformBusinessDetailSchema,
   PlatformBusinessSummarySchema,
   PlatformDomainDetailSchema,
@@ -44,6 +45,7 @@ import {
   BusinessWorkflowRunDetailSchema,
   BusinessModelDetailSchema,
   UploadResultSchema,
+  VerificationAttemptSchema,
   type AdminClientUploadDetail,
   type AdminClientUploadSummary,
   type ClientLabProblem,
@@ -63,6 +65,7 @@ import {
   type OrganizationSummary,
   type RegisteredModel,
   type PipelineMonitor,
+  type PipelineModelBuild,
   type PlatformBusinessDetail,
   type PlatformBusinessSummary,
   type PlatformDomainDetail,
@@ -103,7 +106,12 @@ const LoginResponseSchema = z.object({
       "dclab_developer",
       "business_admin",
       "business_developer",
+      "personal_developer",
       "client_user",
+      "workspace_owner",
+      "workspace_admin",
+      "ml_engineer",
+      "viewer",
     ]),
     full_name: z.string(),
     workspace_id: z.string().nullable(),
@@ -189,7 +197,7 @@ export function useGenerateDecision(): ReturnType<
   });
 }
 
-export function useOverviewSnapshot(): ReturnType<
+export function useOverviewSnapshot(enabled = true): ReturnType<
   typeof useQuery<{ opportunityTotal: number; decisions: DecisionList["items"]; decisionTotal: number; truncated: boolean }>
 > {
   return useQuery({
@@ -211,6 +219,7 @@ export function useOverviewSnapshot(): ReturnType<
         truncated: first.total > 500,
       };
     },
+    enabled,
   });
 }
 
@@ -298,7 +307,28 @@ export async function downloadAdminRunPredictions(runId: string): Promise<void> 
 }
 
 async function saveDownloadedCsv(path: string): Promise<void> {
-  const { blob, filename } = await apiDownload(path);
+  await saveDownloadedFile(path, { accept: "text/csv", fallbackFilename: "predictions.csv" });
+}
+
+export async function downloadModelBuildReproduction(
+  workspaceId: string,
+  pipelineRunId: string,
+  kind: "notebook" | "script",
+): Promise<void> {
+  const suffix = kind === "notebook" ? "notebook" : "script";
+  await saveDownloadedFile(
+    `/workspaces/${workspaceId}/pipeline-runs/${pipelineRunId}/model-build/reproduction/${suffix}/download`,
+    {
+      fallbackFilename: kind === "notebook" ? "reproduction.ipynb" : "reproduction.py",
+    },
+  );
+}
+
+async function saveDownloadedFile(
+  path: string,
+  options?: { accept?: string; fallbackFilename?: string },
+): Promise<void> {
+  const { blob, filename } = await apiDownload(path, options);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -403,6 +433,17 @@ export function useLabTasks() {
   return useQuery({
     queryKey: ["lab", "tasks"],
     queryFn: () => apiGet("/admin/tasks", z.array(LabTaskSchema)),
+  });
+}
+
+export function useCreateLabTaskFromConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (path: string) =>
+      apiPost(`/admin/tasks/from-config?path=${encodeURIComponent(path)}`, LabTaskSchema, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["lab", "tasks"] });
+    },
   });
 }
 
@@ -584,8 +625,44 @@ export function usePipelineMonitor(id: string | undefined, businessId?: string):
     enabled: Boolean(id),
     refetchInterval: (query) => {
       const status = query.state.data?.summary.status.toLowerCase();
-      return status && !["completed", "failed"].includes(status) ? 1000 : false;
+      return status && !["completed", "failed", "skipped"].includes(status) ? 1000 : false;
     },
+  });
+}
+
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "skipped", "cancelled", "canceled"]);
+const RUNNING_STAGE_STATUSES = new Set(["running", "started", "in_progress"]);
+const PENDING_STAGE_STATUSES = new Set(["pending", "queued", "created"]);
+
+function modelBuildIsLive(build: PipelineModelBuild | undefined): boolean {
+  if (!build) return false;
+  const status = build.pipeline_run_status.toLowerCase();
+  if (["failed", "skipped", "cancelled", "canceled"].includes(status)) return false;
+  if (build.stages.some((stage) => RUNNING_STAGE_STATUSES.has(stage.status.toLowerCase()))) {
+    return true;
+  }
+  if (build.stages.some((stage) => PENDING_STAGE_STATUSES.has(stage.status.toLowerCase()))) {
+    return true;
+  }
+  if (status === "completed" && (!build.reproduction_notebook || !build.reproduction_script)) {
+    return true;
+  }
+  return !TERMINAL_RUN_STATUSES.has(status);
+}
+
+export function useModelBuild(
+  workspaceId: string | undefined,
+  pipelineRunId: string | undefined,
+): ReturnType<typeof useQuery<PipelineModelBuild>> {
+  return useQuery({
+    queryKey: ["model-build", workspaceId, pipelineRunId],
+    queryFn: () =>
+      apiGet(
+        `/workspaces/${workspaceId}/pipeline-runs/${pipelineRunId}/model-build`,
+        PipelineModelBuildSchema,
+      ),
+    enabled: Boolean(workspaceId && pipelineRunId),
+    refetchInterval: (query) => (modelBuildIsLive(query.state.data) ? 1000 : false),
   });
 }
 
@@ -598,10 +675,12 @@ export function useBusinessWorkspaces(): ReturnType<typeof useQuery<BusinessWork
 
 export function useBusinessDeepAudit() {
   return useMutation({
-    mutationFn: ({ businessId, runId }: { businessId: string; runId: string }) =>
+    mutationFn: ({ businessId, runId }: { businessId?: string; runId: string }) =>
       apiPost(
-        `/business/workspaces/${businessId}/lab-runs/${runId}/verification/deep`,
-        z.record(z.string(), z.unknown()),
+        businessId
+          ? `/business/workspaces/${businessId}/lab-runs/${runId}/verification/deep`
+          : `/admin/lab/runs/${runId}/verification/deep`,
+        VerificationAttemptSchema,
         {},
       ),
   });

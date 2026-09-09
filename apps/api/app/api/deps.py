@@ -5,11 +5,12 @@ import uuid
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.db.models import User, UserRole
+from app.db.models import User
 from app.db.session import get_db
 from app.services.auth_service import AuthError, user_from_token
 from app.services.authorization_service import (
     AuthorizationError,
+    BUSINESS_PLANE_USER_ROLES,
     PERSONAL_DEVELOPER_ROLE,
     WorkspaceAccess,
     can_execute_workspace_ml,
@@ -70,10 +71,7 @@ def require_platform_admin(
 def require_business_administration(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> User:
-    if platform_role_for(db, user) is not None or user.role in {
-        UserRole.BUSINESS_ADMIN.value,
-        UserRole.BUSINESS_DEVELOPER.value,
-    }:
+    if platform_role_for(db, user) is not None or user.role in BUSINESS_PLANE_USER_ROLES:
         return user
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

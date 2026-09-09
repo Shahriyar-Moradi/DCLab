@@ -221,7 +221,7 @@ class Test1ClassificationCsv:
 
         experiment = db_session.get(Experiment, upload.experiment_id)
         result = experiment.result
-        assert result["split"]["strategy"] == "train_test_split"
+        assert result["split"]["strategy"] == "stratified_random"
         assert result["split"]["n_val"] == 0
         assert result["validation"]["n_folds"] == 5
         assert result["validation"]["cv_strategy"] == "StratifiedKFold"

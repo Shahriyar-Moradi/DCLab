@@ -48,6 +48,8 @@ class SearchConfig:
     retain_max: int = 7
     max_abs_correlation: float = 0.95
     n_robustness_folds: int = 3
+    holdout_plan: dict[str, Any] | None = None
+    model_development_plan: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

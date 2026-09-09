@@ -1,6 +1,6 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Page, type Response, type TestInfo } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const API_URL = "http://127.0.0.1:8001";
@@ -76,7 +76,7 @@ async function uploadCsv(
   await writeFile(fixture, csv);
   await page.goto("/app/labs");
   await expect(
-    page.getByRole("heading", { name: "Try DCLab Before You Commit." }),
+    page.getByRole("heading", { name: "Labs", exact: true }),
   ).toBeVisible();
   const input = page.locator('input[type="file"]').first();
   await input.setInputFiles(fixture);
@@ -111,6 +111,84 @@ async function waitForUpload(
   return latest;
 }
 
+function isPredictionCsvGet(response: Response): boolean {
+  if (response.request().method() !== "GET") return false;
+  try {
+    return new URL(response.url()).pathname.endsWith("/predictions.csv");
+  } catch {
+    return false;
+  }
+}
+
+function parseCsvRow(line: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (character === "," && !inQuotes) {
+      cells.push(current);
+      current = "";
+    } else {
+      current += character;
+    }
+  }
+  cells.push(current);
+  return cells;
+}
+
+function assertPredictionCsv(csv: string, expectedRows: number): void {
+  expect(csv.trim().length, "downloaded CSV was empty").toBeGreaterThan(0);
+  const lines = csv
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  expect(lines.length).toBeGreaterThan(1);
+  expect(parseCsvRow(lines[0])).toEqual(["record", "prediction", "probability"]);
+  const rows = lines.slice(1).map(parseCsvRow);
+  expect(rows).toHaveLength(expectedRows);
+  for (const cells of rows) {
+    expect(cells.length).toBeGreaterThanOrEqual(3);
+    expect(cells[0]?.trim()).not.toBe("");
+    expect(cells[1]?.trim()).not.toBe("");
+    const probability = cells[2]?.trim() ?? "";
+    if (probability !== "") {
+      expect(Number.isFinite(Number(probability))).toBeTruthy();
+    }
+  }
+}
+
+async function downloadLabResultsCsv(
+  page: Page,
+  destination: string,
+): Promise<{ filename: string; csv: string }> {
+  const button = page.getByRole("button", { name: "Download results" });
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+  const [download, response] = await Promise.all([
+    page.waitForEvent("download"),
+    page.waitForResponse(isPredictionCsvGet),
+    button.click(),
+  ]);
+  expect(response.status(), await response.text()).toBe(200);
+  expect(response.headers()["content-type"] ?? "").toMatch(/text\/csv/);
+  expect(new URL(response.url()).pathname).toMatch(
+    /\/app\/labs\/uploads\/[^/]+\/predictions\.csv$/,
+  );
+  await download.saveAs(destination);
+  const csv = await readFile(destination, "utf8");
+  expect(download.suggestedFilename()).toMatch(/\.csv$/i);
+  return { filename: download.suggestedFilename(), csv };
+}
+
 function setCapability(capability: string, state: "missing" | "false" | "true") {
   execFileSync(
     "../../.venv/bin/python",
@@ -132,6 +210,546 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
 
   test.beforeAll(async () => {
     await mkdir(ARTIFACTS, { recursive: true });
+  });
+
+  test("authenticated routes use the role-aware application shell", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("navigation", { name: "Marketing" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
+    await expect(page.getByRole("contentinfo")).toBeVisible();
+
+    await page.goto("/login");
+    await expect(page.getByRole("navigation", { name: "Marketing" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await page.getByLabel("Email").fill("nobody@verification.invalid");
+    await page.getByLabel("Password").fill("wrong-password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.locator("#login-error")).toHaveText(/invalid email or password/i);
+
+    await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/app/dashboards");
+
+    const navigation = page.getByRole("navigation", {
+      name: "Application navigation",
+    });
+    await expect(navigation).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    const refresh = page.getByRole("button", { name: "Refresh" });
+    await expect(refresh).toBeEnabled();
+    await refresh.click();
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    const uploadOpportunities = page.getByRole("link", { name: "Upload opportunities" });
+    if (await uploadOpportunities.count()) {
+      await expect(uploadOpportunities).toHaveAttribute("href", "/app/opportunities/upload");
+    } else {
+      await expect(page.getByRole("heading", { name: "Recommended actions" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Decision confidence" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Recent decisions" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "View all" })).toHaveAttribute("href", "/app/decisions");
+    }
+    await expect(navigation.getByRole("link", { name: "Labs", exact: true })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Model Registry" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Marketing" })).toHaveCount(0);
+    await expect(page.getByRole("contentinfo")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open application navigation" })).toHaveCount(0);
+    await expect(
+      page.getByRole("group", { name: "Account" }).getByText("Dclab Admin", { exact: true }),
+    ).toBeVisible();
+
+    await page.goto("/app/insights");
+    await expect(navigation.getByRole("link", { name: "Insights" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await page.goBack();
+    await expect(navigation.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await page.goForward();
+    await expect(navigation.getByRole("link", { name: "Insights" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/app/opportunities");
+    await expect(navigation.getByRole("link", { name: "Opportunities" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/app/opportunities/upload");
+    await expect(navigation.getByRole("link", { name: "Upload" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(navigation.getByRole("link", { name: "Opportunities" })).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/app/labs");
+    await expect(navigation.getByRole("link", { name: "Labs", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/admin/lab/experiments");
+    await expect(
+      navigation.getByRole("link", { name: "Labs & Experiments" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await page.goto("/admin/businesses");
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/admin/organizations");
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/admin/organizations/00000000-0000-0000-0000-000000000001");
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/admin/models");
+    await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/admin/monitoring");
+    await expect(navigation.getByRole("link", { name: "Monitoring" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.goto("/admin/pipeline-runs/00000000-0000-0000-0000-000000000001/monitor");
+    await expect(navigation.getByRole("link", { name: "Monitoring" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(
+      navigation.getByRole("link", { name: "Labs & Experiments" }),
+    ).not.toHaveAttribute("aria-current", "page");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(navigation).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open application navigation" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open account" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Open application navigation" }).click();
+    await expect(page.getByRole("dialog", { name: "Application navigation" })).toBeVisible();
+    await expect(
+      page.getByRole("dialog").getByRole("navigation", { name: "Application navigation" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("dialog").getByText("Dclab Admin", { exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Application navigation" })).toHaveCount(0);
+
+    await page.setViewportSize({ width: 1280, height: 844 });
+    await page.reload();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Marketing" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
+
+    await login(page, "dclab-developer@verification.invalid");
+    await expect(navigation.getByRole("link", { name: "Model Registry" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Sign out" }).click();
+
+    await login(page, "business-admin-a@verification.invalid");
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveCount(0);
+    await page.goto("/app/labs");
+    await expect(navigation.getByRole("link", { name: "Labs", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await page.getByRole("button", { name: "Sign out" }).click();
+
+    await login(page, "business-developer-a@verification.invalid");
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Marketing" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
+  });
+
+  test("client_user can use app routes and is rejected from platform and business admin", async ({
+    page,
+  }) => {
+    await login(page, "client-user@verification.invalid");
+    await expect(page).toHaveURL(/\/app\/dashboards/);
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await expect(page.getByText("client-user@verification.invalid")).toBeVisible();
+
+    const navigation = page.getByRole("navigation", {
+      name: "Application navigation",
+    });
+    await expect(navigation).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Dashboard" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Labs", exact: true })).toBeVisible();
+    await expect(navigation.getByText("Platform", { exact: true })).toHaveCount(0);
+    await expect(navigation.getByText("Business", { exact: true })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Labs & Experiments" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Monitoring" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
+
+    await page.goto("/app/labs");
+    await expect(page.getByRole("heading", { name: "Labs", exact: true })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Labs", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    const adminPage = await page.goto("/admin/businesses");
+    expect(adminPage?.status()).toBe(403);
+    await expect(page).toHaveURL(/\/admin\/businesses/);
+    await expect(
+      page.getByRole("heading", { name: "You do not have access to the admin area" }),
+    ).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
+    const businessPage = await page.goto("/business");
+    expect(businessPage?.status()).toBe(403);
+    await expect(page).toHaveURL(/\/business/);
+    await expect(
+      page.getByRole("heading", {
+        name: "You do not have access to the business administration area",
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
+
+    const headers = await authHeaders(page);
+    expect(
+      (await page.request.get(`${API_URL}/admin/businesses`, { headers })).status(),
+    ).toBe(403);
+    expect(
+      (await page.request.get(`${API_URL}/business/workspaces`, { headers })).status(),
+    ).toBe(403);
+
+    await page.goto("/app/dashboards");
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page).toHaveURL(/\/app\/dashboards/);
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
+    await expect(navigation.getByText("Platform", { exact: true })).toHaveCount(0);
+    await page.goto("/app/labs");
+    await page.reload();
+    await expect(page).toHaveURL(/\/app\/labs/);
+    await expect(page.getByRole("heading", { name: "Labs", exact: true })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Labs", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  test("workspace dashboard keeps live overview snapshot states", async ({ page }) => {
+    const opportunityId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const firstDecisionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const secondDecisionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const thirdDecisionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    let opportunityTotal = 0;
+    let failOverview = false;
+    let delayMs = 1200;
+    let decisions: JsonRecord[] = [];
+
+    const fulfillJson = async (
+      route: { fulfill: (response: { status: number; contentType: string; body: string }) => Promise<void> },
+      body: JsonRecord,
+      status = 200,
+    ) => {
+      if (delayMs) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      if (failOverview) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "overview fixture failure" }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      });
+    };
+
+    await login(page, "dclab-admin@verification.invalid");
+    await page.route(
+      (url) => url.origin === "http://127.0.0.1:8001" && url.pathname === "/app/opportunities",
+      async (route) => {
+        await fulfillJson(route, { items: [], total: opportunityTotal, limit: 1, offset: 0 });
+      },
+    );
+    await page.route(
+      (url) => url.origin === "http://127.0.0.1:8001" && url.pathname === "/app/decisions",
+      async (route) => {
+        await fulfillJson(route, {
+          items: decisions,
+          total: decisions.length,
+          limit: 100,
+          offset: 0,
+        });
+      },
+    );
+
+    const pending = page.goto("/app/dashboards");
+    await expect(page.getByRole("button", { name: "Refresh" })).toBeDisabled();
+    await pending;
+    delayMs = 0;
+    await expect(page.getByRole("heading", { name: "No opportunities yet" })).toBeVisible();
+    const upload = page.getByRole("link", { name: "Upload opportunities" });
+    await expect(upload).toHaveAttribute("href", "/app/opportunities/upload");
+    await upload.click();
+    await expect(page).toHaveURL(/\/app\/opportunities\/upload/);
+
+    opportunityTotal = 7;
+    decisions = [
+      {
+        id: firstDecisionId,
+        opportunity_id: opportunityId,
+        recommended_action: "CONTACT_TODAY",
+        expected_revenue: 1200,
+        confidence_band: "High",
+        reasoning: ["fixture"],
+        policy_version: "v1",
+        status: "ready",
+        created_at: "2026-01-15T10:00:00.000Z",
+        external_id: "OPP-100",
+      },
+      {
+        id: secondDecisionId,
+        opportunity_id: opportunityId,
+        recommended_action: "CONTACT_TODAY",
+        expected_revenue: 800,
+        confidence_band: "High",
+        reasoning: ["fixture"],
+        policy_version: "v1",
+        status: "ready",
+        created_at: "2026-01-14T10:00:00.000Z",
+        external_id: "OPP-101",
+      },
+      {
+        id: thirdDecisionId,
+        opportunity_id: opportunityId,
+        recommended_action: "NO_ACTION",
+        expected_revenue: 0,
+        confidence_band: "Low",
+        reasoning: ["fixture"],
+        policy_version: "v1",
+        status: "ready",
+        created_at: "2026-01-13T10:00:00.000Z",
+        external_id: "OPP-102",
+      },
+    ];
+    await page.goto("/app/dashboards");
+    const main = page.locator("#main");
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Recommended actions" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Decision confidence" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Recent decisions" })).toBeVisible();
+    await expect(main.getByRole("link", { name: /Opportunities 7/ })).toHaveAttribute(
+      "href",
+      "/app/opportunities",
+    );
+    await expect(main.getByRole("link", { name: /Decisions 3/ })).toHaveAttribute(
+      "href",
+      "/app/decisions",
+    );
+    await expect(main.getByText("CONTACT TODAY").first()).toBeVisible();
+    await expect(main.getByText("67%").first()).toBeVisible();
+    await expect(main.getByRole("link", { name: "View all" })).toHaveAttribute(
+      "href",
+      "/app/decisions",
+    );
+    await expect(main.getByRole("link", { name: "Open" }).first()).toHaveAttribute(
+      "href",
+      `/app/decisions/${firstDecisionId}`,
+    );
+
+    opportunityTotal = 11;
+    decisions = [
+      ...decisions,
+      {
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        opportunity_id: opportunityId,
+        recommended_action: "FOLLOW_UP",
+        expected_revenue: 400,
+        confidence_band: "Medium",
+        reasoning: ["fixture"],
+        policy_version: "v1",
+        status: "ready",
+        created_at: "2026-01-16T10:00:00.000Z",
+        external_id: "OPP-103",
+      },
+    ];
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(main.getByRole("link", { name: /Opportunities 11/ })).toBeVisible();
+    await expect(main.getByRole("link", { name: /Decisions 4/ })).toBeVisible();
+    await expect(main.getByText("50%").first()).toBeVisible();
+    await expect(main.getByText("OPP-103")).toBeVisible();
+
+    failOverview = true;
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
+    await expect(page.getByText("Could not load overview numbers from the backend.")).toBeVisible();
+    failOverview = false;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(main.getByRole("link", { name: /Opportunities 11/ })).toBeVisible();
+  });
+
+  test("workspace insights render live insight payload", async ({ page }) => {
+    await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/app/insights");
+    await expect(page.getByRole("heading", { name: "Insights", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No insights yet" })).toBeVisible();
+
+    await page.route(
+      (url) => url.origin === "http://127.0.0.1:8001" && url.pathname === "/app/insights",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            categories: [
+              { category: "Marketing", insights: [] },
+              {
+                category: "Sales",
+                insights: [
+                  {
+                    subject_id: "cust_e2e",
+                    category: "Sales",
+                    headline: "Follow the proposal that is still open",
+                    confidence_band: "High",
+                    recommended_action: "Contact today",
+                    expected_value: 25000,
+                    currency: "AED",
+                    reasoning: ["This account has an open proposal in the current workspace file."],
+                    generated_at: "2026-01-15T10:00:00.000Z",
+                  },
+                ],
+              },
+              { category: "Revenue", insights: [] },
+              { category: "Churn & Retention", insights: [] },
+              { category: "Customer Value", insights: [] },
+              { category: "Custom", insights: [] },
+            ],
+          }),
+        });
+      },
+    );
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(page.getByRole("heading", { name: "Follow the proposal that is still open" })).toBeVisible();
+    await expect(page.getByText("Contact today")).toBeVisible();
+    await expect(page.getByText("This account has an open proposal in the current workspace file.")).toBeVisible();
+    await expect(page.getByText("12,482")).toHaveCount(0);
+  });
+
+  test("workspace labs sample trial returns translated insights", async ({ page }) => {
+    await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/app/labs");
+    await expect(page.getByRole("heading", { name: "Labs", exact: true })).toBeVisible();
+    const catalog = await apiGet<JsonRecord[]>(page, "/app/labs/problems");
+    const problem = catalog.find((row) => row.use_case === "cross_sell");
+    expect(problem, "cross_sell catalog problem").toBeTruthy();
+    await page.getByRole("button", { name: String(problem?.category), exact: true }).click();
+    await page.getByRole("option", { name: String(problem?.question) }).click();
+    await page.getByRole("button", { name: "Run with sample data" }).click();
+    await expect(page.getByText(/Results from sample data/)).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("#main").getByRole("alert")).toHaveCount(0);
+  });
+
+  test("workspace opportunities upload and decision generation", async ({ page }, testInfo) => {
+    const externalId = `e2e-opp-${Date.now()}`;
+    const csv = [
+      "external_id,customer_id,amount,currency,stage,source,owner_id,created_at",
+      `${externalId},cust-e2e,25000,AED,proposal,inbound,rep-e2e,2026-01-15`,
+      "",
+    ].join("\n");
+    const fixture = testInfo.outputPath("e2e-opportunities.csv");
+    await writeFile(fixture, csv);
+
+    await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/app/dashboards");
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await page.getByRole("navigation", { name: "Application navigation" }).getByRole("link", { name: "Opportunities" }).click();
+    await expect(page.getByRole("heading", { name: "Opportunities", exact: true })).toBeVisible();
+    await page.locator("#main").getByRole("link", { name: "Upload opportunities" }).or(page.locator("#main").getByRole("link", { name: "Upload", exact: true })).first().click();
+    await expect(page).toHaveURL(/\/app\/opportunities\/upload/);
+    await expect(page.getByRole("heading", { name: "Upload opportunities" })).toBeVisible();
+
+    const uploaded = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/app/opportunities/upload",
+    );
+    await page.locator('input[type="file"]').setInputFiles(fixture);
+    const uploadResponse = await uploaded;
+    expect(uploadResponse.ok(), await uploadResponse.text()).toBeTruthy();
+    await expect(page.getByText("1 inserted")).toBeVisible();
+    await page.getByRole("link", { name: "Open opportunities" }).click();
+    await expect(page).toHaveURL(/\/app\/opportunities$/);
+    await expect(page.getByRole("link", { name: externalId })).toBeVisible();
+    await page.getByRole("link", { name: externalId }).click();
+    await expect(page).toHaveURL(new RegExp(`/app/opportunities/${externalId}`));
+    await expect(page.getByRole("heading", { name: externalId })).toBeVisible();
+    await expect(page.getByText("AED 25,000")).toBeVisible();
+
+    await page.getByRole("button", { name: "Generate decision" }).click();
+    const generateOutcome = page.getByRole("button", { name: "Regenerate" }).or(page.locator("#main").getByRole("alert"));
+    await expect(generateOutcome.first()).toBeVisible({ timeout: 30_000 });
+    const generatedOk = await page.getByRole("button", { name: "Regenerate" }).isVisible();
+
+    await page.goto("/app/dashboards");
+    await page.getByRole("navigation", { name: "Application navigation" }).getByRole("link", { name: "Decisions" }).click();
+    await expect(page.getByRole("heading", { name: "Decisions", exact: true })).toBeVisible();
+    if (generatedOk) {
+      await expect(page.getByRole("link", { name: externalId }).first()).toBeVisible();
+      await page.getByRole("link", { name: "Open" }).first().click();
+      await expect(page).toHaveURL(/\/app\/decisions\//);
+      await expect(page.getByRole("link", { name: new RegExp(`Source opportunity ${externalId}`) })).toBeVisible();
+    } else {
+      await expect(page.getByRole("heading", { name: "No decisions yet" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Go to opportunities" })).toHaveAttribute(
+        "href",
+        "/app/opportunities",
+      );
+    }
   });
 
   test("DCLab Admin uploads classification data and replays the monitor", async ({
@@ -164,6 +782,12 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     for (const heading of [
       "Pipeline stage coverage",
       "Preprocessing configuration",
+      "Problem Profile",
+      "Validation Strategy",
+      "Metric Strategy",
+      "Leakage Audit",
+      "Allowed Features",
+      "Excluded Features",
       "Fold-by-fold cross-validation",
       "Candidate comparison",
       "Deterministic verification",
@@ -238,6 +862,13 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     page,
   }) => {
     await login(page, "dclab-developer@verification.invalid");
+    const navigation = page.getByRole("navigation", {
+      name: "Application navigation",
+    });
+    await expect(navigation.getByRole("link", { name: "Registry" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
     await expect(page.getByText("Business A", { exact: true })).toBeVisible();
     await expect(page.getByText("Business B", { exact: true })).toBeVisible();
     await page.goto(`/admin/pipeline-runs/${adminPipelineId}/monitor`);
@@ -261,6 +892,17 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     page,
   }, testInfo) => {
     await login(page, "business-admin-a@verification.invalid");
+    const navigation = page.getByRole("navigation", {
+      name: "Application navigation",
+    });
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveCount(0);
     await expect(page.getByText("Business A", { exact: true })).toBeVisible();
     await expect(page.getByText("Business B", { exact: true })).toHaveCount(0);
     const workspacesResponse = await page.request.get(
@@ -280,11 +922,25 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       "revenue",
     );
     businessUploadId = String(upload.id);
-    await waitForUpload(
+    await expect(page).toHaveURL(new RegExp(`/lab/runs/${String(upload.run_id)}`));
+    const completed = await waitForUpload(
       page,
       `/app/labs/uploads/${String(upload.run_id)}`,
       "status",
     );
+    await expect(page.getByText("Completed", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download results" })).toBeVisible();
+    const outcome = completed.outcome as JsonRecord | undefined;
+    expect(outcome?.download_available).toBe(true);
+    const predictionCount = Number(outcome?.prediction_count);
+    expect(predictionCount).toBeGreaterThan(0);
+    const downloaded = await downloadLabResultsCsv(
+      page,
+      testInfo.outputPath("lab-predictions.csv"),
+    );
+    expect(downloaded.filename).toMatch(/-predictions\.csv$/i);
+    await writeFile(path.join(ARTIFACTS, downloaded.filename), downloaded.csv);
+    assertPredictionCsv(downloaded.csv, predictionCount);
     const workspace = await apiGet(
       page,
       `/business/workspaces/${businessWorkspaceId}`,
@@ -369,11 +1025,26 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       });
       expect(monitor.ok()).toBeTruthy();
       if (capability === "prediction_download") {
-        const denied = await page.request.get(
+        const deniedBusiness = await page.request.get(
           `${API_URL}/business/workspaces/${businessWorkspaceId}/client-uploads/${businessUploadId}/predictions.csv`,
           { headers: await authHeaders(page) },
         );
-        expect(denied.status()).toBe(403);
+        expect(deniedBusiness.status()).toBe(403);
+        const deniedLabs = await page.request.get(
+          `${API_URL}/app/labs/uploads/${businessUploadId}/predictions.csv`,
+          { headers: await authHeaders(page) },
+        );
+        expect(deniedLabs.status()).toBe(403);
+        await page.goto(`/lab/runs/${businessUploadId}`);
+        await expect(page.getByRole("button", { name: "Download results" })).toBeVisible();
+        const [deniedClick] = await Promise.all([
+          page.waitForResponse(isPredictionCsvGet),
+          page.getByRole("button", { name: "Download results" }).click(),
+        ]);
+        expect(deniedClick.status()).toBe(403);
+        await expect(page.getByRole("alert")).toHaveText(
+          "Could not download the results.",
+        );
       }
       if (capability === "deep_audit") {
         const denied = await page.request.post(
@@ -399,6 +1070,14 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
 
   test("Business Developer is tenant-scoped and read-only", async ({ page }) => {
     await login(page, "business-developer-a@verification.invalid");
+    const navigation = page.getByRole("navigation", {
+      name: "Application navigation",
+    });
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Marketing" })).toHaveCount(0);
     const workspaceList = (await (
       await page.request.get(`${API_URL}/business/workspaces`, {
         headers: await authHeaders(page),
@@ -429,6 +1108,10 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(
       page.getByRole("heading", { name: "Pipeline Monitor" }),
     ).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     await expect(
       page.getByRole("button", { name: "Run deep audit" }),
     ).toBeDisabled();

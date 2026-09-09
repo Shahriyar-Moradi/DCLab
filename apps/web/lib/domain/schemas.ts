@@ -233,6 +233,8 @@ export type LabRunOutcome = z.infer<typeof LabRunOutcomeSchema>;
 export const ClientLabUploadSchema = z.object({
   id: z.uuid(),
   run_id: z.uuid(),
+  workspace_id: z.uuid(),
+  pipeline_run_id: z.uuid().nullable(),
   dataset_id: z.uuid().nullable(),
   status: LabRunStatusSchema,
   stage: z.string(),
@@ -248,6 +250,7 @@ export const ClientLabUploadSchema = z.object({
   structured: z.boolean(),
   progress: z.enum(["looking", "ready", "saved"]),
   message: z.string(),
+  pipeline_status: LabRunStatusSchema,
   insights: z.array(ClientInsightSchema),
   outcome: LabRunOutcomeSchema.nullable(),
   created_at: z.string(),
@@ -344,7 +347,11 @@ export const LabComparisonSchema = z
 // Step 6 — Admin-only surfaces (Organizations, Model Registry, Monitoring).
 // Unrestricted, no translation layer; not part of the client-facing block above.
 export const OrganizationSummarySchema = z.object({
-  id: z.uuid(),
+  // Organizations are Workspace rows. Local/demo workspaces use a stable
+  // sentinel GUID whose version nibble is zero, so Zod's strict `z.uuid()`
+  // rejects the same identifier that `PlatformBusinessSummarySchema.id` already
+  // accepts as `z.guid()`.
+  id: z.guid(),
   slug: z.string(),
   name: z.string(),
   created_at: z.string(),
@@ -482,6 +489,7 @@ export const AdminMlRunSchema = z.object({
   target_source: z.string().nullable().optional(),
   target_reason: z.string().nullable().optional(),
   target_confidence: z.number().nullable().optional(),
+  failure_reason: z.string().nullable().optional(),
   started_at: z.string().nullable(),
   completed_at: z.string().nullable(),
   duration_seconds: z.number().nullable(),
@@ -721,10 +729,18 @@ export const PipelineMonitorSchema = z.object({
   openai_audits: z.array(z.record(z.string(), z.unknown())),
   reports: z.record(z.string(), z.unknown()),
   sanitized_evidence: z.record(z.string(), z.unknown()),
+  scientific_plan: z.record(z.string(), z.unknown()),
 });
 
 export type PlatformBusinessSummary = z.infer<typeof PlatformBusinessSummarySchema>;
 export type PlatformBusinessDetail = z.infer<typeof PlatformBusinessDetailSchema>;
+export type PlatformDomain = z.infer<typeof PlatformDomainSchema>;
+export type PlatformWorkflow = z.infer<typeof PlatformWorkflowSchema>;
+export type PlatformWorkflowRun = z.infer<typeof PlatformWorkflowRunSchema>;
+export type PlatformModelVersion = z.infer<typeof PlatformModelVersionSchema>;
+export type PlatformModel = z.infer<typeof PlatformModelSchema>;
+export type PlatformMembership = z.infer<typeof PlatformMembershipSchema>;
+export type PlatformPipeline = z.infer<typeof PlatformPipelineSchema>;
 export type BusinessWorkspaceSummary = z.infer<typeof BusinessWorkspaceSummarySchema>;
 export type BusinessWorkspaceDetail = z.infer<typeof BusinessWorkspaceDetailSchema>;
 export type PlatformDomainDetail = z.infer<typeof PlatformDomainDetailSchema>;
@@ -734,3 +750,90 @@ export type BusinessWorkflowRunDetail = z.infer<typeof BusinessWorkflowRunDetail
 export type PlatformModelDetail = z.infer<typeof PlatformModelDetailSchema>;
 export type BusinessModelDetail = z.infer<typeof BusinessModelDetailSchema>;
 export type PipelineMonitor = z.infer<typeof PipelineMonitorSchema>;
+
+export const ModelBuildEvidenceReferenceSchema = z.object({
+  entity_type: z.string(),
+  id: z.guid().nullable(),
+  source: z.enum(["canonical", "compatibility"]),
+});
+export const ModelBuildGeneratedCodeSchema = z.object({
+  generator_version: z.string(),
+  spec_digest: z.string(),
+  source: z.string(),
+  digest: z.string(),
+  helper_requirements: z.array(z.string()),
+  code_generation_support_status: z.enum(["supported", "not_available", "not_applicable"]),
+});
+export const ModelBuildStageSchema = z.object({
+  key: z.string(),
+  sequence: z.number(),
+  title: z.string(),
+  status: z.string(),
+  started_at: z.string().nullable(),
+  completed_at: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  rows_in: z.number().nullable(),
+  rows_out: z.number().nullable(),
+  decision_summary: z.string().nullable(),
+  reason: z.string().nullable(),
+  configuration: z.record(z.string(), z.unknown()),
+  evidence_references: z.array(ModelBuildEvidenceReferenceSchema),
+  related_candidate_ids: z.array(z.uuid()),
+  related_fold_ids: z.array(z.uuid()),
+  code_generation_support_status: z.enum(["supported", "not_available", "not_applicable"]),
+  generated_code: ModelBuildGeneratedCodeSchema.nullable(),
+});
+export const ModelBuildReproductionArtifactSchema = z.object({
+  id: z.uuid(),
+  workspace_id: z.guid(),
+  project_id: z.uuid().nullable(),
+  pipeline_run_id: z.uuid(),
+  artifact_type: z.string(),
+  filename: z.string(),
+  content_digest: z.string(),
+  mime_type: z.string().nullable(),
+  size_bytes: z.number(),
+  generator_version: z.string().nullable(),
+  spec_digest: z.string().nullable(),
+  role: z.string().nullable(),
+});
+export const PipelineModelBuildSchema = z.object({
+  workspace_id: z.guid(),
+  pipeline_run_id: z.uuid(),
+  pipeline_run_status: z.string(),
+  scientific_evidence_locked_at: z.string().nullable(),
+  compatibility_fallback_used: z.boolean(),
+  generator_version: z.string().nullable(),
+  reproduction_spec_digest: z.string().nullable(),
+  reproduction_notebook: ModelBuildReproductionArtifactSchema.nullable(),
+  reproduction_script: ModelBuildReproductionArtifactSchema.nullable(),
+  stages: z.array(ModelBuildStageSchema),
+});
+export type ModelBuildGeneratedCode = z.infer<typeof ModelBuildGeneratedCodeSchema>;
+export type ModelBuildEvidenceReference = z.infer<typeof ModelBuildEvidenceReferenceSchema>;
+export type ModelBuildStage = z.infer<typeof ModelBuildStageSchema>;
+export type ModelBuildReproductionArtifact = z.infer<typeof ModelBuildReproductionArtifactSchema>;
+export type PipelineModelBuild = z.infer<typeof PipelineModelBuildSchema>;
+
+export const VerificationAttemptSchema = z.object({
+  id: z.uuid(),
+  run_id: z.uuid(),
+  experiment_id: z.uuid().nullable(),
+  audit_mode: z.string(),
+  deterministic_status: z.string(),
+  deterministic_schema_version: z.number(),
+  llm_status: z.string(),
+  llm_model: z.string(),
+  llm_provider: z.string(),
+  prompt_version: z.string(),
+  schema_version: z.number(),
+  input_digest: z.string(),
+  redaction_summary: z.record(z.string(), z.unknown()),
+  llm_report: z.record(z.string(), z.unknown()).nullable(),
+  error: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  started_at: z.string(),
+  completed_at: z.string().nullable(),
+  created_at: z.string(),
+});
+export type VerificationAttempt = z.infer<typeof VerificationAttemptSchema>;

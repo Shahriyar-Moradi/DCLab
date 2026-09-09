@@ -39,6 +39,7 @@ ACCOUNTS = (
         UserRole.BUSINESS_DEVELOPER,
         "business-a",
     ),
+    ("client-user@verification.invalid", UserRole.CLIENT_USER, "business-a"),
 )
 
 

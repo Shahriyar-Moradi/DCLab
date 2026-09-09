@@ -21,9 +21,16 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import get_settings
-from app.engine.lab.evidence import ColumnEvidence, ColumnTypeEvidence, TargetSelectionEvidence
+from app.engine.lab.evidence import (
+    ColumnEvidence,
+    ColumnTypeEvidence,
+    LeakageReviewEvidence,
+    TargetSelectionEvidence,
+)
 from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION as COLUMN_TYPE_V1
 from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT as COLUMN_TYPE_V1_PROMPT
+from app.engine.lab.prompts.leakage_review_v1 import PROMPT_VERSION as LEAKAGE_REVIEW_V1
+from app.engine.lab.prompts.leakage_review_v1 import SYSTEM_PROMPT as LEAKAGE_REVIEW_V1_PROMPT
 from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION as MISSING_VALUE_V1
 from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT as MISSING_VALUE_V1_PROMPT
 from app.engine.lab.prompts.target_selection_v1 import PROMPT_VERSION as TARGET_SELECTION_V1
@@ -36,6 +43,7 @@ _PROMPTS: dict[str, str] = {
     MISSING_VALUE_V1: MISSING_VALUE_V1_PROMPT,
     COLUMN_TYPE_V1: COLUMN_TYPE_V1_PROMPT,
     TARGET_SELECTION_V1: TARGET_SELECTION_V1_PROMPT,
+    LEAKAGE_REVIEW_V1: LEAKAGE_REVIEW_V1_PROMPT,
 }
 
 Action = Literal[
@@ -57,6 +65,58 @@ EvidenceField = Literal[
 ColumnTypeAction = Literal["numerical", "categorical", "identifier"]
 ColumnTypeEvidenceField = Literal["column", "dtype", "cardinality", "cardinality_ratio", "sample_values"]
 TargetTaskType = Literal["binary", "multiclass", "regression"]
+LeakageAvailability = Literal[
+    "known_before_prediction",
+    "known_at_prediction",
+    "known_after_prediction",
+    "unknown",
+]
+LeakageRiskLevel = Literal["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+LeakageEvidenceField = Literal[
+    "column",
+    "target",
+    "task",
+    "dtype",
+    "cardinality",
+    "related_column_names",
+    "exact_target_match_fraction",
+    "single_feature_score",
+    "single_feature_score_kind",
+    "suspicious_name_tokens",
+    "target_name_similarity",
+    "datetime_after_fraction",
+    "identifier_likelihood",
+    "unique_ratio",
+    "missing_fraction",
+    "availability_status",
+    "availability_reason",
+]
+_LEAKAGE_AVAILABILITY: tuple[str, ...] = (
+    "known_before_prediction",
+    "known_at_prediction",
+    "known_after_prediction",
+    "unknown",
+)
+_LEAKAGE_RISK: tuple[str, ...] = ("NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+_LEAKAGE_EVIDENCE_FIELDS: tuple[str, ...] = (
+    "column",
+    "target",
+    "task",
+    "dtype",
+    "cardinality",
+    "related_column_names",
+    "exact_target_match_fraction",
+    "single_feature_score",
+    "single_feature_score_kind",
+    "suspicious_name_tokens",
+    "target_name_similarity",
+    "datetime_after_fraction",
+    "identifier_likelihood",
+    "unique_ratio",
+    "missing_fraction",
+    "availability_status",
+    "availability_reason",
+)
 
 _ACTIONS: tuple[str, ...] = (
     "drop_rows",
@@ -128,6 +188,25 @@ _COLUMN_TYPE_JSON_SCHEMA: dict[str, Any] = {
     "required": ["action", "evidence_field", "rationale", "confidence"],
 }
 
+_LEAKAGE_REVIEW_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "availability_status": {"type": "string", "enum": list(_LEAKAGE_AVAILABILITY)},
+        "risk_level": {"type": "string", "enum": list(_LEAKAGE_RISK)},
+        "evidence_field": {"type": "string", "enum": list(_LEAKAGE_EVIDENCE_FIELDS)},
+        "rationale": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    },
+    "required": [
+        "availability_status",
+        "risk_level",
+        "evidence_field",
+        "rationale",
+        "confidence",
+    ],
+}
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -164,10 +243,23 @@ class TargetSelectionDecision(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class LeakageReviewDecision(BaseModel):
+    """Recommendation only. Extra=forbid so keep/exclude cannot be supplied."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    availability_status: LeakageAvailability
+    risk_level: LeakageRiskLevel
+    evidence_field: LeakageEvidenceField
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
 # In-process caches. See module docstring.
 _CACHE: dict[str, MissingValueDecision] = {}
 _COLUMN_TYPE_CACHE: dict[str, ColumnTypeDecision] = {}
 _TARGET_SELECTION_CACHE: dict[str, TargetSelectionDecision] = {}
+_LEAKAGE_REVIEW_CACHE: dict[str, LeakageReviewDecision] = {}
 
 
 def request_decision(evidence: ColumnEvidence, prompt_version: str) -> MissingValueDecision:
@@ -277,22 +369,64 @@ def request_target_selection_decision(
         raise DecisionAgentUnavailable("decision agent failed") from exc
 
 
+def request_leakage_review(
+    evidence: LeakageReviewEvidence,
+    prompt_version: str,
+) -> LeakageReviewDecision:
+    """Return a schema-validated leakage recommendation, or fail closed.
+
+    The model cannot keep or exclude a feature. It only recommends availability
+    and risk; a deterministic validator still owns the action.
+    """
+    try:
+        settings = get_settings()
+        if not settings.decision_agent_enabled:
+            raise DecisionAgentUnavailable("decision agent is disabled")
+        api_key = (settings.decision_agent_api_key or "").strip()
+        if not api_key:
+            raise DecisionAgentUnavailable("decision agent API key is not configured")
+        system_prompt = _PROMPTS.get(prompt_version)
+        if not system_prompt:
+            raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
+        cache_key = _cache_key(evidence, prompt_version)
+        cached = _LEAKAGE_REVIEW_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        decision = _complete_structured(
+            system_prompt=system_prompt,
+            evidence=evidence,
+            api_key=api_key,
+            model=settings.decision_agent_model,
+            schema=_LEAKAGE_REVIEW_JSON_SCHEMA,
+            schema_name="leakage_review_decision",
+            result_model=LeakageReviewDecision,
+        )
+        _LEAKAGE_REVIEW_CACHE[cache_key] = decision
+        return decision
+    except DecisionAgentUnavailable:
+        raise
+    except Exception as exc:
+        raise DecisionAgentUnavailable("decision agent failed") from exc
+
+
 def _cache_key(
-    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence,
+    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence | LeakageReviewEvidence,
     prompt_version: str,
 ) -> str:
     blob = _evidence_json(evidence) + "\0" + prompt_version
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _evidence_json(evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence) -> str:
+def _evidence_json(
+    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence | LeakageReviewEvidence,
+) -> str:
     return json.dumps(asdict(evidence), sort_keys=True, default=str)
 
 
 def _complete_structured(
     *,
     system_prompt: str,
-    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence,
+    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence | LeakageReviewEvidence,
     api_key: str,
     model: str,
     schema: dict[str, Any],

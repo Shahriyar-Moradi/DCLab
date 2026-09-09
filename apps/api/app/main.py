@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -26,10 +28,33 @@ from app.api.observability import admin_router as admin_observability_router
 from app.api.observability import business_router as business_observability_router
 from app.api.platform_explorer import router as platform_explorer_router
 from app.api.simulations import router as simulations_router
+from app.api.workspaces import router as workspaces_router
+from app.api.reproducibility import (
+    admin_router as admin_reproducibility_router,
+    workspace_router as reproducibility_workspace_router,
+)
+from app.api.technical_explorer import (
+    admin_router as admin_technical_explorer_router,
+    workspace_router as technical_explorer_workspace_router,
+)
 from app.config import get_settings
 from app.db.session import get_engine
+from app.services.job_dispatcher import start_local_ml_worker
 
-app = FastAPI(title="Decision.ai", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Thread dispatcher: claim leftover queued uploads in this process.
+    # Postgres dispatcher: a separate `dclab worker run` process claims jobs.
+    stop = start_local_ml_worker()
+    try:
+        yield
+    finally:
+        if stop is not None:
+            stop.set()
+
+
+app = FastAPI(title="Decision.ai", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in get_settings().cors_origins.split(",") if origin.strip()],
@@ -62,6 +87,8 @@ admin_api.include_router(admin_client_uploads_router)
 admin_api.include_router(admin_ml_verifications_router)
 admin_api.include_router(admin_observability_router)
 admin_api.include_router(platform_explorer_router)
+admin_api.include_router(admin_reproducibility_router)
+admin_api.include_router(admin_technical_explorer_router)
 
 # Business organization/team administration remains separate from shared ML-core
 # execution and keeps the stricter business-administration boundary.
@@ -78,6 +105,9 @@ client_api.include_router(insights_router)
 client_api.include_router(client_labs_router)
 
 app.include_router(auth_router)
+app.include_router(workspaces_router)
+app.include_router(reproducibility_workspace_router)
+app.include_router(technical_explorer_workspace_router)
 app.include_router(business_explorer_router)
 app.include_router(admin_api)
 app.include_router(business_api)

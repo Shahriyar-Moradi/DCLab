@@ -17,6 +17,7 @@ artifacts/**
 !artifacts/.gitkeep
 data/uploads/
 data/client_lab_datasets/
+data/object_store/**
 data/synthetic/
 data/olist/raw/**
 !data/olist/raw/.gitkeep
@@ -32,6 +33,11 @@ models/revenue_prediction/*
 models/sim/**
 !models/sim/.gitkeep
 !models/sim/**/.gitkeep
+
+# Playwright
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
 
 # OS
 .DS_Store

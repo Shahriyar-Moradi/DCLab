@@ -171,7 +171,7 @@ class TestAutoTrainJob:
         prep = next(row for row in trace if row["step"] == "preprocessing")
         assert prep["kind"] == "column_transformer"
         split = next(row for row in trace if row["step"] == "splitting")
-        assert split["strategy"] == "train_test_split"
+        assert split["strategy"] == "stratified_random"
         assert split["n_train"] > 0 and split["n_test"] > 0
         cv = next(row for row in trace if row["step"] == "cross_validation")
         assert cv["n_folds"] == 5
@@ -198,7 +198,7 @@ class TestAutoTrainJob:
         assert "logistic_regression" in families
         assert "random_forest" in families
         assert all("missing_variant" not in (row.get("preprocessing") or {}) for row in result["candidates"])
-        assert result["split"]["strategy"] == "train_test_split"
+        assert result["split"]["strategy"] == "stratified_random"
         assert result["split"]["n_val"] == 0
         trained = [row for row in result["candidates"] if row["status"] == "trained"]
         assert all(row["n_folds"] == 5 for row in trained)

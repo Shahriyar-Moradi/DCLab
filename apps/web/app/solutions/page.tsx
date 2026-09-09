@@ -1,9 +1,9 @@
-import { MarketingShell, PageHero } from "@/app/components/marketing/primitives";
+import { MarketingPage, PageHero } from "@/app/components/marketing/primitives";
 import { GetStartedCTA, MLGrid } from "@/app/components/marketing/sections";
 
 export default function SolutionsPage() {
   return (
-    <MarketingShell>
+    <MarketingPage>
       <PageHero
         eyebrow="Machine Learning"
         title="From Analytics to Prediction"
@@ -11,6 +11,6 @@ export default function SolutionsPage() {
       />
       <MLGrid />
       <GetStartedCTA />
-    </MarketingShell>
+    </MarketingPage>
   );
 }

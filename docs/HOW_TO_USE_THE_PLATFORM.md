@@ -36,7 +36,7 @@ From the project root:
 cd /Users/shahriar/Downloads/decision_ai
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[boosting]"
 cp -n .env.example .env
 make db
 make migrate
@@ -69,6 +69,9 @@ make run
 ```
 
 Wait until you see something like `Uvicorn running on http://127.0.0.1:8001`.
+`make run` trains Lab CSV uploads in this process. If you set
+`ML_JOB_DISPATCHER=postgres`, also run `make worker` in another terminal or
+uploads stay on Queued.
 
 Check: open http://127.0.0.1:8001/health — you should see
 `{"status":"ok","db":"connected"}`.

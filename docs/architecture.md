@@ -1,6 +1,6 @@
 # Architecture
 
-DCLab v0.1 keeps one Python package (`app` under `apps/api`) so uvicorn, Alembic, and `pip install -e .` stay unchanged.
+DCLab v0.1 keeps one Python package (`app` under `apps/api`) so uvicorn, Alembic, and `pip install -e ".[boosting]"` stay unchanged.
 
 - **M1** (`app/api/opportunities.py`, `decisions.py`, `app/ml/`, `apps/web` ledger) is preserved. Generate JSON still has eight keys.
 - **Engine** (`app/engine/`) is dataset-agnostic: loaders, profiler, PIT targets, feature-group combinations, model registry, splits, leakage, metrics, diversity selection, ensemble, runner, reports.

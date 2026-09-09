@@ -4,8 +4,9 @@
     python -m scripts.scan_banned_terms --api-only
     python -m scripts.scan_banned_terms --web-only
 
-Exit code is 0 iff both scans are clean. Add apps/api to PYTHONPATH before running
-(the repo's Makefile / CI job does this via `cd apps/api`).
+Developer workbench and platform/admin trees are still walked so the policy is
+visible; banned terms there are allowed. Exit code is 0 iff the `/app` API
+schemas and business/client frontend source are clean.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ sys.path.insert(0, "apps/api")
 from app.translation.scanner import (  # noqa: E402
     scan_client_api_response_models,
     scan_frontend_client_tree,
+    scan_frontend_surfaces,
 )
 
 
@@ -41,10 +43,20 @@ def main() -> int:
     if not args.web_only:
         clean &= _report("client API response schemas", scan_client_api_response_models())
     if not args.api_only:
-        clean &= _report("client frontend source", scan_frontend_client_tree())
+        clean &= _report("business/client frontend source", scan_frontend_client_tree())
+        for result in scan_frontend_surfaces():
+            if result.enforce_banned_terms:
+                continue
+            print(
+                f"[scanned] {result.label} ({result.audience.value}): "
+                f"{len(result.files_scanned)} files, ML vocabulary allowed"
+            )
 
     if not clean:
-        print("\nBanned-terms scan failed. Route the offending value through app.translation before it reaches a client surface.")
+        print(
+            "\nBanned-terms scan failed. Route the offending value through "
+            "app.translation before it reaches a business/client surface."
+        )
         return 1
     print("\nBanned-terms scan passed.")
     return 0

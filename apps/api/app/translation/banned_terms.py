@@ -1,10 +1,14 @@
-"""The vocabulary a client-facing surface must never contain.
+"""The vocabulary a legacy business-decision / client surface must never contain.
 
-This list is the enforcement mechanism for the one rule the access-split document
-exists for: no raw ML-engine detail reaches a client screen, API response, or error
-message. `scripts/scan_banned_terms.py` and `test_translation_layer.py` both import
-from here, so this file is the single source of truth — extend it here, not in the
-scanners.
+This list is the enforcement mechanism for that audience only: no raw ML-engine
+detail reaches `/app` client screens, `/app` API responses, or translated error
+copy. Developer workbench (Personal `/lab`, Business explorer, Model Build) and
+platform/admin surfaces may use the full ML vocabulary — they are classified in
+`surfaces.py`, not exempted by disabling this scanner.
+
+`scripts/scan_banned_terms.py` and `test_translation_layer.py` both import from
+here, so this file is the single source of truth for the word list — extend it
+here, not in the scanners.
 """
 
 from __future__ import annotations

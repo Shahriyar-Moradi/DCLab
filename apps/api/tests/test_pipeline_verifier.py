@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
+import pandas as pd
 import pytest
 
 from app.services.pipeline_verifier import PipelineVerifier
@@ -32,6 +34,8 @@ def _valid_report(tmp_path):
             "validation_row_count": 2,
             "metrics": {"pr_auc": 0.8},
             "fit_duration_ms": 1.0,
+            "group_overlap": [],
+            "group_overlap_count": 0,
         },
         {
             "fold_number": 2,
@@ -41,6 +45,8 @@ def _valid_report(tmp_path):
             "validation_row_count": 2,
             "metrics": {"pr_auc": 0.8},
             "fit_duration_ms": 1.0,
+            "group_overlap": [],
+            "group_overlap_count": 0,
         },
     ]
     candidate = {
@@ -62,6 +68,68 @@ def _valid_report(tmp_path):
         "cv_std": {"pr_auc": 0.0},
         "fit_duration_ms": 2.0,
         "folds": folds,
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaa",
+        "metadata": {
+            "holdout_plan_version": "dclab.holdout_plan.v1",
+            "holdout_strategy": "stratified_random",
+            "validation_plan_version": "dclab.validation_plan.v1",
+            "validation_strategy": "StratifiedKFold",
+            "primary_metric": "pr_auc",
+            "model_development_plan_version": "dclab.model_development_plan.v1",
+        },
+    }
+    problem_profile = {
+        "task_type": "binary",
+        "target": "outcome",
+        "row_count": 4,
+        "feature_count": 2,
+        "class_distribution": {"0": 2, "1": 2},
+        "minority_class_fraction": 0.5,
+        "imbalance_ratio": 1.0,
+        "numeric_columns": ["measure"],
+        "categorical_columns": ["segment"],
+        "datetime_columns": [],
+        "identifier_columns": [],
+        "version": "dclab.problem_profile.v1",
+    }
+    validation_plan = {
+        "strategy": "StratifiedKFold",
+        "requested_folds": 5,
+        "actual_folds": 2,
+        "shuffle": True,
+        "random_state": 42,
+        "group_column": None,
+        "time_column": None,
+        "stratified": True,
+        "reason": "Ordinary binary classification uses stratified folds.",
+        "fallback_reason": "Test fixture has too few rows for five folds.",
+        "version": "dclab.validation_plan.v1",
+    }
+    metric_plan = {
+        "primary_metric": "pr_auc",
+        "secondary_metrics": ["roc_auc", "f1", "accuracy"],
+        "reason": "Binary classification uses PR-AUC as the primary selection metric.",
+        "version": "dclab.metric_plan.v1",
+    }
+    model_development_plan = {
+        "problem_profile": problem_profile,
+        "validation_plan": validation_plan,
+        "metric_plan": metric_plan,
+        "feature_availability": [],
+        "leakage_assessment": {
+            "risk": "LOW",
+            "findings": [],
+            "high_risk_columns": [],
+            "source": "leakage_auditor",
+            "partition": "train",
+            "version": "dclab.leakage_audit.v1",
+        },
+        "allowed_features": ["measure", "segment"],
+        "excluded_features": [],
+        "group_column": None,
+        "time_column": None,
+        "recommended_model_family_hints": ["logistic/linear models"],
+        "plan_version": "dclab.model_development_plan.v1",
     }
     return {
         "run": {"status": "completed"},
@@ -121,19 +189,39 @@ def _valid_report(tmp_path):
         "task": {
             "task_type": "binary",
             "target": "outcome",
+            "evaluation_metric": "pr_auc",
             "feature_groups": {"features": ["measure", "segment"]},
         },
         "split": {
             "split_at": locked,
-            "strategy": "train_test_split",
+            "strategy": "stratified_random",
             "random_state": 42,
             "stratify": True,
             "n_train": 4,
             "n_test": 2,
+            "test_size": 0.2,
+            "requested_test_size": 0.2,
+            "actual_test_size": 2 / 6,
             "train_source_rows": [0, 1, 2, 3],
             "test_source_rows": [4, 5],
             "all_source_rows": [0, 1, 2, 3, 4, 5],
+            "provenance_disjoint": True,
         },
+        "holdout_plan": {
+            "strategy": "stratified_random",
+            "test_size": 0.2,
+            "random_state": 42,
+            "stratified": True,
+            "group_column": None,
+            "time_column": None,
+            "reason": "Ordinary binary classification uses a stratified random 80/20 final holdout.",
+            "evidence": {"grouping_needed": False, "temporal_needed": False},
+            "plan_version": "dclab.holdout_plan.v1",
+        },
+        "problem_profile": problem_profile,
+        "validation_plan": validation_plan,
+        "metric_plan": metric_plan,
+        "model_development_plan": model_development_plan,
         "cleaning": {
             "rows_in": 6,
             "rows_out": 6,
@@ -278,6 +366,108 @@ def test_valid_evidence_is_verified(tmp_path):
     result = PipelineVerifier().verify(_valid_report(tmp_path))
     assert result["overall_status"] == "VERIFIED", result
     assert all(row["status"] == "PASS" for row in result["checks"])
+    assert {
+        "model_development_plan_exists",
+        "validation_plan_exists",
+        "validation_strategy_matches_task",
+        "validation_fold_count_truthful",
+        "group_validation_has_zero_group_overlap",
+        "temporal_validation_respects_order",
+        "primary_metric_matches_selection_metric",
+        "leakage_audit_exists",
+        "critical_leakage_feature_not_modeled",
+        "excluded_features_not_in_candidates",
+        "final_test_not_used_in_problem_profile",
+        "holdout_plan_exists",
+        "holdout_strategy_matches_problem_structure",
+        "holdout_train_test_disjoint",
+        "group_holdout_has_zero_group_overlap",
+        "temporal_holdout_respects_order",
+        "single_authoritative_development_plan",
+        "runner_validation_matches_plan",
+        "runner_metric_matches_plan",
+        "candidate_features_match_plan",
+        "task_metric_matches_plan",
+        "candidate_fingerprint_contains_plan_identity",
+    } <= {row["check_id"] for row in result["checks"]}
+
+
+def _rename_profile_column(report: dict, old: str, new: str) -> None:
+    profile = report["raw_profile"]
+    profile["column_names"] = [new if name == old else name for name in profile["column_names"]]
+    for row in profile["columns"]:
+        if row.get("name") == old:
+            row["name"] = new
+    report["cleaning"]["columns_in"] = [new if name == old else name for name in report["cleaning"]["columns_in"]]
+    report["cleaning"]["columns_out"] = [new if name == old else name for name in report["cleaning"]["columns_out"]]
+    for row in report["column_role_evidence"]["columns"]:
+        if row.get("column") == old:
+            row["column"] = new
+
+
+def _regression_report(tmp_path):
+    report = _valid_report(tmp_path)
+    csv = (
+        "measure,segment,revenue\n"
+        "1,a,10.0\n"
+        "2,b,20.5\n"
+        "3,a,30.25\n"
+        "4,b,40.125\n"
+        "5,a,50.0625\n"
+        "6,b,228.54120937279944\n"
+    )
+    input_path = tmp_path / "input.csv"
+    input_path.write_text(csv)
+    report["artifacts"]["input"] = str(input_path)
+    _rename_profile_column(report, "outcome", "revenue")
+    report["target_decision"]["target_column"] = "revenue"
+    report["target_decision"]["task_type"] = "regression"
+    report["task"]["task_type"] = "regression"
+    report["task"]["target"] = "revenue"
+    parsed = pd.read_csv(input_path)
+    report["prediction_evidence"] = [
+        {"source_row_index": 4, "y_true": float(parsed.iloc[4]["revenue"]), "y_pred": 50.0},
+        {"source_row_index": 5, "y_true": float(parsed.iloc[5]["revenue"]), "y_pred": 228.0},
+    ]
+    return report
+
+
+def test_regression_float_serialization_difference_passes_prediction_provenance(tmp_path):
+    report = _regression_report(tmp_path)
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "PASS"
+    true = float(report["prediction_evidence"][1]["y_true"])
+    serialized = math.nextafter(true, math.inf)
+    assert serialized != true
+    report["prediction_evidence"][1]["y_true"] = serialized
+    tolerated = PipelineVerifier().verify(report)
+    assert _status_for(tolerated, "prediction_provenance_complete") == "PASS"
+
+
+def test_meaningful_regression_y_true_change_fails_prediction_provenance(tmp_path):
+    report = _regression_report(tmp_path)
+    report["prediction_evidence"][1]["y_true"] = float(report["prediction_evidence"][1]["y_true"]) + 0.01
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "FAIL"
+    message = next(row["message"] for row in result["checks"] if row["check_id"] == "prediction_provenance_complete")
+    assert "5" in message
+
+
+def test_wrong_source_row_provenance_fails_prediction_provenance(tmp_path):
+    report = _regression_report(tmp_path)
+    report["prediction_evidence"][0]["source_row_index"] = 5
+    report["prediction_evidence"][1]["source_row_index"] = 4
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "FAIL"
+
+
+def test_binary_label_mismatch_still_fails_prediction_provenance(tmp_path):
+    report = _valid_report(tmp_path)
+    result = PipelineVerifier().verify(report)
+    assert _status_for(result, "prediction_provenance_complete") == "PASS"
+    report["prediction_evidence"][0]["y_true"] = 1
+    corrupted = PipelineVerifier().verify(report)
+    assert _status_for(corrupted, "prediction_provenance_complete") == "FAIL"
 
 
 def test_encoded_binary_labels_still_match_the_input_artifact(tmp_path):
@@ -306,6 +496,21 @@ def test_encoded_binary_labels_still_match_the_input_artifact(tmp_path):
         ("prediction_mismatch", "prediction_provenance_complete"),
         ("prediction_count", "prediction_provenance_complete"),
         ("train_prediction", "prediction_provenance_complete"),
+        ("group_leakage", "group_validation_has_zero_group_overlap"),
+        ("temporal_leakage", "temporal_validation_respects_order"),
+        ("metric_mismatch", "primary_metric_matches_selection_metric"),
+        ("leakage_feature_used", "critical_leakage_feature_not_modeled"),
+        ("excluded_feature_used", "excluded_features_not_in_candidates"),
+        ("holdout_in_profile", "final_test_not_used_in_problem_profile"),
+        ("holdout_group_overlap", "group_holdout_has_zero_group_overlap"),
+        ("reversed_temporal_holdout", "temporal_holdout_respects_order"),
+        ("group_cv_random_holdout", "holdout_strategy_matches_problem_structure"),
+        ("temporal_cv_random_holdout", "holdout_strategy_matches_problem_structure"),
+        ("split_plan_objects", "single_authoritative_development_plan"),
+        ("runner_cv_mismatch", "runner_validation_matches_plan"),
+        ("task_metric_mismatch", "task_metric_matches_plan"),
+        ("features_outside_plan", "candidate_features_match_plan"),
+        ("fingerprint_missing_identity", "candidate_fingerprint_contains_plan_identity"),
     ],
 )
 def test_deliberate_corruption_is_never_verified(tmp_path, case, check_id):
@@ -342,7 +547,136 @@ def test_deliberate_corruption_is_never_verified(tmp_path, case, check_id):
         report["prediction_evidence"].pop()
     elif case == "train_prediction":
         report["prediction_evidence"][0]["source_row_index"] = 0
+    elif case == "group_leakage":
+        report["validation_plan"]["strategy"] = "StratifiedGroupKFold"
+        report["validation_plan"]["group_column"] = "customer_id"
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["group_column"] = "customer_id"
+        report["candidate_models"][0]["cv_strategy"] = "StratifiedGroupKFold"
+        report["candidate_models"][0]["folds"][0]["group_overlap"] = ["C001"]
+        report["candidate_models"][0]["folds"][0]["group_overlap_count"] = 1
+    elif case == "temporal_leakage":
+        report["validation_plan"]["strategy"] = "TimeSeriesSplit"
+        report["validation_plan"]["time_column"] = "as_of_date"
+        report["validation_plan"]["stratified"] = False
+        report["validation_plan"]["shuffle"] = False
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["time_column"] = "as_of_date"
+        report["candidate_models"][0]["cv_strategy"] = "TimeSeriesSplit"
+        for fold in report["candidate_models"][0]["folds"]:
+            fold["train_time_max"] = "2024-06-01T00:00:00"
+            fold["validation_time_min"] = "2024-05-01T00:00:00"
+    elif case == "metric_mismatch":
+        report["selection"]["selection_metric"] = "accuracy"
+    elif case == "leakage_feature_used":
+        report["model_development_plan"]["excluded_features"] = [
+            {
+                "column": "final_customer_fare",
+                "risk": "HIGH",
+                "action": "exclude",
+                "reason": "known after prediction",
+                "reasons": ["known_after_prediction"],
+                "availability": {"status": "known_after_prediction"},
+            }
+        ]
+        report["candidate_models"][0]["feature_set"].append("final_customer_fare")
+    elif case == "excluded_feature_used":
+        report["model_development_plan"]["excluded_features"] = [
+            {
+                "column": "result_code",
+                "risk": "HIGH",
+                "action": "exclude",
+                "reason": "target proxy",
+                "reasons": ["target_proxy"],
+                "availability": {"status": "known_after_prediction"},
+            }
+        ]
+        report["candidate_models"][0]["feature_set"].append("result_code")
+    elif case == "holdout_in_profile":
+        report["problem_profile"]["row_count"] = 6
+        report["problem_profile"]["test_source_rows"] = [4, 5]
+        report["model_development_plan"]["problem_profile"] = dict(report["problem_profile"])
+    elif case == "holdout_group_overlap":
+        report["validation_plan"]["strategy"] = "StratifiedGroupKFold"
+        report["validation_plan"]["group_column"] = "customer_id"
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["group_column"] = "customer_id"
+        report["candidate_models"][0]["cv_strategy"] = "StratifiedGroupKFold"
+        report["holdout_plan"]["strategy"] = "group_disjoint"
+        report["holdout_plan"]["group_column"] = "customer_id"
+        report["holdout_plan"]["stratified"] = False
+        report["split"]["strategy"] = "group_disjoint"
+        report["split"]["stratify"] = False
+        report["split"]["group_column"] = "customer_id"
+        report["split"]["group_overlap"] = ["C001"]
+        report["split"]["group_overlap_count"] = 1
+    elif case == "reversed_temporal_holdout":
+        report["validation_plan"]["strategy"] = "TimeSeriesSplit"
+        report["validation_plan"]["time_column"] = "as_of_date"
+        report["validation_plan"]["stratified"] = False
+        report["validation_plan"]["shuffle"] = False
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["time_column"] = "as_of_date"
+        report["candidate_models"][0]["cv_strategy"] = "TimeSeriesSplit"
+        report["holdout_plan"]["strategy"] = "temporal_future"
+        report["holdout_plan"]["time_column"] = "as_of_date"
+        report["holdout_plan"]["stratified"] = False
+        report["split"]["strategy"] = "temporal_future"
+        report["split"]["stratify"] = False
+        report["split"]["time_column"] = "as_of_date"
+        report["split"]["train_time_min"] = "2024-06-01T00:00:00"
+        report["split"]["train_time_max"] = "2024-06-30T00:00:00"
+        report["split"]["test_time_min"] = "2024-05-01T00:00:00"
+        report["split"]["test_time_max"] = "2024-05-15T00:00:00"
+    elif case == "group_cv_random_holdout":
+        report["validation_plan"]["strategy"] = "StratifiedGroupKFold"
+        report["validation_plan"]["group_column"] = "customer_id"
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["group_column"] = "customer_id"
+        report["candidate_models"][0]["cv_strategy"] = "StratifiedGroupKFold"
+        report["holdout_plan"]["strategy"] = "stratified_random"
+        report["split"]["strategy"] = "stratified_random"
+    elif case == "temporal_cv_random_holdout":
+        report["validation_plan"]["strategy"] = "TimeSeriesSplit"
+        report["validation_plan"]["time_column"] = "as_of_date"
+        report["validation_plan"]["stratified"] = False
+        report["model_development_plan"]["validation_plan"] = dict(report["validation_plan"])
+        report["model_development_plan"]["time_column"] = "as_of_date"
+        report["candidate_models"][0]["cv_strategy"] = "TimeSeriesSplit"
+        report["holdout_plan"]["strategy"] = "random"
+        report["split"]["strategy"] = "random"
+        report["split"]["stratify"] = False
+    elif case == "split_plan_objects":
+        report["validation_plan"] = dict(report["validation_plan"])
+        report["validation_plan"]["strategy"] = "KFold"
+    elif case == "runner_cv_mismatch":
+        report["candidate_models"][0]["cv_strategy"] = "KFold"
+    elif case == "task_metric_mismatch":
+        report["task"]["evaluation_metric"] = "accuracy"
+    elif case == "features_outside_plan":
+        report["candidate_models"][0]["feature_set"].append("result_code")
+    elif case == "fingerprint_missing_identity":
+        report["candidate_models"][0]["metadata"] = {}
 
     result = PipelineVerifier().verify(report)
     assert result["overall_status"] in {"FAILED", "NOT_VERIFIABLE"}
     assert _status_for(result, check_id) in {"FAIL", "NOT_VERIFIABLE"}
+
+
+def test_missing_model_development_plan_is_not_verifiable(tmp_path):
+    report = deepcopy(_valid_report(tmp_path))
+    report["model_development_plan"] = {}
+    report["validation_plan"] = {}
+    report["metric_plan"] = {}
+    report["problem_profile"] = {}
+    result = PipelineVerifier().verify(report)
+    assert result["overall_status"] == "NOT_VERIFIABLE"
+    assert _status_for(result, "model_development_plan_exists") == "NOT_VERIFIABLE"
+    assert _status_for(result, "validation_plan_exists") == "NOT_VERIFIABLE"
+    assert _status_for(result, "leakage_audit_exists") == "NOT_VERIFIABLE"
+    assert _status_for(result, "single_authoritative_development_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "runner_validation_matches_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "candidate_features_match_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "candidate_fingerprint_contains_plan_identity") == "NOT_VERIFIABLE"
+    assert _status_for(result, "task_metric_matches_plan") == "NOT_VERIFIABLE"
+    assert _status_for(result, "runner_metric_matches_plan") == "NOT_VERIFIABLE"

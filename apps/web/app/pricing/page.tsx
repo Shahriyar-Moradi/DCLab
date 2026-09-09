@@ -1,16 +1,16 @@
-import { MarketingShell, PageHero } from "@/app/components/marketing/primitives";
-import { GetStartedCTA, PricingGrid } from "@/app/components/marketing/sections";
+import { MarketingPage, PageHero } from "@/app/components/marketing/primitives";
+import { GetStartedCTA, PricingPanel } from "@/app/components/marketing/sections";
 
 export default function PricingPage() {
   return (
-    <MarketingShell>
+    <MarketingPage>
       <PageHero
         eyebrow="Pricing"
-        title="Enterprise-Grade, Scaled to You"
-        subtitle="Start small, scale infinitely. Pricing that grows with your intelligence."
+        title="Talk to the team about access"
+        subtitle="This deployment does not publish self-serve plan prices. Sign in if you have an account, or book a demo."
       />
-      <PricingGrid />
+      <PricingPanel />
       <GetStartedCTA />
-    </MarketingShell>
+    </MarketingPage>
   );
 }

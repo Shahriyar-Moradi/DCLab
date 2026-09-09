@@ -1,9 +1,13 @@
 "use client";
 
 import { Button } from "@/app/components/ui/Button";
+import { CollectionSearch } from "@/app/components/ui/CollectionSearch";
+import { DataTable } from "@/app/components/ui/DataTable";
 import { ErrorState } from "@/app/components/ui/ErrorState";
+import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { Table, Td, Th } from "@/app/components/ui/Table";
+import { UploadZone } from "@/app/components/ui/UploadZone";
+import { filterByText } from "@/app/components/ui/localCollection";
 import { useCreateLabWorkbook, useLabDatasets, useSession, useUploadLabDataset } from "@/lib/application";
 import { ApiError } from "@/lib/infrastructure";
 import Link from "next/link";
@@ -16,7 +20,7 @@ export default function LabDatasetsPage() {
   const sample = useCreateLabWorkbook();
   const router = useRouter();
   const [progress, setProgress] = useState(0);
-  const [drag, setDrag] = useState(false);
+  const [queryText, setQueryText] = useState("");
   const { user } = useSession();
   const canWrite = user?.role === "dclab_admin";
 
@@ -33,48 +37,44 @@ export default function LabDatasetsPage() {
     );
   }
 
-  if (query.isPending) return <Skeleton className="h-64" />;
+  if (query.isPending) {
+    return (
+      <div>
+        <DatasetsHeader />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
   if (query.isError) return <ErrorState body="Could not load datasets." onRetry={() => void query.refetch()} />;
+  const allRows = query.data ?? [];
+  const rows = filterByText(allRows, queryText, (row) => [row.name, row.version, row.source_type, row.id]);
 
   return (
     <div>
-      <h1 className="font-display text-title text-ink">Datasets</h1>
-      <p className="mt-2 max-w-2xl font-body text-body text-ink-muted">
-        A CSV becomes an immutable lab dataset. After upload, open it to train the five use-case models.
-      </p>
-      {!canWrite ? <p className="mt-4 rounded bg-navy-soft p-4 text-body text-ink-muted">Read-only platform access. Upload and training actions require DCLab Admin.</p> : null}
-      <label
-        className={`mt-8 block rounded border border-hairline bg-paper-raised px-8 py-12 text-center ${canWrite ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${drag ? "bg-navy-soft" : ""}`}
-        onDragOver={(event) => {
-          event.preventDefault();
-          if (canWrite) setDrag(true);
-        }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDrag(false);
-          const file = canWrite ? event.dataTransfer.files[0] : undefined;
-          if (file) send(file);
-        }}
-      >
-        <input
-          type="file"
-          accept=".csv,.parquet,.pq,text/csv"
-          className="sr-only"
-          disabled={!canWrite}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) send(file);
-          }}
-        />
-        <span className="font-body text-body text-ink">Drop a CSV here, or click to choose a file</span>
-      </label>
-      {upload.isPending ? <p className="mt-4 font-mono text-data text-ink">Uploading {progress}%</p> : null}
-      {upload.isError ? (
-        <p className="mt-4 font-body text-body text-oxblood">
-          {upload.error instanceof ApiError ? upload.error.message : "Upload failed."}
+      <DatasetsHeader />
+      {!canWrite ? (
+        <p className="mt-4 rounded-xl border border-hairline bg-navy-soft p-4 text-body text-ink-muted">
+          Read-only platform access. Upload and training actions require DCLab Admin.
         </p>
       ) : null}
+      <UploadZone
+        className="mt-8"
+        accept=".csv,.parquet,.pq,text/csv"
+        disabled={!canWrite || upload.isPending}
+        label="Drop a CSV here, or click to choose a file"
+        hint={upload.isPending ? `Uploading ${progress}%` : "CSV or Parquet. After upload, open the dataset to train ready use cases."}
+        error={
+          upload.isError
+            ? upload.error instanceof ApiError
+              ? upload.error.message
+              : "Upload failed."
+            : undefined
+        }
+        onFiles={(files) => {
+          const file = files[0];
+          if (file) send(file);
+        }}
+      />
       <p className="mt-4">
         <Button
           variant="secondary"
@@ -89,36 +89,48 @@ export default function LabDatasetsPage() {
         </Button>
       </p>
       {sample.isError ? (
-        <p className="mt-2 font-body text-body text-oxblood">
+        <p className="mt-2 text-body text-oxblood">
           {sample.error instanceof ApiError ? sample.error.message : "Could not create the sample workbook."}
         </p>
       ) : null}
-      <div className="mt-8 rounded bg-paper-raised p-4">
-        <Table>
-          <thead>
-            <tr>
-              <Th>Name</Th>
-              <Th>Rows</Th>
-              <Th>Columns</Th>
-              <Th>Version</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {(query.data ?? []).map((row) => (
-              <tr key={row.id}>
-                <Td>
-                  <Link className="text-navy underline-offset-2 hover:underline" href={`/admin/lab/datasets/${row.id}`}>
-                    {row.name}
-                  </Link>
-                </Td>
-                <Td mono>{String(row.row_count)}</Td>
-                <Td mono>{String(row.column_count)}</Td>
-                <Td mono>{row.version}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+      <div className="mt-8">
+        <CollectionSearch value={queryText} onChange={setQueryText} shown={rows.length} total={allRows.length} />
+        <DataTable
+          columns={[
+            {
+              id: "name",
+              header: "Name",
+              cell: (row) => (
+                <Link className="text-navy hover:underline" href={`/admin/lab/datasets/${row.id}`}>
+                  {row.name}
+                </Link>
+              ),
+            },
+            { id: "rows", header: "Rows", mono: true, cell: (row) => String(row.row_count) },
+            { id: "columns", header: "Columns", mono: true, cell: (row) => String(row.column_count) },
+            { id: "version", header: "Version", mono: true, cell: (row) => row.version },
+            { id: "source", header: "Source", mono: true, cell: (row) => row.source_type },
+          ]}
+          rows={rows}
+          rowKey={(row) => row.id}
+          emptyTitle="No datasets"
+          emptyBody={
+            queryText.trim()
+              ? "Nothing on this list matches that filter."
+              : "Upload a CSV or load the sample workbook to create an immutable lab dataset."
+          }
+        />
       </div>
     </div>
+  );
+}
+
+function DatasetsHeader() {
+  return (
+    <PageHeader
+      breadcrumbs={[{ label: "Labs", href: "/admin/lab" }, { label: "Datasets" }]}
+      title="Datasets"
+      description="A CSV becomes an immutable lab dataset. After upload, open it to train the five use-case models."
+    />
   );
 }

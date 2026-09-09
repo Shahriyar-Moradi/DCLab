@@ -89,12 +89,17 @@ def test_open_ingest_run_experiment_completes_with_real_kfold_and_holdout_test()
         saved = pd.read_csv(pred_path)
 
     assert result["status"] == "COMPLETED"
+    evidence = result["scientific_evidence"]
+    assert evidence["preprocessing_fit_scope"] == "fold_train"
+    assert evidence["missing_value_plan"]["column_decisions"]
+    assert evidence["numerical_columns"]
+    assert evidence["categorical_columns"]
     expected_n = len(open_ingest_families("binary"))
     assert result["funnel"]["trained"] == expected_n
     assert result["funnel"]["failed"] == 0
     assert result["best_single"] is not None
     assert result["best_single"]["model_family"]
-    assert result["split"]["strategy"] == "train_test_split"
+    assert result["split"]["strategy"] == "stratified_random"
     assert result["split"]["test_size"] == 0.2
     assert result["split"]["n_val"] == 0
     assert result["split"]["n_test"] > 0

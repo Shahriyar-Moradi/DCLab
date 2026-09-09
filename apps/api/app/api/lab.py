@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import REPO_ROOT
 from app.db.models import Dataset, DatasetProfile, Environment, Experiment, ExperimentCandidate, PredictionTask
 from app.db.session import get_db
+from app.domain.errors import ScientificEvidenceLockedError
 from app.services.lab_service import (
     create_experiment,
     execute_experiment,
@@ -409,5 +410,8 @@ def run_existing(experiment_id: UUID, db: Session = Depends(get_db)) -> dict:
     row = db.get(Experiment, experiment_id)
     if row is None:
         raise HTTPException(404, "experiment not found")
-    executed = execute_experiment(db, row)
+    try:
+        executed = execute_experiment(db, row)
+    except ScientificEvidenceLockedError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
     return experiment_payload(db, executed)

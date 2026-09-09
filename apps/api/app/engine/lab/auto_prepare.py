@@ -15,7 +15,7 @@ ColumnTransformer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -109,6 +109,88 @@ class MissingValuePlan:
     row_missing_fraction: float = 0.0
     total_rows: int = 0
     drop_rows_recommended: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dropped_columns": list(self.dropped_columns),
+            "column_decisions": [asdict(item) for item in self.column_decisions],
+            "rows_with_missing": int(self.rows_with_missing),
+            "row_missing_fraction": float(self.row_missing_fraction),
+            "total_rows": int(self.total_rows),
+            "drop_rows_recommended": bool(self.drop_rows_recommended),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> MissingValuePlan | None:
+        if not isinstance(payload, dict):
+            return None
+        decisions: list[ColumnMissingDecision] = []
+        for row in payload.get("column_decisions") or []:
+            if not isinstance(row, dict) or not row.get("column") or not row.get("action"):
+                continue
+            decisions.append(
+                ColumnMissingDecision(
+                    column=str(row["column"]),
+                    missing_count=int(row.get("missing_count") or 0),
+                    missing_fraction=float(row.get("missing_fraction") or 0.0),
+                    action=str(row["action"]),
+                    fill_value=row.get("fill_value"),
+                )
+            )
+        return cls(
+            dropped_columns=[str(name) for name in list(payload.get("dropped_columns") or [])],
+            column_decisions=decisions,
+            rows_with_missing=int(payload.get("rows_with_missing") or 0),
+            row_missing_fraction=float(payload.get("row_missing_fraction") or 0.0),
+            total_rows=int(payload.get("total_rows") or 0),
+            drop_rows_recommended=bool(payload.get("drop_rows_recommended")),
+        )
+
+
+def missing_plan_from_applied_imputers(
+    frame: pd.DataFrame,
+    numerical_cols: list[str],
+    categorical_cols: list[str],
+) -> MissingValuePlan:
+    """Record SimpleImputer actions the ColumnTransformer actually applies.
+
+    Does not drop columns. High-missing modeled columns are imputed, matching
+    ``build_preprocessor``.
+    """
+
+    n = max(len(frame), 1)
+    decisions: list[ColumnMissingDecision] = []
+    modeled = list(dict.fromkeys([*numerical_cols, *categorical_cols]))
+    numerical = set(numerical_cols)
+    for name in modeled:
+        if name not in frame.columns:
+            continue
+        missing = int(frame[name].isna().sum())
+        fraction = missing / n
+        if missing == 0:
+            action = "keep"
+        elif name in numerical:
+            action = "impute_median"
+        else:
+            action = "impute_most_frequent"
+        decisions.append(
+            ColumnMissingDecision(
+                column=name,
+                missing_count=missing,
+                missing_fraction=fraction,
+                action=action,
+            )
+        )
+    present = [name for name in modeled if name in frame.columns]
+    rows_with_missing = int(frame[present].isna().any(axis=1).sum()) if present else 0
+    return MissingValuePlan(
+        dropped_columns=[],
+        column_decisions=decisions,
+        rows_with_missing=rows_with_missing,
+        row_missing_fraction=rows_with_missing / n,
+        total_rows=int(len(frame)),
+        drop_rows_recommended=False,
+    )
 
 
 def plan_missing_values(frame: pd.DataFrame, columns: list[str]) -> MissingValuePlan:

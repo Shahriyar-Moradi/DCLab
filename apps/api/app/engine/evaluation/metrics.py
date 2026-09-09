@@ -9,6 +9,7 @@ from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
+    balanced_accuracy_score,
     brier_score_loss,
     confusion_matrix,
     f1_score,
@@ -54,7 +55,9 @@ def classification_metrics(y_true, scores, *, threshold: float = 0.5) -> dict[st
         "recall": float(recall_score(y, pred, zero_division=0)),
         "f1": float(f1_score(y, pred, zero_division=0)),
         "log_loss": float(log_loss(y, p, labels=[0, 1])),
+        "balanced_accuracy": float(balanced_accuracy_score(y, pred)),
         "brier": float(brier_score_loss(y, p)),
+        "brier_score": float(brier_score_loss(y, p)),
         "calibration_gap": calibration_gap,
         "confusion_matrix": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
         "top_decile_lift": top_decile_lift,
@@ -67,11 +70,13 @@ def regression_metrics(y_true, pred) -> dict[str, Any]:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(pred, dtype=float)
     mae = float(mean_absolute_error(y, p))
-    rmse = float(mean_squared_error(y, p) ** 0.5)
+    mse = float(mean_squared_error(y, p))
+    rmse = float(mse ** 0.5)
     mape = float(np.mean(np.abs((y - p) / np.clip(np.abs(y), 1e-6, None)))) * 100
     smape = float(np.mean(2 * np.abs(y - p) / np.clip(np.abs(y) + np.abs(p), 1e-6, None))) * 100
     return {
         "mae": mae,
+        "mse": mse,
         "rmse": rmse,
         "r2": float(r2_score(y, p)) if len(y) > 1 else 0.0,
         "mape": mape,
@@ -82,11 +87,13 @@ def regression_metrics(y_true, pred) -> dict[str, Any]:
 
 LOWER_IS_BETTER = {
     "mae",
+    "mse",
     "rmse",
     "mape",
     "smape",
     "log_loss",
     "brier",
+    "brier_score",
     "median_absolute_error",
     "calibration_gap",
 }

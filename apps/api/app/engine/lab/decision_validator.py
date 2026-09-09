@@ -24,10 +24,16 @@ from app.engine.lab.evidence import (
     COLUMN_TYPE_AMBIGUOUS_ID_RATIO_MIN,
     ColumnEvidence,
     ColumnTypeEvidence,
+    LeakageReviewEvidence,
     MissingnessCooccurrence,
     TargetSelectionEvidence,
 )
-from app.engine.lab.llm_client import ColumnTypeDecision, MissingValueDecision, TargetSelectionDecision
+from app.engine.lab.llm_client import (
+    ColumnTypeDecision,
+    LeakageReviewDecision,
+    MissingValueDecision,
+    TargetSelectionDecision,
+)
 from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT as COLUMN_TYPE_PROMPT
 from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT
 
@@ -151,6 +157,95 @@ def validate_target_selection_decision(
             f"({candidate.probable_task_type!r})"
         )
     return ValidationResult(verdict="accept", reason="")
+
+
+_LEAKAGE_FIELD_NAMES = {item.name for item in fields(LeakageReviewEvidence)}
+_LEAKAGE_AVAILABILITY = {
+    "known_before_prediction",
+    "known_at_prediction",
+    "known_after_prediction",
+    "unknown",
+}
+_LEAKAGE_RISK = {"NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
+_LEAKAGE_ACTIONS = {"keep", "exclude", "keep_with_warning", "requires_review"}
+
+
+def validate_leakage_review_decision(
+    evidence: LeakageReviewEvidence,
+    decision: LeakageReviewDecision,
+) -> ValidationResult:
+    """Accept a leakage recommendation only if bounded evidence actually backs it.
+
+    The LLM cannot keep or exclude a feature. Action fields are rejected even if
+    a caller constructed a decision-like object with extras.
+    """
+    for forbidden in _LEAKAGE_ACTIONS:
+        if getattr(decision, forbidden, None) is not None or forbidden in getattr(decision, "model_fields_set", set()):
+            return _reject("leakage review cannot keep or exclude a feature")
+        rationale = str(getattr(decision, "rationale", "")).lower()
+        if f"action={forbidden}" in rationale:
+            return _reject("leakage review cannot keep or exclude a feature")
+
+    confidence = getattr(decision, "confidence", None)
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return _reject("decision did not state a numeric confidence")
+    if float(confidence) < MIN_CONFIDENCE:
+        return _reject(f"confidence {float(confidence)} is below MIN_CONFIDENCE={MIN_CONFIDENCE}")
+
+    status = getattr(decision, "availability_status", None)
+    if status not in _LEAKAGE_AVAILABILITY:
+        return _reject(f"availability_status {status!r} is not in the leakage_review_v1 enum")
+    risk = getattr(decision, "risk_level", None)
+    if risk not in _LEAKAGE_RISK:
+        return _reject(f"risk_level {risk!r} is not in the leakage_review_v1 enum")
+
+    cited = getattr(decision, "evidence_field", None)
+    if not isinstance(cited, str) or cited not in _LEAKAGE_FIELD_NAMES:
+        return _reject(f"cited field {cited!r} does not exist on the evidence object")
+
+    support_reason = _leakage_claim_unsupported(evidence, decision, status, risk, cited)
+    if support_reason:
+        return _reject(support_reason)
+    return ValidationResult(verdict="accept", reason="")
+
+
+def _leakage_claim_unsupported(
+    evidence: LeakageReviewEvidence,
+    decision: LeakageReviewDecision,
+    status: str,
+    risk: str,
+    cited: str,
+) -> str | None:
+    exact = evidence.exact_target_match_fraction
+    score = evidence.single_feature_score
+    after = evidence.datetime_after_fraction
+    tokens = list(evidence.suspicious_name_tokens or [])
+    future_tokens = {"final", "actual", "realized", "completed", "resolved", "post", "after", "future", "result"}
+    has_future_name = bool(set(tokens) & future_tokens)
+
+    if risk == "NONE" and exact is not None and exact >= 0.99:
+        return "exact_target_match_fraction does not support NONE"
+    if risk == "CRITICAL" and (exact is None or exact < 0.99):
+        return "CRITICAL requires exact_target_match_fraction >= 0.99"
+    if risk == "HIGH":
+        strong_after = after is not None and after > 0
+        strong_combined = bool(tokens) and score is not None and score >= 0.9
+        if not strong_after and not strong_combined and not (exact is not None and exact >= 0.99):
+            return "HIGH requires datetime_after_fraction > 0 or combined name and score evidence"
+    if status == "known_after_prediction":
+        if not ((after is not None and after > 0) or has_future_name):
+            return "known_after_prediction requires datetime_after_fraction > 0 or future-name tokens"
+    if cited == "exact_target_match_fraction" and risk in {"HIGH", "CRITICAL"}:
+        if exact is None or exact < 0.99:
+            return "cited exact_target_match_fraction does not support the claimed risk"
+    if cited == "datetime_after_fraction" and status == "known_after_prediction":
+        if after is None or after <= 0:
+            return "cited datetime_after_fraction does not show post-prediction timestamps"
+    if cited == "single_feature_score" and risk in {"HIGH", "CRITICAL"}:
+        if score is None or score < 0.9 or not tokens:
+            return "cited single_feature_score does not support HIGH/CRITICAL without combined name evidence"
+    _ = decision
+    return None
 
 
 def _reject(reason: str) -> ValidationResult:

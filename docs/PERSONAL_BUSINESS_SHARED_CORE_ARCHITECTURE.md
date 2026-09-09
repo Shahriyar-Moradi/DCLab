@@ -22,6 +22,8 @@ DCLab Platform Admin  ──► Core + cross-workspace operational administratio
 
 Never introduce `Business -> Personal Development -> Core`.
 
+**Implementation note.** Current `main` already has `Workspace.kind` (`0029_workspace_identity`) and canonical membership roles. This branch does not revive `0028_personal_business_shared_core`. Additive identity work is `0047_personal_dev_identity` after `0046_ingestion_job_tenant_fks`. Stored `personal_developer` maps to `ml_engineer` for ML execution. On current `main`, `can_write_workspace` is shared ML-core write authority; member administration is `can_manage_workspace_members`.
+
 ---
 
 ## Current repository assessment

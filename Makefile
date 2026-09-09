@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run web up down sim users
+.PHONY: db migrate train seed test run worker web up down sim users
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -58,8 +58,14 @@ seed:
 test:
 	$(PYTEST) --cov=app --cov-report=term-missing
 
+# Local API. Default dispatcher is postgres (persist and return). That leaves
+# CSV uploads on Queued unless a worker claims them — so `make run` uses the
+# in-process thread adapter unless ML_JOB_DISPATCHER is already set.
 run:
-	$(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
+	ML_JOB_DISPATCHER=$(or $(ML_JOB_DISPATCHER),thread) $(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
+
+worker:
+	$(dir $(PYTHON))dclab worker run
 
 # Future: full containerized stack. Not used for day-to-day local development.
 # Stop native Postgres first if port 5432 is already taken: brew services stop postgresql@16

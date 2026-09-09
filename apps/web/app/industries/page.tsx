@@ -1,20 +1,20 @@
-import { FeatureCard, MarketingShell, PageHero } from "@/app/components/marketing/primitives";
+import { FeatureCard, MarketingPage, MarketingWrap, PageHero } from "@/app/components/marketing/primitives";
 import { GetStartedCTA, INDUSTRIES } from "@/app/components/marketing/sections";
 
 export default function IndustriesPage() {
   return (
-    <MarketingShell>
+    <MarketingPage>
       <PageHero
         eyebrow="Industries"
         title="Decision intelligence for operators"
         subtitle="A horizontal decision layer on top of the stack you already run — not a new CRM, and not a replacement for your team."
       />
-      <div className="mx-auto mt-12 grid max-w-7xl gap-4 px-5 sm:grid-cols-2 lg:px-8">
+      <MarketingWrap className="grid gap-4 pb-8 sm:grid-cols-2">
         {INDUSTRIES.map((item) => (
           <FeatureCard key={item.title} {...item} />
         ))}
-      </div>
+      </MarketingWrap>
       <GetStartedCTA />
-    </MarketingShell>
+    </MarketingPage>
   );
 }

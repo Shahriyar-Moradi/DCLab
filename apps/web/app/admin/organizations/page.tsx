@@ -1,60 +1,77 @@
 "use client";
 
+import { formatWhen } from "@/app/components/admin/format";
+import { CollectionSearch } from "@/app/components/ui/CollectionSearch";
+import { DataTable } from "@/app/components/ui/DataTable";
 import { ErrorState } from "@/app/components/ui/ErrorState";
+import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { Table, Td, Th } from "@/app/components/ui/Table";
+import { filterByText } from "@/app/components/ui/localCollection";
 import { useAdminOrganizations } from "@/lib/application";
 import Link from "next/link";
+import { useState } from "react";
 
 export default function OrganizationsPage() {
   const query = useAdminOrganizations();
+  const [queryText, setQueryText] = useState("");
 
-  if (query.isPending) return <Skeleton className="h-64" />;
+  if (query.isPending) {
+    return (
+      <div>
+        <PageHeader
+          eyebrow="Administration"
+          title="Organizations"
+          description="Every client workspace: who has access, how much of their own data is connected, and how much of the product they have actually used."
+        />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
   if (query.isError) {
     return <ErrorState body="Could not load organizations." onRetry={() => void query.refetch()} />;
   }
 
-  const rows = query.data ?? [];
+  const allRows = query.data ?? [];
+  const rows = filterByText(allRows, queryText, (row) => [row.name, row.slug]);
 
   return (
     <div>
-      <p className="font-body text-eyebrow uppercase tracking-[0.06em] text-ink-muted">DCLab Admin</p>
-      <h1 className="mt-2 font-display text-title text-ink">Organizations</h1>
-      <p className="mt-2 max-w-2xl font-body text-body text-ink-muted">
-        Every client workspace: who has access, how much of their own data is connected, and how much
-        of the product they have actually used.
-      </p>
+      <PageHeader
+        eyebrow="Administration"
+        title="Organizations"
+        description="Every client workspace: who has access, how much of their own data is connected, and how much of the product they have actually used."
+      />
       <div className="mt-8">
-        <Table>
-          <thead>
-            <tr>
-              <Th>Organization</Th>
-              <Th>Users</Th>
-              <Th>Opportunities</Th>
-              <Th>Decisions</Th>
-              <Th>Trial runs</Th>
-              <Th>Created</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <Td>
-                  <Link className="font-body font-semibold text-navy underline-offset-2 hover:underline" href={`/admin/organizations/${row.id}`}>
+        <CollectionSearch value={queryText} onChange={setQueryText} shown={rows.length} total={allRows.length} />
+        <DataTable
+          columns={[
+            {
+              id: "org",
+              header: "Organization",
+              cell: (row) => (
+                <div>
+                  <Link className="font-semibold text-navy hover:underline" href={`/admin/organizations/${row.id}`}>
                     {row.name}
                   </Link>
-                  <span className="ml-2 font-mono text-data text-ink-muted">{row.slug}</span>
-                </Td>
-                <Td mono>{row.user_count}</Td>
-                <Td mono>{row.opportunity_count}</Td>
-                <Td mono>{row.decision_count}</Td>
-                <Td mono>{row.trial_run_count}</Td>
-                <Td mono>{new Date(row.created_at).toLocaleDateString()}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-        {rows.length === 0 ? <p className="mt-6 font-body text-body text-ink-muted">No organizations yet.</p> : null}
+                  <p className="font-mono text-data text-ink-muted">{row.slug}</p>
+                </div>
+              ),
+            },
+            { id: "users", header: "Users", mono: true, cell: (row) => String(row.user_count) },
+            { id: "opps", header: "Opportunities", mono: true, cell: (row) => String(row.opportunity_count) },
+            { id: "decisions", header: "Decisions", mono: true, cell: (row) => String(row.decision_count) },
+            { id: "trials", header: "Trial runs", mono: true, cell: (row) => String(row.trial_run_count) },
+            { id: "created", header: "Created", mono: true, cell: (row) => formatWhen(row.created_at) || "—" },
+          ]}
+          rows={rows}
+          rowKey={(row) => row.id}
+          emptyTitle="No organizations yet."
+          emptyBody={
+            queryText.trim()
+              ? "Nothing on this list matches that filter."
+              : "Organization rows come from registered workspaces."
+          }
+        />
       </div>
     </div>
   );

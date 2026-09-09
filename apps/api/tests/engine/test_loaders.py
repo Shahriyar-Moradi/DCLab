@@ -12,6 +12,12 @@ def test_csv_and_parquet_roundtrip(tmp_path):
     frame.to_parquet(parquet_path, index=False)
     loaded_csv = load_table(csv_path)
     loaded_parquet = load_table(parquet_path)
+    tsv_path = tmp_path / "t.tsv"
+    json_path = tmp_path / "t.json"
+    frame.to_csv(tsv_path, index=False, sep="\t")
+    json_path.write_text(frame.to_json(orient="records"), encoding="utf-8")
+    assert list(load_table(tsv_path).columns) == ["a", "b"]
+    assert len(load_table(json_path)) == 3
     assert list(loaded_csv.columns) == ["a", "b"]
     assert len(loaded_parquet) == 3
     schema = infer_schema(loaded_csv)

@@ -14,7 +14,7 @@ It is **not** AutoML-for-its-own-sake, not a CRM, and not the Horizontal Intelli
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[boosting]"
 cp .env.example .env
 brew install postgresql@16
 make db
@@ -22,7 +22,7 @@ make migrate
 make train
 cd apps/web && npm install && cp .env.example .env.local && cd ../..
 
-make run    # API  http://127.0.0.1:8001
+make run    # API  http://127.0.0.1:8001  (trains CSV uploads in-process)
 make web    # UI   http://localhost:3001
 ```
 

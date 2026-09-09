@@ -49,6 +49,13 @@ Focused suites used during this verification:
 - `apps/api/tests/test_data_model_lineage.py`
 - `apps/api/tests/test_pipeline_observability.py`
 - `apps/api/tests/test_pipeline_verifier.py`
+- `apps/api/tests/test_adaptive_modeling_phase1a.py`
+- `apps/api/tests/test_adaptive_modeling_phase1b.py`
+- `apps/api/tests/test_adaptive_modeling_phase1_verification.py`
+- `apps/api/tests/test_adaptive_modeling_holdout.py`
+- `apps/api/tests/test_adaptive_modeling_single_plan.py`
+- `apps/api/tests/test_adaptive_modeling_production_e2e.py`
+- `apps/api/tests/test_platform_explorer.py`
 - `apps/api/tests/test_platform_explorer.py`
 - `apps/api/tests/test_ml2_pipeline_integrity.py`
 
@@ -68,7 +75,7 @@ cd apps/web
 npm run e2e
 ```
 
-This recreates `dclab_e2e_verify`, migrates to Alembic head, seeds four fixture
+This recreates `dclab_e2e_verify`, migrates to Alembic head, seeds five fixture
 accounts (password `VerificationOnly123!`), boots FastAPI on 8001 and Next.js
 on 3001, and writes screenshots under `artifacts/e2e-verification/` (gitignored).
 
@@ -78,6 +85,7 @@ Fixture emails:
 - `dclab-developer@verification.invalid`
 - `business-admin-a@verification.invalid`
 - `business-developer-a@verification.invalid`
+- `client-user@verification.invalid`
 
 JWT for both processes in Playwright is `e2e-verification-only-secret`. The Next
 middleware must use the same secret as the API or `/admin` and `/business`
