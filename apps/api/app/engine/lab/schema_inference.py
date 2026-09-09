@@ -150,11 +150,30 @@ def _sample_values(series: pd.Series, limit: int = 10) -> list[Any]:
     return values
 
 
+def _recognized_binary_values(series: pd.Series) -> bool:
+    """True only for bools, 0/1 numerics, or known yes/no-style tokens.
+
+    Two arbitrary category values (Gold/Silver, Male/Female) are features, not labels.
+    """
+    observed = series.dropna()
+    if observed.empty:
+        return False
+    if pd.api.types.is_bool_dtype(series):
+        return True
+    if pd.api.types.is_numeric_dtype(series):
+        numeric = pd.to_numeric(observed, errors="coerce")
+        if not bool(numeric.notna().all()):
+            return False
+        return {float(value) for value in numeric.tolist()} <= {0.0, 1.0}
+    distinct = set(observed.astype(str).str.strip().str.lower().unique())
+    return distinct <= _BINARY_TOKENS
+
+
 def _probable_task_type(series: pd.Series, unique: int, unique_ratio: float) -> str:
-    if unique == 2:
-        return "binary"
     if pd.api.types.is_bool_dtype(series):
         return "binary" if unique == 2 else "unusable"
+    if unique == 2:
+        return "binary" if _recognized_binary_values(series) else "unusable"
     if pd.api.types.is_datetime64_any_dtype(series):
         return "unusable"
     if pd.api.types.is_numeric_dtype(series):
@@ -203,7 +222,6 @@ def generate_target_candidates(frame: pd.DataFrame, columns: list[str]) -> list[
         task_type = _probable_task_type(series, unique, unique_ratio)
         if constant or missing_ratio > 0.8 or id_score >= 0.8 or task_type == "unusable":
             continue
-        distinct = set(series.dropna().astype(str).str.strip().str.lower().unique())
         provisional.append(
             {
                 "column": name,
@@ -213,7 +231,7 @@ def generate_target_candidates(frame: pd.DataFrame, columns: list[str]) -> list[
                 "unique_ratio": unique_ratio,
                 "missing_ratio": missing_ratio,
                 "identifier_likelihood": id_score,
-                "binary_tokens": task_type == "binary" and distinct <= _BINARY_TOKENS,
+                "binary_tokens": task_type == "binary" and _recognized_binary_values(series),
             }
         )
 
@@ -316,7 +334,10 @@ def choose_target_deterministically(
     if not candidates:
         return TargetChoice(
             column=None,
-            reason="no usable target candidates remain after identifier, constant, and type checks",
+            reason=(
+                "target selection is ambiguous: no usable target candidates remain "
+                "after identifier, constant, and type checks"
+            ),
             candidates=[],
         )
 

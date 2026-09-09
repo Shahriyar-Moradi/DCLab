@@ -24,6 +24,35 @@ def _rng_frame(seed: int = 7, n: int = 200) -> tuple[np.random.Generator, int]:
     return np.random.default_rng(seed), n
 
 
+def test_two_value_plan_name_is_not_a_binary_label():
+    rng, n = _rng_frame()
+    frame = pd.DataFrame(
+        {
+            "customer_id": [f"C{i}" for i in range(n)],
+            "plan_name": rng.choice(["Gold", "Silver"], n),
+            "amount": np.arange(n),
+        }
+    )
+    choice = choose_target_deterministically(frame, list(frame.columns))
+    assert choice.column is None
+    assert "target selection is ambiguous" in choice.reason
+
+
+def test_identifier_plus_unnamed_continuous_column_is_not_a_regression_target():
+    n = 50
+    frame = pd.DataFrame(
+        {
+            "record_uuid": [f"id-{i}" for i in range(n)],
+            "amount": np.linspace(1.0, 100.0, n),
+        }
+    )
+    choice = choose_target_deterministically(frame, list(frame.columns))
+    assert choice.column is None
+    candidates = generate_target_candidates(frame, list(frame.columns))
+    assert [item.column for item in candidates] == ["amount"]
+    assert candidates[0].confidence < 0.65
+
+
 def test_unfamiliar_classification_target_is_inferred_without_use_case_aliases():
     rng, n = _rng_frame()
     frame = pd.DataFrame(
