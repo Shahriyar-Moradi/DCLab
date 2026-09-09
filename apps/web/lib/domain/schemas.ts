@@ -233,7 +233,10 @@ export type LabRunOutcome = z.infer<typeof LabRunOutcomeSchema>;
 export const ClientLabUploadSchema = z.object({
   id: z.uuid(),
   run_id: z.uuid(),
-  workspace_id: z.uuid(),
+  // Local/demo workspaces use a stable sentinel GUID whose version nibble is
+  // zero. It is a valid database identifier but intentionally not an RFC
+  // versioned UUID, so Zod's strict `z.uuid()` rejects it.
+  workspace_id: z.guid(),
   pipeline_run_id: z.uuid().nullable(),
   dataset_id: z.uuid().nullable(),
   status: LabRunStatusSchema,
