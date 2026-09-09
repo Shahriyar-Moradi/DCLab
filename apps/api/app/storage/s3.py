@@ -102,7 +102,22 @@ class S3Storage:
 
     @contextmanager
     def open(self, key: str) -> Iterator[BinaryIO]:
-        yield io.BytesIO(self.get(key))
+        try:
+            response = self._client().get_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            if _is_not_found(exc):
+                raise ObjectNotFoundError(key) from exc
+            raise
+        body = response["Body"]
+        if not hasattr(body, "read"):
+            yield io.BytesIO(bytes(body))
+            return
+        try:
+            yield body
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
 
     def exists(self, key: str) -> bool:
         try:

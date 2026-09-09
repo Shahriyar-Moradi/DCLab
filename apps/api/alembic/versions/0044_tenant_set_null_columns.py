@@ -16,7 +16,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-from app.db.integrity import PREVENT_CODE_SNAPSHOT_MUTATION_SQL
+from alembic_frozen.rev_0042_provenance import PREVENT_CODE_SNAPSHOT_MUTATION_SQL
 
 revision: str = "0044_tenant_set_null_columns"
 down_revision: Union[str, Sequence[str], None] = "0043_evidence_lock"

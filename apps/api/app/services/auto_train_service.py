@@ -49,6 +49,7 @@ from app.domain.lab_run_stages import (
     SKIPPED,
     SPLITTING,
 )
+from app.engine.data.loaders import load_table
 from app.engine.data.quality import quality_report
 from app.engine.features.combinations import features_for_groups, generate_group_combinations
 from app.engine.lab.auto_prepare import (
@@ -74,6 +75,7 @@ from app.engine.models.registry import available_families
 from app.engine.schema.profiler import profile_frame
 from app.engine.types import SearchConfig, TaskSpec
 from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
+from app.services.dataset_materialization import materialize_client_upload
 from app.services.evidence_lock_service import (
     lock_scientific_evidence,
     missing_scientific_evidence,
@@ -129,37 +131,8 @@ def _resolve_auto_train_project_id(
 
 
 def _load_upload_frame(stored_path: str) -> pd.DataFrame:
-    """Re-read the saved file as a DataFrame regardless of format. `load_table`
-    (used by every other Lab dataset) only understands CSV/Parquet, so this
-    mirrors `open_ingest`'s format coverage and normalizes to CSV afterwards.
-    """
-    path = Path(stored_path)
-    suffix = path.suffix.lower()
-    if suffix == ".csv":
-        return pd.read_csv(path)
-    if suffix in {".tsv", ".tab"}:
-        return pd.read_csv(path, sep="\t")
-    if suffix in {".parquet", ".pq"}:
-        return pd.read_parquet(path)
-    if suffix in {".xlsx", ".xls"}:
-        return pd.read_excel(path)
-    if suffix in {".json", ".jsonl", ".ndjson"}:
-        text = path.read_text(encoding="utf-8", errors="replace").strip()
-        if not text:
-            return pd.DataFrame()
-        if text[0] != "[" and "\n" in text:
-            rows = [json.loads(line) for line in text.splitlines() if line.strip()]
-            return pd.json_normalize(rows)
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return pd.json_normalize(parsed)
-        if isinstance(parsed, dict):
-            for key in ("records", "data", "rows", "items"):
-                if isinstance(parsed.get(key), list):
-                    return pd.json_normalize(parsed[key])
-            return pd.json_normalize([parsed])
-        return pd.DataFrame()
-    return pd.read_csv(path, sep=None, engine="python")
+    """Load a materialized local path. Canonical bytes come from ObjectStorage."""
+    return load_table(stored_path)
 
 
 def _search_config(*, holdout_plan=None, development_plan=None) -> SearchConfig:
@@ -506,7 +479,8 @@ def run_auto_train_job(
     _stage(INGESTING)
     try:
         evidence_timer = _evidence_start("file_ingestion")
-        frame = _load_upload_frame(upload.stored_path)
+        with materialize_client_upload(db, upload) as source:
+            frame = _load_upload_frame(str(source))
         current_rows = int(len(frame))
         frame.columns = [str(c) for c in frame.columns]
         columns = list(frame.columns)

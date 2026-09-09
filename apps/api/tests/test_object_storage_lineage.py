@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import io
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -324,9 +325,7 @@ def test_s3_adapter_contract_mocked():
     def get_object(*, Bucket, Key):
         if Key not in objects:
             raise _NotFound()
-        body = MagicMock()
-        body.read.return_value = objects[Key]["Body"]
-        return {"Body": body}
+        return {"Body": io.BytesIO(objects[Key]["Body"])}
 
     def head_object(*, Bucket, Key):
         if Key not in objects:
@@ -350,6 +349,8 @@ def test_s3_adapter_contract_mocked():
     result = storage.put("models/a.bin", payload, content_type="application/octet-stream")
     assert result.content_digest == digest
     assert storage.get("models/a.bin") == payload
+    with storage.open("models/a.bin") as handle:
+        assert handle.read() == payload
     assert storage.exists("models/a.bin") is True
     assert storage.checksum("models/a.bin") == digest
     assert storage.metadata("models/a.bin").bucket == "lab-bucket"

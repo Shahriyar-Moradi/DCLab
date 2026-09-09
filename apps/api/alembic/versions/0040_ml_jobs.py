@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.domain.ml_jobs import CK_ML_JOB_STATUS, CK_ML_JOB_TYPE
+from alembic_frozen.rev_0040_ml_jobs import CK_ML_JOB_STATUS, CK_ML_JOB_TYPE
 
 revision: str = "0040_ml_jobs"
 down_revision: Union[str, Sequence[str], None] = "0039_scientific_plans"

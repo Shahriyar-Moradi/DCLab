@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.domain.execution_plane import (
+from alembic_frozen.rev_0031_execution_plane import (
     CK_PIPELINE_STAGE_RUNS_STATUS,
     CK_PIPELINE_VERSION_POSITIVE,
     CK_PIPELINES_STATUS,

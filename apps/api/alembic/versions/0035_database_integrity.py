@@ -18,7 +18,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-from app.db.integrity import (
+from alembic_frozen.rev_0035_immutability import (
     immutability_downgrade_statements,
     immutability_upgrade_statements,
 )

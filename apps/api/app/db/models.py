@@ -999,6 +999,20 @@ class ClientLabUpload(Base):
             ["artifacts.workspace_id", "artifacts.id"],
             name="fk_client_lab_uploads_workspace_artifact",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "data_source_id"],
+            ["data_sources.workspace_id", "data_sources.id"],
+            name="fk_client_lab_uploads_workspace_data_source",
+            ondelete="SET NULL (data_source_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "ingestion_run_id"],
+            ["ingestion_runs.workspace_id", "ingestion_runs.id"],
+            name="fk_client_lab_uploads_workspace_ingestion_run",
+            ondelete="SET NULL (ingestion_run_id)",
+            use_alter=True,
+        ),
         CheckConstraint(
             "client_status IN ('queued', 'processing', 'completed', 'failed')",
             name="ck_client_lab_uploads_client_status",
@@ -1078,8 +1092,12 @@ class ClientLabUpload(Base):
     artifact: Mapped["Artifact | None"] = relationship(
         foreign_keys="ClientLabUpload.artifact_id",
     )
-    data_source: Mapped["DataSource | None"] = relationship()
-    ingestion_run: Mapped["IngestionRun | None"] = relationship()
+    data_source: Mapped["DataSource | None"] = relationship(
+        foreign_keys="ClientLabUpload.data_source_id",
+    )
+    ingestion_run: Mapped["IngestionRun | None"] = relationship(
+        foreign_keys="ClientLabUpload.ingestion_run_id",
+    )
     workflow_runs: Mapped[list["WorkflowRun"]] = relationship(
         back_populates="source_upload",
         foreign_keys="WorkflowRun.source_upload_id",
@@ -1098,11 +1116,14 @@ class MlJob(Base):
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
             name="fk_ml_jobs_workspace_project",
+            ondelete="SET NULL (project_id)",
+            use_alter=True,
         ),
         ForeignKeyConstraint(
             ["workspace_id", "upload_id"],
             ["client_lab_uploads.workspace_id", "client_lab_uploads.id"],
             name="fk_ml_jobs_workspace_upload",
+            ondelete="CASCADE",
         ),
         CheckConstraint(CK_ML_JOB_TYPE, name="ck_ml_jobs_type_valid"),
         CheckConstraint(CK_ML_JOB_STATUS, name="ck_ml_jobs_status_valid"),
@@ -1381,6 +1402,7 @@ class DataSource(Base):
 
     __tablename__ = "data_sources"
     __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_data_sources_workspace_id"),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
@@ -1431,7 +1453,8 @@ class DataSource(Base):
         foreign_keys="DataSource.project_id",
     )
     ingestion_runs: Mapped[list["IngestionRun"]] = relationship(
-        back_populates="data_source"
+        back_populates="data_source",
+        foreign_keys="IngestionRun.data_source_id",
     )
 
 
@@ -1440,10 +1463,17 @@ class IngestionRun(Base):
 
     __tablename__ = "ingestion_runs"
     __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_ingestion_runs_workspace_id"),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
             name="fk_ingestion_runs_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "data_source_id"],
+            ["data_sources.workspace_id", "data_sources.id"],
+            name="fk_ingestion_runs_workspace_data_source",
+            ondelete="CASCADE",
         ),
         CheckConstraint(CK_INGESTION_RUNS_STATUS, name="ck_ingestion_runs_status_valid"),
         Index("ix_ingestion_runs_workspace_id", "workspace_id"),
@@ -1489,7 +1519,10 @@ class IngestionRun(Base):
         back_populates="ingestion_runs",
         foreign_keys="IngestionRun.project_id",
     )
-    data_source: Mapped[DataSource] = relationship(back_populates="ingestion_runs")
+    data_source: Mapped[DataSource] = relationship(
+        back_populates="ingestion_runs",
+        foreign_keys="IngestionRun.data_source_id",
+    )
     datasets: Mapped[list["Dataset"]] = relationship(
         back_populates="ingestion_run",
         foreign_keys="Dataset.ingestion_run_id",
@@ -1584,6 +1617,11 @@ class Dataset(Base):
             ["artifacts.workspace_id", "artifacts.id"],
             name="fk_datasets_workspace_artifact",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "ingestion_run_id"],
+            ["ingestion_runs.workspace_id", "ingestion_runs.id"],
+            name="fk_datasets_workspace_ingestion_run",
+        ),
         Index("ix_datasets_workspace_created_at", "workspace_id", desc("created_at")),
         Index("ix_datasets_project_created_at", "project_id", desc("created_at")),
         Index("ix_datasets_ingestion_run_id", "ingestion_run_id"),
@@ -1618,6 +1656,7 @@ class Dataset(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="csv")
+    # LEGACY: filesystem path or object:// URI. Canonical loading uses artifact_id.
     location: Mapped[str] = mapped_column(String(512), nullable=False)
     version: Mapped[str] = mapped_column(String(64), nullable=False, default="v1")
     content_digest: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

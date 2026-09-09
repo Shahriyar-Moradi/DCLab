@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.domain.scientific_plane import (
+from alembic_frozen.rev_0032_scientific_plane import (
     CK_CV_FOLD_RUN_STATUS,
     CK_HYPERPARAMETER_SOURCE,
     CK_MODEL_EVALUATION_SCOPE,

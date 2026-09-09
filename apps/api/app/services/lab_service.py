@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import subprocess
 from collections.abc import Callable
@@ -34,6 +33,8 @@ from app.engine.experiments.runner import run_experiment
 from app.engine.schema.profiler import profile_frame
 from app.engine.serving.artifacts import experiment_dir
 from app.engine.types import SearchConfig, TaskSpec
+from app.services.dataset_materialization import materialize_dataset
+from app.storage._hashing import sha256_file
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def ingest_dataset(
         )
         db.add(dataset_asset)
         db.flush()
-    digest = hashlib.sha256(Path(location).read_bytes()).hexdigest()
+    digest = sha256_file(location)
     size_bytes = Path(location).stat().st_size
     from app.services.dataset_column_service import persist_dataset_columns, schema_digest_from_columns
 
@@ -130,7 +131,8 @@ def ingest_dataset(
 
 
 def profile_dataset(db: Session, dataset: Dataset) -> DatasetProfile:
-    frame = load_table(dataset.location)
+    with materialize_dataset(dataset, db=db) as source:
+        frame = load_table(source)
     stats = profile_frame(frame)
     profile = DatasetProfile(dataset_id=dataset.id, stats=stats)
     db.add(profile)
@@ -329,7 +331,8 @@ def execute_experiment(
         dataset.name,
     )
     try:
-        frame = load_table(dataset.location)
+        with materialize_dataset(dataset, db=db) as source:
+            frame = load_table(source)
 
         def _persist_checkpoint(payload: dict) -> None:
             # Selection is committed before the final holdout evaluator runs.

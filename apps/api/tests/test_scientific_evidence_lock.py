@@ -22,6 +22,7 @@ from adaptive_modeling.production import ACCEPTABLE_VERIFICATION, labs_upload_an
 from app.db.models import (
     DEFAULT_WORKSPACE_ID,
     CVFoldRun,
+    CodeSnapshot,
     Dataset,
     DatasetAsset,
     EvaluationMetric,
@@ -35,8 +36,11 @@ from app.db.models import (
     ModelEvaluation,
     ModelHyperparameter,
     ModelSelectionDecision,
+    ModelVersion,
+    PipelineScientificPlan,
     PipelineStageRun,
     PreprocessingStep,
+    RuntimeEnvironment,
 )
 from app.services.evidence_lock_service import (
     EVIDENCE_REQUIREMENTS,
@@ -169,6 +173,14 @@ def locked_run(auth_client, db_session, monkeypatch, _rule_engine_only):
                 PreprocessingStep.pipeline_run_id == experiment.id
             )
         ),
+        scientific_plan=db_session.scalar(
+            select(PipelineScientificPlan).where(
+                PipelineScientificPlan.pipeline_run_id == experiment.id
+            )
+        ),
+        code_snapshot=db_session.scalar(
+            select(CodeSnapshot).where(CodeSnapshot.pipeline_run_id == experiment.id)
+        ),
         test_prediction=db_session.scalar(
             select(ExperimentTestPrediction).where(
                 ExperimentTestPrediction.experiment_id == experiment.id
@@ -190,6 +202,83 @@ def test_completed_labs_run_locks_every_piece_of_evidence(db_session, locked_run
     ) is True
     # The stamp must land after the evidence it certifies.
     assert experiment.scientific_evidence_locked_at >= locked_run.selection.locked_at
+    assert locked_run.scientific_plan is not None
+    assert locked_run.scientific_plan.locked_at is not None
+    assert locked_run.model_version is not None
+    assert locked_run.code_snapshot is not None
+    assert db_session.get(RuntimeEnvironment, locked_run.code_snapshot.runtime_environment_id) is not None
+
+
+def test_locked_run_rejects_plan_runtime_snapshot_and_model_version_tampering(
+    db_session, locked_run
+):
+    plan = locked_run.scientific_plan
+    snapshot = locked_run.code_snapshot
+    version = locked_run.model_version
+    runtime_id = snapshot.runtime_environment_id
+
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "UPDATE pipeline_scientific_plans SET primary_metric = 'accuracy' WHERE id = :id",
+            id=plan.id,
+        )
+    db_session.rollback()
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "DELETE FROM pipeline_scientific_plans WHERE id = :id",
+            id=plan.id,
+        )
+    db_session.rollback()
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "UPDATE runtime_environments SET python_version = '0.0.0' WHERE id = :id",
+            id=runtime_id,
+        )
+    db_session.rollback()
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "DELETE FROM runtime_environments WHERE id = :id",
+            id=runtime_id,
+        )
+    db_session.rollback()
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "UPDATE code_snapshots SET code_digest = :digest WHERE id = :id",
+            digest="e" * 64,
+            id=snapshot.id,
+        )
+    db_session.rollback()
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "DELETE FROM code_snapshots WHERE id = :id",
+            id=snapshot.id,
+        )
+    db_session.rollback()
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "UPDATE model_versions SET metrics = '{}'::jsonb WHERE id = :id",
+            id=version.id,
+        )
+    db_session.rollback()
+    with pytest.raises(DBAPIError, match="immutable|locked|frozen"):
+        _raw(
+            db_session,
+            "DELETE FROM model_versions WHERE id = :id",
+            id=version.id,
+        )
+    db_session.rollback()
+
+    db_session.expire_all()
+    assert db_session.get(PipelineScientificPlan, plan.id).primary_metric == plan.primary_metric
+    assert db_session.get(CodeSnapshot, snapshot.id).code_digest == snapshot.code_digest
+    assert db_session.get(ModelVersion, version.id).content_digest == version.content_digest
 
 
 def test_locked_run_rejects_cv_score_tampering(db_session, locked_run):

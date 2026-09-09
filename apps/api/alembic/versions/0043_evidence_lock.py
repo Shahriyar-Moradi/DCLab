@@ -11,7 +11,7 @@ features — were still open to direct SQL.
 
 This revision adds ``experiments.scientific_evidence_locked_at`` and the
 triggers that reject INSERT/UPDATE/DELETE on that run's evidence once the stamp
-is set. ``app.services.evidence_lock_service`` stamps it only after every piece
+is set. The evidence-lock service stamps it only after every piece
 of evidence exists.
 
 Append-only post-run evidence is untouched: ``ml_run_events``,
@@ -27,7 +27,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-from app.db.evidence_lock import (
+from alembic_frozen.rev_0043_evidence_lock import (
     evidence_lock_downgrade_statements,
     evidence_lock_upgrade_statements,
 )

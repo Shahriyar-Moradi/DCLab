@@ -39,6 +39,7 @@ from app.services.ingestion_run_service import complete_ingestion_run, start_ing
 from app.services.lab_service import seed_dogfood
 from app.services.project_service import get_or_create_labs_project, get_project
 from app.storage.factory import get_object_storage
+from app.storage.materialize import materialize_object, object_location_uri
 from app.translation.models import InsightCategory
 
 SAVED_MESSAGE = (
@@ -67,8 +68,6 @@ def _parse_category(value: str) -> InsightCategory:
 def _load_preview_frame(dest: Path, kind: str):
     if kind not in {"spreadsheet", "json", "table_file"}:
         return None
-    if dest.suffix.lower() not in {".csv", ".parquet", ".pq"}:
-        return None
     try:
         return load_table(dest)
     except Exception:
@@ -88,6 +87,7 @@ def _persist_upload_dataset(
     ingestion_run_id: UUID,
     artifact_id: UUID,
     size_bytes: int,
+    location: str,
 ) -> Dataset:
     """Persist the physical upload even when it is not yet training-ready."""
 
@@ -124,7 +124,7 @@ def _persist_upload_dataset(
         artifact_id=artifact_id,
         name=name,
         source_type=(dest.suffix.lower().lstrip(".") or preview.kind)[:32],
-        location=str(dest),
+        location=location,
         version="v1",
         content_digest=content_digest,
         schema_digest=schema_digest,
@@ -218,12 +218,158 @@ def save_upload(
     mime_type = mimetypes.guess_type(filename)[0]
     try:
         put = storage.put(object_key, payload, content_type=mime_type)
-        local = storage.local_path(put.key)
-        if local is None:
-            storage.delete(put.key)
-            raise OpenLabFileError("Labs uploads require local object storage")
-        dest = Path(local)
-        preview = preview_upload_path(filename, dest)
+        legacy_location = storage.local_path(put.key) or object_location_uri(
+            put.provider, put.key
+        )
+        with materialize_object(
+            storage,
+            put.key,
+            expected_digest=put.content_digest,
+            filename=filename,
+        ) as dest:
+            preview = preview_upload_path(filename, dest)
+            if project_id is not None:
+                project = get_project(
+                    db, actor=user, workspace_id=workspace_id, project_id=project_id
+                )
+            else:
+                project = get_or_create_labs_project(
+                    db, workspace_id=workspace_id, actor=user
+                )
+            problem_spec_id_resolved: UUID | None = None
+            if problem_spec_id is not None:
+                from app.services.problem_spec_service import get_problem_spec
+
+                spec = get_problem_spec(
+                    db,
+                    actor=user,
+                    workspace_id=workspace_id,
+                    project_id=project.id,
+                    spec_id=problem_spec_id,
+                )
+                problem_spec_id_resolved = spec.id
+            artifact = record_artifact(
+                db,
+                artifact_id=artifact_id,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                artifact_type="dataset",
+                put=put,
+                mime_type=put.content_type or mime_type,
+                created_by=user.id,
+                extra_metadata={"original_filename": filename, "kind": preview.kind},
+            )
+            source = create_data_source(
+                db,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                name=filename,
+                source_type="upload",
+                provider=put.provider,
+                created_by=user.id,
+                configuration={
+                    "original_filename": filename,
+                    "kind": preview.kind,
+                    "object_key": put.key,
+                    "artifact_id": str(artifact.id),
+                },
+            )
+            ingestion = start_ingestion_run(
+                db,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                data_source_id=source.id,
+                status="running",
+            )
+
+            dataset = _persist_upload_dataset(
+                db,
+                dest,
+                filename,
+                put.content_digest,
+                preview,
+                workspace_id=workspace_id,
+                requested_by=user.id,
+                project_id=project.id,
+                ingestion_run_id=ingestion.id,
+                artifact_id=artifact.id,
+                size_bytes=put.size_bytes,
+                location=legacy_location,
+            )
+            complete_ingestion_run(
+                db,
+                ingestion,
+                rows_read=preview.record_count,
+                rows_written=preview.record_count,
+                bytes_read=put.size_bytes,
+                schema_digest=dataset.schema_digest,
+                content_digest=put.content_digest,
+            )
+
+            row = ClientLabUpload(
+                workspace_id=workspace_id,
+                requested_by=user.id,
+                category=parsed_category.value,
+                original_filename=filename,
+                stored_path=legacy_location,
+                kind=preview.kind,
+                record_count=preview.record_count,
+                fields_noticed=preview.fields_noticed,
+                has_named_fields=preview.has_named_fields,
+                explicit_target_column=(target_column or "").strip() or None,
+                pipeline_status="queued",
+                client_status="queued",
+                dataset_id=dataset.id,
+                artifact_id=artifact.id,
+                data_source_id=source.id,
+                ingestion_run_id=ingestion.id,
+            )
+            db.add(row)
+            db.flush()
+            from app.services.lineage_service import (
+                create_pipeline_run,
+                create_workflow_run,
+                get_or_create_labs_workflow,
+            )
+
+            workflow = get_or_create_labs_workflow(
+                db, workspace_id=workspace_id, actor=user, project=project
+            )
+            workflow_run = create_workflow_run(
+                db,
+                workspace_id=workspace_id,
+                workflow=workflow,
+                requester=user,
+                trigger_type="upload",
+                source_type=preview.kind,
+                source_upload=row,
+                explicit_target=(target_column or "").strip() or None,
+                inputs=[(dataset, "reference")],
+                problem_spec_id=problem_spec_id_resolved,
+            )
+            pipeline_run = create_pipeline_run(
+                db,
+                workflow_run=workflow_run,
+                environment=dataset.environment,
+                dataset=dataset,
+                task=None,
+                pipeline_name="open_ingest_deterministic_ml",
+                pipeline_index=0,
+                pipeline_purpose="training_and_scoring",
+                input_role=None,
+                commit=False,
+            )
+            row.experiment_id = pipeline_run.id
+            from app.services.ml_job_service import create_auto_train_job
+
+            create_auto_train_job(
+                db,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                upload_id=row.id,
+            )
+            db.commit()
+            db.refresh(row)
     except OpenIngestError as exc:
         storage.delete(object_key)
         raise OpenLabFileError(str(exc)) from exc
@@ -233,147 +379,6 @@ def save_upload(
         storage.delete(object_key)
         raise
 
-    if project_id is not None:
-        project = get_project(
-            db, actor=user, workspace_id=workspace_id, project_id=project_id
-        )
-    else:
-        project = get_or_create_labs_project(
-            db, workspace_id=workspace_id, actor=user
-        )
-    problem_spec_id_resolved: UUID | None = None
-    if problem_spec_id is not None:
-        from app.services.problem_spec_service import get_problem_spec
-
-        spec = get_problem_spec(
-            db,
-            actor=user,
-            workspace_id=workspace_id,
-            project_id=project.id,
-            spec_id=problem_spec_id,
-        )
-        problem_spec_id_resolved = spec.id
-    artifact = record_artifact(
-        db,
-        artifact_id=artifact_id,
-        workspace_id=workspace_id,
-        project_id=project.id,
-        artifact_type="dataset",
-        put=put,
-        mime_type=put.content_type or mime_type,
-        created_by=user.id,
-        extra_metadata={"original_filename": filename, "kind": preview.kind},
-    )
-    source = create_data_source(
-        db,
-        workspace_id=workspace_id,
-        project_id=project.id,
-        name=filename,
-        source_type="upload",
-        provider=put.provider,
-        created_by=user.id,
-        configuration={
-            "original_filename": filename,
-            "kind": preview.kind,
-            "object_key": put.key,
-            "artifact_id": str(artifact.id),
-        },
-    )
-    ingestion = start_ingestion_run(
-        db,
-        workspace_id=workspace_id,
-        project_id=project.id,
-        data_source_id=source.id,
-        status="running",
-    )
-
-    dataset = _persist_upload_dataset(
-        db,
-        dest,
-        filename,
-        put.content_digest,
-        preview,
-        workspace_id=workspace_id,
-        requested_by=user.id,
-        project_id=project.id,
-        ingestion_run_id=ingestion.id,
-        artifact_id=artifact.id,
-        size_bytes=put.size_bytes,
-    )
-    complete_ingestion_run(
-        db,
-        ingestion,
-        rows_read=preview.record_count,
-        rows_written=preview.record_count,
-        bytes_read=put.size_bytes,
-        schema_digest=dataset.schema_digest,
-        content_digest=put.content_digest,
-    )
-
-    row = ClientLabUpload(
-        workspace_id=workspace_id,
-        requested_by=user.id,
-        category=parsed_category.value,
-        original_filename=filename,
-        stored_path=str(dest),
-        kind=preview.kind,
-        record_count=preview.record_count,
-        fields_noticed=preview.fields_noticed,
-        has_named_fields=preview.has_named_fields,
-        explicit_target_column=(target_column or "").strip() or None,
-        pipeline_status="queued",
-        client_status="queued",
-        dataset_id=dataset.id,
-        artifact_id=artifact.id,
-        data_source_id=source.id,
-        ingestion_run_id=ingestion.id,
-    )
-    db.add(row)
-    db.flush()
-    from app.services.lineage_service import (
-        create_pipeline_run,
-        create_workflow_run,
-        get_or_create_labs_workflow,
-    )
-
-    workflow = get_or_create_labs_workflow(
-        db, workspace_id=workspace_id, actor=user, project=project
-    )
-    workflow_run = create_workflow_run(
-        db,
-        workspace_id=workspace_id,
-        workflow=workflow,
-        requester=user,
-        trigger_type="upload",
-        source_type=preview.kind,
-        source_upload=row,
-        explicit_target=(target_column or "").strip() or None,
-        inputs=[(dataset, "reference")],
-        problem_spec_id=problem_spec_id_resolved,
-    )
-    pipeline_run = create_pipeline_run(
-        db,
-        workflow_run=workflow_run,
-        environment=dataset.environment,
-        dataset=dataset,
-        task=None,
-        pipeline_name="open_ingest_deterministic_ml",
-        pipeline_index=0,
-        pipeline_purpose="training_and_scoring",
-        input_role=None,
-        commit=False,
-    )
-    row.experiment_id = pipeline_run.id
-    from app.services.ml_job_service import create_auto_train_job
-
-    create_auto_train_job(
-        db,
-        workspace_id=workspace_id,
-        project_id=project.id,
-        upload_id=row.id,
-    )
-    db.commit()
-    db.refresh(row)
     # Build the client payload while the row is still queued. Training starts
     # only when a worker claims the persisted ml_jobs row.
     payload = _to_read(db, row)

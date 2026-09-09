@@ -1,0 +1,433 @@
+{
+  "check_constraints": [
+    {
+      "table": "artifacts",
+      "name": "ck_artifacts_provider_valid",
+      "definition": "CHECK (((provider)::text = ANY ((ARRAY['local'::character varying, 's3'::character varying, 'gcs'::character varying])::text[])))"
+    },
+    {
+      "table": "artifacts",
+      "name": "ck_artifacts_type_valid",
+      "definition": "CHECK (((artifact_type)::text = ANY ((ARRAY['dataset'::character varying, 'source_code'::character varying, 'training_script'::character varying, 'model'::character varying, 'preprocessor'::character varying, 'report'::character varying, 'plot'::character varying, 'result_json'::character varying, 'feature_manifest'::character varying, 'dependency_lock'::character varying, 'reproduction_notebook'::character varying, 'reproduction_script'::character varying])::text[])))"
+    },
+    {
+      "table": "client_lab_uploads",
+      "name": "ck_client_lab_uploads_client_status",
+      "definition": "CHECK (((client_status)::text = ANY ((ARRAY['queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "code_snapshots",
+      "name": "ck_code_snapshots_language_valid",
+      "definition": "CHECK (((language)::text = 'python'::text))"
+    },
+    {
+      "table": "cv_fold_runs",
+      "name": "ck_cv_fold_runs_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'running'::character varying])::text[])))"
+    },
+    {
+      "table": "data_preparation_decisions",
+      "name": "ck_data_preparation_decisions_source_valid",
+      "definition": "CHECK (((decision_source)::text = ANY ((ARRAY['deterministic'::character varying, 'user'::character varying, 'llm'::character varying, 'fallback'::character varying])::text[])))"
+    },
+    {
+      "table": "data_quality_findings",
+      "name": "ck_data_quality_findings_severity_valid",
+      "definition": "CHECK (((severity)::text = ANY ((ARRAY['info'::character varying, 'warning'::character varying, 'error'::character varying, 'critical'::character varying])::text[])))"
+    },
+    {
+      "table": "data_quality_findings",
+      "name": "ck_data_quality_findings_type_valid",
+      "definition": "CHECK (((finding_type)::text = ANY ((ARRAY['missing_values'::character varying, 'duplicates'::character varying, 'outlier'::character varying, 'high_cardinality'::character varying, 'constant'::character varying, 'schema_problem'::character varying, 'target_leakage'::character varying, 'prediction_time_leakage'::character varying])::text[])))"
+    },
+    {
+      "table": "data_sources",
+      "name": "ck_data_sources_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'disabled'::character varying, 'error'::character varying])::text[])))"
+    },
+    {
+      "table": "data_sources",
+      "name": "ck_data_sources_type_valid",
+      "definition": "CHECK (((source_type)::text = ANY ((ARRAY['upload'::character varying, 'database'::character varying, 'object_storage'::character varying, 'api'::character varying, 'crm'::character varying, 'logs'::character varying, 'other'::character varying])::text[])))"
+    },
+    {
+      "table": "feature_lineage",
+      "name": "ck_feature_lineage_relationship_valid",
+      "definition": "CHECK (((relationship)::text = 'source'::text))"
+    },
+    {
+      "table": "feature_set_versions",
+      "name": "ck_feature_set_versions_version_positive",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "features",
+      "name": "ck_features_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['modeled'::character varying, 'excluded'::character varying, 'dropped'::character varying])::text[])))"
+    },
+    {
+      "table": "ingestion_runs",
+      "name": "ck_ingestion_runs_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "lab_decision_records",
+      "name": "ck_lab_decision_records_source",
+      "definition": "CHECK (((source)::text = ANY ((ARRAY['rule'::character varying, 'llm'::character varying, 'fallback'::character varying])::text[])))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_purpose",
+      "definition": "CHECK (((purpose)::text = ANY ((ARRAY['semantic_target'::character varying, 'semantic_missing_value'::character varying, 'semantic_column_type'::character varying, 'semantic_leakage'::character varying, 'pipeline_audit_routine'::character varying, 'pipeline_audit_deep'::character varying])::text[])))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_attempts_non_negative",
+      "definition": "CHECK ((attempts >= 0))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_max_attempts_positive",
+      "definition": "CHECK ((max_attempts >= 1))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "ml_jobs",
+      "name": "ck_ml_jobs_type_valid",
+      "definition": "CHECK (((job_type)::text = 'auto_train'::text))"
+    },
+    {
+      "table": "ml_run_verifications",
+      "name": "ck_ml_run_verifications_audit_mode",
+      "definition": "CHECK (((audit_mode)::text = ANY ((ARRAY['routine'::character varying, 'deep'::character varying])::text[])))"
+    },
+    {
+      "table": "model_evaluations",
+      "name": "ck_model_evaluations_scope_valid",
+      "definition": "CHECK (((evaluation_scope)::text = ANY ((ARRAY['cv_fold'::character varying, 'cv_aggregate'::character varying, 'final_holdout'::character varying, 'slice'::character varying, 'robustness'::character varying, 'calibration'::character varying, 'latency'::character varying])::text[])))"
+    },
+    {
+      "table": "model_evaluations",
+      "name": "ck_model_evaluations_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'running'::character varying])::text[])))"
+    },
+    {
+      "table": "model_evaluations",
+      "name": "ck_model_evaluations_subject_present",
+      "definition": "CHECK (((candidate_id IS NOT NULL) OR (model_version_id IS NOT NULL)))"
+    },
+    {
+      "table": "model_evaluations",
+      "name": "ck_model_evaluations_type_valid",
+      "definition": "CHECK (((evaluation_type)::text = ANY ((ARRAY['cross_validation'::character varying, 'final_holdout'::character varying, 'robustness'::character varying, 'slice'::character varying, 'calibration'::character varying, 'latency'::character varying])::text[])))"
+    },
+    {
+      "table": "model_hyperparameters",
+      "name": "ck_model_hyperparameters_source_valid",
+      "definition": "CHECK (((source)::text = ANY ((ARRAY['default'::character varying, 'planner'::character varying, 'user'::character varying, 'random_search'::character varying, 'optuna'::character varying, 'other_search'::character varying])::text[])))"
+    },
+    {
+      "table": "pipeline_stage_runs",
+      "name": "ck_pipeline_stage_runs_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'skipped'::character varying])::text[])))"
+    },
+    {
+      "table": "pipeline_versions",
+      "name": "ck_pipeline_versions_version_positive",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "pipelines",
+      "name": "ck_pipelines_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'archived'::character varying])::text[])))"
+    },
+    {
+      "table": "platform_memberships",
+      "name": "ck_platform_memberships_role_valid",
+      "definition": "CHECK (((role)::text = ANY ((ARRAY['dclab_admin'::character varying, 'dclab_developer'::character varying])::text[])))"
+    },
+    {
+      "table": "preprocessing_steps",
+      "name": "ck_preprocessing_steps_fit_scope_valid",
+      "definition": "CHECK (((fit_scope)::text = ANY ((ARRAY['fold_train'::character varying, 'all_train'::character varying, 'non_learned'::character varying])::text[])))"
+    },
+    {
+      "table": "problem_specs",
+      "name": "ck_problem_specs_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'locked'::character varying])::text[])))"
+    },
+    {
+      "table": "problem_specs",
+      "name": "ck_problem_specs_version_positive",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "projects",
+      "name": "ck_projects_provenance_valid",
+      "definition": "CHECK (((provenance)::text = ANY ((ARRAY['user'::character varying, 'system_legacy_import'::character varying])::text[])))"
+    },
+    {
+      "table": "projects",
+      "name": "ck_projects_status_valid",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'archived'::character varying])::text[])))"
+    },
+    {
+      "table": "projects",
+      "name": "ck_projects_user_provenance_requires_actor",
+      "definition": "CHECK ((((provenance)::text <> 'user'::text) OR (created_by IS NOT NULL)))"
+    },
+    {
+      "table": "users",
+      "name": "ck_users_client_requires_workspace",
+      "definition": "CHECK ((((role)::text <> 'client_user'::text) OR (workspace_id IS NOT NULL)))"
+    },
+    {
+      "table": "users",
+      "name": "ck_users_role_valid",
+      "definition": "CHECK (((role)::text = ANY ((ARRAY['dclab_admin'::character varying, 'dclab_developer'::character varying, 'business_admin'::character varying, 'business_developer'::character varying, 'client_user'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
+    },
+    {
+      "table": "workflow_runs",
+      "name": "ck_workflow_runs_initiated_by_type",
+      "definition": "CHECK (((initiated_by_type IS NULL) OR ((initiated_by_type)::text = ANY ((ARRAY['human'::character varying, 'api'::character varying, 'system'::character varying, 'schedule'::character varying, 'agent'::character varying])::text[]))))"
+    },
+    {
+      "table": "workflow_versions",
+      "name": "ck_workflow_versions_version_positive",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "workspace_memberships",
+      "name": "ck_workspace_memberships_role_valid",
+      "definition": "CHECK (((role)::text = ANY ((ARRAY['business_admin'::character varying, 'business_developer'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
+    },
+    {
+      "table": "workspaces",
+      "name": "ck_workspaces_kind_valid",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['personal'::character varying, 'business'::character varying])::text[])))"
+    }
+  ],
+  "triggers": [
+    {
+      "table": "artifacts",
+      "name": "artifacts_columns_immutable",
+      "definition": "CREATE TRIGGER artifacts_columns_immutable BEFORE UPDATE ON public.artifacts FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('provider,bucket,object_key,content_digest,size_bytes')"
+    },
+    {
+      "table": "code_snapshots",
+      "name": "code_snapshots_immutable",
+      "definition": "CREATE TRIGGER code_snapshots_immutable BEFORE DELETE OR UPDATE ON public.code_snapshots FOR EACH ROW EXECUTE FUNCTION prevent_code_snapshot_mutation()"
+    },
+    {
+      "table": "cv_fold_runs",
+      "name": "cv_fold_runs_evidence_locked",
+      "definition": "CREATE TRIGGER cv_fold_runs_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.cv_fold_runs FOR EACH ROW EXECUTE FUNCTION prevent_locked_candidate_evidence_mutation('candidate_id')"
+    },
+    {
+      "table": "data_preparation_decisions",
+      "name": "data_preparation_decisions_evidence_locked",
+      "definition": "CREATE TRIGGER data_preparation_decisions_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.data_preparation_decisions FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('pipeline_run_id')"
+    },
+    {
+      "table": "data_quality_findings",
+      "name": "data_quality_findings_evidence_locked",
+      "definition": "CREATE TRIGGER data_quality_findings_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.data_quality_findings FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('pipeline_run_id')"
+    },
+    {
+      "table": "datasets",
+      "name": "datasets_immutable",
+      "definition": "CREATE TRIGGER datasets_immutable BEFORE DELETE OR UPDATE ON public.datasets FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "evaluation_metrics",
+      "name": "evaluation_metrics_evidence_locked",
+      "definition": "CREATE TRIGGER evaluation_metrics_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.evaluation_metrics FOR EACH ROW EXECUTE FUNCTION prevent_locked_metric_evidence_mutation('model_evaluation_id')"
+    },
+    {
+      "table": "experiment_candidates",
+      "name": "experiment_candidates_evidence_locked",
+      "definition": "CREATE TRIGGER experiment_candidates_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.experiment_candidates FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('experiment_id')"
+    },
+    {
+      "table": "experiment_test_predictions",
+      "name": "experiment_test_predictions_evidence_locked",
+      "definition": "CREATE TRIGGER experiment_test_predictions_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.experiment_test_predictions FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('experiment_id')"
+    },
+    {
+      "table": "experiments",
+      "name": "experiments_evidence_lock_stamp",
+      "definition": "CREATE TRIGGER experiments_evidence_lock_stamp BEFORE INSERT OR UPDATE ON public.experiments FOR EACH ROW EXECUTE FUNCTION prevent_evidence_lock_reset()"
+    },
+    {
+      "table": "feature_lineage",
+      "name": "feature_lineage_evidence_locked",
+      "definition": "CREATE TRIGGER feature_lineage_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.feature_lineage FOR EACH ROW EXECUTE FUNCTION prevent_locked_feature_child_mutation('feature_id')"
+    },
+    {
+      "table": "feature_set_versions",
+      "name": "feature_set_versions_locked_immutable",
+      "definition": "CREATE TRIGGER feature_set_versions_locked_immutable BEFORE DELETE OR UPDATE ON public.feature_set_versions FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()"
+    },
+    {
+      "table": "feature_transformations",
+      "name": "feature_transformations_evidence_locked",
+      "definition": "CREATE TRIGGER feature_transformations_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.feature_transformations FOR EACH ROW EXECUTE FUNCTION prevent_locked_feature_child_mutation('feature_id')"
+    },
+    {
+      "table": "features",
+      "name": "features_evidence_locked",
+      "definition": "CREATE TRIGGER features_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.features FOR EACH ROW EXECUTE FUNCTION prevent_locked_feature_evidence_mutation('feature_set_version_id')"
+    },
+    {
+      "table": "ml_run_events",
+      "name": "ml_run_events_append_only",
+      "definition": "CREATE TRIGGER ml_run_events_append_only BEFORE DELETE OR UPDATE ON public.ml_run_events FOR EACH ROW EXECUTE FUNCTION prevent_ml_run_event_mutation()"
+    },
+    {
+      "table": "model_evaluations",
+      "name": "model_evaluations_evidence_locked",
+      "definition": "CREATE TRIGGER model_evaluations_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.model_evaluations FOR EACH ROW EXECUTE FUNCTION prevent_locked_evaluation_mutation()"
+    },
+    {
+      "table": "model_hyperparameters",
+      "name": "model_hyperparameters_evidence_locked",
+      "definition": "CREATE TRIGGER model_hyperparameters_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.model_hyperparameters FOR EACH ROW EXECUTE FUNCTION prevent_locked_candidate_evidence_mutation('candidate_id')"
+    },
+    {
+      "table": "model_selection_decisions",
+      "name": "model_selection_decisions_evidence_locked",
+      "definition": "CREATE TRIGGER model_selection_decisions_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.model_selection_decisions FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('pipeline_run_id')"
+    },
+    {
+      "table": "model_selection_decisions",
+      "name": "model_selection_decisions_immutable",
+      "definition": "CREATE TRIGGER model_selection_decisions_immutable BEFORE DELETE OR UPDATE ON public.model_selection_decisions FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "model_versions",
+      "name": "model_versions_immutable",
+      "definition": "CREATE TRIGGER model_versions_immutable BEFORE DELETE OR UPDATE ON public.model_versions FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "pipeline_scientific_plans",
+      "name": "pipeline_scientific_plans_locked_immutable",
+      "definition": "CREATE TRIGGER pipeline_scientific_plans_locked_immutable BEFORE DELETE OR UPDATE ON public.pipeline_scientific_plans FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()"
+    },
+    {
+      "table": "pipeline_stage_runs",
+      "name": "pipeline_stage_runs_evidence_locked",
+      "definition": "CREATE TRIGGER pipeline_stage_runs_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.pipeline_stage_runs FOR EACH ROW EXECUTE FUNCTION prevent_locked_stage_run_mutation()"
+    },
+    {
+      "table": "pipeline_versions",
+      "name": "pipeline_versions_locked_immutable",
+      "definition": "CREATE TRIGGER pipeline_versions_locked_immutable BEFORE DELETE OR UPDATE ON public.pipeline_versions FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()"
+    },
+    {
+      "table": "preprocessing_steps",
+      "name": "preprocessing_steps_evidence_locked",
+      "definition": "CREATE TRIGGER preprocessing_steps_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.preprocessing_steps FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('pipeline_run_id')"
+    },
+    {
+      "table": "problem_specs",
+      "name": "problem_specs_locked_immutable",
+      "definition": "CREATE TRIGGER problem_specs_locked_immutable BEFORE DELETE OR UPDATE ON public.problem_specs FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()"
+    },
+    {
+      "table": "runtime_environments",
+      "name": "runtime_environments_immutable",
+      "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "workflow_versions",
+      "name": "workflow_versions_locked_immutable",
+      "definition": "CREATE TRIGGER workflow_versions_locked_immutable BEFORE DELETE OR UPDATE ON public.workflow_versions FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()"
+    }
+  ],
+  "functions": [
+    {
+      "name": "candidate_evidence_locked",
+      "definition": "CREATE OR REPLACE FUNCTION public.candidate_evidence_locked(wanted_candidate uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiment_candidates AS candidate_row\n        JOIN experiments AS run ON run.id = candidate_row.experiment_id\n        WHERE candidate_row.id = wanted_candidate\n          AND run.scientific_evidence_locked_at IS NOT NULL\n    );\n$function$\n"
+    },
+    {
+      "name": "evaluation_target_evidence_locked",
+      "definition": "CREATE OR REPLACE FUNCTION public.evaluation_target_evidence_locked(wanted_candidate uuid, wanted_version uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiment_candidates AS candidate_row\n        JOIN experiments AS run ON run.id = candidate_row.experiment_id\n        WHERE candidate_row.id = wanted_candidate\n          AND run.scientific_evidence_locked_at IS NOT NULL\n        UNION ALL\n        SELECT 1\n        FROM model_versions AS version_row\n        JOIN experiments AS run ON run.id = version_row.pipeline_run_id\n        WHERE version_row.id = wanted_version\n          AND run.scientific_evidence_locked_at IS NOT NULL\n    );\n$function$\n"
+    },
+    {
+      "name": "feature_evidence_locked",
+      "definition": "CREATE OR REPLACE FUNCTION public.feature_evidence_locked(wanted_feature uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM features AS feature_row\n        WHERE feature_row.id = wanted_feature\n          AND feature_set_version_evidence_locked(feature_row.feature_set_version_id)\n    );\n$function$\n"
+    },
+    {
+      "name": "feature_set_version_evidence_locked",
+      "definition": "CREATE OR REPLACE FUNCTION public.feature_set_version_evidence_locked(wanted_version uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiment_candidates AS candidate_row\n        JOIN experiments AS run ON run.id = candidate_row.experiment_id\n        WHERE candidate_row.feature_set_version_id = wanted_version\n          AND run.scientific_evidence_locked_at IS NOT NULL\n        UNION ALL\n        SELECT 1\n        FROM model_versions AS version_row\n        JOIN experiments AS run ON run.id = version_row.pipeline_run_id\n        WHERE version_row.feature_set_version_id = wanted_version\n          AND run.scientific_evidence_locked_at IS NOT NULL\n    );\n$function$\n"
+    },
+    {
+      "name": "model_evaluation_evidence_locked",
+      "definition": "CREATE OR REPLACE FUNCTION public.model_evaluation_evidence_locked(wanted_evaluation uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM model_evaluations AS evaluation_row\n        WHERE evaluation_row.id = wanted_evaluation\n          AND evaluation_target_evidence_locked(\n              evaluation_row.candidate_id, evaluation_row.model_version_id\n          )\n    );\n$function$\n"
+    },
+    {
+      "name": "pipeline_run_evidence_locked",
+      "definition": "CREATE OR REPLACE FUNCTION public.pipeline_run_evidence_locked(wanted_run uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1 FROM experiments AS run\n        WHERE run.id = wanted_run\n          AND run.scientific_evidence_locked_at IS NOT NULL\n    );\n$function$\n"
+    },
+    {
+      "name": "pipeline_run_scientific_evidence_complete",
+      "definition": "CREATE OR REPLACE FUNCTION public.pipeline_run_scientific_evidence_complete(wanted_run uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiments AS run\n        JOIN model_selection_decisions AS selection\n          ON selection.pipeline_run_id = run.id\n        JOIN experiment_candidates AS winner\n          ON winner.id = selection.selected_candidate_id\n         AND winner.experiment_id = run.id\n        LEFT JOIN feature_set_versions AS feature_version\n          ON feature_version.id = winner.feature_set_version_id\n        WHERE run.id = wanted_run\n          AND upper(run.status) = 'COMPLETED'\n          AND lower(winner.status) = 'trained'\n          AND (\n              (\n                  run.project_id IS NULL\n                  AND winner.feature_set_version_id IS NULL\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM experiment_candidates AS feature_candidate\n                      WHERE feature_candidate.experiment_id = run.id\n                        AND feature_candidate.feature_set_version_id IS NOT NULL\n                  )\n              )\n              OR (\n                  winner.feature_set_version_id IS NOT NULL\n                  AND feature_version.locked_at IS NOT NULL\n                  AND EXISTS (\n                      SELECT 1\n                      FROM features AS feature_row\n                      WHERE feature_row.feature_set_version_id = winner.feature_set_version_id\n                  )\n              )\n          )\n          AND (\n              (\n                  run.workflow_run_id IS NULL\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM model_versions AS unexpected_version\n                      WHERE unexpected_version.pipeline_run_id = run.id\n                  )\n              )\n              OR EXISTS (\n                  SELECT 1\n                  FROM model_versions AS version_row\n                  WHERE version_row.pipeline_run_id = run.id\n                    AND version_row.selected_candidate_id = winner.id\n                    AND version_row.dataset_id = run.dataset_id\n                    AND version_row.feature_set_version_id = winner.feature_set_version_id\n                    AND version_row.runtime_environment_id IS NOT NULL\n                    AND version_row.model_artifact_id IS NOT NULL\n                    AND version_row.feature_manifest_artifact_id IS NOT NULL\n              )\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM preprocessing_steps AS step\n              WHERE step.pipeline_run_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM model_evaluations AS holdout\n              WHERE holdout.candidate_id = winner.id\n                AND holdout.evaluation_scope = 'final_holdout'\n                AND holdout.status = 'completed'\n                AND EXISTS (\n                    SELECT 1\n                    FROM evaluation_metrics AS metric\n                    WHERE metric.model_evaluation_id = holdout.id\n                )\n                AND (\n                    (\n                        run.workflow_run_id IS NULL\n                        AND holdout.model_version_id IS NULL\n                    )\n                    OR EXISTS (\n                        SELECT 1\n                        FROM model_versions AS version_row\n                        WHERE version_row.pipeline_run_id = run.id\n                          AND version_row.selected_candidate_id = winner.id\n                          AND holdout.model_version_id = version_row.id\n                    )\n                )\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM experiment_test_predictions AS prediction\n              WHERE prediction.experiment_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'dependency_lock'\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'model'\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'feature_manifest'\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND NOT EXISTS (\n                    SELECT 1\n                    FROM model_hyperparameters AS parameter_row\n                    WHERE parameter_row.candidate_id = candidate_row.id\n                )\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND lower(candidate_row.status) = 'trained'\n                AND (\n                    CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END = 0\n                    OR (\n                        SELECT count(*)\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND fold.status = 'completed'\n                    ) <> CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END\n                    OR EXISTS (\n                        SELECT 1\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND NOT EXISTS (\n                              SELECT 1\n                              FROM model_evaluations AS evaluation_row\n                              WHERE evaluation_row.candidate_id = candidate_row.id\n                                AND evaluation_row.evaluation_scope = 'cv_fold'\n                                AND evaluation_row.status = 'completed'\n                                AND evaluation_row.summary->>'fold_number'\n                                    = fold.fold_number::text\n                                AND EXISTS (\n                                    SELECT 1\n                                    FROM evaluation_metrics AS metric\n                                    WHERE metric.model_evaluation_id = evaluation_row.id\n                                )\n                          )\n                    )\n                    OR NOT EXISTS (\n                        SELECT 1\n                        FROM model_evaluations AS evaluation_row\n                        WHERE evaluation_row.candidate_id = candidate_row.id\n                          AND evaluation_row.evaluation_scope = 'cv_aggregate'\n                          AND evaluation_row.status = 'completed'\n                          AND EXISTS (\n                              SELECT 1\n                              FROM evaluation_metrics AS metric\n                              WHERE metric.model_evaluation_id = evaluation_row.id\n                          )\n                    )\n                )\n          )\n    );\n$function$\n"
+    },
+    {
+      "name": "prevent_canonical_column_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_canonical_column_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    frozen_columns text[] := string_to_array(TG_ARGV[0], ',');\n    old_row jsonb := to_jsonb(OLD);\n    new_row jsonb := to_jsonb(NEW);\n    guarded text;\nBEGIN\n    FOREACH guarded IN ARRAY frozen_columns LOOP\n        IF old_row -> guarded IS DISTINCT FROM new_row -> guarded THEN\n            RAISE EXCEPTION '%.% is immutable', TG_TABLE_NAME, guarded;\n        END IF;\n    END LOOP;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_canonical_row_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_canonical_row_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    RAISE EXCEPTION '% rows are immutable', TG_TABLE_NAME;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_code_snapshot_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_code_snapshot_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'UPDATE'\n        AND pg_trigger_depth() > 1\n        AND OLD.pipeline_stage_run_id IS NOT NULL\n        AND NEW.pipeline_stage_run_id IS NULL\n        AND (to_jsonb(OLD) - 'pipeline_stage_run_id')\n            IS NOT DISTINCT FROM (to_jsonb(NEW) - 'pipeline_stage_run_id')\n    THEN\n        RETURN NEW;\n    END IF;\n    RAISE EXCEPTION '% rows are immutable', TG_TABLE_NAME;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_evidence_lock_reset",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_evidence_lock_reset()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'INSERT' THEN\n        IF NEW.scientific_evidence_locked_at IS NOT NULL THEN\n            RAISE EXCEPTION\n                'experiments.scientific_evidence_locked_at cannot be set before scientific evidence is complete';\n        END IF;\n        RETURN NEW;\n    END IF;\n    IF OLD.scientific_evidence_locked_at IS NULL AND NEW.scientific_evidence_locked_at IS NOT NULL THEN\n        IF NOT pipeline_run_scientific_evidence_complete(OLD.id) THEN\n            RAISE EXCEPTION\n                'experiments.scientific_evidence_locked_at cannot be set before scientific evidence is complete';\n        END IF;\n        NEW.scientific_evidence_locked_at := statement_timestamp();\n    ELSIF OLD.scientific_evidence_locked_at IS NOT NULL\n        AND NEW.scientific_evidence_locked_at IS DISTINCT FROM OLD.scientific_evidence_locked_at THEN\n        RAISE EXCEPTION\n            'experiments.scientific_evidence_locked_at cannot be changed once the run is locked';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_candidate_evidence_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_candidate_evidence_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    owner uuid;\nBEGIN\n    IF TG_OP <> 'INSERT' THEN\n        owner := (to_jsonb(OLD) ->> TG_ARGV[0])::uuid;\n        IF candidate_evidence_locked(owner) THEN\n            RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n        END IF;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    owner := (to_jsonb(NEW) ->> TG_ARGV[0])::uuid;\n    IF candidate_evidence_locked(owner) THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_evaluation_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_evaluation_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP <> 'INSERT'\n        AND evaluation_target_evidence_locked(OLD.candidate_id, OLD.model_version_id)\n    THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    IF evaluation_target_evidence_locked(NEW.candidate_id, NEW.model_version_id) THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_feature_child_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_feature_child_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    owner uuid;\nBEGIN\n    IF TG_OP <> 'INSERT' THEN\n        owner := (to_jsonb(OLD) ->> TG_ARGV[0])::uuid;\n        IF feature_evidence_locked(owner) THEN\n            RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n        END IF;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    owner := (to_jsonb(NEW) ->> TG_ARGV[0])::uuid;\n    IF feature_evidence_locked(owner) THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_feature_evidence_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_feature_evidence_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    owner uuid;\nBEGIN\n    IF TG_OP <> 'INSERT' THEN\n        owner := (to_jsonb(OLD) ->> TG_ARGV[0])::uuid;\n        IF feature_set_version_evidence_locked(owner) THEN\n            RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n        END IF;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    owner := (to_jsonb(NEW) ->> TG_ARGV[0])::uuid;\n    IF feature_set_version_evidence_locked(owner) THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_metric_evidence_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_metric_evidence_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    owner uuid;\nBEGIN\n    IF TG_OP <> 'INSERT' THEN\n        owner := (to_jsonb(OLD) ->> TG_ARGV[0])::uuid;\n        IF model_evaluation_evidence_locked(owner) THEN\n            RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n        END IF;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    owner := (to_jsonb(NEW) ->> TG_ARGV[0])::uuid;\n    IF model_evaluation_evidence_locked(owner) THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_row_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_row_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'DELETE' THEN\n        IF OLD.locked_at IS NOT NULL THEN\n            RAISE EXCEPTION '% is locked and immutable', TG_TABLE_NAME;\n        END IF;\n        RETURN OLD;\n    END IF;\n    IF OLD.locked_at IS NOT NULL THEN\n        RAISE EXCEPTION '% is locked and immutable', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_run_evidence_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_run_evidence_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    owner uuid;\nBEGIN\n    IF TG_OP <> 'INSERT' THEN\n        owner := (to_jsonb(OLD) ->> TG_ARGV[0])::uuid;\n        IF pipeline_run_evidence_locked(owner) THEN\n            RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n        END IF;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    owner := (to_jsonb(NEW) ->> TG_ARGV[0])::uuid;\n    IF pipeline_run_evidence_locked(owner) THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_locked_stage_run_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_stage_run_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    old_locked_at timestamptz;\n    new_locked_at timestamptz;\n    old_post_run_evidence boolean;\n    new_post_run_evidence boolean;\nBEGIN\n    IF TG_OP = 'INSERT' THEN\n        SELECT run.scientific_evidence_locked_at INTO new_locked_at\n        FROM experiments AS run\n        WHERE run.id = NEW.pipeline_run_id;\n        new_post_run_evidence := NEW.stage_type = 'verification'\n            OR NEW.stage_key IN ('deterministic_verification', 'report', 'openai_audit');\n        IF new_locked_at IS NOT NULL AND NOT new_post_run_evidence THEN\n            RAISE EXCEPTION\n                'pipeline_stage_runs is frozen: scientific evidence for this pipeline run is locked';\n        END IF;\n        RETURN NEW;\n    END IF;\n\n    SELECT run.scientific_evidence_locked_at INTO old_locked_at\n    FROM experiments AS run\n    WHERE run.id = OLD.pipeline_run_id;\n    old_post_run_evidence := OLD.stage_type = 'verification'\n            OR OLD.stage_key IN ('deterministic_verification', 'report', 'openai_audit');\n\n    IF TG_OP = 'DELETE' THEN\n        IF old_locked_at IS NOT NULL\n            AND NOT old_post_run_evidence\n            AND OLD.status IN ('completed', 'failed', 'skipped')\n        THEN\n            RAISE EXCEPTION\n                'pipeline_stage_runs is frozen: scientific evidence for this pipeline run is locked';\n        END IF;\n        RETURN OLD;\n    END IF;\n\n    SELECT run.scientific_evidence_locked_at INTO new_locked_at\n    FROM experiments AS run\n    WHERE run.id = NEW.pipeline_run_id;\n    new_post_run_evidence := NEW.stage_type = 'verification'\n        OR NEW.stage_key IN ('deterministic_verification', 'report', 'openai_audit');\n\n    IF old_locked_at IS NOT NULL AND NOT old_post_run_evidence THEN\n        IF OLD.status IN ('completed', 'failed', 'skipped')\n            OR NEW.pipeline_run_id IS DISTINCT FROM OLD.pipeline_run_id\n            OR NEW.stage_key IS DISTINCT FROM OLD.stage_key\n            OR NEW.stage_type IS DISTINCT FROM OLD.stage_type\n            OR NEW.status NOT IN ('completed', 'failed', 'skipped')\n        THEN\n            RAISE EXCEPTION\n                'pipeline_stage_runs is frozen: scientific evidence for this pipeline run is locked';\n        END IF;\n    END IF;\n\n    IF new_locked_at IS NOT NULL AND NOT new_post_run_evidence\n        AND (\n            NEW.pipeline_run_id IS DISTINCT FROM OLD.pipeline_run_id\n            OR old_post_run_evidence\n        )\n    THEN\n        RAISE EXCEPTION\n            'pipeline_stage_runs is frozen: scientific evidence for this pipeline run is locked';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_ml_run_event_mutation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_ml_run_event_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n        BEGIN\n            RAISE EXCEPTION 'ml_run_events is append-only';\n        END;\n        $function$\n"
+    }
+  ]
+}

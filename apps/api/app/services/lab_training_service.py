@@ -27,6 +27,7 @@ from app.engine.lab.column_map import (
     task_slug_for,
 )
 from app.engine.types import SearchConfig, TaskSpec
+from app.services.dataset_materialization import materialize_dataset
 from app.services.lab_service import (
     create_experiment,
     execute_experiment,
@@ -51,7 +52,8 @@ def _latest_experiment(db: Session, task: PredictionTask | None) -> Experiment |
 
 
 def plan_dataset_use_cases(db: Session, dataset: Dataset) -> dict:
-    frame = load_table(dataset.location)
+    with materialize_dataset(dataset, db=db) as source:
+        frame = load_table(source)
     columns = [str(name) for name in frame.columns]
     logger.info(
         "lab plan dataset=%s rows=%s columns=%s",

@@ -24,10 +24,17 @@ from conftest import ADMIN_URL
 from test_execution_hierarchy import make_hierarchy
 
 
-EXPECTED_ACTION_COLUMNS = {
+PRE_0044_ACTION_COLUMNS = {
     "fk_artifacts_workspace_pipeline_run": ["pipeline_run_id"],
     "fk_code_snapshots_workspace_pipeline_stage_run": ["pipeline_stage_run_id"],
     "fk_workflow_runs_workspace_source_upload": ["source_upload_id"],
+}
+
+EXPECTED_ACTION_COLUMNS = {
+    **PRE_0044_ACTION_COLUMNS,
+    "fk_client_lab_uploads_workspace_data_source": ["data_source_id"],
+    "fk_client_lab_uploads_workspace_ingestion_run": ["ingestion_run_id"],
+    "fk_ml_jobs_workspace_project": ["project_id"],
 }
 
 
@@ -375,12 +382,12 @@ def test_alembic_existing_and_fresh_upgrade_remove_all_unsafe_constraints(monkey
         command.upgrade(config, "0043_evidence_lock")
         with engine.connect() as connection:
             assert set(_composite_set_null_actions(connection)) == set(
-                EXPECTED_ACTION_COLUMNS
+                PRE_0044_ACTION_COLUMNS
             )
             assert all(
                 columns == ["workspace_id", expected[0]]
                 for name, columns in _composite_set_null_actions(connection).items()
-                if (expected := EXPECTED_ACTION_COLUMNS.get(name))
+                if (expected := PRE_0044_ACTION_COLUMNS.get(name))
             )
 
         command.upgrade(config, "head")

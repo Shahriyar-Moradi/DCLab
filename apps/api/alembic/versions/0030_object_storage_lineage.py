@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.domain.data_plane import (
+from alembic_frozen.rev_0030_data_plane import (
     CK_ARTIFACTS_PROVIDER,
     CK_ARTIFACTS_TYPE,
     CK_DATA_SOURCES_STATUS,

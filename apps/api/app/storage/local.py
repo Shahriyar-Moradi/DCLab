@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO, Iterator
 
-from app.storage._hashing import sha256_bytes, write_and_hash
+from app.storage._hashing import sha256_file, write_and_hash
 from app.storage.base import ObjectMetadata, ObjectPutResult
 from app.storage.exceptions import ObjectNotFoundError
 
@@ -70,7 +70,7 @@ class LocalStorage:
         path = self._path(key)
         if not path.is_file():
             raise ObjectNotFoundError(key)
-        digest = sha256_bytes(path.read_bytes())
+        digest = sha256_file(path)
         return ObjectMetadata(
             key=key,
             size_bytes=path.stat().st_size,
@@ -88,7 +88,10 @@ class LocalStorage:
         return path.resolve().as_uri()
 
     def checksum(self, key: str) -> str:
-        return sha256_bytes(self.get(key))
+        path = self._path(key)
+        if not path.is_file():
+            raise ObjectNotFoundError(key)
+        return sha256_file(path)
 
     def local_path(self, key: str) -> str | None:
         return str(self._path(key))

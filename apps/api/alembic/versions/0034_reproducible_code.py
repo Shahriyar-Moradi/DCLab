@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.domain.reproducibility import CK_CODE_LANGUAGE
+from alembic_frozen.rev_0034_reproducibility import CK_CODE_LANGUAGE
 
 revision: str = "0034_reproducible_code"
 down_revision: Union[str, Sequence[str], None] = "0033_candidate_modeling"

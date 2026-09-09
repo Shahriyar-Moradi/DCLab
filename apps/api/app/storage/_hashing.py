@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import BinaryIO
+
+DEFAULT_CHUNK_SIZE = 1024 * 1024
 
 
 def as_bytes(data: bytes | bytearray | memoryview | BinaryIO) -> bytes:
@@ -16,11 +19,19 @@ def sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def sha256_file(path: str | Path, *, chunk_size: int = DEFAULT_CHUNK_SIZE) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while chunk := handle.read(chunk_size):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def write_and_hash(
     destination,
     data: bytes | bytearray | memoryview | BinaryIO,
     *,
-    chunk_size: int = 1024 * 1024,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
 ) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0

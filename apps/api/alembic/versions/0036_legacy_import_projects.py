@@ -7,6 +7,7 @@ Create Date: 2026-09-05
 Existing records without Project get one deterministic compatibility project
 per Workspace (slug ``legacy-import``). Only rows on the frozen 0036 table list
 with a known workspace_id and NULL project_id are attached. Two historical
+with a known workspace_id and NULL project_id are attached. Two historical
 Workflows in the same workspace share that bucket; they are not merged into one
 case study.
 
@@ -23,12 +24,12 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.db.integrity import (
+from alembic_frozen.rev_0035_immutability import (
     immutability_disable_trigger_statements,
     immutability_enable_trigger_statements,
 )
-from app.db.legacy_import import LEGACY_IMPORT_BACKFILL_TABLES
-from app.domain.workspace_identity import (
+from alembic_frozen.rev_0036_legacy_import import (
+    LEGACY_IMPORT_BACKFILL_TABLES,
     LEGACY_IMPORT_PROJECT_DESCRIPTION,
     LEGACY_IMPORT_PROJECT_NAME,
     LEGACY_IMPORT_PROJECT_SLUG,

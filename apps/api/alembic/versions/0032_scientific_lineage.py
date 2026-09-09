@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from app.domain.scientific_plane import (
+from alembic_frozen.rev_0032_scientific_plane import (
     CK_DATA_QUALITY_FINDING_TYPE,
     CK_DATA_QUALITY_SEVERITY,
     CK_FEATURE_LINEAGE_RELATIONSHIP,
