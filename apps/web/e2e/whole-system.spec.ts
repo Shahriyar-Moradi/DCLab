@@ -406,7 +406,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await login(page, "client-user@verification.invalid");
     await expect(page).toHaveURL(/\/app\/dashboards/);
     await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
-    await expect(page.getByText("client-user@verification.invalid")).toBeVisible();
+    await expect(\n      page.getByRole("group", { name: "Account" }).getByText("Client User", { exact: true }),\n    ).toBeVisible();
 
     const navigation = page.getByRole("navigation", {
       name: "Application navigation",
