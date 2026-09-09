@@ -1095,6 +1095,22 @@ def list_datasets(
     return [_dataset_list_item(row) for row in db.scalars(stmt)]
 
 
+def get_dataset(
+    db: Session,
+    user: User,
+    dataset_id: UUID,
+    *,
+    workspace_id: UUID | None,
+) -> DatasetListItem | None:
+    scope = resolve_explorer_scope(db, user, workspace_id)
+    row = db.get(Dataset, dataset_id)
+    if row is None:
+        return None
+    if scope is not None and row.workspace_id != scope:
+        return None
+    return _dataset_list_item(row)
+
+
 project_detail_query = ProjectDetailQuery()
 workflow_detail_query = WorkflowDetailQuery()
 pipeline_run_detail_query = PipelineRunDetailQuery()

@@ -246,6 +246,8 @@ def cmd_verify_openai_smoke(_args: argparse.Namespace) -> int:
 
 def cmd_worker_run(args: argparse.Namespace) -> int:
     """Claim queued ml_jobs and run them. Production companion to the API process."""
+    import os
+    import socket
     import time
 
     from app.config import get_settings
@@ -256,10 +258,11 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
         if args.poll_seconds is not None
         else get_settings().ml_job_poll_seconds
     )
+    claimed_by = f"{socket.gethostname()}:{os.getpid()}"[:128]
     while True:
         db = _session()
         try:
-            job = process_next_job(db)
+            job = process_next_job(db, claimed_by=claimed_by)
         except Exception as exc:  # noqa: BLE001
             print(json.dumps({"error": str(exc)}), file=sys.stderr)
             db.rollback()

@@ -65,6 +65,30 @@ class DataSourceConfigurationError(ValueError):
     """DataSource.configuration contained a secret or an invalid source_type."""
 
 
+class DataAccessNotFoundError(LookupError):
+    """No data access matches the given workspace-scoped id."""
+
+
+class DataAccessConfigurationError(ValueError):
+    """DataAccess locator, credential pointer, or vocabulary is invalid."""
+
+
+class DataAccessEventSpecError(ValueError):
+    """data_access_events payload stored raw rows, secrets, or invalid vocabulary."""
+
+
+class MlJobSpecError(ValueError):
+    """ml_jobs payload stored raw rows, secrets, or an invalid slug/handler."""
+
+
+class UnknownJobHandlerError(LookupError):
+    """No worker handler is registered for this handler_key."""
+
+
+class VisualizationSpecError(ValueError):
+    """visualizations spec stored bulk series, secrets, or an invalid slug."""
+
+
 class IngestionRunNotFoundError(LookupError):
     """No ingestion run matches the given workspace-scoped id."""
 

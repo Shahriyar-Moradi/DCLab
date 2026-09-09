@@ -1,6 +1,6 @@
 # DCLab database migration map
 
-Head revision: `0047_personal_dev_identity`.
+Head revision: `0053_pipeline_run_branch`.
 
 This map freezes how pre-redesign objects relate to the canonical model. Nothing
 in this redesign deletes working product paths. Do not infer that two historical
@@ -25,14 +25,28 @@ Workflows were the same case study.
 | `0040_ml_jobs` | Durable ML job queue (`ml_jobs`); not a 0036 backfill target |
 | `0041`–`0046` | Artifact pipeline index, provenance, evidence lock, SET NULL, reproduction artifacts, ingestion tenant FKs |
 | `0047_personal_dev_identity` | `personal_developer` role; nullable `ml_workflows.workspace_domain_id` |
+| `0048_execution_requests` | Protocol-neutral execution requests; Labs auto-train may link one |
+| `0049_data_access` | DataAccess separate from DataSource; ingest may name an access path |
+| `0050_privacy_audit` | Nullable column policy metadata; append-only data-access audit events |
+| `0051_ml_job_queue` | Generalized `ml_jobs` handler queue; auto_train remains one registered handler |
+| `0052_visualizations` | Canonical visual-result metadata; identity/spec immutable |
+| `0053_pipeline_run_branch` | Scientific parent pointer on PipelineRun; does not fork runs |
 
 ## Object classification
 
 | Object | Classification | Keep because | Do not |
 | --- | --- | --- | --- |
-| `experiments` | **Canonical compatibility table** | Physical PipelineRun | Create a second run table or trainer |
+| `experiments` | **Canonical compatibility table** | Physical PipelineRun; optional scientific parent | Create a second run table, trainer, or mutate a parent run |
 | `experiment_candidates` | **Canonical compatibility table** | Physical candidate rows | Duplicate search results only in JSON |
-| `client_lab_uploads` | **Compatibility adapter** | Labs CSV → DataSource / Ingestion / Dataset / PipelineRun | Bypass auto-train |
+| `client_lab_uploads` | **Compatibility adapter** | Labs CSV → DataSource / DataAccess / Ingestion / Dataset / PipelineRun | Treat as the canonical execution request |
+| `execution_requests` | **Canonical control-plane** | Protocol-neutral intent for `model_build` | Confuse with `ml_jobs` worker rows |
+| `ml_jobs` | **Canonical worker queue** | Durable claim/retry/heartbeat; `handler_key` registry | Add a second queue or MCP jobs here |
+| `data_access_events` | **Canonical append-only audit** | Access summaries for future privacy reporting | Store raw rows or credentials |
+| `dataset_columns` | **Canonical column facts** | Searchable schema plus nullable policy fields | Auto-classify PII in this freeze |
+| `visualizations` | **Canonical visual-result metadata** | One spec row per plot; series/PNG in artifacts | Generate charts or add a visualization UI here |
+| `data_sources` | **Canonical** | Logical source of data | Store credentials in `configuration` |
+| `data_accesses` | **Canonical** | Authorized executable path to a DataSource | Implement Salesforce/Airbyte/Snowflake/OAuth here |
+| `datasets` | **Canonical immutable DatasetVersion** | Physical version of a DatasetAsset | Create `dataset_snapshots` |
 | `opportunities` | **Legacy, still operational** | `/app` scoring upload path | Attach guessed Project FKs |
 | `predictions` | **Legacy, still operational** | Written with opportunities | Treat as ModelVersion |
 | `decisions` | **Legacy, still operational** | Translated actions | Merge into ModelSelectionDecision |
@@ -120,3 +134,14 @@ only.
 - **Existing:** pre-redesign (`0028`) rows survive upgrade. Compatibility routes
   that read `client_lab_uploads`, `experiments`, and `opportunities` keep working.
   Canonical queries that filter `project_id` see attached orphans on `legacy-import`.
+
+## Application boundary (not a schema revision)
+
+Stable HTTP resources live under `/v1` and call existing application/query
+services. Legacy `/app`, `/admin`, `/business`, `/workspaces`, and `/auth/me`
+remain adapters. `packages/dclab_client` is an HTTP client for `/v1` only.
+The greenfield path is User → Workspace → Project → DataSource → DataAccess →
+ExecutionRequest → IngestionRun → Dataset → MlJob → WorkflowRun → PipelineRun →
+scientific evidence → Visualization → Artifact; Labs CSV upload is a
+compatibility adapter. This freeze does not add MCP, agents, notebooks,
+customer CLI, WebSocket, or SSE.

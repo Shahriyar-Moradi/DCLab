@@ -5,12 +5,16 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+import pytest
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
 from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, MlJob
 from app.domain.ml_jobs import (
+    HANDLER_LABS_AUTO_TRAIN,
+    HANDLER_VERSION_LABS_AUTO_TRAIN,
     JOB_COMPLETED,
     JOB_FAILED,
     JOB_QUEUED,
@@ -109,12 +113,22 @@ def test_upload_persists_queued_job_and_request_return_does_not_run_it(
     job = db_session.scalar(select(MlJob).where(MlJob.upload_id == upload.id))
     assert job is not None
     assert job.job_type == JOB_TYPE_AUTO_TRAIN
+    assert job.handler_key == HANDLER_LABS_AUTO_TRAIN
+    assert job.handler_version == HANDLER_VERSION_LABS_AUTO_TRAIN
     assert job.target_id == upload.id
     assert job.upload_id == upload.id
     assert job.workspace_id == upload.workspace_id
     assert job.project_id is not None
+    assert job.execution_request_id is not None
+    assert job.workflow_run_id is not None
+    assert job.pipeline_run_id is not None
     assert job.status == JOB_QUEUED
     assert job.attempts == 0
+    assert job.priority == 0
+    assert job.available_at is not None
+    assert job.claimed_by is None
+    assert job.lease_expires_at is None
+    assert job.payload.get("upload_id") == upload_id
     assert job.started_at is None
     assert job.completed_at is None
 
@@ -314,3 +328,197 @@ def test_live_job_with_independent_heartbeat_is_not_recovered(db_session, test_e
     result = execute_job(db_session, claimed, runner=runner)
     assert result.status == JOB_COMPLETED
     assert seen["recovered"] == []
+
+
+def test_claim_skips_jobs_not_yet_available(db_session):
+    job = _queued_job(db_session)
+    job.available_at = datetime.now(UTC) + timedelta(hours=1)
+    db_session.commit()
+    assert claim_next_queued_job(db_session) is None
+    db_session.expire_all()
+    stored = db_session.get(MlJob, job.id)
+    assert stored is not None
+    assert stored.status == JOB_QUEUED
+
+
+def test_claim_prefers_higher_priority(db_session):
+    from app.services.ml_job_service import create_ml_job
+
+    low = _queued_job(db_session)
+    high_upload = _make_upload(db_session)
+    high = create_ml_job(
+        db_session,
+        workspace_id=high_upload.workspace_id,
+        job_type="inspect",
+        handler_key="future.inspect",
+        target_id=high_upload.id,
+        priority=10,
+        payload={"kind": "inspect"},
+    )
+    db_session.commit()
+    claimed = claim_next_queued_job(db_session)
+    assert claimed is not None
+    assert claimed.id == high.id
+    assert claimed.id != low.id
+
+
+def test_one_execution_request_may_own_multiple_jobs(db_session):
+    from app.db.models import ExecutionRequest
+    from app.domain.execution_requests import (
+        OPERATION_MODEL_BUILD,
+        REQUEST_ACCEPTED,
+        SOURCE_SYSTEM,
+    )
+    from app.services.ml_job_service import create_ml_job
+
+    auto = _queued_job(db_session)
+    request = ExecutionRequest(
+        workspace_id=auto.workspace_id,
+        operation=OPERATION_MODEL_BUILD,
+        source_surface=SOURCE_SYSTEM,
+        status=REQUEST_ACCEPTED,
+        request_spec={"upload_id": str(auto.upload_id)},
+    )
+    db_session.add(request)
+    db_session.flush()
+    auto.execution_request_id = request.id
+    sibling = create_ml_job(
+        db_session,
+        workspace_id=auto.workspace_id,
+        execution_request_id=request.id,
+        job_type="inspect",
+        handler_key="future.inspect",
+        target_id=auto.target_id,
+        payload={"kind": "inspect"},
+    )
+    db_session.commit()
+    assert sibling.id != auto.id
+    assert sibling.execution_request_id == auto.execution_request_id == request.id
+    assert sibling.upload_id is None
+
+
+def test_postgres_accepts_extensible_job_type_slug(db_session):
+    from app.services.ml_job_service import create_ml_job
+
+    upload = _make_upload(db_session)
+    job = create_ml_job(
+        db_session,
+        workspace_id=upload.workspace_id,
+        job_type="column_profile",
+        handler_key="future.column_profile",
+        target_id=upload.id,
+        payload={"dataset_id": str(upload.id)},
+    )
+    db_session.commit()
+    stored = db_session.get(MlJob, job.id)
+    assert stored is not None
+    assert stored.job_type == "column_profile"
+    assert stored.handler_key == "future.column_profile"
+    assert stored.upload_id is None
+
+
+def test_postgres_rejects_job_payload_rows_and_closed_auto_train_without_upload(
+    db_session,
+):
+    upload = _make_upload(db_session)
+    db_session.commit()
+    with pytest.raises(IntegrityError):
+        db_session.execute(
+            text(
+                """
+                INSERT INTO ml_jobs (
+                    id, workspace_id, job_type, handler_key, target_id, status,
+                    payload, attempts, max_attempts
+                ) VALUES (
+                    gen_random_uuid(), :workspace, 'inspect', 'future.inspect',
+                    :target, 'queued', '{"rows":[1]}'::jsonb, 0, 3
+                )
+                """
+            ),
+            {"workspace": upload.workspace_id, "target": upload.id},
+        )
+        db_session.commit()
+    db_session.rollback()
+    with pytest.raises(IntegrityError):
+        db_session.execute(
+            text(
+                """
+                INSERT INTO ml_jobs (
+                    id, workspace_id, job_type, handler_key, target_id, status,
+                    attempts, max_attempts
+                ) VALUES (
+                    gen_random_uuid(), :workspace, 'auto_train', 'labs.auto_train',
+                    :target, 'queued', 0, 3
+                )
+                """
+            ),
+            {"workspace": upload.workspace_id, "target": upload.id},
+        )
+        db_session.commit()
+    db_session.rollback()
+
+
+def test_auto_train_is_the_registered_handler(db_session):
+    from app.services.job_handlers import registered_handler_keys
+
+    assert HANDLER_LABS_AUTO_TRAIN in registered_handler_keys()
+    job = _queued_job(db_session)
+    db_session.commit()
+    result = process_next_job(db_session)
+    assert result is not None
+    assert result.id == job.id
+    assert result.handler_key == HANDLER_LABS_AUTO_TRAIN
+    assert result.status == JOB_COMPLETED
+
+
+def test_unknown_handler_is_retried_then_failed(db_session):
+    from app.services.ml_job_service import create_ml_job
+
+    upload = _make_upload(db_session)
+    create_ml_job(
+        db_session,
+        workspace_id=upload.workspace_id,
+        job_type="inspect",
+        handler_key="future.inspect",
+        target_id=upload.id,
+        max_attempts=2,
+    )
+    db_session.commit()
+    first = process_next_job(db_session)
+    assert first is not None
+    assert first.status == JOB_QUEUED
+    assert "unsupported ml job handler" in (first.failure_reason or "")
+    second = process_next_job(db_session)
+    assert second is not None
+    assert second.status == JOB_FAILED
+
+
+def test_expired_lease_recovers_even_with_recent_heartbeat(db_session):
+    job = _queued_job(db_session, max_attempts=2)
+    now = datetime.now(UTC)
+    job.status = JOB_RUNNING
+    job.attempts = 1
+    job.started_at = now
+    job.heartbeat_at = now
+    job.claimed_by = "worker-a"
+    job.lease_expires_at = now - timedelta(seconds=1)
+    db_session.commit()
+    recovered = recover_abandoned_jobs(db_session, now=now, heartbeat_timeout_seconds=60)
+    db_session.commit()
+    assert [row.id for row in recovered] == [job.id]
+    db_session.refresh(job)
+    assert job.status == JOB_QUEUED
+    assert job.claimed_by is None
+    assert job.lease_expires_at is None
+
+
+def test_claim_sets_claimed_by_and_lease(db_session):
+    job = _queued_job(db_session)
+    db_session.commit()
+    claimed = claim_next_queued_job(db_session, claimed_by="worker-1")
+    assert claimed is not None
+    assert claimed.id == job.id
+    assert claimed.claimed_by == "worker-1"
+    assert claimed.lease_expires_at is not None
+    assert claimed.heartbeat_at is not None
+    assert claimed.lease_expires_at >= claimed.heartbeat_at

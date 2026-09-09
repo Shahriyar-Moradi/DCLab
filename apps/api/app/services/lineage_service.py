@@ -33,6 +33,7 @@ from app.db.models import (
 from app.engine.types import SearchConfig
 from app.services.authorization_service import can_write_workspace
 from app.domain.execution_plane import CREATABLE_INITIATED_BY_TYPES
+from app.domain.pipeline_run_branch import BRANCH_REASON_MAX_CHARS
 
 DOMAIN_SEEDS = (
     ("labs", "Labs"),
@@ -45,6 +46,39 @@ DOMAIN_SEEDS = (
 
 class LineageError(ValueError):
     """Raised before persistence when a lineage edge is invalid or cross-tenant."""
+
+
+_BRANCH_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def resolve_pipeline_run_branch(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    parent_pipeline_run_id: UUID | None,
+    branch_key: str | None = None,
+    branch_reason: str | None = None,
+) -> tuple[UUID | None, str | None, str | None]:
+    """Validate scientific branch pointers. Does not write the parent run."""
+
+    key = (branch_key or "").strip() or None
+    reason = (branch_reason or "").strip() or None
+    if parent_pipeline_run_id is None:
+        if key is not None or reason is not None:
+            raise LineageError("branch_key and branch_reason require a parent pipeline run")
+        return None, None, None
+    parent = db.get(Experiment, parent_pipeline_run_id)
+    if parent is None or parent.workspace_id != workspace_id:
+        raise LineageError(
+            "parent pipeline run does not belong to this workspace"
+        )
+    if key is not None and _BRANCH_KEY_RE.fullmatch(key) is None:
+        raise LineageError("invalid branch_key")
+    if reason is not None and len(reason) > BRANCH_REASON_MAX_CHARS:
+        raise LineageError(
+            f"branch_reason exceeds {BRANCH_REASON_MAX_CHARS} characters"
+        )
+    return parent.id, key, reason
 
 
 def slugify(value: str) -> str:
@@ -436,9 +470,19 @@ def create_pipeline_run(
     config: SearchConfig | None = None,
     input_role: str | None = "training",
     commit: bool = True,
+    parent_pipeline_run_id: UUID | None = None,
+    branch_key: str | None = None,
+    branch_reason: str | None = None,
 ) -> Experiment:
     if dataset.workspace_id != workflow_run.workspace_id:
         raise LineageError("pipeline dataset belongs to another workspace")
+    parent_id, key, reason = resolve_pipeline_run_branch(
+        db,
+        workspace_id=workflow_run.workspace_id,
+        parent_pipeline_run_id=parent_pipeline_run_id,
+        branch_key=branch_key,
+        branch_reason=branch_reason,
+    )
     if input_role is not None:
         add_workflow_run_input(
             db,
@@ -502,6 +546,9 @@ def create_pipeline_run(
         pipeline_id=pipeline.id if pipeline is not None else None,
         pipeline_version_id=pipeline_version.id if pipeline_version is not None else None,
         run_number=run_number,
+        parent_pipeline_run_id=parent_id,
+        branch_key=key,
+        branch_reason=reason,
     )
 
 

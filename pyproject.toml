@@ -49,5 +49,5 @@ where = ["apps/api"]
 include = ["app*"]
 
 [tool.pytest.ini_options]
-testpaths = ["apps/api/tests"]
-pythonpath = [".", "apps/api", "apps/api/tests"]
+testpaths = ["apps/api/tests", "packages/dclab_client/tests"]
+pythonpath = [".", "apps/api", "apps/api/tests", "packages/dclab_client"]

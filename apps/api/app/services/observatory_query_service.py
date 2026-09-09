@@ -36,19 +36,33 @@ def list_pipeline_events(
     *,
     workspace_id: UUID | None,
     after_sequence: int = 0,
+    limit: int | None = None,
 ) -> list[MlRunEvent] | None:
     if get_pipeline(db, experiment_id, workspace_id=workspace_id) is None:
         return None
-    return list(
-        db.scalars(
-            select(MlRunEvent)
-            .where(
-                MlRunEvent.experiment_id == experiment_id,
-                MlRunEvent.sequence > max(0, after_sequence),
-            )
-            .order_by(MlRunEvent.sequence)
-        )
+    return list_run_events(
+        db, experiment_id, after_sequence=after_sequence, limit=limit
     )
+
+
+def list_run_events(
+    db: Session,
+    experiment_id: UUID,
+    *,
+    after_sequence: int = 0,
+    limit: int | None = None,
+) -> list[MlRunEvent]:
+    stmt = (
+        select(MlRunEvent)
+        .where(
+            MlRunEvent.experiment_id == experiment_id,
+            MlRunEvent.sequence > max(0, after_sequence),
+        )
+        .order_by(MlRunEvent.sequence)
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return list(db.scalars(stmt))
 
 
 def list_pipeline_llm_invocations(

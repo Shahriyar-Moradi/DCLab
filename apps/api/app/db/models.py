@@ -20,11 +20,28 @@ from sqlalchemy import (
     event,
     func,
     inspect as orm_inspect,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.domain.data_access import (
+    CK_DATA_ACCESSES_CREDENTIAL_OPAQUE,
+    CK_DATA_ACCESSES_EXECUTION_MODE,
+    CK_DATA_ACCESSES_LOCATOR_BOUNDED,
+    CK_DATA_ACCESSES_LOCATOR_NO_SECRETS,
+    CK_DATA_ACCESSES_LOCATOR_OBJECT,
+    CK_DATA_ACCESSES_PRIVACY_BOUNDED,
+    CK_DATA_ACCESSES_PRIVACY_NO_SECRETS,
+    CK_DATA_ACCESSES_PRIVACY_OBJECT,
+    CK_DATA_ACCESSES_RETENTION_BOUNDED,
+    CK_DATA_ACCESSES_RETENTION_NO_SECRETS,
+    CK_DATA_ACCESSES_RETENTION_OBJECT,
+    CK_DATA_ACCESSES_STATUS,
+    CK_DATA_ACCESSES_TYPE,
+    CK_DATA_ACCESSES_UPLOAD_IS_COPY,
+)
 from app.domain.data_plane import (
     CK_ARTIFACTS_PROVIDER,
     CK_ARTIFACTS_TYPE,
@@ -40,7 +57,62 @@ from app.domain.execution_plane import (
     CK_WORKFLOW_VERSION_POSITIVE,
 )
 from app.domain.reproducibility import CK_CODE_LANGUAGE
-from app.domain.ml_jobs import CK_ML_JOB_STATUS, CK_ML_JOB_TYPE
+from app.domain.execution_requests import (
+    CK_EXECUTION_REQUEST_OPERATION,
+    CK_EXECUTION_REQUEST_PARENT_NOT_SELF,
+    CK_EXECUTION_REQUEST_RESULT_BOUNDED,
+    CK_EXECUTION_REQUEST_RESULT_NO_SECRETS,
+    CK_EXECUTION_REQUEST_RESULT_OBJECT,
+    CK_EXECUTION_REQUEST_SOURCE,
+    CK_EXECUTION_REQUEST_SPEC_BOUNDED,
+    CK_EXECUTION_REQUEST_SPEC_NO_SECRETS,
+    CK_EXECUTION_REQUEST_SPEC_OBJECT,
+    CK_EXECUTION_REQUEST_STATUS,
+)
+from app.domain.privacy_audit import (
+    CK_DATA_ACCESS_EVENTS_ACTOR,
+    CK_DATA_ACCESS_EVENTS_COLUMN_BOUNDED,
+    CK_DATA_ACCESS_EVENTS_COLUMN_NO_ROWS,
+    CK_DATA_ACCESS_EVENTS_COLUMN_OBJECT,
+    CK_DATA_ACCESS_EVENTS_COMPLETED,
+    CK_DATA_ACCESS_EVENTS_FAILURE,
+    CK_DATA_ACCESS_EVENTS_OPERATION,
+    CK_DATA_ACCESS_EVENTS_PURPOSE,
+    CK_DATA_ACCESS_EVENTS_RESOURCE_BOUNDED,
+    CK_DATA_ACCESS_EVENTS_RESOURCE_NO_ROWS,
+    CK_DATA_ACCESS_EVENTS_RESOURCE_OBJECT,
+    CK_DATA_ACCESS_EVENTS_STATUS,
+    CK_DATASET_COLUMNS_CLASSIFICATION_SOURCE,
+    CK_DATASET_COLUMNS_LLM_EXPOSURE,
+    CK_DATASET_COLUMNS_MODEL_USE,
+    CK_DATASET_COLUMNS_SENSITIVITY,
+)
+from app.domain.ml_jobs import (
+    CK_ML_JOB_AUTO_TRAIN_UPLOAD,
+    CK_ML_JOB_HANDLER_KEY,
+    CK_ML_JOB_HANDLER_VERSION,
+    CK_ML_JOB_PAYLOAD_BOUNDED,
+    CK_ML_JOB_PAYLOAD_NO_SECRETS,
+    CK_ML_JOB_PAYLOAD_OBJECT,
+    CK_ML_JOB_PRIORITY,
+    CK_ML_JOB_STATUS,
+    CK_ML_JOB_TYPE,
+)
+from app.domain.pipeline_run_branch import (
+    CK_EXPERIMENTS_BRANCH_KEY,
+    CK_EXPERIMENTS_BRANCH_REASON,
+    CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
+    CK_EXPERIMENTS_PARENT_NOT_SELF,
+)
+from app.domain.visualizations import (
+    CK_VISUALIZATIONS_DIGEST,
+    CK_VISUALIZATIONS_RENDERER,
+    CK_VISUALIZATIONS_SPEC_BOUNDED,
+    CK_VISUALIZATIONS_SPEC_NO_BULK,
+    CK_VISUALIZATIONS_SPEC_OBJECT,
+    CK_VISUALIZATIONS_SPEC_VERSION,
+    CK_VISUALIZATIONS_TYPE,
+)
 from app.domain.scientific_plane import (
     CK_CV_FOLD_RUN_STATUS,
     CK_DATA_QUALITY_FINDING_TYPE,
@@ -127,9 +199,21 @@ class Workspace(Base):
         back_populates="workspace",
         foreign_keys="Artifact.workspace_id",
     )
+    visualizations: Mapped[list["Visualization"]] = relationship(
+        back_populates="workspace",
+        foreign_keys="Visualization.workspace_id",
+    )
     data_sources: Mapped[list["DataSource"]] = relationship(
         back_populates="workspace",
         foreign_keys="DataSource.workspace_id",
+    )
+    data_accesses: Mapped[list["DataAccess"]] = relationship(
+        back_populates="workspace",
+        foreign_keys="DataAccess.workspace_id",
+    )
+    data_access_events: Mapped[list["DataAccessEvent"]] = relationship(
+        back_populates="workspace",
+        foreign_keys="DataAccessEvent.workspace_id",
     )
     ingestion_runs: Mapped[list["IngestionRun"]] = relationship(
         back_populates="workspace",
@@ -505,6 +589,10 @@ class Project(Base):
     data_sources: Mapped[list["DataSource"]] = relationship(
         back_populates="project",
         foreign_keys="DataSource.project_id",
+    )
+    data_accesses: Mapped[list["DataAccess"]] = relationship(
+        back_populates="project",
+        foreign_keys="DataAccess.project_id",
     )
     ingestion_runs: Mapped[list["IngestionRun"]] = relationship(
         back_populates="project",
@@ -1107,12 +1195,11 @@ class ClientLabUpload(Base):
 
 
 class MlJob(Base):
-    """Durable ML work item. API persists the row; a worker claims and runs it."""
+    """Durable worker queue row. API persists; a worker claims by handler_key."""
 
     __tablename__ = "ml_jobs"
     __table_args__ = (
         UniqueConstraint("workspace_id", "id", name="uq_ml_jobs_workspace_id"),
-        UniqueConstraint("job_type", "target_id", name="uq_ml_jobs_type_target"),
         UniqueConstraint("upload_id", name="uq_ml_jobs_upload_id"),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
@@ -1127,12 +1214,58 @@ class MlJob(Base):
             name="fk_ml_jobs_workspace_upload",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "execution_request_id"],
+            ["execution_requests.workspace_id", "execution_requests.id"],
+            name="fk_ml_jobs_workspace_execution_request",
+            ondelete="SET NULL (execution_request_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "workflow_run_id"],
+            ["workflow_runs.workspace_id", "workflow_runs.id"],
+            name="fk_ml_jobs_workspace_workflow_run",
+            ondelete="SET NULL (workflow_run_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_run_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_ml_jobs_workspace_pipeline_run",
+            ondelete="SET NULL (pipeline_run_id)",
+            use_alter=True,
+        ),
         CheckConstraint(CK_ML_JOB_TYPE, name="ck_ml_jobs_type_valid"),
+        CheckConstraint(CK_ML_JOB_HANDLER_KEY, name="ck_ml_jobs_handler_key_valid"),
+        CheckConstraint(
+            CK_ML_JOB_HANDLER_VERSION, name="ck_ml_jobs_handler_version_valid"
+        ),
         CheckConstraint(CK_ML_JOB_STATUS, name="ck_ml_jobs_status_valid"),
+        CheckConstraint(CK_ML_JOB_PRIORITY, name="ck_ml_jobs_priority_range"),
+        CheckConstraint(
+            CK_ML_JOB_AUTO_TRAIN_UPLOAD, name="ck_ml_jobs_auto_train_upload"
+        ),
+        CheckConstraint(CK_ML_JOB_PAYLOAD_OBJECT, name="ck_ml_jobs_payload_object"),
+        CheckConstraint(CK_ML_JOB_PAYLOAD_BOUNDED, name="ck_ml_jobs_payload_bounded"),
+        CheckConstraint(
+            CK_ML_JOB_PAYLOAD_NO_SECRETS, name="ck_ml_jobs_payload_no_secrets"
+        ),
         CheckConstraint("attempts >= 0", name="ck_ml_jobs_attempts_non_negative"),
         CheckConstraint("max_attempts >= 1", name="ck_ml_jobs_max_attempts_positive"),
         Index("ix_ml_jobs_status_queued_at", "status", "queued_at"),
         Index("ix_ml_jobs_workspace_created_at", "workspace_id", "created_at"),
+        Index(
+            "ix_ml_jobs_queued_claim",
+            "priority",
+            "available_at",
+            "queued_at",
+            postgresql_where=text("status = 'queued'"),
+        ),
+        Index(
+            "ix_ml_jobs_running_lease",
+            "lease_expires_at",
+            postgresql_where=text("status = 'running'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1150,7 +1283,27 @@ class MlJob(Base):
         nullable=True,
         index=True,
     )
+    execution_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("execution_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     job_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    handler_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    handler_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     upload_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -1158,6 +1311,19 @@ class MlJob(Base):
         nullable=True,
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    claimed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    payload: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
     queued_at: Mapped[datetime] = mapped_column(
@@ -1172,6 +1338,145 @@ class MlJob(Base):
     )
 
     upload: Mapped["ClientLabUpload | None"] = relationship(foreign_keys="MlJob.upload_id")
+
+
+class ExecutionRequest(Base):
+    """Control-plane intent. Not a worker job; MlJob remains execution.
+
+    ``parent_request_id`` is control-plane lineage. Scientific branch lineage
+    lives on ``experiments.parent_pipeline_run_id``.
+    """
+
+    __tablename__ = "execution_requests"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_execution_requests_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_execution_requests_workspace_project",
+            ondelete="SET NULL (project_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "parent_request_id"],
+            ["execution_requests.workspace_id", "execution_requests.id"],
+            name="fk_execution_requests_workspace_parent",
+            ondelete="SET NULL (parent_request_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "workflow_run_id"],
+            ["workflow_runs.workspace_id", "workflow_runs.id"],
+            name="fk_execution_requests_workspace_workflow_run",
+            ondelete="SET NULL (workflow_run_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_run_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_execution_requests_workspace_pipeline_run",
+            ondelete="SET NULL (pipeline_run_id)",
+            use_alter=True,
+        ),
+        CheckConstraint(CK_EXECUTION_REQUEST_OPERATION, name="ck_execution_requests_operation"),
+        CheckConstraint(CK_EXECUTION_REQUEST_SOURCE, name="ck_execution_requests_source"),
+        CheckConstraint(CK_EXECUTION_REQUEST_STATUS, name="ck_execution_requests_status"),
+        CheckConstraint(
+            CK_EXECUTION_REQUEST_SPEC_OBJECT, name="ck_execution_requests_spec_object"
+        ),
+        CheckConstraint(
+            CK_EXECUTION_REQUEST_SPEC_BOUNDED, name="ck_execution_requests_spec_bounded"
+        ),
+        CheckConstraint(
+            CK_EXECUTION_REQUEST_SPEC_NO_SECRETS,
+            name="ck_execution_requests_spec_no_secrets",
+        ),
+        CheckConstraint(
+            CK_EXECUTION_REQUEST_RESULT_OBJECT, name="ck_execution_requests_result_object"
+        ),
+        CheckConstraint(
+            CK_EXECUTION_REQUEST_RESULT_BOUNDED,
+            name="ck_execution_requests_result_bounded",
+        ),
+        CheckConstraint(
+            CK_EXECUTION_REQUEST_RESULT_NO_SECRETS,
+            name="ck_execution_requests_result_no_secrets",
+        ),
+        CheckConstraint(
+            CK_EXECUTION_REQUEST_PARENT_NOT_SELF,
+            name="ck_execution_requests_parent_not_self",
+        ),
+        Index(
+            "ix_execution_requests_workspace_status_created_at",
+            "workspace_id",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "uq_execution_requests_workspace_idempotency_key",
+            "workspace_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_surface: Mapped[str] = mapped_column(String(32), nullable=False)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    external_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    parent_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("execution_requests.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    request_spec: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    result_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_summary: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
 
 class MlRunVerification(Base):
@@ -1458,6 +1763,149 @@ class DataSource(Base):
         back_populates="data_source",
         foreign_keys="IngestionRun.data_source_id",
     )
+    data_accesses: Mapped[list["DataAccess"]] = relationship(
+        back_populates="data_source",
+        foreign_keys="DataAccess.data_source_id",
+    )
+
+
+class DataAccess(Base):
+    """Authorized, executable way to reach a DataSource. Secrets stay out of PostgreSQL."""
+
+    __tablename__ = "data_accesses"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_data_accesses_workspace_id"),
+        UniqueConstraint(
+            "data_source_id", "id", name="uq_data_accesses_data_source_id"
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_data_accesses_workspace_project",
+            ondelete="SET NULL (project_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "data_source_id"],
+            ["data_sources.workspace_id", "data_sources.id"],
+            name="fk_data_accesses_workspace_data_source",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(CK_DATA_ACCESSES_TYPE, name="ck_data_accesses_access_type"),
+        CheckConstraint(
+            CK_DATA_ACCESSES_EXECUTION_MODE, name="ck_data_accesses_execution_mode"
+        ),
+        CheckConstraint(CK_DATA_ACCESSES_STATUS, name="ck_data_accesses_status"),
+        CheckConstraint(
+            CK_DATA_ACCESSES_UPLOAD_IS_COPY, name="ck_data_accesses_upload_is_copy"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_LOCATOR_OBJECT, name="ck_data_accesses_locator_object"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_LOCATOR_BOUNDED, name="ck_data_accesses_locator_bounded"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_LOCATOR_NO_SECRETS,
+            name="ck_data_accesses_locator_no_secrets",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_PRIVACY_OBJECT, name="ck_data_accesses_privacy_object"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_PRIVACY_BOUNDED, name="ck_data_accesses_privacy_bounded"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_PRIVACY_NO_SECRETS,
+            name="ck_data_accesses_privacy_no_secrets",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_RETENTION_OBJECT, name="ck_data_accesses_retention_object"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_RETENTION_BOUNDED,
+            name="ck_data_accesses_retention_bounded",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_RETENTION_NO_SECRETS,
+            name="ck_data_accesses_retention_no_secrets",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESSES_CREDENTIAL_OPAQUE,
+            name="ck_data_accesses_credential_opaque",
+        ),
+        Index(
+            "ix_data_accesses_workspace_status_created_at",
+            "workspace_id",
+            "status",
+            "created_at",
+        ),
+        Index("ix_data_accesses_data_source_id", "data_source_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    data_source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    access_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_locator: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    credential_reference: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    data_region: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", server_default="active"
+    )
+    privacy_policy: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    retention_policy: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="data_accesses",
+        foreign_keys="DataAccess.workspace_id",
+    )
+    project: Mapped[Project | None] = relationship(
+        back_populates="data_accesses",
+        foreign_keys="DataAccess.project_id",
+    )
+    data_source: Mapped[DataSource] = relationship(
+        back_populates="data_accesses",
+        foreign_keys="DataAccess.data_source_id",
+    )
+    ingestion_runs: Mapped[list["IngestionRun"]] = relationship(
+        back_populates="data_access",
+        foreign_keys="IngestionRun.data_access_id",
+    )
+    access_events: Mapped[list["DataAccessEvent"]] = relationship(
+        back_populates="data_access",
+        foreign_keys="DataAccessEvent.data_access_id",
+    )
 
 
 class IngestionRun(Base):
@@ -1477,10 +1925,33 @@ class IngestionRun(Base):
             name="fk_ingestion_runs_workspace_data_source",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "data_access_id"],
+            ["data_accesses.workspace_id", "data_accesses.id"],
+            name="fk_ingestion_runs_workspace_data_access",
+            ondelete="SET NULL (data_access_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "execution_request_id"],
+            ["execution_requests.workspace_id", "execution_requests.id"],
+            name="fk_ingestion_runs_workspace_execution_request",
+            ondelete="SET NULL (execution_request_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["data_source_id", "data_access_id"],
+            ["data_accesses.data_source_id", "data_accesses.id"],
+            name="fk_ingestion_runs_data_source_data_access",
+            ondelete="SET NULL (data_access_id)",
+            use_alter=True,
+        ),
         CheckConstraint(CK_INGESTION_RUNS_STATUS, name="ck_ingestion_runs_status_valid"),
         Index("ix_ingestion_runs_workspace_id", "workspace_id"),
         Index("ix_ingestion_runs_project_id", "project_id"),
         Index("ix_ingestion_runs_data_source_id", "data_source_id"),
+        Index("ix_ingestion_runs_data_access_id", "data_access_id"),
+        Index("ix_ingestion_runs_execution_request_id", "execution_request_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1494,6 +1965,14 @@ class IngestionRun(Base):
     )
     data_source_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    data_access_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("data_accesses.id", ondelete="SET NULL"), nullable=True
+    )
+    execution_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("execution_requests.id", ondelete="SET NULL"),
+        nullable=True,
     )
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="queued", server_default="queued"
@@ -1525,9 +2004,160 @@ class IngestionRun(Base):
         back_populates="ingestion_runs",
         foreign_keys="IngestionRun.data_source_id",
     )
+    data_access: Mapped["DataAccess | None"] = relationship(
+        back_populates="ingestion_runs",
+        foreign_keys="IngestionRun.data_access_id",
+    )
+    execution_request: Mapped["ExecutionRequest | None"] = relationship(
+        foreign_keys="IngestionRun.execution_request_id",
+    )
     datasets: Mapped[list["Dataset"]] = relationship(
         back_populates="ingestion_run",
         foreign_keys="Dataset.ingestion_run_id",
+    )
+    access_events: Mapped[list["DataAccessEvent"]] = relationship(
+        back_populates="ingestion_run",
+        foreign_keys="DataAccessEvent.ingestion_run_id",
+    )
+
+
+class DataAccessEvent(Base):
+    """Append-only access ledger. Summaries only — never raw rows or credentials."""
+
+    __tablename__ = "data_access_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "id", name="uq_data_access_events_workspace_id"
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "data_access_id"],
+            ["data_accesses.workspace_id", "data_accesses.id"],
+            name="fk_data_access_events_workspace_data_access",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "execution_request_id"],
+            ["execution_requests.workspace_id", "execution_requests.id"],
+            name="fk_data_access_events_workspace_execution_request",
+            ondelete="SET NULL (execution_request_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "ingestion_run_id"],
+            ["ingestion_runs.workspace_id", "ingestion_runs.id"],
+            name="fk_data_access_events_workspace_ingestion_run",
+            ondelete="SET NULL (ingestion_run_id)",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_ACTOR, name="ck_data_access_events_actor_type"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_PURPOSE, name="ck_data_access_events_purpose"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_OPERATION, name="ck_data_access_events_operation"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_STATUS, name="ck_data_access_events_status"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_COMPLETED, name="ck_data_access_events_completed"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_FAILURE, name="ck_data_access_events_failure"
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_RESOURCE_OBJECT,
+            name="ck_data_access_events_resource_object",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_RESOURCE_BOUNDED,
+            name="ck_data_access_events_resource_bounded",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_RESOURCE_NO_ROWS,
+            name="ck_data_access_events_resource_no_rows",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_COLUMN_OBJECT,
+            name="ck_data_access_events_column_object",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_COLUMN_BOUNDED,
+            name="ck_data_access_events_column_bounded",
+        ),
+        CheckConstraint(
+            CK_DATA_ACCESS_EVENTS_COLUMN_NO_ROWS,
+            name="ck_data_access_events_column_no_rows",
+        ),
+        Index(
+            "ix_data_access_events_workspace_created_at",
+            "workspace_id",
+            "created_at",
+        ),
+        Index("ix_data_access_events_data_access_id", "data_access_id"),
+        Index(
+            "ix_data_access_events_workspace_status_started_at",
+            "workspace_id",
+            "status",
+            "started_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    data_access_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("data_accesses.id"), nullable=False
+    )
+    execution_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("execution_requests.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    ingestion_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ingestion_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_summary: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    column_summary: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    rows_read: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bytes_read: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="data_access_events",
+        foreign_keys="DataAccessEvent.workspace_id",
+    )
+    data_access: Mapped[DataAccess] = relationship(
+        back_populates="access_events",
+        foreign_keys="DataAccessEvent.data_access_id",
+    )
+    ingestion_run: Mapped["IngestionRun | None"] = relationship(
+        back_populates="access_events",
+        foreign_keys="DataAccessEvent.ingestion_run_id",
     )
 
 
@@ -1738,7 +2368,33 @@ class DatasetColumn(Base):
             name="fk_dataset_columns_workspace_dataset",
             ondelete="CASCADE",
         ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_SENSITIVITY, name="ck_dataset_columns_sensitivity_class"
+        ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_CLASSIFICATION_SOURCE,
+            name="ck_dataset_columns_classification_source",
+        ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_MODEL_USE, name="ck_dataset_columns_model_use_policy"
+        ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_LLM_EXPOSURE,
+            name="ck_dataset_columns_llm_exposure_policy",
+        ),
         Index("ix_dataset_columns_dataset_id", "dataset_id"),
+        Index(
+            "ix_dataset_columns_workspace_sensitivity_class",
+            "workspace_id",
+            "sensitivity_class",
+            postgresql_where=text("sensitivity_class IS NOT NULL"),
+        ),
+        Index(
+            "ix_dataset_columns_workspace_llm_exposure_policy",
+            "workspace_id",
+            "llm_exposure_policy",
+            postgresql_where=text("llm_exposure_policy IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1765,6 +2421,10 @@ class DatasetColumn(Base):
     mean_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     median_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     stats: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    sensitivity_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    classification_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model_use_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    llm_exposure_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -2319,7 +2979,11 @@ class WorkflowRunInput(Base):
 
 
 class Experiment(Base):
-    """Physical PipelineRun. Table stays ``experiments`` during the compatibility window."""
+    """Physical PipelineRun. Table stays ``experiments`` during the compatibility window.
+
+    Optional ``parent_pipeline_run_id`` is scientific branch lineage. Control-plane
+    parentage stays on ``execution_requests.parent_request_id``.
+    """
 
     __tablename__ = "experiments"
     __table_args__ = (
@@ -2354,6 +3018,23 @@ class Experiment(Base):
             ["datasets.workspace_id", "datasets.id"],
             name="fk_experiments_workspace_dataset",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "parent_pipeline_run_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_experiments_workspace_parent_pipeline_run",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_PARENT_NOT_SELF, name="ck_experiments_parent_not_self"
+        ),
+        CheckConstraint(CK_EXPERIMENTS_BRANCH_KEY, name="ck_experiments_branch_key"),
+        CheckConstraint(
+            CK_EXPERIMENTS_BRANCH_REASON, name="ck_experiments_branch_reason"
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
+            name="ck_experiments_branch_requires_parent",
+        ),
         Index(
             "ix_experiments_workspace_created_at",
             "workspace_id",
@@ -2369,6 +3050,7 @@ class Experiment(Base):
         Index("ix_experiments_workflow_run_created_at", "workflow_run_id", "created_at"),
         Index("ix_experiments_pipeline_id", "pipeline_id"),
         Index("ix_experiments_pipeline_version_id", "pipeline_version_id"),
+        Index("ix_experiments_parent_pipeline_run_id", "parent_pipeline_run_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -2412,6 +3094,14 @@ class Experiment(Base):
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False, index=True
     )
+    # Scientific lineage. Control-plane parentage stays on execution_requests.parent_request_id.
+    parent_pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiments.id"),
+        nullable=True,
+    )
+    branch_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    branch_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED", index=True)
     failure_reason: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -2453,6 +3143,15 @@ class Experiment(Base):
     pipeline_version: Mapped[PipelineVersion | None] = relationship(
         back_populates="pipeline_runs",
         foreign_keys="Experiment.pipeline_version_id",
+    )
+    parent_pipeline_run: Mapped["Experiment | None"] = relationship(
+        remote_side="Experiment.id",
+        foreign_keys="Experiment.parent_pipeline_run_id",
+        back_populates="branch_children",
+    )
+    branch_children: Mapped[list["Experiment"]] = relationship(
+        foreign_keys="Experiment.parent_pipeline_run_id",
+        back_populates="parent_pipeline_run",
     )
     task: Mapped[PredictionTask | None] = relationship(back_populates="experiments")
     candidates: Mapped[list["ExperimentCandidate"]] = relationship(
@@ -2513,6 +3212,10 @@ class Experiment(Base):
     artifacts: Mapped[list["Artifact"]] = relationship(
         back_populates="pipeline_run",
         foreign_keys="Artifact.pipeline_run_id",
+    )
+    visualizations: Mapped[list["Visualization"]] = relationship(
+        back_populates="pipeline_run",
+        foreign_keys="Visualization.pipeline_run_id",
     )
 
 
@@ -2674,6 +3377,10 @@ class PipelineStageRun(Base):
     code_snapshots: Mapped[list["CodeSnapshot"]] = relationship(
         back_populates="pipeline_stage_run",
         foreign_keys="CodeSnapshot.pipeline_stage_run_id",
+    )
+    visualizations: Mapped[list["Visualization"]] = relationship(
+        back_populates="pipeline_stage_run",
+        foreign_keys="Visualization.pipeline_stage_run_id",
     )
 
 
@@ -3322,6 +4029,10 @@ class ExperimentCandidate(Base):
         foreign_keys="ModelEvaluation.candidate_id",
         passive_deletes=True,
     )
+    visualizations: Mapped[list["Visualization"]] = relationship(
+        back_populates="candidate",
+        foreign_keys="Visualization.candidate_id",
+    )
     selected_in: Mapped[list["ModelSelectionDecision"]] = relationship(
         back_populates="selected_candidate",
         foreign_keys="ModelSelectionDecision.selected_candidate_id",
@@ -3530,6 +4241,169 @@ class ModelEvaluation(Base):
         back_populates="model_evaluation",
         foreign_keys="EvaluationMetric.model_evaluation_id",
         passive_deletes=True,
+    )
+    visualizations: Mapped[list["Visualization"]] = relationship(
+        back_populates="model_evaluation",
+        foreign_keys="Visualization.model_evaluation_id",
+    )
+
+
+class Visualization(Base):
+    """Canonical description of a visual result. Spec is small; series live in artifacts."""
+
+    __tablename__ = "visualizations"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_visualizations_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_run_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_visualizations_workspace_pipeline_run",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_visualizations_workspace_project",
+            ondelete="SET NULL (project_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_stage_run_id"],
+            ["pipeline_stage_runs.workspace_id", "pipeline_stage_runs.id"],
+            name="fk_visualizations_workspace_stage",
+            ondelete="SET NULL (pipeline_stage_run_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "candidate_id"],
+            ["experiment_candidates.workspace_id", "experiment_candidates.id"],
+            name="fk_visualizations_workspace_candidate",
+            ondelete="SET NULL (candidate_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "model_evaluation_id"],
+            ["model_evaluations.workspace_id", "model_evaluations.id"],
+            name="fk_visualizations_workspace_evaluation",
+            ondelete="SET NULL (model_evaluation_id)",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "data_artifact_id"],
+            ["artifacts.workspace_id", "artifacts.id"],
+            name="fk_visualizations_workspace_data_artifact",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "image_artifact_id"],
+            ["artifacts.workspace_id", "artifacts.id"],
+            name="fk_visualizations_workspace_image_artifact",
+        ),
+        CheckConstraint(CK_VISUALIZATIONS_TYPE, name="ck_visualizations_type"),
+        CheckConstraint(
+            CK_VISUALIZATIONS_SPEC_VERSION, name="ck_visualizations_spec_version"
+        ),
+        CheckConstraint(CK_VISUALIZATIONS_RENDERER, name="ck_visualizations_renderer"),
+        CheckConstraint(CK_VISUALIZATIONS_DIGEST, name="ck_visualizations_digest"),
+        CheckConstraint(
+            CK_VISUALIZATIONS_SPEC_OBJECT, name="ck_visualizations_spec_object"
+        ),
+        CheckConstraint(
+            CK_VISUALIZATIONS_SPEC_BOUNDED, name="ck_visualizations_spec_bounded"
+        ),
+        CheckConstraint(
+            CK_VISUALIZATIONS_SPEC_NO_BULK, name="ck_visualizations_spec_no_bulk"
+        ),
+        Index("ix_visualizations_workspace_created_at", "workspace_id", "created_at"),
+        Index("ix_visualizations_pipeline_run_id", "pipeline_run_id"),
+        Index(
+            "ix_visualizations_workspace_type",
+            "workspace_id",
+            "visualization_type",
+        ),
+        Index("ix_visualizations_candidate_id", "candidate_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    pipeline_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiments.id"),
+        nullable=False,
+    )
+    pipeline_stage_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pipeline_stage_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiment_candidates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    model_evaluation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("model_evaluations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    visualization_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    spec_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    renderer_hint: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    spec: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    data_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id"),
+        nullable=True,
+    )
+    image_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id"),
+        nullable=True,
+    )
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    workspace: Mapped[Workspace] = relationship(
+        back_populates="visualizations",
+        foreign_keys="Visualization.workspace_id",
+    )
+    project: Mapped[Project | None] = relationship(
+        foreign_keys="Visualization.project_id",
+    )
+    pipeline_run: Mapped[Experiment] = relationship(
+        back_populates="visualizations",
+        foreign_keys="Visualization.pipeline_run_id",
+    )
+    pipeline_stage_run: Mapped[PipelineStageRun | None] = relationship(
+        back_populates="visualizations",
+        foreign_keys="Visualization.pipeline_stage_run_id",
+    )
+    candidate: Mapped[ExperimentCandidate | None] = relationship(
+        back_populates="visualizations",
+        foreign_keys="Visualization.candidate_id",
+    )
+    model_evaluation: Mapped[ModelEvaluation | None] = relationship(
+        back_populates="visualizations",
+        foreign_keys="Visualization.model_evaluation_id",
+    )
+    data_artifact: Mapped[Artifact | None] = relationship(
+        foreign_keys="Visualization.data_artifact_id",
+    )
+    image_artifact: Mapped[Artifact | None] = relationship(
+        foreign_keys="Visualization.image_artifact_id",
     )
 
 
@@ -4309,6 +5183,22 @@ def _protect_immutable_model_version(_mapper, _connection, _target: ModelVersion
 @event.listens_for(MlRunEvent, "before_delete")
 def _protect_immutable_ml_run_event(_mapper, _connection, _target: MlRunEvent) -> None:
     raise ValueError("MlRunEvent rows are append-only")
+
+
+@event.listens_for(DataAccessEvent, "before_update")
+@event.listens_for(DataAccessEvent, "before_delete")
+def _protect_immutable_data_access_event(
+    _mapper, _connection, _target: DataAccessEvent
+) -> None:
+    raise ValueError("DataAccessEvent rows are append-only")
+
+
+@event.listens_for(Visualization, "before_update")
+@event.listens_for(Visualization, "before_delete")
+def _protect_immutable_visualization(
+    _mapper, _connection, _target: Visualization
+) -> None:
+    raise ValueError("Visualization identity/spec is immutable")
 
 
 def _previous_locked_at(target) -> datetime | None:

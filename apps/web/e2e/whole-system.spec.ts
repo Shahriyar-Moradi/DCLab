@@ -1042,9 +1042,9 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
           page.getByRole("button", { name: "Download results" }).click(),
         ]);
         expect(deniedClick.status()).toBe(403);
-        await expect(page.getByRole("alert")).toHaveText(
-          "Could not download the results.",
-        );
+        await expect(
+          page.getByRole("alert", { name: "Could not download the results." }),
+        ).toBeVisible();
       }
       if (capability === "deep_audit") {
         const denied = await page.request.post(
