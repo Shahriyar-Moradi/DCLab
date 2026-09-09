@@ -1,6 +1,6 @@
 # DCLab Database Architecture
 
-**Physical freeze head:** `0046_ingestion_job_tenant_fks`  
+**Physical freeze head:** `0047_personal_dev_identity`  
 **Evidence date:** 2026-09-09  
 **Catalog:** empty PostgreSQL → `alembic upgrade head` → `alembic current` / `alembic check` / SQLAlchemy `compare_metadata()`.
 
@@ -10,7 +10,7 @@ This document describes the database that exists at that head. It is not a wishl
 
 | Check | Result |
 | --- | --- |
-| `alembic current` | `0046_ingestion_job_tenant_fks (head)` |
+| `alembic current` | `0047_personal_dev_identity (head)` |
 | `alembic check` | No new upgrade operations |
 | `compare_metadata()` | `DIFF_COUNT 0` |
 | Tables (public heaps) | 61 including `alembic_version` |
@@ -185,3 +185,4 @@ No table is partitioned. Partition only after retention and query-key evidence. 
 | `0044_tenant_set_null_columns` | Column-specific SET NULL |
 | `0045_reproduction_artifacts` | Notebook/script artifact types |
 | `0046_ingestion_job_tenant_fks` | DataSource / IngestionRun parent keys and remaining tenant FKs |
+| `0047_personal_dev_identity` | `personal_developer` role + nullable `ml_workflows.workspace_domain_id` |

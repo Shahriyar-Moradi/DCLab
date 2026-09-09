@@ -47,10 +47,20 @@ function LoginForm() {
           const requested = params.get("next");
           const platformMember = isPlatformRole(data.user.role);
           const businessMember = isBusinessAdministrationRole(data.user.role);
-          const fallback = platformMember ? "/admin/businesses" : businessMember ? "/business" : "/app/dashboards";
+          const personalDeveloper = data.user.role === "personal_developer";
+          const fallback = platformMember
+            ? "/admin/businesses"
+            : personalDeveloper
+              ? "/development"
+              : businessMember
+                ? "/business"
+                : "/app/dashboards";
           const allowed = requested && (
             platformMember ||
-            (!requested.startsWith("/admin") && (businessMember || !requested.startsWith("/business")))
+            (personalDeveloper && requested.startsWith("/development")) ||
+            (!requested.startsWith("/admin") &&
+              !requested.startsWith("/development") &&
+              (businessMember || !requested.startsWith("/business")))
           );
           router.push(allowed && requested ? requested : fallback);
           router.refresh();

@@ -1,6 +1,6 @@
 # DCLab database migration map
 
-Head revision: `0040_ml_jobs`.
+Head revision: `0047_personal_dev_identity`.
 
 This map freezes how pre-redesign objects relate to the canonical model. Nothing
 in this redesign deletes working product paths. Do not infer that two historical
@@ -23,6 +23,8 @@ Workflows were the same case study.
 | `0038_runtime_env_lock_scope` | RuntimeEnvironment is global facts; lock Artifacts stay on CodeSnapshot |
 | `0039_scientific_plans` | One `pipeline_scientific_plans` row per PipelineRun; explorer reads columns first |
 | `0040_ml_jobs` | Durable ML job queue (`ml_jobs`); not a 0036 backfill target |
+| `0041`–`0046` | Artifact pipeline index, provenance, evidence lock, SET NULL, reproduction artifacts, ingestion tenant FKs |
+| `0047_personal_dev_identity` | `personal_developer` role; nullable `ml_workflows.workspace_domain_id` |
 
 ## Object classification
 

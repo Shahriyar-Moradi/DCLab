@@ -240,6 +240,7 @@ class UserRole(str, enum.Enum):
     BUSINESS_ADMIN = "business_admin"
     BUSINESS_DEVELOPER = "business_developer"
     CLIENT_USER = "client_user"
+    PERSONAL_DEVELOPER = "personal_developer"
     WORKSPACE_OWNER = "workspace_owner"
     WORKSPACE_ADMIN = "workspace_admin"
     ML_ENGINEER = "ml_engineer"
@@ -255,9 +256,9 @@ class WorkspaceRole(str, enum.Enum):
     """Customer workspace membership roles.
 
     Canonical roles are ``workspace_owner``, ``workspace_admin``, ``ml_engineer``,
-    and ``viewer``. Legacy ``business_admin`` / ``business_developer`` values are
-    still stored and accepted; authorization translates them rather than rewriting
-    existing rows.
+    and ``viewer``. Legacy ``business_admin`` / ``business_developer`` /
+    ``personal_developer`` values are still stored and accepted; authorization
+    translates them rather than rewriting existing rows.
     """
 
     WORKSPACE_OWNER = "workspace_owner"
@@ -266,6 +267,7 @@ class WorkspaceRole(str, enum.Enum):
     VIEWER = "viewer"
     BUSINESS_ADMIN = "business_admin"
     BUSINESS_DEVELOPER = "business_developer"
+    PERSONAL_DEVELOPER = "personal_developer"
 
 
 class User(Base):
@@ -273,14 +275,14 @@ class User(Base):
     __table_args__ = (
         CheckConstraint(
             "role IN ('dclab_admin', 'dclab_developer', 'business_admin', "
-            "'business_developer', 'client_user', 'workspace_owner', "
-            "'workspace_admin', 'ml_engineer', 'viewer')",
+            "'business_developer', 'personal_developer', 'client_user', "
+            "'workspace_owner', 'workspace_admin', 'ml_engineer', 'viewer')",
             name="ck_users_role_valid",
         ),
         # A client user is always scoped to exactly one workspace; DCLab admins are
         # not tied to a client account, so their workspace_id stays NULL.
         CheckConstraint(
-            "role <> 'client_user' OR workspace_id IS NOT NULL",
+            "role NOT IN ('client_user', 'personal_developer') OR workspace_id IS NOT NULL",
             name="ck_users_client_requires_workspace",
         ),
     )
@@ -371,8 +373,8 @@ class WorkspaceMembership(Base):
             name="uq_workspace_memberships_workspace_user",
         ),
         CheckConstraint(
-            "role IN ('business_admin', 'business_developer', 'workspace_owner', "
-            "'workspace_admin', 'ml_engineer', 'viewer')",
+            "role IN ('business_admin', 'business_developer', 'personal_developer', "
+            "'workspace_owner', 'workspace_admin', 'ml_engineer', 'viewer')",
             name="ck_workspace_memberships_role_valid",
         ),
         Index("ix_workspace_memberships_workspace_id", "workspace_id"),
@@ -1858,8 +1860,8 @@ class MlWorkflow(Base):
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
     )
-    workspace_domain_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("workspace_domains.id"), nullable=False
+    workspace_domain_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspace_domains.id"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     slug: Mapped[str] = mapped_column(String(128), nullable=False)

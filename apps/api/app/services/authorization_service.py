@@ -8,7 +8,11 @@ rewriting stored membership rows:
 
 * ``business_admin`` → ``workspace_admin``
 * ``business_developer`` → ``viewer`` (read-only; never ``ml_engineer``)
+* ``personal_developer`` → ``ml_engineer`` (Personal Development compatibility)
 * ``client_user`` keeps the existing no-membership fallback path
+
+Workspace administration and shared ML-core execution stay separate:
+``can_manage_workspace_members`` vs ``can_execute_workspace_ml``.
 """
 
 from __future__ import annotations
@@ -44,9 +48,12 @@ class WorkspaceAccess:
     workspace_role: WorkspaceRole | None
 
 
+PERSONAL_DEVELOPER_ROLE = "personal_developer"
+
 _LEGACY_WORKSPACE_ROLE = {
     WorkspaceRole.BUSINESS_ADMIN: WorkspaceRole.WORKSPACE_ADMIN,
     WorkspaceRole.BUSINESS_DEVELOPER: WorkspaceRole.VIEWER,
+    WorkspaceRole.PERSONAL_DEVELOPER: WorkspaceRole.ML_ENGINEER,
 }
 
 _ML_WRITE_ROLES = frozenset(
@@ -178,6 +185,12 @@ def can_perform_ml_write(db: Session, user: User, workspace_id: UUID) -> bool:
     return can_write_workspace(db, user, workspace_id)
 
 
+def can_execute_workspace_ml(db: Session, user: User, workspace_id: UUID) -> bool:
+    """Authority to mutate shared ML-core resources in an authorized workspace."""
+
+    return can_perform_ml_write(db, user, workspace_id)
+
+
 def can_manage_workspace_members(db: Session, user: User, workspace_id: UUID) -> bool:
     platform_role = platform_role_for(db, user)
     if platform_role is not None:
@@ -235,7 +248,7 @@ def assert_can_assign_workspace_role(
 
     if target_role in LEGACY_ASSIGNMENT_WORKSPACE_ROLES:
         raise AuthorizationError(
-            "legacy roles business_admin and business_developer cannot be assigned; "
+            "legacy roles cannot be assigned; "
             "use workspace_admin, ml_engineer, or viewer",
             status_code=400,
         )
@@ -271,7 +284,7 @@ def resolve_workspace_access(
     """Resolve a workspace only after checking server-side membership.
 
     A supplied header is a selector, never proof of access. Platform members may
-    select any existing workspace. Business members may select only a workspace
+    select any existing workspace. Customer members may select only a workspace
     represented by an authoritative membership row.
     """
 
@@ -319,4 +332,4 @@ def resolve_workspace_access(
             WorkspaceRole.BUSINESS_ADMIN,
         )
 
-    raise AuthorizationError("not authorized for a business workspace")
+    raise AuthorizationError("not authorized for a workspace")

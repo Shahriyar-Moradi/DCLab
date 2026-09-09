@@ -4,6 +4,7 @@ import { PLATFORM_NAV_SECTION } from "@/app/components/admin/platform-nav";
 import {
   BarChart3,
   ClipboardList,
+  Code2,
   FlaskConical,
   type LucideIcon,
   LayoutDashboard,
@@ -11,9 +12,9 @@ import {
   Scale,
   Upload,
 } from "lucide-react";
-import { isBusinessAdministrationRole, isPlatformRole, type SessionUser } from "@/lib/infrastructure/session";
+import { isBusinessAdministrationRole, isDevelopmentRole, isPlatformRole, type SessionUser } from "@/lib/infrastructure/session";
 
-type NavAudience = "all" | "platform" | "business";
+type NavAudience = "all" | "platform" | "business" | "development";
 
 export type AppNavigationItem = {
   id: string;
@@ -118,11 +119,30 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
       },
     ],
   },
+  {
+    id: "development",
+    label: "Development",
+    audience: "development",
+    items: [
+      {
+        id: "development-home",
+        label: "Development",
+        href: "/development",
+        icon: Code2,
+        audience: "development",
+        isActive: (pathname) => prefixMatch(pathname, "/development"),
+      },
+    ],
+  },
 ];
 
 function isVisible(audience: NavAudience, role: SessionUser["role"]) {
+  if (role === "personal_developer") {
+    return audience === "development";
+  }
   if (audience === "all") return true;
   if (audience === "platform") return isPlatformRole(role);
+  if (audience === "development") return isDevelopmentRole(role);
   return isBusinessRole(role);
 }
 
@@ -146,7 +166,9 @@ export function commandDestinationsForRole(user: SessionUser | null): CommandDes
   const destinations: CommandDestination[] = navigationForRole(user).flatMap((section) =>
     section.items.map((item) => ({ href: item.href, label: item.label, group: section.label })),
   );
-  destinations.push({ href: "/app/settings", label: "Account", group: "Workspace" });
+  if (user?.role !== "personal_developer") {
+    destinations.push({ href: "/app/settings", label: "Account", group: "Workspace" });
+  }
   if (user && isPlatformRole(user.role)) {
     destinations.push({ href: "/admin/organizations", label: "Organizations", group: "Platform" });
   }
@@ -167,12 +189,13 @@ export function activeNavigationItem(pathname: string, user: SessionUser | null)
 
 export function defaultProductRoute(role: SessionUser["role"]) {
   if (isPlatformRole(role)) return "/admin/businesses";
+  if (role === "personal_developer") return "/development";
   if (isBusinessRole(role)) return "/business";
   return "/app/dashboards";
 }
 
 export function isProductRoute(pathname: string) {
-  return ["/app", "/lab", "/admin", "/business"].some(
+  return ["/app", "/lab", "/admin", "/business", "/development"].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }

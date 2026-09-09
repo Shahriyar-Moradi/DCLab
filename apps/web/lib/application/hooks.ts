@@ -106,6 +106,7 @@ const LoginResponseSchema = z.object({
       "dclab_developer",
       "business_admin",
       "business_developer",
+      "personal_developer",
       "client_user",
       "workspace_owner",
       "workspace_admin",

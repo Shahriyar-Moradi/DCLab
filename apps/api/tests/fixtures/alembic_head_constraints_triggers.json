@@ -183,12 +183,12 @@
     {
       "table": "users",
       "name": "ck_users_client_requires_workspace",
-      "definition": "CHECK ((((role)::text <> 'client_user'::text) OR (workspace_id IS NOT NULL)))"
+      "definition": "CHECK ((((role)::text <> ALL ((ARRAY['client_user'::character varying, 'personal_developer'::character varying])::text[])) OR (workspace_id IS NOT NULL)))"
     },
     {
       "table": "users",
       "name": "ck_users_role_valid",
-      "definition": "CHECK (((role)::text = ANY ((ARRAY['dclab_admin'::character varying, 'dclab_developer'::character varying, 'business_admin'::character varying, 'business_developer'::character varying, 'client_user'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
+      "definition": "CHECK (((role)::text = ANY ((ARRAY['dclab_admin'::character varying, 'dclab_developer'::character varying, 'business_admin'::character varying, 'business_developer'::character varying, 'personal_developer'::character varying, 'client_user'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
     },
     {
       "table": "workflow_runs",
@@ -203,7 +203,7 @@
     {
       "table": "workspace_memberships",
       "name": "ck_workspace_memberships_role_valid",
-      "definition": "CHECK (((role)::text = ANY ((ARRAY['business_admin'::character varying, 'business_developer'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
+      "definition": "CHECK (((role)::text = ANY ((ARRAY['business_admin'::character varying, 'business_developer'::character varying, 'personal_developer'::character varying, 'workspace_owner'::character varying, 'workspace_admin'::character varying, 'ml_engineer'::character varying, 'viewer'::character varying])::text[])))"
     },
     {
       "table": "workspaces",
