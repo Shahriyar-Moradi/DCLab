@@ -350,21 +350,17 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await page.reload();
     await expect(navigation).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open application navigation" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open account" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open account" })).toHaveCount(0);
     await page.getByRole("button", { name: "Open application navigation" }).click();
     await expect(page.getByRole("dialog", { name: "Application navigation" })).toBeVisible();
     await expect(
       page.getByRole("dialog").getByRole("navigation", { name: "Application navigation" }),
     ).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Application navigation" })).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Open account" }).click();
-    await expect(page.getByRole("dialog", { name: "Application navigation" })).toBeVisible();
     await expect(
       page.getByRole("dialog").getByText("Dclab Admin", { exact: true }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Application navigation" })).toHaveCount(0);
 
     await page.setViewportSize({ width: 1280, height: 844 });
     await page.reload();
