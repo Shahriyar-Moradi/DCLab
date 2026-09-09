@@ -172,12 +172,8 @@ def test_ambiguous_target_uses_existing_configured_llm_path(monkeypatch):
     assert "measure_b is the intended response" == choice.reason
 
 
-def test_rightmost_yes_no_column_breaks_a_binary_tie():
-    """IBM Telco-style files have several Yes/No flags; Churn is last and should win.
-
-    Without a layout prior every Yes/No column scores 0.65 with margin 0, so
-    the run fails closed even though the label is the conventional last column.
-    """
+def test_column_position_does_not_break_an_ambiguous_binary_tie():
+    """A column's CSV position is not sufficient evidence that it is a label."""
     rng, n = _rng_frame()
     frame = pd.DataFrame(
         {
@@ -193,13 +189,14 @@ def test_rightmost_yes_no_column_breaks_a_binary_tie():
         }
     )
     choice = choose_target_deterministically(frame, list(frame.columns))
-    assert choice.column == "Churn"
-    assert choice.task_type == "binary"
-    assert choice.source == "rule"
+    assert choice.column is None
+    assert choice.task_type is None
+    assert choice.source == "fallback"
     assert choice.confidence >= 0.65
+    assert "target selection is ambiguous" in choice.reason
 
 
-def test_rightmost_tied_candidate_wins_when_file_has_a_trailing_empty_column():
+def test_trailing_empty_column_does_not_make_a_tied_candidate_a_target():
     rng, n = _rng_frame()
     frame = pd.DataFrame(
         {
@@ -210,8 +207,28 @@ def test_rightmost_tied_candidate_wins_when_file_has_a_trailing_empty_column():
         }
     )
     choice = choose_target_deterministically(frame, list(frame.columns))
+    assert choice.column is None
+    assert choice.source == "fallback"
+    assert "target selection is ambiguous" in choice.reason
+
+
+def test_explicit_target_resolves_an_ambiguous_binary_tie():
+    rng, n = _rng_frame()
+    frame = pd.DataFrame(
+        {
+            "Partner": rng.choice(["Yes", "No"], n),
+            "PhoneService": rng.choice(["Yes", "No"], n),
+            "Churn": rng.choice(["Yes", "No"], n),
+        }
+    )
+    choice = choose_target_deterministically(
+        frame,
+        list(frame.columns),
+        explicit_target="Churn",
+    )
     assert choice.column == "Churn"
-    assert choice.source == "rule"
+    assert choice.task_type == "binary"
+    assert choice.source == "explicit"
 
 
 def test_llm_disabled_preserves_safe_ambiguous_failure(monkeypatch):
