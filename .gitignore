@@ -34,5 +34,10 @@ models/sim/**
 !models/sim/.gitkeep
 !models/sim/**/.gitkeep
 
+# Playwright
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+
 # OS
 .DS_Store

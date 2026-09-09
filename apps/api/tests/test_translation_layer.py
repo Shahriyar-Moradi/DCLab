@@ -25,8 +25,18 @@ from app.translation.decisions import translate_opportunity_decision
 from app.translation.models import ClientFacingInsight, ConfidenceBand
 from app.translation.scanner import (
     _scan_model,
+    classify_frontend_path,
+    list_surface_source_files,
     scan_client_api_response_models,
     scan_frontend_client_tree,
+    scan_frontend_surface,
+    scan_frontend_surfaces,
+    surfaces_for,
+)
+from app.translation.surfaces import (
+    WEB_ROOT,
+    FrontendSurface,
+    SurfaceAudience,
 )
 from app.translation.simulations import CATEGORY_BY_USE_CASE, translate_simulation_outcome
 
@@ -196,6 +206,24 @@ class TestLiveClientSurfaceIsClean:
         violations = scan_frontend_client_tree()
         assert violations == {}, violations
 
+    def test_declared_surfaces_are_scanned_for_their_audience(self):
+        results = {result.audience: result for result in scan_frontend_surfaces()}
+        assert set(results) == set(SurfaceAudience)
+        client = results[SurfaceAudience.BUSINESS_CLIENT]
+        developer = results[SurfaceAudience.DEVELOPER_WORKBENCH]
+        admin = results[SurfaceAudience.PLATFORM_ADMIN]
+        assert client.enforce_banned_terms is True
+        assert client.violations == {}
+        assert client.files_scanned
+        assert developer.enforce_banned_terms is False
+        assert developer.files_scanned
+        assert developer.violations == {}
+        assert admin.enforce_banned_terms is False
+        assert admin.files_scanned
+        assert admin.violations == {}
+        assert not any("model-build" in path for path in client.files_scanned)
+        assert any("model-build" in path for path in developer.files_scanned)
+
 
 class TestScannerCatchesRegressions:
     """Proves the detectors aren't a no-op by feeding them a real violation in an
@@ -223,18 +251,81 @@ class TestScannerCatchesRegressions:
         bad_file = tmp_path / "LeakyComponent.tsx"
         bad_file.write_text('export const Leaky = () => <span>Model confidence: {auc}</span>;')
 
-        import app.translation.scanner as scanner_module
+        import app.translation.surfaces as surfaces_module
 
-        monkeypatch.setattr(scanner_module, "CLIENT_SCAN_DIRS", (tmp_path,))
-        monkeypatch.setattr(scanner_module, "CLIENT_SCAN_FILES", ())
-        monkeypatch.setattr(scanner_module, "CLIENT_SCHEMA_FILE", tmp_path / "does-not-exist.ts")
+        monkeypatch.setattr(
+            surfaces_module,
+            "FRONTEND_SURFACES",
+            (
+                FrontendSurface(
+                    audience=SurfaceAudience.BUSINESS_CLIENT,
+                    label="fixture client",
+                    dirs=(tmp_path,),
+                    enforce_banned_terms=True,
+                    schema_file=tmp_path / "does-not-exist.ts",
+                ),
+            ),
+        )
+
+        from app.translation import scanner as scanner_module
 
         violations = scanner_module.scan_frontend_client_tree()
         assert violations, "scanner failed to flag a reintroduced banned term in a client component"
 
-        # Clean up: prove the same fixture directory passes once the term is gone.
         bad_file.write_text('export const Clean = () => <span>Recommended action: send email</span>;')
         assert scanner_module.scan_frontend_client_tree() == {}
+
+    def test_developer_surface_fixture_allows_ml_vocabulary(self, tmp_path, monkeypatch):
+        (tmp_path / "ModelBuildPanel.tsx").write_text(
+            "export const Panel = () => <span>model CV hyperparameter</span>;"
+        )
+        import app.translation.surfaces as surfaces_module
+
+        surface = FrontendSurface(
+            audience=SurfaceAudience.DEVELOPER_WORKBENCH,
+            label="fixture workbench",
+            dirs=(tmp_path,),
+            enforce_banned_terms=False,
+        )
+        monkeypatch.setattr(surfaces_module, "FRONTEND_SURFACES", (surface,))
+        from app.translation import scanner as scanner_module
+
+        result = scanner_module.scan_frontend_surface(surface)
+        assert result.files_scanned
+        assert result.violations == {}
+        assert scanner_module.scan_frontend_client_tree() == {}
+
+
+class TestDeveloperWorkbenchAllowsMlVocabulary:
+    def test_personal_and_model_build_trees_are_developer_workbench(self):
+        inspector = WEB_ROOT / "app" / "components" / "model-build" / "ModelBuildInspector.tsx"
+        lab_run = WEB_ROOT / "app" / "lab" / "runs" / "[run_id]" / "page.tsx"
+        insights = WEB_ROOT / "app" / "app" / "insights" / "page.tsx"
+        admin_models = WEB_ROOT / "app" / "admin" / "models" / "page.tsx"
+        assert classify_frontend_path(inspector) is SurfaceAudience.DEVELOPER_WORKBENCH
+        assert classify_frontend_path(lab_run) is SurfaceAudience.DEVELOPER_WORKBENCH
+        assert classify_frontend_path(insights) is SurfaceAudience.BUSINESS_CLIENT
+        assert classify_frontend_path(admin_models) is SurfaceAudience.PLATFORM_ADMIN
+
+    def test_model_build_source_keeps_technical_ml_wording(self):
+        workbench = surfaces_for(SurfaceAudience.DEVELOPER_WORKBENCH)
+        files = [path for surface in workbench for path in list_surface_source_files(surface)]
+        model_build = [path for path in files if "model-build" in str(path)]
+        assert model_build, "Model Build surface must be scanned as developer workbench"
+        blob = "\n".join(path.read_text(encoding="utf-8") for path in model_build)
+        lowered = blob.lower()
+        assert "model" in lowered
+        assert "hyperparameter" in lowered
+        assert "cv" in lowered
+        hits = find_banned_terms(blob)
+        assert "model" in hits
+        assert "candidate" in hits
+        assert "training" in hits
+        result = scan_frontend_surface(workbench[0])
+        # The workbench scan still walks these files; it does not fail on ML terms.
+        assert any("model-build" in path for path in result.files_scanned)
+        assert result.violations == {}
+        assert scan_frontend_client_tree() == {}
 
 
 class TestClientDashboardIsolatedFromMlOps:

@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -35,8 +37,22 @@ from app.api.technical_explorer import (
 )
 from app.config import get_settings
 from app.db.session import get_engine
+from app.services.job_dispatcher import start_local_ml_worker
 
-app = FastAPI(title="Decision.ai", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Thread dispatcher: claim leftover queued uploads in this process.
+    # Postgres dispatcher: a separate `dclab worker run` process claims jobs.
+    stop = start_local_ml_worker()
+    try:
+        yield
+    finally:
+        if stop is not None:
+            stop.set()
+
+
+app = FastAPI(title="Decision.ai", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in get_settings().cors_origins.split(",") if origin.strip()],

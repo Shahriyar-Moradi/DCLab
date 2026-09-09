@@ -1,22 +1,23 @@
 """The enforcement half of the translation layer.
 
-Two independent scans, both driven by `banned_terms.find_banned_terms`:
+Scans are driven by `banned_terms.find_banned_terms` and the declarative
+surface catalog in `surfaces.py`:
 
 1. `scan_client_api_response_models` — walks every route mounted under the `/app`
    (client) API tree and inspects its Pydantic response model(s) field-by-field.
-   This is a structural check against the actual live route table, not a
-   hand-maintained list, so a new endpoint can't accidentally skip it.
-2. `scan_frontend_client_tree` — reads every `.ts`/`.tsx` file under the
-   client-only parts of the Next.js app (never the admin tree) and flags any
-   banned word or phrase found in the raw source text.
+2. `scan_frontend_surfaces` — reads every `.ts`/`.tsx` file under each declared
+   frontend surface. Banned-terms enforcement applies only to
+   `SurfaceAudience.BUSINESS_CLIENT`. Developer workbench and platform/admin
+   trees are still scanned (so tests can assert audience and ML vocabulary)
+   but those audiences may use full ML terminology.
 
-`scripts/scan_banned_terms.py` is the CLI wrapper used in CI; `test_translation_layer.py`
-calls these functions directly so a broken translator fails `pytest`, not just a
-separate lint step.
+`scripts/scan_banned_terms.py` is the CI wrapper; `test_translation_layer.py`
+calls these functions so a broken translator fails `pytest`.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args, get_origin
 
@@ -24,36 +25,42 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
 from app.config import REPO_ROOT
+from app.translation import surfaces as frontend_surfaces
 from app.translation.banned_terms import find_banned_terms
-
-WEB_ROOT = REPO_ROOT / "apps" / "web"
-
-# Directories that make up the authenticated client-facing Next.js surface. The
-# admin tree (`apps/web/app/admin`) is deliberately excluded — full ML vocabulary
-# is expected and allowed there. Public marketing pages/components are also
-# excluded: they describe the product to prospects in general terms and are not
-# an "insight" surface, so words like "model" in a sentence like "keeps searching
-# for a model that beats the one you have" are legitimate marketing copy, not a
-# leaked prediction result.
-CLIENT_SCAN_DIRS: tuple[Path, ...] = (
-    WEB_ROOT / "app" / "app",
-    WEB_ROOT / "app" / "lab",
-    WEB_ROOT / "app" / "login",
-    WEB_ROOT / "app" / "components" / "ui",
-    WEB_ROOT / "app" / "components" / "layout",
-    WEB_ROOT / "app" / "components" / "workspace",
-    WEB_ROOT / "app" / "components" / "decisions",
-    WEB_ROOT / "app" / "components" / "overview",
+from app.translation.surfaces import (
+    CLIENT_SCHEMA_BEGIN,
+    CLIENT_SCHEMA_END,
+    CLIENT_SCHEMA_FILE,
+    FRONTEND_SURFACES,
+    SurfaceAudience,
+    classify_frontend_path,
+    surfaces_for,
 )
+
+WEB_ROOT = frontend_surfaces.WEB_ROOT
+SCAN_EXTENSIONS = {".ts", ".tsx"}
+
+
+def _business_client_dirs() -> tuple[Path, ...]:
+    dirs: list[Path] = []
+    for surface in frontend_surfaces.FRONTEND_SURFACES:
+        if surface.audience is SurfaceAudience.BUSINESS_CLIENT:
+            dirs.extend(surface.dirs)
+    return tuple(dirs)
+
+
+# Compatibility aliases for older tests/scripts. Prefer FRONTEND_SURFACES.
+CLIENT_SCAN_DIRS: tuple[Path, ...] = _business_client_dirs()
 CLIENT_SCAN_FILES: tuple[Path, ...] = ()
 
-# `lib/domain/schemas.ts` is shared between the client and admin (Lab) surfaces,
-# so it can't be scanned wholesale — only the block marked as client-facing.
-CLIENT_SCHEMA_FILE = WEB_ROOT / "lib" / "domain" / "schemas.ts"
-CLIENT_SCHEMA_BEGIN = "// BEGIN CLIENT-FACING SCHEMAS"
-CLIENT_SCHEMA_END = "// END CLIENT-FACING SCHEMAS"
 
-SCAN_EXTENSIONS = {".ts", ".tsx"}
+@dataclass(frozen=True)
+class SurfaceScanResult:
+    audience: SurfaceAudience
+    label: str
+    enforce_banned_terms: bool
+    files_scanned: tuple[str, ...]
+    violations: dict[str, list[str]]
 
 
 def _iter_pydantic_models(annotation: Any) -> list[type[BaseModel]]:
@@ -110,36 +117,70 @@ def _scan_text(text: str) -> list[str]:
     return find_banned_terms(text)
 
 
-def scan_frontend_client_tree() -> dict[str, list[str]]:
-    violations: dict[str, list[str]] = {}
-    paths: list[Path] = list(CLIENT_SCAN_FILES)
-    for directory in CLIENT_SCAN_DIRS:
+def _label_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def list_surface_source_files(surface: frontend_surfaces.FrontendSurface) -> list[Path]:
+    paths: list[Path] = list(surface.files)
+    for directory in surface.dirs:
         if directory.exists():
             paths.extend(p for p in directory.rglob("*") if p.is_file() and p.suffix in SCAN_EXTENSIONS)
+    return paths
 
-    for path in paths:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        hits = _scan_text(text)
-        if hits:
+
+def _schema_hits(surface: frontend_surfaces.FrontendSurface) -> dict[str, list[str]]:
+    if surface.schema_file is None or surface.schema_begin is None or surface.schema_end is None:
+        return {}
+    if not surface.schema_file.exists():
+        return {}
+    full = surface.schema_file.read_text(encoding="utf-8")
+    start = full.find(surface.schema_begin)
+    end = full.find(surface.schema_end)
+    if start == -1 or end == -1:
+        return {}
+    hits = _scan_text(full[start:end])
+    if not hits:
+        return {}
+    return {f"{surface.schema_file.relative_to(REPO_ROOT)} [client schema block]": hits}
+
+
+def scan_frontend_surface(surface: frontend_surfaces.FrontendSurface) -> SurfaceScanResult:
+    files = list_surface_source_files(surface)
+    labels = tuple(_label_path(path) for path in files)
+    violations: dict[str, list[str]] = {}
+    if surface.enforce_banned_terms:
+        for path in files:
             try:
-                label = str(path.relative_to(REPO_ROOT))
-            except ValueError:
-                label = str(path)
-            violations[label] = hits
-
-    if CLIENT_SCHEMA_FILE.exists():
-        full = CLIENT_SCHEMA_FILE.read_text(encoding="utf-8")
-        start = full.find(CLIENT_SCHEMA_BEGIN)
-        end = full.find(CLIENT_SCHEMA_END)
-        if start != -1 and end != -1:
-            hits = _scan_text(full[start:end])
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            hits = _scan_text(text)
             if hits:
-                key = f"{CLIENT_SCHEMA_FILE.relative_to(REPO_ROOT)} [client schema block]"
-                violations[key] = hits
+                violations[_label_path(path)] = hits
+        violations.update(_schema_hits(surface))
+    return SurfaceScanResult(
+        audience=surface.audience,
+        label=surface.label,
+        enforce_banned_terms=surface.enforce_banned_terms,
+        files_scanned=labels,
+        violations=violations,
+    )
 
+
+def scan_frontend_surfaces() -> tuple[SurfaceScanResult, ...]:
+    return tuple(scan_frontend_surface(surface) for surface in frontend_surfaces.FRONTEND_SURFACES)
+
+
+def scan_frontend_client_tree() -> dict[str, list[str]]:
+    """Banned-terms scan of legacy business-decision / client surfaces only."""
+    violations: dict[str, list[str]] = {}
+    for surface in frontend_surfaces.FRONTEND_SURFACES:
+        if surface.audience is SurfaceAudience.BUSINESS_CLIENT:
+            violations.update(scan_frontend_surface(surface).violations)
     return violations
 
 
@@ -148,3 +189,25 @@ def scan_all() -> dict[str, list[str]]:
     violations.update({f"api:{key}": value for key, value in scan_client_api_response_models().items()})
     violations.update({f"web:{key}": value for key, value in scan_frontend_client_tree().items()})
     return violations
+
+
+__all__ = [
+    "CLIENT_SCAN_DIRS",
+    "CLIENT_SCAN_FILES",
+    "CLIENT_SCHEMA_BEGIN",
+    "CLIENT_SCHEMA_END",
+    "CLIENT_SCHEMA_FILE",
+    "FRONTEND_SURFACES",
+    "SCAN_EXTENSIONS",
+    "SurfaceAudience",
+    "SurfaceScanResult",
+    "WEB_ROOT",
+    "classify_frontend_path",
+    "list_surface_source_files",
+    "scan_all",
+    "scan_client_api_response_models",
+    "scan_frontend_client_tree",
+    "scan_frontend_surface",
+    "scan_frontend_surfaces",
+    "surfaces_for",
+]

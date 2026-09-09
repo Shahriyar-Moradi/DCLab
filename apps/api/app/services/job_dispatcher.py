@@ -3,6 +3,9 @@
 Production default is PostgreSQL: persist the row and return. A separate
 worker claims with FOR UPDATE SKIP LOCKED. `inline` and `thread` exist only as
 explicit local-development adapters.
+
+`thread` also starts one in-process claim loop so leftover queued rows (from
+before the API was in thread mode) are drained, not only newly dispatched jobs.
 """
 
 from __future__ import annotations
@@ -17,6 +20,48 @@ from app.db.session import get_session_factory
 from app.services.ml_job_service import process_next_job
 
 logger = logging.getLogger(__name__)
+
+_local_worker_lock = threading.Lock()
+_local_worker_stop: threading.Event | None = None
+
+
+def _dispatcher_name() -> str:
+    return str(get_settings().ml_job_dispatcher or "postgres").strip().lower()
+
+
+def uses_in_process_worker() -> bool:
+    return _dispatcher_name() in {"thread", "threads", "daemon"}
+
+
+def start_local_ml_worker() -> threading.Event | None:
+    """Claim loop for the thread dispatcher. No-op for postgres / inline."""
+
+    if not uses_in_process_worker():
+        return None
+    global _local_worker_stop
+    with _local_worker_lock:
+        if _local_worker_stop is not None and not _local_worker_stop.is_set():
+            return _local_worker_stop
+        stop = threading.Event()
+        poll = max(0.1, float(get_settings().ml_job_poll_seconds))
+
+        def _loop() -> None:
+            while not stop.is_set():
+                session = get_session_factory()()
+                job = None
+                try:
+                    job = process_next_job(session)
+                except Exception:  # noqa: BLE001
+                    logger.exception("local ml worker failed")
+                finally:
+                    session.close()
+                if job is None:
+                    stop.wait(poll)
+
+        threading.Thread(target=_loop, daemon=True, name="ml-job-worker").start()
+        _local_worker_stop = stop
+        logger.info("local ml worker claiming queued jobs in this process")
+        return stop
 
 
 class JobDispatcher(ABC):
@@ -59,6 +104,8 @@ class ThreadJobDispatcher(JobDispatcher):
     name = "thread"
 
     def dispatch(self, upload_id: UUID, job_id: UUID | None = None) -> None:
+        start_local_ml_worker()
+
         def _worker() -> None:
             session = get_session_factory()()
             try:
@@ -76,9 +123,9 @@ class ThreadJobDispatcher(JobDispatcher):
 
 
 def get_job_dispatcher() -> JobDispatcher:
-    raw = str(get_settings().ml_job_dispatcher or "postgres").strip().lower()
+    raw = _dispatcher_name()
     if raw in {"inline", "sync", "synchronous"}:
         return InlineJobDispatcher()
-    if raw in {"thread", "threads", "daemon"}:
+    if uses_in_process_worker():
         return ThreadJobDispatcher()
     return PostgresJobDispatcher()

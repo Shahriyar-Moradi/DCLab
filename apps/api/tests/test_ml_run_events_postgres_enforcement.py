@@ -52,9 +52,8 @@ def test_postgres_append_only_trigger_and_sequence_uniqueness(monkeypatch, tmp_p
         pytest.skip(f"isolated PostgreSQL on 55432 is unavailable: {exc}")
 
     try:
-        monkeypatch.setenv(
-            "DATABASE_URL", database_url.render_as_string(hide_password=False)
-        )
+        rendered = database_url.render_as_string(hide_password=False)
+        monkeypatch.setenv("DATABASE_URL", rendered)
         from app.config import get_settings
 
         get_settings.cache_clear()

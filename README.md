@@ -22,7 +22,7 @@ make migrate
 make train
 cd apps/web && npm install && cp .env.example .env.local && cd ../..
 
-make run    # API  http://127.0.0.1:8001
+make run    # API  http://127.0.0.1:8001  (trains CSV uploads in-process)
 make web    # UI   http://localhost:3001
 ```
 
