@@ -119,6 +119,14 @@ def collect_mismatches(source: str | None = None) -> list[str]:
                 )
                 continue
             annotation = py_fields[name].annotation
+            if name == "workspace_id":
+                expr = zod_expr.replace(" ", "")
+                if "z.guid(" not in expr:
+                    mismatches.append(
+                        f"{zod_name}.{name} must use z.guid() for the demo "
+                        f"sentinel workspace id, got `{zod_expr}`"
+                    )
+                continue
             if not _type_compatible(annotation, zod_expr):
                 mismatches.append(
                     f"{zod_name}.{name}: Zod `{zod_expr}` is not compatible with "

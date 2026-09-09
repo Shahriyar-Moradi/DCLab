@@ -37,6 +37,7 @@ from app.db.models import (
     Project,
     WorkflowRun,
 )
+from app.domain.errors import ScientificEvidenceLockedError
 from app.domain.lab_run_stages import (
     ANALYZING,
     CLEANING,
@@ -1036,18 +1037,31 @@ def run_auto_train_job(
             if on_heartbeat is not None and event_type in HEARTBEAT_PROGRESS_EVENTS:
                 on_heartbeat()
 
-        experiment = execute_experiment(
-            db,
-            experiment,
-            on_stage=_experiment_stage,
-            on_event=_on_model_event,
-            persist_scientific=False,
-        )
-        if experiment.status != "COMPLETED":
-            result = dict(experiment.result or {})
-            reason = result.get("error") or f"experiment ended with status {experiment.status}"
-            _fail(str(reason), extra={"experiment_status": experiment.status}, experiment_id=experiment.id)
+        reuse_locked_run = experiment.scientific_evidence_locked_at is not None
+        if reuse_locked_run and str(experiment.status).upper() != "COMPLETED":
+            _fail(
+                f"scientific evidence for pipeline run {experiment.id} is locked",
+                extra={"experiment_status": experiment.status},
+                experiment_id=experiment.id,
+            )
             return
+        if not reuse_locked_run:
+            experiment = execute_experiment(
+                db,
+                experiment,
+                on_stage=_experiment_stage,
+                on_event=_on_model_event,
+                persist_scientific=False,
+            )
+            if experiment.status != "COMPLETED":
+                result = dict(experiment.result or {})
+                reason = result.get("error") or f"experiment ended with status {experiment.status}"
+                _fail(
+                    str(reason),
+                    extra={"experiment_status": experiment.status},
+                    experiment_id=experiment.id,
+                )
+                return
 
         avail = available_families(task_type)
         boost_family_used = next(
@@ -1071,7 +1085,10 @@ def run_auto_train_job(
             "group_combinations": [list(item) for item in combos],
         }
         split_meta = dict(result.get("split") or {})
-        if split_meta.get("test_source_rows") != locked_split.get("test_source_rows"):
+        if (
+            not reuse_locked_run
+            and split_meta.get("test_source_rows") != locked_split.get("test_source_rows")
+        ):
             raise RuntimeError("persisted experiment did not preserve the locked holdout")
         trained = [row for row in (result.get("candidates") or []) if row.get("status") == "trained"]
         winner = dict(result.get("best_single") or {})
@@ -1225,142 +1242,142 @@ def run_auto_train_job(
             log["stage_timings"] = list(result["stage_timings"])
             experiment.result = result
             db.commit()
-            from app.services.scientific_lineage_service import (
-                lab_decision_sources_for_upload,
-                persist_scientific_lineage_from_result,
-            )
+            from app.services.reproducibility_service import store_report_artifacts
 
-            result_prep = (
-                result.get("preprocessing")
-                if isinstance(result.get("preprocessing"), dict)
-                else {}
-            )
-            evidence = (
-                dict(result["scientific_evidence"])
-                if isinstance(result.get("scientific_evidence"), dict)
-                else {}
-            )
-            evidence.update(
-                {
-                    "quality": quality,
-                    "missing_value_plan": missing_plan.to_dict(),
-                    "leakage_exclusions": list(development_plan.excluded_features),
-                    "feature_actions": list(fe_transformations),
-                    "numerical_columns": [
-                        str(name)
-                        for name in (result_prep.get("numeric_columns") or num_cols)
-                    ],
-                    "categorical_columns": [
-                        str(name)
-                        for name in (result_prep.get("categorical_columns") or cat_cols)
-                    ],
-                    "modeled_features": list(modeled_cols),
-                    "dropped_columns": list(missing_plan.dropped_columns),
-                    "preprocessing_fit_scope": "fold_train",
-                }
-            )
-            result["scientific_evidence"] = evidence
-            persist_scientific_lineage_from_result(
-                db,
-                experiment,
-                result,
-                missing_plan=missing_plan,
-                lab_decision_sources=lab_decision_sources_for_upload(db, upload.id),
-                source_dataset_id=upload.dataset_id,
-            )
-            from app.services.candidate_modeling_service import (
-                link_candidates_to_feature_set_version,
-                link_holdout_evaluation_to_model_version,
-            )
-            from app.services.reproducibility_service import (
-                persist_reproducibility,
-                store_report_artifacts,
-            )
-
-            link_candidates_to_feature_set_version(db, experiment)
-            repro = persist_reproducibility(db, experiment, result)
-            if workflow_run is not None:
-                from app.services.lineage_service import (
-                    create_model_asset,
-                    create_model_version,
+            if not reuse_locked_run:
+                from app.services.scientific_lineage_service import (
+                    lab_decision_sources_for_upload,
+                    persist_scientific_lineage_from_result,
                 )
 
-                model_asset = db.scalar(
-                    select(ModelAsset).where(
-                        ModelAsset.workflow_id == workflow_run.workflow_id,
+                result_prep = (
+                    result.get("preprocessing")
+                    if isinstance(result.get("preprocessing"), dict)
+                    else {}
+                )
+                evidence = (
+                    dict(result["scientific_evidence"])
+                    if isinstance(result.get("scientific_evidence"), dict)
+                    else {}
+                )
+                evidence.update(
+                    {
+                        "quality": quality,
+                        "missing_value_plan": missing_plan.to_dict(),
+                        "leakage_exclusions": list(development_plan.excluded_features),
+                        "feature_actions": list(fe_transformations),
+                        "numerical_columns": [
+                            str(name)
+                            for name in (result_prep.get("numeric_columns") or num_cols)
+                        ],
+                        "categorical_columns": [
+                            str(name)
+                            for name in (result_prep.get("categorical_columns") or cat_cols)
+                        ],
+                        "modeled_features": list(modeled_cols),
+                        "dropped_columns": list(missing_plan.dropped_columns),
+                        "preprocessing_fit_scope": "fold_train",
+                    }
+                )
+                result["scientific_evidence"] = evidence
+                persist_scientific_lineage_from_result(
+                    db,
+                    experiment,
+                    result,
+                    missing_plan=missing_plan,
+                    lab_decision_sources=lab_decision_sources_for_upload(db, upload.id),
+                    source_dataset_id=upload.dataset_id,
+                )
+                from app.services.candidate_modeling_service import (
+                    link_candidates_to_feature_set_version,
+                    link_holdout_evaluation_to_model_version,
+                )
+                from app.services.reproducibility_service import persist_reproducibility
+
+                link_candidates_to_feature_set_version(db, experiment)
+                repro = persist_reproducibility(db, experiment, result)
+                if workflow_run is not None:
+                    from app.services.lineage_service import (
+                        create_model_asset,
+                        create_model_version,
                     )
-                )
-                if model_asset is None:
-                    slug = "client-lab-selected-model"
-                    taken = db.scalar(
-                        select(ModelAsset.id).where(
-                            ModelAsset.workspace_id == upload.workspace_id,
-                            ModelAsset.slug == slug,
+
+                    model_asset = db.scalar(
+                        select(ModelAsset).where(
+                            ModelAsset.workflow_id == workflow_run.workflow_id,
                         )
                     )
-                    if taken is not None:
-                        slug = f"client-lab-selected-model-{workflow_run.workflow.slug}"
-                    model_asset = create_model_asset(
+                    if model_asset is None:
+                        slug = "client-lab-selected-model"
+                        taken = db.scalar(
+                            select(ModelAsset.id).where(
+                                ModelAsset.workspace_id == upload.workspace_id,
+                                ModelAsset.slug == slug,
+                            )
+                        )
+                        if taken is not None:
+                            slug = f"client-lab-selected-model-{workflow_run.workflow.slug}"
+                        model_asset = create_model_asset(
+                            db,
+                            workspace_id=upload.workspace_id,
+                            workflow=workflow_run.workflow,
+                            name="Client Lab Selected Model",
+                            slug=slug,
+                        )
+                    selected_key = (result.get("selection") or {}).get(
+                        "selected_candidate_id"
+                    ) or (result.get("best_single") or {}).get("candidate_id")
+                    selected_candidate = db.scalar(
+                        select(ExperimentCandidate).where(
+                            ExperimentCandidate.experiment_id == experiment.id,
+                            ExperimentCandidate.candidate_key == selected_key,
+                        )
+                    )
+                    if selected_candidate is None:
+                        raise RuntimeError("selected candidate was not persisted")
+                    version_count = db.query(ModelVersion).filter(
+                        ModelVersion.model_asset_id == model_asset.id
+                    ).count()
+                    model_version = create_model_version(
                         db,
-                        workspace_id=upload.workspace_id,
-                        workflow=workflow_run.workflow,
-                        name="Client Lab Selected Model",
-                        slug=slug,
+                        model_asset=model_asset,
+                        pipeline_run=experiment,
+                        selected_candidate=selected_candidate,
+                        version=f"v{version_count + 1}",
+                        runtime_environment_id=repro.runtime_environment.id,
+                        code_snapshot_id=(
+                            repro.code_snapshot.id if repro.code_snapshot is not None else None
+                        ),
+                        model_artifact_id=(
+                            repro.model_artifact.id if repro.model_artifact is not None else None
+                        ),
+                        preprocessor_artifact_id=(
+                            repro.preprocessor_artifact.id
+                            if repro.preprocessor_artifact is not None
+                            else None
+                        ),
+                        feature_manifest_artifact_id=(
+                            repro.feature_manifest_artifact.id
+                            if repro.feature_manifest_artifact is not None
+                            else None
+                        ),
+                        feature_set_version_id=repro.feature_set_version_id,
                     )
-                selected_key = (result.get("selection") or {}).get(
-                    "selected_candidate_id"
-                ) or (result.get("best_single") or {}).get("candidate_id")
-                selected_candidate = db.scalar(
-                    select(ExperimentCandidate).where(
-                        ExperimentCandidate.experiment_id == experiment.id,
-                        ExperimentCandidate.candidate_key == selected_key,
-                    )
+                    link_holdout_evaluation_to_model_version(db, experiment, model_version)
+                from app.services.model_build_reproduction_service import (
+                    persist_model_build_reproduction_artifacts,
                 )
-                if selected_candidate is None:
-                    raise RuntimeError("selected candidate was not persisted")
-                version_count = db.query(ModelVersion).filter(
-                    ModelVersion.model_asset_id == model_asset.id
-                ).count()
-                model_version = create_model_version(
-                    db,
-                    model_asset=model_asset,
-                    pipeline_run=experiment,
-                    selected_candidate=selected_candidate,
-                    version=f"v{version_count + 1}",
-                    runtime_environment_id=repro.runtime_environment.id,
-                    code_snapshot_id=(
-                        repro.code_snapshot.id if repro.code_snapshot is not None else None
-                    ),
-                    model_artifact_id=(
-                        repro.model_artifact.id if repro.model_artifact is not None else None
-                    ),
-                    preprocessor_artifact_id=(
-                        repro.preprocessor_artifact.id
-                        if repro.preprocessor_artifact is not None
-                        else None
-                    ),
-                    feature_manifest_artifact_id=(
-                        repro.feature_manifest_artifact.id
-                        if repro.feature_manifest_artifact is not None
-                        else None
-                    ),
-                    feature_set_version_id=repro.feature_set_version_id,
-                )
-                link_holdout_evaluation_to_model_version(db, experiment, model_version)
-            from app.services.model_build_reproduction_service import (
-                persist_model_build_reproduction_artifacts,
-            )
 
-            persist_model_build_reproduction_artifacts(db, experiment)
-            # Last statement before the commit: the triggers this arms read the
-            # stamp inside this transaction.
-            if lock_scientific_evidence(db, experiment) is None:
-                missing = ", ".join(missing_scientific_evidence(db, experiment))
-                raise RuntimeError(
-                    "cannot finish pipeline run before scientific evidence is complete: "
-                    f"{missing}"
-                )
-            db.commit()
+                persist_model_build_reproduction_artifacts(db, experiment)
+                # Last statement before the commit: the triggers this arms read the
+                # stamp inside this transaction.
+                if lock_scientific_evidence(db, experiment) is None:
+                    missing = ", ".join(missing_scientific_evidence(db, experiment))
+                    raise RuntimeError(
+                        "cannot finish pipeline run before scientific evidence is complete: "
+                        f"{missing}"
+                    )
+                db.commit()
             preliminary_report = build_technical_run_report(
                 db,
                 upload=upload,
@@ -1418,6 +1435,10 @@ def run_auto_train_job(
                 },
             )
             _request_routine_advisory_verification()
+    except ScientificEvidenceLockedError as exc:
+        logger.exception("auto-train hit locked pipeline run for upload %s", upload_id)
+        db.rollback()
+        _fail(str(exc), experiment_id=exc.pipeline_run_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("auto-train job failed for upload %s", upload_id)
         db.rollback()
