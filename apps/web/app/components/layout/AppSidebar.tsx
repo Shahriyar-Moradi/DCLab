@@ -120,6 +120,9 @@ export function AppSidebar({
           </div>
           <div className={cn("min-w-0", iconOnly && "sr-only")}>
             <p className="truncate text-[0.8125rem] font-semibold leading-tight text-ink">{accountName}</p>
+            {user?.email && user.email !== accountName ? (
+              <p className="truncate text-[0.6875rem] leading-tight text-ink-muted">{user.email}</p>
+            ) : null}
             <p className="truncate text-[0.6875rem] leading-tight text-ink-muted">{accountRole}</p>
           </div>
         </Link>
