@@ -706,9 +706,20 @@ def test_upload_shows_real_outcome_once_trained(auth_client, db_session, monkeyp
     assert "fold_metrics" not in text
     assert "experiment_id" not in body
 
-    csv_response = auth_client.get(f"/app/labs/uploads/{upload_id}/predictions.csv")
+    csv_response = auth_client.get(
+        f"/app/labs/uploads/{upload_id}/predictions.csv",
+        headers={"Origin": "http://localhost:3001"},
+    )
     assert csv_response.status_code == 200
     assert "text/csv" in csv_response.headers.get("content-type", "")
+    disposition = csv_response.headers.get("content-disposition", "")
+    assert 'filename="telco-predictions.csv"' in disposition
+    exposed = {
+        part.strip().lower()
+        for part in (csv_response.headers.get("access-control-expose-headers") or "").split(",")
+        if part.strip()
+    }
+    assert "content-disposition" in exposed
     lines = [line for line in csv_response.text.strip().splitlines() if line]
     assert lines[0].startswith("record")
     assert "prediction" in lines[0]

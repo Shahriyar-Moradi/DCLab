@@ -180,12 +180,15 @@ async function downloadLabResultsCsv(
   ]);
   expect(response.status(), await response.text()).toBe(200);
   expect(response.headers()["content-type"] ?? "").toMatch(/text\/csv/);
+  expect(response.headers()["content-disposition"] ?? "").toMatch(
+    /filename="[^"]+-predictions\.csv"/i,
+  );
   expect(new URL(response.url()).pathname).toMatch(
     /\/app\/labs\/uploads\/[^/]+\/predictions\.csv$/,
   );
   await download.saveAs(destination);
   const csv = await readFile(destination, "utf8");
-  expect(download.suggestedFilename()).toMatch(/\.csv$/i);
+  expect(download.suggestedFilename()).toMatch(/-predictions\.csv$/i);
   return { filename: download.suggestedFilename(), csv };
 }
 
