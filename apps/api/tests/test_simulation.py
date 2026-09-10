@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from app.db.models import SimulationRun
+from app.db.models import DEFAULT_WORKSPACE_ID, SimulationRun
 from app.ml.candidates import build_candidate_specs
 from app.ml.feature_groups import load_layer_config
 from app.ml.predict import reset_model_cache
@@ -161,6 +161,7 @@ def test_simulation_api_persists_and_returns_uplift_flag(admin_client, db_sessio
     }
     row = SimulationRun(
         id=uuid4(),
+        workspace_id=DEFAULT_WORKSPACE_ID,
         use_case="churn",
         model_version="churn_sim_v1",
         policy_version="churn_sim_v1",
@@ -193,6 +194,9 @@ def test_simulation_api_persists_and_returns_uplift_flag(admin_client, db_sessio
     ):
         assert key in body
     assert body["recommended_action"] == "ASSIGN_CSM"
+    listed_ids = {item["id"] for item in listed.json()["items"]}
+    assert str(row.id) in listed_ids
+    assert listed.json()["items"][0]["workspace_id"] == str(DEFAULT_WORKSPACE_ID)
 
 
 def test_simulation_run_endpoint_uses_engine(admin_client, monkeypatch, db_session):
@@ -224,3 +228,25 @@ def test_simulation_run_endpoint_uses_engine(admin_client, monkeypatch, db_sessi
     body = response.json()
     assert body["use_case"] == "churn"
     assert body["payload"]["uplift_is_simulated"] is True
+    assert body["workspace_id"] == str(DEFAULT_WORKSPACE_ID)
+
+
+def test_unowned_historical_simulation_run_is_hidden(admin_client, db_session):
+    row = SimulationRun(
+        id=uuid4(),
+        use_case="churn",
+        model_version="churn_sim_v1",
+        policy_version="churn_sim_v1",
+        fusion="single:gb_all",
+        payload={"heroes": [], "sample_decisions": []},
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    listed = admin_client.get("/admin/simulations/runs")
+    assert listed.status_code == 200
+    assert str(row.id) not in {item["id"] for item in listed.json()["items"]}
+    detail = admin_client.get(f"/admin/simulations/runs/{row.id}")
+    assert detail.status_code == 404
+    decision = admin_client.get(f"/admin/simulations/runs/{row.id}/decisions/C-92831")
+    assert decision.status_code == 404

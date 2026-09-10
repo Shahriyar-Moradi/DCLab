@@ -161,7 +161,7 @@ calling the translator.
 | `generate_service.py` | Run M1 prediction + policy, persist a Decision, return translated response |
 | `decision_service.py` | Policy evaluation internals for M1 |
 | `decision_query.py` | List/get decisions; serialize through translation |
-| `insight_query.py` | Latest simulation per use case → grouped insights |
+| `insight_query.py` | Latest workspace-owned simulation per use case → grouped insights |
 | `client_lab_service.py` | Trial catalog, quota, timeout, translate, persist run + audit |
 | `lab_service.py` | Admin Lab: ingest, tasks, create/execute experiments |
 | `admin_organization_service.py` | Workspace counts |
@@ -348,9 +348,10 @@ apps/web/
 
 ### 8.1 `apps/web/middleware.ts`
 
-Reads cookie `dclab_token`, **verifies** the JWT signature (`jose`), redirects
-anonymous visitors to `/login`, returns a real **403 HTML page** if a
-`client_user` hits `/admin`.
+Reads cookie `dclab_session` (HttpOnly, not readable from JavaScript) and
+asks FastAPI `GET /auth/me` with `X-DCLab-Session`. Unauthenticated visitors
+are redirected to `/login`. Area 403 HTML still applies when a `client_user`
+hits `/admin`. See `docs/adr/0001-browser-session-bff.md`.
 
 ### 8.2 `apps/web/app/` — pages
 
@@ -367,7 +368,7 @@ Next.js: a folder with `page.tsx` is a URL.
 
 | Path | Page |
 |---|---|
-| `/login` | Sign in; stores JWT cookie |
+| `/login` | Sign in; BFF sets HttpOnly `dclab_session` |
 
 **Client product (`/app/…`)**
 

@@ -8,6 +8,8 @@ absent rather than faked with a placeholder number.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,7 +42,7 @@ def _metric_deltas(current: dict, previous: dict | None) -> dict[str, MetricDelt
     return deltas
 
 
-def list_retrain_events(db: Session) -> list[RetrainEvent]:
+def list_retrain_events(db: Session, workspace_id: UUID) -> list[RetrainEvent]:
     events: list[RetrainEvent] = []
 
     experiments = db.scalars(
@@ -70,7 +72,9 @@ def list_retrain_events(db: Session) -> list[RetrainEvent]:
     # chronological-per-use-case delta series regardless of who triggered the
     # run, since it's the same underlying retrain event either way.
     use_case_events: list[tuple[str, RetrainEvent]] = []
-    for run in db.scalars(select(SimulationRun)).all():
+    for run in db.scalars(
+        select(SimulationRun).where(SimulationRun.workspace_id == workspace_id)
+    ).all():
         metrics = (run.payload or {}).get("metrics") or {}
         use_case_events.append(
             (
@@ -142,9 +146,9 @@ def list_dataset_health(db: Session) -> list[DatasetHealth]:
     return results
 
 
-def get_monitoring_overview(db: Session) -> MonitoringOverview:
+def get_monitoring_overview(db: Session, workspace_id: UUID) -> MonitoringOverview:
     return MonitoringOverview(
-        retrain_events=list_retrain_events(db),
+        retrain_events=list_retrain_events(db, workspace_id),
         dataset_health=list_dataset_health(db),
         drift_detection_note=DRIFT_NOTE,
     )

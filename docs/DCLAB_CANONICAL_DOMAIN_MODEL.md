@@ -1,5 +1,11 @@
 # DCLab canonical domain model
 
+> **Status: LIVING core, older ingest sketch.** Dataset lineage below originally
+> omitted first-class `DataAccess`. Current chain:
+> Workspace → Project → ProblemSpec → DataSource → DataAccess → IngestionRun →
+> Dataset → WorkflowRun → PipelineRun → ModelVersion.
+> Current head: [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md).
+
 This is the frozen Prompt 9 customer/ML core. Personal and Business tenants share
 this model and **one** training engine (`run_auto_train_job` → `run_experiment`).
 Internal DCLab roles stay off the customer membership table.
@@ -28,10 +34,11 @@ side-effecting writes.
 
 ```
 DataSource
-  → IngestionRun
-      → DatasetAsset
-          → Dataset          (physical version; immutable)
-              → DatasetColumn
+  → DataAccess
+      → IngestionRun
+          → DatasetAsset
+              → Dataset          (physical version; immutable)
+                  → DatasetColumn
 ```
 
 Bytes live in provider-neutral object storage. PostgreSQL stores `Artifact`

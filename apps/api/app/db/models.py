@@ -383,6 +383,9 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -394,6 +397,82 @@ class User(Base):
     workspace_memberships: Mapped[list["WorkspaceMembership"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    auth_sessions: Mapped[list["AuthSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    recovery_tokens: Mapped[list["AuthRecoveryToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class AuthSession(Base):
+    """Hashed browser session. Identity-plane; not workspace-scoped.
+
+    ``selected_workspace_id`` is a remembered selector (ADR 0003), not proof
+    of access and not a tenant scope on the session row. See ADR 0001.
+    """
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_auth_sessions_token_hash"),
+        Index("ix_auth_sessions_user_id", "user_id"),
+        Index("ix_auth_sessions_idle_expires_at", "idle_expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    idle_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rotated_from_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("auth_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    selected_workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    user: Mapped[User] = relationship(back_populates="auth_sessions")
+
+
+class AuthRecoveryToken(Base):
+    """Hashed password-reset / email-verification token. Identity-plane. ADR 0002."""
+
+    __tablename__ = "auth_recovery_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_auth_recovery_tokens_token_hash"),
+        CheckConstraint(
+            "purpose IN ('password_reset', 'email_verification')",
+            name="ck_auth_recovery_tokens_purpose",
+        ),
+        Index("ix_auth_recovery_tokens_user_id", "user_id"),
+        Index("ix_auth_recovery_tokens_expires_at", "expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="recovery_tokens")
 
 
 class BusinessProfile(Base):
@@ -479,6 +558,9 @@ class WorkspaceMembership(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     workspace: Mapped[Workspace] = relationship(back_populates="memberships")
@@ -972,9 +1054,44 @@ class Decision(Base):
 
 
 class SimulationRun(Base):
+    """Canned simulation pack run. Tenant-owned when workspace_id is set.
+
+    Null workspace_id is historical archive (ADR 0004): never backfilled onto
+    a default workspace, never served on customer or workspace-scoped reads.
+    """
+
     __tablename__ = "simulation_runs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_simulation_runs_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id"],
+            ["workspaces.id"],
+            name="fk_simulation_runs_workspace_id",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_simulation_runs_workspace_project",
+            ondelete="SET NULL (project_id)",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            "project_id IS NULL OR workspace_id IS NOT NULL",
+            name="ck_simulation_runs_project_requires_workspace",
+        ),
+        Index(
+            "ix_simulation_runs_workspace_use_case_created",
+            "workspace_id",
+            "use_case",
+            "created_at",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     use_case: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     model_version: Mapped[str] = mapped_column(String(128), nullable=False)
     policy_version: Mapped[str] = mapped_column(String(128), nullable=False)

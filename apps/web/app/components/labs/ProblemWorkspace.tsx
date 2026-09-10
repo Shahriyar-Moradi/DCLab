@@ -9,6 +9,7 @@ import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { useLabQuota, useLabRuns, useRunLabTrial, useSession } from "@/lib/application";
 import { formatTimestamp, type ClientLabProblem, type ClientLabRun } from "@/lib/domain";
 import { canWriteWorkspaceSession } from "@/lib/infrastructure/session";
+import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { useRef, useState, type KeyboardEvent } from "react";
 
 export function ProblemWorkspace({ problems }: { problems: ClientLabProblem[] }) {
@@ -114,6 +115,9 @@ function SelectedProblem({ problem }: { problem: ClientLabProblem }) {
       </Panel>
 
       <Panel title="Run" description="Uses the same engine as admin simulations, bounded by quota.">
+        <div className="mb-4">
+          <ActiveWorkspaceNotice action="Run this trial" />
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={runWithSample} disabled={blocked}>
             {running ? "Running…" : "Run with sample data"}

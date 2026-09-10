@@ -53,7 +53,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         NEXT_PUBLIC_API_URL: apiUrl,
-        JWT_SECRET: "e2e-verification-only-secret",
+        DCLAB_API_URL: apiUrl,
       },
     },
   ],

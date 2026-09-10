@@ -3,7 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { apiGet, apiPost, apiPostForm, uploadFile, apiDownload } from "@/lib/infrastructure/api-client";
-import { type SessionUser } from "@/lib/infrastructure/session";
+import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
+import { parseSessionUser } from "@/lib/infrastructure/session";
 import { useSession } from "./session-provider";
 import {
   AdminClientUploadDetailSchema,
@@ -95,27 +96,41 @@ export type DecisionQuery = {
   opportunity_id?: string;
 };
 
+const SessionUserSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: z.enum([
+    "dclab_admin",
+    "dclab_developer",
+    "business_admin",
+    "business_developer",
+    "personal_developer",
+    "client_user",
+    "workspace_owner",
+    "workspace_admin",
+    "ml_engineer",
+    "viewer",
+  ]),
+  full_name: z.string(),
+  workspace_id: z.string().nullable(),
+  email_verified_at: z.string().nullable().optional(),
+  active_workspace_id: z.string().nullable().optional(),
+  workspaces: z
+    .array(
+      z.object({
+        id: z.string(),
+        slug: z.string(),
+        name: z.string(),
+        kind: z.string(),
+        role: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
+  request_id: z.string().nullable().optional(),
+});
+
 const LoginResponseSchema = z.object({
-  access_token: z.string(),
-  token_type: z.string(),
-  user: z.object({
-    id: z.string(),
-    email: z.string(),
-    role: z.enum([
-      "dclab_admin",
-      "dclab_developer",
-      "business_admin",
-      "business_developer",
-      "personal_developer",
-      "client_user",
-      "workspace_owner",
-      "workspace_admin",
-      "ml_engineer",
-      "viewer",
-    ]),
-    full_name: z.string(),
-    workspace_id: z.string().nullable(),
-  }),
+  user: SessionUserSchema,
 });
 
 export function useLogin() {
@@ -124,7 +139,8 @@ export function useLogin() {
     mutationFn: (credentials: { email: string; password: string }) =>
       apiPost("/auth/login", LoginResponseSchema, credentials),
     onSuccess: (data) => {
-      signIn(data.access_token, data.user as SessionUser);
+      const user = parseSessionUser(data.user);
+      if (user) signIn(user);
     },
   });
 }
@@ -140,7 +156,7 @@ export function useHealth(): ReturnType<typeof useQuery<Health>> {
 
 export function useOpportunities(params: OpportunityQuery = {}): ReturnType<typeof useQuery<OpportunityList>> {
   return useQuery({
-    queryKey: ["opportunities", params],
+    queryKey: workspaceQueryKey("opportunities", params),
     queryFn: () =>
       apiGet("/app/opportunities", OpportunityListSchema, {
         limit: params.limit ?? 20,
@@ -154,7 +170,7 @@ export function useOpportunities(params: OpportunityQuery = {}): ReturnType<type
 
 export function useOpportunity(id: string | undefined): ReturnType<typeof useQuery<Opportunity>> {
   return useQuery({
-    queryKey: ["opportunities", id],
+    queryKey: workspaceQueryKey("opportunities", id),
     queryFn: () => apiGet(`/app/opportunities/${id}`, OpportunitySchema),
     enabled: Boolean(id),
   });
@@ -162,7 +178,7 @@ export function useOpportunity(id: string | undefined): ReturnType<typeof useQue
 
 export function useDecisions(params: DecisionQuery = {}): ReturnType<typeof useQuery<DecisionList>> {
   return useQuery({
-    queryKey: ["decisions", params],
+    queryKey: workspaceQueryKey("decisions", params),
     queryFn: () =>
       apiGet("/app/decisions", DecisionListSchema, {
         limit: params.limit ?? 20,
@@ -176,7 +192,7 @@ export function useDecisions(params: DecisionQuery = {}): ReturnType<typeof useQ
 
 export function useDecision(id: string | undefined): ReturnType<typeof useQuery<Decision>> {
   return useQuery({
-    queryKey: ["decisions", id],
+    queryKey: workspaceQueryKey("decisions", id),
     queryFn: () => apiGet(`/app/decisions/${id}`, DecisionSchema),
     enabled: Boolean(id),
   });
@@ -190,9 +206,9 @@ export function useGenerateDecision(): ReturnType<
     mutationFn: (opportunity_id: string) =>
       apiPost("/app/decisions/generate", DecisionGenerateSchema, { opportunity_id }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["decisions"] });
-      void queryClient.invalidateQueries({ queryKey: ["opportunities"] });
-      void queryClient.invalidateQueries({ queryKey: ["overview-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("decisions") });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("opportunities") });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("overview-snapshot") });
     },
   });
 }
@@ -201,7 +217,7 @@ export function useOverviewSnapshot(enabled = true): ReturnType<
   typeof useQuery<{ opportunityTotal: number; decisions: DecisionList["items"]; decisionTotal: number; truncated: boolean }>
 > {
   return useQuery({
-    queryKey: ["overview-snapshot"],
+    queryKey: workspaceQueryKey("overview-snapshot"),
     queryFn: async () => {
       const opportunities = await apiGet("/app/opportunities", OpportunityListSchema, { limit: 1, offset: 0 });
       const first = await apiGet("/app/decisions", DecisionListSchema, { limit: 100, offset: 0 });
@@ -225,21 +241,21 @@ export function useOverviewSnapshot(enabled = true): ReturnType<
 
 export function useInsights(): ReturnType<typeof useQuery<InsightList>> {
   return useQuery({
-    queryKey: ["insights"],
+    queryKey: workspaceQueryKey("insights"),
     queryFn: () => apiGet("/app/insights", InsightListSchema),
   });
 }
 
 export function useLabProblems(): ReturnType<typeof useQuery<ClientLabProblem[]>> {
   return useQuery({
-    queryKey: ["client-labs", "problems"],
+    queryKey: workspaceQueryKey("client-labs", "problems"),
     queryFn: () => apiGet("/app/labs/problems", z.array(ClientLabProblemSchema)),
   });
 }
 
 export function useLabQuota(useCase: string | undefined): ReturnType<typeof useQuery<ClientLabQuota>> {
   return useQuery({
-    queryKey: ["client-labs", "quota", useCase],
+    queryKey: workspaceQueryKey("client-labs", "quota", useCase),
     queryFn: () => apiGet(`/app/labs/problems/${useCase}/quota`, ClientLabQuotaSchema),
     enabled: Boolean(useCase),
   });
@@ -247,14 +263,14 @@ export function useLabQuota(useCase: string | undefined): ReturnType<typeof useQ
 
 export function useLabRuns(useCase?: string): ReturnType<typeof useQuery<ClientLabRun[]>> {
   return useQuery({
-    queryKey: ["client-labs", "runs", useCase ?? "all"],
+    queryKey: workspaceQueryKey("client-labs", "runs", useCase ?? "all"),
     queryFn: () => apiGet("/app/labs/runs", z.array(ClientLabRunSchema), { use_case: useCase }),
   });
 }
 
 export function useLabRun(id: string | undefined): ReturnType<typeof useQuery<ClientLabRun>> {
   return useQuery({
-    queryKey: ["client-labs", "runs", "detail", id],
+    queryKey: workspaceQueryKey("client-labs", "runs", "detail", id),
     queryFn: () => apiGet(`/app/labs/runs/${id}`, ClientLabRunSchema),
     enabled: Boolean(id),
   });
@@ -272,22 +288,22 @@ export function useRunLabTrial(): ReturnType<
       return apiPostForm("/app/labs/runs", ClientLabRunSchema, form);
     },
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["client-labs", "runs"] });
-      void queryClient.invalidateQueries({ queryKey: ["client-labs", "quota", variables.useCase] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("client-labs", "runs") });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("client-labs", "quota", variables.useCase) });
     },
   });
 }
 
 export function useLabUploads(category: string): ReturnType<typeof useQuery<ClientLabUpload[]>> {
   return useQuery({
-    queryKey: ["client-labs", "uploads", category],
+    queryKey: workspaceQueryKey("client-labs", "uploads", category),
     queryFn: () => apiGet("/app/labs/uploads", z.array(ClientLabUploadSchema), { category }),
   });
 }
 
 export function useLabUpload(id: string | undefined): ReturnType<typeof useQuery<ClientLabUpload>> {
   return useQuery({
-    queryKey: ["client-labs", "uploads", "detail", id],
+    queryKey: workspaceQueryKey("client-labs", "uploads", "detail", id),
     queryFn: () => apiGet(`/app/labs/uploads/${id}`, ClientLabUploadSchema),
     enabled: Boolean(id),
     refetchInterval: (query) => {
@@ -308,8 +324,8 @@ export function useConfirmLabTarget(): ReturnType<
         target_column: targetColumn,
       }),
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: ["client-labs", "uploads", "detail", data.id] });
-      void queryClient.invalidateQueries({ queryKey: ["client-labs", "uploads"] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("client-labs", "uploads", "detail", data.id) });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("client-labs", "uploads") });
     },
   });
 }
@@ -368,7 +384,7 @@ export function useUploadLabFile(): ReturnType<
       return apiPostForm("/app/labs/uploads", ClientLabUploadSchema, form);
     },
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["client-labs", "uploads", variables.category] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("client-labs", "uploads", variables.category) });
     },
   });
 }
@@ -380,22 +396,22 @@ export function useUploadOpportunities(): ReturnType<
   return useMutation({
     mutationFn: ({ file, onProgress }) => uploadFile("/app/opportunities/upload", UploadResultSchema, file, onProgress),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["opportunities"] });
-      void queryClient.invalidateQueries({ queryKey: ["overview-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("opportunities") });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("overview-snapshot") });
     },
   });
 }
 
 export function useLabEnvironments() {
   return useQuery({
-    queryKey: ["lab", "environments"],
+    queryKey: workspaceQueryKey("lab", "environments"),
     queryFn: () => apiGet("/admin/environments", z.array(LabEnvironmentSchema)),
   });
 }
 
 export function useLabDatasets() {
   return useQuery({
-    queryKey: ["lab", "datasets"],
+    queryKey: workspaceQueryKey("lab", "datasets"),
     queryFn: () => apiGet("/admin/datasets", z.array(LabDatasetSchema)),
   });
 }
@@ -408,7 +424,7 @@ export function useUploadLabDataset() {
       return uploadFile("/admin/datasets/upload", LabDatasetSchema, file, onProgress, { name });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["lab", "datasets"] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("lab", "datasets") });
     },
   });
 }
@@ -418,14 +434,14 @@ export function useCreateLabWorkbook() {
   return useMutation({
     mutationFn: () => apiPost("/admin/datasets/sample-workbook", LabDatasetSchema, {}),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["lab", "datasets"] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("lab", "datasets") });
     },
   });
 }
 
 export function useLabUseCasePlan(datasetId: string | undefined) {
   return useQuery({
-    queryKey: ["lab", "use-cases", datasetId],
+    queryKey: workspaceQueryKey("lab", "use-cases", datasetId),
     queryFn: () => apiGet(`/admin/datasets/${datasetId}/use-cases`, LabUseCasePlanSchema),
     enabled: Boolean(datasetId),
   });
@@ -437,17 +453,17 @@ export function useTrainLabUseCase(datasetId: string | undefined) {
     mutationFn: (slug: string) =>
       apiPost(`/admin/datasets/${datasetId}/use-cases/${slug}/train`, LabExperimentSchema, { max_models: 5 }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["lab", "use-cases", datasetId] });
-      void queryClient.invalidateQueries({ queryKey: ["lab", "experiments"] });
-      void queryClient.invalidateQueries({ queryKey: ["lab", "tasks"] });
-      void queryClient.invalidateQueries({ queryKey: ["admin", "models"] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("lab", "use-cases", datasetId) });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("lab", "experiments") });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("lab", "tasks") });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("admin", "models") });
     },
   });
 }
 
 export function useLabTasks() {
   return useQuery({
-    queryKey: ["lab", "tasks"],
+    queryKey: workspaceQueryKey("lab", "tasks"),
     queryFn: () => apiGet("/admin/tasks", z.array(LabTaskSchema)),
   });
 }
@@ -458,21 +474,21 @@ export function useCreateLabTaskFromConfig() {
     mutationFn: (path: string) =>
       apiPost(`/admin/tasks/from-config?path=${encodeURIComponent(path)}`, LabTaskSchema, {}),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["lab", "tasks"] });
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("lab", "tasks") });
     },
   });
 }
 
 export function useLabExperiments() {
   return useQuery({
-    queryKey: ["lab", "experiments"],
+    queryKey: workspaceQueryKey("lab", "experiments"),
     queryFn: () => apiGet("/admin/experiments", z.array(LabExperimentSchema)),
   });
 }
 
 export function useLabExperiment(id: string | undefined) {
   return useQuery({
-    queryKey: ["lab", "experiments", id],
+    queryKey: workspaceQueryKey("lab", "experiments", id),
     queryFn: () => apiGet(`/admin/experiments/${id}`, LabExperimentSchema),
     enabled: Boolean(id),
   });
@@ -480,7 +496,7 @@ export function useLabExperiment(id: string | undefined) {
 
 export function useLabReport(id: string | undefined) {
   return useQuery({
-    queryKey: ["lab", "report", id],
+    queryKey: workspaceQueryKey("lab", "report", id),
     queryFn: () => apiGet(`/admin/experiments/${id}/report`, LabReportSchema),
     enabled: Boolean(id),
   });
@@ -488,7 +504,7 @@ export function useLabReport(id: string | undefined) {
 
 export function useLabCandidates(id: string | undefined) {
   return useQuery({
-    queryKey: ["lab", "candidates", id],
+    queryKey: workspaceQueryKey("lab", "candidates", id),
     queryFn: () => apiGet(`/admin/experiments/${id}/candidates`, z.array(LabCandidateSchema)),
     enabled: Boolean(id),
   });
@@ -496,7 +512,7 @@ export function useLabCandidates(id: string | undefined) {
 
 export function useLabComparison(id: string | undefined) {
   return useQuery({
-    queryKey: ["lab", "comparison", id],
+    queryKey: workspaceQueryKey("lab", "comparison", id),
     queryFn: () => apiGet(`/admin/experiments/${id}/comparison`, LabComparisonSchema),
     enabled: Boolean(id),
   });
@@ -504,14 +520,14 @@ export function useLabComparison(id: string | undefined) {
 
 export function useAdminOrganizations(): ReturnType<typeof useQuery<OrganizationSummary[]>> {
   return useQuery({
-    queryKey: ["admin", "organizations"],
+    queryKey: workspaceQueryKey("admin", "organizations"),
     queryFn: () => apiGet("/admin/organizations", z.array(OrganizationSummarySchema)),
   });
 }
 
 export function useAdminOrganization(id: string | undefined): ReturnType<typeof useQuery<OrganizationDetail>> {
   return useQuery({
-    queryKey: ["admin", "organizations", id],
+    queryKey: workspaceQueryKey("admin", "organizations", id),
     queryFn: () => apiGet(`/admin/organizations/${id}`, OrganizationDetailSchema),
     enabled: Boolean(id),
   });
@@ -519,21 +535,21 @@ export function useAdminOrganization(id: string | undefined): ReturnType<typeof 
 
 export function useAdminModelRegistry(): ReturnType<typeof useQuery<RegisteredModel[]>> {
   return useQuery({
-    queryKey: ["admin", "models"],
+    queryKey: workspaceQueryKey("admin", "models"),
     queryFn: () => apiGet("/admin/models", z.array(RegisteredModelSchema)),
   });
 }
 
 export function useAdminMonitoring(): ReturnType<typeof useQuery<MonitoringOverview>> {
   return useQuery({
-    queryKey: ["admin", "monitoring"],
+    queryKey: workspaceQueryKey("admin", "monitoring"),
     queryFn: () => apiGet("/admin/monitoring", MonitoringOverviewSchema),
   });
 }
 
 export function useAdminClientUploads(): ReturnType<typeof useQuery<AdminClientUploadSummary[]>> {
   return useQuery({
-    queryKey: ["admin", "client-uploads"],
+    queryKey: workspaceQueryKey("admin", "client-uploads"),
     queryFn: () => apiGet("/admin/client-uploads", z.array(AdminClientUploadSummarySchema)),
   });
 }
@@ -542,7 +558,7 @@ export function useAdminClientUpload(
   id: string | undefined,
 ): ReturnType<typeof useQuery<AdminClientUploadDetail>> {
   return useQuery({
-    queryKey: ["admin", "client-uploads", id],
+    queryKey: workspaceQueryKey("admin", "client-uploads", id),
     queryFn: () => apiGet(`/admin/client-uploads/${id}`, AdminClientUploadDetailSchema),
     enabled: Boolean(id),
     refetchInterval: (query) => {
@@ -575,7 +591,7 @@ export function useAdminClientTrialAudit(
   auditId: string | undefined,
 ): ReturnType<typeof useQuery<ClientTrialAuditDetail>> {
   return useQuery({
-    queryKey: ["admin", "models", "client-trials", auditId],
+    queryKey: workspaceQueryKey("admin", "models", "client-trials", auditId),
     queryFn: () => apiGet(`/admin/models/client-trials/${auditId}`, ClientTrialAuditDetailSchema),
     enabled: Boolean(auditId),
   });
@@ -583,14 +599,14 @@ export function useAdminClientTrialAudit(
 
 export function usePlatformBusinesses(): ReturnType<typeof useQuery<PlatformBusinessSummary[]>> {
   return useQuery({
-    queryKey: ["platform", "businesses"],
+    queryKey: workspaceQueryKey("platform", "businesses"),
     queryFn: () => apiGet("/admin/businesses", z.array(PlatformBusinessSummarySchema)),
   });
 }
 
 export function usePlatformBusiness(id: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformBusinessDetail | BusinessWorkspaceDetail>> {
   return useQuery({
-    queryKey: [businessMode ? "business" : "platform", "businesses", id],
+    queryKey: workspaceQueryKey(businessMode ? "business" : "platform", "businesses", id),
     queryFn: () => businessMode
       ? apiGet(`/business/workspaces/${id}`, BusinessWorkspaceDetailSchema)
       : apiGet(`/admin/businesses/${id}`, PlatformBusinessDetailSchema),
@@ -600,7 +616,7 @@ export function usePlatformBusiness(id: string | undefined, businessMode = false
 
 export function usePlatformDomain(businessId: string | undefined, domainId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformDomainDetail>> {
   return useQuery({
-    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "domains", domainId],
+    queryKey: workspaceQueryKey(businessMode ? "business" : "platform", "businesses", businessId, "domains", domainId),
     queryFn: () => apiGet(businessMode ? `/business/workspaces/${businessId}/domains/${domainId}` : `/admin/businesses/${businessId}/domains/${domainId}`, PlatformDomainDetailSchema),
     enabled: Boolean(businessId && domainId),
   });
@@ -608,7 +624,7 @@ export function usePlatformDomain(businessId: string | undefined, domainId: stri
 
 export function usePlatformWorkflow(businessId: string | undefined, workflowId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformWorkflowDetail>> {
   return useQuery({
-    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "workflows", workflowId],
+    queryKey: workspaceQueryKey(businessMode ? "business" : "platform", "businesses", businessId, "workflows", workflowId),
     queryFn: () => apiGet(businessMode ? `/business/workspaces/${businessId}/workflows/${workflowId}` : `/admin/businesses/${businessId}/workflows/${workflowId}`, PlatformWorkflowDetailSchema),
     enabled: Boolean(businessId && workflowId),
   });
@@ -616,7 +632,7 @@ export function usePlatformWorkflow(businessId: string | undefined, workflowId: 
 
 export function usePlatformWorkflowRun(businessId: string | undefined, runId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformWorkflowRunDetail | BusinessWorkflowRunDetail>> {
   return useQuery({
-    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "workflow-runs", runId],
+    queryKey: workspaceQueryKey(businessMode ? "business" : "platform", "businesses", businessId, "workflow-runs", runId),
     queryFn: () => businessMode
       ? apiGet(`/business/workspaces/${businessId}/workflow-runs/${runId}`, BusinessWorkflowRunDetailSchema)
       : apiGet(`/admin/businesses/${businessId}/workflow-runs/${runId}`, PlatformWorkflowRunDetailSchema),
@@ -626,7 +642,7 @@ export function usePlatformWorkflowRun(businessId: string | undefined, runId: st
 
 export function usePlatformModel(businessId: string | undefined, modelId: string | undefined, businessMode = false): ReturnType<typeof useQuery<PlatformModelDetail | BusinessModelDetail>> {
   return useQuery({
-    queryKey: [businessMode ? "business" : "platform", "businesses", businessId, "models", modelId],
+    queryKey: workspaceQueryKey(businessMode ? "business" : "platform", "businesses", businessId, "models", modelId),
     queryFn: () => businessMode
       ? apiGet(`/business/workspaces/${businessId}/models/${modelId}`, BusinessModelDetailSchema)
       : apiGet(`/admin/businesses/${businessId}/models/${modelId}`, PlatformModelDetailSchema),
@@ -636,7 +652,7 @@ export function usePlatformModel(businessId: string | undefined, modelId: string
 
 export function usePipelineMonitor(id: string | undefined, businessId?: string): ReturnType<typeof useQuery<PipelineMonitor>> {
   return useQuery({
-    queryKey: [businessId ? "business" : "platform", "pipeline-monitor", businessId, id],
+    queryKey: workspaceQueryKey(businessId ? "business" : "platform", "pipeline-monitor", businessId, id),
     queryFn: () => apiGet(businessId ? `/business/workspaces/${businessId}/pipeline-runs/${id}/monitor` : `/admin/pipeline-runs/${id}/monitor`, PipelineMonitorSchema),
     enabled: Boolean(id),
     refetchInterval: (query) => {
@@ -671,7 +687,7 @@ export function useModelBuild(
   pipelineRunId: string | undefined,
 ): ReturnType<typeof useQuery<PipelineModelBuild>> {
   return useQuery({
-    queryKey: ["model-build", workspaceId, pipelineRunId],
+    queryKey: workspaceQueryKey("model-build", workspaceId, pipelineRunId),
     queryFn: () =>
       apiGet(
         `/workspaces/${workspaceId}/pipeline-runs/${pipelineRunId}/model-build`,
@@ -684,7 +700,7 @@ export function useModelBuild(
 
 export function useBusinessWorkspaces(): ReturnType<typeof useQuery<BusinessWorkspaceSummary[]>> {
   return useQuery({
-    queryKey: ["business", "workspaces"],
+    queryKey: workspaceQueryKey("business", "workspaces"),
     queryFn: () => apiGet("/business/workspaces", z.array(BusinessWorkspaceSummarySchema)),
   });
 }

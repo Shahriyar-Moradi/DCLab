@@ -138,7 +138,7 @@ def authenticate(db: Session, email: str, password: str) -> User:
     if not verify_password(password, user.password_hash):
         raise AuthError("invalid email or password")
     if not user.is_active:
-        raise AuthError("account is disabled")
+        raise AuthError("invalid email or password")
     return user
 
 
@@ -355,6 +355,7 @@ def ensure_demo_users(db: Session) -> list[User]:
             )
         else:
             user = existing
+            previous_role = user.role
             user.password_hash = hash_password(str(spec["password"]))
             user.role = role.value
             user.full_name = str(spec["full_name"])
@@ -362,6 +363,10 @@ def ensure_demo_users(db: Session) -> list[User]:
             user.is_active = True
             _sync_platform_membership(db, user, role)
             _sync_workspace_membership(db, user, role, workspace_id)
+            if previous_role != user.role:
+                from app.services.session_service import revoke_sessions_for_user
+
+                revoke_sessions_for_user(db, user.id)
         if home == "personal":
             user.role = UserRole.WORKSPACE_OWNER.value
             personal_id = _ensure_personal_workspace(db, user)

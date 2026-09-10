@@ -54,7 +54,7 @@ def _request(base: str, method: str, path: str, token: str | None, body: dict | 
 
 def login(base: str, role: str) -> str:
     email, password = ACCOUNTS[role]
-    status, raw = _request(base, "POST", "/auth/login", None, {"email": email, "password": password})
+    status, raw = _request(base, "POST", "/auth/tokens", None, {"email": email, "password": password})
     if status != 200:
         print(f"login failed for role={role} (HTTP {status})", file=sys.stderr)
         raise SystemExit(2)

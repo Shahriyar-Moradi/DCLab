@@ -81,8 +81,15 @@ make test
 
 CI uses synthetic data only. Olist is optional and gitignored under `data/olist/raw/`.
 
-## Out of scope
+## Out of scope (current product)
 
-Horizontal Intelligence, CRM integrations, SSO, billing, Kubernetes, causal platform, distributed GPU training.
+Horizontal Intelligence, CRM integrations, billing, causal platform, and
+distributed GPU training are not in this product.
+
+SSO and Kubernetes are not implemented on current `main`. They are scheduled
+later in [`docs/agentic-program/`](docs/agentic-program/README.md) (Scopes 9–10),
+not omitted from the program.
 
 See `docs/` for architecture, experimentation, leakage, and reporting.
+Current verification facts:
+[`docs/verification/S0_P01A_CURRENT_TRUTH.md`](docs/verification/S0_P01A_CURRENT_TRUTH.md).

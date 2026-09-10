@@ -10,6 +10,8 @@ surface is admin-only and the translation layer never touches it.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -47,8 +49,12 @@ def _experiment_models(db: Session) -> list[RegisteredModel]:
     return models
 
 
-def _simulation_models(db: Session) -> list[RegisteredModel]:
-    runs = db.scalars(select(SimulationRun).order_by(SimulationRun.created_at.desc())).all()
+def _simulation_models(db: Session, workspace_id: UUID) -> list[RegisteredModel]:
+    runs = db.scalars(
+        select(SimulationRun)
+        .where(SimulationRun.workspace_id == workspace_id)
+        .order_by(SimulationRun.created_at.desc())
+    ).all()
     return [
         RegisteredModel(
             id=run.id,
@@ -84,8 +90,8 @@ def _client_trial_models(db: Session) -> list[RegisteredModel]:
     ]
 
 
-def list_registered_models(db: Session) -> list[RegisteredModel]:
-    models = _experiment_models(db) + _simulation_models(db) + _client_trial_models(db)
+def list_registered_models(db: Session, workspace_id: UUID) -> list[RegisteredModel]:
+    models = _experiment_models(db) + _simulation_models(db, workspace_id) + _client_trial_models(db)
     models.sort(key=lambda model: model.created_at, reverse=True)
     return models
 

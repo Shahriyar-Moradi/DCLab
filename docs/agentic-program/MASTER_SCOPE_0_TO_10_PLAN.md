@@ -1,10 +1,12 @@
 # DCLab master Scope 0–10 implementation plan
 
-**Program baseline date:** 2026-09-10  
-**Repository:** `Shahriyar-Moradi/DCLab`  
-**Reviewed commit:** `1bce168327e1a159d4804a268043720b80630013`  
-**Default branch:** `main`  
-**Database head:** `0054_execution_needs_input`  
+**Program baseline date:** 2026-09-10
+**Repository:** `Shahriyar-Moradi/DCLab`
+**Reviewed product commit:** `1bce168327e1a159d4804a268043720b80630013`
+**Current `main` (S0-P01A):** `49da76b9f4ee6dab6579c7b933011f0641553cc5` (docs-only on top of `1bce168`)
+**Default branch:** `main`
+**Database head:** `0058_simulation_workspace`
+**Current truth report:** `docs/verification/S0_P01A_CURRENT_TRUTH.md`
 **Authority:** this document orders future work; verified code and tests remain
 the authority for current behavior.
 
@@ -61,18 +63,21 @@ the current checkout, current evidence below wins.
 
 ### 3.1 Verified on this review
 
+S0-P01A re-measured `main` at `49da76b` (product still `1bce168`). Full ledger:
+`docs/verification/S0_P01A_CURRENT_TRUTH.md`.
+
 | Evidence | Observed result |
 | --- | --- |
-| Git | clean `main`, equal to `origin/main`, SHA `1bce168` before these docs |
-| GitHub CI | run 51 succeeded on the exact reviewed SHA |
-| Backend and SDK tests | `945 passed, 3 skipped` in 574.03 seconds |
+| Git | `main` = `origin/main` at `49da76b`; last application SHA `1bce168` |
+| GitHub CI | run **52** succeeded on `49da76b` (regression + whole-system E2E). Run 51 succeeded on `1bce168`. |
+| Backend and SDK tests | `945 passed, 3 skipped` in 515.51 seconds (local S0-P01A); 574.03s was the `1bce168` review |
 | Frontend lint | completed with three React hook dependency warnings |
-| Frontend production build | succeeded; 31 generated pages and 46 routes listed |
-| Standalone TypeScript check | succeeded after the build; an earlier parallel invocation raced with `.next` generation and is not a source failure |
-| Alembic | one head: `0054_execution_needs_input` |
-| Relational schema | 64 SQLAlchemy tables |
-| HTTP surface | 157 OpenAPI operations, 150 paths, 13 `/v1` operations |
-| Repository scale | 746 tracked files; 431 Python files; 153 TS/TSX files; 101 test files |
+| Frontend production build | succeeded; 31 generated pages and 48 listed routes including `/_not-found` |
+| Standalone TypeScript check | succeeded when run **before** `next build`; a parallel invocation can race on `.next` |
+| Alembic | one head: `0058_simulation_workspace` (58 revisions) |
+| Relational schema | 66 SQLAlchemy tables (`auth_sessions` and `auth_recovery_tokens` are identity-plane; PipelineRun remains `experiments`) |
+| HTTP surface | 167 OpenAPI operations, 160 paths, 13 `/v1` operations |
+| Repository scale | **760** tracked files; 431 Python files; 153 TS/TSX files; **108** test files |
 | Source size | about 97,308 Python lines and 14,933 TS/TSX lines |
 
 ### 3.2 Established foundation to reuse
@@ -104,10 +109,10 @@ the current checkout, current evidence below wins.
 | No durable agent runtime | no AgentDefinition/Session/Run/Step/ToolCall/Checkpoint/Citation models or services | 1 |
 | No central LLM data policy | DatasetColumn policy fields remain nullable; no ContextEnvelope | 0 and 1–2 |
 | No prompt/model/tool/budget registry | narrow settings and strings only | 1–2 |
-| Browser bearer token is readable by JavaScript | `session.ts` writes `dclab_token`; API uses Authorization header | 0 |
-| Browser has no workspace selector propagation | web API client sends Authorization but not `X-Workspace-Id` | 0 |
+| Browser bearer token is readable by JavaScript | Replaced in S0-P02A: HttpOnly `dclab_session` + BFF; API bearer is `POST /auth/tokens` | 0 (S0-P02B CSRF/CSP) |
+| Browser workspace selector | S0-P03A: visible selector, `auth_sessions.selected_workspace_id`, BFF `X-Workspace-Id`; Python client stays explicit. Capability matrix is S0-P03B | 0 |
 | Membership authority is not end-to-end in browser routing | token role still shapes frontend behavior | 0 |
-| Global legacy simulation | `SimulationRun` has no workspace; legacy insights can read global latest | 0 |
+| Global legacy simulation | S0-P04A: `simulation_runs.workspace_id` / `project_id`; unowned archive denied; Insights workspace-filtered. Admin experiment/trial lists still mixed until S0-P04B | 0 |
 | `/v1` is small and inconsistent | raw lists, numeric event cursor, FastAPI `detail` errors, 13 operations | 0 and 5 |
 | No canonical atomic model-build command | execution intent exists, but `POST /v1/model-builds`, cancel, and retry do not | 0 and 3 |
 | No agentic notebook | notebook/script artifacts exist, but no revision/cell/execution runtime | 4 |
@@ -115,7 +120,7 @@ the current checkout, current evidence below wins.
 | Connector records are registries only | no secrets, adapter runtime, cursors, drift, webhooks, scheduler | 7 |
 | No generic recommendation/action/outcome ledger | legacy Opportunity/Prediction/Decision is one vertical | 8 |
 | Development topology is not production | Compose has only PostgreSQL and API; no managed deployment proof | 9 |
-| Documentation is stale in places | verification report is at revision 0027; README calls SSO/Kubernetes out of scope without the new program context | 0 |
+| Documentation was stale | 0027/0053 reports are indexed HISTORICAL (S0-P01A). Drift CI (S0-P01B) fails contradictory CURRENT docs and snapshot drift | — |
 | Alembic metadata cycle warning | dependency cycle among datasets/execution_requests/experiments/ingestion_runs | 0 review; repair only if justified |
 
 ## 4. Non-negotiable architecture invariants
@@ -226,8 +231,8 @@ adversarial tests, and internal E2E must all meet the Scope 1 gate before Scope
 
 ## 7. How every plan is delivered
 
-Each numbered plan is an epic-sized outcome divided into at least two coding
-agent prompts in the linked prompt file. The normal order is:
+Each numbered plan is an epic-sized outcome divided into four to eight bounded
+coding-agent prompts in the linked prompt file. The normal order is:
 
 1. inspect and record the current baseline for the plan;
 2. write or update an ADR and threat model when the boundary is new;
@@ -245,6 +250,12 @@ Every prompt should normally be one reviewable pull request. Database changes
 use expand-and-contract compatibility. Risky features remain disabled until the
 scope gate passes.
 
+The execution-grade pack contains 81 plans and 420 prompts. Every scope file
+defines plan-specific code/data/API/job/UI/test/operations contracts; the shared
+[`prompts/EXECUTION_STANDARD.md`](prompts/EXECUTION_STANDARD.md) defines the
+repository routing map, implementation packet, change budget and completion
+report. Prompt ranges in the tables are inclusive.
+
 ## 8. Scope 0 — foundation closure
 
 ### Objective
@@ -256,14 +267,14 @@ tables. Scope 0 does not rewrite the working ML platform.
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 0.1 | Current truth package: regenerate schema/OpenAPI/repo facts, replace stale verification claims, add docs index and status ledger | none | S0-P01A, S0-P01B |
-| 0.2 | Secure browser BFF/session: HttpOnly/Secure/SameSite cookie, rotation, revocation, logout, CSRF, CSP, login throttling and recovery hooks | 0.1 | S0-P02A, S0-P02B |
-| 0.3 | Authoritative multi-workspace selection and capability resolution across API, BFF, UI, cache invalidation, and tests | 0.2 | S0-P03A, S0-P03B |
-| 0.4 | Remove or tenant-scope SimulationRun/legacy insights; close raw-event and client capability leaks | 0.3 | S0-P04A, S0-P04B |
-| 0.5 | Fail-closed dataset classification bootstrap, quarantine, retention/deletion skeleton, and production LLM boot checks | 0.1 | S0-P05A, S0-P05B |
-| 0.6 | `/v1` foundation: uniform error envelope, opaque cursors, request IDs, list contracts, artifact authorization, cancel/retry lifecycle skeleton | 0.3 | S0-P06A, S0-P06B |
-| 0.7 | Development/CI parity: migration paths, worker/web/object-store Compose services, safe seed, scans, frontend component-test runner, lint modernization | 0.1 | S0-P07A, S0-P07B |
-| 0.8 | Architecture decision set, Alembic cycle analysis, current DB scale baseline, operational risk register | 0.1 | S0-P08A, S0-P08B |
+| 0.1 | Current truth package: regenerate schema/OpenAPI/repo facts, replace stale verification claims, add docs index and status ledger | none | S0-P01A–D (4) |
+| 0.2 | Secure browser BFF/session: HttpOnly/Secure/SameSite cookie, rotation, revocation, logout, CSRF, CSP, login throttling and recovery hooks | 0.1 | S0-P02A–F (6) |
+| 0.3 | Authoritative multi-workspace selection and capability resolution across API, BFF, UI, cache invalidation, and tests | 0.2 | S0-P03A–E (5) |
+| 0.4 | Remove or tenant-scope SimulationRun/legacy insights; close raw-event and client capability leaks | 0.3 | S0-P04A–D (4) |
+| 0.5 | Fail-closed dataset classification bootstrap, quarantine, retention/deletion skeleton, and production LLM boot checks | 0.1 | S0-P05A–E (5) |
+| 0.6 | `/v1` foundation: uniform error envelope, opaque cursors, request IDs, list contracts, artifact authorization, cancel/retry lifecycle skeleton | 0.3 | S0-P06A–F (6) |
+| 0.7 | Development/CI parity: migration paths, worker/web/object-store Compose services, safe seed, scans, frontend component-test runner, lint modernization | 0.1 | S0-P07A–E (5) |
+| 0.8 | Architecture decision set, Alembic cycle analysis, current DB scale baseline, operational risk register | 0.1 | S0-P08A–D (4) |
 
 ### Scope 0 exit gate
 
@@ -292,17 +303,17 @@ tool catalog contains no write, export, connector, or code-execution capability.
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 1.1 | Agent, prompt, model, tool, budget, and data-policy domain contracts plus ADR/state diagrams | Scope 0 | S1-P01A, S1-P01B |
-| 1.2 | Additive agent-control schema: definitions/versions, sessions/messages, runs/steps, tool calls, checkpoints, citations/events, approvals placeholder | 1.1 | S1-P02A, S1-P02B |
-| 1.3 | Policy/version and ledger schema: prompt releases, model/tool/budget/data versions, reservations/settlements, LLM invocation agent context | 1.2 | S1-P03A, S1-P03B |
-| 1.4 | Provider-neutral LLM gateway, deterministic fake, first provider adapter, structured output, timeout/retry/circuit breaker | 1.3 | S1-P04A, S1-P04B |
-| 1.5 | DataPolicyService and immutable ContextEnvelopeBuilder with metadata-only default, digests, injection boundaries, and deletion hooks | 1.3 | S1-P05A, S1-P05B |
-| 1.6 | AgentSessionService, AgentRunService, AgentBudgetService, PromptRegistry, ToolRegistry, CitationValidator, AgentEventService | 1.2–1.5 | S1-P06A, S1-P06B |
-| 1.7 | Bounded state machine and `agent.turn.v1` worker: one durable step, leases, checkpoint/recovery, cancellation, expiry and terminal bounds | 1.6 | S1-P07A, S1-P07B |
-| 1.8 | Read-only tool catalog for identity, projects, dataset metadata/profile, requests/builds/events, completed evidence, safe summaries and artifact metadata | 1.6 | S1-P08A, S1-P08B |
-| 1.9 | `/v1/agent` sessions/messages/runs/steps/events/citations/cancel/retry APIs and Python-client coverage | 1.7–1.8 | S1-P09A, S1-P09B |
-| 1.10 | Agent Studio UI: session list, objective/message flow, progress, citations, budgets, policy block, retry/cancel, explicit feedback | 1.9 | S1-P10A, S1-P10B |
-| 1.11 | Evaluation/adversarial program, dashboards, runbooks, feature flag, workspace allowlist, synthetic provider integration | 1.4–1.10 | S1-P11A, S1-P11B |
+| 1.1 | Agent, prompt, model, tool, budget, and data-policy domain contracts plus ADR/state diagrams | Scope 0 | S1-P01A–E (5) |
+| 1.2 | Additive agent-control schema: definitions/versions, sessions/messages, runs/steps, tool calls, checkpoints, citations/events, approvals placeholder | 1.1 | S1-P02A–F (6) |
+| 1.3 | Policy/version and ledger schema: prompt releases, model/tool/budget/data versions, reservations/settlements, LLM invocation agent context | 1.2 | S1-P03A–E (5) |
+| 1.4 | Provider-neutral LLM gateway, deterministic fake, first provider adapter, structured output, timeout/retry/circuit breaker | 1.3 | S1-P04A–F (6) |
+| 1.5 | DataPolicyService and immutable ContextEnvelopeBuilder with metadata-only default, digests, injection boundaries, and deletion hooks | 1.3 | S1-P05A–E (5) |
+| 1.6 | AgentSessionService, AgentRunService, AgentBudgetService, PromptRegistry, ToolRegistry, CitationValidator, AgentEventService | 1.2–1.5 | S1-P06A–F (6) |
+| 1.7 | Bounded state machine and `agent.turn.v1` worker: one durable step, leases, checkpoint/recovery, cancellation, expiry and terminal bounds | 1.6 | S1-P07A–F (6) |
+| 1.8 | Read-only tool catalog for identity, projects, dataset metadata/profile, requests/builds/events, completed evidence, safe summaries and artifact metadata | 1.6 | S1-P08A–E (5) |
+| 1.9 | `/v1/agent` sessions/messages/runs/steps/events/citations/cancel/retry APIs and Python-client coverage | 1.7–1.8 | S1-P09A–E (5) |
+| 1.10 | Agent Studio UI: session list, objective/message flow, progress, citations, budgets, policy block, retry/cancel, explicit feedback | 1.9 | S1-P10A–E (5) |
+| 1.11 | Evaluation/adversarial program, dashboards, runbooks, feature flag, workspace allowlist, synthetic provider integration | 1.4–1.10 | S1-P11A–E (5) |
 
 ### Scope 1 exit gate
 
@@ -380,17 +391,17 @@ Scope 3 activates selected proposals as approved commands.
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 2.1 | Agent task/delegation/critique contracts, hierarchical budgets, graph registry, policy snapshots, and multi-agent ADR/threat model | complete Scope 1 | S2-P01A, S2-P01B |
-| 2.2 | AgentTask, delegation, review, proposal, conflict, and supervision event schema with immutable lineage | 2.1 | S2-P02A, S2-P02B |
-| 2.3 | Full prompt/model/data/tool operations: evaluation suites, promotion records, shadow/canary/rollback, provider/data rules and kill switches | 2.1 | S2-P03A, S2-P03B |
-| 2.4 | Dataset steward: ingest/profile/classification/readiness/drift review and safe mapping proposals | 2.2–2.3 | S2-P04A, S2-P04B |
-| 2.5 | Problem and experiment architects: objective, target, task, entity/time, metric, validation, holdout, resource and ambiguity plans | 2.2–2.3 | S2-P05A, S2-P05B |
-| 2.6 | Preparation/feature and leakage/validation critics with plan-diff schemas and deterministic verifier precedence | 2.4–2.5 | S2-P06A, S2-P06B |
-| 2.7 | Experiment director and candidate/metric critic over stage state, failures, search evidence, stability, winner/holdout and bounded child proposals | 2.5–2.6 | S2-P07A, S2-P07B |
-| 2.8 | Artifact/provenance auditor and audience-safe reporter for digests, missing objects, reproductions, visualizations, reports and citations | 2.4–2.7 | S2-P08A, S2-P08B |
-| 2.9 | Supervisor orchestration, conflict/consensus rules, human escalation, partial-result synthesis, global stop conditions and recovery | 2.4–2.8 | S2-P09A, S2-P09B |
-| 2.10 | Agentic operations UI: task graph, specialist activity, proposals/diffs, critiques, unresolved decisions, cost, policy and evidence | 2.9 | S2-P10A, S2-P10B |
-| 2.11 | Whole-pipeline shadow evaluations, counterfactual replay, failure injection, specialist ablation, quality/cost/latency dashboards and promotion gate | 2.3–2.10 | S2-P11A, S2-P11B |
+| 2.1 | Agent task/delegation/critique contracts, hierarchical budgets, graph registry, policy snapshots, and multi-agent ADR/threat model | complete Scope 1 | S2-P01A–E (5) |
+| 2.2 | AgentTask, delegation, review, proposal, conflict, and supervision event schema with immutable lineage | 2.1 | S2-P02A–E (5) |
+| 2.3 | Full prompt/model/data/tool operations: evaluation suites, promotion records, shadow/canary/rollback, provider/data rules and kill switches | 2.1 | S2-P03A–F (6) |
+| 2.4 | Dataset steward: ingest/profile/classification/readiness/drift review and safe mapping proposals | 2.2–2.3 | S2-P04A–E (5) |
+| 2.5 | Problem and experiment architects: objective, target, task, entity/time, metric, validation, holdout, resource and ambiguity plans | 2.2–2.3 | S2-P05A–E (5) |
+| 2.6 | Preparation/feature and leakage/validation critics with plan-diff schemas and deterministic verifier precedence | 2.4–2.5 | S2-P06A–E (5) |
+| 2.7 | Experiment director and candidate/metric critic over stage state, failures, search evidence, stability, winner/holdout and bounded child proposals | 2.5–2.6 | S2-P07A–E (5) |
+| 2.8 | Artifact/provenance auditor and audience-safe reporter for digests, missing objects, reproductions, visualizations, reports and citations | 2.4–2.7 | S2-P08A–E (5) |
+| 2.9 | Supervisor orchestration, conflict/consensus rules, human escalation, partial-result synthesis, global stop conditions and recovery | 2.4–2.8 | S2-P09A–F (6) |
+| 2.10 | Agentic operations UI: task graph, specialist activity, proposals/diffs, critiques, unresolved decisions, cost, policy and evidence | 2.9 | S2-P10A–E (5) |
+| 2.11 | Whole-pipeline shadow evaluations, counterfactual replay, failure injection, specialist ablation, quality/cost/latency dashboards and promotion gate | 2.3–2.10 | S2-P11A–F (6) |
 
 ### Scope 2 exit gate
 
@@ -421,13 +432,13 @@ iteration without permitting arbitrary mutation or code execution.
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 3.1 | Canonical atomic ModelBuildCommandService and `POST /v1/model-builds` with intent, readiness, quota, preconditions and idempotency | Scope 2 | S3-P01A, S3-P01B |
-| 3.2 | Cooperative cancellation, child retry/branch lineage, event aggregation, recovery and artifact quarantine | 3.1 | S3-P02A, S3-P02B |
-| 3.3 | Exact ApprovalService and policy for sensitive reads, compute, internal mutation, publish and external action risk tiers | 3.1 | S3-P03A, S3-P03B |
-| 3.4 | Activate typed agent tools: draft ProblemSpec, validate readiness, create/cancel/retry build, request export, create corrective child proposal | 3.2–3.3 | S3-P04A, S3-P04B |
-| 3.5 | Bounded experiment iteration: hypothesis/change digest, parent citation, holdout discipline, total portfolio budget and stop policy | 3.4 | S3-P05A, S3-P05B |
-| 3.6 | Unified web/SDK/agent command and approval UI with exact summary, cost, state, denials, notifications and audit | 3.4–3.5 | S3-P06A, S3-P06B |
-| 3.7 | Scientific, concurrency, recovery, approval-substitution and agent-mutation evaluation gate | 3.1–3.6 | S3-P07A, S3-P07B |
+| 3.1 | Canonical atomic ModelBuildCommandService and `POST /v1/model-builds` with intent, readiness, quota, preconditions and idempotency | Scope 2 | S3-P01A–F (6) |
+| 3.2 | Cooperative cancellation, child retry/branch lineage, event aggregation, recovery and artifact quarantine | 3.1 | S3-P02A–E (5) |
+| 3.3 | Exact ApprovalService and policy for sensitive reads, compute, internal mutation, publish and external action risk tiers | 3.1 | S3-P03A–E (5) |
+| 3.4 | Activate typed agent tools: draft ProblemSpec, validate readiness, create/cancel/retry build, request export, create corrective child proposal | 3.2–3.3 | S3-P04A–E (5) |
+| 3.5 | Bounded experiment iteration: hypothesis/change digest, parent citation, holdout discipline, total portfolio budget and stop policy | 3.4 | S3-P05A–E (5) |
+| 3.6 | Unified web/SDK/agent command and approval UI with exact summary, cost, state, denials, notifications and audit | 3.4–3.5 | S3-P06A–E (5) |
+| 3.7 | Scientific, concurrency, recovery, approval-substitution and agent-mutation evaluation gate | 3.1–3.6 | S3-P07A–E (5) |
 
 ### Scope 3 exit gate
 
@@ -449,13 +460,13 @@ Prompt file: [`prompts/SCOPE_03_CONTROLLED_COMMANDS.md`](prompts/SCOPE_03_CONTRO
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 4.1 | Notebook/revision/cell/environment/input/output domain and storage model | Scope 2; write cells need 3 | S4-P01A, S4-P01B |
-| 4.2 | Managed cells for Markdown, DCLab query, profile, chart, build intent, evidence, decision and agent objective | 4.1 | S4-P02A, S4-P02B |
-| 4.3 | Notebook APIs, optimistic concurrency, execution jobs, cancel/retry, lineage and exports | 4.2 | S4-P03A, S4-P03B |
-| 4.4 | Agent-generated reviewable diffs, revision proposals, resource binding and error explanation | 4.2–4.3 | S4-P04A, S4-P04B |
-| 4.5 | Studio notebook UI, collaboration boundary, provenance drawer and accessible output states | 4.3–4.4 | S4-P05A, S4-P05B |
-| 4.6 | Isolated Python beta: disposable sandbox, immutable images, no secrets/network, quotas, manifests, publisher and cleanup | managed notebook gate | S4-P06A, S4-P06B |
-| 4.7 | Reproducibility, sandbox escape, egress, exhaustion, artifact-smuggling and export verification | 4.6 | S4-P07A, S4-P07B |
+| 4.1 | Notebook/revision/cell/environment/input/output domain and storage model | Scope 2; write cells need 3 | S4-P01A–E (5) |
+| 4.2 | Managed cells for Markdown, DCLab query, profile, chart, build intent, evidence, decision and agent objective | 4.1 | S4-P02A–E (5) |
+| 4.3 | Notebook APIs, optimistic concurrency, execution jobs, cancel/retry, lineage and exports | 4.2 | S4-P03A–F (6) |
+| 4.4 | Agent-generated reviewable diffs, revision proposals, resource binding and error explanation | 4.2–4.3 | S4-P04A–E (5) |
+| 4.5 | Studio notebook UI, collaboration boundary, provenance drawer and accessible output states | 4.3–4.4 | S4-P05A–E (5) |
+| 4.6 | Isolated Python beta: disposable sandbox, immutable images, no secrets/network, quotas, manifests, publisher and cleanup | managed notebook gate | S4-P06A–F (6) |
+| 4.7 | Reproducibility, sandbox escape, egress, exhaustion, artifact-smuggling and export verification | 4.6 | S4-P07A–E (5) |
 
 ### Scope 4 exit gate
 
@@ -473,12 +484,12 @@ Prompt file: [`prompts/SCOPE_04_AGENTIC_NOTEBOOK.md`](prompts/SCOPE_04_AGENTIC_N
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 5.1 | Service accounts, hashed scoped tokens, rotation/revocation/last-use, OAuth/device-flow integration and audit | Scope 3 | S5-P01A, S5-P01B |
-| 5.2 | Complete stable `/v1`: resources, commands, errors, cursors, ETag, quotas, rate limits, uploads/downloads and OpenAPI compatibility | 5.1 | S5-P02A, S5-P02B |
-| 5.3 | Public SDK with sync/async parity, auth providers, iterators, waiters, safe retry/idempotency and streaming | 5.2 | S5-P03A, S5-P03B |
-| 5.4 | Separate customer CLI package over SDK: auth/config/workspace/project/dataset/build/artifact/agent/approval/notebook commands | 5.3 | S5-P04A, S5-P04B |
-| 5.5 | Stable JSON/JSONL, exit codes, signal/timeout semantics, keychain handling and shell completion | 5.4 | S5-P05A, S5-P05B |
-| 5.6 | Package matrices, SBOM, signatures, provenance, compatibility and release automation | 5.3–5.5 | S5-P06A, S5-P06B |
+| 5.1 | Service accounts, hashed scoped tokens, rotation/revocation/last-use, OAuth/device-flow integration and audit | Scope 3 | S5-P01A–E (5) |
+| 5.2 | Complete stable `/v1`: resources, commands, errors, cursors, ETag, quotas, rate limits, uploads/downloads and OpenAPI compatibility | 5.1 | S5-P02A–F (6) |
+| 5.3 | Public SDK with sync/async parity, auth providers, iterators, waiters, safe retry/idempotency and streaming | 5.2 | S5-P03A–E (5) |
+| 5.4 | Separate customer CLI package over SDK: auth/config/workspace/project/dataset/build/artifact/agent/approval/notebook commands | 5.3 | S5-P04A–E (5) |
+| 5.5 | Stable JSON/JSONL, exit codes, signal/timeout semantics, keychain handling and shell completion | 5.4 | S5-P05A–D (4) |
+| 5.6 | Package matrices, SBOM, signatures, provenance, compatibility and release automation | 5.3–5.5 | S5-P06A–E (5) |
 
 ### Scope 5 exit gate
 
@@ -495,17 +506,17 @@ Prompt file: [`prompts/SCOPE_05_PUBLIC_API_SDK_CLI.md`](prompts/SCOPE_05_PUBLIC_
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 6.1 | `packages/dclab_mcp` architecture over public SDK, pinned protocol decision and threat model | Scope 5 | S6-P01A, S6-P01B |
-| 6.2 | Local stdio server with clean framing, read-only tools, resources, prompts, cursors and bounded structured results | 6.1 | S6-P02A, S6-P02B |
-| 6.3 | Hosted Streamable HTTP, protected-resource metadata, OAuth audience/scope, Origin/Host/DNS-rebinding controls and sessions | 6.2 | S6-P03A, S6-P03B |
-| 6.4 | Selected build/agent write tools using existing command, budget, approval and idempotency contracts | Scope 3 and 6.3 | S6-P04A, S6-P04B |
-| 6.5 | Protocol/client conformance, malicious payload, tenant, output-leakage, rate/concurrency and operational release gate | 6.2–6.4 | S6-P05A, S6-P05B |
+| 6.1 | `packages/dclab_mcp` architecture over public SDK, pinned protocol decision and threat model | Scope 5 | S6-P01A–D (4) |
+| 6.2 | Local stdio server with clean framing, read-only tools, resources, prompts, cursors and bounded structured results | 6.1 | S6-P02A–E (5) |
+| 6.3 | Hosted Streamable HTTP, protected-resource metadata, OAuth audience/scope, Origin/Host/DNS-rebinding controls and stateless request handling | 6.2 | S6-P03A–F (6) |
+| 6.4 | Selected build/agent write tools using existing command, budget, approval and idempotency contracts | Scope 3 and 6.3 | S6-P04A–E (5) |
+| 6.5 | Protocol/client conformance, malicious payload, tenant, output-leakage, rate/concurrency and operational release gate | 6.2–6.4 | S6-P05A–E (5) |
 
 ### Scope 6 exit gate
 
 MCP is a thin SDK adapter with no broader authority. Hosted access validates
 issuer, signature, audience, expiry, scope, membership, workspace, Origin, host,
-session and rate limits. Results contain no raw rows, internal-only details,
+protocol revision/request metadata and rate limits. Results contain no raw rows, internal-only details,
 secrets, prompts, hidden reasoning, storage keys, or signed URLs. Read and write
 surfaces have independent kill switches.
 
@@ -517,12 +528,12 @@ Prompt file: [`prompts/SCOPE_06_MCP.md`](prompts/SCOPE_06_MCP.md).
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 7.1 | Direct multipart upload, quarantine/staging, streaming digest/MIME/archive/malware checks and async profile/classification | Scope 0 | S7-P01A, S7-P01B |
-| 7.2 | Connector definitions/config versions, sync plans/runs, checkpoints, schema snapshots, webhook receipts and managed secret references | 7.1 and Scope 5 identity | S7-P02A, S7-P02B |
-| 7.3 | Narrow adapter/secret/egress contract and faithful fake contract suite | 7.2 | S7-P03A, S7-P03B |
-| 7.4 | One pilot-selected provider: connection test, discovery, full/incremental sync, atomic publish, mapping and classification lineage | 7.3 | S7-P04A, S7-P04B |
-| 7.5 | Scheduler, webhook, backpressure, rate limit, reconciliation, schema-drift review, pause/resume/revoke and cleanup | 7.4 | S7-P05A, S7-P05B |
-| 7.6 | Connector UI/CLI/agent integration, freshness/quality dashboards, runbooks and staging provider proof | 7.4–7.5 | S7-P06A, S7-P06B |
+| 7.1 | Direct multipart upload, quarantine/staging, streaming digest/MIME/archive/malware checks and async profile/classification | Scope 0 | S7-P01A–E (5) |
+| 7.2 | Connector definitions/config versions, sync plans/runs, checkpoints, schema snapshots, webhook receipts and managed secret references | 7.1 and Scope 5 identity | S7-P02A–E (5) |
+| 7.3 | Narrow adapter/secret/egress contract and faithful fake contract suite | 7.2 | S7-P03A–E (5) |
+| 7.4 | One pilot-selected provider: connection test, discovery, full/incremental sync, atomic publish, mapping and classification lineage | 7.3 | S7-P04A–F (6) |
+| 7.5 | Scheduler, webhook, backpressure, rate limit, reconciliation, schema-drift review, pause/resume/revoke and cleanup | 7.4 | S7-P05A–F (6) |
+| 7.6 | Connector UI/CLI/agent integration, freshness/quality dashboards, runbooks and staging provider proof | 7.4–7.5 | S7-P06A–E (5) |
 
 ### Scope 7 exit gate
 
@@ -540,12 +551,12 @@ Prompt file: [`prompts/SCOPE_07_CONNECTORS.md`](prompts/SCOPE_07_CONNECTORS.md).
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 8.1 | Domain-neutral DecisionCase and immutable RecommendationVersion with candidates, constraints, evidence class, uncertainty and `do nothing` | Scopes 3 and 7 | S8-P01A, S8-P01B |
-| 8.2 | ActionProposal/ActionExecution schema, exact approval integration, canonical digest and transactional outbox/delivery attempts | 8.1 | S8-P02A, S8-P02B |
-| 8.3 | One low-risk outbound provider action with idempotency, reconciliation, cancellation and compensation classification | 8.2 | S8-P03A, S8-P03B |
-| 8.4 | OutcomeObservation, corrections, attribution windows, ImpactAssessment, experiment evidence and FeedbackSignal | 8.1–8.3 | S8-P04A, S8-P04B |
-| 8.5 | Recommendation/action/outcome APIs, UI, SDK/CLI, agent tools and audience-safe explanation | 8.1–8.4 | S8-P05A, S8-P05B |
-| 8.6 | End-to-end duplicate/ambiguous delivery, outcome lag, causal-language, privacy and operator recovery gate | 8.1–8.5 | S8-P06A, S8-P06B |
+| 8.1 | Domain-neutral DecisionCase and immutable RecommendationVersion with candidates, constraints, evidence class, uncertainty and `do nothing` | Scopes 3 and 7 | S8-P01A–E (5) |
+| 8.2 | ActionProposal/ActionExecution schema, exact approval integration, canonical digest and transactional outbox/delivery attempts | 8.1 | S8-P02A–F (6) |
+| 8.3 | One low-risk outbound provider action with idempotency, reconciliation, cancellation and compensation classification | 8.2 | S8-P03A–F (6) |
+| 8.4 | OutcomeObservation, corrections, attribution windows, ImpactAssessment, experiment evidence and FeedbackSignal | 8.1–8.3 | S8-P04A–E (5) |
+| 8.5 | Recommendation/action/outcome APIs, UI, SDK/CLI, agent tools and audience-safe explanation | 8.1–8.4 | S8-P05A–E (5) |
+| 8.6 | End-to-end duplicate/ambiguous delivery, outcome lag, causal-language, privacy and operator recovery gate | 8.1–8.5 | S8-P06A–E (5) |
 
 ### Scope 8 exit gate
 
@@ -563,13 +574,13 @@ Prompt file: [`prompts/SCOPE_08_ACTIONS_AND_OUTCOMES.md`](prompts/SCOPE_08_ACTIO
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 9.1 | Environment/IaC architecture for dev, CI, staging, production, network, DNS/TLS/WAF, identities and configuration | applicable product scopes | S9-P01A, S9-P01B |
-| 9.2 | Managed PostgreSQL, PgBouncer, private object storage, secrets/KMS, roles, migration pipeline, PITR, lifecycle and reconciliation | 9.1 | S9-P02A, S9-P02B |
-| 9.3 | Separate web/API/ML/agent/integration/notebook deployments, handler allowlists, autoscaling, quotas and graceful degradation | 9.1–9.2 | S9-P03A, S9-P03B |
-| 9.4 | OpenTelemetry traces, structured redacted logs, metrics, SLO/error budgets, dashboards, alerts and runbooks | 9.2–9.3 | S9-P04A, S9-P04B |
-| 9.5 | CI/CD: lint/types/tests/evals, migrations, containers, SBOM, vulnerability/license/secret scan, signing, provenance, canary and rollback | 9.1–9.4 | S9-P05A, S9-P05B |
-| 9.6 | Privacy retention/deletion, backup/restore, incident response, penetration test and compliance evidence | 9.2–9.5 | S9-P06A, S9-P06B |
-| 9.7 | Allowlisted pilot, quotas/limits, support path, success metrics, full ingest-to-outcome workflow and go/no-go review | 9.1–9.6 | S9-P07A, S9-P07B |
+| 9.1 | Environment/IaC architecture for dev, CI, staging, production, network, DNS/TLS/WAF, identities and configuration | applicable product scopes | S9-P01A–E (5) |
+| 9.2 | Managed PostgreSQL, PgBouncer, private object storage, secrets/KMS, roles, migration pipeline, PITR, lifecycle and reconciliation | 9.1 | S9-P02A–E (5) |
+| 9.3 | Separate web/API/ML/agent/integration/notebook deployments, handler allowlists, autoscaling, quotas and graceful degradation | 9.1–9.2 | S9-P03A–E (5) |
+| 9.4 | OpenTelemetry traces, structured redacted logs, metrics, SLO/error budgets, dashboards, alerts and runbooks | 9.2–9.3 | S9-P04A–E (5) |
+| 9.5 | CI/CD: lint/types/tests/evals, migrations, containers, SBOM, vulnerability/license/secret scan, signing, provenance, canary and rollback | 9.1–9.4 | S9-P05A–F (6) |
+| 9.6 | Privacy retention/deletion, backup/restore, incident response, penetration test and compliance evidence | 9.2–9.5 | S9-P06A–F (6) |
+| 9.7 | Allowlisted pilot, quotas/limits, support path, success metrics, full ingest-to-outcome workflow and go/no-go review | 9.1–9.6 | S9-P07A–E (5) |
 
 ### Scope 9 exit gate
 
@@ -587,13 +598,13 @@ Prompt file: [`prompts/SCOPE_09_PRODUCTION_RELEASE.md`](prompts/SCOPE_09_PRODUCT
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 10.1 | Capacity/cardinality/cost baseline, workload forecasts, thresholds and quarterly architecture review | production telemetry | S10-P01A, S10-P01B |
-| 10.2 | Database evolution only when triggered: query/index tuning, PgBouncer, RLS proof, read replicas, partition/archive and restore | 10.1 evidence | S10-P02A, S10-P02B |
-| 10.3 | Compute/queue evolution: resource-class workers, distributed CPU/GPU, notebook pool and broker only after SLO evidence | 10.1 evidence | S10-P03A, S10-P03B |
-| 10.4 | Retrieval benchmark, PostgreSQL full text/pgvector first, poisoning/deletion/tenant tests; separate vector service only if justified | measured retrieval need | S10-P04A, S10-P04B |
-| 10.5 | Enterprise identity, SSO/SCIM, organization hierarchy, regional data planes, CMK and audit export | customer demand/contracts | S10-P05A, S10-P05B |
-| 10.6 | Additional connectors, actions, specialized agent teams, templates and scheduled proactive agents with contract suites | proven first adapters/agents | S10-P06A, S10-P06B |
-| 10.7 | Controlled L3/L4 autonomy, model serving/drift/champion-challenger and action policies through shadow, approval, canary and rollback | long-running outcome evidence | S10-P07A, S10-P07B |
+| 10.1 | Capacity/cardinality/cost baseline, workload forecasts, thresholds and quarterly architecture review | production telemetry | S10-P01A–D (4) |
+| 10.2 | Database evolution only when triggered: query/index tuning, PgBouncer, RLS proof, read replicas, partition/archive and restore | 10.1 evidence | S10-P02A–E (5) |
+| 10.3 | Compute/queue evolution: resource-class workers, distributed CPU/GPU, notebook pool and broker only after SLO evidence | 10.1 evidence | S10-P03A–E (5) |
+| 10.4 | Retrieval benchmark, PostgreSQL full text/pgvector first, poisoning/deletion/tenant tests; separate vector service only if justified | measured retrieval need | S10-P04A–E (5) |
+| 10.5 | Enterprise identity, SSO/SCIM, organization hierarchy, regional data planes, CMK and audit export | customer demand/contracts | S10-P05A–E (5) |
+| 10.6 | Additional connectors, actions, specialized agent teams, templates and scheduled proactive agents with contract suites | proven first adapters/agents | S10-P06A–E (5) |
+| 10.7 | Controlled L3/L4 autonomy, model serving/drift/champion-challenger and action policies through shadow, approval, canary and rollback | long-running outcome evidence | S10-P07A–F (6) |
 
 ### Scope 10 exit rule
 
@@ -797,4 +808,8 @@ Known limitation:
 Reviewer and date:
 ```
 
-The next operational action is Scope 0, Plan 0.1, prompt `S0-P01A`.
+The next operational action is the earliest dependency-eligible prompt without
+`VERIFIED` evidence in `docs/verification/`. Finish any in-flight work first.
+Because Scope 0 execution began before the prompt expansion, reconcile its newly
+added prompt letters and record a verified no-op when current code already meets
+the contract; never build a duplicate implementation merely to satisfy an ID.

@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.middleware.security import CsrfOriginMiddleware, SecurityHeadersMiddleware
+
 from app.api.admin_client_uploads import router as admin_client_uploads_router
 from app.api.admin_model_registry import router as admin_model_registry_router
 from app.api.admin_ml_verifications import router as admin_ml_verifications_router
@@ -38,13 +40,14 @@ from app.api.technical_explorer import (
     workspace_router as technical_explorer_workspace_router,
 )
 from app.api.v1 import router as v1_router
-from app.config import get_settings
+from app.config import get_settings, validate_runtime_settings
 from app.db.session import get_engine
 from app.services.job_dispatcher import start_local_ml_worker
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    validate_runtime_settings(get_settings())
     # Thread dispatcher: claim leftover queued uploads in this process.
     # Postgres dispatcher: a separate `dclab worker run` process claims jobs.
     stop = start_local_ml_worker()
@@ -56,13 +59,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Decision.ai", version="0.1.0", lifespan=lifespan)
+app.add_middleware(CsrfOriginMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in get_settings().cors_origins.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "X-Request-Id"],
 )
 
 admin_api = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])

@@ -13,6 +13,7 @@ import { displayName, roleLabel } from "@/lib/infrastructure/session";
 import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { WorkspaceSelector } from "./WorkspaceSelector";
 
 type AppSidebarProps = {
   mobile?: boolean;
@@ -77,9 +78,10 @@ export function AppSidebar({
 
   function handleSignOut() {
     onNavigate?.();
-    signOut();
-    router.push("/login");
-    router.refresh();
+    void signOut().then(() => {
+      router.push("/login");
+      router.refresh();
+    });
   }
 
   const accountName = user ? displayName(user) : "Loading account";
@@ -97,12 +99,15 @@ export function AppSidebar({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
         {loaded && user ? (
-          <SidebarNavigation
-            sections={sections}
-            pathname={pathname}
-            collapsed={iconOnly}
-            onNavigate={onNavigate}
-          />
+          <>
+            <WorkspaceSelector collapsed={iconOnly} inputId={mobile ? "active-workspace-mobile" : "active-workspace"} />
+            <SidebarNavigation
+              sections={sections}
+              pathname={pathname}
+              collapsed={iconOnly}
+              onNavigate={onNavigate}
+            />
+          </>
         ) : (
           <div className="px-3 pt-7 text-sm text-ink-muted">{iconOnly ? "…" : "Loading navigation…"}</div>
         )}

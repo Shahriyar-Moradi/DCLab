@@ -1,20 +1,38 @@
 # DCLab Verification Index
 
-| Document | What it is | How it was produced |
-| --- | --- | --- |
-| [verification/BASELINE.md](verification/BASELINE.md) | Frozen `main` SHA, tool versions, isolation policy | Recorded before repairs |
-| [DCLAB_DATABASE_ARCHITECTURE.md](DCLAB_DATABASE_ARCHITECTURE.md) | Physical schema, FKs, indexes, JSONB risks | Alembic head + `models.py` + pg_catalog on 55432 |
-| [DCLAB_API_REFERENCE.md](DCLAB_API_REFERENCE.md) | Runtime OpenAPI operations | FastAPI `app.openapi()` |
-| [DCLAB_RBAC_CAPABILITY_MATRIX.md](DCLAB_RBAC_CAPABILITY_MATRIX.md) | Role/capability enforcement | Route guards + capability service + tests |
-| [DCLAB_PIPELINE_DEEP_DIVE.md](DCLAB_PIPELINE_DEEP_DIVE.md) | 90 implementation-linked pipeline topics | `auto_train_service`, `runner`, `auto_prepare`, verifier |
-| [DCLAB_E2E_VERIFICATION_RUNBOOK.md](DCLAB_E2E_VERIFICATION_RUNBOOK.md) | Reproducible commands | Isolated 55432 cluster |
-| [DCLAB_SYSTEM_VERIFICATION_REPORT.md](DCLAB_SYSTEM_VERIFICATION_REPORT.md) | Claim ledger, P0–P3, checklists, command log | Runtime evidence from isolated 55432 + Playwright + live OpenAI |
-| [DCLAB_ACCESS_ARCHITECTURE.md](DCLAB_ACCESS_ARCHITECTURE.md) | Identity and route trees | Corrected where runtime disproved a claim |
-| [DCLAB_BUSINESS_ADMINISTRATION.md](DCLAB_BUSINESS_ADMINISTRATION.md) | Business plane | Source doc; see report checklists |
-| [DCLAB_PLATFORM_ADMINISTRATION.md](DCLAB_PLATFORM_ADMINISTRATION.md) | Platform plane | Source doc; see report checklists |
-| [DCLAB_DATA_AND_MODEL_LINEAGE.md](DCLAB_DATA_AND_MODEL_LINEAGE.md) | Lineage hierarchy | Source doc; 0027 repair noted in report |
-| [DCLAB_PIPELINE_OBSERVABILITY.md](DCLAB_PIPELINE_OBSERVABILITY.md) | Events and LLM ledger | Source doc; observatory role gate updated |
-| [DCLAB_ADAPTIVE_MODEL_BUILDER.md](DCLAB_ADAPTIVE_MODEL_BUILDER.md) | Phase 1 scientific planning layer plus adaptive final holdout | ProblemProfile, HoldoutPlan, ValidationPlan, MetricPlan, LeakageAuditor, verifier, benchmarks |
-| [DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md](DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md) | Production Labs E2E scientific proof (Repairs 1–3) | `/app/labs/uploads` → `run_auto_train_job` → ModelVersion → verifier → monitor |
+**Current truth:** [`verification/S0_P01A_CURRENT_TRUTH.md`](verification/S0_P01A_CURRENT_TRUTH.md)
+(SHA `49da76b` product baseline, Alembic `0058_simulation_workspace`, 2026-09-10).
+
+**Status ledger:** [`verification/README.md`](verification/README.md).
+
+Documents below are **not** silently current. Historical reports keep their
+original evidence; do not copy their executive counts into new plans.
+
+| Document | Status | What it is | How it was produced |
+| --- | --- | --- | --- |
+| [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md) | **CURRENT** | SHA, Alembic, OpenAPI, inventories, gate results, 0053→0054 reconciliation, claim ledger | `scripts/record_repo_truth.py` + pytest + frontend gates + GitHub Actions run 52 |
+| [verification/S0_P02A_BROWSER_SESSIONS.md](verification/S0_P02A_BROWSER_SESSIONS.md) | **CURRENT** | HttpOnly BFF sessions, ADR 0001 | S0-P02A tests + source assertions |
+| [verification/S0_P02B_SESSION_HARDENING.md](verification/S0_P02B_SESSION_HARDENING.md) | **CURRENT** | CSRF, CSP, throttle, recovery | S0-P02B tests + Playwright spec |
+| [verification/S0_P03A_WORKSPACE_SELECTION.md](verification/S0_P03A_WORKSPACE_SELECTION.md) | **CURRENT** | Active workspace selector, ADR 0003, Alembic `0058_simulation_workspace` | S0-P03A tests |
+| [verification/S0_P04A_SIMULATION_INSIGHTS.md](verification/S0_P04A_SIMULATION_INSIGHTS.md) | **CURRENT** | SimulationRun/Insights tenancy, ADR 0004, Alembic `0058_simulation_workspace` | S0-P04A tests |
+| [verification/S0_P01B_TRUTH_DRIFT.md](verification/S0_P01B_TRUTH_DRIFT.md) | **CURRENT** | Drift CI, synthetic-fail tests, snapshot refresh | `scripts/check_truth_drift.py` + `contracts/` |
+| [../contracts/README.md](../contracts/README.md) | **CURRENT** | Intentional contract change vs accidental drift | S0-P01B |
+| [verification/README.md](verification/README.md) | **CURRENT** | Current vs historical status ledger | S0-P01A |
+| [verification/BASELINE.md](verification/BASELINE.md) | **HISTORICAL** | Pre-repair `main` SHA `de2af56`, tool versions, isolation policy | Recorded 2026-09-04 before repairs |
+| [DCLAB_DATABASE_ARCHITECTURE.md](DCLAB_DATABASE_ARCHITECTURE.md) | **HISTORICAL freeze (0053)** | Physical schema, FKs, indexes, JSONB risks at `0053_pipeline_run_branch` | Alembic head + `models.py` + pg_catalog. Current head is **0054** (CHECK-only) |
+| [DCLAB_DATABASE_MIGRATION_MAP.md](DCLAB_DATABASE_MIGRATION_MAP.md) | **HISTORICAL map** | Redesign object map through 0053; 0054 addendum at top | Written at 0053; addendum names current head |
+| [DCLAB_API_REFERENCE.md](DCLAB_API_REFERENCE.md) | **HISTORICAL** | Runtime OpenAPI operations (then 94) | FastAPI `app.openapi()` at an older SHA. Current: **157** operations |
+| [DCLAB_RBAC_CAPABILITY_MATRIX.md](DCLAB_RBAC_CAPABILITY_MATRIX.md) | **LIVING source** | Role/capability enforcement | Route guards + capability service + tests |
+| [DCLAB_PIPELINE_DEEP_DIVE.md](DCLAB_PIPELINE_DEEP_DIVE.md) | **LIVING source** | Implementation-linked pipeline topics | `auto_train_service`, `runner`, `auto_prepare`, verifier |
+| [DCLAB_E2E_VERIFICATION_RUNBOOK.md](DCLAB_E2E_VERIFICATION_RUNBOOK.md) | **LIVING runbook** | Optional local 55432 commands | Required browser E2E is GitHub `Whole-system E2E` on the same SHA |
+| [DCLAB_SYSTEM_VERIFICATION_REPORT.md](DCLAB_SYSTEM_VERIFICATION_REPORT.md) | **HISTORICAL** | Claim ledger, P0–P3, checklists, command log at Alembic **0027** | Isolated 55432 + Playwright + live OpenAI on 2026-09-04 |
+| [DCLAB_ACCESS_ARCHITECTURE.md](DCLAB_ACCESS_ARCHITECTURE.md) | **LIVING source** | Identity and route trees | Corrected where runtime disproved a claim |
+| [DCLAB_BUSINESS_ADMINISTRATION.md](DCLAB_BUSINESS_ADMINISTRATION.md) | **LIVING source** | Business plane | Source doc; see current tests, not 0027 counts |
+| [DCLAB_PLATFORM_ADMINISTRATION.md](DCLAB_PLATFORM_ADMINISTRATION.md) | **LIVING source** | Platform plane | Source doc |
+| [DCLAB_DATA_AND_MODEL_LINEAGE.md](DCLAB_DATA_AND_MODEL_LINEAGE.md) | **PARTIAL / older diagram** | Lineage hierarchy before DataAccess was first-class | Canonical chain is now Workspace → Project → ProblemSpec → DataSource → DataAccess → IngestionRun → Dataset → WorkflowRun → PipelineRun → ModelVersion |
+| [DCLAB_PIPELINE_OBSERVABILITY.md](DCLAB_PIPELINE_OBSERVABILITY.md) | **LIVING source** | Events and LLM ledger | Observatory role gate in tests |
+| [DCLAB_ADAPTIVE_MODEL_BUILDER.md](DCLAB_ADAPTIVE_MODEL_BUILDER.md) | **LIVING source** | Phase 1 scientific planning layer plus adaptive final holdout | ProblemProfile, HoldoutPlan, ValidationPlan, MetricPlan, LeakageAuditor, verifier, benchmarks |
+| [DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md](DCLAB_ADAPTIVE_MODEL_BUILDER_CORRECTNESS.md) | **LIVING source** | Production Labs E2E scientific proof (Repairs 1–3) | `/app/labs/uploads` → `run_auto_train_job` → ModelVersion → verifier → monitor |
+| [DCLAB_DATABASE_ERD.md](DCLAB_DATABASE_ERD.md) | **HISTORICAL** | Mermaid ERD | Frozen at Alembic **0039**; current head is **0054** |
 
 Evidence artifacts (gitignored): `artifacts/e2e-verification/`.

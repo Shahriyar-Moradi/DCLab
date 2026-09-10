@@ -1,335 +1,692 @@
-# Scope 2 prompts — complete agentic operating system
+# Scope 2 execution prompts — complete agentic operating system
 
-Start only after Scope 1 is fully verified. Scope 2 makes the entire DCLab
-workflow agent-supervised in read, shadow, critique and proposal modes. It does
-not activate model-build or external-write tools; those arrive in Scope 3/8.
-Use the common preamble in `README.md`.
+Start only after verified Scope 1. Apply `README.md` and
+`EXECUTION_STANDARD.md`. Agents supervise the whole deterministic pipeline in
+read, shadow, critique and proposal modes. Domain writes, builds, exports,
+external actions and arbitrary code remain disabled.
+
+## Scope implementation boundary
+
+Extend Scope 1 through cohesive `domain/agent_supervision.py`,
+`services/agent_supervision_*.py`, code-owned specialist modules and a resource
+router such as `api/v1_agent_operations.py`. Proposals are typed immutable
+records, not SQL/code blobs. Specialists call existing dataset, ProblemSpec,
+scientific, model-build, evidence, artifact and observability query services.
 
 ## Plan 2.1 — multi-agent contracts and governance
 
-### S2-P01A — define the supervisor/specialist operating contract
+**Contract.** The supervisor owns a persisted DAG, global completion and shared
+budget. Each specialist receives the intersection of parent authority and a
+smaller context/tool set. Conflict never resolves through silent majority.
+
+### S2-P01A — operating-model ADR and specialist boundaries
 
 ```text
-Write an ADR and versioned domain schemas for a supervisor plus Dataset Steward,
-Problem/Plan Architect, Preparation/Feature Reviewer, Leakage/Validation Critic,
-Experiment Director, Candidate/Metric Critic, Artifact/Provenance Auditor,
-Technical/Business Reporter and Reliability/Recovery Analyst. Define task
-decomposition, dependency graph, typed specialist inputs/outputs, parent/child
-run/task lineage, critique/revision, conflict, human escalation, partial result,
-global completion and stop states. Define when one agent is preferred and what
-measured threshold justifies specialists. Agents may create proposal records
-only; deterministic services own domain facts and future mutations.
+Write the multi-agent ADR defining supervisor, Dataset Steward, Problem/Plan
+Architect, Preparation/Feature Reviewer, Leakage/Validation Critic, Experiment
+Director, Candidate/Metric Critic, Artifact/Provenance Auditor, audience-safe
+Reporters and Reliability/Recovery Analyst. For each specify objective, typed
+input/output, allowed read tools, forbidden behavior, citations, escalation and
+completion. Define when the single Scope 1 agent is sufficient. Add contract
+schemas/tests only; do not spawn specialists yet.
 ```
 
-### S2-P01B — hierarchical authority, budget and threat model
+### S2-P01B — task DAG, review, conflict and proposal contracts
 
 ```text
-Define and test pure policy for delegation. A child receives the intersection
-of parent workspace/project/resource scope, data policy, model policy, tool
-catalog, risk tier, deadline and remaining budget; it can never widen them.
-Allocate/reserve child steps/tokens/cost/time/jobs atomically and settle back to
-the parent. Prevent recursive/unbounded spawning, circular dependencies,
-self-approval, policy/tool/model self-promotion, runtime code changes and hidden
-memory. Threat-model confused deputies, collusion/consensus failure, poisoned
-specialist output, delegation storms and cross-agent data leakage. Add schema
-and property tests for monotonic narrowing and global stop conditions.
+Define versioned Task, Delegation, Review/Critique, Conflict and Proposal value
+objects. Tasks carry dependencies, priority/deadline, expected result schema and
+stop conditions. Reviews append verdict/concerns/evidence/revision request;
+conflicts list positions and deterministic/human resolver; proposals bind target
+resource/version, canonical typed patch, expected effect, risk and validation.
+Reject cycles, arbitrary code/SQL and mutable historical reviews in pure tests.
+```
+
+### S2-P01C — hierarchical authority and budget policy
+
+```text
+Define a pure derivation function where child workspace/project/resource/data/
+model/tool/risk/deadline/budget authority is the intersection of parent and
+specialist policy. Reserve child steps, calls, tokens, cost, time, bytes and job
+slots atomically and settle unused capacity to the parent. Bound depth, fan-out,
+parallelism and total tasks. Add property tests proving monotonic narrowing,
+global exhaustion and cancellation propagation.
+```
+
+### S2-P01D — graph release and compatibility contract
+
+```text
+Define immutable AgentGraphVersion containing node specialist versions, edges,
+input/output schemas, conflict policy, budget allocation, concurrency and stop
+rules. Specify draft/shadow/canary/active/retired compatibility with prompt,
+model, tool and data policy releases. Canonical digest includes every behavior-
+relevant field. Add validation for missing nodes, cycles, incompatible schemas,
+unbounded branches and retired dependency.
+```
+
+### S2-P01E — multi-agent threat and acceptance gate
+
+```text
+Threat-model delegation storms, confused deputy, collusion, poisoned specialist
+output, prompt/tool self-promotion, self-approval, hidden memory, cross-agent
+leakage, conflict manipulation and cost amplification. Map each threat to a
+contract assertion/test/kill switch. Publish state/DAG/sequence diagrams and
+confirm deterministic services remain final authority. Do not permit persistence
+implementation to start with unresolved authority or conflict rules.
 ```
 
 ## Plan 2.2 — task, delegation, review and proposal persistence
 
-### S2-P02A — add multi-agent control-plane records
+**Contract.** Use current SQLAlchemy metadata, composite tenant constraints and
+append-only history. Large task/review/proposal bodies use protected artifacts;
+queryable state and digests remain in PostgreSQL.
+
+### S2-P02A — task and dependency schema
 
 ```text
-Add additive models/migrations for AgentTask, AgentDelegation, AgentReview or
-Critique, AgentProposal, AgentConflict and supervision events. Tasks record
-workspace/project, supervisor/child runs, typed objective/result schema,
-dependency IDs, state, priority, deadline, input/output digests, allowed tools,
-policy/budget snapshots and citations. Delegations record authority narrowing
-and child allocation. Reviews append verdict, concerns, evidence and requested
-revision. Proposals contain target resource/version, canonical typed patch,
-expected effect, risks, validation result and status; never raw arbitrary code/
-SQL. Use composite tenant constraints, append-only history and measured indexes.
+Add AgentTask and dependency edges bound to workspace/project, supervisor run,
+graph/node version, objective/result schema, state, priority, deadline, input/
+output digest, attempts and stop reason. Enforce same-run/same-tenant edges,
+unique dependency pair and acyclic DAG through service validation plus defensive
+constraints. Index runnable dependency/state and run timeline queries. Add an
+additive migration and PostgreSQL integrity tests.
 ```
 
-### S2-P02B — concurrency, lineage, retention and recovery proof
+### S2-P02B — delegation and child-allocation schema
 
 ```text
-Test task DAG validation, cycle rejection, dependency scheduling, concurrent
-claim, duplicate delegation, child budget race, supervisor cancellation,
-specialist timeout, partial completion, conflict creation, review revisions and
-immutable proposal history with real PostgreSQL. Prove child references cannot
-cross workspace/project or outlive authorization. Define retention/deletion for
-tasks, reviews, proposal bodies, checkpoints and artifacts; invalidating a
-source must invalidate derived proposals. Add event cursor and reconstruction
-tests so an operator can explain exactly why a specialist ran and what evidence
-it returned after process loss.
+Add AgentDelegation linking parent task/run, child task/run, authority snapshot,
+budget reservation, depth and status. Persist canonical parent/child scope and
+prove the child snapshot is not wider before insert. Enforce same workspace/
+project, one child allocation per idempotency key and immutable accepted
+delegation. Add concurrent allocation, duplicate, cancellation and overflow
+tests with real PostgreSQL.
 ```
 
-## Plan 2.3 — prompt, model, data and evaluation operations
-
-### S2-P03A — productionize immutable releases and promotion
+### S2-P02C — review, conflict and proposal schema
 
 ```text
-Complete PromptRegistry, ModelPolicy, ToolPolicy, DataPolicy, BudgetPolicy,
-AgentVersion and graph release lifecycles: draft -> candidate -> shadow ->
-canary -> active -> retired. Add PromotionRecord with environment, compatible
-version set, evaluation run, approver, previous release, deployment ID,
-promotion/rollback time and digest. Enforce separation of duties and concurrent
-single-active promotion. Route by purpose/data class/region/retention/quality/
-latency/cost and allow only stricter fallback. Add admin read/propose/review/
-promote/rollback APIs and UI with raw prompt-body capability separated from
-metadata access.
+Add append-only AgentReview, AgentConflict and AgentProposal. Reviews bind
+reviewer version, subject version/digest, verdict, structured concerns, citations
+and requested revision. Conflicts bind competing outputs and resolution state.
+Proposals bind target type/id/version/digest, versioned patch schema, expected
+effect, risk, validation and supersession. Store large bodies as artifacts and
+reject cross-tenant/unknown target types.
 ```
 
-### S2-P03B — evaluation platform, shadow and kill-switch proof
+### S2-P02D — supervision events and query indexes
 
 ```text
-Persist versioned evaluation suites/cases/runs/results with deterministic
-policy/tool/citation assertions, calibrated qualitative rubrics, artifacts for
-large fixtures and baseline deltas. Add offline, provider-integration,
-adversarial, shadow, canary, promote and rollback orchestration. Emergency
-switches must independently disable all external LLM calls, provider/model,
-data-context class, agent definition/specialist, write tools, tool/risk tier and
-hosted MCP placeholder. Prove new steps observe stricter emergency policy,
-running steps cannot become more permissive, provider failure cannot trigger a
-retry storm, and rollback restores a historically resolvable release.
+Add versioned supervision events for task ready/claimed/completed, delegation,
+review, conflict, proposal and escalation with per-run ordering and request/trace
+correlation. Define audience-safe projections and opaque cursors. Add measured
+indexes for runnable tasks, unresolved conflicts/proposals and operator timelines;
+verify query plans using bounded graph fixtures. Never put full prompts/outputs
+or high-cardinality labels into events/metrics.
+```
+
+### S2-P02E — migration, retention and reconstruction gate
+
+```text
+Test empty/live-head upgrade, forward repair, task DAG constraints, concurrent
+claim/allocation, immutable review/proposal history and two-workspace substitution.
+Define retention/deletion for task/review bodies, artifacts and audit skeletons;
+source invalidation must mark derived proposals unusable. Reconstruct a complete
+supervision timeline after process loss from rows/events/digests. Record migration
+and query evidence before specialist services are added.
+```
+
+## Plan 2.3 — prompt, model, data, tool and evaluation operations
+
+**Contract.** Extend Scope 1 registries to governed promotion. Runtime never
+edits active releases; promotion is an authorized deterministic service with
+separation of duties and immutable evaluation evidence.
+
+### S2-P03A — release lifecycle and PromotionRecord persistence
+
+```text
+Add or complete draft -> candidate -> shadow -> canary -> active -> retired
+lifecycles for graph/agent/prompt/model/tool/data/budget releases. Add
+PromotionRecord with environment, compatible release set/digests, evaluation
+run, proposer/approver, previous release, deployment/canary, activation and
+rollback. Enforce immutable bodies, one compatible active set and separation of
+duties. Add migration, concurrency and rollback-lineage tests.
+```
+
+### S2-P03B — model/provider/data routing service
+
+```text
+Implement deterministic server routing by purpose, data class, region,
+retention/training policy, structured/tool capability, quality tier, latency and
+cost ceiling. Fallback may only be policy-compatible and equal-or-stricter; no
+provider selection by user text or LLM output. Return selected release IDs and
+reason. Test unavailable region, conflicting requirements, retired models,
+provider outage and strict fail-closed behavior.
+```
+
+### S2-P03C — evaluation persistence and runner
+
+```text
+Add EvaluationSuite/Case/Run/Result with immutable fixtures/artifact digests,
+release set, environment, deterministic assertions, calibrated rubric versions,
+baseline, per-case result and aggregate. Implement offline fake, controlled
+provider, adversarial, shadow and canary run modes as durable jobs. Bound fixture
+size/provider spend and prevent customer content in shared suites. Test resume,
+duplicate run and partial provider failure.
+```
+
+### S2-P03D — promotion, rollback and kill-switch services
+
+```text
+Implement propose/review/promote/rollback through application services with
+current admin capability, exact compatible digest, required passing safety gates
+and transactionally consistent active pointer. Rollback creates a record and
+restores a known compatible set; it never edits history. Add global/purpose/
+workspace provider, model, graph and tool kill switches evaluated at dispatch.
+Test stale approval, concurrent promotion and emergency disable.
+```
+
+### S2-P03E — admin API and operations UI
+
+```text
+Add protected `/v1` admin resources and UI for release metadata, evaluation
+status/deltas, propose/review/promote/rollback and kill switches. Raw prompt body,
+model credentials and evaluation sensitive fixtures require distinct capabilities
+and are not sent to ordinary operators. Use ETag/idempotency and stable errors.
+Add API/component/browser tests for role separation, stale version, denied body
+and rollback confirmation.
+```
+
+### S2-P03F — LLM operations release gate
+
+```text
+Run migration, promotion-race, role-separation, routing/fallback, safety-eval,
+shadow/canary and rollback/kill-switch drills. Verify a safety assertion blocks
+promotion despite aggregate quality and runtime requests retain the exact release
+set. Add dashboards/alerts/runbooks for evaluation regression, cost, breaker and
+release changes. Record a reversible inactive release before specialist work.
 ```
 
 ## Plan 2.4 — Dataset Steward
 
-### S2-P04A — implement dataset supervision in proposal mode
+**Contract.** Add one specialist over existing ingestion, DatasetColumn,
+profile, readiness, classification and data-access queries. Output is a cited
+assessment and typed proposal; it cannot publish data or change classifications.
+
+### S2-P04A — steward input/output and tool release
 
 ```text
-Implement the Dataset Steward specialist using typed read tools for source,
-ingestion, asset/version, schema, profile, quality, freshness, lineage and
-effective policies. Its structured output reports readiness, uncertainty,
-unsafe/unknown columns, target/entity/time candidates, schema drift, quality
-violations and required clarification. It may propose—never directly apply—
-classification reviews, deterministic mapping versions, exclusions,
-transformations, profiling reruns and data-repair plans. Every assertion cites
-Dataset/DatasetColumn/Profile/Finding/Policy resources and preserves original
-source evidence. Give it no object-store body, secret, arbitrary sample or
-mutation tool.
+Define DatasetStewardInput with dataset/version/purpose and minimal envelope;
+output contains readiness findings, quality/drift concerns, mapping/classification
+questions, proposed typed patches, uncertainty and citations. Register only
+dataset/source/access/schema/profile/readiness/drift read tools with strict
+bounds. Add schema/tool contract tests and an agent version/prompt candidate.
+Do not expose rows or mutation tools.
 ```
 
-### S2-P04B — steward correctness, privacy and drift evaluation
+### S2-P04B — deterministic evidence assembler
 
 ```text
-Create cases for numeric/categorical/time/text/identifier/sensitive/unknown/
-malformed columns, ambiguous targets, numeric strings, missing/sentinel values,
-duplicates, stale data, rare groups, source drift and injection inside names or
-profile text. Compare proposed changes with deterministic validators. Hard-fail
-unsafe exposure, invented statistics, cross-tenant citations, automatic safety
-downgrade, unsupported target choice or silent mapping activation. Measure
-readiness accuracy, clarification quality, citation completeness, redundant
-tool calls, cost and latency against the single-agent baseline.
+Build a service that assembles authorized Dataset, DatasetColumn, DataSource,
+DataAccess, IngestionRun, profile, quarantine/classification and prior-version
+drift facts into a minimal ContextEnvelope. Compute deterministic readiness and
+hard blockers before LLM invocation. Every fact maps to a citation/version/
+digest. Test null policy, partial profile, failed ingest, deleted object and
+cross-workspace access.
 ```
 
-## Plan 2.5 — Problem and Plan Architects
-
-### S2-P05A — objective and ProblemSpec architect
+### S2-P04C — steward execution and proposal validation
 
 ```text
-Implement a specialist that converts a user business objective plus authorized
-dataset evidence into a typed draft ProblemSpec proposal. Separate user facts,
-inferences and defaults. Include objective, prediction target, task type,
-entity/time semantics, eligible population, prediction/decision horizon,
-metric/business utility, constraints, audience, prohibited claims,
-assumptions, missing decisions and source citations. Use deterministic target/
-task services as evidence and fail closed on material ambiguity. The result is
-an immutable proposal/diff and cannot edit the current ProblemSpec.
+Implement one specialist task handler using the gateway and strict structured
+output. Validate proposed mappings/roles/classification changes against allowed
+patch schema, current source version and deterministic policy; impossible or
+unsafe suggestions become concerns/escalations. Persist review/proposal/events
+and settle child budget. No proposal is applied. Test malformed, overconfident,
+uncited and stale-source output.
 ```
 
-### S2-P05B — scientific experiment-plan architect and tests
+### S2-P04D — drift, privacy and adversarial evaluation
 
 ```text
-Implement a specialist that proposes validation, holdout, primary/secondary
-metrics, leakage exclusions, feature groups, candidate/resource bounds,
-expected artifacts and approval/cost class while reusing PipelineScientificPlan
-schemas and deterministic planning validators. Test classification,
-regression, temporal/entity grouping, insufficient sample/class balance,
-conflicting objective/metric, arbitrary target names, unsupported causality and
-holdout leakage. Hard-fail plans that use final holdout for tuning, omit a
-required entity/time boundary, exceed budget, or cite mutable/nonexistent
-evidence. Store validator output with the proposal.
+Create synthetic datasets covering type ambiguity, target leakage indicators,
+missingness, duplicates, schema drift, sensitive columns, poisoned names and
+conflicting metadata. Assert hard blockers, citation correctness, no row/secret
+exposure, calibrated uncertainty and safe questions. Compare steward versus
+deterministic-only baseline on predefined usefulness, cost and latency measures.
+```
+
+### S2-P04E — steward shadow gate
+
+```text
+Add steward metrics/operator view for findings, proposal types, policy blocks,
+latency/cost and disagreement with deterministic readiness. Run in shadow for
+versioned workflows, inspect false positives/negatives and exercise kill switch,
+provider outage and source invalidation. Promote only to visible proposal mode,
+never auto-apply, after hard safety and value thresholds pass.
+```
+
+## Plan 2.5 — Problem and experiment-plan architects
+
+**Contract.** Specialists propose immutable ProblemSpec and scientific-plan
+versions using existing target intent, problem, scientific and lineage services.
+Clarifying questions are preferred to unsupported assumptions.
+
+### S2-P05A — Problem Architect contract and evidence
+
+```text
+Define typed objective/ProblemSpec proposal with target, task, positive class,
+entity, prediction time, label window, horizon, constraints, business utility,
+ambiguities, questions and citations. Assemble minimal authorized schema/profile/
+intent evidence and deterministic target candidates. Register read-only tools.
+Reject absent version/digest or unsupported target/task claims in schema tests.
+```
+
+### S2-P05B — Problem Architect execution and validation
+
+```text
+Execute the specialist through structured output, then validate columns/types,
+target leakage/time semantics, access/classification, current source version and
+required user decisions using deterministic services. Persist a typed diff or
+clarifying-question result, never edit ProblemSpec. Test ambiguous target,
+classification, binary positive class, time-series and stale evidence cases.
+```
+
+### S2-P05C — Experiment Plan Architect contract
+
+```text
+Define a proposal for metric/direction, validation method/folds/groups/time,
+holdout, split seed, preparation/feature rules, candidate/resource portfolio and
+stop criteria bound to a ProblemSpec/dataset digest. Encode scientific hard
+constraints separately from agent rationale. Reuse existing scientific-plan
+types and verifier; do not invent a parallel training specification.
+```
+
+### S2-P05D — plan validation and architect evaluation
+
+```text
+Validate every proposed plan through target intent, leakage, validation and
+resource policy before persistence. Create fixtures for imbalance, groups,
+temporal ordering, small data, unsupported metric, excessive compute and missing
+entity/time. Assert the specialist asks when evidence is insufficient and cannot
+weaken holdout/evidence locks. Measure valid-plan rate, useful questions, cost
+and latency against a deterministic baseline.
+```
+
+### S2-P05E — architect shadow release
+
+```text
+Integrate Problem/Plan Architect tasks into the supervision graph after Dataset
+Steward dependencies, with proposal/review/conflict events and human escalation.
+Run shadow on versioned completed and pre-build cases; inspect disagreements and
+exercise source/policy invalidation. Add dashboards/runbook/kill switch and
+enable proposal visibility only after safety gates pass.
 ```
 
 ## Plan 2.6 — preparation, feature, leakage and validation critics
 
-### S2-P06A — preparation and feature review specialist
+**Contract.** Critics review a frozen proposed plan and deterministic evidence.
+They emit typed findings/diffs; existing preprocessing/leakage/validation code
+and verifier remain authoritative.
+
+### S2-P06A — preparation and feature review contract
 
 ```text
-Implement a specialist that audits proposed/current cleaning, missing-value,
-column-role, encoding, scaling, feature construction and feature-lineage
-decisions. It receives persisted decisions and safe profiles, not full rows.
-Produce typed findings with severity, evidence, affected columns/features,
-scientific risk and a proposed new plan version or deterministic repair—not an
-in-place edit. Enforce fold-local fitting, train-only evidence, unknown-category
-handling, reproducible transformations and feature-source lineage. LLM semantic
-advice cannot override deterministic invalidity.
+Define typed findings for column role, missing treatment, encoding/scaling,
+rare category, feature group, leakage risk and unsupported transformation with
+severity, evidence, proposed plan diff and confidence. Assemble fold-safe
+preparation/feature metadata from existing services and `ml/features.py`/
+`feature_groups.py` contracts without exposing raw rows. Add schema/tool tests.
 ```
 
-### S2-P06B — leakage and validation adversarial critic
+### S2-P06B — Leakage/Validation Critic contract
 
 ```text
-Implement a separate critic for structural, semantic, temporal, entity,
-post-outcome and target-proxy leakage plus split/metric/holdout validity. Run it
-before a proposal may be marked ready. Test direct target copies, near-
-identifiers, post-event timestamps, fold contamination, group crossover,
-preprocessing fit on holdout, semantic false positive/negative, poisoned field
-descriptions and instruction injection. Cross-check deterministic LeakageAuditor
-and verifier outputs; deterministic rejection wins. Record dissent/conflict
-rather than averaging incompatible conclusions. Measure detection/false-
-positive rate and citation accuracy.
+Define findings for target/temporal/group/duplicate/post-outcome leakage,
+pre-split fitting, holdout misuse, metric mismatch and invalid CV. Include a
+hard-block recommendation only when supported by deterministic rule/evidence;
+otherwise request review. Register minimal plan/dataset/lineage read tools and
+add hostile/uncited output validation. The critic cannot approve its own fix.
+```
+
+### S2-P06C — critic execution and deterministic precedence
+
+```text
+Implement specialist handlers and proposal validators. Run deterministic
+verifiers before and after LLM review; deterministic failure always blocks and
+LLM “safe” cannot override it. Persist separate reviews, conflicts and proposed
+immutable plan revisions. Deduplicate equivalent findings by canonical digest.
+Test provider failure, contradictory critics, stale plan and budget exhaustion.
+```
+
+### S2-P06D — adversarial scientific evaluation
+
+```text
+Build versioned fixtures for leakage variants, fold-local preprocessing, grouped/
+temporal splits, rare classes, identifier memorization, duplicate entities,
+post-outcome columns and misleading names. Assert recall for deterministic hard
+cases, low unsupported-claim rate, citations and no raw exposure. Compare single
+critic, paired critics and deterministic-only cost/latency/value.
+```
+
+### S2-P06E — critic shadow gate
+
+```text
+Place critics after plan proposal and before experiment direction in the graph.
+Expose findings/diffs and unresolved conflicts to reviewers without applying
+them. Add disagreement/safety/cost metrics, false-positive review workflow and
+kill switch. Run replay on completed scientific plans and record whether each
+finding would have improved, duplicated or harmed deterministic decisions.
 ```
 
 ## Plan 2.7 — Experiment Director and Candidate/Metric Critic
 
-### S2-P07A — stage-aware experiment director
+**Contract.** These agents inspect persisted stage/candidate/fold/metric state,
+failure evidence and budgets. They may propose bounded child experiments but do
+not create/cancel/retry them until Scope 3.
+
+### S2-P07A — Experiment Director state contract
 
 ```text
-Implement an Experiment Director that reads WorkflowRun/PipelineRun,
-scientific-plan locks, stage events, jobs, failures, candidates, folds, metrics,
-selection, holdout, model and artifact status. In Scope 2 it monitors and emits
-diagnosis, next-safe-step, missing-evidence and child-run proposals; it cannot
-start/cancel/retry. Model the expected stage state machine and distinguish
-queued/running/waiting-for-input/failed/cancelled/completed. A long build becomes
-a durable wait linked to ExecutionRequest and resumes from events. Never hide
-failed candidates or claim completion from HTTP acceptance.
+Define stage-aware input/output for queued/running/failed/completed pipeline
+states: diagnosis, next evidence needed, safe recovery proposal, candidate
+portfolio concern, stop recommendation and citations. Assemble data from
+WorkflowRun/PipelineRun/stages/MlJob/events/verification through audience-safe
+queries. Explicitly distinguish observed fact, hypothesis and unsupported state.
+Add schema/tool contract tests.
 ```
 
-### S2-P07B — candidate/metric critique and bounded iteration proposal
+### S2-P07B — candidate and metric critique contract
 
 ```text
-Implement the Candidate/Metric Critic over persisted search evidence. Evaluate
-candidate diversity, hyperparameter bounds, fold stability, baseline
-comparison, metric/objective alignment, calibration/uncertainty, winner lock,
-single final holdout and population limitations. It may propose a child
-experiment with parent citation, exact hypothesis/change digest, expected
-information value, cost and stop rule. Test cherry-picking, repeated holdout
-optimization, invented metrics, failed-candidate concealment, unstable folds,
-wrong metric direction and unsupported causal/deployment claims. Enforce
-portfolio limits even though execution remains disabled.
+Define findings for CV distribution/stability, candidate failures, resource use,
+metric direction/suitability, calibration/fairness where configured, selection
+margin and holdout discipline. A child proposal includes one hypothesis, one
+typed change digest, parent evidence citations, estimated budget and stop rule.
+It cannot use holdout evidence to tune candidates. Add validation/property tests.
 ```
 
-## Plan 2.8 — artifacts, provenance and reporting specialists
-
-### S2-P08A — artifact and provenance auditor
+### S2-P07C — stage-aware specialist handlers
 
 ```text
-Implement a specialist that checks Artifact metadata/object existence/digest,
-source/data/code/runtime/plan/input/output lineage, locked evidence,
-Visualization schema, report/prediction/model references and retention state.
-It can propose reconciliation, quarantine, regeneration or missing-evidence
-work but cannot overwrite an immutable object or issue a download. Return typed
-availability/corruption/lineage findings and exact citations. Integrate with a
-dry-run artifact reconciler. Test missing object, wrong digest, orphan body,
-cross-workspace key, stale signed URL, incomplete artifact, malicious MIME and
-source deletion/reclassification.
+Implement director/critic tasks with state-specific allowed tools and structured
+outputs. Validate against current plan/run/candidate versions, deterministic
+selection and evidence locks. Persist proposed recovery/child diffs, reviews and
+conflicts; deduplicate and stop when terminal/budget/policy changes. Test race
+with run progress, failed jobs, partial metrics and provider outage.
 ```
 
-### S2-P08B — technical and business reporter
+### S2-P07D — replay and scientific safety evaluation
 
 ```text
-Implement audience-specific Reporters that synthesize only verified cited
-facts. Technical output covers assumptions, target/entity/time, preparation,
-leakage, candidates, folds, metric, selection, holdout, verification,
-reproducibility, limitations and next proposals. Business output uses the
-translation layer and omits raw ML operations/internal prompts/provider
-details while preserving evidence class, uncertainty, freshness, risks and
-what is not causal. Validate every claim/citation after rendering. Test banned
-terms, causal overstatement, hallucinated numbers, missing/invalid citations,
-partial/failed runs, policy-redacted evidence and malicious artifact text.
+Replay synthetic and historical-safe completed runs at each stage, including
+infrastructure failure, invalid data, unstable candidates, metric ties, resource
+exhaustion and misleading holdout results. Score diagnosis accuracy, supported
+recommendation, prohibited holdout use, citation validity, cost and latency.
+Compare against deterministic status and single-agent baseline; any evidence-lock
+violation fails the release.
+```
+
+### S2-P07E — experiment supervision shadow gate
+
+```text
+Integrate director and critic after approved plan/critic tasks in shadow only.
+Add task/run/operator timelines, disagreement categories, proposed child budget
+and stop metrics. Exercise cancellation, stale run, restart and graph kill switch.
+Review a bounded sample with ML owners before proposal visibility; do not expose
+an execute control until Scope 3 command/approval gates.
+```
+
+## Plan 2.8 — artifact/provenance audit and audience-safe reporting
+
+**Contract.** Auditors use digests/lineage/verification; reporters derive cited
+technical or business representations. Neither changes artifacts or invents
+causal claims.
+
+### S2-P08A — artifact and provenance audit contract
+
+```text
+Define typed checks for missing/mismatched object, digest/size/media, orphaned or
+cross-tenant reference, incomplete lineage, unreproducible environment, stale
+report/visualization and evidence-lock mismatch. Reuse artifact, lineage,
+reproducibility and verifier services with metadata-only tools. Findings carry
+severity, resource/version/digest, deterministic check and repair proposal.
+```
+
+### S2-P08B — deterministic reconciliation and auditor handler
+
+```text
+Run deterministic object/row/lineage checks before the LLM; use the specialist
+only to synthesize/triage supported findings and propose typed reconciliation,
+regeneration or quarantine intent. Never fetch arbitrary storage keys or mutate
+objects. Persist audit review/proposal/citations. Test missing object, digest
+mismatch, duplicate metadata, wrong tenant, deleted source and verifier failure.
+```
+
+### S2-P08C — technical and business report contracts
+
+```text
+Define two structured outputs over the same evidence: technical report may show
+approved scientific detail; business report uses the translation layer and safe
+decision language. Each claim declares evidence class, uncertainty and citations;
+causal wording is forbidden without qualifying design. Charts reference approved
+Visualization/Artifact metadata. Add banned-term, unsupported-claim and malicious
+label tests.
+```
+
+### S2-P08D — reporter execution and rendering safety
+
+```text
+Implement reporter tasks using minimal audience-specific envelopes and validated
+structured outputs. Render Markdown/JSON through safe components; never render
+provider HTML, script, arbitrary URL or hidden reasoning. Persist report body as
+immutable artifact with digest/version and searchable metadata. Invalidate when
+source authorization/version changes. Test admin/developer/business projections.
+```
+
+### S2-P08E — audit/report shadow gate
+
+```text
+Evaluate known artifact faults, reproducibility gaps, technical summaries,
+business translations and unsupported causal prompts. Assert deterministic
+fault detection, citation coverage, audience separation, XSS safety and no
+storage/provider leakage. Add missing-object/report-regression metrics and
+runbooks; promote only read/proposal views with independent auditor/reporter
+kill switches.
 ```
 
 ## Plan 2.9 — supervisor orchestration
 
-### S2-P09A — implement governed task-graph execution
+**Contract.** The supervisor schedules persisted tasks whose dependencies are
+satisfied, applies hierarchical budgets, requests reviews, surfaces conflicts
+and produces a cited partial/final synthesis. One job performs one bounded task
+transition.
+
+### S2-P09A — decomposition and DAG materialization
 
 ```text
-Implement SupervisorOrchestrator over AgentTask DAGs. It chooses only registered
-specialists from immutable graph policy, creates narrowed child tasks, schedules
-ready dependencies, persists child results/reviews, requests revision or human
-input, resolves deterministic precedence and synthesizes a final cited answer/
-proposal set. Parallelize independent read tasks within workspace/provider/job
-limits, but preserve deterministic merge order. Bound depth, breadth, tasks,
-steps, tools, LLM calls, bytes, cost and time globally and per child. One failed
-specialist yields a typed partial/fail decision, never silent omission.
+Implement validated supervisor decomposition from a supported objective/template
+into an AgentGraphVersion DAG. Materialize tasks/dependencies/delegations
+idempotently with current policy snapshots and child reservations. Reject unknown
+specialists/tools, cycles, excessive depth/fan-out or unjustified task creation.
+For the first release prefer code-owned graph templates with bounded structured
+parameterization over unconstrained LLM graph generation.
 ```
 
-### S2-P09B — conflict, recovery and delegation-storm proof
+### S2-P09B — ready-task scheduler and specialist dispatch
 
 ```text
-Inject contradictory specialists, stale citations, child timeouts, provider
-outages, invalid schema, malicious child output, duplicate delivery, supervisor
-and child worker death, cancellation at each boundary, budget exhaustion and
-human-input expiry. Prove deterministic facts/policy override LLM consensus;
-unresolved scientific conflicts escalate; child tools cannot widen; all budget
-is settled; checkpoints reconstruct the DAG; and no recursion/delegation storm
-occurs. Test partial answer labeling and exact task/citation trace. Compare
-serial and parallel execution for stable semantic output and no database race.
+Register a bounded supervision handler that claims ready tasks with leases,
+re-authorizes parent/child scope, dispatches exactly one specialist operation,
+checkpoints result, settles allocation and emits events before scheduling the
+next transition. Enforce graph parallelism and workspace fairness. Test duplicate
+claim, dependency race, child timeout, cancellation and worker restart using
+PostgreSQL jobs.
+```
+
+### S2-P09C — review, revision and conflict resolution
+
+```text
+Implement code-owned review requirements and conflict rules per output type.
+Route deterministic invariant conflicts to hard block, resolvable schema issues
+to bounded revision, and judgment disputes to human escalation with all cited
+positions. Limit review/revision rounds and budget. No specialist reviews or
+approves its own release/proposal. Test oscillation, collusion-like agreement,
+poisoned reviewer output and stale subject version.
+```
+
+### S2-P09D — partial result, escalation and final synthesis
+
+```text
+Define global completion for all-success, useful-partial, blocked, cancelled,
+expired and failed graphs. Build final synthesis only from validated task outputs
+and citations, explicitly listing unresolved questions/conflicts and omitted
+failed specialists. Human escalation has durable state, required capability,
+expiry and resume semantics. Test late results, membership change and no-supported-
+answer without inventing conclusions.
+```
+
+### S2-P09E — global limits and recovery
+
+```text
+Enforce graph-wide steps/tasks/depth/fanout/parallelism/tokens/cost/time/bytes/jobs
+plus per-specialist limits. Reconcile lost leases, orphan child reservations,
+ready tasks without jobs and terminal graphs with active children. Cancellation
+propagates top-down while completed evidence remains. Add failure injection at
+every task/delegation/review checkpoint and prove deterministic reconstruction.
+```
+
+### S2-P09F — supervisor system gate
+
+```text
+Run complete fake-provider graph cases for dataset-to-report supervision,
+clarifying question, deterministic block, critic conflict, specialist outage,
+partial result, budget exhaustion, cancellation and restart. Verify authority
+narrowing, proposal-only catalog, citations, events and terminal accounting.
+Benchmark against Scope 1 single agent and enable only shadow graphs after
+observed safety/value/cost evidence.
 ```
 
 ## Plan 2.10 — agentic operations UI
 
-### S2-P10A — task graph, review and proposal experience
+**Contract.** Extend Agent Studio with server-projected graph/task/review/
+proposal/evaluation state. UI controls request deterministic services; they do
+not mutate rows or interpret raw agent/provider bodies.
+
+### S2-P10A — API projections and client hooks
 
 ```text
-Extend Agent Studio with a task/dependency graph or accessible list, specialist
-identity/purpose, current state, evidence/citations, critique/revision chain,
-conflicts, human questions, proposed resource diffs, expected effect/risk/cost,
-hierarchical budget and stop reason. Users can inspect and reject proposals but
-cannot activate domain mutations in Scope 2. Clearly label deterministic facts,
-LLM advice, user decisions and unresolved uncertainty. Preserve refresh/
-reconnect and audience filtering. Do not expose hidden reasoning, raw prompts,
-provider bodies or forbidden technical details.
+Add bounded `/v1` resources for graph runs, tasks/dependencies, specialist
+activity, reviews, conflicts, proposals, escalations and release/evaluation
+metadata. Define role/audience projections, pages/cursors/ETags and safe diff
+schemas. Add Python/TypeScript client types/hooks keyed by workspace/run. Raw
+prompt/output/policy bodies remain separately protected or absent.
 ```
 
-### S2-P10B — admin release/evaluation and accessibility UI
+### S2-P10B — task graph and specialist timeline
 
 ```text
-Add protected admin views for agent/graph/prompt/model/tool/data/budget versions,
-evaluation comparisons, promotion request/approval, shadow/canary status,
-rollback and kill switches. Separate raw prompt-body access. Add component/E2E
-tests for DAG progress, parallel tasks, revision, conflict/escalation, partial
-failure, cancellation, policy/budget block, promotion separation of duties and
-rollback. Verify keyboard traversal, focus, semantic statuses, announcements,
-contrast and reduced motion. A client user must never see internal model/prompt
-or cross-workspace release data.
+Build accessible graph/list fallback, task detail and chronological event views
+showing state, dependencies, specialist/version, citations, bounded budget and
+safe failure. Support large graphs through pagination/virtualization rather than
+loading all nodes. Handle partial/out-of-order updates, reconnect and workspace
+switch. Add component tests for every state and keyboard navigation.
+```
+
+### S2-P10C — review, proposal diff and conflict experience
+
+```text
+Render typed resource-aware diffs with base/current/proposed version, validation,
+risk, expected effect and citations. Provide review/escalation controls only when
+the server exposes capability/state; use ETag and explicit confirmation. In Scope
+2 controls may review/reject/request revision, never execute domain mutation.
+Test stale proposal, concurrent reviewer, malicious labels and denied role.
+```
+
+### S2-P10D — release/evaluation administration
+
+```text
+Build protected views for graph/agent/prompt/model/tool/data/budget release
+metadata, compatibility, evaluation assertions/deltas, promotion history,
+kill-switch status and rollback. Keep raw prompt body and secrets out of ordinary
+admin responses. Require reason/confirmation for promotion/rollback and show
+immutable evidence links. Add separation-of-duty and stale-version E2E.
+```
+
+### S2-P10E — operations UI gate
+
+```text
+Run component/accessibility/browser journeys for running/partial/blocked/failed/
+cancelled graphs, specialist conflict/revision, invalidated proposal, evaluation
+failure, promotion/rollback and workspace switch. Scan DOM/network/storage for
+raw prompts, hidden reasoning, secrets, internal paths and cross-tenant data.
+Verify large graph performance with recorded fixtures and document UI kill switch.
 ```
 
 ## Plan 2.11 — whole-pipeline shadow evaluation
 
-### S2-P11A — end-to-end shadow and counterfactual replay
+**Contract.** Use versioned synthetic and authorized replay fixtures. Promotion
+requires hard safety assertions plus predefined incremental value over the Scope
+1/deterministic baseline; higher cost/latency must be visible.
+
+### S2-P11A — end-to-end scenario corpus
 
 ```text
-Build versioned scenarios spanning ingest/profile -> objective/ProblemSpec ->
-preparation/leakage/plan -> candidates/folds/selection/holdout -> artifacts/
-reports, using existing immutable synthetic runs. Execute the multi-agent team
-in shadow/proposal mode and compare its outputs to deterministic evidence,
-human labels and the Scope 1 single-agent baseline. Include success, ambiguity,
-invalid data, forced candidate failure, corrupted artifact, policy denial,
-provider failure, cancellation and unsupported causality. Store per-specialist
-and overall quality, hard failures, task/tool count, latency and cost.
+Create versioned scenarios from ingest/profile/classification through problem,
+plan, preparation, leakage, experiment state, candidate evidence, artifacts and
+reports. Include clean, ambiguous, incomplete, drifted, leaking, failed and
+malicious cases with expected deterministic facts, allowed proposals, required
+questions/conflicts and forbidden behavior. Use synthetic/de-identified fixtures
+and immutable source digests.
 ```
 
-### S2-P11B — ablation, promotion threshold and operational gate
+### S2-P11B — counterfactual replay harness
 
 ```text
-Run specialist ablations and alternate routing to prove each extra agent adds a
-defined benefit worth cost/latency. Set predeclared blocking thresholds for
-policy/citation/scientific correctness and minimum improvement for task success
-or diagnostic quality. Load/soak test task/checkpoint/event growth and provider
-backpressure. Create dashboards/alerts/runbooks for delegation depth, child
-failure, conflict age, budget imbalance, schema invalidity, stale citations and
-shadow regression. Promote the graph only to a Scope 2 read/shadow/proposal
-allowlist. Record that all domain write tools remain disabled.
+Implement a durable replay mode that feeds historical-safe snapshots to the
+single agent and multi-agent graph without changing domain state. Freeze release
+set/time/random/provider fixtures, capture task/tool/proposal/citation/budget
+traces and compare to expected assertions. Prevent current/future evidence from
+leaking into an earlier replay point. Test reproducibility and partial resume.
 ```
 
-## Scope 2 completion prompt
+### S2-P11C — failure, attack and recovery campaign
 
-Map every pipeline stage to its supervising agent, typed tools, proposal schema,
-tests, telemetry and kill switch. Query production-like policy to prove
-delegation narrowing and no active domain mutation. Scope 3 is blocked until the
-multi-agent team beats the predeclared baseline and every safety hard gate is
-VERIFIED.
+```text
+Inject provider/tool timeouts, malformed/poisoned output, worker death, duplicate
+jobs, stale sources, authorization revocation, budget races, delegation storms,
+critic conflict, missing artifacts and policy kill switch. Assert bounded stop,
+no widened authority/write, correct partial result, redacted evidence and full
+reconstruction. One tenant/security/scientific violation fails the release.
+```
+
+### S2-P11D — specialist ablation and value analysis
+
+```text
+Run code-owned graph variants removing or combining specialists. Measure hard-
+case detection, useful supported proposal rate, question quality, unsupported
+claim/conflict rate, task/tool count, latency, tokens and cost. Define uncertainty
+and reviewer sample size; do not promote complexity whose incremental value does
+not exceed the agreed threshold. Store analysis/version/digests as evidence.
+```
+
+### S2-P11E — dashboards, thresholds and operational drill
+
+```text
+Create dashboards for graph success/partial/block/failure, task/review/conflict,
+proposal invalidation, safety assertions, provider/tool latency, budget and
+baseline delta. Set alert/error-budget thresholds from observed shadow results.
+Drill graph/provider/specialist kill switches, rollback, worker drain and stuck
+graph recovery. Assign owners and link exact runbooks.
+```
+
+### S2-P11F — Scope 2 promotion gate
+
+```text
+Run migrations, full regression, scenario corpus, counterfactual replay,
+adversarial/failure campaign, ablations, API/UI and operator recovery in a
+production-shaped environment. Publish exact release set and evidence showing
+pipeline coverage, authority narrowing, citations, proposal-only behavior and
+incremental value/cost. Enable proposal mode only for allowlisted workspaces;
+do not start Scope 3 until all hard gates pass.
+```

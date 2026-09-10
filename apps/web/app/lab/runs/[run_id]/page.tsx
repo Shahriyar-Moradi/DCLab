@@ -16,6 +16,7 @@ import { SectionHeader } from "@/app/components/ui/SectionHeader";
 import { Select } from "@/app/components/ui/Select";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { downloadLabPredictions, useConfirmLabTarget, useLabUpload, useSession } from "@/lib/application";
+import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { ApiError } from "@/lib/infrastructure/api-client";
 import {
   formatTimestamp,
@@ -293,6 +294,9 @@ export default function LabRunPage() {
 
         {run.status === "needs_input" ? (
           <Panel title="Needs input" description="Choose the outcome column you want DCLab to predict.">
+            <div className="mb-4">
+              <ActiveWorkspaceNotice action="Confirm this outcome column" />
+            </div>
             <p className="text-body text-ink">{confirmation?.reason ?? run.message}</p>
             <div className="mt-4 max-w-md">
               <Select

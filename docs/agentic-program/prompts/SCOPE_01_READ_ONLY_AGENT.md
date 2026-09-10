@@ -1,329 +1,705 @@
-# Scope 1 prompts — complete durable read-only agent
+# Scope 1 execution prompts — complete durable read-only agent
 
-Do not begin this file until the Scope 0 release gate is verified. Keep every
-agent tool read-only. Use the common preamble in `README.md`.
+Start only after the Scope 0 gate. Apply `README.md` and
+`EXECUTION_STANDARD.md`. The released catalog is metadata/evidence read-only:
+no build, export, connector, notebook-code, approval, or domain-mutation tool.
 
-## Plan 1.1 — contracts and state machine
+## Scope implementation boundary
 
-### S1-P01A — freeze agent domain contracts
+Extend the existing API service using `domain/agent.py` and cohesive
+`services/agent_*.py` modules; mount a resource router such as `api/v1_agent.py`.
+Use current SQLAlchemy metadata and PostgreSQL jobs. Add SDK resources beneath
+`packages/dclab_client`; add Agent Studio under `apps/web/app/app/agent/` with
+components under `apps/web/app/components/agent/`. Exact names may change only
+when current conventions require it and the implementation packet records why.
+
+## Plan 1.1 — agent and policy contracts
+
+**Contract.** Freeze framework-neutral schemas and state machines before a
+migration. Runs are immutable-version-bound and bounded; tool outputs and LLM
+outputs are untrusted; approvals are inactive placeholders.
+
+### S1-P01A — agent runtime ADR and resource contracts
 
 ```text
-Write the Scope 1 agent ADRs and versioned Pydantic domain contracts before
-adding persistence. Define AgentRun states created, queued, running,
-waiting_for_tool, waiting_for_user, completed, failed, cancelled, expired,
-budget_exhausted and policy_blocked; allowed/forbidden transitions; immutable
-terminal states; one-step-per-job behavior; source channels; autonomy L0/L1;
-response components; citation contract; failure codes; and cancellation/retry
-semantics. Define strict schemas for objectives, plans, tool selection/results,
-clarification, cited final answers and progress events. Unknown fields fail.
-Record that framework state is supplementary and DCLab records are authoritative.
+Inventory existing LlmInvocation, job, event, authorization and evidence models.
+Write the agent-runtime ADR and `domain/agent.py` value objects for definition,
+version, session, message, run, step, tool call, checkpoint, citation and event.
+Specify IDs, workspace/project lineage, actor, immutable version references,
+timestamps, input/output digests and audience. Include read-only product slice,
+non-goals, service ownership and how existing OpenAI usage is wrapped. Add schema
+serialization tests only; do not create tables or call a provider.
 ```
 
-### S1-P01B — prove the contracts as pure logic
+### S1-P01B — run, step and session state machines
 
 ```text
-Implement table-driven unit tests for every state transition and terminal
-invariant, structured-output acceptance/rejection, response/citation
-requirements, canonical digest stability, bounded fields and failure mapping.
-Test invalid tools, resource IDs, prose where JSON is required, absent
-citations, oversized content, ambiguous objectives, policy blocks and budget
-exhaustion. Add schema snapshots so a control-flow contract change requires
-review. Do not call a live LLM or database in these tests.
+Define pure transition functions for session active/closed; run queued/running/
+waiting/cancel_requested/succeeded/failed/cancelled/expired; and step pending/
+running/waiting/succeeded/failed/skipped/cancelled. List allowed initiators,
+terminal behavior, retry/child semantics and event emitted for every transition.
+Reject backward/unknown transitions and edits after terminal state. Add exhaustive
+table-driven/property tests. Do not encode state transitions only in route code.
+```
+
+### S1-P01C — tool, context, citation and structured-output contracts
+
+```text
+Define versioned JSON-compatible schemas for tool descriptor/call/result,
+ContextEnvelope, context item, citation target/span/digest and final answer with
+claim/citation mapping. Bound names, strings, lists, nesting, bytes and item
+counts; distinguish user text from trusted instructions and tool/provider data.
+Specify safe error categories and redacted previews. Add round-trip and hostile
+payload tests. No arbitrary Python object, SQL, URL or storage key is accepted.
+```
+
+### S1-P01D — prompt, model, data and budget policy contracts
+
+```text
+Define immutable draft/published/retired versions for agent, graph, prompt,
+model, tool, data and budget policy. Specify purpose, environment, compatible
+schema versions, digest, creator/reviewer, activation interval and rollback
+reference. Budget dimensions include steps, tool calls, tokens, cost, wall time,
+context bytes and concurrency with reserve/settle semantics. Data policy defaults
+unknown/null to deny. Add monotonic policy and canonical-digest tests.
+```
+
+### S1-P01E — contract threat model and acceptance gate
+
+```text
+Threat-model injection, confused deputy, unauthorized citations, tool argument
+smuggling, context exfiltration, provider retention, replay, budget race, event
+leakage and forged version IDs. Map every threat to a contract invariant and a
+future test owner. Review schemas against Scope 0 API/error/version conventions.
+Publish state diagrams and a compatibility matrix; close only if no table/service
+implementation must invent an unresolved state or authority decision.
 ```
 
 ## Plan 1.2 — agent control-plane persistence
 
-### S1-P02A — add agent definitions, sessions, runs and messages
+**Contract.** Add tenant-safe tables through current metadata/migrations. Large
+message, checkpoint and tool bodies become immutable artifacts when over the
+bounded inline threshold. No prompt secrets or hidden reasoning are stored.
+
+### S1-P02A — definitions, versions, sessions and messages schema
 
 ```text
-Add a small additive migration and SQLAlchemy models for AgentDefinition and
-immutable AgentVersion; AgentSession; AgentMessage; and AgentRun. Use UUIDs,
-workspace/project/user or service-principal lineage, composite tenant foreign
-keys, bounded redacted text/JSON, content/objective/configuration digests,
-parent retry lineage, timestamps, expiry/retention and measured list/status
-indexes. AgentVersion records graph key/version plus prompt/model/tool/budget
-policy references and is immutable after promotion. A run snapshots effective
-policy IDs/digests and hard budgets. Messages store redacted display content,
-classification and optional encrypted Artifact reference—never hidden reasoning.
+Add AgentDefinition, AgentVersion, AgentSession and AgentMessage tables/models.
+Definitions carry workspace or system scope, stable key and status; versions
+carry schema/digest and immutable policy references; sessions carry workspace,
+optional project, actor and close state; messages carry role, bounded safe body
+or artifact reference, digest and sequence. Enforce composite tenant lineage,
+unique keys/sequences and immutable published versions. Add one additive
+migration and model/constraint tests; no run execution yet.
 ```
 
-### S1-P02B — add steps, calls, checkpoints, citations and events
+### S1-P02B — runs, steps and attempt lineage schema
 
 ```text
-Add AgentStep, AgentToolCall, AgentCheckpoint, AgentCitation and AgentEvent in a
-separate migration. Steps/events/checkpoints are append-only and monotonically
-sequenced per run. Tool calls store registered name/version, risk, redacted
-arguments/results, digests, idempotency identity and status; Scope 1 allows R0/
-T0 reads only. Checkpoints contain bounded IDs/counters/next node and a digest,
-not copied data. Citations identify resource type/ID/field/version digest and
-must be tenant-validatable. Add pending AgentApproval structure only if needed
-for future compatibility, but expose no approval/write behavior. Test cross-
-workspace FK rejection, sequence concurrency, immutability and delete/retention.
+Add AgentRun and AgentStep with session/version/workspace/project, parent run,
+attempt, state, current/maximum bounds, deadlines, cancellation, terminal reason,
+input/output digest, lease metadata and ordered step number. Enforce same-tenant
+parent/session/version references, one active attempt rule as designed, and
+terminal immutability through service plus DB constraints where practical. Add
+indexes for session timeline, worker claim and operator terminal scans.
 ```
 
-## Plan 1.3 — policy versions and usage ledgers
-
-### S1-P03A — add immutable policy registries
+### S1-P02C — tool calls, checkpoints and citation schema
 
 ```text
-Add logical/version pairs for prompt templates/releases, model-routing
-policies, tool policies, budget policies and data-policy sets. Common version
-fields include parent/version/status/schema/digest/creator/time/evaluation and
-immutable-after-promotion enforcement. Store bounded configuration or an
-access-controlled Artifact reference. Seed a disabled/candidate read-only
-agent configuration with metadata-only data policy, R0/T0 tools, fake model
-route and conservative budgets. Promotion is a pointer/record, not row editing.
-Add uniqueness/concurrent-promotion tests and historical resolution.
+Add AgentToolCall, AgentCheckpoint and AgentCitation. Tool calls bind step,
+tool-version key, canonical arguments/result digest, status, timing and bounded
+safe error; checkpoints bind state-machine cursor and resume digest; citations
+bind answer/message, authorized resource type/id/version/digest and safe label.
+Use artifact references for large bodies. Enforce sequence, workspace lineage,
+append-only records and no raw credentials/URLs. Add migration integrity tests.
 ```
 
-### S1-P03B — budget ledger and LLM invocation evolution
+### S1-P02D — agent events and approval placeholder
 
 ```text
-Add atomic budget reservation/settlement/release/expiry records for steps, LLM
-calls, tokens, estimated/actual numeric cost and currency, tool calls, wall
-time, concurrent runs and owned jobs. Extend llm_invocations rather than
-creating a second ledger: optional agent_run/agent_step context, prompt version,
-attempt, retryable/error, provider request metadata, cached/fallback state and
-precise cost. Enforce one valid pipeline, agent or evaluation context and same-
-workspace links. Migrate compatibly with existing pipeline rows. Test concurrent
-reservations at boundary/one-over, abandoned repair and legacy LLM behavior.
+Add append-only AgentEvent with per-run monotonic sequence, type/schema version,
+actor/request/trace correlation and bounded audience-safe payload. Add only the
+minimal inactive approval reference needed for forward compatibility; do not
+implement approval behavior before Scope 3. Reuse existing event/query patterns
+where safe. Test concurrent sequence allocation, cursor ordering, cross-tenant
+constraints and immutable history with real PostgreSQL.
+```
+
+### S1-P02E — migration compatibility, retention and deletion
+
+```text
+Test empty database, live previous-head upgrade, downgrade or documented forward
+repair, and application compatibility before/after expand. Define retention for
+messages, inline/tool bodies, checkpoints, events and artifact objects; preserve
+audit/citation evidence while honoring deletion/tombstone policy. Add bounded
+cleanup/reconciliation intent, not destructive ad-hoc SQL. Verify indexes and
+query plans for session/run/event reads with versioned fixtures.
+```
+
+### S1-P02F — persistence adversarial gate
+
+```text
+Exercise two workspaces, forged parent/session/version IDs, concurrent message/
+step/event creation, duplicate tool/checkpoint writes, terminal-row mutation,
+orphan artifact references and process loss around commits. Prove database and
+service invariants reject cross-tenant or inconsistent lineage. Run migration
+and integrity suites and record the live head/digests before services depend on
+the schema. Repair only Plan 1.2 defects.
+```
+
+## Plan 1.3 — policy releases and usage ledger
+
+**Contract.** Policies are immutable releases, selected server-side by purpose
+and environment. Usage reservations prevent concurrent overspend; provider
+reports never replace local bounds.
+
+### S1-P03A — policy registry persistence
+
+```text
+Add prompt, model, tool, data and budget policy release records or one typed
+registry design approved by ADR. Each release stores scope, semantic/schema
+version, canonical body/artifact digest, status, environment, compatibility,
+creator/reviewer and activation/retirement. Enforce one applicable active release
+per key/environment and immutable published bodies. Prompt-body permission is
+separate from metadata permission. Add additive migration and conflict tests.
+```
+
+### S1-P03B — budget account, reservation and settlement ledger
+
+```text
+Add budget account/snapshot, reservation and settlement entries bound to agent
+run/step and policy version. Reserve atomically for steps, calls, tokens, cost,
+time, bytes and concurrency; same idempotency key replays; settlement cannot
+exceed reservation without explicit fail-closed policy. Release abandoned leases
+through a reconciler. Test concurrent reservations, duplicate settlement,
+negative/overflow values, expiry and cancellation in PostgreSQL.
+```
+
+### S1-P03C — evolve LLM invocation lineage
+
+```text
+Add nullable compatibility fields to existing LlmInvocation for workspace,
+agent run/step, prompt/model/data/budget/tool releases, provider request digest,
+usage, latency, outcome and safe error category. Backfill historical rows as
+legacy/unknown without granting exposure. Ensure request/response bodies and
+hidden reasoning are not retained. Add composite lineage where possible,
+indexes for cost/incident queries and compatibility tests for old callers.
+```
+
+### S1-P03D — registry and budget services
+
+```text
+Implement transport-neutral selection, publish, resolve-active, reserve, settle,
+cancel and reconcile services. Require current capability for publish/metadata/
+body access; runtime receives immutable snapshots, not mutable registry rows.
+Return typed domain errors for missing compatibility, budget denial and race.
+Emit safe events/metrics with policy IDs and low-cardinality reason codes. Do
+not add admin UI or autonomous promotion yet.
+```
+
+### S1-P03E — policy/ledger completion gate
+
+```text
+Run migration, two-workspace, immutability, single-active, compatibility and
+budget race tests. Simulate crash before/after reservation and settlement and
+prove reconciliation neither leaks capacity nor double-charges. Verify raw
+prompt bodies require the separate capability and logs expose no body/secret.
+Record query plans and rollback/disable behavior before provider work begins.
 ```
 
 ## Plan 1.4 — provider-neutral LLM gateway
 
-### S1-P04A — gateway and deterministic fake
+**Contract.** Add `services/llm_gateway.py` and a narrow adapter package while
+wrapping `openai_provider.py`. All callers use structured request/result types;
+CI uses a deterministic fake.
+
+### S1-P04A — gateway interface and request pipeline
 
 ```text
-Implement a transport-neutral LlmGateway receiving an already-built bounded
-envelope, declared purpose, immutable model/prompt policy IDs, output schema and
-budget reservation. Return validated output or a typed failure plus provider,
-model, usage, latency, finish reason, request ID, safety signals and attempts.
-Build a deterministic scripted fake for valid output, invalid JSON/schema,
-unknown tool, timeout, rate limit, transient/permanent failure, delayed
-response, cancellation, usage/cost and malicious reflection. Implement bounded
-schema repair (maximum one by default), retry classification, deadlines and
-circuit-breaker interfaces. Provider-specific types must not escape.
+Define LlmGateway.complete_structured(request, schema) with purpose, immutable
+policy snapshots, ContextEnvelope digest, deadline, idempotency/correlation and
+reserved budget. Resolve provider/model server-side, validate context exposure,
+bound serialized bytes and reject unsupported capabilities before network I/O.
+Return typed content/usage/finish/safe-error metadata. Unit-test with no provider;
+do not expose provider SDK types outside the adapter.
 ```
 
-### S1-P04B — first production adapter and outage tests
+### S1-P04B — deterministic fake provider
 
 ```text
-Add the first approved hosted provider adapter behind the gateway with server-
-side credentials, explicit connect/read timeout, cancellation where supported,
-structured output, maximum sizes, regional endpoint option, usage parsing and
-health/quota signals. Route only by server policy and purpose—never a free-form
-model ID. Test through a fake HTTP transport; add an opt-in synthetic-only live
-smoke that never runs in normal PR CI. Prove rate-limit Retry-After handling,
-bounded jitter/retries, circuit opening, stricter-only fallback, reservation
-settlement on all outcomes, redacted logs/traces and provider-wide kill switch.
+Implement a scriptable fake adapter supporting valid structured responses,
+malformed JSON/schema, unknown fields, refusal, tool proposal, truncation,
+timeouts, retryable/permanent/rate-limit errors, usage mismatch and cancellation.
+Responses derive deterministically from fixture keys, not prompt wording. Add a
+shared adapter contract and use the fake for all CI orchestration tests. Ensure
+fixtures contain no customer data and failure bodies are bounded/redacted.
 ```
 
-## Plan 1.5 — context and data policy
-
-### S1-P05A — DataPolicyService and metadata-only envelope
+### S1-P04C — production provider adapter
 
 ```text
-Implement DataPolicyService and ContextEnvelopeBuilder over authorized query
-services. Scope 1 envelopes may contain principal/workspace/project,
-ProblemSpec, dataset schema/profile/quality/freshness/policy metadata,
-completed-run evidence/events/safe summaries, allowed tools, budgets and
-relevant redacted turns. Exclude raw rows, sensitive values, credentials,
-storage keys/URLs, model binaries, hidden reasoning and unrestricted artifacts.
-Every item records source type/ID/version, classification, transformation and
-digest. Persist envelope metadata, included/excluded counts, byte/token
-estimate, policy version and digest; content retention is off by default.
+Refactor existing OpenAI integration behind the gateway as the first adapter.
+Configure endpoint/model/region/retention/training guarantees through model/data
+policy and secret references. Apply connect/read/total timeouts, bounded retries
+with jitter and Retry-After, circuit breaker and cancellation. Validate structured
+output strictly and record only safe invocation metadata. Add mocked transport
+tests; no live credential in PR CI.
 ```
 
-### S1-P05B — exposure and injection adversarial matrix
+### S1-P04D — usage, budget and idempotency settlement
 
 ```text
-Test deny, metadata_only, aggregate_only, redact, allow_sample,
-allow_full_bounded and null/unknown decisions even though Scope 1 activates only
-metadata-safe context. Include secrets, direct/quasi identifiers, rare values,
-free text, URLs, markup, Unicode controls and nested data. Treat uploaded,
-connector, notebook, tool and provider content as untrusted data separated from
-policy instructions. Prove another workspace's IDs, instructions to reveal
-prompts/secrets, claimed new tools, arbitrary URLs and encoded injection cannot
-change tools/context/authorization. Test deterministic transformations,
-minimum aggregation groups, reclassification/deletion invalidation and envelope
-size/truncation notices.
+Integrate atomic reservation before provider dispatch and settlement after every
+success/failure/timeout. Enforce local maximum even when provider usage is absent
+or inconsistent; record estimation provenance. Replayed completed idempotency
+keys return the recorded result reference, while ambiguous network outcomes are
+not blindly re-sent. Test crash points, concurrent calls, over-budget response,
+cancellation and circuit-open behavior.
 ```
 
-## Plan 1.6 — application services
-
-### S1-P06A — sessions, runs, versions and budgets
+### S1-P04E — telemetry, configuration and synthetic smoke
 
 ```text
-Implement transport-neutral AgentDefinitionService, AgentSessionService,
-AgentRunService, PromptRegistry, ModelPolicyService and AgentBudgetService.
-Support authorized create/list/get/rename/close/archive sessions, one run per
-user message, immutable effective configuration snapshot, valid transition,
-cancel, expire and child retry. Use ETag/version for mutable session metadata.
-Re-authorize on run creation and every step. Reserve before work, settle actual
-usage and repair abandoned reservations. Define transaction boundaries and
-stable domain errors. Test owners/roles/two workspaces, concurrency, expiry,
-retention and emergency stricter policy during an existing run.
+Add typed provider settings, boot validation, separate feature/provider kill
+switches and a manually/securely scheduled synthetic smoke using non-sensitive
+fixtures. Emit request count, latency, token/cost, retry, refusal, schema failure
+and breaker state by bounded provider/model-purpose labels. Add outage/rotation/
+retention runbooks. Logs/traces must omit prompt/context/response bodies and keys.
 ```
 
-### S1-P06B — tools, checkpoints, citations and events
+### S1-P04F — gateway adversarial gate
 
 ```text
-Implement AgentToolRegistry/executor, AgentCheckpointService,
-AgentCitationService/Validator and AgentEventService. Tool registration uses
-code-owned stable name/version, strict schemas, scope/capability, workspace
-behavior, risk, idempotency, timeout/cost/result-size and data classes. The
-runtime resolves the handler, re-authorizes, validates arguments/resources,
-executes one read, bounds/classifies output, persists result/citations and emits
-events. Checkpoint/result/next-state commit atomically. Reject arbitrary import
-paths and duplicate registration. Test cross-tenant citations, stale resources,
-oversized/malicious results, event cursor ordering and append-only behavior.
+Run the shared contract against fake and mocked production adapters, including
+prompt injection strings, huge/malformed outputs, provider HTML errors, hangs,
+429/5xx, cancellation, budget races and policy revocation between scheduling and
+dispatch. Prove no call occurs for denied data/purpose and every invocation has
+version/cost lineage. Run the synthetic smoke outside PR CI and record evidence
+without provider content before enabling Scope 1 orchestration.
 ```
 
-## Plan 1.7 — durable orchestrator and worker
+## Plan 1.5 — data policy and immutable context envelope
 
-### S1-P07A — bounded one-turn orchestrator
+**Contract.** Add `services/data_policy_service.py` and
+`services/context_envelope_builder.py`. Metadata-only is the initial product;
+raw rows and unrestricted free text remain unavailable.
+
+### S1-P05A — effective data-policy resolver
 
 ```text
-Implement AgentOrchestrator as a small explicit graph: authorize -> load
-checkpoint -> check cancel/expiry/policy/budget -> build context -> classify
-intent -> select zero or one read tool -> validate observation -> ask user or
-answer with citations -> checkpoint/terminalize. Do not start with an unbounded
-ReAct loop. Add an allowlisted agent.turn.v1 MlJob handler and worker deployment
-filter. Commit pending external intent before provider call and durable result/
-usage/checkpoint afterward. Enqueue the next step only after commit. Long waits
-become durable states, never a held HTTP request.
+Resolve effective exposure from workspace, project, dataset and column policy,
+classification source/confidence, purpose, provider/model capability, region,
+retention and user capability. Choose the strictest applicable rule; unknown,
+null, conflict or stale classification denies. Return a versioned decision with
+reason codes and source IDs, not a boolean alone. Add pure policy matrices and
+PostgreSQL tests for mixed-column/two-workspace cases.
 ```
 
-### S1-P07B — crash, duplicate, cancellation and bounds proof
+### S1-P05B — metadata-only ContextEnvelope builder
 
 ```text
-Inject worker death before LLM call, after response before result, after result
-before checkpoint, after checkpoint before enqueue, before/after tool read,
-during cancellation and while waiting for user. Define safe reconciliation for
-ambiguous provider responses and prove duplicate job delivery cannot duplicate
-a logical call. Test lease/heartbeat/reclaim, maximum steps/LLM/tool calls,
-context/output bytes, tokens/cost, wall time, concurrency, session window,
-expiry and cancellation propagation. Every run reaches completed, failed,
-cancelled, expired, budget_exhausted or policy_blocked with stable evidence.
+Build immutable bounded envelopes from authorized project, ProblemSpec, dataset
+schema/profile, run state, completed metrics and artifact metadata. Every item
+records resource/version/digest, classification, audience and citation target.
+Separate system instructions, user text, trusted structured facts and untrusted
+source text. Deterministically sort, truncate and digest. Do not include rows,
+credentials, signed URLs, internal paths or hidden errors.
 ```
 
-## Plan 1.8 — read-only tools
-
-### S1-P08A — implement the first tool catalog
+### S1-P05C — injection and content-boundary controls
 
 ```text
-Implement versioned read tools for current identity/workspace; list/get
-projects and ProblemSpecs; list/get dataset versions, approved column/profile/
-quality/freshness/lineage metadata; list/get ExecutionRequests and ModelBuilds;
-read incremental build events; read locked evidence and audience-safe business
-summary; list visualization and artifact metadata; and compare completed runs
-deterministically if the existing service supports it. Every list is bounded/
-cursor-based and every output identifies source resources/classification. Tools
-call application/query services, not ORM objects or engine classes. Expose no
-raw object access, signed URL, export or write.
+Normalize and label untrusted dataset names/descriptions/provider/tool text;
+prevent it from becoming system/tool instructions. Reject control characters,
+oversized nesting and unsupported media; escape only at the correct renderer,
+not by corrupting source facts. Add adversarial fixtures for indirect injection,
+Unicode/confusable content, formula-like text, fake citations and exfiltration
+requests. Verify structured trusted fields remain distinguishable end to end.
 ```
 
-### S1-P08B — per-tool authorization and contract suite
+### S1-P05D — invalidation, retention and deletion hooks
 
 ```text
-For every read tool, test valid/additional/invalid fields, missing and cross-
-tenant IDs, role/capability matrix, suspended/revoked membership, resource
-state, current authorization recheck, timeout/cancel, result bound,
-classification, citation validity, audit and safe errors. Prove the effective
-catalog has no mutation, code, connector, secret, export, provider URL or
-generic query capability. Test technical and business audience projections so
-client users cannot see internal candidate names/metrics/prompts while allowed
-engineers can inspect authorized evidence. Generate reviewed schema snapshots.
+Record envelope source versions/digests and invalidate reuse when membership,
+classification, policy, source version, retention or deletion state changes.
+Never cache authorization beyond the documented bound. Store large envelope
+bodies only as protected artifacts with TTL; preserve enough digest/lineage for
+audit after body deletion. Test concurrent policy change, revoked membership,
+deleted source and stale checkpoint resume.
 ```
 
-## Plan 1.9 — agent API and Python client
-
-### S1-P09A — `/v1/agent` resources
+### S1-P05E — exposure and citation gate
 
 ```text
-Add session create/list/get/patch; message list/create; run get/steps/events/
-citations; run cancel/resume/retry endpoints. Message creation persists the
-user message, creates one AgentRun and queues one turn atomically, then returns
-202 with resource/status/event links. Lists use opaque cursors; mutable session
-metadata uses ETag/If-Match; errors follow the standard envelope. Resume accepts
-only an eligible waiting_for_user state and a schema-valid response. Retry
-creates child lineage. Enforce workspace, ownership/capability, limits,
-idempotency and audit. Start with cursor polling; do not add SSE yet.
+Run a matrix across provider/purpose/data class/region/retention/capability and
+two workspaces. Assert denied fields never appear in gateway request serialization,
+logs, traces, errors, caches or citations. Verify every included fact resolves
+to a currently authorized source/version/digest and deterministic envelopes are
+byte-stable. Add policy-denial metrics/runbook and keep any row-level mode off.
 ```
 
-### S1-P09B — SDK resources and live contract tests
+## Plan 1.6 — agent application services
+
+**Contract.** Services own authorization and transactions; routes, workers and
+tools call them. Split by session/run/budget/registry/citation/event concern and
+avoid a god `AgentService`.
+
+### S1-P06A — session and message services
 
 ```text
-Extend dclab_client with typed agent sessions/messages/runs/steps/events/
-citations and cancel/resume/retry methods, cursor iterators and an explicit
-bounded waiter. Map stable server errors to typed exceptions and retain request
-IDs. Preserve HTTP-only package isolation. Add sync contract tests against a
-live PostgreSQL API for two workspaces, pagination, idempotent message submit,
-waiting/resume, cancellation, event resumption, terminal failures and token/
-content redaction. Update the OpenAPI/SDK coverage gate.
+Implement create/list/get/close session and append/list message services with
+current workspace membership, optional project authorization, bounded content,
+monotonic ordering, idempotency and artifact spillover. User messages are
+untrusted and immutable; assistant messages reference run/version/citations.
+Define safe not-found/denied/conflict errors and event emission. Test two
+workspaces, concurrent append, closed session and duplicate keys.
 ```
 
-## Plan 1.10 — Agent Studio
-
-### S1-P10A — build the read-only Agent Studio UI
+### S1-P06B — run and version-binding services
 
 ```text
-Add an Agent panel integrated with secure session/workspace/project context.
-Implement session list/new/rename/close; objective/message composer; durable
-run progress timeline; current node/status; cited resource cards with safe
-links; assumptions/risks/limitations; budget usage; policy or budget blocked
-states; cancel/retry; clarification/resume; and explicit feedback rating/reason.
-The UI must say read-only and show when an LLM/tool is used. Reload/reconnect
-from server state, not browser-only state. Never render hidden reasoning or raw
-tool/provider bodies. Use accessible status announcements, focus and keyboard
-behavior.
+Implement create/get/list/cancel/retry run services. At creation atomically
+resolve and snapshot compatible agent/graph/prompt/model/tool/data/budget
+versions, validate feature/allowlist and reserve initial budget. Persist intent
+and `agent.turn.v1` job atomically. Retry creates a child attempt with immutable
+parent reference; it never edits terminal evidence. Test policy races and
+same-key replay/different-digest conflict.
 ```
 
-### S1-P10B — UI component and browser E2E
+### S1-P06C — prompt/tool registries and execution authorization
 
 ```text
-Add component tests for loading, empty, running, waiting, completed, failed,
-cancelled, expired, budget/policy block, stale and retry states; workspace
-switch; citation failure; malicious Markdown; and feedback that does not train.
-Add whole-system browser E2E using the fake provider: open session, ask about
-dataset readiness and a completed/failed build, observe persisted steps, reload,
-follow citations, request clarification/resume and cancel. Prove cross-workspace
-resource substitution is denied and client/technical audience content differs.
-Run accessibility automation plus manual critical-flow checks.
+Implement runtime lookup by immutable version and purpose. Tool descriptors are
+code-owned, schema-versioned, read-only in Scope 1 and mapped to one application
+query service. At call time re-check principal/session/workspace/resource/data
+policy, current membership and budget; scheduled authority is insufficient.
+Return bounded typed results with citation candidates. Test registry mismatch,
+revocation and argument smuggling.
 ```
 
-## Plan 1.11 — evaluation, operations and release
-
-### S1-P11A — deterministic and adversarial evaluation gate
+### S1-P06D — budget service integration
 
 ```text
-Create versioned synthetic evaluation cases for dataset readiness, failed
-build diagnosis, completed evidence, business translation, ambiguity/refusal,
-provider/tool failure, budget/cancel/recovery, cross-tenant references,
-sensitive/unknown columns, direct/indirect injection, secret exfiltration and
-unsupported causal claims. Hard gates: authorization/policy, forbidden tools/
-content, valid schema/terminal state, citation identity and budget. Grade task
-success, clarity, completeness, citation usefulness and tool efficiency. Store
-suite/case/agent/prompt/model/tool/data-policy/code versions, exact assertions,
-usage and baseline delta. One safety violation fails regardless of average.
+Wrap reserve/settle/release/reconcile behind AgentBudgetService and require it
+for run, step, provider and tool operations. Define global/run/child dimensions,
+deadline computation and terminal reason on exhaustion. Reservations and state
+changes share a transaction where possible; otherwise use explicit recoverable
+intent. Add injected-clock and concurrent-worker tests plus low-cardinality
+budget-denial/exhaustion metrics.
 ```
 
-### S1-P11B — dashboards, runbooks and internal preview
+### S1-P06E — citation validation and answer finalization
 
 ```text
-Instrument request -> run -> step -> LLM/tool -> checkpoint with OpenTelemetry
-and bounded redacted logs. Add metrics/dashboards for terminal outcomes,
-latency, steps/calls, invalid schemas, policy denials, citation failures,
-provider errors/throttles, budget exhaustion, cost, approval age placeholder,
-lease recovery and queue age. Add alerts/runbooks for provider outage, retry
-storm, stuck run, budget spike, policy denial spike, suspected tenant leak and
-kill-switch rollback. Release behind agent/provider/tool/data-context feature
-flags plus workspace allowlist. Run staging synthetic smoke and have internal
-users complete the acceptance workflow; record L0–L6 evidence and limitations.
+Implement CitationValidator that resolves resource/version/digest through
+authorized query services, checks claim mappings and rejects inaccessible,
+changed, deleted or unsupported evidence. Finalization validates structured
+answer schema, audience-safe wording and citation coverage before appending the
+assistant message. Define “no supported answer” as a successful safe outcome.
+Add mixed valid/invalid and revocation-race tests.
 ```
 
-## Scope 1 completion prompt
+### S1-P06F — event service and application-service gate
 
-Run the complete exit checklist in the master plan. The final review must query
-the effective tool registry and prove no write/export/code/connector action is
-reachable. Scope 2 remains blocked unless every Scope 1 hard gate is VERIFIED.
+```text
+Implement monotonic append/list event service with opaque cursor, audience-safe
+projection and correlation. Run service-level scenarios from session creation
+through queued run/cancel/finalize without a real provider. Prove transaction
+rollback leaves no orphan job/reservation/event and replay is stable. Document
+service ownership and forbid routes/workers from direct agent-row mutation.
+```
+
+## Plan 1.7 — bounded orchestrator and worker
+
+**Contract.** Register only `agent.turn.v1` in the existing dispatcher. One job
+executes one bounded state-machine step and checkpoints before scheduling the
+next; no in-memory recursive loop owns durability.
+
+### S1-P07A — planner state and next-step decision
+
+```text
+Implement a deterministic orchestrator reducer that accepts the persisted run,
+last checkpoint, bounded events and validated provider/tool result, then returns
+exactly one next action: call provider, call one tool, finalize, wait, fail or
+cancel. Validate structured provider decisions against allowed graph/tool/version
+and remaining budgets. Add pure traces for common questions and every terminal/
+invalid state. The LLM cannot choose authorization or worker handler keys.
+```
+
+### S1-P07B — worker handler and durable checkpoint
+
+```text
+Register `agent.turn.v1` with a narrow handler. Claim run/step under lease,
+re-authorize, reserve, execute at most one external operation, persist result and
+checkpoint, settle, append event, and enqueue the next step atomically or through
+a recoverable outbox pattern. Payload contains IDs/version only. Add heartbeat,
+deadline and bounded result serialization. Test no nested unbounded execution.
+```
+
+### S1-P07C — cancellation, wait, expiry and terminalization
+
+```text
+Check cancellation/policy revocation/deadline before dispatch and after external
+return. Define cooperative cancellation for provider/tool calls, safe late
+results, waiting state, maximum wait and expiry. A reconciler terminalizes runs
+with lost jobs/leases or exhausted bounds and releases reservations. Test cancel
+at every checkpoint and ensure terminal state/message/event are consistent.
+```
+
+### S1-P07D — crash and duplicate recovery
+
+```text
+Inject failure before/after claim, external dispatch, result persistence,
+checkpoint, settlement, event and next-job enqueue. Prove duplicate delivery
+cannot repeat a non-idempotent operation; Scope 1 tools are reads but provider
+cost still settles once. Reconstruct from database after process restart and
+detect ambiguous dispatch conservatively. Add PostgreSQL concurrency tests.
+```
+
+### S1-P07E — orchestration limits and backpressure
+
+```text
+Enforce maximum steps, tool/provider calls, tokens, cost, context/result bytes,
+wall time, active runs per workspace/user and queue age. Reject or queue fairly
+with stable reason/retry metadata; never create unlimited child jobs. Add metrics
+for state/queue/lease/recovery/exhaustion by bounded labels and a worker drain/
+kill-switch runbook. Benchmark with synthetic bounded fixtures.
+```
+
+### S1-P07F — orchestrator system gate
+
+```text
+Run deterministic fake-provider system cases for direct answer, multi-tool,
+policy block, insufficient evidence, malformed decision, outage, cancellation,
+crash recovery, duplicate job and every budget. Verify terminal reconstruction,
+events, citations, reservations and no write tool. Record latency/cost step
+baselines and only then enable the handler for an internal allowlist.
+```
+
+## Plan 1.8 — read-only tool catalog
+
+**Contract.** Tools are typed adapters over existing application queries, never
+raw DB/object access. Initial results are metadata/evidence summaries with hard
+page/byte/time bounds and citation targets.
+
+### S1-P08A — inventory and version the first catalog
+
+```text
+Map user questions to the smallest initial tools: identity/capabilities,
+projects/ProblemSpec, dataset schema/profile/readiness, execution/build status,
+bounded events, completed scientific evidence, artifact metadata and safe
+technical/business summaries. For each define name/version, JSON input/output,
+required capability/data policy, allowed states, maximum items/bytes/time and
+citation mapping. Register code-owned descriptors; no dynamic import/tool name.
+```
+
+### S1-P08B — implement identity/project/dataset tools
+
+```text
+Implement tools through workspace, project, problem, data access, dataset column
+and profile services. Require explicit resource IDs where ambiguity is unsafe;
+lists use opaque cursors and bounded fields. Return classification-aware schema/
+aggregate metadata only, never rows or signed URLs. Re-authorize on every call.
+Add contract tests for empty, denied, deleted, quarantined and cross-workspace.
+```
+
+### S1-P08C — implement execution/evidence/artifact tools
+
+```text
+Wrap execution request, model build, observability, evidence lock, verification,
+lineage and artifact metadata queries. Expose audience-safe stage/status/failure,
+metrics and provenance only for completed/authorized evidence; clearly label
+provisional state. Artifact tool returns metadata/digest, not content/download.
+Test missing/failed/running/locked states, large timelines and internal-detail
+redaction.
+```
+
+### S1-P08D — tool runner and result sanitation
+
+```text
+Implement one ToolRunner that validates schema, canonicalizes arguments,
+re-authorizes, reserves budget, applies timeout/page/byte limits, invokes the
+mapped service and validates/sanitizes results. Record call/result digests and
+safe error category. Reject unknown version/fields/resource types and provider-
+supplied tool names. Add malicious argument/result, timeout and revocation tests.
+```
+
+### S1-P08E — catalog safety and coverage gate
+
+```text
+Run shared contract tests for every tool, including two workspaces, suspended
+membership, policy change, huge result, injection text, secret/storage/internal
+field scan and citation resolution. Prove catalog diff contains no create/update/
+delete/export/code/connector action. Measure result sizes/latency, document tool
+owners and independent catalog kill switch, and freeze the Scope 1 tool release.
+```
+
+## Plan 1.9 — agent `/v1` API and Python client
+
+**Contract.** Mount `api/v1_agent.py` using Plan 1.6 services and Scope 0 common
+errors/pages/request IDs. The SDK remains HTTP-only and workspace-explicit.
+
+### S1-P09A — session and message endpoints
+
+```text
+Add `POST/GET /v1/agent/sessions`, `GET/DELETE-or-close /sessions/{id}` and
+`POST/GET /sessions/{id}/messages` with typed request/response/page schemas,
+idempotency on creates, ETag where mutable, explicit workspace and current
+membership/capability. Define 201/200/202/204 and stable 400/401/403/404/409/422/
+429 behavior. Route code only validates transport and calls services.
+```
+
+### S1-P09B — run, step, event, citation and control endpoints
+
+```text
+Add run create/get/list, bounded steps, opaque-cursor events, citations, cancel
+and child retry endpoints. Creation returns durable resource/links; polling uses
+ETag or cursor and Retry-After where useful. Cancellation is 202 until observed;
+retry is idempotent and only for allowed terminal states. Ensure audience-safe
+projections and test cross-session/workspace ID substitution.
+```
+
+### S1-P09C — OpenAPI and negative transport contract
+
+```text
+Document examples and schemas without leaking prompt/tool internals. Add API
+tests for missing/malformed workspace, invalid state, stale ETag, tampered
+cursor, duplicate key, body/limit overflow, unsupported media, internal error
+and rate/quota denial. Update deterministic OpenAPI snapshot and classify the
+change as additive. Verify request IDs and no FastAPI detail/provider body leak.
+```
+
+### S1-P09D — Python client agent resources
+
+```text
+Add typed session/message/run/step/event/citation models and sync client methods,
+iterators and wait/cancel helpers using existing transport/error/retry rules.
+Waiters bound timeout/poll interval and honor server Retry-After; creates expose
+idempotency. Keep explicit workspace and safe body/stream limits. Add mocked
+transport plus live PostgreSQL API tests; no API internal imports.
+```
+
+### S1-P09E — API/SDK parity gate
+
+```text
+Generate an operation-to-client parity manifest and fail CI on drift. Run the
+complete read-only conversation lifecycle through the client, including reload,
+cancel, retry, events and citations, plus two-workspace denial and provider
+failure. Verify no write/export/code route exists. Record compatibility/version
+and rollback behavior before Agent Studio consumes the API.
+```
+
+## Plan 1.10 — Agent Studio UI
+
+**Contract.** Build beneath `apps/web/app/app/agent/`; reuse AppShell, session/
+query providers and UI primitives. The UI renders server capabilities and run
+state but never invents authorization or success.
+
+### S1-P10A — information architecture and typed client hooks
+
+```text
+Define routes for session list/new/session detail and component boundaries for
+messages, composer, run progress, tool steps, citations, budget/policy notices
+and feedback. Add schemas/hooks keyed by workspace/session/run using the BFF.
+Model loading/empty/blocked/error/offline/terminal states explicitly. Keep raw
+prompts, hidden reasoning and admin policy bodies out of client types.
+```
+
+### S1-P10B — session and objective experience
+
+```text
+Implement accessible session list/create/close and message composer with bounded
+input, idempotent submit, double-submit prevention and clear active workspace.
+On send, show the durable server message/run rather than an optimistic invented
+answer. Preserve reload/back-forward behavior and safely recover expired session
+or membership. Add component tests for empty/error/denied/slow states.
+```
+
+### S1-P10C — progress, cancellation and reconnect
+
+```text
+Render ordered server events/steps with audience-safe labels, current bound
+usage and terminal reason. Poll/reconnect using opaque cursor and backoff; stop
+on terminal/visibility loss as appropriate. Implement cancel/retry from current
+server state and handle race with completion. Test duplicate/out-of-order event
+responses, network loss, workspace switch and page reload without data leakage.
+```
+
+### S1-P10D — citation, policy and feedback experience
+
+```text
+Render claim-linked citations with resource type/name/version/digest and an
+authorized navigation target; never render arbitrary provider URLs/HTML. Show
+policy/budget blocks with safe reason and next action. Add explicit helpful/not-
+helpful plus bounded comment feedback as evidence only, not automatic learning.
+Test missing/revoked citations, malicious labels and keyboard/screen-reader flow.
+```
+
+### S1-P10E — browser and accessibility gate
+
+```text
+Run component and Playwright journeys for zero/one/many workspaces, new and
+existing session, direct answer, tool answer, policy block, provider error,
+cancel, retry, reload/reconnect, revoked membership and narrow/mobile viewport.
+Perform automated accessibility checks and manual keyboard/focus review. Verify
+no tokens/raw internals leak into DOM/storage/errors before allowlisted release.
+```
+
+## Plan 1.11 — evaluation, operations and internal release
+
+**Contract.** Evaluation is versioned evidence with hard safety assertions and
+quality/cost/latency baselines. Scope 1 releases behind feature flag plus user/
+workspace allowlist and separate provider kill switch.
+
+### S1-P11A — versioned golden and adversarial suite
+
+```text
+Create synthetic versioned cases for project/dataset readiness, running/failed/
+completed builds, insufficient evidence and audience-safe explanation. Assert
+tool choice/arguments, policy decision, structured schema, citation coverage,
+unsupported-claim refusal, bounds and terminal state; add injection/exfiltration/
+cross-tenant/secret/provider-failure cases. Store large fixtures/results as
+artifacts with digests. One safety failure fails the run regardless of average.
+```
+
+### S1-P11B — evaluation runner and baseline comparison
+
+```text
+Implement deterministic offline evaluation over the fake provider and a
+controlled synthetic provider-integration mode. Persist suite/release/result,
+per-assertion evidence, latency/token/cost and baseline delta. Define calibrated
+rubrics only for non-deterministic quality and require reviewer identity. Add CI
+for deterministic cases and a scheduled/manual provider run. No production
+promotion is automatic in Scope 1.
+```
+
+### S1-P11C — observability, alerts and operator views
+
+```text
+Add run/step/job/provider/tool/policy/citation/budget metrics and trace links with
+bounded labels; structured logs use IDs/digests/reason codes only. Create operator
+queries/dashboard definitions for stuck/failed/expired runs, queue age, breaker,
+budget exhaustion, citation invalidation and evaluation regression. Define alert
+thresholds from observed internal baselines and assign owners.
+```
+
+### S1-P11D — runbooks, flags and recovery drills
+
+```text
+Document provider outage, runaway cost, stuck queue, corrupt checkpoint,
+unauthorized citation, policy rollback, user deletion and total agent disable.
+Implement global/workspace/user allowlist plus independent orchestration/provider
+flags with fail-closed defaults. Drill cancellation, worker restart, breaker,
+policy rollback and disable without schema rollback; record observed recovery.
+```
+
+### S1-P11E — internal end-to-end release gate
+
+```text
+Run migrations, full regression, two-workspace, fake/provider synthetic,
+adversarial, budget-concurrency, crash-injection, API/SDK and browser E2E. Have an
+allowlisted user complete the supported questions without DB intervention.
+Publish the Scope 1 evidence record with versions, quality/cost/latency, safety
+assertions and limitations. Do not start Scope 2 until every hard gate passes.
+```

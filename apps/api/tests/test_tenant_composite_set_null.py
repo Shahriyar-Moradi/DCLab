@@ -52,6 +52,7 @@ EXPECTED_ACTION_COLUMNS = {
     "fk_visualizations_workspace_stage": ["pipeline_stage_run_id"],
     "fk_visualizations_workspace_candidate": ["candidate_id"],
     "fk_visualizations_workspace_evaluation": ["model_evaluation_id"],
+    "fk_simulation_runs_workspace_project": ["project_id"],
 }
 
 

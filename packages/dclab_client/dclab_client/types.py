@@ -9,12 +9,23 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class PrincipalWorkspace(BaseModel):
+    id: UUID
+    slug: str
+    name: str
+    kind: str
+    role: str | None = None
+
+
 class Principal(BaseModel):
     id: UUID
     email: str
     role: str
     full_name: str
     workspace_id: UUID | None = None
+    active_workspace_id: UUID | None = None
+    workspaces: list[PrincipalWorkspace] = Field(default_factory=list)
+    request_id: str | None = None
 
 
 class Workspace(BaseModel):

@@ -153,7 +153,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 "prediction_tasks, datasets, environments, simulation_runs, "
                 "lab_decision_records, client_lab_run_audits, client_lab_runs, "
                 "ml_jobs, execution_requests, client_lab_uploads, "
-                "decisions, predictions, opportunities, users RESTART IDENTITY CASCADE"
+                "decisions, predictions, opportunities, auth_recovery_tokens, auth_sessions, users RESTART IDENTITY CASCADE"
             ))
             # Keep the well-known default workspace; drop any extra workspaces a
             # test created so slugs don't collide across test functions.
@@ -162,6 +162,15 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 {"default_id": DEFAULT_WORKSPACE_ID},
             )
         _clear_test_object_store()
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle_state():
+    from app.services.login_throttle import reset_login_throttle
+
+    reset_login_throttle()
+    yield
+    reset_login_throttle()
 
 
 @pytest.fixture()
@@ -180,6 +189,23 @@ def client(test_engine, db_session: Session) -> Generator[TestClient, None, None
 
 ADMIN_PASSWORD = "admin-pass-123"
 CLIENT_PASSWORD = "client-pass-123"
+TRUSTED_ORIGIN = "http://localhost:3001"
+
+
+def csrf_headers(client) -> dict[str, str]:
+    token = client.cookies.get("dclab_csrf")
+    if not token:
+        response = client.get("/auth/csrf")
+        token = response.json()["csrf_token"]
+    return {"Origin": TRUSTED_ORIGIN, "X-CSRF-Token": token}
+
+
+def browser_login(client, email: str, password: str):
+    return client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+        headers=csrf_headers(client),
+    )
 
 
 @pytest.fixture()

@@ -1,5 +1,9 @@
 # DCLab Verification Baseline
 
+> **Status: HISTORICAL.** Recorded 2026-09-04 at SHA `de2af56` before later
+> repairs. Do not use these versions or the SHA as current truth.
+> Current: [`S0_P01A_CURRENT_TRUTH.md`](S0_P01A_CURRENT_TRUTH.md).
+
 - Commit SHA: `de2af56824b81400624f34758308324db34f4da9`
 - Branch: `main`
 - Recorded at: `2026-09-04T11:20:01Z`

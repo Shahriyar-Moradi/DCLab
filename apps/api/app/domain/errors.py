@@ -49,6 +49,10 @@ class ProjectNotFoundError(LookupError):
     """No project matches the given workspace-scoped id."""
 
 
+class SimulationRunNotFoundError(LookupError):
+    """No simulation run matches the given workspace-scoped id."""
+
+
 class ProblemSpecNotFoundError(LookupError):
     """No problem spec matches the given workspace-scoped id."""
 

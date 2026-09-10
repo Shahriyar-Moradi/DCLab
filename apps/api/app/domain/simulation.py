@@ -8,6 +8,10 @@ from app.sim import USE_CASES
 
 class SimulationRunRequest(BaseModel):
     use_case: str = Field(..., description="One of the eight simulation questions, or 'all'")
+    project_id: UUID | None = Field(
+        default=None,
+        description="Optional project in the active workspace; omitted for pack-only runs",
+    )
 
 
 class SimulationHeroDecision(BaseModel):
@@ -34,6 +38,8 @@ class SimulationRunRead(BaseModel):
     fusion: str
     payload: dict
     created_at: datetime
+    workspace_id: UUID | None = None
+    project_id: UUID | None = None
 
 
 class SimulationRunListResponse(BaseModel):

@@ -1,5 +1,10 @@
 # DCLab System Verification Report
 
+> **Status: HISTORICAL.** Evidence date 2026-09-04 at Alembic
+> `0027_repair_tenant_lineage`. Executive counts (498 pytest, 6 Playwright, 29
+> Next routes, head 0027) are not current. Do not copy them into new plans.
+> Current: [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md).
+
 **Baseline SHA:** `de2af56824b81400624f34758308324db34f4da9` (`main`, recorded in [verification/BASELINE.md](verification/BASELINE.md))  
 **Verification date:** 2026-09-04  
 **Isolated PostgreSQL:** `localhost:55432` (`artifacts/e2e-verification-pgdata`)  

@@ -1,0 +1,460 @@
+{
+  "paths": {
+    "/v1/datasets": {
+      "GET": {
+        "operationId": "read_datasets_v1_datasets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": null
+      }
+    },
+    "/v1/datasets/{dataset_id}": {
+      "GET": {
+        "operationId": "read_dataset_v1_datasets__dataset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "DatasetListItem"
+      }
+    },
+    "/v1/execution-requests": {
+      "POST": {
+        "operationId": "submit_execution_request_v1_execution_requests_post",
+        "parameters": [],
+        "requestSchema": "ExecutionRequestCreate",
+        "statusCodes": [
+          "202",
+          "422"
+        ],
+        "successSchema": "ExecutionRequestRead"
+      }
+    },
+    "/v1/execution-requests/{request_id}": {
+      "GET": {
+        "operationId": "read_execution_request_v1_execution_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "ExecutionRequestRead"
+      }
+    },
+    "/v1/execution-requests/{request_id}/target-confirmation": {
+      "POST": {
+        "operationId": "confirm_execution_request_target_v1_execution_requests__request_id__target_confirmation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ExecutionTargetConfirmation",
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "ExecutionRequestRead"
+      }
+    },
+    "/v1/me": {
+      "GET": {
+        "operationId": "read_principal_v1_me_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200"
+        ],
+        "successSchema": "PrincipalRead"
+      }
+    },
+    "/v1/model-builds/{pipeline_run_id}": {
+      "GET": {
+        "operationId": "read_model_build_v1_model_builds__pipeline_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pipeline_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "PipelineModelBuildRead"
+      }
+    },
+    "/v1/model-builds/{pipeline_run_id}/artifacts": {
+      "GET": {
+        "operationId": "read_model_build_artifacts_v1_model_builds__pipeline_run_id__artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pipeline_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": null
+      }
+    },
+    "/v1/model-builds/{pipeline_run_id}/events": {
+      "GET": {
+        "operationId": "read_model_build_events_v1_model_builds__pipeline_run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pipeline_run_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "EventPage"
+      }
+    },
+    "/v1/model-builds/{pipeline_run_id}/visualizations": {
+      "GET": {
+        "operationId": "read_model_build_visualizations_v1_model_builds__pipeline_run_id__visualizations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pipeline_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": null
+      }
+    },
+    "/v1/projects": {
+      "GET": {
+        "operationId": "read_projects_v1_projects_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200"
+        ],
+        "successSchema": null
+      }
+    },
+    "/v1/projects/{project_id}": {
+      "GET": {
+        "operationId": "read_project_v1_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "ProjectRead"
+      }
+    },
+    "/v1/workspaces": {
+      "GET": {
+        "operationId": "read_workspaces_v1_workspaces_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200"
+        ],
+        "successSchema": null
+      }
+    }
+  },
+  "sdk_schemas": {
+    "ArtifactRead": {
+      "properties": [
+        "artifact_type",
+        "content_digest",
+        "created_at",
+        "id",
+        "mime_type",
+        "object_key",
+        "project_id",
+        "provider",
+        "size_bytes",
+        "workspace_id"
+      ],
+      "required": [
+        "artifact_type",
+        "content_digest",
+        "created_at",
+        "id",
+        "mime_type",
+        "object_key",
+        "project_id",
+        "provider",
+        "size_bytes",
+        "workspace_id"
+      ]
+    },
+    "DatasetListItem": {
+      "properties": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "name",
+        "project_id",
+        "row_count",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "name",
+        "project_id",
+        "row_count",
+        "version",
+        "workspace_id"
+      ]
+    },
+    "EventPage": {
+      "properties": [
+        "items",
+        "next_cursor"
+      ],
+      "required": [
+        "items"
+      ]
+    },
+    "ExecutionRequestRead": {
+      "properties": [
+        "completed_at",
+        "created_at",
+        "external_request_id",
+        "failure_code",
+        "failure_summary",
+        "id",
+        "idempotency_key",
+        "operation",
+        "parent_request_id",
+        "pipeline_run_id",
+        "project_id",
+        "request_spec",
+        "requested_by_user_id",
+        "result_summary",
+        "source_surface",
+        "started_at",
+        "status",
+        "workflow_run_id",
+        "workspace_id"
+      ],
+      "required": [
+        "created_at",
+        "id",
+        "operation",
+        "request_spec",
+        "source_surface",
+        "status",
+        "workspace_id"
+      ]
+    },
+    "MlRunEventRead": {
+      "properties": [
+        "created_at",
+        "duration_ms",
+        "event_type",
+        "experiment_id",
+        "id",
+        "payload",
+        "sequence",
+        "stage",
+        "status",
+        "timestamp",
+        "workflow_run_id",
+        "workspace_id"
+      ],
+      "required": [
+        "created_at",
+        "duration_ms",
+        "event_type",
+        "experiment_id",
+        "id",
+        "payload",
+        "sequence",
+        "stage",
+        "status",
+        "timestamp",
+        "workflow_run_id",
+        "workspace_id"
+      ]
+    },
+    "PipelineModelBuildRead": {
+      "properties": [
+        "compatibility_fallback_used",
+        "generator_version",
+        "pipeline_run_id",
+        "pipeline_run_status",
+        "reproduction_notebook",
+        "reproduction_script",
+        "reproduction_spec_digest",
+        "scientific_evidence_locked_at",
+        "stages",
+        "workspace_id"
+      ],
+      "required": [
+        "pipeline_run_id",
+        "pipeline_run_status",
+        "stages",
+        "workspace_id"
+      ]
+    },
+    "PrincipalRead": {
+      "properties": [
+        "active_workspace_id",
+        "email",
+        "full_name",
+        "id",
+        "request_id",
+        "role",
+        "workspace_id",
+        "workspaces"
+      ],
+      "required": [
+        "email",
+        "full_name",
+        "id",
+        "role"
+      ]
+    },
+    "ProjectRead": {
+      "properties": [
+        "archived_at",
+        "created_at",
+        "created_by",
+        "description",
+        "id",
+        "name",
+        "provenance",
+        "slug",
+        "status",
+        "updated_at",
+        "workspace_id"
+      ],
+      "required": [
+        "archived_at",
+        "created_at",
+        "created_by",
+        "description",
+        "id",
+        "name",
+        "provenance",
+        "slug",
+        "status",
+        "updated_at",
+        "workspace_id"
+      ]
+    },
+    "VisualizationRead": {
+      "properties": [
+        "candidate_id",
+        "content_digest",
+        "created_at",
+        "data_artifact_id",
+        "id",
+        "image_artifact_id",
+        "model_evaluation_id",
+        "pipeline_run_id",
+        "pipeline_stage_run_id",
+        "project_id",
+        "renderer_hint",
+        "spec",
+        "spec_version",
+        "visualization_type",
+        "workspace_id"
+      ],
+      "required": [
+        "content_digest",
+        "created_at",
+        "id",
+        "pipeline_run_id",
+        "spec",
+        "spec_version",
+        "visualization_type",
+        "workspace_id"
+      ]
+    },
+    "WorkspaceRead": {
+      "properties": [
+        "created_at",
+        "id",
+        "kind",
+        "max_members",
+        "max_ml_engineer_seats",
+        "name",
+        "slug"
+      ],
+      "required": [
+        "created_at",
+        "id",
+        "kind",
+        "max_ml_engineer_seats",
+        "name",
+        "slug"
+      ]
+    }
+  }
+}

@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.db.models import SimulationRun
+from app.db.models import DEFAULT_WORKSPACE_ID, SimulationRun
 
 
 def _seed_completed_experiment(db_session, *, seed: int = 11):
@@ -49,6 +49,7 @@ def _seed_completed_experiment(db_session, *, seed: int = 11):
 def _insert_simulation_run(db_session, *, use_case: str, roc_auc: float) -> SimulationRun:
     row = SimulationRun(
         id=uuid4(),
+        workspace_id=DEFAULT_WORKSPACE_ID,
         use_case=use_case,
         model_version=f"{use_case}_sim_v1",
         policy_version=f"{use_case}_sim_v1",

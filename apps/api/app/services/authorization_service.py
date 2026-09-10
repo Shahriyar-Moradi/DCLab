@@ -146,13 +146,63 @@ def _explicit_workspace_memberships(db: Session, user: User) -> list[WorkspaceMe
     )
 
 
+def active_workspace_memberships(
+    db: Session, user: User
+) -> list[WorkspaceMembership]:
+    return [row for row in _explicit_workspace_memberships(db, user) if row.suspended_at is None]
+
+
+def workspace_is_selectable(db: Session, user: User, workspace_id: UUID) -> bool:
+    """True when current membership (or platform role) may select this workspace.
+
+    The selector is never proof: callers must still run resolve_workspace_access
+    on tenant routes.
+    """
+
+    if db.get(Workspace, workspace_id) is None:
+        return False
+    if platform_role_for(db, user) is not None:
+        return True
+    memberships = active_workspace_memberships(db, user)
+    if memberships:
+        return any(row.workspace_id == workspace_id for row in memberships)
+    return (
+        user.role == UserRole.CLIENT_USER.value and user.workspace_id == workspace_id
+    )
+
+
+def default_workspace_id(db: Session, user: User) -> UUID | None:
+    """Workspace to remember when the actor has not chosen one yet."""
+
+    if platform_role_for(db, user) is not None:
+        if db.get(Workspace, DEFAULT_WORKSPACE_ID) is not None:
+            return DEFAULT_WORKSPACE_ID
+        first = db.scalar(select(Workspace.id).order_by(Workspace.name, Workspace.id))
+        return first
+
+    memberships = active_workspace_memberships(db, user)
+    if memberships:
+        by_workspace = {row.workspace_id: row for row in memberships}
+        if user.workspace_id in by_workspace:
+            return user.workspace_id
+        if len(memberships) == 1:
+            return memberships[0].workspace_id
+        return None
+    if user.role == UserRole.CLIENT_USER.value and user.workspace_id is not None:
+        if db.get(Workspace, user.workspace_id) is not None:
+            return user.workspace_id
+    return None
+
+
 def workspace_role_for(db: Session, user: User, workspace_id: UUID) -> WorkspaceRole | None:
     memberships = _explicit_workspace_memberships(db, user)
     if memberships:
         membership = next(
             (row for row in memberships if row.workspace_id == workspace_id), None
         )
-        return WorkspaceRole(membership.role) if membership is not None else None
+        if membership is None or membership.suspended_at is not None:
+            return None
+        return WorkspaceRole(membership.role)
     if user.role == UserRole.CLIENT_USER.value and user.workspace_id == workspace_id:
         return WorkspaceRole.BUSINESS_ADMIN
     return None
@@ -297,15 +347,18 @@ def resolve_workspace_access(
 
     memberships = _explicit_workspace_memberships(db, user)
     if memberships:
-        by_workspace = {row.workspace_id: row for row in memberships}
+        active = [row for row in memberships if row.suspended_at is None]
+        by_workspace = {row.workspace_id: row for row in active}
         if requested_workspace_id is not None:
             membership = by_workspace.get(requested_workspace_id)
             if membership is None:
                 raise AuthorizationError("not authorized for this workspace")
         elif user.workspace_id in by_workspace:
             membership = by_workspace[user.workspace_id]
-        elif len(memberships) == 1:
-            membership = memberships[0]
+        elif len(active) == 1:
+            membership = active[0]
+        elif not active:
+            raise AuthorizationError("not authorized for this workspace")
         else:
             raise AuthorizationError(
                 "select an authorized workspace with X-Workspace-Id",

@@ -65,6 +65,9 @@ jobs:
       - name: Run migrations
         run: alembic upgrade head
 
+      - name: Repository truth drift
+        run: python -m scripts.check_truth_drift --alembic-check
+
       # --- Unit / integration tests -------------------------------------------------
       # Includes the access-control sweep (every /admin endpoint x every role) and
       # the translation-layer suite (every use case's real policy actions, banned

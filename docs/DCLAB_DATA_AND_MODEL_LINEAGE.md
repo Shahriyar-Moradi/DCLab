@@ -1,5 +1,11 @@
 # DCLab Data and Model Lineage
 
+> **Status: PARTIAL / older diagram.** The tree below predates first-class
+> `DataAccess` and `ExecutionRequest`. Current canonical chain:
+> Workspace → Project → ProblemSpec → DataSource → DataAccess → IngestionRun →
+> Dataset → WorkflowRun → PipelineRun (`experiments`) → ModelVersion.
+> Current head: [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md).
+
 ## Canonical hierarchy
 
 ```text

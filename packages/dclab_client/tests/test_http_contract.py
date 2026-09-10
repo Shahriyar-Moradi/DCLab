@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -136,3 +137,39 @@ def test_confirm_target_posts_column_to_v1():
     assert request.headers["X-Request-Id"] == "trace-confirm"
     body = json.loads(request.content.decode("utf-8"))
     assert body == {"target_column": "Churn"}
+
+
+def test_omits_workspace_header_unless_constructed_with_one():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "11111111-1111-1111-1111-111111111111",
+                "email": "a@b.test",
+                "role": "viewer",
+                "full_name": "A",
+                "workspace_id": None,
+            },
+        )
+
+    api = _client(handler, token="secret-token")
+    me = api.identity.me()
+    assert me.email == "a@b.test"
+    assert me.active_workspace_id is None
+    assert me.workspaces == []
+    request = recorded[0]
+    assert "X-Workspace-Id" not in request.headers
+    assert "cookie" not in request.headers
+    assert "x-dclab-session" not in request.headers
+
+
+def test_source_never_calls_browser_session_workspace_selection():
+    source = (
+        Path(__file__).resolve().parents[1] / "dclab_client" / "_http.py"
+    ).read_text(encoding="utf-8")
+    assert "dclab_session" not in source
+    assert "/auth/workspace" not in source
+    assert "Cookie" not in source

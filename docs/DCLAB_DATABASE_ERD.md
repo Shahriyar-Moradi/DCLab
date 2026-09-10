@@ -1,5 +1,9 @@
 # DCLab database ERD
 
+> **Status: HISTORICAL.** Logical model frozen at Alembic `0039_scientific_plans`.
+> Current head is `0054_execution_needs_input`. See
+> [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md).
+
 Logical model at Alembic head `0039_scientific_plans`. Physical table names
 that differ from the logical noun are noted in parentheses.
 

@@ -134,7 +134,7 @@ def test_login_token_carries_name_role_and_long_expiry(client, client_user):
     from app.config import get_settings
 
     response = client.post(
-        "/auth/login", json={"email": client_user.email, "password": "client-pass-123"}
+        "/auth/tokens", json={"email": client_user.email, "password": "client-pass-123"}
     )
     assert response.status_code == 200
     body = response.json()
@@ -159,10 +159,10 @@ def test_demo_staff_and_customer_have_separate_access(client, db_session):
     db_session.commit()
 
     staff = client.post(
-        "/auth/login", json={"email": DEMO_ADMIN_EMAIL, "password": DEMO_ADMIN_PASSWORD}
+        "/auth/tokens", json={"email": DEMO_ADMIN_EMAIL, "password": DEMO_ADMIN_PASSWORD}
     )
     customer = client.post(
-        "/auth/login", json={"email": DEMO_CLIENT_EMAIL, "password": DEMO_CLIENT_PASSWORD}
+        "/auth/tokens", json={"email": DEMO_CLIENT_EMAIL, "password": DEMO_CLIENT_PASSWORD}
     )
     assert staff.status_code == 200
     assert customer.status_code == 200
@@ -213,7 +213,7 @@ def test_demo_seed_covers_platform_business_and_personal_roles(client, db_sessio
     client_email = "demo@client.io"
     for login in logins:
         response = client.post(
-            "/auth/login",
+            "/auth/tokens",
             json={"email": login["email"], "password": login["password"]},
         )
         assert response.status_code == 200, login["email"]
@@ -236,7 +236,7 @@ def test_demo_seed_covers_platform_business_and_personal_roles(client, db_sessio
 
 def test_login_returns_a_usable_token(client, client_user):
     response = client.post(
-        "/auth/login", json={"email": client_user.email, "password": "client-pass-123"}
+        "/auth/tokens", json={"email": client_user.email, "password": "client-pass-123"}
     )
     assert response.status_code == 200
     body = response.json()
@@ -249,10 +249,15 @@ def test_login_returns_a_usable_token(client, client_user):
 
 
 def test_login_rejects_a_wrong_password(client, client_user):
+    from conftest import csrf_headers
+
     response = client.post(
-        "/auth/login", json={"email": client_user.email, "password": "not-the-password"}
+        "/auth/login",
+        json={"email": client_user.email, "password": "not-the-password"},
+        headers=csrf_headers(client),
     )
     assert response.status_code == 401
+    assert response.json()["detail"] == "invalid email or password"
 
 
 def test_a_garbage_token_is_rejected(client):

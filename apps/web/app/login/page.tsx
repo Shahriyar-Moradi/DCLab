@@ -116,8 +116,7 @@ function LoginForm() {
             className="w-full"
             size="xl"
             onClick={() => {
-              signOut();
-              router.refresh();
+              void signOut().then(() => router.refresh());
             }}
           >
             Sign out and use a different account

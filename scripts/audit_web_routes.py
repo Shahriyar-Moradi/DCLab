@@ -15,7 +15,7 @@ import urllib.request
 
 API = os.environ.get("DCLAB_API_URL", "http://127.0.0.1:8001")
 WEB = os.environ.get("DCLAB_WEB_URL", "http://127.0.0.1:3001")
-TOKEN_COOKIE = "dclab_token"
+TOKEN_COOKIE = "dclab_session"
 
 ADMIN_PAGES = ["/admin/lab", "/admin/lab/datasets", "/admin/lab/experiments", "/admin/lab/tasks"]
 CLIENT_PAGES = ["/app/dashboards", "/app/opportunities", "/app/decisions"]
@@ -26,16 +26,44 @@ ACCOUNTS = {
 }
 
 
+def _csrf_headers() -> dict[str, str]:
+    request = urllib.request.Request(
+        f"{API}/auth/csrf",
+        headers={"Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        token = json.loads(response.read())["csrf_token"]
+        cookies = response.headers.get_all("Set-Cookie") or []
+    csrf_cookie = ""
+    for item in cookies:
+        if item.lower().startswith("dclab_csrf="):
+            csrf_cookie = item.split(";", 1)[0].split("=", 1)[1]
+            break
+    headers = {
+        "Content-Type": "application/json",
+        "Origin": WEB,
+        "X-CSRF-Token": token,
+    }
+    if csrf_cookie:
+        headers["Cookie"] = f"dclab_csrf={csrf_cookie}"
+    return headers
+
+
 def login(role: str) -> str:
     email, password = ACCOUNTS[role]
     request = urllib.request.Request(
         f"{API}/auth/login",
         method="POST",
         data=json.dumps({"email": email, "password": password}).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=_csrf_headers(),
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read())["access_token"]
+        cookies = response.headers.get_all("Set-Cookie") or []
+        prefix = f"{TOKEN_COOKIE}="
+        for item in cookies:
+            if item.lower().startswith(prefix.lower()):
+                return item.split(";", 1)[0].split("=", 1)[1]
+        raise SystemExit("login did not issue a session cookie")
 
 
 def visit(path: str, token: str | None) -> tuple[int, str]:

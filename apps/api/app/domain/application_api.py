@@ -16,12 +16,23 @@ from app.domain.execution_requests import OPERATION_MODEL_BUILD
 from app.domain.observability import MlRunEventRead
 
 
+class PrincipalWorkspaceRead(BaseModel):
+    id: UUID
+    slug: str
+    name: str
+    kind: str
+    role: str | None = None
+
+
 class PrincipalRead(BaseModel):
     id: UUID
     email: str
     role: str
     full_name: str
     workspace_id: UUID | None = None
+    active_workspace_id: UUID | None = None
+    workspaces: list[PrincipalWorkspaceRead] = Field(default_factory=list)
+    request_id: str | None = None
 
 
 class ExecutionRequestCreate(BaseModel):

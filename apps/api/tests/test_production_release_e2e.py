@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from adaptive_modeling.fixtures import ordinary_binary, regression
 from adaptive_modeling.production import labs_upload_and_train
+from conftest import csrf_headers
 from app.db.models import (
     Artifact,
     CodeSnapshot,
@@ -192,6 +193,7 @@ def test_personal_signup_project_and_one_ml_core(
     registered = client.post(
         "/auth/register",
         json={"email": email, "password": "test-password", "full_name": "Personal Owner"},
+        headers=csrf_headers(client),
     )
     assert registered.status_code == 200, registered.text
     body = registered.json()
@@ -200,10 +202,17 @@ def test_personal_signup_project_and_one_ml_core(
     duplicate = client.post(
         "/auth/register",
         json={"email": email, "password": "test-password"},
+        headers=csrf_headers(client),
     )
     assert duplicate.status_code == 409
 
-    token = body["access_token"]
+    assert "access_token" not in body
+    token_response = client.post(
+        "/auth/tokens",
+        json={"email": email, "password": "test-password"},
+    )
+    assert token_response.status_code == 200, token_response.text
+    token = token_response.json()["access_token"]
     created = client.post(
         "/workspaces/personal",
         headers=_headers(token),

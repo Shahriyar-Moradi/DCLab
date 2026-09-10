@@ -11,6 +11,11 @@
       "definition": "CHECK (((artifact_type)::text = ANY ((ARRAY['dataset'::character varying, 'source_code'::character varying, 'training_script'::character varying, 'model'::character varying, 'preprocessor'::character varying, 'report'::character varying, 'plot'::character varying, 'result_json'::character varying, 'feature_manifest'::character varying, 'dependency_lock'::character varying, 'reproduction_notebook'::character varying, 'reproduction_script'::character varying])::text[])))"
     },
     {
+      "table": "auth_recovery_tokens",
+      "name": "ck_auth_recovery_tokens_purpose",
+      "definition": "CHECK (((purpose)::text = ANY ((ARRAY['password_reset'::character varying, 'email_verification'::character varying])::text[])))"
+    },
+    {
       "table": "client_lab_uploads",
       "name": "ck_client_lab_uploads_client_status",
       "definition": "CHECK (((client_status)::text = ANY ((ARRAY['queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying, 'needs_input'::character varying])::text[])))"
@@ -434,6 +439,11 @@
       "table": "projects",
       "name": "ck_projects_user_provenance_requires_actor",
       "definition": "CHECK ((((provenance)::text <> 'user'::text) OR (created_by IS NOT NULL)))"
+    },
+    {
+      "table": "simulation_runs",
+      "name": "ck_simulation_runs_project_requires_workspace",
+      "definition": "CHECK (((project_id IS NULL) OR (workspace_id IS NOT NULL)))"
     },
     {
       "table": "users",

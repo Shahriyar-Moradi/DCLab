@@ -1,6 +1,14 @@
 # DCLab database migration map
 
-Head revision: `0053_pipeline_run_branch`.
+> **Status:** this map froze the redesign spine at `0053_pipeline_run_branch`.
+> **Current Alembic head is `0058_simulation_workspace`** (simulation tenancy;
+> see [adr/0004-simulation-insights-tenancy.md](adr/0004-simulation-insights-tenancy.md)).
+> `0057_session_workspace` remains the browser session workspace selector.
+> `0056_auth_hardening` remains recovery tokens and membership suspension.
+> `0055_auth_sessions` remains the hashed browser-session table.
+> `0054_execution_needs_input` remains the CHECK-only `needs_input` revision.
+
+Head revision at freeze: `0053_pipeline_run_branch`.
 
 This map freezes how pre-redesign objects relate to the canonical model. Nothing
 in this redesign deletes working product paths. Do not infer that two historical
@@ -31,6 +39,11 @@ Workflows were the same case study.
 | `0051_ml_job_queue` | Generalized `ml_jobs` handler queue; auto_train remains one registered handler |
 | `0052_visualizations` | Canonical visual-result metadata; identity/spec immutable |
 | `0053_pipeline_run_branch` | Scientific parent pointer on PipelineRun; does not fork runs |
+| `0054_execution_needs_input` | Adds `needs_input` to ExecutionRequest and ClientLabUpload CHECKs. Not a second state machine. |
+| `0055_auth_sessions` | Hashed opaque browser sessions (`auth_sessions`). Identity-plane; not workspace-scoped. See ADR 0001. |
+| `0056_auth_hardening` | Recovery token hashes, `users.email_verified_at`, `workspace_memberships.suspended_at`. CSRF/CSP/throttle are application-layer (ADR 0002). |
+| `0057_session_workspace` | `auth_sessions.selected_workspace_id` selector (ADR 0003). Identity-plane FK, not tenant proof. |
+| `0058_simulation_workspace` | **Current head.** Nullable `simulation_runs.workspace_id` / `project_id`; honest empty backfill (ADR 0004). |
 
 ## Object classification
 

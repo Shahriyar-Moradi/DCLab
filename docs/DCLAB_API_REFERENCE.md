@@ -1,5 +1,12 @@
 # DCLab API Reference
 
+> **Status: HISTORICAL.** Written against **94** FastAPI operations. Current
+> runtime OpenAPI is **157** operations / **150** paths / **13** `/v1`
+> operations. See
+> [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md).
+> Do not use the count “94” as current truth. Role and guard notes below may
+> still be useful; re-verify against `app.openapi()` before citing.
+
 ## Basis and notation
 
 This reference is generated from the 94 operations in the runtime FastAPI

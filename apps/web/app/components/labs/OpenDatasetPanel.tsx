@@ -11,6 +11,7 @@ import { UploadZone } from "@/app/components/ui/UploadZone";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { filterByText } from "@/app/components/ui/localCollection";
 import { useLabUploads, useSession, useUploadLabFile } from "@/lib/application";
+import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { formatTimestamp, type InsightCategoryValue, type LabRunStatus } from "@/lib/domain";
 import { canWriteWorkspaceSession, isPlatformRole } from "@/lib/infrastructure/session";
 import Link from "next/link";
@@ -73,6 +74,9 @@ export function OpenDatasetPanel({ category }: { category: InsightCategoryValue 
         Reading messy files into a usable table is coming next. Bounded problem trials below still need matching columns
         or sample data.
       </p>
+      <div className="mt-4">
+        <ActiveWorkspaceNotice action="Save this file" />
+      </div>
 
       <div className="mt-5">
         <UploadZone

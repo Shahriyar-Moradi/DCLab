@@ -6,6 +6,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Panel } from "@/app/components/ui/Card";
 import { UploadZone } from "@/app/components/ui/UploadZone";
 import { useUploadOpportunities } from "@/lib/application";
+import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -29,6 +30,10 @@ export default function UploadPage() {
           { label: "Upload" },
         ]}
       />
+
+      <div className="mb-4">
+        <ActiveWorkspaceNotice action="Upload this CSV" />
+      </div>
 
       <UploadZone
         accept=".csv,text/csv"

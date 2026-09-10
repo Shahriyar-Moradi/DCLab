@@ -11,6 +11,8 @@ import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { apiGet } from "@/lib/infrastructure";
 import { LabDatasetSchema } from "@/lib/domain";
 import { useLabUseCasePlan, useSession, useTrainLabUseCase } from "@/lib/application";
+import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
+import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import Link from "next/link";
@@ -23,11 +25,11 @@ export default function DatasetDetailPage() {
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [batchMessage, setBatchMessage] = useState<string | null>(null);
   const dataset = useQuery({
-    queryKey: ["lab", "dataset", datasetId],
+    queryKey: workspaceQueryKey("lab", "dataset", datasetId),
     queryFn: () => apiGet(`/admin/datasets/${datasetId}`, LabDatasetSchema),
   });
   const profile = useQuery({
-    queryKey: ["lab", "profile", datasetId],
+    queryKey: workspaceQueryKey("lab", "profile", datasetId),
     queryFn: () => apiGet(`/admin/datasets/${datasetId}/profile`, z.object({ id: z.string(), stats: z.unknown() })),
     retry: 0,
   });
@@ -74,6 +76,9 @@ export default function DatasetDetailPage() {
         identifier={dataset.data.id}
         description={`${dataset.data.row_count} rows · ${dataset.data.column_count} columns · ${dataset.data.version}`}
       />
+      <div className="mt-4">
+        <ActiveWorkspaceNotice action="Train models" />
+      </div>
       <Panel className="mt-8">
         <FactGrid>
           <Fact label="Rows" value={String(dataset.data.row_count)} mono />

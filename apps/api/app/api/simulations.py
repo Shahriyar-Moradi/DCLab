@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.db.models import SimulationRun
+from app.api.deps import request_workspace_id, require_workspace_read
 from app.db.session import get_db
+from app.domain.errors import IdentityError, SimulationRunNotFoundError
 from app.domain.simulation import (
     KNOWN_USE_CASES,
     SimulationDecisionResponse,
@@ -15,47 +15,56 @@ from app.domain.simulation import (
     SimulationRunRead,
     SimulationRunRequest,
 )
+from app.services.simulation_run_service import (
+    get_workspace_simulation_run,
+    list_workspace_simulation_runs,
+    persist_simulation_run,
+)
 from app.sim.runner import run_all, run_use_case
 
-router = APIRouter(prefix="/simulations", tags=["simulations"])
+router = APIRouter(
+    prefix="/simulations",
+    tags=["simulations"],
+    dependencies=[Depends(require_workspace_read)],
+)
 
 
-def _persist(db: Session, payload: dict) -> SimulationRun:
-    row = SimulationRun(
-        use_case=str(payload["use_case"]),
-        model_version=str(payload["model_version"]),
-        policy_version=str(payload["policy_version"]),
-        fusion=str(payload["fusion"]),
-        payload=payload,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
+def _persist(db: Session, workspace_id, payload: dict, project_id) -> SimulationRunRead:
+    try:
+        row = persist_simulation_run(
+            db, workspace_id=workspace_id, payload=payload, project_id=project_id
+        )
+    except IdentityError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return SimulationRunRead.model_validate(row)
 
 
 @router.post("/run")
-def run_simulation(body: SimulationRunRequest, db: Session = Depends(get_db)):
+def run_simulation(
+    request: Request,
+    body: SimulationRunRequest,
+    db: Session = Depends(get_db),
+):
+    workspace_id = request_workspace_id(request)
     name = body.use_case.strip().lower()
     if name == "all":
-        rows = [_persist(db, payload) for payload in run_all()]
-        return SimulationRunListResponse(
-            items=[SimulationRunRead.model_validate(row) for row in rows],
-            total=len(rows),
-        )
+        rows = [
+            _persist(db, workspace_id, payload, body.project_id) for payload in run_all()
+        ]
+        return SimulationRunListResponse(items=rows, total=len(rows))
     if name not in KNOWN_USE_CASES:
         raise HTTPException(status_code=400, detail=f"Unknown use case {body.use_case!r}")
     try:
         payload = run_use_case(name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    row = _persist(db, payload)
-    return SimulationRunRead.model_validate(row)
+    return _persist(db, workspace_id, payload, body.project_id)
 
 
 @router.get("/runs", response_model=SimulationRunListResponse)
-def list_runs(db: Session = Depends(get_db)):
-    rows = list(db.scalars(select(SimulationRun).order_by(SimulationRun.created_at.desc())))
+def list_runs(request: Request, db: Session = Depends(get_db)):
+    workspace_id = request_workspace_id(request)
+    rows = list_workspace_simulation_runs(db, workspace_id=workspace_id)
     return SimulationRunListResponse(
         items=[SimulationRunRead.model_validate(row) for row in rows],
         total=len(rows),
@@ -63,18 +72,26 @@ def list_runs(db: Session = Depends(get_db)):
 
 
 @router.get("/runs/{run_id}", response_model=SimulationRunRead)
-def get_run(run_id: UUID, db: Session = Depends(get_db)):
-    row = db.get(SimulationRun, run_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="simulation run not found")
+def get_run(request: Request, run_id: UUID, db: Session = Depends(get_db)):
+    try:
+        row = get_workspace_simulation_run(
+            db, workspace_id=request_workspace_id(request), run_id=run_id
+        )
+    except SimulationRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="simulation run not found") from exc
     return SimulationRunRead.model_validate(row)
 
 
 @router.get("/runs/{run_id}/decisions/{external_id}", response_model=SimulationDecisionResponse)
-def get_decision(run_id: UUID, external_id: str, db: Session = Depends(get_db)):
-    row = db.get(SimulationRun, run_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="simulation run not found")
+def get_decision(
+    request: Request, run_id: UUID, external_id: str, db: Session = Depends(get_db)
+):
+    try:
+        row = get_workspace_simulation_run(
+            db, workspace_id=request_workspace_id(request), run_id=run_id
+        )
+    except SimulationRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="simulation run not found") from exc
     payload = row.payload or {}
     match = None
     for item in list(payload.get("heroes") or []) + list(payload.get("sample_decisions") or []):

@@ -15,26 +15,42 @@ const ARTIFACTS = path.resolve(
 
 type JsonRecord = Record<string, unknown>;
 
+function backend(endpoint: string): string {
+  return `/api/backend${endpoint}`;
+}
+
 async function login(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).not.toHaveURL(/\/login/);
+  const cookies = await page.context().cookies();
+  const session = cookies.find((cookie) => cookie.name === "dclab_session");
+  expect(session, "server-issued session cookie").toBeTruthy();
+  expect(session?.httpOnly).toBe(true);
+  const csrf = cookies.find((cookie) => cookie.name === "dclab_csrf");
+  expect(csrf, "csrf cookie").toBeTruthy();
+  expect(csrf?.httpOnly).toBe(false);
+  expect(cookies.find((cookie) => cookie.name === "dclab_token")).toBeFalsy();
 }
 
-async function authHeaders(page: Page): Promise<Record<string, string>> {
-  const token = (await page.context().cookies()).find(
-    (cookie) => cookie.name === "dclab_token",
-  )?.value;
-  expect(token).toBeTruthy();
-  return { Authorization: `Bearer ${token}` };
+async function mutationHeaders(page: Page): Promise<Record<string, string>> {
+  const cookies = await page.context().cookies();
+  let csrf = cookies.find((cookie) => cookie.name === "dclab_csrf")?.value;
+  if (!csrf) {
+    const issued = await page.request.get(backend("/auth/csrf"));
+    expect(issued.ok(), await issued.text()).toBeTruthy();
+    csrf = ((await issued.json()) as { csrf_token: string }).csrf_token;
+  }
+  return {
+    "X-CSRF-Token": csrf ?? "",
+    Origin: "http://127.0.0.1:3001",
+  };
 }
 
 async function apiGet<T = JsonRecord>(page: Page, endpoint: string): Promise<T> {
-  const response = await page.request.get(`${API_URL}${endpoint}`, {
-    headers: await authHeaders(page),
-  });
+  const response = await page.request.get(backend(endpoint));
   expect(response.ok(), `${endpoint}: ${await response.text()}`).toBeTruthy();
   return (await response.json()) as T;
 }
@@ -455,13 +471,10 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     ).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
 
-    const headers = await authHeaders(page);
-    expect(
-      (await page.request.get(`${API_URL}/admin/businesses`, { headers })).status(),
-    ).toBe(403);
-    expect(
-      (await page.request.get(`${API_URL}/business/workspaces`, { headers })).status(),
-    ).toBe(403);
+    expect((await page.request.get(backend("/admin/businesses"))).status()).toBe(403);
+    expect((await page.request.get(backend("/business/workspaces"))).status()).toBe(
+      403,
+    );
 
     await page.goto("/app/dashboards");
     await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
@@ -519,13 +532,13 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
 
     await login(page, "dclab-admin@verification.invalid");
     await page.route(
-      (url) => url.origin === "http://127.0.0.1:8001" && url.pathname === "/app/opportunities",
+      (url) => url.pathname === "/api/backend/app/opportunities",
       async (route) => {
         await fulfillJson(route, { items: [], total: opportunityTotal, limit: 1, offset: 0 });
       },
     );
     await page.route(
-      (url) => url.origin === "http://127.0.0.1:8001" && url.pathname === "/app/decisions",
+      (url) => url.pathname === "/api/backend/app/decisions",
       async (route) => {
         await fulfillJson(route, {
           items: decisions,
@@ -648,7 +661,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(page.getByRole("heading", { name: "No insights yet" })).toBeVisible();
 
     await page.route(
-      (url) => url.origin === "http://127.0.0.1:8001" && url.pathname === "/app/insights",
+      (url) => url.pathname === "/api/backend/app/insights",
       async (route) => {
         await route.fulfill({
           status: 200,
@@ -886,8 +899,8 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await page.goto("/app/labs");
     await expect(page.getByText(/Read-only access/).first()).toBeVisible();
     await expect(page.locator('input[type="file"]').first()).toBeDisabled();
-    const denied = await page.request.post(`${API_URL}/admin/environments/dogfood`, {
-      headers: await authHeaders(page),
+    const denied = await page.request.post(backend("/admin/environments/dogfood"), {
+      headers: await mutationHeaders(page),
     });
     expect(denied.status()).toBe(403);
     await page.screenshot({
@@ -913,10 +926,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveCount(0);
     await expect(page.getByText("Business A", { exact: true })).toBeVisible();
     await expect(page.getByText("Business B", { exact: true })).toHaveCount(0);
-    const workspacesResponse = await page.request.get(
-      `${API_URL}/business/workspaces`,
-      { headers: await authHeaders(page) },
-    );
+    const workspacesResponse = await page.request.get(backend("/business/workspaces"));
     expect(workspacesResponse.ok()).toBeTruthy();
     const workspaces = (await workspacesResponse.json()) as JsonRecord[];
     expect(workspaces).toHaveLength(1);
@@ -983,10 +993,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Labs" })).toBeVisible();
 
-    const platformBusinesses = await page.request.get(
-      `${API_URL}/admin/businesses`,
-      { headers: await authHeaders(page) },
-    );
+    const platformBusinesses = await page.request.get(backend("/admin/businesses"));
     expect(platformBusinesses.status()).toBe(403);
   });
 
@@ -997,9 +1004,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     const monitorPath = `/business/workspaces/${businessWorkspaceId}/pipeline-runs/${businessPipelineId}/monitor`;
     for (const state of ["missing", "false"] as const) {
       setCapability("pipeline_monitor", state);
-      const denied = await page.request.get(`${API_URL}${monitorPath}`, {
-        headers: await authHeaders(page),
-      });
+      const denied = await page.request.get(backend(monitorPath));
       expect(denied.status()).toBe(403);
     }
     setCapability("pipeline_monitor", "true");
@@ -1028,19 +1033,17 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       "model_management",
     ]) {
       setCapability(capability, "false");
-      const monitor = await page.request.get(`${API_URL}${monitorPath}`, {
-        headers: await authHeaders(page),
-      });
+      const monitor = await page.request.get(backend(monitorPath));
       expect(monitor.ok()).toBeTruthy();
       if (capability === "prediction_download") {
         const deniedBusiness = await page.request.get(
-          `${API_URL}/business/workspaces/${businessWorkspaceId}/client-uploads/${businessUploadId}/predictions.csv`,
-          { headers: await authHeaders(page) },
+          backend(
+            `/business/workspaces/${businessWorkspaceId}/client-uploads/${businessUploadId}/predictions.csv`,
+          ),
         );
         expect(deniedBusiness.status()).toBe(403);
         const deniedLabs = await page.request.get(
-          `${API_URL}/app/labs/uploads/${businessUploadId}/predictions.csv`,
-          { headers: await authHeaders(page) },
+          backend(`/app/labs/uploads/${businessUploadId}/predictions.csv`),
         );
         expect(deniedLabs.status()).toBe(403);
         await page.goto(`/lab/runs/${businessUploadId}`);
@@ -1056,8 +1059,10 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       }
       if (capability === "deep_audit") {
         const denied = await page.request.post(
-          `${API_URL}/business/workspaces/${businessWorkspaceId}/lab-runs/${businessUploadId}/verification/deep`,
-          { headers: await authHeaders(page) },
+          backend(
+            `/business/workspaces/${businessWorkspaceId}/lab-runs/${businessUploadId}/verification/deep`,
+          ),
+          { headers: await mutationHeaders(page) },
         );
         expect(denied.status()).toBe(403);
       }
@@ -1087,19 +1092,15 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Marketing" })).toHaveCount(0);
     const workspaceList = (await (
-      await page.request.get(`${API_URL}/business/workspaces`, {
-        headers: await authHeaders(page),
-      })
+      await page.request.get(backend("/business/workspaces"))
     ).json()) as JsonRecord[];
     expect(workspaceList).toHaveLength(1);
     businessWorkspaceId = String(workspaceList[0].id);
 
-    const adminPage = await page.request.get(`${API_URL}/admin/businesses`, {
-      headers: await authHeaders(page),
-    });
+    const adminPage = await page.request.get(backend("/admin/businesses"));
     expect(adminPage.status()).toBe(403);
-    const uploadDenied = await page.request.post(`${API_URL}/app/labs/uploads`, {
-      headers: await authHeaders(page),
+    const uploadDenied = await page.request.post(backend("/app/labs/uploads"), {
+      headers: await mutationHeaders(page),
       multipart: {
         category: "Customer Value",
         file: {
@@ -1130,7 +1131,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
 
   test("Business A cannot substitute Business B identifiers", async ({ page }) => {
     await login(page, "business-admin-a@verification.invalid");
-    const adminLogin = await page.request.post(`${API_URL}/auth/login`, {
+    const adminLogin = await page.request.post(`${API_URL}/auth/tokens`, {
       headers: { "Content-Type": "application/json" },
       data: JSON.stringify({
         email: "dclab-admin@verification.invalid",
@@ -1148,13 +1149,13 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       allBusinesses.find((row) => row.slug === "business-b")?.id,
     );
     const foreign = await page.request.get(
-      `${API_URL}/business/workspaces/${businessBWorkspaceId}`,
-      { headers: await authHeaders(page) },
+      backend(`/business/workspaces/${businessBWorkspaceId}`),
     );
     expect(foreign.status()).toBe(404);
     const substitutedPipeline = await page.request.get(
-      `${API_URL}/business/workspaces/${businessBWorkspaceId}/pipeline-runs/${businessPipelineId}/monitor`,
-      { headers: await authHeaders(page) },
+      backend(
+        `/business/workspaces/${businessBWorkspaceId}/pipeline-runs/${businessPipelineId}/monitor`,
+      ),
     );
     expect(substitutedPipeline.status()).toBe(404);
     await page.goto(`/business/workspaces/${businessBWorkspaceId}`);

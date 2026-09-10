@@ -1,5 +1,10 @@
 # DCLab Database Architecture
 
+> **Status: HISTORICAL FREEZE** at Alembic `0053_pipeline_run_branch`
+> (2026-09-09). Current head is `0054_execution_needs_input`: CHECK constraints
+> only (`needs_input` on ExecutionRequest and ClientLabUpload). No new tables.
+> Current truth: [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md).
+
 **Physical freeze head:** `0053_pipeline_run_branch`  
 **Evidence date:** 2026-09-09  
 **Catalog:** empty PostgreSQL → `alembic upgrade head` → `alembic current` / `alembic check` / SQLAlchemy `compare_metadata()`.

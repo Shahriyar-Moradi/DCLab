@@ -1,5 +1,12 @@
 # DCLab E2E Verification Runbook
 
+> **Status: LIVING commands, optional local cluster.** Required whole-system
+> browser E2E for a given SHA is GitHub Actions job `Whole-system E2E`
+> (`.github/workflows/ci.yml`), which uses service Postgres on 5432 and
+> database `dclab_e2e_verify`. Local port **55432** remains a disposable
+> developer cluster, not the current required CI evidence.
+> Current SHA evidence: [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md).
+
 Use only disposable databases whose name contains `verify` or `e2e`. Never
 point these commands at `postgresql://localhost:5432/decisionai`.
 

@@ -60,7 +60,7 @@ from scripts.seed_conversion_model import seed_conversion_artifact  # noqa: E402
 
 API = os.environ.get("DCLAB_API_URL", "http://127.0.0.1:8001")
 WEB = os.environ.get("DCLAB_WEB_URL", "http://127.0.0.1:3001")
-TOKEN_COOKIE = "dclab_token"
+TOKEN_COOKIE = "dclab_session"
 
 ACCOUNTS = {
     "client": (
@@ -172,13 +172,58 @@ def _multipart_request(path: str, token: str | None, fields: dict[str, str], fil
         return exc.code, exc.read()
 
 
+def _csrf_headers() -> dict[str, str]:
+    request = urllib.request.Request(
+        f"{API}/auth/csrf",
+        headers={"Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        token = json.loads(response.read())["csrf_token"]
+        cookies = response.headers.get_all("Set-Cookie") or []
+    csrf_cookie = ""
+    for item in cookies:
+        if item.lower().startswith("dclab_csrf="):
+            csrf_cookie = item.split(";", 1)[0].split("=", 1)[1]
+            break
+    headers = {
+        "Content-Type": "application/json",
+        "Origin": WEB,
+        "X-CSRF-Token": token,
+    }
+    if csrf_cookie:
+        headers["Cookie"] = f"dclab_csrf={csrf_cookie}"
+    return headers
+
+
 def login(role: str) -> str:
     email, password = ACCOUNTS[role]
-    status, raw = _json_request("POST", "/auth/login", body={"email": email, "password": password})
+    status, raw = _json_request("POST", "/auth/tokens", body={"email": email, "password": password})
     if status != 200:
         print(f"login failed for role={role} (HTTP {status})", file=sys.stderr)
         raise SystemExit(2)
     return json.loads(raw)["access_token"]
+
+
+def browser_session(role: str) -> str:
+    email, password = ACCOUNTS[role]
+    request = urllib.request.Request(
+        f"{API}/auth/login",
+        method="POST",
+        data=json.dumps({"email": email, "password": password}).encode(),
+        headers=_csrf_headers(),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            cookies = response.headers.get_all("Set-Cookie") or []
+    except urllib.error.HTTPError as exc:
+        print(f"browser login failed for role={role} (HTTP {exc.code})", file=sys.stderr)
+        raise SystemExit(2) from exc
+    prefix = f"{TOKEN_COOKIE}="
+    for item in cookies:
+        if item.lower().startswith(prefix.lower()):
+            return item.split(";", 1)[0].split("=", 1)[1]
+    print("login did not issue a session cookie", file=sys.stderr)
+    raise SystemExit(2)
 
 
 def live_client_operations() -> set[tuple[str, str]]:
@@ -389,6 +434,7 @@ def main() -> int:
     args = parser.parse_args()
 
     token = login(args.role)
+    session = browser_session(args.role)
 
     print("Crawling every /app/* API operation the live schema reports...")
     live_ops = live_client_operations()
@@ -413,7 +459,7 @@ def main() -> int:
 
     print("\nCrawling every client page.tsx under apps/web/app/app/ and apps/web/app/lab/...")
     all_pages = discover_pages("app") + discover_pages("lab")
-    page_findings, skipped = crawl_pages(token, discovered_ids)
+    page_findings, skipped = crawl_pages(session, discovered_ids)
     print(f"  {len(all_pages) - len(skipped)}/{len(all_pages)} pages resolved and scanned.")
     if skipped:
         print(f"  skipped (no seeded id to fill a dynamic segment): {skipped}", file=sys.stderr)

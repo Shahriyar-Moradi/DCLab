@@ -14,7 +14,7 @@ import { useCallback, useState, type ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { user } = useSession();
+  const { user, activeWorkspace } = useSession();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapsed();
@@ -42,7 +42,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Menu size={20} aria-hidden />
           </button>
           <BrandLogo product compact className="app-topbar-logo" href={home} />
-          <p className="app-topbar-context">{active?.label ?? "Workspace"}</p>
+          <p className="app-topbar-context">
+            {active?.label ?? "Workspace"}
+            {activeWorkspace ? ` · ${activeWorkspace.name}` : ""}
+          </p>
           <button
             type="button"
             className="app-command-trigger"

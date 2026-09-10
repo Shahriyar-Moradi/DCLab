@@ -7,6 +7,7 @@ import { ErrorState } from "@/app/components/ui/ErrorState";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { useDecisions, useGenerateDecision, useOpportunity } from "@/lib/application";
+import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { decisionToView, formatMoney, formatTimestamp, generateToView, type SignalTone } from "@/lib/domain";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -134,6 +135,9 @@ export default function OpportunityDetailPage() {
       ) : null}
 
       <Panel className="mt-5" title="Decision" description="Score this opportunity and record a recommended action.">
+        <div className="mb-4">
+          <ActiveWorkspaceNotice action="Generate this decision" />
+        </div>
         {current ? (
           <DecisionLedgerEntry decision={current} variant="compact" animate={fresh} />
         ) : (

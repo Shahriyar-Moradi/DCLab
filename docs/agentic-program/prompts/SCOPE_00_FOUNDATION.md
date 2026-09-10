@@ -1,279 +1,517 @@
-# Scope 0 prompts — foundation closure
+# Scope 0 execution prompts — foundation closure
 
-Run these prompts in order after using the required preamble in `README.md`.
-Scope 0 changes the platform foundation only; it does not add a user-visible
-agent. Preserve the verified deterministic ML behavior.
+Use the common preamble in `README.md` and every rule in
+`EXECUTION_STANDARD.md`. Execute plans in order. For already-implemented work,
+inspect the current diff and evidence first; verify or repair it instead of
+creating a second implementation.
+
+## Scope boundary
+
+- Preserve the deterministic ML and evidence behavior.
+- Do not introduce a user-visible agent, new LLM authority, connector, or
+  external side effect.
+- The expected working-tree database head is already beyond the original 0054
+  baseline. Always discover the live head before adding a revision.
+- Existing evidence IDs `S0-P01A`, `S0-P01B`, `S0-P02A`, `S0-P02B`, and
+  `S0-P03A` retain their original meaning.
 
 ## Plan 0.1 — current truth package
+
+**Contract.** Own current-state truth in `scripts/record_repo_truth.py`,
+`scripts/check_truth_drift.py`, `.github/workflows/ci.yml`, `contracts/`, and
+`docs/verification/`. Generated facts include Git/Alembic/model/OpenAPI/test/web
+inventories and must be deterministic. This plan changes no product behavior.
 
 ### S0-P01A — regenerate the repository truth baseline
 
 ```text
-Audit the current DCLab checkout and replace stale future-planning facts with a
-reproducible baseline. Record the exact SHA, branch/remote state, Alembic heads,
-SQLAlchemy table count, migration count, runtime OpenAPI path/operation counts,
-/v1 operation list, backend/frontend/package/test inventories, and latest CI
-result. Re-run backend/SDK tests, Python static checks that exist, web lint,
-standalone typecheck, production build, and existing browser E2E or reference
-the exact same-SHA required CI evidence when local E2E would duplicate it.
-
-Create a current verification report and update docs indexes so old reports are
-clearly historical rather than silently wrong. Reconcile the 0053-era audit
-with current head 0054 and the canonical target/needs_input changes. Classify
-every claim VERIFIED, IMPLEMENTED, PARTIAL, PLANNED, BLOCKED, or NOT_TESTED.
-Do not change application behavior in this prompt. Add a reproducible command
-script only if the repository lacks one, and keep it read-only by default.
+Inspect the current checkout and run the repository truth workflow. Record the
+exact product SHA, documentation SHA, dirty state, remote relationship, Alembic
+heads/revision count, SQLAlchemy table count, OpenAPI paths/operations and /v1
+surface, source/test inventories, and same-SHA CI evidence. Run the supported
+backend, SDK, frontend lint/type/build and browser checks, separating observed
+results from historical reports. Update only CURRENT verification/index facts;
+keep old evidence immutable and labeled HISTORICAL. Do not change application
+behavior. If scripts already exist, repair them instead of adding alternatives.
 ```
 
 ### S0-P01B — automate truth drift detection
 
 ```text
-Turn the baseline's mechanically verifiable facts into CI checks. Detect
-multiple Alembic heads, model/migration drift, duplicate revisions, unexpected
-public API breaking changes, SDK route/type drift, stale generated API facts,
-broken docs links, tracked object-store/Playwright output, production-default
-secrets, and contradictory current-status documents. Generate/check a /v1
-OpenAPI snapshot deterministically. Add tests proving the checks fail on small
-synthetic violations and pass on the current tree. Keep historical reports
-immutable; mark their status in an index instead of rewriting their evidence.
-Document how to refresh snapshots and how reviewers distinguish an intentional
-contract change from accidental drift.
+Make CI fail deterministically for multiple Alembic heads, duplicate revisions,
+model/migration mismatch, unreviewed /v1 breakage, SDK contract drift, stale
+generated facts, broken current-doc links, tracked runtime artifacts, unsafe
+production defaults, or contradictory CURRENT claims. Add synthetic tests that
+prove each detector fails for a bounded fixture and passes on the real tree.
+Snapshots must have a documented refresh command and intentional-change review
+path. Do not rewrite historical evidence or depend on network access in PR CI.
 ```
 
-## Plan 0.2 — secure browser session
-
-### S0-P02A — implement server-issued sessions/BFF
+### S0-P01C — reconcile truth ownership and generated artifacts
 
 ```text
-Replace the JavaScript-readable dclab_token bearer-cookie flow with a
-server-issued browser session or BFF contract. Write an ADR covering session
-storage, access/refresh lifetime, rotation, revocation, logout, credential
-binding, and failure behavior. Implement HttpOnly, Secure in deployed modes,
-appropriate SameSite, narrow Path/Domain, idle and absolute expiry, rotation on
-login/privilege change, and server-side revocation. The browser must no longer
-read, decode, or attach a long-lived bearer token. Preserve an API bearer flow
-for non-browser clients behind a distinct authentication path. Add production
-boot validation so unsafe cookie/secret configuration fails closed.
-
-Update login/register/me/logout contracts and the web request layer. Do not use
-the token's role for authorization; server membership remains authoritative.
-Add database records only if required by the ADR, with hashed identifiers and
-retention/cleanup behavior. Never store raw session/refresh values in logs or
-ordinary database columns.
+Audit README, docs indexes, API/database/ERD/migration documents, Make targets,
+and CI so each mechanically derived fact has exactly one generator and one
+canonical checked artifact. Remove duplicated hand-maintained CURRENT counts or
+replace them with links to the generated source. Add a manifest containing
+generator version, source SHA and artifact digest. Test idempotent regeneration
+and a clean git diff after two consecutive runs. Do not redesign any API/schema.
 ```
 
-### S0-P02B — session, CSRF, CSP, and abuse verification
+### S0-P01D — close the baseline gate
 
 ```text
-Harden and verify the browser session end to end. Add CSRF protection for every
-cookie-authenticated mutation, trusted-origin checks, security headers/CSP,
-output-safe rendering, login throttling, uniform credential errors, session
-revocation, concurrent-session policy, password-reset/email-verification hooks,
-and account recovery states appropriate to the chosen identity design. Test
-cookie flags, no token access from client JavaScript, fixation prevention,
-rotation, expiry with an injected clock, logout, revoked/suspended membership,
-CSRF from an untrusted origin, XSS-sensitive sinks, proxy/TLS configuration,
-and redaction from logs/errors. Add browser E2E for login, refresh, logout, and
-revocation. Record limitations if full email or external identity delivery is
-deferred, but keep insecure fallbacks disabled in production.
+Run the complete truth, migration, backend, SDK, web and browser gate from a
+clean environment. Verify no secret/object-store/Playwright output is tracked,
+the documented commands work, and CI on the exact SHA agrees with local facts.
+Create or refresh the S0-P01 evidence record with observed commands, durations,
+known warnings and owners. Repair only truth-tooling defects. Mark the plan
+VERIFIED only when regeneration produces no unexplained diff.
+```
+
+## Plan 0.2 — secure browser session and BFF
+
+**Contract.** Reuse `api/auth.py`, `api/deps.py`, `services/session_service.py`,
+`csrf_service.py`, `login_throttle.py`, `recovery_service.py`, `config.py`,
+`middleware/security.py`, the `auth_sessions` migration lineage, web BFF route,
+`session.ts`, and `session-provider.tsx`. Browser auth uses an opaque HttpOnly
+cookie; non-browser API tokens remain a separate explicit flow. Session states
+are `active`, `revoked`, and `expired`; rotation invalidates the predecessor.
+
+### S0-P02A — server-issued session and BFF foundation
+
+```text
+Preserve or complete the accepted browser-session ADR. Implement one opaque,
+hashed-at-rest server session with idle/absolute expiry, rotation, revocation,
+logout and safe lookup. Issue it only in an HttpOnly cookie with deployed-mode
+Secure, explicit SameSite and narrow path/domain. Route browser API access
+through `apps/web/app/api/backend/[...path]/route.ts`; JavaScript must never read
+or attach a long-lived bearer. Keep `POST /auth/tokens` or its current equivalent
+for non-browser clients. Add fail-closed production config checks and focused
+PostgreSQL/service/API tests. Do not add social login or SSO.
+```
+
+### S0-P02B — session, CSRF, CSP, abuse and recovery hardening
+
+```text
+Preserve or complete the accepted hardening ADR. Require CSRF token plus
+trusted-origin validation on every cookie-authenticated mutation, apply CSP and
+security headers, throttle credential endpoints with uniform errors, and model
+bounded recovery/verification tokens without revealing account existence. Test
+fixation, rotation, injected-clock expiry, logout, revocation, suspended users,
+CSRF, hostile Origin, proxy/TLS behavior, XSS-sensitive rendering and redaction.
+Keep incomplete email delivery disabled and documented rather than faking it.
+```
+
+### S0-P02C — persistence, constraints and cleanup reconciliation
+
+```text
+Review the live auth-session/recovery migrations and models. Ensure raw tokens
+are never stored, hashes are unique, user/session lineage is enforced, expiry
+and revocation queries are indexed, rotation lineage cannot cross users, and
+cleanup is bounded and race-safe. Add an idempotent cleanup service/job using a
+code-owned handler only if durable cleanup is absent. Test empty and previous-
+head upgrades, concurrent rotation/logout, expired cleanup and forward repair.
+Do not introduce Redis merely for sessions.
+```
+
+### S0-P02D — browser/BFF contract completion
+
+```text
+Audit every web request path, middleware branch and login/logout flow. Remove
+remaining bearer-token parsing, localStorage/cookie helpers and client-side role
+authority. Define BFF error/cookie forwarding, request-ID propagation, upload/
+download streaming bounds and cache-control. Test anonymous, authenticated,
+expired, revoked and backend-unavailable behavior plus login/logout/reload E2E.
+The BFF must not become a second authorization layer or log credentials/bodies.
+```
+
+### S0-P02E — operations, configuration and incident controls
+
+```text
+Add typed settings and `.env.example` entries for cookie name/security, idle and
+absolute TTL, CSRF, trusted origins, session/recovery hashing secrets, throttle
+bounds and emergency browser-session disable. Validate production settings at
+boot. Emit bounded login/session/CSRF metrics and safe audit events with reason
+codes, never identifiers or tokens at unsafe cardinality. Add cleanup, suspected
+theft, secret rotation and mass-revocation runbooks. Unit-test configuration and
+redaction; do not depend on production secrets in CI.
+```
+
+### S0-P02F — adversarial completion gate
+
+```text
+Run a two-user/two-workspace browser and PostgreSQL matrix covering fixation,
+cookie theft/replay after rotation, CSRF, Origin/Host confusion, XSS token
+access, concurrent logout, password/reset enumeration, expired cleanup and
+server restart. Confirm API bearer clients still work without browser cookies.
+Verify the kill switch and recovery runbook in a production-shaped environment.
+Repair only Plan 0.2 defects and record exact evidence before marking complete.
 ```
 
 ## Plan 0.3 — authoritative workspace and capabilities
 
-### S0-P03A — implement workspace selection contract
+**Contract.** Reuse `workspace_selection_service.py`, authorization/capability/
+entitlement services, `api/deps.py`, `api/workspaces.py`, current session row,
+the BFF, `active-workspace.ts`, `api-client.ts`, `WorkspaceSelector.tsx`, and
+query/session providers. Selection is presentation context; current membership
+and server-side capability resolution authorize every operation.
+
+### S0-P03A — active-workspace selection contract
 
 ```text
-Implement one authoritative active-workspace contract for browser and API
-requests. Cover users with zero, one, and multiple memberships. Add a visible
-selector, selected-workspace persistence in the server session or a validated
-X-Workspace-Id propagation path, and clearing/re-keying of every workspace
-local query cache when switching. Display the active workspace on every
-mutation and approval. The selector is never proof of access: resolve current
-membership and return a safe denial/not-found result for unauthorized
-resources. Update /v1/me and workspace reads as needed, with stable response
-schemas and request IDs. Ensure the public Python client retains explicit
-workspace selection without inheriting the browser session design.
+Preserve or complete the accepted workspace-selection ADR. Support zero, one
+and multiple memberships; persist a selected workspace only after current
+membership validation; propagate it through the BFF as `X-Workspace-Id`; and
+keep the Python client explicitly scoped. Add a visible selector and active-
+workspace notice on mutations. Switching must clear or re-key tenant caches.
+Unauthorized/stale selections return the stable safe error and never prove
+access. Test membership removal and session restoration.
 ```
 
-### S0-P03B — centralize capability authority and prove isolation
+### S0-P03B — central capability authority
 
 ```text
-Make effective role and capabilities come from current PlatformMembership and
-WorkspaceMembership state on all backend and frontend paths. Define bounded
-caching and invalidation for role changes, suspension, capability changes, and
-workspace suspension. Remove routing decisions that trust stale JWT role data;
-the UI may render server-returned capabilities but the API must independently
-authorize every operation. Build a route-operation matrix for platform admin,
-platform developer, workspace owner/admin, ML engineer, viewer, legacy client,
-suspended and anonymous principals. Add two-workspace negative tests across all
-active route families, workspace switching browser E2E, similarly named
-resources, cross-tenant IDs, and cache invalidation. Standardize when a safe
-403 versus tenant-hiding 404 is returned and audit sensitive denials.
+Inventory every route/service/UI capability check and define one versioned
+server capability matrix based on current membership, role, entitlement,
+resource state and optional feature flag. Implement resolution/caching with a
+bounded invalidation strategy on membership/role/entitlement change. `/v1/me`
+returns displayable effective capabilities, not an authorization token. Remove
+business decisions based on decoded token role. Test revoked/suspended members,
+role change during a session and direct API calls that bypass hidden UI.
+```
+
+### S0-P03C — tenant-aware frontend state and navigation
+
+```text
+Key every React query/cache/resource URL and optimistic state by active
+workspace. On switch, cancel in-flight tenant requests, clear sensitive state,
+reload capabilities, route safely, and announce the change accessibly. Hide or
+disable navigation from server capabilities while preserving server denial as
+authority. Add component tests for zero/one/many workspaces and E2E proving no
+old-workspace data flashes after a slow concurrent switch. Avoid a second role
+matrix in TypeScript.
+```
+
+### S0-P03D — API/client propagation and concurrency
+
+```text
+Audit all `/v1`, legacy API, upload/download, event-polling and SDK calls for
+explicit workspace context. Centralize validation in dependencies/services;
+resource workspace and selected/header workspace must agree. Define behavior
+for missing, malformed, unauthorized and conflicting workspace IDs. Test two
+tabs selecting different workspaces, concurrent membership revocation, bearer
+client explicit scoping and BFF header spoof attempts. Never trust a browser-
+supplied workspace without membership lookup.
+```
+
+### S0-P03E — isolation and operational gate
+
+```text
+Run a route inventory and two-workspace matrix across reads, mutations, files,
+events, errors, metrics and caches. Verify current membership changes take
+effect within the documented invalidation bound. Emit low-cardinality denial/
+selection metrics and safe audit events; add a cache/invalidation runbook and
+feature rollback that does not re-enable global access. Record observed E2E and
+PostgreSQL evidence before closing Plan 0.3.
 ```
 
 ## Plan 0.4 — legacy tenant and raw-surface closure
 
-### S0-P04A — retire or tenant-scope SimulationRun and Insights
+**Contract.** Inspect `SimulationRun` and related models/migrations,
+`domain/simulation.py`, `services/insight_query.py`, `api/simulations.py`,
+`api/insights.py`, business/client routes, observability/event endpoints, and
+the SDK. Every customer-visible record must resolve one workspace or be removed
+from customer surfaces.
+
+### S0-P04A — legacy lineage decision and migration design
 
 ```text
-Inventory every SimulationRun creation, read, translation, CLI, seed and UI
-path. Choose and document one honest outcome: add Workspace/Project lineage
-with composite constraints and a provable ownership backfill, or remove the
-legacy simulation/insights route from customer production navigation and deny
-ambiguous historical rows. Never assign unknown legacy rows to a convenient
-default workspace. If migrating, use expand/backfill/validate/non-null steps,
-cover delete behavior, and update all workspace-scoped queries. Add two-
-workspace tests proving /app/insights and every derivative cannot expose the
-other tenant. Preserve historical evidence or archive it according to policy.
+Inventory every global SimulationRun/Insight read and write, caller, fixture and
+UI route. Write an ADR choosing tenant-scope, import-to-canonical lineage, or
+retirement for each legacy surface. Define deterministic backfill evidence,
+ambiguous-row quarantine, compatibility window and rollback. Do not guess a
+workspace for historical rows and do not rewrite immutable scientific evidence.
+Stop after the ADR if ownership cannot be proven.
 ```
 
-### S0-P04B — close capability and audience leakage
+### S0-P04B — enforce tenant lineage and remove global reads
 
 ```text
-Audit every admin, business, development, /app and /v1 response for effective
-capability and audience filtering. Fix the documented raw observatory gap so
-CV-fold, semantic-LLM, provider-audit, model-management, prediction-download,
-decision-ledger and raw-debug details each require their own current capability.
-Ensure platform developers and business developers remain read-only. Run the
-static banned-terms scan plus live not-sampled route crawls for client,
-business, platform, anonymous, suspended and cross-workspace identities. Add
-coverage-drift checks so a new route fails CI until classified. Do not hide
-fields only in React; shape them in transport-neutral query/translation
-services and test serialized responses.
+Implement the accepted additive migration/service changes. Add workspace and
+composite constraints or disable/remove the customer route as decided; backfill
+only provable rows and quarantine ambiguity. Replace “latest globally” queries
+with authorized workspace/resource queries. Keep internal admin access behind a
+named capability and audit. Test previous-head upgrade, cross-workspace IDs,
+empty history and concurrent creation. Do not create parallel canonical models.
 ```
 
-## Plan 0.5 — classification, quarantine, retention foundation
-
-### S0-P05A — implement fail-closed dataset policy bootstrap
+### S0-P04C — raw event and client audience closure
 
 ```text
-Populate effective DatasetColumn sensitivity_class, classification_source,
-model_use_policy and llm_exposure_policy during ingest with deterministic
-rules. Add a versioned append-only policy-decision history and a review state
-for unknown/high-risk columns if that slice is compatible with Scope 1's final
-schema. Null or unknown must deny external LLM values and samples. Detect
-credentials, direct identifiers, quasi-identifiers, sensitive domains, free
-text, URLs/markup/control characters and rare categories. Automated detection
-may tighten a decision but cannot make a column safer without policy. Add an
-admin/user review workflow with supersession lineage, current snapshot update,
-and two-workspace authorization. Keep the external LLM feature disabled until
-all existing relevant columns have an effective decision.
+Inventory legacy events, observability responses, exception details, SDK types
+and business UI payloads. Create audience-safe projections that omit internal
+paths, handler keys, stack traces, storage keys, prompts, raw provider bodies
+and cross-tenant cardinality. Enforce capability and workspace before lookup,
+including 404/403 anti-enumeration policy. Add snapshot/contract tests for admin,
+developer and client audiences. Preserve operator detail in protected telemetry.
 ```
 
-### S0-P05B — quarantine and deletion skeleton
+### S0-P04D — retirement and isolation gate
 
 ```text
-Add production-shaped upload quarantine states and bounded validation before a
-source becomes an accepted Dataset: expected/observed size, digest, MIME/file
-signature, parser safety, archive expansion limits, decompression-bomb checks,
-malware adapter contract, failure cleanup and accepted publication. Define
-retention classes for source objects, quarantine, derived profiles, LLM
-metadata, future agent state and audit. Implement an idempotent dry-run-first
-retention/deletion planner that can locate database rows and object bodies by
-lineage, revoke access, report legal/evidence exceptions and produce non-content
-completion evidence. Full agent deletion arrives later, but Scope 0 tests must
-prove quarantine expiry and object/database reconciliation without deleting
-the wrong workspace.
+Run migration, API inventory, two-workspace and browser tests against all legacy
+simulation/insight/event routes. Prove no global customer query remains and no
+SDK/UI path exposes a retired capability. Add deprecation/removal notes and a
+forward-repair runbook for quarantined rows. Remove feature flags only after the
+compatibility window; record evidence and known retained admin-only surfaces.
+```
+
+## Plan 0.5 — classification, quarantine and retention foundation
+
+**Contract.** Reuse Dataset/DatasetColumn/DataSource/DataAccess/IngestionRun and
+Artifact lineage, `dataset_column_service.py`, ingestion/materialization and
+artifact services. Unknown classification or LLM exposure is deny. Large files
+remain private objects; quarantine is a state, not a public bucket.
+
+### S0-P05A — policy schema and fail-closed bootstrap
+
+```text
+Define versioned enums/schemas for sensitivity, LLM exposure, retention class,
+residency and classification source/confidence. Inventory nullable DatasetColumn
+policy fields and write an expand/backfill/enforce plan: existing null/unknown
+becomes denied, never safe. Add database checks/indexes and service-level policy
+resolution with dataset defaults plus stricter column override. Test mixed
+classes and cross-workspace references. Do not send data to an LLM in this plan.
+```
+
+### S0-P05B — quarantine and publish state machine
+
+```text
+Define and implement upload/ingestion states received -> quarantined -> scanned
+-> classified -> publishable -> published, plus rejected/expired. Only typed
+services can transition state and every transition records actor/reason/policy
+version/digest. Block profile, preview, artifact download and LLM use before the
+required gate. Test invalid transitions, duplicate scans, changed objects,
+malicious filenames/MIME/archive metadata and worker loss. Malware integration
+may be a safe stub, but production bypass must fail closed.
+```
+
+### S0-P05C — retention and deletion skeleton
+
+```text
+Add retention-policy resolution, deletion request/tombstone and object-cleanup
+work intent without claiming full privacy deletion. Bind dataset versions,
+artifacts, derived runs and legal/immutability holds; define what can be deleted,
+anonymized, retained or made unavailable. Use ID-only jobs and idempotent object
+deletion/reconciliation. Test hold precedence, repeated deletion, missing object
+and partial failure. Do not physically erase evidence required by an active hold.
+```
+
+### S0-P05D — production LLM boot and egress guard
+
+```text
+Add configuration validation so any external LLM path requires an explicit
+provider, allowed data classes, retention/training policy, region, timeout,
+budget and emergency disable. Unknown provider capability or nullable exposure
+blocks startup/feature activation. Ensure existing narrow OpenAI integration
+uses the same guard and redacts payloads/errors. Add config matrix tests and a
+synthetic smoke path; never use customer content or live credentials in CI.
+```
+
+### S0-P05E — policy, quarantine and deletion gate
+
+```text
+Run PostgreSQL and service adversarial tests for null policies, stricter
+overrides, malicious metadata, cross-workspace data, concurrent transitions,
+retention holds and object-store failure. Verify denied content cannot reach
+preview, LLM, download, logs or metrics. Add low-cardinality policy/quarantine/
+deletion metrics, operator queries and runbooks. Record exact limitations of
+the skeleton and keep downstream LLM features disabled until Scope 1 policy.
 ```
 
 ## Plan 0.6 — stable `/v1` foundation
 
-### S0-P06A — standard errors, cursors, correlation and compatibility
+**Contract.** Reuse `api/v1.py`, `domain/application_api.py`, request-ID
+middleware, authorization services, artifact service, ExecutionRequest/MlJob,
+and `packages/dclab_client`. Establish shared contracts before adding broad
+resource coverage in Scope 5.
+
+### S0-P06A — common errors, requests and page contracts
 
 ```text
-Create one public error envelope with stable code, safe message, retryable,
-request_id and bounded details. Convert /v1 validation, auth, not-found,
-idempotency and state errors without leaking stack/database/provider bodies.
-Return X-Request-Id on success and every failure and propagate it into
-ExecutionRequest, MlJob and events. Replace raw/unbounded list responses with
-{items,next_cursor}; use a signed/opaque cursor containing stable sort key and
-ID tie-breaker, never trusted tenant authority. Add list endpoints currently
-missing, especially execution requests and model builds, with filters and
-limits. Check in an OpenAPI snapshot and breaking-change gate. Update
-dclab_client types/errors and route-coverage tests in the same change.
+Define typed `/v1` schemas for error, field violation, opaque cursor page,
+request metadata and resource reference. Map domain exceptions centrally to
+stable status/code/message/request_id without FastAPI `detail` leakage. Enforce
+bounded limit/default/order and cursor scope/digest/expiry. Update existing /v1
+list routes and SDK parsing compatibly. Test empty pages, invalid/tampered cursor,
+wrong workspace and internal exception redaction. Do not expand all legacy APIs.
 ```
 
-### S0-P06B — lifecycle, artifact, cancel and retry skeleton
+### S0-P06B — lifecycle, cancellation and retry resource skeleton
 
 ```text
-Add application-service and /v1 contracts for ExecutionRequest events,
-cooperative cancel, and child retry without resetting parent evidence. Define
-state preconditions, idempotency replay/conflict, cancellation timestamps,
-retry lineage, safe terminal errors, cursor ordering and accepted-versus-
-completed semantics. Add artifact metadata and short-lived download-
-authorization contracts that recheck workspace, capability, type, retention,
-classification and digest; never persist or return long-lived signed URLs.
-Wire the Python client. This prompt may establish lifecycle primitives used by
-Scope 3 but must not expose a model-build create command until its atomic
-service exists. Verify concurrent cancel/claim, retry, cross-workspace IDs,
-expired authorization and missing/corrupt object behavior with PostgreSQL.
+Define shared states and transition responses for ExecutionRequest, job-backed
+operations and child attempts. Add authorized cancel and retry application
+service boundaries with idempotency and immutable parent/child lineage; expose
+only routes already backed by correct behavior. Cancellation is requested then
+observed, not an immediate false success. Test terminal/no-op/conflict states,
+duplicate delivery and cross-workspace access. Do not implement agent commands.
+```
+
+### S0-P06C — artifact authorization and streaming contract
+
+```text
+Centralize artifact metadata/download authorization by workspace, parent
+resource, audience, classification and retention state. Return a bounded stream
+or short-lived transport decided by ADR without exposing storage keys. Validate
+digest, size, content disposition and safe media type; support range only if the
+storage adapter proves it. Add SDK streaming with cleanup and tests for missing,
+quarantined, expired, wrong-tenant and changed-object cases.
+```
+
+### S0-P06D — correlation, ETag and compatibility policy
+
+```text
+Propagate one validated/generated request ID through BFF, API, services, jobs,
+events and safe response headers. Define ETag/version semantics for mutable
+resources and If-Match conflicts. Add an OpenAPI compatibility classifier for
+breaking versus additive changes and document supported deprecation headers/
+window. Test malformed IDs, duplicate headers, stale writes and deterministic
+schema generation. Avoid trace IDs as authentication or database keys.
+```
+
+### S0-P06E — SDK parity and negative-contract suite
+
+```text
+Refactor the Python client only enough to share typed page/error/artifact/
+lifecycle behavior. Verify explicit workspace, request/client IDs, bounded
+timeouts, safe retry only for idempotent operations, response-body limits and
+stream cleanup. Add live API contract tests for every current /v1 operation and
+negative tests for HTML/provider/internal error bodies. Do not expose API
+internals or open a database connection from the client.
+```
+
+### S0-P06F — `/v1` foundation release gate
+
+```text
+Run OpenAPI drift, SDK live-contract, two-workspace, pagination, artifact,
+idempotency, cancellation/retry and redaction suites in PostgreSQL. Measure
+representative list and event polling behavior with recorded fixtures. Add
+request/error/rate metrics and an API compatibility runbook. Repair only shared
+contract defects, then freeze the baseline snapshot used by Scope 1 and 5.
 ```
 
 ## Plan 0.7 — development and CI parity
 
-### S0-P07A — one-command full development topology
+**Contract.** Own `compose.yaml`, `Makefile`, `.env.example`, web env/example,
+CI workflows, test configuration and safe seed scripts. Local topology must
+exercise API, web, worker, PostgreSQL and object storage without production
+credentials.
+
+### S0-P07A — one-command development topology
 
 ```text
-Evolve local Compose into a reproducible synthetic stack with migration, API,
-web, worker-ml, placeholder worker-agent/integration profiles, private local
-object storage and health checks. Use fake providers by default and no
-production credential fallback. Seed two workspaces, role variants, successful/
-failed/cancelled runs and sensitive/unknown columns. Separate handler allowlists
-and shared storage correctly. Provide up/down/reset/smoke commands that do not
-silently erase a developer database. Verify empty-checkout startup, migrations,
-API/web health, worker claim, persisted artifacts and shutdown/cleanup. Align
-Dockerfile and lockfiles with CI Python/Node versions and production boot
-validation.
+Define one documented bootstrap target that starts PostgreSQL, API, web, at
+least one durable worker and S3-compatible local object storage, runs migrations
+and a safe deterministic seed, then exposes health checks. Pin images, use
+named isolated volumes and non-production credentials, and make restart safe.
+Do not add Kubernetes or a production cloud dependency. Add smoke assertions
+for API->job->worker->object flow and useful failure messages.
 ```
 
-### S0-P07B — CI and frontend quality gates
+### S0-P07B — CI quality and migration graph
 
 ```text
-Split CI into explicit static-policy, Python lint/type, migration-empty,
-migration-upgrade, backend-postgres, scientific-correctness, SDK-contract,
-web-lint-type-build, web-component, whole-system E2E, container-build/scan and
-docs-link jobs while preserving required coverage. Add a frontend component
-test runner for session, workspace headers/context, schemas, async empty/error/
-cancel states and accessible alerts. Migrate deprecated next lint usage to the
-supported ESLint CLI and fix the current React hook dependency warnings. Avoid
-parallel commands that race on .next. Add secret/dependency/license/container
-checks with pinned outputs, and document which expensive staging tests remain
-scheduled rather than PR gates.
+Build a required CI graph for Python format/lint/type checks that the project
+actually supports, backend/SDK tests, migration empty/previous-head checks,
+truth drift, frontend lint/type/build, component tests, browser E2E and artifact
+guards. Cache safely by lockfile and prevent concurrent generated-output races.
+Use deterministic service health gates and upload bounded failure artifacts.
+Do not hide flaky failures with unconditional retry.
 ```
 
-## Plan 0.8 — ADRs, database graph, and scale baseline
-
-### S0-P08A — lock architecture decisions
+### S0-P07C — frontend component-test and lint modernization
 
 ```text
-Create reviewed ADRs for: one /v1 public boundary; ExecutionRequest versus
-MlJob; PostgreSQL queue for initial agent jobs; provider-neutral LLM gateway;
-null-equals-deny data exposure; DCLab-owned durable agent records; managed-cell
-notebook before code; isolated code plane; SDK-first CLI and MCP;
-transactional outbox; structured retrieval before vectors; BFF/session design;
-and the first production identity/provider/region assumptions that must be
-decided now. Each ADR includes context, decision, alternatives, consequences,
-security/tenancy impact, migration/rollback and revisit trigger. Update doc
-navigation and mark superseded conflicting claims.
+Choose and configure the smallest supported component/unit test runner for the
+Next.js version, with DOM accessibility helpers and deterministic network mocks.
+Migrate deprecated `next lint` to the supported ESLint command and resolve the
+known hook dependency warnings through correct dependencies or documented
+stable callbacks. Add tests for session/workspace primitives. Avoid snapshot-
+only tests and broad frontend rewrites.
 ```
 
-### S0-P08B — analyze the relational cycle and record scale thresholds
+### S0-P07D — deterministic seed and developer safety
 
 ```text
-Investigate the SQLAlchemy/Alembic sort warning involving datasets,
+Audit seed scripts for fixed identities, two-workspace isolation, known object
+digests and idempotent reruns. Separate development/browser fixtures from any
+production bootstrap. Add explicit environment guards against destructive seed
+or local-storage cleanup outside named development resources. Document reset
+and recovery using exact validated targets. No script may recursively delete an
+unresolved path or use production credentials.
+```
+
+### S0-P07E — parity and cold-start gate
+
+```text
+From a fresh checkout-equivalent environment, execute documented bootstrap,
+empty migration, seed, backend/SDK/web/component/browser tests, worker restart
+and object download. Compare local and CI commands and eliminate silent skips.
+Record durations, resource needs, known platform differences and owners. Verify
+shutdown/restart preserves intended data and cleanup affects only named local
+resources before closing the plan.
+```
+
+## Plan 0.8 — architecture decisions, DB graph and scale baseline
+
+**Contract.** Store accepted decisions in `docs/adr/`, measured DB/API facts in
+`docs/verification/`, and reproducible benchmarks in `scripts/`. Decisions must
+name triggers and reversibility; this plan does not install speculative scale
+components.
+
+### S0-P08A — lock foundation architecture decisions
+
+```text
+Complete ADRs for browser identity/BFF, workspace authority, application-service
+boundary, PostgreSQL job queue, object/secret placement, agent boundary,
+versioning/immutability and environment topology. Each ADR records context,
+decision, rejected alternatives, security/tenant consequences, compatibility,
+operational owner, measurable revisit trigger and rollback. Link code/evidence
+and mark superseded decisions explicitly. Do not claim decisions already made
+if the current implementation disagrees.
+```
+
+### S0-P08B — relational cycle and integrity analysis
+
+```text
+Reproduce the Alembic/SQLAlchemy dependency-cycle warning among datasets,
 execution_requests, experiments and ingestion_runs. Draw the actual FK graph,
-identify which use_alter/deferred relationships are intentional, and prove
-empty/upgrade migrations plus deletes. Repair only if a simpler safe direction
-preserves canonical lineage; otherwise document and add a regression guard so
-a future library upgrade cannot turn the warning into failure. Refresh table
-cardinalities, indexes, slow-query baseline, queue claim plans, object growth,
-connection limits, backup assumptions and thresholds for PgBouncer, read
-replicas, partitioning, a separate broker, distributed compute and vector
-retrieval. Do not implement scale components without a triggered threshold.
+identify whether it affects create/drop/migration ordering, and benchmark the
+canonical query paths. Prefer documentation or targeted constraint changes over
+a disruptive model rewrite. If repair is justified, produce a separate
+expand/backfill/enforce design and tests; do not edit the schema in this prompt.
 ```
 
-## Scope 0 completion prompt
+### S0-P08C — capacity and risk baseline
 
-After S0-P08B, run one final scope review that maps every Scope 0 exit criterion
-to L0–L5 evidence, lists any waiver with owner/expiry, and prevents enabling the
-Scope 1 feature flag when a P0 item is unresolved.
+```text
+Measure representative tenant/resource cardinalities, job claim latency, event
+polling, key list queries, artifact throughput and local/CI resource use with
+versioned fixtures. Record query plans and index coverage without inventing
+production SLOs. Create a risk register for tenant, auth, migration, queue,
+object, LLM and operational boundaries with owner, detection, mitigation and
+scope. Define evidence thresholds that would trigger Scope 10 changes.
+```
+
+### S0-P08D — Scope 0 architecture gate
+
+```text
+Review all Scope 0 ADRs against the implemented tree and current verification
+facts. Resolve contradictory docs, missing owners, untestable rollback or
+undefined production defaults. Run DB integrity and canonical-query benchmarks,
+record the cycle disposition, and confirm no speculative broker/vector/Kubernetes
+dependency was added. Publish the Scope 0 go/no-go record with every failed or
+deferred item explicitly assigned before Scope 1 begins.
+```

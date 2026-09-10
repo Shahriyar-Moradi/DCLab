@@ -5,9 +5,11 @@ import uuid
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.db.models import User
+from app.config import get_settings
+from app.db.models import AuthSession, User
 from app.db.session import get_db
 from app.services.auth_service import AuthError, user_from_token
+from app.services.session_service import SESSION_HEADER, user_from_session
 from app.services.authorization_service import (
     AuthorizationError,
     BUSINESS_PLANE_USER_ROLES,
@@ -19,31 +21,82 @@ from app.services.authorization_service import (
     can_write_workspace,
     platform_role_for,
     resolve_workspace_access,
+    workspace_is_selectable,
 )
 
 
-def _bearer_token(request: Request) -> str:
+def _bearer_token(request: Request) -> str | None:
     header = request.headers.get("Authorization") or ""
     scheme, _, token = header.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing bearer token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return None
     return token.strip()
 
 
+def session_credential(request: Request) -> str | None:
+    header = (request.headers.get(SESSION_HEADER) or "").strip()
+    if header:
+        return header
+    cookie = request.cookies.get(get_settings().session_cookie_name)
+    if cookie:
+        return cookie.strip()
+    return None
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    token = _bearer_token(request)
+    bearer = _bearer_token(request)
+    if bearer:
+        try:
+            return user_from_token(db, bearer)
+        except AuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(exc),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+    raw = session_credential(request)
+    if raw:
+        try:
+            user, row = user_from_session(db, raw)
+        except AuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(exc),
+            ) from exc
+        request.state.auth_session = row
+        db.commit()
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="missing bearer token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def require_browser_session(
+    request: Request, db: Session = Depends(get_db)
+) -> tuple[User, AuthSession]:
+    if _bearer_token(request):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bearer clients must send X-Workspace-Id; session workspace selection is browser-only",
+        )
+    raw = session_credential(request)
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing session",
+        )
     try:
-        return user_from_token(db, token)
+        user, row = user_from_session(db, raw)
     except AuthError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    request.state.auth_session = row
+    db.commit()
+    return user, row
 
 
 def require_platform_read(
@@ -79,22 +132,44 @@ def require_business_administration(
     )
 
 
-def _requested_workspace_id(request: Request) -> uuid.UUID | None:
+def parse_requested_workspace_id(request: Request) -> uuid.UUID | None:
     raw = request.headers.get("X-Workspace-Id")
     if not raw:
+        request.state.requested_workspace_id = None
         return None
     try:
-        return uuid.UUID(raw.strip())
+        parsed = uuid.UUID(raw.strip())
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-Workspace-Id must be a UUID",
         ) from exc
+    request.state.requested_workspace_id = parsed
+    return parsed
+
+
+def _requested_workspace_id(request: Request) -> uuid.UUID | None:
+    return parse_requested_workspace_id(request)
+
+
+def _session_selected_workspace_id(
+    request: Request, db: Session, user: User
+) -> uuid.UUID | None:
+    row = getattr(request.state, "auth_session", None)
+    if not isinstance(row, AuthSession) or row.selected_workspace_id is None:
+        return None
+    if workspace_is_selectable(db, user, row.selected_workspace_id):
+        return row.selected_workspace_id
+    return None
 
 
 def _workspace_access(request: Request, db: Session, user: User) -> WorkspaceAccess:
+    header = _requested_workspace_id(request)
+    requested = header if header is not None else _session_selected_workspace_id(
+        request, db, user
+    )
     try:
-        access = resolve_workspace_access(db, user, _requested_workspace_id(request))
+        access = resolve_workspace_access(db, user, requested)
     except AuthorizationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     request.state.workspace_access = access

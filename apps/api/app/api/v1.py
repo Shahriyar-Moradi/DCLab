@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import (
     get_current_user,
+    parse_requested_workspace_id,
     request_workspace_id,
     require_workspace_ml_execution,
     require_workspace_read,
@@ -55,6 +56,7 @@ from app.services.project_service import get_project, list_projects
 from app.services.technical_explorer_service import get_dataset, list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
 from app.services.workspace_service import list_workspaces_for_actor
+from app.services.workspace_selection_service import principal_read
 
 router = APIRouter(prefix="/v1", tags=["v1"])
 
@@ -84,19 +86,18 @@ def _cursor_sequence(cursor: str | None) -> int:
     return value
 
 
-def _principal(user: User) -> PrincipalRead:
-    return PrincipalRead(
-        id=user.id,
-        email=user.email,
-        role=user.role,
-        full_name=user.full_name,
-        workspace_id=user.workspace_id,
-    )
+def _principal(db, user, request) -> PrincipalRead:
+    parse_requested_workspace_id(request)
+    return principal_read(db, user, request)
 
 
 @router.get("/me", response_model=PrincipalRead)
-def read_principal(user: User = Depends(get_current_user)) -> PrincipalRead:
-    return _principal(user)
+def read_principal(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PrincipalRead:
+    return _principal(db, user, request)
 
 
 @router.get("/workspaces", response_model=list[WorkspaceRead])

@@ -401,7 +401,7 @@ class TestClientDashboardIsolatedFromMlOps:
 class TestClientInsightsSection:
     """Step 3 — the client Insights section, organized by business function.
 
-    `/app/insights` reads the latest completed simulation run per use case
+    `/app/insights` reads the latest workspace-owned simulation run per use case
     (admin-produced) and serves it through the Step 1 translator, grouped by
     `InsightCategory`. Nothing here trains a model or accepts a client-triggered
     run — that bounded, translated trigger is Step 5 (Client Labs).
@@ -410,9 +410,10 @@ class TestClientInsightsSection:
     def _seed_run(self, db_session, *, use_case: str, external_id: str, features: dict, hours_ago: int = 0):
         from datetime import UTC, datetime, timedelta
 
-        from app.db.models import SimulationRun
+        from app.db.models import DEFAULT_WORKSPACE_ID, SimulationRun
 
         row = SimulationRun(
+            workspace_id=DEFAULT_WORKSPACE_ID,
             use_case=use_case,
             model_version=f"{use_case}_sim_v1",
             policy_version=f"{use_case}_sim_v1",
