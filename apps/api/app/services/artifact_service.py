@@ -14,7 +14,7 @@ from app.db.models import Artifact, Experiment, Project, Workspace
 from app.domain.data_plane import ARTIFACT_TYPES
 from app.domain.errors import ArtifactNotFoundError, IdentityError
 from app.storage.base import ObjectPutResult, ObjectStorage
-from app.storage.factory import get_object_storage
+from app.storage.factory import get_object_storage, storage_for_artifact
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -149,7 +149,7 @@ def read_artifact_bytes(
     storage: ObjectStorage | None = None,
 ) -> bytes:
     artifact = get_artifact(db, workspace_id=workspace_id, artifact_id=artifact_id)
-    backend = storage or get_object_storage()
+    backend = storage_for_artifact(artifact, storage=storage)
     return backend.get(artifact.object_key)
 
 

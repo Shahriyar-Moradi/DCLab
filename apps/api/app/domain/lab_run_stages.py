@@ -1,15 +1,18 @@
 """Fine-grained ML-run stages stored on `ClientLabUpload.pipeline_status`.
 
 This extends the existing upload status column rather than adding a second
-enum. The normal client only ever sees four lifecycle values:
+enum. The normal client sees:
 
     queued → processing → completed
                          → failed
+            → needs_input → (resume) processing
 
-Detailed stages stay on the stored column for execution, logging, and admin
-inspection. Client-facing `stage` / `pipeline_status` stay that four-state
-view. Progress on the run page uses five server-mapped milestones in
-`milestone` + `steps` — never the raw internal stage names.
+``needs_input`` is a resumable wait for target confirmation, not a
+scientific failure. Detailed stages stay on the stored column for
+execution, logging, and admin inspection. Client-facing `stage` /
+`pipeline_status` stay that coarse view except ``needs_input``, which is
+surfaced honestly. Progress on the run page uses five server-mapped
+milestones in `milestone` + `steps` — never the raw internal stage names.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ PREDICTING = "predicting"
 COMPLETED = "completed"
 FAILED = "failed"
 SKIPPED = "skipped"
+NEEDS_INPUT = "needs_input"
 RUNNING = "running"  # legacy coarse in-progress value
 NOT_APPLICABLE = "not_applicable"
 
@@ -53,7 +57,18 @@ IN_PROGRESS_STAGES = frozenset(
     }
 )
 
-CLIENT_STATUSES = frozenset({"queued", "processing", "completed", "failed"})
+CLIENT_STATUS_VALUES = (
+    "queued",
+    "processing",
+    "completed",
+    "failed",
+    "needs_input",
+)
+CLIENT_STATUSES = frozenset(CLIENT_STATUS_VALUES)
+CK_CLIENT_LAB_UPLOADS_CLIENT_STATUS = (
+    "client_status IN ('queued', 'processing', 'completed', 'failed', 'needs_input')"
+)
+NEEDS_INPUT_HEADLINE = "Choose the outcome column to predict."
 
 # Five client-safe milestones. Internal stages never leave this table.
 CLIENT_MILESTONES: tuple[tuple[str, str, frozenset[str]], ...] = (
@@ -94,11 +109,13 @@ STAGE_ORDER: tuple[str, ...] = (
 
 
 def lifecycle_status(pipeline_status: str) -> str:
-    """The only four values a normal client may see."""
+    """Coarse client lifecycle, including resumable ``needs_input``."""
     if pipeline_status == QUEUED:
         return "queued"
     if pipeline_status == COMPLETED:
         return "completed"
+    if pipeline_status == NEEDS_INPUT:
+        return NEEDS_INPUT
     if pipeline_status in IN_PROGRESS_STAGES:
         return "processing"
     return "failed"
@@ -130,6 +147,8 @@ def milestone_for(pipeline_status: str) -> str:
 
 
 def headline(pipeline_status: str) -> str:
+    if pipeline_status == NEEDS_INPUT:
+        return NEEDS_INPUT_HEADLINE
     return milestone_for(pipeline_status)
 
 

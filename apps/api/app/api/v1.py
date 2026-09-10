@@ -24,10 +24,17 @@ from app.domain.application_api import (
     EventPage,
     ExecutionRequestCreate,
     ExecutionRequestRead,
+    ExecutionTargetConfirmation,
     PrincipalRead,
     VisualizationRead,
 )
-from app.domain.errors import IdentityError, ProjectNotFoundError
+from app.domain.errors import (
+    ExecutionNotWaitingError,
+    IdentityError,
+    ProjectNotFoundError,
+    TargetIntentConflictError,
+    TargetNotInDatasetError,
+)
 from app.domain.execution_requests import EXECUTION_OPERATIONS, SOURCE_API
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.observability import MlRunEventRead
@@ -37,6 +44,7 @@ from app.domain.workspace_identity import ProjectRead, WorkspaceRead
 from app.services.artifact_service import list_artifacts
 from app.services.execution_request_service import (
     ExecutionRequestSpecError,
+    confirm_execution_target,
     create_execution_request,
     get_execution_request,
 )
@@ -214,10 +222,47 @@ def submit_execution_request(
         )
     except ExecutionRequestSpecError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TargetNotInDatasetError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except TargetIntentConflictError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     db.commit()
     db.refresh(row)
+    return ExecutionRequestRead.model_validate(row)
+
+
+@router.post(
+    "/execution-requests/{request_id}/target-confirmation",
+    response_model=ExecutionRequestRead,
+)
+def confirm_execution_request_target(
+    request_id: UUID,
+    payload: ExecutionTargetConfirmation,
+    request: Request,
+    user: User = Depends(require_workspace_ml_execution),
+    db: Session = Depends(get_db),
+) -> ExecutionRequestRead:
+    workspace_id = request_workspace_id(request)
+    try:
+        row = confirm_execution_target(
+            db,
+            actor=user,
+            workspace_id=workspace_id,
+            request_id=request_id,
+            target_column=payload.target_column,
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ExecutionNotWaitingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except TargetNotInDatasetError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except TargetIntentConflictError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except ExecutionRequestSpecError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ExecutionRequestRead.model_validate(row)
 
 

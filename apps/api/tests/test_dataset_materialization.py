@@ -89,7 +89,7 @@ def _patch_object_storage(monkeypatch, storage: RemoteLikeStorage) -> None:
         lambda: storage,
     )
     monkeypatch.setattr(
-        "app.services.dataset_materialization.get_object_storage",
+        "app.storage.factory.get_object_storage",
         lambda: storage,
     )
 

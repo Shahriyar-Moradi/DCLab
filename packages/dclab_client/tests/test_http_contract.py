@@ -88,3 +88,51 @@ def test_create_sends_idempotency_key_header_and_body():
     body = json.loads(request.content.decode("utf-8"))
     assert body["idempotency_key"] == "once"
     assert body["operation"] == "model_build"
+
+
+def test_confirm_target_posts_column_to_v1():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "11111111-1111-1111-1111-111111111111",
+                "workspace_id": "11111111-1111-1111-1111-111111111111",
+                "project_id": None,
+                "operation": "model_build",
+                "source_surface": "legacy_labs",
+                "requested_by_user_id": None,
+                "idempotency_key": None,
+                "external_request_id": None,
+                "parent_request_id": None,
+                "status": "running",
+                "request_spec": {"target_column": "Churn"},
+                "result_summary": {"code": "target_confirmed", "target_column": "Churn"},
+                "workflow_run_id": None,
+                "pipeline_run_id": None,
+                "created_at": "2026-09-09T00:00:00Z",
+                "started_at": "2026-09-09T00:00:01Z",
+                "completed_at": None,
+                "failure_code": None,
+                "failure_summary": None,
+            },
+        )
+
+    api = _client(handler, token="secret-token")
+    row = api.execution_requests.confirm_target(
+        "11111111-1111-1111-1111-111111111111",
+        target_column="Churn",
+        request_id="trace-confirm",
+    )
+    assert row.status == "running"
+    assert row.request_spec["target_column"] == "Churn"
+    request = recorded[0]
+    assert request.url.path == (
+        "/v1/execution-requests/11111111-1111-1111-1111-111111111111/target-confirmation"
+    )
+    assert request.method == "POST"
+    assert request.headers["X-Request-Id"] == "trace-confirm"
+    body = json.loads(request.content.decode("utf-8"))
+    assert body == {"target_column": "Churn"}

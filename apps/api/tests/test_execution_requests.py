@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 
 from app.db.models import DEFAULT_WORKSPACE_ID, ClientLabUpload, ExecutionRequest, User
 from app.domain.execution_requests import (
@@ -185,3 +188,55 @@ def test_postgres_rejects_oversized_and_secret_request_spec(db_session):
         )
         db_session.commit()
     db_session.rollback()
+
+
+def test_concurrent_idempotency_resolves_to_one_canonical_request(db_session, test_engine):
+    key = f"race-{uuid4().hex}"
+    db_session.commit()
+    SessionLocal = sessionmaker(bind=test_engine)
+    barrier = threading.Barrier(2)
+
+    def _create() -> str:
+        session = SessionLocal()
+        try:
+            barrier.wait(timeout=10)
+            row = create_execution_request(
+                session,
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                operation=OPERATION_MODEL_BUILD,
+                source_surface=SOURCE_LEGACY_LABS,
+                idempotency_key=key,
+                request_spec={"filename": "race.csv"},
+            )
+            session.commit()
+            return str(row.id)
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        ids = list(pool.map(lambda _: _create(), range(2)))
+    assert ids[0] == ids[1]
+    db_session.expire_all()
+    rows = list(
+        db_session.scalars(
+            select(ExecutionRequest).where(
+                ExecutionRequest.workspace_id == DEFAULT_WORKSPACE_ID,
+                ExecutionRequest.idempotency_key == key,
+            )
+        )
+    )
+    assert len(rows) == 1
+    assert str(rows[0].id) == ids[0]
+
+
+def test_unrelated_integrity_error_is_not_swallowed_as_idempotency(db_session):
+    with pytest.raises(IntegrityError):
+        create_execution_request(
+            db_session,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            operation=OPERATION_MODEL_BUILD,
+            source_surface=SOURCE_LEGACY_LABS,
+            idempotency_key=f"fk-{uuid4().hex[:12]}",
+            parent_request_id=uuid4(),
+            request_spec={"filename": "x.csv"},
+        )

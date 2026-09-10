@@ -201,7 +201,13 @@ export const LabRunStepSchema = z.object({
 });
 export type LabRunStep = z.infer<typeof LabRunStepSchema>;
 
-export const LabRunStatusSchema = z.enum(["queued", "processing", "completed", "failed"]);
+export const LabRunStatusSchema = z.enum([
+  "queued",
+  "processing",
+  "completed",
+  "failed",
+  "needs_input",
+]);
 export type LabRunStatus = z.infer<typeof LabRunStatusSchema>;
 
 export const LabRunPredictionSchema = z.object({
@@ -230,10 +236,30 @@ export const LabRunOutcomeSchema = z.object({
 });
 export type LabRunOutcome = z.infer<typeof LabRunOutcomeSchema>;
 
+export const TargetColumnOptionSchema = z.object({
+  name: z.string(),
+  confidence: z.number(),
+});
+export type TargetColumnOption = z.infer<typeof TargetColumnOptionSchema>;
+
+export const TargetConfirmationSchema = z.object({
+  code: z.string(),
+  reason: z.string(),
+  recommended_column: z.string().nullable().optional(),
+  confidence: z.number(),
+  margin: z.number(),
+  possible_columns: z.array(TargetColumnOptionSchema),
+  execution_request_id: z.uuid().nullable().optional(),
+});
+export type TargetConfirmation = z.infer<typeof TargetConfirmationSchema>;
+
 export const ClientLabUploadSchema = z.object({
   id: z.uuid(),
   run_id: z.uuid(),
-  workspace_id: z.uuid(),
+  // Local/demo workspaces use a stable sentinel GUID whose version nibble is
+  // zero. It is a valid database identifier but intentionally not an RFC
+  // versioned UUID, so Zod's strict `z.uuid()` rejects it.
+  workspace_id: z.guid(),
   pipeline_run_id: z.uuid().nullable(),
   dataset_id: z.uuid().nullable(),
   status: LabRunStatusSchema,
@@ -253,6 +279,7 @@ export const ClientLabUploadSchema = z.object({
   pipeline_status: LabRunStatusSchema,
   insights: z.array(ClientInsightSchema),
   outcome: LabRunOutcomeSchema.nullable(),
+  target_confirmation: TargetConfirmationSchema.nullable().optional(),
   created_at: z.string(),
 });
 export type ClientLabUpload = z.infer<typeof ClientLabUploadSchema>;

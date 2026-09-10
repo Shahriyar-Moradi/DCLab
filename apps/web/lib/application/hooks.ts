@@ -293,7 +293,23 @@ export function useLabUpload(id: string | undefined): ReturnType<typeof useQuery
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (status === "queued" || status === "processing") return 1000;
-      return query.state.data?.progress === "looking" ? 1000 : false;
+      return query.state.data?.progress === "looking" && status !== "needs_input" ? 1000 : false;
+    },
+  });
+}
+
+export function useConfirmLabTarget(): ReturnType<
+  typeof useMutation<ClientLabUpload, Error, { uploadId: string; targetColumn: string }>
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ uploadId, targetColumn }) =>
+      apiPost(`/app/labs/uploads/${uploadId}/target-confirmation`, ClientLabUploadSchema, {
+        target_column: targetColumn,
+      }),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["client-labs", "uploads", "detail", data.id] });
+      void queryClient.invalidateQueries({ queryKey: ["client-labs", "uploads"] });
     },
   });
 }

@@ -948,7 +948,8 @@ def _verify_reproducibility_lineage(add, report: dict[str, Any], db: Session) ->
 
     from app.config import get_settings
     from app.db.models import Dataset, Experiment, ExperimentCandidate, ModelVersion
-    from app.storage.factory import get_object_storage
+    from app.storage.exceptions import StorageConfigurationError
+    from app.storage.factory import storage_for_artifact
 
     run = _as_dict(report.get("run"))
     raw_experiment_id = run.get("experiment_id")
@@ -1044,8 +1045,20 @@ def _verify_reproducibility_lineage(add, report: dict[str, Any], db: Session) ->
             "artifacts.content_digest",
         )
     else:
-        storage = get_object_storage()
-        if not storage.exists(model_artifact.object_key):
+        try:
+            storage = storage_for_artifact(model_artifact)
+        except StorageConfigurationError as exc:
+            add(
+                "model_artifact_registered",
+                "reproducibility",
+                CHECK_FAIL,
+                str(exc),
+                "artifacts.provider",
+            )
+            storage = None
+        if storage is None:
+            pass
+        elif not storage.exists(model_artifact.object_key):
             add(
                 "model_artifact_registered",
                 "reproducibility",

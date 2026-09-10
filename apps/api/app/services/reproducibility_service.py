@@ -41,7 +41,7 @@ from app.services.artifact_service import (
 )
 from app.services.authorization_service import can_read_workspace
 from app.services.scientific_lineage_service import latest_pipeline_run_feature_set_version
-from app.storage.factory import get_object_storage
+from app.storage.factory import storage_for_artifact
 
 
 @dataclass
@@ -464,7 +464,7 @@ def signed_url_for_artifact(
     artifact = get_artifact_for_actor(
         db, actor, artifact_id=artifact_id, workspace_id=workspace_id
     )
-    url = get_object_storage().signed_url(artifact.object_key, expires_in=expires_in)
+    url = storage_for_artifact(artifact).signed_url(artifact.object_key, expires_in=expires_in)
     return artifact, url, expires_in
 
 

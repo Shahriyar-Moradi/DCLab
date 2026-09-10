@@ -17,7 +17,8 @@ from app.config import get_settings
 from app.db.models import ClientLabUpload, MlJob
 from app.db.session import get_session_factory
 from app.domain.errors import MlJobSpecError, UnknownJobHandlerError
-from app.domain.lab_run_stages import COMPLETED, SKIPPED
+from app.domain.lab_run_stages import COMPLETED, IN_PROGRESS_STAGES, NEEDS_INPUT, SKIPPED
+from app.services.target_intent_service import upload_has_unresolved_target
 from app.domain.ml_jobs import (
     DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
     DEFAULT_MAX_ATTEMPTS,
@@ -346,6 +347,25 @@ def complete_job(db: Session, job: MlJob, *, now: datetime | None = None) -> Non
     db.flush()
 
 
+def requeue_job(db: Session, job: MlJob, *, now: datetime | None = None) -> MlJob:
+    """Return the same row to queued so resume does not insert a second job."""
+
+    moment = now or _now()
+    if job.status == JOB_QUEUED and job.completed_at is None:
+        job.available_at = moment
+        db.flush()
+        return job
+    job.status = JOB_QUEUED
+    job.completed_at = None
+    job.failure_reason = None
+    job.queued_at = moment
+    job.available_at = moment
+    job.claimed_by = None
+    job.lease_expires_at = None
+    db.flush()
+    return job
+
+
 def fail_or_retry_job(
     db: Session,
     job: MlJob,
@@ -420,8 +440,27 @@ def execute_job(
     if job_type == JOB_TYPE_AUTO_TRAIN or handler_key == HANDLER_LABS_AUTO_TRAIN:
         upload = db.get(ClientLabUpload, target_id)
         status = str(upload.pipeline_status or "") if upload is not None else ""
-        if status in {COMPLETED, SKIPPED}:
+        waiting = status == NEEDS_INPUT or (
+            upload is not None and upload_has_unresolved_target(upload)
+        )
+        explicit = (
+            str(getattr(upload, "explicit_target_column", "") or "").strip()
+            if upload is not None
+            else ""
+        )
+        if status in {COMPLETED, SKIPPED} or waiting:
             complete_job(db, current, now=terminal_at)
+            if waiting and explicit:
+                requeue_job(db, current, now=terminal_at)
+                from app.services.auto_train_service import enqueue_auto_train
+
+                enqueue_auto_train(target_id)
+        elif status in IN_PROGRESS_STAGES and explicit:
+            complete_job(db, current, now=terminal_at)
+            requeue_job(db, current, now=terminal_at)
+            from app.services.auto_train_service import enqueue_auto_train
+
+            enqueue_auto_train(target_id)
         else:
             reason = ""
             if upload is not None and isinstance(upload.pipeline_log, dict):

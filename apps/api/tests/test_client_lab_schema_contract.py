@@ -9,7 +9,7 @@ from scripts.check_client_lab_schema_contract import (
     extract_z_object_fields,
 )
 
-CLIENT_LAB_UUID_FIELDS = ("id", "run_id", "workspace_id", "pipeline_run_id", "dataset_id")
+CLIENT_LAB_UUID_FIELDS = ("id", "run_id", "pipeline_run_id", "dataset_id")
 
 
 def test_client_lab_zod_fields_exist_on_pydantic_with_compatible_types():
@@ -31,3 +31,10 @@ def test_client_lab_upload_uuid_ids_use_z_uuid():
         expr = fields[name].replace(" ", "")
         assert "z.uuid(" in expr, f"{name} must use z.uuid(): {fields[name]}"
         assert "z.guid(" not in expr, f"{name} must not use z.guid(): {fields[name]}"
+
+
+def test_client_lab_upload_workspace_id_uses_z_guid():
+    fields = extract_z_object_fields(SCHEMA_FILE.read_text(encoding="utf-8"), "ClientLabUploadSchema")
+    expr = fields["workspace_id"].replace(" ", "")
+    assert "z.guid(" in expr, fields["workspace_id"]
+    assert "z.uuid(" not in expr, fields["workspace_id"]

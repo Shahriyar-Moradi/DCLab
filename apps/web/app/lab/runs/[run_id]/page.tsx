@@ -13,8 +13,10 @@ import { GlassPanel } from "@/app/components/ui/GlassPanel";
 import { MetricCard } from "@/app/components/ui/MetricCard";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { SectionHeader } from "@/app/components/ui/SectionHeader";
+import { Select } from "@/app/components/ui/Select";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { downloadLabPredictions, useLabUpload, useSession } from "@/lib/application";
+import { downloadLabPredictions, useConfirmLabTarget, useLabUpload, useSession } from "@/lib/application";
+import { ApiError } from "@/lib/infrastructure/api-client";
 import {
   formatTimestamp,
   type ClientLabUpload,
@@ -33,6 +35,7 @@ type DetailFact = { label: string; value: string; mono?: boolean };
 function statusTone(status: LabRunStatus): SignalTone {
   if (status === "completed") return "green";
   if (status === "failed") return "oxblood";
+  if (status === "needs_input") return "amber";
   return "amber";
 }
 
@@ -127,9 +130,12 @@ function OutcomeMetrics({ outcome }: { outcome: LabRunOutcome }) {
 export default function LabRunPage() {
   const params = useParams<{ run_id: string }>();
   const query = useLabUpload(params.run_id);
+  const confirmTarget = useConfirmLabTarget();
   const { user } = useSession();
   const [busy, setBusy] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState("");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const isPlatformMember = user ? isPlatformRole(user.role) : false;
 
   async function onDownload(runId: string) {
@@ -205,6 +211,38 @@ export default function LabRunPage() {
   ]);
 
   const showArtifacts = downloadAvailable || Boolean(run.dataset_id);
+  const confirmation = run.target_confirmation;
+  const columnNames = (confirmation?.possible_columns ?? [])
+    .map((row) => row.name)
+    .filter(Boolean);
+  const targetOptions = columnNames.length > 0 ? columnNames : run.fields_noticed;
+  const recommendedTarget = nonempty(confirmation?.recommended_column) ?? targetOptions[0] ?? "";
+  const chosenTarget = selectedTarget || recommendedTarget;
+
+  async function onConfirmTarget() {
+    if (!chosenTarget) return;
+    setConfirmError(null);
+    try {
+      await confirmTarget.mutateAsync({ uploadId: run.id, targetColumn: chosenTarget });
+      await query.refetch();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const body = error.body;
+        if (body && typeof body === "object" && "detail" in body) {
+          const detail = (body as { detail: unknown }).detail;
+          if (detail && typeof detail === "object" && detail !== null && "message" in detail) {
+            setConfirmError(String((detail as { message: unknown }).message));
+            return;
+          }
+          if (typeof detail === "string") {
+            setConfirmError(detail);
+            return;
+          }
+        }
+      }
+      setConfirmError("Could not confirm that column.");
+    }
+  }
 
   return (
     <div>
@@ -231,7 +269,11 @@ export default function LabRunPage() {
       />
 
       {downloadError ? (
-        <p className="mb-5 text-body text-oxblood" role="alert">
+        <p
+          className="mb-5 text-body text-oxblood"
+          role="alert"
+          aria-label={downloadError}
+        >
           {downloadError}
         </p>
       ) : null}
@@ -248,6 +290,39 @@ export default function LabRunPage() {
         </Panel>
 
         {inProgress ? <ExecutionProgress run={run} /> : null}
+
+        {run.status === "needs_input" ? (
+          <Panel title="Needs input" description="Choose the outcome column you want DCLab to predict.">
+            <p className="text-body text-ink">{confirmation?.reason ?? run.message}</p>
+            <div className="mt-4 max-w-md">
+              <Select
+                id="target-confirmation"
+                label="Outcome column"
+                value={chosenTarget}
+                onChange={(event) => setSelectedTarget(event.target.value)}
+              >
+                {targetOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            {confirmError ? (
+              <p className="mt-3 text-body text-oxblood" role="alert">
+                {confirmError}
+              </p>
+            ) : null}
+            <div className="mt-4">
+              <Button
+                onClick={() => void onConfirmTarget()}
+                disabled={!chosenTarget || confirmTarget.isPending}
+              >
+                {confirmTarget.isPending ? "Resuming…" : "Confirm and resume"}
+              </Button>
+            </div>
+          </Panel>
+        ) : null}
 
         {run.pipeline_run_id ? (
           <TechnicalRunDetails workspaceId={run.workspace_id} pipelineRunId={run.pipeline_run_id} />

@@ -117,6 +117,8 @@ class TargetChoice:
     candidates: list[TargetCandidate] = field(default_factory=list)
     raw_llm_output: dict[str, Any] | None = None
     validator_verdict: str = "not_run"
+    # problem_spec | request | rule | llm | unresolved
+    intent_source: str = "unresolved"
 
     def audit_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +127,7 @@ class TargetChoice:
             "evaluation_metric": self.evaluation_metric,
             "confidence": self.confidence,
             "source": self.source,
+            "intent_source": self.intent_source,
             "reason": self.reason,
             "evidence": self.evidence,
             "candidates": [asdict(item) for item in self.candidates],
@@ -296,6 +299,27 @@ def metric_for_task(task_type: str) -> str:
     return "accuracy"
 
 
+def profile_named_target(frame: pd.DataFrame, column: str) -> tuple[str | None, dict[str, Any]]:
+    """Type a known column. Does not rank or select among candidates."""
+
+    series = frame[column]
+    unique = int(series.nunique(dropna=True))
+    n = max(len(frame), 1)
+    task_type = _probable_task_type(series, unique, unique / n)
+    evidence = {
+        "column": column,
+        "dtype": str(series.dtype),
+        "unique_count": unique,
+        "unique_ratio": unique / n,
+        "missing_ratio": float(series.isna().sum()) / n,
+        "identifier_likelihood": identifier_likelihood(column, series, n),
+        "constant": unique <= 1,
+    }
+    if task_type == "unusable":
+        return None, evidence
+    return task_type, evidence
+
+
 def choose_target_deterministically(
     frame: pd.DataFrame,
     columns: list[str],
@@ -310,6 +334,7 @@ def choose_target_deterministically(
                 column=None,
                 reason=f"explicit target {explicit_target!r} is not present in the dataset",
                 source="explicit",
+                intent_source="request",
                 candidates=candidates,
             )
         candidate = by_column.get(explicit_target)
@@ -318,6 +343,7 @@ def choose_target_deterministically(
                 column=None,
                 reason=f"explicit target {explicit_target!r} is constant, identifier-like, or unusable",
                 source="explicit",
+                intent_source="request",
                 candidates=candidates,
             )
         return TargetChoice(
@@ -327,6 +353,7 @@ def choose_target_deterministically(
             evaluation_metric=metric_for_task(candidate.probable_task_type),
             confidence=1.0,
             source="explicit",
+            intent_source="request",
             evidence=candidate.evidence,
             candidates=candidates,
         )
@@ -338,6 +365,7 @@ def choose_target_deterministically(
                 "target selection is ambiguous: no usable target candidates remain "
                 "after identifier, constant, and type checks"
             ),
+            intent_source="unresolved",
             candidates=[],
         )
 
@@ -352,6 +380,7 @@ def choose_target_deterministically(
             evaluation_metric=metric_for_task(best.probable_task_type),
             confidence=best.confidence,
             source="rule",
+            intent_source="rule",
             evidence={**best.evidence, "runner_up_margin": round(margin, 4)},
             candidates=candidates,
         )
@@ -363,6 +392,7 @@ def choose_target_deterministically(
         ),
         confidence=best.confidence,
         source="fallback",
+        intent_source="unresolved",
         evidence={"runner_up_margin": round(margin, 4)},
         candidates=candidates,
     )

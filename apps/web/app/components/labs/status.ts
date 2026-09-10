@@ -30,6 +30,7 @@ export const LAB_RUN_STATUS_LABEL: Record<LabRunStatus, string> = {
   processing: "In progress",
   completed: "Completed",
   failed: "Could not finish",
+  needs_input: "Needs input",
 };
 
 export function runPath(runId: string): string {

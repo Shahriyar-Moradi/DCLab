@@ -89,6 +89,7 @@ KNOWN_CLIENT_OPERATIONS = {
     ("GET", "/app/labs/uploads/{upload_id}"),
     ("GET", "/app/labs/uploads/{upload_id}/predictions.csv"),
     ("POST", "/app/labs/uploads"),
+    ("POST", "/app/labs/uploads/{upload_id}/target-confirmation"),
 }
 
 SAMPLE_CSV = (
@@ -293,6 +294,25 @@ def crawl_api(token: str) -> tuple[dict[str, list[str]], set[tuple[str, str]], d
                 f"/app/labs/uploads/{upload_id}/predictions.csv",
                 "/app/labs/uploads/{upload_id}/predictions.csv",
             )
+            status, raw = _json_request(
+                "POST",
+                f"/app/labs/uploads/{upload_id}/target-confirmation",
+                token=token,
+                body={"target_column": "count"},
+            )
+            covered.add(("POST", "/app/labs/uploads/{upload_id}/target-confirmation"))
+            if status == 200:
+                hits = find_banned_terms(raw.decode("utf-8", errors="replace"))
+                if hits:
+                    findings[
+                        f"POST /app/labs/uploads/{upload_id}/target-confirmation"
+                    ] = hits
+            elif status not in (409, 422):
+                print(
+                    "  note: POST /app/labs/uploads/{id}/target-confirmation -> "
+                    f"{status} (unexpected, not scanned)",
+                    file=sys.stderr,
+                )
     else:
         print(f"  note: POST /app/labs/uploads -> {status} (unexpected, not scanned)", file=sys.stderr)
     get("/app/labs/uploads", "/app/labs/uploads")

@@ -13,7 +13,7 @@
     {
       "table": "client_lab_uploads",
       "name": "ck_client_lab_uploads_client_status",
-      "definition": "CHECK (((client_status)::text = ANY ((ARRAY['queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+      "definition": "CHECK (((client_status)::text = ANY ((ARRAY['queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying, 'needs_input'::character varying])::text[])))"
     },
     {
       "table": "code_snapshots",
@@ -248,7 +248,7 @@
     {
       "table": "execution_requests",
       "name": "ck_execution_requests_status",
-      "definition": "CHECK (((status)::text = ANY ((ARRAY['accepted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['accepted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'needs_input'::character varying])::text[])))"
     },
     {
       "table": "experiments",

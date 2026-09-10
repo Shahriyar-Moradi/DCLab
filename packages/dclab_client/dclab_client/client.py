@@ -116,6 +116,21 @@ class ExecutionRequestsClient:
         )
         return ExecutionRequest.model_validate(payload)
 
+    def confirm_target(
+        self,
+        execution_request_id: UUID | str,
+        *,
+        target_column: str,
+        request_id: str | None = None,
+    ) -> ExecutionRequest:
+        payload = self._transport.request(
+            "POST",
+            f"/v1/execution-requests/{_id(execution_request_id)}/target-confirmation",
+            json={"target_column": target_column},
+            request_id=request_id,
+        )
+        return ExecutionRequest.model_validate(payload)
+
     def get(
         self, execution_request_id: UUID | str, *, request_id: str | None = None
     ) -> ExecutionRequest:

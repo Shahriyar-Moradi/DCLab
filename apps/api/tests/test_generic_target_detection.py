@@ -217,11 +217,17 @@ def test_column_position_does_not_break_an_ambiguous_binary_tie():
             "Churn": rng.choice(["Yes", "No"], n),
         }
     )
+    candidates = generate_target_candidates(frame, list(frame.columns))
+    by_name = {item.column: item.confidence for item in candidates}
+    assert by_name["Churn"] == 0.65
+    assert by_name["Partner"] == 0.65
+    assert by_name["Churn"] - by_name["Partner"] == 0.00
     choice = choose_target_deterministically(frame, list(frame.columns))
     assert choice.column is None
     assert choice.task_type is None
     assert choice.source == "fallback"
     assert choice.confidence >= 0.65
+    assert choice.evidence["runner_up_margin"] == 0.0
     assert "target selection is ambiguous" in choice.reason
 
 

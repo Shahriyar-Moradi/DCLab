@@ -15,11 +15,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ClientLabUpload, Dataset, DatasetAsset, User
-from app.domain.client_lab import ClientLabUploadRead
+from app.domain.client_lab import ClientLabUploadRead, TargetConfirmationRequired
 from app.domain.data_access import ACCESS_TYPE_UPLOAD, EXECUTION_MODE_COPY
-from app.domain.errors import OpenLabFileError, UnknownLabCategoryError
+from app.domain.errors import (
+    IdentityError,
+    OpenLabFileError,
+    TargetIntentConflictError,
+    TargetNotInDatasetError,
+    UnknownLabCategoryError,
+)
 from app.domain.lab_run_stages import (
     IN_PROGRESS_STAGES,
+    NEEDS_INPUT,
+    NEEDS_INPUT_HEADLINE,
     PROCESSING_HEADLINE,
     client_error_message,
     client_stage,
@@ -60,7 +68,7 @@ READY_MESSAGE = "We've looked at your file."
 
 def _progress(row: ClientLabUpload) -> str:
     """Map the admin-only pipeline status to a three-word client progress label."""
-    if row.pipeline_status in IN_PROGRESS_STAGES:
+    if row.pipeline_status in IN_PROGRESS_STAGES or row.pipeline_status == NEEDS_INPUT:
         return "looking"
     if row.pipeline_status == "completed":
         return "ready"
@@ -154,6 +162,54 @@ def _persist_upload_dataset(
     return dataset
 
 
+def _target_confirmation_read(
+    db: Session, row: ClientLabUpload
+) -> TargetConfirmationRequired | None:
+    if (row.client_status or lifecycle_status(row.pipeline_status)) != NEEDS_INPUT:
+        return None
+    log = row.pipeline_log if isinstance(row.pipeline_log, dict) else {}
+    raw = log.get("target_confirmation")
+    if not isinstance(raw, dict):
+        return None
+    from app.services.execution_request_service import execution_request_for_upload
+
+    request = execution_request_for_upload(db, row)
+    candidates = []
+    for item in list(raw.get("possible_columns") or raw.get("candidate_columns") or []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            confidence = float(item.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        candidates.append({"name": name, "confidence": confidence})
+    try:
+        confidence = float(raw.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    try:
+        margin = float(raw.get("margin") or 0.0)
+    except (TypeError, ValueError):
+        margin = 0.0
+    recommended = (
+        str(raw.get("recommended_column") or raw.get("recommended_candidate") or "").strip()
+        or None
+    )
+    reason = str(raw.get("reason") or "").strip() or NEEDS_INPUT_HEADLINE
+    return TargetConfirmationRequired(
+        code=str(raw.get("code") or "target_confirmation_required"),
+        reason=reason,
+        recommended_column=recommended,
+        confidence=confidence,
+        margin=margin,
+        possible_columns=candidates,
+        execution_request_id=request.id if request is not None else None,
+    )
+
+
 def _to_read(
     db: Session, row: ClientLabUpload, *, include_predictions: bool = False
 ) -> ClientLabUploadRead:
@@ -164,6 +220,8 @@ def _to_read(
     coarse = row.client_status or lifecycle_status(row.pipeline_status)
     if coarse in {"queued", "processing"}:
         message = headline(row.pipeline_status) or PROCESSING_HEADLINE
+    elif coarse == NEEDS_INPUT:
+        message = headline(row.pipeline_status) or NEEDS_INPUT_HEADLINE
     elif coarse == "failed":
         log = row.pipeline_log if isinstance(row.pipeline_log, dict) else {}
         reason = log.get("reason")
@@ -195,6 +253,7 @@ def _to_read(
         pipeline_status=public_pipeline_status(row.pipeline_status),
         insights=insights,
         outcome=outcome,
+        target_confirmation=_target_confirmation_read(db, row),
         created_at=row.created_at,
     )
 
@@ -245,18 +304,18 @@ def save_upload(
                 project = get_or_create_labs_project(
                     db, workspace_id=workspace_id, actor=user
                 )
-            problem_spec_id_resolved: UUID | None = None
+            spec_row = None
             if problem_spec_id is not None:
                 from app.services.problem_spec_service import get_problem_spec
 
-                spec = get_problem_spec(
+                spec_row = get_problem_spec(
                     db,
                     actor=user,
                     workspace_id=workspace_id,
                     project_id=project.id,
                     spec_id=problem_spec_id,
                 )
-                problem_spec_id_resolved = spec.id
+            problem_spec_id_resolved = spec_row.id if spec_row is not None else None
             artifact = record_artifact(
                 db,
                 artifact_id=artifact_id,
@@ -332,6 +391,28 @@ def save_upload(
                 schema_digest=dataset.schema_digest,
                 content_digest=put.content_digest,
             )
+            from app.services.problem_spec_service import populate_unlocked_problem_spec_target
+            from app.services.target_intent_service import (
+                dataset_schema_column_names,
+                normalize_target_name,
+                validate_declared_target_intent,
+            )
+
+            requested_target = normalize_target_name(target_column)
+            schema_names = dataset_schema_column_names(dataset) or list(
+                preview.fields_noticed or []
+            )
+            validate_declared_target_intent(
+                schema_names=schema_names,
+                problem_spec=spec_row,
+                requested_target=requested_target,
+            )
+            if (
+                spec_row is not None
+                and requested_target
+                and not normalize_target_name(spec_row.target_column)
+            ):
+                populate_unlocked_problem_spec_target(db, spec_row, requested_target)
 
             row = ClientLabUpload(
                 workspace_id=workspace_id,
@@ -399,6 +480,7 @@ def save_upload(
                 project_id=project.id,
                 workflow_run_id=workflow_run.id,
                 pipeline_run_id=pipeline_run.id,
+                problem_spec_id=problem_spec_id_resolved,
             )
             ingestion.execution_request_id = request.id
             append_data_access_event(
@@ -444,11 +526,15 @@ def save_upload(
             db.commit()
             db.refresh(row)
     except OpenIngestError as exc:
+        db.rollback()
         storage.delete(object_key)
         raise OpenLabFileError(str(exc)) from exc
-    except OpenLabFileError:
+    except (OpenLabFileError, TargetIntentConflictError, TargetNotInDatasetError):
+        db.rollback()
+        storage.delete(object_key)
         raise
     except Exception:
+        db.rollback()
         storage.delete(object_key)
         raise
 
@@ -504,6 +590,32 @@ def get_upload(
     if row is None:
         return None
     return _to_read(db, row, include_predictions=True)
+
+
+def confirm_upload_target(
+    db: Session,
+    user: User,
+    upload_id: UUID,
+    *,
+    workspace_id: UUID,
+    target_column: str,
+) -> ClientLabUploadRead:
+    from app.services.execution_request_service import confirm_upload_target as confirm_row
+
+    row = _upload_for_workspace(db, user, upload_id, workspace_id=workspace_id)
+    if row is None:
+        raise IdentityError("not found", status_code=404)
+    confirm_row(
+        db,
+        actor=user,
+        workspace_id=workspace_id,
+        upload_id=row.id,
+        target_column=target_column,
+    )
+    refreshed = db.get(ClientLabUpload, row.id)
+    if refreshed is None:
+        raise IdentityError("not found", status_code=404)
+    return _to_read(db, refreshed)
 
 
 def predictions_download(

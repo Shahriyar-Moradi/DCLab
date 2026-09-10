@@ -21,6 +21,7 @@ from app.services.lineage_service import (
     LineageError,
     create_pipeline_run,
     create_workflow_run,
+    resolve_pipeline_run_branch,
 )
 from test_data_model_lineage import make_lineage_setup
 
@@ -281,3 +282,33 @@ def test_self_parent_and_orphan_branch_metadata_are_rejected(db_session, tmp_pat
         )
         db_session.commit()
     db_session.rollback()
+
+
+def test_self_parent_is_rejected_with_lineage_error_before_flush(db_session, tmp_path):
+    setup = make_lineage_setup(db_session, tmp_path)
+    parent = _pipeline(db_session, setup)
+    db_session.flush()
+    with pytest.raises(LineageError, match="own parent"):
+        resolve_pipeline_run_branch(
+            db_session,
+            workspace_id=setup["alpha"].id,
+            parent_pipeline_run_id=parent.id,
+            pipeline_run_id=parent.id,
+        )
+
+
+def test_create_pipeline_run_rejects_self_parent_with_lineage_error(
+    db_session, tmp_path, monkeypatch
+):
+    setup = make_lineage_setup(db_session, tmp_path)
+    parent = _pipeline(db_session, setup)
+    db_session.flush()
+    monkeypatch.setattr("app.services.lab_service.uuid4", lambda: parent.id)
+    with pytest.raises(LineageError, match="own parent"):
+        _pipeline(
+            db_session,
+            setup,
+            parent_pipeline_run_id=parent.id,
+            branch_key="agent_followup",
+            branch_reason="must not loop onto itself",
+        )

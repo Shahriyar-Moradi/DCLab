@@ -58,6 +58,7 @@ def resolve_pipeline_run_branch(
     parent_pipeline_run_id: UUID | None,
     branch_key: str | None = None,
     branch_reason: str | None = None,
+    pipeline_run_id: UUID | None = None,
 ) -> tuple[UUID | None, str | None, str | None]:
     """Validate scientific branch pointers. Does not write the parent run."""
 
@@ -67,6 +68,8 @@ def resolve_pipeline_run_branch(
         if key is not None or reason is not None:
             raise LineageError("branch_key and branch_reason require a parent pipeline run")
         return None, None, None
+    if pipeline_run_id is not None and parent_pipeline_run_id == pipeline_run_id:
+        raise LineageError("pipeline run cannot be its own parent")
     parent = db.get(Experiment, parent_pipeline_run_id)
     if parent is None or parent.workspace_id != workspace_id:
         raise LineageError(

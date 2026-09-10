@@ -227,15 +227,18 @@ def create_experiment(
         raise ValueError("workflow run and dataset belong to different workspaces")
     from app.services.lineage_service import resolve_pipeline_run_branch
 
+    run_id = uuid4()
     parent_id, key, reason = resolve_pipeline_run_branch(
         db,
         workspace_id=dataset.workspace_id,
         parent_pipeline_run_id=parent_pipeline_run_id,
         branch_key=branch_key,
         branch_reason=branch_reason,
+        pipeline_run_id=run_id,
     )
     cfg = config or SearchConfig()
     row = Experiment(
+        id=run_id,
         workspace_id=dataset.workspace_id,
         project_id=project_id if project_id is not None else (
             workflow_run.project_id if workflow_run is not None else dataset.project_id
