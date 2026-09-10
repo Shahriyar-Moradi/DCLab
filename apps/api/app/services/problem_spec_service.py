@@ -118,6 +118,38 @@ def create_problem_spec(
     return spec
 
 
+def populate_unlocked_problem_spec_target(
+    db: Session,
+    spec: ProblemSpec,
+    target_column: str,
+) -> ProblemSpec:
+    """Fill a NULL target on an unlocked draft. Locked specs are never mutated."""
+
+    name = (target_column or "").strip()
+    if not name:
+        return spec
+    if spec.locked_at is not None or spec.status == "locked":
+        return spec
+    if (spec.target_column or "").strip():
+        return spec
+    spec.target_column = name
+    spec.content_digest = problem_spec_digest(
+        _content_payload(
+            task_type=spec.task_type,
+            business_objective=spec.business_objective,
+            target_column=spec.target_column,
+            prediction_unit=spec.prediction_unit,
+            prediction_time_column=spec.prediction_time_column,
+            prediction_horizon=spec.prediction_horizon,
+            primary_metric=spec.primary_metric,
+            constraints=spec.constraints or {},
+            success_criteria=spec.success_criteria or {},
+        )
+    )
+    db.flush()
+    return spec
+
+
 def list_problem_specs(
     db: Session, *, actor: User, workspace_id: UUID, project_id: UUID
 ) -> list[ProblemSpec]:

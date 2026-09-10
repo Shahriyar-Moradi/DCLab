@@ -69,6 +69,7 @@ from app.domain.execution_requests import (
     CK_EXECUTION_REQUEST_SPEC_OBJECT,
     CK_EXECUTION_REQUEST_STATUS,
 )
+from app.domain.lab_run_stages import CK_CLIENT_LAB_UPLOADS_CLIENT_STATUS, NEEDS_INPUT
 from app.domain.privacy_audit import (
     CK_DATA_ACCESS_EVENTS_ACTOR,
     CK_DATA_ACCESS_EVENTS_COLUMN_BOUNDED,
@@ -717,6 +718,8 @@ class ProblemSpec(Base):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Canonical persisted scientific intent for the linked execution. Authoritative
+    # when set; see app.services.target_intent_service.
     target_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
     prediction_unit: Mapped[str | None] = mapped_column(String(128), nullable=True)
     prediction_time_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -1051,11 +1054,13 @@ _PIPELINE_IN_PROGRESS = frozenset(
 
 
 def client_status_for(pipeline_status: str) -> str:
-    """Coarse four-state view stored on `ClientLabUpload.client_status`."""
+    """Coarse client view stored on `ClientLabUpload.client_status`."""
     if pipeline_status == "queued":
         return "queued"
     if pipeline_status == "completed":
         return "completed"
+    if pipeline_status == NEEDS_INPUT:
+        return NEEDS_INPUT
     if pipeline_status in _PIPELINE_IN_PROGRESS:
         return "processing"
     return "failed"
@@ -1065,8 +1070,8 @@ class ClientLabUpload(Base):
     """Compatibility adapter: Labs file ingest into DataSource / Ingestion / Dataset lineage.
 
     `run_id` is the stable ML-run identity (currently equal to `id`).
-    `client_status` is the coarse four-state view a client may see; fine-grained
-    execution lives on `pipeline_status`.
+    `client_status` is the coarse client view (queued / processing / completed /
+    failed / needs_input); fine-grained execution lives on `pipeline_status`.
     """
 
     __tablename__ = "client_lab_uploads"
@@ -1104,7 +1109,7 @@ class ClientLabUpload(Base):
             use_alter=True,
         ),
         CheckConstraint(
-            "client_status IN ('queued', 'processing', 'completed', 'failed')",
+            CK_CLIENT_LAB_UPLOADS_CLIENT_STATUS,
             name="ck_client_lab_uploads_client_status",
         ),
         Index(
@@ -1141,8 +1146,10 @@ class ClientLabUpload(Base):
     record_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     fields_noticed: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     has_named_fields: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Optional generic-upload override. Existing clients omit it and continue
-    # through deterministic/semantic target inference.
+    # Compatibility: Labs form field. Canonical persisted scientific intent is
+    # ProblemSpec.target_column. New executions resolve through
+    # target_intent_service; this field must not silently contradict a linked
+    # ProblemSpec target. Existing clients may still send it without a spec.
     explicit_target_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
     # Simple-case auto-train (admin-only; see docs/LABS_DATA_UNDERSTANDING.md).
     # queued | ingesting | analyzing | cleaning | feature_engineering |
@@ -1151,7 +1158,7 @@ class ClientLabUpload(Base):
     pipeline_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="not_applicable", server_default="not_applicable", index=True
     )
-    # queued | processing | completed | failed — never a pipeline stage name.
+    # queued | processing | completed | failed | needs_input — never a pipeline stage name.
     client_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="queued", server_default="queued", index=True
     )
@@ -2888,6 +2895,8 @@ class WorkflowRun(Base):
         ),
         nullable=True,
     )
+    # Request-side copy of an explicit target. Compatibility fallback only;
+    # ProblemSpec.target_column is canonical when set.
     explicit_target: Mapped[str | None] = mapped_column(String(256), nullable=True)
     resolved_target: Mapped[str | None] = mapped_column(String(256), nullable=True)
     task_type: Mapped[str | None] = mapped_column(String(32), nullable=True)

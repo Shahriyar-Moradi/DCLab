@@ -1,4 +1,4 @@
-"""Physical database foundation gate for Alembic head 0053.
+"""Physical database foundation gate for Alembic head 0054.
 
 Cross-tenant and delete assertions go through raw SQL. Alembic current/check
 and compare_metadata live in test_historical_alembic_revisions.py against
@@ -37,7 +37,7 @@ from app.services.lineage_service import (
 from app.storage.local import LocalStorage
 from test_data_model_lineage import make_lineage_setup
 
-CURRENT_HEAD = "0053_pipeline_run_branch"
+CURRENT_HEAD = "0054_execution_needs_input"
 
 IMPORTANT_DELETE_ACTIONS = {
     "fk_ingestion_runs_workspace_data_source": "c",

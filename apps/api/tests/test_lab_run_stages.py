@@ -9,6 +9,7 @@ from app.domain.lab_run_stages import (
     FAILED,
     FEATURE_ENGINEERING,
     INGESTING,
+    NEEDS_INPUT,
     PREPROCESSING,
     QUEUED,
     SPLITTING,
@@ -24,7 +25,7 @@ from app.domain.lab_run_stages import (
 )
 from app.translation.banned_terms import find_banned_terms
 
-CLIENT_STATES = {"queued", "processing", "completed", "failed"}
+CLIENT_STATES = {"queued", "processing", "completed", "failed", "needs_input"}
 INTERNAL_LEAKS = (
     "ingesting",
     "feature_engineering",
@@ -43,10 +44,11 @@ def test_lifecycle_status_views_fine_grained_stages_as_processing():
     assert lifecycle_status(TRAINING) == "processing"
     assert lifecycle_status(COMPLETED) == "completed"
     assert lifecycle_status(FAILED) == "failed"
+    assert lifecycle_status(NEEDS_INPUT) == "needs_input"
 
 
 def test_client_view_never_emits_internal_stages_or_banned_vocabulary():
-    for stored in (QUEUED, ANALYZING, CLEANING, FEATURE_ENGINEERING, CROSS_VALIDATION, TRAINING, COMPLETED, FAILED):
+    for stored in (QUEUED, ANALYZING, CLEANING, FEATURE_ENGINEERING, CROSS_VALIDATION, TRAINING, COMPLETED, FAILED, NEEDS_INPUT):
         token = client_stage(stored)
         public = public_pipeline_status(stored)
         assert token in CLIENT_STATES
@@ -118,6 +120,7 @@ def test_in_progress_headline_follows_the_mapped_milestone():
     assert headline(TRAINING) == "Building your model"
     assert headline(COMPLETED) == ""
     assert headline(FAILED) == ""
+    assert headline(NEEDS_INPUT) == "Choose the outcome column to predict."
     assert find_banned_terms(headline(TRAINING)) == []
 
 

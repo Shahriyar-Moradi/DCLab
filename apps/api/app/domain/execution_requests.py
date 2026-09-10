@@ -28,12 +28,18 @@ EXECUTION_REQUEST_STATUSES = (
     "running",
     "completed",
     "failed",
+    "needs_input",
 )
 
 REQUEST_ACCEPTED = "accepted"
 REQUEST_RUNNING = "running"
 REQUEST_COMPLETED = "completed"
 REQUEST_FAILED = "failed"
+REQUEST_NEEDS_INPUT = "needs_input"
+
+TARGET_CONFIRMATION_REQUIRED = "target_confirmation_required"
+TARGET_CONFIRMED = "target_confirmed"
+EXECUTION_RESUMED = "execution_resumed"
 
 REQUEST_SPEC_MAX_BYTES = 16384
 RESULT_SUMMARY_MAX_BYTES = 16384
@@ -64,6 +70,7 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         "kind",
         "record_count",
         "target_column",
+        "problem_spec_id",
         "fields_noticed",
         "column_count",
     }
@@ -95,4 +102,8 @@ CK_EXECUTION_REQUEST_RESULT_NO_SECRETS = (
 )
 CK_EXECUTION_REQUEST_PARENT_NOT_SELF = (
     "parent_request_id IS NULL OR parent_request_id <> id"
+)
+
+UQ_EXECUTION_REQUESTS_WORKSPACE_IDEMPOTENCY_KEY = (
+    "uq_execution_requests_workspace_idempotency_key"
 )

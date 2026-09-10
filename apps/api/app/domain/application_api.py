@@ -33,6 +33,10 @@ class ExecutionRequestCreate(BaseModel):
     external_request_id: str | None = Field(default=None, max_length=128)
 
 
+class ExecutionTargetConfirmation(BaseModel):
+    target_column: str = Field(min_length=1, max_length=256)
+
+
 class ExecutionRequestRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

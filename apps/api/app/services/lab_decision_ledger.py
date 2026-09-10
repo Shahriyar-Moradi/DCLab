@@ -82,6 +82,7 @@ def _target_final_decision(choice: TargetChoice) -> dict[str, Any]:
         "evaluation_metric": choice.evaluation_metric,
         "confidence": choice.confidence,
         "source": choice.source,
+        "intent_source": choice.intent_source,
         "validator_verdict": choice.validator_verdict,
     }
 
@@ -224,6 +225,7 @@ def resolve_target_selection(
         choice.evaluation_metric = metric_for_task(decision.task_type)
         choice.confidence = float(decision.confidence)
         choice.source = "llm"
+        choice.intent_source = "llm"
         choice.reason = decision.rationale
         choice.evidence = candidate.evidence
         _observe_semantic_decision(

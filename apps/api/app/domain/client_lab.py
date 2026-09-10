@@ -79,6 +79,25 @@ class ClientLabRunStep(BaseModel):
     state: str
 
 
+class TargetColumnScore(BaseModel):
+    name: str
+    confidence: float
+
+
+class TargetConfirmationSubmit(BaseModel):
+    target_column: str = Field(min_length=1, max_length=256)
+
+
+class TargetConfirmationRequired(BaseModel):
+    code: str
+    reason: str
+    recommended_column: str | None = None
+    confidence: float = 0.0
+    margin: float = 0.0
+    possible_columns: list[TargetColumnScore] = Field(default_factory=list)
+    execution_request_id: UUID | None = None
+
+
 class ClientLabUploadRead(BaseModel):
     """Capability 1: we accepted the file. Structuring it is not done yet.
 
@@ -88,11 +107,12 @@ class ClientLabUploadRead(BaseModel):
     `run_id` is this upload's ML-run identity (persisted on the row, currently
     the same UUID as `id`). `workspace_id` and `pipeline_run_id` identify the
     canonical model-build timeline for this upload. `status` is the stored coarse
-    `client_status` (queued / processing / completed / failed). `stage` and `pipeline_status` on
-    this payload stay that same four-state view. Fine-grained execution lives
-    only on the stored `pipeline_status` column. `milestone` is the current
-    client-safe progress label; `steps` is the five-item checklist. When the
-    job has finished, `outcome` holds a plain-language result and the
+    `client_status` (queued / processing / completed / failed / needs_input).
+    `needs_input` is a resumable wait for target confirmation. `stage` and
+    `pipeline_status` on this payload stay that coarse view. Fine-grained
+    execution lives only on the stored `pipeline_status` column. `milestone` is
+    the current client-safe progress label; `steps` is the five-item checklist.
+    When the job has finished, `outcome` holds a plain-language result and the
     predictions — still free of engine internals.
     """
 
@@ -120,4 +140,5 @@ class ClientLabUploadRead(BaseModel):
     pipeline_status: str
     insights: list[ClientFacingInsight] = []
     outcome: ClientLabRunOutcome | None = None
+    target_confirmation: TargetConfirmationRequired | None = None
     created_at: datetime

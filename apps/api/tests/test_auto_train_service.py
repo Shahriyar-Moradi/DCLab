@@ -99,18 +99,15 @@ class TestAutoTrainJob:
 
         run_auto_train_job(db_session, upload.id)
         db_session.refresh(upload)
-        assert upload.pipeline_status == "failed"
+        assert upload.pipeline_status == "needs_input"
         assert upload.experiment_id is None
         assert "target selection is ambiguous" in upload.pipeline_log["reason"]
-        assert upload.pipeline_log["failed_at"] == "analyzing"
-        assert "analyzing" in (upload.pipeline_log.get("stages") or [])
-        report = upload.pipeline_log["technical_report"]
-        assert report["run"]["status"] == "failed"
-        assert report["run"]["last_successful_stage"] == "ingesting"
-        assert report["run"]["failed_stage"] == "analyzing"
-        assert "target selection is ambiguous" in report["run"]["failure_reason"]
-        assert report["deterministic_verification"]["overall_status"] == "FAILED"
-        assert report["deterministic_verification"]["missing_evidence"]
+        assert upload.pipeline_log["target"]["status"] == "unresolved"
+        assert upload.pipeline_log["target"]["column"] is None
+        assert "failed_at" not in (upload.pipeline_log or {})
+        assert "needs_input" in (upload.pipeline_log.get("stages") or [])
+        assert "splitting" not in (upload.pipeline_log.get("stages") or [])
+        assert "sample_values" not in str(upload.pipeline_log.get("target") or {})
 
     def test_completes_and_persists_a_real_experiment_for_a_telco_like_csv(self, db_session, tmp_path):
         frame = _telco_like_frame(n=200)

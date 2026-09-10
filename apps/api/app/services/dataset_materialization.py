@@ -17,7 +17,7 @@ from app.db.models import Artifact, ClientLabUpload, Dataset
 from app.storage._hashing import sha256_file
 from app.storage.base import ObjectStorage
 from app.storage.exceptions import DigestMismatchError, ObjectNotFoundError, ObjectStorageError
-from app.storage.factory import get_object_storage
+from app.storage.factory import storage_for_artifact, storage_for_provider
 from app.storage.materialize import (
     materialize_object,
     parse_object_location,
@@ -43,7 +43,6 @@ def materialize_dataset(
 ) -> Iterator[Path]:
     """Yield a local path for `dataset` and delete any remote temp copy on exit."""
 
-    backend = storage or get_object_storage()
     row = artifact
     if row is None and dataset.artifact_id is not None:
         if db is None:
@@ -53,6 +52,7 @@ def materialize_dataset(
             raise ObjectNotFoundError(str(dataset.artifact_id))
 
     if row is not None:
+        backend = storage_for_artifact(row, storage=storage)
         expected = row.content_digest or dataset.content_digest
         filename = Path(row.object_key).name
         with materialize_object(
@@ -68,7 +68,8 @@ def materialize_dataset(
     location = dataset.location or ""
     parsed = parse_object_location(location)
     if parsed is not None:
-        _provider, key = parsed
+        provider, key = parsed
+        backend = storage_for_provider(provider, storage=storage)
         with materialize_object(
             backend,
             key,
@@ -113,7 +114,7 @@ def materialize_client_upload(
     if upload.artifact_id is not None:
         artifact = db.get(Artifact, upload.artifact_id)
         if artifact is not None:
-            backend = storage or get_object_storage()
+            backend = storage_for_artifact(artifact, storage=storage)
             with materialize_object(
                 backend,
                 artifact.object_key,

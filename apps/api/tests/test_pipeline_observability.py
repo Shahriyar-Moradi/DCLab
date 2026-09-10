@@ -383,7 +383,7 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     )
     assert llm_list.status_code == 200
     assert {row["purpose"] for row in llm_list.json()} >= {
-        "semantic_target",
+        "semantic_missing_value",
         "pipeline_audit_deep",
     }
     detail = admin_client.get(

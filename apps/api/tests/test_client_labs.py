@@ -279,7 +279,7 @@ def test_open_ingest_upload_returns_run_id_and_reload_works(auth_client, db_sess
     again = detail.json()
     assert again["run_id"] == run_id
     assert again["dataset_id"] == body["dataset_id"]
-    assert again["status"] in {"queued", "processing", "completed", "failed"}
+    assert again["status"] in {"queued", "processing", "completed", "failed", "needs_input"}
     assert find_banned_terms(detail.text) == []
 
 
@@ -536,7 +536,7 @@ def test_open_ingest_upload_detail_is_workspace_scoped_and_client_safe(auth_clie
     body = detail.json()
     assert body["id"] == upload_id
     assert body["run_id"] == upload_id
-    assert body["status"] in {"queued", "processing", "completed", "failed"}
+    assert body["status"] in {"queued", "processing", "completed", "failed", "needs_input"}
     assert body["progress"] in {"looking", "ready", "saved"}
     assert body["pipeline_status"]
     assert body["insights"] == []
@@ -579,6 +579,7 @@ def test_open_ingest_upload_stays_free_of_auto_train_pipeline_fields(auth_client
         "pipeline_status",
         "insights",
         "outcome",
+        "target_confirmation",
         "created_at",
     }
     assert body["progress"] in {"looking", "ready", "saved"}

@@ -18,7 +18,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 function isLabRunStatus(value: string): value is LabRunStatus {
-  return value === "queued" || value === "processing" || value === "completed" || value === "failed";
+  return (
+    value === "queued" ||
+    value === "processing" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "needs_input"
+  );
 }
 
 export function OpenDatasetPanel({ category }: { category: InsightCategoryValue }) {

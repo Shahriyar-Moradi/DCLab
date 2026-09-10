@@ -369,7 +369,9 @@ class Test5Failure:
         assert db_session.query(ClientLabUpload).count() == 0
         assert find_banned_terms(response.text) == []
 
-    def test_no_label_csv_fails_the_run_and_client_leaves_processing(self, auth_client, db_session, monkeypatch):
+    def test_no_label_csv_stays_unresolved_without_scientific_failure(
+        self, auth_client, db_session, monkeypatch
+    ):
         _disable_background_job(monkeypatch)
         frame = pd.DataFrame(
             {
@@ -387,32 +389,34 @@ class Test5Failure:
 
         run_auto_train_job(db_session, run_id)
         db_session.expire_all()
-        failed = auth_client.get(f"/app/labs/uploads/{run_id}")
-        body = failed.json()
-        assert body["status"] == "failed"
+        waiting = auth_client.get(f"/app/labs/uploads/{run_id}")
+        body = waiting.json()
+        assert body["status"] == "needs_input"
+        assert body["pipeline_status"] == "needs_input"
         assert body["outcome"] is None
+        assert body["target_confirmation"]["code"] == "target_confirmation_required"
         upload = db_session.get(ClientLabUpload, run_id)
-        assert upload.pipeline_status == "failed"
+        assert upload.pipeline_status == "needs_input"
         assert "target selection is ambiguous" in (upload.pipeline_log or {}).get("reason", "")
+        assert (upload.pipeline_log or {}).get("target", {}).get("status") == "unresolved"
         assert upload.experiment_id is not None
         workflow_run = db_session.scalar(
             select(WorkflowRun).where(WorkflowRun.source_upload_id == upload.id)
         )
         experiment = db_session.get(Experiment, upload.experiment_id)
         assert workflow_run is not None
-        assert workflow_run.status == "failed"
-        assert "target selection is ambiguous" in workflow_run.failure_reason
+        assert workflow_run.status == "running"
+        assert workflow_run.failure_reason is None
         assert experiment is not None
         assert experiment.workflow_run_id == workflow_run.id
-        assert experiment.status == "FAILED"
-        assert "target selection is ambiguous" in experiment.failure_reason
-        assert experiment.result["error"] == experiment.failure_reason
+        assert experiment.status != "FAILED"
+        assert experiment.failure_reason is None
         assert db_session.scalar(
             select(ModelVersion).where(ModelVersion.pipeline_run_id == experiment.id)
         ) is None
-        assert find_banned_terms(failed.text) == []
+        assert find_banned_terms(waiting.text) == []
         again = auth_client.get(f"/app/labs/uploads/{run_id}")
-        assert again.json()["status"] == "failed"
+        assert again.json()["status"] == "needs_input"
         assert again.json()["outcome"] is None
 
 

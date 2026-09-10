@@ -9,12 +9,21 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, request_workspace_id
 from app.db.models import User
 from app.db.session import get_db
-from app.domain.client_lab import ClientLabProblem, ClientLabQuotaRead, ClientLabRunRead, ClientLabUploadRead
+from app.domain.client_lab import (
+    ClientLabProblem,
+    ClientLabQuotaRead,
+    ClientLabRunRead,
+    ClientLabUploadRead,
+    TargetConfirmationSubmit,
+)
 from app.domain.errors import (
+    ExecutionNotWaitingError,
     IdentityError,
     OpenLabFileError,
     ProblemSpecNotFoundError,
     ProjectNotFoundError,
+    TargetIntentConflictError,
+    TargetNotInDatasetError,
     TrialDatasetColumnsError,
     TrialDatasetTooLargeError,
     TrialQuotaExceededError,
@@ -121,6 +130,10 @@ async def create_upload(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except OpenLabFileError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TargetNotInDatasetError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except TargetIntentConflictError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
     except IdentityError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except (ProjectNotFoundError, ProblemSpecNotFoundError) as exc:
@@ -161,6 +174,35 @@ def get_upload(
     if row is None:
         raise HTTPException(status_code=404, detail="file not found")
     return row
+
+
+@router.post(
+    "/uploads/{upload_id}/target-confirmation",
+    response_model=ClientLabUploadRead,
+)
+def confirm_upload_target(
+    upload_id: UUID,
+    payload: TargetConfirmationSubmit,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ClientLabUploadRead:
+    try:
+        return client_lab_upload_service.confirm_upload_target(
+            db,
+            user,
+            upload_id,
+            workspace_id=request_workspace_id(request),
+            target_column=payload.target_column,
+        )
+    except IdentityError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ExecutionNotWaitingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except TargetNotInDatasetError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except TargetIntentConflictError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
 
 
 @router.get("/uploads/{upload_id}/predictions.csv")
