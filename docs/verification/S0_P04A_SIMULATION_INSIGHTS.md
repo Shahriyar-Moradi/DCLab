@@ -2,7 +2,7 @@
 
 **Status:** CURRENT  
 **Plan/prompt:** S0-P04A  
-**Alembic head:** `0058_simulation_workspace`  
+**Canonical current head:** [`truth_baseline.json`](../../contracts/truth_baseline.json)
 **ADR:** [0004-simulation-insights-tenancy.md](../adr/0004-simulation-insights-tenancy.md)
 
 Tenant-scope `simulation_runs` with an honest empty backfill. Historical rows
@@ -19,6 +19,9 @@ The complete browser acceptance suite passed 18/18 against a fresh database at
 fail-closed behavior, and cross-tenant identifier rejection. The full
 backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
 
+The evidence block below preserves the original prompt measurement; its
+mechanical counts are historical, not a second CURRENT inventory.
+
 ```text
 Plan/prompt ID: S0-P04A
 Claim: /app/insights and simulation derivatives cannot expose another tenant; unowned historical rows are not assigned to a default workspace
@@ -28,7 +31,7 @@ Environment: local macOS, .venv CPython 3.12, Postgres 16 on localhost:5432
 Migration path tested: 0058_simulation_workspace; historical Alembic catalogs match
 Commands:
   .venv/bin/pytest -q --tb=line
-  .venv/bin/python -m scripts.check_truth_drift --write-snapshots
+  .venv/bin/python -m scripts.generate_truth_artifacts
   cd apps/web && ./node_modules/.bin/tsc --noEmit && npm run lint
 Expected result: two-workspace isolation; orphans 404; drift clean at 0058 / 66 tables / 167 ops
 Observed result: 1025 passed, 3 skipped, 21 warnings, 615.09s; drift all [clean]; tsc clean; lint 3 pre-existing model-build hook warnings

@@ -2,11 +2,12 @@
 
 **Program baseline date:** 2026-09-11
 **Repository:** `Shahriyar-Moradi/DCLab`
-**Reviewed product commit:** `c91b05a4e0f471f01a7c5989ade429281f79babe`
-**Documentation baseline:** `c91b05a4e0f471f01a7c5989ade429281f79babe`
-**Current `main` (S0-P01A baseline):** `c91b05a4e0f471f01a7c5989ade429281f79babe`
+**Reviewed product commit:** `3d54994e83283d34665f9589687108627284ab3f`
+**Documentation baseline:** `3d54994e83283d34665f9589687108627284ab3f`
+**Current Git facts:** use the stdout-only recorder and CURRENT verification report
 **Default branch:** `main`
-**Database head:** `0058_simulation_workspace`
+**Canonical database/API/inventory facts:** [`contracts/truth_baseline.json`](../../contracts/truth_baseline.json)
+and [`contracts/truth_manifest.json`](../../contracts/truth_manifest.json)
 **Current truth report:** `docs/verification/S0_P01A_CURRENT_TRUTH.md`
 **Authority:** this document orders future work; verified code and tests remain
 the authority for current behavior.
@@ -64,23 +65,22 @@ the current checkout, current evidence below wins.
 
 ### 3.1 Verified on this review
 
-S0-P01A re-measured the product/document baseline at `c91b05a`. Full ledger:
+S0-P01A re-measured the product/document baseline, now committed at `3d54994`. Full ledger:
 `docs/verification/S0_P01A_CURRENT_TRUTH.md`.
 
 | Evidence | Observed result |
 | --- | --- |
-| Git | clean baseline: `main` = `origin/main` at `c91b05a`, ahead 0 and behind 0; product and documentation SHAs both `c91b05a` |
-| GitHub CI | exact-SHA run **34519255834** failed at the repository-truth link parser; migrations passed and later regression/E2E steps were skipped. S0-P01A repairs the false positive locally; a green post-repair remote run requires commit/push. |
+| Git | committed baseline: `main` = `origin/main` at `3d54994`, ahead 0 and behind 0; use the recorder for later movement |
+| GitHub CI | exact-SHA status for the current commit is not inferred from the older `c91b05a` run; S0-P01D owns exact-SHA closure. |
 | Backend and SDK tests | `1031 passed, 1 skipped, 20 warnings` in 599.07s on the repaired working tree; isolated PostgreSQL enforcement tests ran. |
 | Frontend lint | exit 0 with three existing React hook dependency warnings and tooling notices. |
 | Frontend production build | succeeded; 31 static pages generated. |
 | Standalone TypeScript check | exit 0 when run before `next build`; do not race generated `.next` state. |
 | Local Playwright | fresh `0058` database: complete uninterrupted run `18 passed` in 1.6m after repairing session-cookie forwarding, bodyless 204 handling, and stale E2E locators. |
-| Alembic | one head: `0058_simulation_workspace` (58 revisions) |
-| Relational schema | 66 SQLAlchemy tables (`auth_sessions` and `auth_recovery_tokens` are identity-plane; PipelineRun remains `experiments`) |
-| HTTP surface | 167 OpenAPI operations, 160 paths, 13 `/v1` operations |
-| Repository scale | **805** tracked files; 452 Python files; 159 TS/TSX files; **114** test files |
-| Source size | 102,078 Python lines and 15,554 TS/TSX lines in the inspected working tree |
+| Alembic, repository scale, and source/test/web inventory | [`contracts/truth_baseline.json`](../../contracts/truth_baseline.json) is the sole generated CURRENT owner. |
+| Relational schema | [`contracts/sqlalchemy_tables.json`](../../contracts/sqlalchemy_tables.json) is the sole generated CURRENT table registry. |
+| HTTP and `/v1` surface | [`contracts/openapi_operations.json`](../../contracts/openapi_operations.json) and [`contracts/v1_openapi.json`](../../contracts/v1_openapi.json) are canonical. |
+| Generator provenance | [`contracts/truth_manifest.json`](../../contracts/truth_manifest.json) pins generator version, source SHA-256, and artifact digests. |
 
 ### 3.2 Established foundation to reuse
 

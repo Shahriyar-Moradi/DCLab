@@ -1,23 +1,36 @@
 # DCLab contract snapshots (S0-P01B)
 
-These JSON files are the mechanically verifiable public surface from
-`scripts.record_repo_truth` / FastAPI / SQLAlchemy / Alembic. CI fails when
-runtime facts drift from them.
+These JSON files are the canonical mechanically generated truth surface from
+FastAPI, SQLAlchemy, Alembic, the SDK, and the repository inventory. Exactly one
+writer owns them: `scripts.generate_truth_artifacts`. The recorder is read-only
+and the drift checker never rewrites an artifact.
 
-| File | What it pins |
+| File | Sole ownership |
 | --- | --- |
-| `v1_openapi.json` | Canonical `/v1` operations, parameters, request/response schema names, SDK DTO fields |
-| `openapi_operations.json` | Every public HTTP operation (`METHOD path`) |
+| `v1_openapi.json` | `/v1` parameter and request/response-shape compatibility plus the OpenAPI fields consumed by SDK DTO checks |
+| `openapi_operations.json` | Presence of every public HTTP operation (`METHOD path`), including `/v1` membership |
 | `sqlalchemy_tables.json` | SQLAlchemy mapped table names (PipelineRun remains `experiments`) |
-| `truth_baseline.json` | Head revision, revision count, table count, OpenAPI path/operation/`/v1` counts |
+| `truth_baseline.json` | Alembic head/revision aggregate, OpenAPI/table aggregate counts, and repository/source/test/web inventory |
+| `truth_manifest.json` | Generator name/version, SHA-256 of all non-generated non-ignored source paths and bytes, and SHA-256 digest of each artifact above |
+
+CURRENT documentation links to these artifacts instead of owning a second copy
+of their numbers. Historical reports keep their frozen measurements.
 
 ## Refresh snapshots
 
 After an **intentional** contract, schema, or `/v1` change:
 
 ```bash
-.venv/bin/python -m scripts.check_truth_drift --write-snapshots
+.venv/bin/python -m scripts.generate_truth_artifacts
+.venv/bin/python -m scripts.generate_truth_artifacts --check
+.venv/bin/python -m scripts.generate_truth_artifacts --verify-idempotent
 ```
+
+The manifest `source_sha` is a SHA-256 content digest, not a Git commit ID. It
+hashes the sorted paths and bytes returned by Git for tracked and non-ignored
+new files, excluding the generated outputs themselves. This avoids a
+self-referential commit hash while remaining identical before and after the
+files' first commit.
 
 Commit the snapshot diff in the **same** PR as the code change. The PR
 description must say whether the change is:
@@ -28,7 +41,9 @@ description must say whether the change is:
    Needs an explicit compatibility plan; do not refresh the snapshot silently
    to hide a removal.
 
-`python -m scripts.check_truth_drift` (no flags) is read-only.
+`python -m scripts.check_truth_drift` is read-only. CI generates twice, requires
+byte-identical output, requires `git diff --exit-code -- contracts/`, then runs
+the drift checker. None of these steps uses the network.
 
 `POST /auth/login` and `POST /auth/register` no longer return `access_token`
 (S0-P02A). API clients must use `POST /auth/tokens`. That is a **breaking**
@@ -56,11 +71,12 @@ python -m scripts.check_truth_drift --alembic-check
 ```
 
 That compares SQLAlchemy metadata to the migrated database (`alembic check`
-equivalent). Do not use `--write-snapshots` to skip a metadata mismatch.
+equivalent). Do not regenerate artifacts to hide a metadata mismatch.
 
 ## Reviewer checklist
 
 - Snapshot-only PRs with no product change are almost always accidental; reject.
-- `/v1` removals in `v1_openapi.json` / `openapi_operations.json` are breaking.
+- `/v1` operation removals in `openapi_operations.json` and shape changes in
+  `v1_openapi.json` are breaking.
 - Historical verification reports stay immutable. Status lives in
   `docs/verification/README.md`, not by rewriting old evidence.

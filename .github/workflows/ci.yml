@@ -65,6 +65,12 @@ jobs:
       - name: Run migrations
         run: alembic upgrade head
 
+      - name: Truth artifacts regenerate idempotently
+        run: python -m scripts.generate_truth_artifacts --verify-idempotent
+
+      - name: Truth regeneration leaves no diff
+        run: git diff --exit-code -- contracts/
+
       - name: Repository truth drift
         run: python -m scripts.check_truth_drift --alembic-check
 

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import subprocess
 from pathlib import Path
 
+from scripts.generate_truth_artifacts import verify_idempotent
 from scripts.record_repo_truth import collect as collect_repo_truth
 from scripts.truth_drift import (
     INSECURE_JWT_SECRET,
@@ -13,14 +17,17 @@ from scripts.truth_drift import (
     check_baseline_counts,
     check_current_status_docs,
     check_docs_links,
+    check_generated_artifacts,
     check_openapi_operations_snapshot,
     check_production_secrets,
     check_sdk_routes,
     check_sdk_types,
     check_table_snapshot,
+    check_tracked_generated_output,
     check_v1_openapi_snapshot,
     collect_reports,
     extract_sdk_v1_paths,
+    generated_file_contents,
     parse_alembic_revisions,
 )
 
@@ -174,6 +181,63 @@ def test_baseline_count_drift():
     assert any("openapi_operation_count" in item for item in report.problems)
 
 
+def test_stale_generated_artifact_is_detected():
+    report = check_generated_artifacts(
+        expected_files={"contracts/example.json": "expected\n"},
+        actual_files={"contracts/example.json": "stale\n"},
+    )
+    assert not report.ok
+    assert "contracts/example.json" in report.problems[0]
+    assert check_generated_artifacts(
+        expected_files={"contracts/example.json": "expected\n"},
+        actual_files={"contracts/example.json": "expected\n"},
+    ).ok
+
+
+def test_generated_manifest_has_source_sha_and_artifact_digests():
+    fixture_source_sha = "a" * 64
+    files = generated_file_contents(source_sha=fixture_source_sha)
+    manifest = json.loads(files["contracts/truth_manifest.json"])
+    assert manifest["generator"]["name"] == "scripts.generate_truth_artifacts"
+    assert manifest["generator"]["version"] == "1.0.0"
+    assert manifest["source_sha"] == fixture_source_sha
+    for rel, metadata in manifest["artifacts"].items():
+        assert metadata["sha256"] == hashlib.sha256(
+            files[rel].encode("utf-8")
+        ).hexdigest()
+
+
+def test_two_generations_are_identical_and_leave_a_clean_git_diff(tmp_path: Path):
+    assert verify_idempotent(output_root=tmp_path) == []
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "contracts"], cwd=tmp_path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Truth Fixture",
+            "-c",
+            "user.email=truth-fixture@invalid.example",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "fixture baseline",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    assert verify_idempotent(output_root=tmp_path) == []
+    clean = subprocess.run(
+        ["git", "diff", "--exit-code", "--", "contracts"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert clean.returncode == 0, clean.stdout + clean.stderr
+
+
 def test_docs_links_fail_on_missing_target(tmp_path: Path):
     page = tmp_path / "page.md"
     page.write_text("[missing](no-such-file.md)\n", encoding="utf-8")
@@ -263,6 +327,31 @@ def test_current_doc_with_wrong_head_is_contradiction(tmp_path: Path):
     assert any("0027_repair_legacy_tenant_lineage" in item for item in report.problems)
 
 
+def test_current_indexes_can_delegate_head_to_canonical_artifact(tmp_path: Path):
+    truth = tmp_path / "current.md"
+    truth.write_text(
+        "**Status:** CURRENT\n[truth](contracts/truth_baseline.json)\n",
+        encoding="utf-8",
+    )
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(
+        "S0_P01A_CURRENT_TRUTH.md HISTORICAL truth_baseline.json\n",
+        encoding="utf-8",
+    )
+    historical = tmp_path / "old.md"
+    historical.write_text("> **Status: HISTORICAL.**\n", encoding="utf-8")
+    report = check_current_status_docs(
+        repo_root=tmp_path,
+        expected_head="0058_simulation_workspace",
+        historical_files=["old.md"],
+        current_truth=truth,
+        ledger=ledger,
+        index=ledger,
+        current_scan_files=[],
+    )
+    assert report.ok
+
+
 def test_current_truth_must_name_current_product_sha(tmp_path: Path):
     truth = tmp_path / "current.md"
     truth.write_text(
@@ -340,6 +429,19 @@ def test_insecure_secret_in_compose_is_rejected(tmp_path: Path):
     )
     assert not report.ok
     assert any("docker-compose.yml" in item for item in report.problems)
+
+
+def test_tracked_runtime_artifacts_are_detected_with_bounded_fixture():
+    object_store, playwright = check_tracked_generated_output(
+        object_store_rule_present=False,
+        tracked_object_store=["data/object_store/private.csv"],
+        playwright_missing_rules=["apps/web/playwright-report/"],
+        tracked_playwright=["apps/web/test-results/trace.zip"],
+    )
+    assert not object_store.ok
+    assert "private.csv" in " ".join(object_store.problems)
+    assert not playwright.ok
+    assert "trace.zip" in " ".join(playwright.problems)
 
 
 def test_alembic_metadata_reports_synthetic_diffs():

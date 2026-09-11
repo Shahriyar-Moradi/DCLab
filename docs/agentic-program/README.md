@@ -2,7 +2,7 @@
 
 This directory is the executable program of work for evolving DCLab from the
 verified deterministic platform at product/document baseline
-`c91b05a4e0f471f01a7c5989ade429281f79babe`; see
+`3d54994e83283d34665f9589687108627284ab3f`; see
 [`../verification/S0_P01A_CURRENT_TRUTH.md`](../verification/S0_P01A_CURRENT_TRUTH.md)
 into a secure, scalable, agentic decision-intelligence product.
 

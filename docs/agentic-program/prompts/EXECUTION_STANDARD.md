@@ -26,7 +26,7 @@ Inspect these existing surfaces before inventing a new path:
 | Web application | `apps/web/app/`, `apps/web/lib/application/`, `apps/web/lib/infrastructure/api-client.ts` | Use the existing App Router, query/session providers, UI primitives, and BFF. |
 | Backend tests | `apps/api/tests/` | Use real PostgreSQL fixtures from `conftest.py` for tenancy, constraints, leases, concurrency, and migrations. |
 | Browser tests | `apps/web/e2e/` | Test user-visible security and workflow boundaries through the BFF. |
-| Truth/docs | `scripts/record_repo_truth.py`, `scripts/check_truth_drift.py`, `docs/verification/` | Update generated/current facts only through the reproducible truth workflow. |
+| Truth/docs | `scripts/generate_truth_artifacts.py`, `scripts/record_repo_truth.py`, `scripts/check_truth_drift.py`, `contracts/`, `docs/verification/` | Only the generator writes checked artifacts; the recorder/checker are read-only. Update CURRENT prose by linking to canonical artifacts. |
 
 If the listed path changes before a prompt is run, the coding agent must locate
 its current replacement with `rg`, record the substitution in the evidence,

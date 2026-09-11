@@ -1,11 +1,9 @@
 """Read-only recorder for mechanically observable repository facts.
 
-Default: print JSON to stdout. Does not mutate git, databases, or application
-files. Optional ``--output PATH`` writes the same JSON (still an artifact, not
-an application change).
+Print JSON to stdout. This command does not mutate Git, databases, application
+files, or canonical artifacts.
 
     python -m scripts.record_repo_truth
-    python -m scripts.record_repo_truth --output artifacts/repo-truth.json
 """
 
 from __future__ import annotations
@@ -40,6 +38,7 @@ PRODUCT_PATHS: tuple[str, ...] = (
     "pyproject.toml",
     "scripts",
     ":(exclude)scripts/check_truth_drift.py",
+    ":(exclude)scripts/generate_truth_artifacts.py",
     ":(exclude)scripts/record_repo_truth.py",
     ":(exclude)scripts/truth_drift.py",
 )
@@ -50,6 +49,7 @@ DOCUMENTATION_PATHS: tuple[str, ...] = (
     "contracts",
     "docs",
     "scripts/check_truth_drift.py",
+    "scripts/generate_truth_artifacts.py",
     "scripts/record_repo_truth.py",
     "scripts/truth_drift.py",
 )
@@ -195,62 +195,14 @@ def _openapi_facts() -> dict[str, object]:
 
 
 def _inventory_facts() -> dict[str, object]:
-    files = _run(["git", "ls-files"]).splitlines()
-    by_ext: Counter[str] = Counter()
-    python_lines = 0
-    ts_lines = 0
-    backend_py: list[str] = []
-    frontend_ts: list[str] = []
-    tests: list[str] = []
-    packages: list[str] = []
-    for rel in files:
-        path = Path(rel)
-        suffix = path.suffix.lower() or "<none>"
-        by_ext[suffix] += 1
-        if suffix == ".py":
-            python_lines += _line_count(REPO_ROOT / path)
-            if rel.startswith("apps/api/"):
-                backend_py.append(rel)
-            if "/tests/" in rel or rel.startswith("apps/web/e2e/"):
-                tests.append(rel)
-        if suffix in {".ts", ".tsx"}:
-            ts_lines += _line_count(REPO_ROOT / path)
-            if rel.startswith("apps/web/"):
-                frontend_ts.append(rel)
-            if rel.startswith("apps/web/e2e/") or rel.endswith(".spec.ts"):
-                tests.append(rel)
-        if rel.startswith("packages/"):
-            packages.append(rel)
+    from scripts.truth_drift import repository_inventory
 
-    package_roots = sorted(
-        {Path(rel).parts[1] for rel in packages if len(Path(rel).parts) > 1}
-    )
-    backend_tests = [p for p in tests if p.startswith("apps/api/tests/")]
-    sdk_tests = [p for p in tests if p.startswith("packages/dclab_client/tests/")]
-    web_e2e = [p for p in tests if p.startswith("apps/web/e2e/")]
-    return {
-        "tracked_file_count": len(files),
-        "python_file_count": by_ext.get(".py", 0),
-        "ts_tsx_file_count": by_ext.get(".ts", 0) + by_ext.get(".tsx", 0),
-        "python_line_count": python_lines,
-        "ts_tsx_line_count": ts_lines,
-        "backend_python_file_count": len(backend_py),
-        "frontend_ts_tsx_file_count": len(frontend_ts),
-        "test_file_count": len(sorted(set(tests))),
-        "backend_test_file_count": len(backend_tests),
-        "sdk_test_file_count": len(sdk_tests),
-        "web_e2e_file_count": len(web_e2e),
-        "package_roots": package_roots,
-        "package_file_count": len(packages),
-        "extension_counts": dict(sorted(by_ext.items())),
-    }
-
-
-def _line_count(path: Path) -> int:
-    try:
-        return sum(1 for _ in path.open("rb"))
-    except OSError:
-        return 0
+    inventory = repository_inventory()
+    # Retain the recorder's public key for compatibility. The canonical checked
+    # artifact names this value repository_file_count because uncommitted,
+    # non-ignored files are intentionally included before their first commit.
+    inventory["tracked_file_count"] = inventory.pop("repository_file_count")
+    return inventory
 
 
 def collect() -> dict[str, object]:
@@ -268,18 +220,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Record read-only DCLab repository truth facts."
     )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="Optional JSON path. Default is stdout only.",
-    )
-    args = parser.parse_args()
+    parser.parse_args()
     payload = collect()
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(text, encoding="utf-8")
     sys.stdout.write(text)
     return 0
 

@@ -2,7 +2,7 @@
 
 **Status:** CURRENT  
 **Plan/prompt:** S0-P03A  
-**Alembic head:** `0058_simulation_workspace`  
+**Canonical current head:** [`truth_baseline.json`](../../contracts/truth_baseline.json)
 **ADR:** [0003-workspace-selection.md](../adr/0003-workspace-selection.md)
 
 One active-workspace contract for browser and API. The selector is never
@@ -18,6 +18,9 @@ The complete browser acceptance suite passed 18/18 against a fresh database at
 `0058_simulation_workspace`, including the visible active-workspace selector,
 session persistence, role-aware routes, and foreign-workspace rejection. The
 full backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
+
+The evidence block below preserves the original prompt measurement; its
+mechanical counts are historical, not a second CURRENT inventory.
 
 ```text
 Plan/prompt ID: S0-P03A

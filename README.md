@@ -93,3 +93,5 @@ not omitted from the program.
 See `docs/` for architecture, experimentation, leakage, and reporting.
 Current verification facts:
 [`docs/verification/S0_P01A_CURRENT_TRUTH.md`](docs/verification/S0_P01A_CURRENT_TRUTH.md).
+Canonical generated database/API/repository facts and their provenance:
+[`contracts/README.md`](contracts/README.md).

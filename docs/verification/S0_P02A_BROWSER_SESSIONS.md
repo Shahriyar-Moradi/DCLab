@@ -2,7 +2,7 @@
 
 **Status:** CURRENT  
 **Plan/prompt:** S0-P02A  
-**Alembic head:** `0058_simulation_workspace`  
+**Canonical current head:** [`truth_baseline.json`](../../contracts/truth_baseline.json)
 **ADR:** [0001-browser-session-bff.md](../adr/0001-browser-session-bff.md)
 
 Replaces the JavaScript-readable `dclab_token` bearer cookie with an opaque
@@ -22,6 +22,9 @@ inferring `Secure` from Next.js production mode, and it emits `null` bodies for
 cookies. Focused session Playwright passed 5/5 and the complete browser suite
 passed 18/18 against a fresh database at `0058_simulation_workspace`. The full
 backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
+
+The evidence block below preserves the original prompt measurement; its
+mechanical counts are historical, not a second CURRENT inventory.
 
 ```text
 Plan/prompt ID: S0-P02A

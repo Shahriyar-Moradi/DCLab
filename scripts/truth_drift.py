@@ -7,6 +7,7 @@ migrate databases or change application files.
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import re
@@ -22,6 +23,17 @@ V1_SNAPSHOT = CONTRACTS_DIR / "v1_openapi.json"
 OPERATIONS_SNAPSHOT = CONTRACTS_DIR / "openapi_operations.json"
 TABLES_SNAPSHOT = CONTRACTS_DIR / "sqlalchemy_tables.json"
 BASELINE_SNAPSHOT = CONTRACTS_DIR / "truth_baseline.json"
+MANIFEST_SNAPSHOT = CONTRACTS_DIR / "truth_manifest.json"
+
+GENERATOR_NAME = "scripts.generate_truth_artifacts"
+GENERATOR_VERSION = "1.0.0"
+GENERATED_ARTIFACTS: tuple[str, ...] = (
+    "contracts/v1_openapi.json",
+    "contracts/openapi_operations.json",
+    "contracts/sqlalchemy_tables.json",
+    "contracts/truth_baseline.json",
+)
+GENERATED_OUTPUTS: tuple[str, ...] = (*GENERATED_ARTIFACTS, "contracts/truth_manifest.json")
 
 INSECURE_JWT_SECRET = "dev-only-insecure-secret-change-me"
 PRODUCTION_ENV_VALUES = {"production", "prod"}
@@ -98,6 +110,95 @@ def _git_ls_files(*args: str) -> list[str]:
         err = (result.stderr or result.stdout).decode().strip() or f"exit {result.returncode}"
         raise RuntimeError(f"git ls-files failed: {err}")
     return [path for path in result.stdout.decode().split("\0") if path]
+
+
+def repository_files(*, repo_root: Path = REPO_ROOT) -> list[str]:
+    """Return the deterministic version-controlled worktree candidate set.
+
+    Non-ignored new files are included so regeneration before and after their
+    first commit produces the same inventory. Deleted tracked files are omitted.
+    Generated outputs are explicit so the first generation is also stable.
+    """
+
+    result = subprocess.run(
+        ["git", "ls-files", "-co", "--exclude-standard", "-z"],
+        cwd=repo_root,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout).decode().strip() or f"exit {result.returncode}"
+        raise RuntimeError(f"git ls-files failed: {err}")
+    found = {
+        rel
+        for rel in result.stdout.decode().split("\0")
+        if rel and (repo_root / rel).is_file()
+    }
+    found.update(GENERATED_OUTPUTS)
+    return sorted(found)
+
+
+def repository_inventory(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    files = repository_files(repo_root=repo_root)
+    extension_counts: Counter[str] = Counter()
+    python_lines = 0
+    ts_lines = 0
+    tests: set[str] = set()
+    package_files: list[str] = []
+    backend_python = 0
+    frontend_ts_tsx = 0
+    for rel in files:
+        path = Path(rel)
+        suffix = path.suffix.lower() or "<none>"
+        extension_counts[suffix] += 1
+        absolute = repo_root / rel
+        if suffix == ".py":
+            python_lines += _line_count(absolute)
+            if rel.startswith("apps/api/"):
+                backend_python += 1
+            if "/tests/" in rel:
+                tests.add(rel)
+        if suffix in {".ts", ".tsx"}:
+            ts_lines += _line_count(absolute)
+            if rel.startswith("apps/web/"):
+                frontend_ts_tsx += 1
+            if rel.startswith("apps/web/e2e/") or rel.endswith(".spec.ts"):
+                tests.add(rel)
+        if rel.startswith("packages/"):
+            package_files.append(rel)
+    package_roots = sorted(
+        {Path(rel).parts[1] for rel in package_files if len(Path(rel).parts) > 1}
+    )
+    return {
+        "repository_file_count": len(files),
+        "python_file_count": extension_counts.get(".py", 0),
+        "ts_tsx_file_count": extension_counts.get(".ts", 0)
+        + extension_counts.get(".tsx", 0),
+        "python_line_count": python_lines,
+        "ts_tsx_line_count": ts_lines,
+        "backend_python_file_count": backend_python,
+        "frontend_ts_tsx_file_count": frontend_ts_tsx,
+        "test_file_count": len(tests),
+        "backend_test_file_count": len(
+            [path for path in tests if path.startswith("apps/api/tests/")]
+        ),
+        "sdk_test_file_count": len(
+            [path for path in tests if path.startswith("packages/dclab_client/tests/")]
+        ),
+        "web_e2e_file_count": len(
+            [path for path in tests if path.startswith("apps/web/e2e/")]
+        ),
+        "package_roots": package_roots,
+        "package_file_count": len(package_files),
+        "extension_counts": dict(sorted(extension_counts.items())),
+    }
+
+
+def _line_count(path: Path) -> int:
+    try:
+        return sum(1 for _ in path.open("rb"))
+    except OSError:
+        return 0
 
 
 def _literal(node: ast.AST) -> Any:
@@ -245,7 +346,7 @@ def check_table_snapshot(
         problems.append("SQLAlchemy tables missing versus snapshot: " + ", ".join(missing))
     if extra:
         problems.append(
-            "SQLAlchemy tables added versus snapshot (refresh contracts/sqlalchemy_tables.json if intentional): "
+            "SQLAlchemy tables added versus snapshot (run `python -m scripts.generate_truth_artifacts` if intentional): "
             + ", ".join(extra)
         )
     return DriftReport("model_migration_tables", problems)
@@ -350,7 +451,7 @@ def check_v1_openapi_snapshot(
             [
                 "runtime /v1 OpenAPI snapshot drifted from contracts/v1_openapi.json; "
                 "if this is an intentional contract change, refresh with "
-                "`python -m scripts.check_truth_drift --write-snapshots` and explain "
+                "`python -m scripts.generate_truth_artifacts` and explain "
                 "the snapshot diff in the PR"
             ],
         )
@@ -377,7 +478,7 @@ def check_openapi_operations_snapshot(
         )
     if added:
         problems.append(
-            "public API operations added versus snapshot (refresh contracts/openapi_operations.json if intentional): "
+            "public API operations added versus snapshot (run `python -m scripts.generate_truth_artifacts` if intentional): "
             + ", ".join(added)
         )
     return DriftReport("openapi_operations", problems)
@@ -472,6 +573,7 @@ def check_baseline_counts(
     path_count: int | None = None,
     operation_count: int | None = None,
     v1_count: int | None = None,
+    inventory: Mapping[str, Any] | None = None,
 ) -> DriftReport:
     expected = baseline if baseline is not None else _load_json(BASELINE_SNAPSHOT)
     records = parse_alembic_revisions()
@@ -506,7 +608,14 @@ def check_baseline_counts(
         if expected.get(key) != value:
             problems.append(
                 f"truth baseline {key} expected {expected.get(key)!r} got {value!r}; "
-                "refresh contracts/truth_baseline.json if intentional"
+                "run `python -m scripts.generate_truth_artifacts` if intentional"
+            )
+    if "inventory" in expected:
+        live_inventory = dict(inventory) if inventory is not None else repository_inventory()
+        if expected.get("inventory") != live_inventory:
+            problems.append(
+                "repository inventory drifted from contracts/truth_baseline.json; "
+                "refresh with `python -m scripts.generate_truth_artifacts`"
             )
     return DriftReport("truth_baseline", problems)
 
@@ -556,7 +665,11 @@ def check_docs_links(
     markdown = (
         list(files)
         if files is not None
-        else [REPO_ROOT / rel for rel in _git_ls_files("*.md") if rel.endswith(".md")]
+        else [
+            REPO_ROOT / rel
+            for rel in repository_files()
+            if rel.endswith(".md")
+        ]
     )
     problems: list[str] = []
     root = repo_root.resolve()
@@ -600,8 +713,11 @@ def check_current_status_docs(
     truth_text = truth.read_text(encoding="utf-8")
     if "CURRENT" not in "\n".join(truth_text.splitlines()[:12]):
         problems.append(f"{CURRENT_TRUTH_REL} must be marked CURRENT")
-    if head not in truth_text:
-        problems.append(f"{CURRENT_TRUTH_REL} must name Alembic head {head}")
+    if head not in truth_text and "truth_baseline.json" not in truth_text:
+        problems.append(
+            f"{CURRENT_TRUTH_REL} must name Alembic head {head} or link to "
+            "contracts/truth_baseline.json"
+        )
     # A Markdown file cannot embed the hash of the commit that contains it.
     # Accept that unavoidable case only when the same commit is both the latest
     # product change and the latest CURRENT-truth change. A later product-only
@@ -626,12 +742,15 @@ def check_current_status_docs(
             problems.append(f"{rel} must point at the current truth report")
         if "HISTORICAL" not in text:
             problems.append(f"{rel} must mark older reports HISTORICAL")
-        if head not in text:
-            problems.append(f"{rel} must name Alembic head {head}")
+        if head not in text and "truth_baseline.json" not in text:
+            problems.append(
+                f"{rel} must name Alembic head {head} or link to "
+                "contracts/truth_baseline.json"
+            )
     scan = (
         list(current_scan_files)
         if current_scan_files is not None
-        else _git_ls_files("*.md")
+        else [rel for rel in repository_files() if rel.endswith(".md")]
     )
     for rel in scan:
         path = repo_root / rel
@@ -667,7 +786,7 @@ def check_production_secrets(
     files = (
         list(tracked_files)
         if tracked_files is not None
-        else _git_ls_files()
+        else repository_files(repo_root=repo_root)
     )
     for rel in files:
         if insecure_secret_allowlisted(rel):
@@ -704,7 +823,13 @@ def check_production_secrets(
     return DriftReport("production_secrets", problems)
 
 
-def check_tracked_generated_output() -> list[DriftReport]:
+def check_tracked_generated_output(
+    *,
+    object_store_rule_present: bool | None = None,
+    tracked_object_store: Sequence[str] | None = None,
+    playwright_missing_rules: Sequence[str] | None = None,
+    tracked_playwright: Sequence[str] | None = None,
+) -> list[DriftReport]:
     from scripts.check_object_store_untracked import (
         gitignore_has_object_store_rule,
         tracked_object_store_paths,
@@ -715,16 +840,33 @@ def check_tracked_generated_output() -> list[DriftReport]:
     )
 
     object_store = DriftReport("object_store_untracked")
-    if not gitignore_has_object_store_rule():
+    has_object_store_rule = (
+        gitignore_has_object_store_rule()
+        if object_store_rule_present is None
+        else object_store_rule_present
+    )
+    if not has_object_store_rule:
         object_store.problems.append(".gitignore missing data/object_store/**")
-    tracked = tracked_object_store_paths()
+    tracked = (
+        tracked_object_store_paths()
+        if tracked_object_store is None
+        else list(tracked_object_store)
+    )
     if tracked:
         object_store.problems.append("tracked object-store files: " + ", ".join(tracked[:20]))
     playwright = DriftReport("playwright_untracked")
-    missing = gitignore_has_playwright_rules()
+    missing = (
+        gitignore_has_playwright_rules()
+        if playwright_missing_rules is None
+        else list(playwright_missing_rules)
+    )
     if missing:
         playwright.problems.append(".gitignore missing: " + ", ".join(missing))
-    tracked_pw = tracked_playwright_paths()
+    tracked_pw = (
+        tracked_playwright_paths()
+        if tracked_playwright is None
+        else list(tracked_playwright)
+    )
     if tracked_pw:
         playwright.problems.append(
             "tracked Playwright files: " + ", ".join(tracked_pw[:20])
@@ -788,6 +930,7 @@ def collect_reports(*, include_alembic_metadata: bool = False) -> list[DriftRepo
         check_sdk_routes(),
         check_sdk_types(),
         check_baseline_counts(),
+        check_generated_artifacts(),
         check_docs_links(),
         check_current_status_docs(
             expected_product_sha=latest_commit_for_paths(PRODUCT_PATHS),
@@ -801,31 +944,105 @@ def collect_reports(*, include_alembic_metadata: bool = False) -> list[DriftRepo
     return reports
 
 
-def write_snapshots() -> None:
-    CONTRACTS_DIR.mkdir(parents=True, exist_ok=True)
+def snapshot_payloads() -> dict[str, object]:
+    """Build every canonical fact artifact from the live source tree."""
+
     schema = _openapi_schema()
     tables = sqlalchemy_table_names()
     records = parse_alembic_revisions()
     ops = openapi_operation_list(schema)
     v1_ops = [item for item in ops if item.split(" ", 1)[1].startswith("/v1")]
-    V1_SNAPSHOT.write_text(
-        _json_dump(canonicalize_v1_openapi(schema)), encoding="utf-8"
-    )
-    OPERATIONS_SNAPSHOT.write_text(_json_dump(ops), encoding="utf-8")
-    TABLES_SNAPSHOT.write_text(_json_dump(tables), encoding="utf-8")
-    BASELINE_SNAPSHOT.write_text(
-        _json_dump(
-            {
-                "alembic_heads": _heads(records),
-                "alembic_revision_count": len(records),
-                "sqlalchemy_table_count": len(tables),
-                "openapi_path_count": len(schema.get("paths") or {}),
-                "openapi_operation_count": len(ops),
-                "v1_operation_count": len(v1_ops),
-            }
-        ),
-        encoding="utf-8",
-    )
+    return {
+        "contracts/v1_openapi.json": canonicalize_v1_openapi(schema),
+        "contracts/openapi_operations.json": ops,
+        "contracts/sqlalchemy_tables.json": tables,
+        "contracts/truth_baseline.json": {
+            "alembic_heads": _heads(records),
+            "alembic_revision_count": len(records),
+            "sqlalchemy_table_count": len(tables),
+            "openapi_path_count": len(schema.get("paths") or {}),
+            "openapi_operation_count": len(ops),
+            "v1_operation_count": len(v1_ops),
+            "inventory": repository_inventory(),
+        },
+    }
+
+
+def source_sha256(*, repo_root: Path = REPO_ROOT) -> str:
+    """Hash all non-generated, non-ignored source paths and bytes."""
+
+    digest = hashlib.sha256()
+    generated = set(GENERATED_OUTPUTS)
+    for rel in repository_files(repo_root=repo_root):
+        if rel in generated:
+            continue
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update((repo_root / rel).read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def generated_file_contents(
+    *, source_sha: str | None = None
+) -> dict[str, str]:
+    rendered = {
+        rel: _json_dump(payload) for rel, payload in snapshot_payloads().items()
+    }
+    artifacts = {
+        rel: {"sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
+        for rel, text in sorted(rendered.items())
+    }
+    manifest = {
+        "schema_version": 1,
+        "generator": {"name": GENERATOR_NAME, "version": GENERATOR_VERSION},
+        "source_sha": source_sha or source_sha256(),
+        "source_sha_algorithm": "sha256",
+        "artifacts": artifacts,
+    }
+    return {**rendered, "contracts/truth_manifest.json": _json_dump(manifest)}
+
+
+def check_generated_artifacts(
+    *,
+    expected_files: Mapping[str, str] | None = None,
+    actual_files: Mapping[str, str | None] | None = None,
+) -> DriftReport:
+    expected = dict(expected_files) if expected_files is not None else generated_file_contents()
+    if actual_files is None:
+        actual: dict[str, str | None] = {
+            rel: (REPO_ROOT / rel).read_text(encoding="utf-8")
+            if (REPO_ROOT / rel).is_file()
+            else None
+            for rel in expected
+        }
+    else:
+        actual = dict(actual_files)
+    problems: list[str] = []
+    for rel, expected_text in sorted(expected.items()):
+        if actual.get(rel) is None:
+            problems.append(f"missing generated truth artifact: {rel}")
+        elif actual.get(rel) != expected_text:
+            problems.append(
+                f"stale generated truth artifact: {rel}; refresh with "
+                "`python -m scripts.generate_truth_artifacts`"
+            )
+    return DriftReport("generated_truth_artifacts", problems)
+
+
+def write_snapshots(
+    *,
+    output_root: Path = REPO_ROOT,
+    files: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Write the complete generated set; called only by the generator CLI."""
+
+    rendered = dict(files) if files is not None else generated_file_contents()
+    for rel, text in sorted(rendered.items()):
+        path = output_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return rendered
 
 
 def format_reports(reports: Iterable[DriftReport]) -> tuple[str, int]:

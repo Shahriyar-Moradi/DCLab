@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run worker web up down sim users truth-drift
+.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -58,8 +58,16 @@ seed:
 test:
 	$(PYTEST) --cov=app --cov-report=term-missing
 
-truth-drift:
+truth-check:
 	$(PYTHON) -m scripts.check_truth_drift
+
+truth-drift: truth-check
+
+truth-generate:
+	$(PYTHON) -m scripts.generate_truth_artifacts
+
+truth-idempotence:
+	$(PYTHON) -m scripts.generate_truth_artifacts --verify-idempotent
 
 # Local API. Default dispatcher is postgres (persist and return). That leaves
 # CSV uploads on Queued unless a worker claims them — so `make run` uses the

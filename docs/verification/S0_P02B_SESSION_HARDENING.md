@@ -2,7 +2,7 @@
 
 **Status:** CURRENT  
 **Plan/prompt:** S0-P02B  
-**Alembic head:** `0058_simulation_workspace`  
+**Canonical current head:** [`truth_baseline.json`](../../contracts/truth_baseline.json)
 **ADR:** [0002-session-csrf-csp-abuse.md](../adr/0002-session-csrf-csp-abuse.md)
 
 Hardens the S0-P02A HttpOnly BFF session: CSRF + trusted Origin on cookie
@@ -19,6 +19,9 @@ all pass through the real browser/BFF path (5/5 focused). The complete browser
 acceptance suite passes 18/18, including role-aware routing, capability
 fail-closed behavior, and tenant substitution rejection. The full backend/SDK
 regression passes 1,031 tests with one live-OpenAI skip.
+
+The evidence block below preserves the original prompt measurement; its
+mechanical counts are historical, not a second CURRENT inventory.
 
 ```text
 Plan/prompt ID: S0-P02B
