@@ -34,12 +34,12 @@ Refresh rules and reviewer guidance: [`contracts/README.md`](../../contracts/REA
 | `model_migration_tables` | SQLAlchemy tables match snapshot (includes `auth_sessions`) | add/remove table name |
 | `alembic_metadata` | CI after `alembic upgrade head`; also `test_historical_alembic_revisions.py` | injected `add_table` diff |
 | `v1_openapi_snapshot` | canonical `/v1` JSON | missing `/v1/me` |
-| `openapi_operations` | 157 `METHOD path` rows | remove `POST /v1/execution-requests`; add `/v1/new` |
+| `openapi_operations` | 167 `METHOD path` rows | remove `POST /v1/execution-requests`; add `/v1/new` |
 | `sdk_routes` | every SDK `/v1` template matches OpenAPI | SDK path not in API; API path not in SDK |
 | `sdk_types` | SDK DTO fields match OpenAPI components | required field `role` dropped from SDK |
 | `truth_baseline` | heads/counts in `contracts/truth_baseline.json` | operation count 999 |
-| `docs_links` | tracked markdown local targets exist | `[x](no-such-file.md)` |
-| `current_status_docs` | HISTORICAL banners + CURRENT names 0054 | CURRENT doc naming `0027_*` |
+| `docs_links` | tracked Markdown local targets exist; examples in inline/fenced code are ignored | a real link to a missing file |
+| `current_status_docs` | HISTORICAL banners + CURRENT head `0058` + latest product lineage | CURRENT doc naming `0027_*` or a stale product SHA; a combined product/evidence commit is accepted only when it is the latest commit for both |
 | `production_secrets` | default JWT only in allowlisted local files | `DCLAB_ENV=production` + default JWT; secret in `docker-compose.yml` |
 | object-store / Playwright | existing gitignore guards | already covered by `test_object_store_git_guard.py` |
 
@@ -53,10 +53,12 @@ the same PR, with the PR stating additive vs breaking. Reviewers read
 `contracts/*.json` the way they read an OpenAPI changelog. Do not “fix” CI by
 rewriting historical reports.
 
-Known limitation: `apps/web/middleware.ts` still falls back to the development
-JWT secret. That is allowlisted here and remains Scope 0.2 (S0-P02) work.
 `--alembic-check` against an unmigrated local `decisionai` database is a false
-positive; CI migrates first.
+positive; CI migrates first. Link-shaped strings in Markdown code examples are
+not links and are excluded from the link check. Because a document cannot
+contain the hash of the commit that contains that document, the lineage guard
+accepts a non-embedded product SHA only when the same commit is also the latest
+change to the CURRENT truth file; the next product-only commit fails normally.
 
 ## Evidence
 
@@ -68,8 +70,8 @@ Environment: local .venv CPython 3.12.13; pytest does not require --alembic-chec
 Commands:
   python -m scripts.check_truth_drift
   pytest -q apps/api/tests/test_truth_drift.py
-Expected result: CLI all [clean]; 18 pytest passed
-Observed result: CLI all [clean]; 18 passed
+Expected result: CLI all [clean]; focused pytest passes
+Observed result: CLI all [clean]; 22 passed, 1 warning
 Artifact: contracts/*.json ; docs/verification/S0_P01B_TRUTH_DRIFT.md
 Security and tenant checks: production default JWT rejected when DCLAB_ENV=production; no tenant behavior change
 Rollback/kill switch: revert this prompt's scripts, contracts, CI step, and tests

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.record_repo_truth import collect as collect_repo_truth
 from scripts.truth_drift import (
     INSECURE_JWT_SECRET,
     alembic_graph_problems,
@@ -22,6 +23,15 @@ from scripts.truth_drift import (
     extract_sdk_v1_paths,
     parse_alembic_revisions,
 )
+
+
+def test_repo_truth_is_deterministic_and_records_lineage_shas():
+    first = collect_repo_truth()
+    second = collect_repo_truth()
+    assert first == second
+    assert "recorded_at" not in first
+    assert first["git"]["product_sha"]
+    assert first["git"]["documentation_sha"]
 
 
 def test_drift_checks_pass_on_current_tree():
@@ -181,6 +191,17 @@ def test_docs_links_pass_on_existing_relative_target(tmp_path: Path):
     assert report.ok
 
 
+def test_docs_links_ignore_link_examples_in_code(tmp_path: Path):
+    page = tmp_path / "page.md"
+    page.write_text(
+        "`[inline](inline-missing.md)`\n\n"
+        "```text\n[fenced](fenced-missing.md)\n```\n",
+        encoding="utf-8",
+    )
+    report = check_docs_links([page], repo_root=tmp_path)
+    assert report.ok
+
+
 def test_historical_banner_required(tmp_path: Path):
     hist = tmp_path / "old.md"
     hist.write_text("# Old report\nAlembic 0027\n", encoding="utf-8")
@@ -240,6 +261,60 @@ def test_current_doc_with_wrong_head_is_contradiction(tmp_path: Path):
     )
     assert not report.ok
     assert any("0027_repair_legacy_tenant_lineage" in item for item in report.problems)
+
+
+def test_current_truth_must_name_current_product_sha(tmp_path: Path):
+    truth = tmp_path / "current.md"
+    truth.write_text(
+        "**Status:** CURRENT\n0058_simulation_workspace\nold-sha\n",
+        encoding="utf-8",
+    )
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(
+        "S0_P01A_CURRENT_TRUTH.md HISTORICAL 0058_simulation_workspace\n",
+        encoding="utf-8",
+    )
+    historical = tmp_path / "old.md"
+    historical.write_text("> **Status: HISTORICAL.**\n", encoding="utf-8")
+    report = check_current_status_docs(
+        repo_root=tmp_path,
+        expected_head="0058_simulation_workspace",
+        expected_product_sha="current-product-sha",
+        historical_files=["old.md"],
+        current_truth=truth,
+        ledger=ledger,
+        index=ledger,
+        current_scan_files=[],
+    )
+    assert not report.ok
+    assert any("current-product-sha" in item for item in report.problems)
+
+
+def test_current_truth_can_cover_the_product_commit_that_contains_it(tmp_path: Path):
+    truth = tmp_path / "current.md"
+    truth.write_text(
+        "**Status:** CURRENT\n0058_simulation_workspace\nparent-product-sha\n",
+        encoding="utf-8",
+    )
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(
+        "S0_P01A_CURRENT_TRUTH.md HISTORICAL 0058_simulation_workspace\n",
+        encoding="utf-8",
+    )
+    historical = tmp_path / "old.md"
+    historical.write_text("> **Status: HISTORICAL.**\n", encoding="utf-8")
+    report = check_current_status_docs(
+        repo_root=tmp_path,
+        expected_head="0058_simulation_workspace",
+        expected_product_sha="combined-product-and-truth-commit",
+        current_truth_commit_sha="combined-product-and-truth-commit",
+        historical_files=["old.md"],
+        current_truth=truth,
+        ledger=ledger,
+        index=ledger,
+        current_scan_files=[],
+    )
+    assert report.ok
 
 
 def test_production_env_rejects_default_jwt():

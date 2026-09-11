@@ -1,9 +1,10 @@
 # DCLab master Scope 0–10 implementation plan
 
-**Program baseline date:** 2026-09-10
+**Program baseline date:** 2026-09-11
 **Repository:** `Shahriyar-Moradi/DCLab`
-**Reviewed product commit:** `1bce168327e1a159d4804a268043720b80630013`
-**Current `main` (S0-P01A):** `49da76b9f4ee6dab6579c7b933011f0641553cc5` (docs-only on top of `1bce168`)
+**Reviewed product commit:** `c91b05a4e0f471f01a7c5989ade429281f79babe`
+**Documentation baseline:** `c91b05a4e0f471f01a7c5989ade429281f79babe`
+**Current `main` (S0-P01A baseline):** `c91b05a4e0f471f01a7c5989ade429281f79babe`
 **Default branch:** `main`
 **Database head:** `0058_simulation_workspace`
 **Current truth report:** `docs/verification/S0_P01A_CURRENT_TRUTH.md`
@@ -63,22 +64,23 @@ the current checkout, current evidence below wins.
 
 ### 3.1 Verified on this review
 
-S0-P01A re-measured `main` at `49da76b` (product still `1bce168`). Full ledger:
+S0-P01A re-measured the product/document baseline at `c91b05a`. Full ledger:
 `docs/verification/S0_P01A_CURRENT_TRUTH.md`.
 
 | Evidence | Observed result |
 | --- | --- |
-| Git | `main` = `origin/main` at `49da76b`; last application SHA `1bce168` |
-| GitHub CI | run **52** succeeded on `49da76b` (regression + whole-system E2E). Run 51 succeeded on `1bce168`. |
-| Backend and SDK tests | `945 passed, 3 skipped` in 515.51 seconds (local S0-P01A); 574.03s was the `1bce168` review |
-| Frontend lint | completed with three React hook dependency warnings |
-| Frontend production build | succeeded; 31 generated pages and 48 listed routes including `/_not-found` |
-| Standalone TypeScript check | succeeded when run **before** `next build`; a parallel invocation can race on `.next` |
+| Git | clean baseline: `main` = `origin/main` at `c91b05a`, ahead 0 and behind 0; product and documentation SHAs both `c91b05a` |
+| GitHub CI | exact-SHA run **34519255834** failed at the repository-truth link parser; migrations passed and later regression/E2E steps were skipped. S0-P01A repairs the false positive locally; a green post-repair remote run requires commit/push. |
+| Backend and SDK tests | `1031 passed, 1 skipped, 20 warnings` in 599.07s on the repaired working tree; isolated PostgreSQL enforcement tests ran. |
+| Frontend lint | exit 0 with three existing React hook dependency warnings and tooling notices. |
+| Frontend production build | succeeded; 31 static pages generated. |
+| Standalone TypeScript check | exit 0 when run before `next build`; do not race generated `.next` state. |
+| Local Playwright | fresh `0058` database: complete uninterrupted run `18 passed` in 1.6m after repairing session-cookie forwarding, bodyless 204 handling, and stale E2E locators. |
 | Alembic | one head: `0058_simulation_workspace` (58 revisions) |
 | Relational schema | 66 SQLAlchemy tables (`auth_sessions` and `auth_recovery_tokens` are identity-plane; PipelineRun remains `experiments`) |
 | HTTP surface | 167 OpenAPI operations, 160 paths, 13 `/v1` operations |
-| Repository scale | **760** tracked files; 431 Python files; 153 TS/TSX files; **108** test files |
-| Source size | about 97,308 Python lines and 14,933 TS/TSX lines |
+| Repository scale | **805** tracked files; 452 Python files; 159 TS/TSX files; **114** test files |
+| Source size | 102,078 Python lines and 15,554 TS/TSX lines in the inspected working tree |
 
 ### 3.2 Established foundation to reuse
 

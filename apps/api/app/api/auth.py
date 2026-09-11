@@ -258,7 +258,8 @@ def logout(
         revoke_session_token(db, raw.strip())
         db.commit()
     _clear_auth_cookies(response)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
@@ -271,7 +272,8 @@ def logout_all(
     revoke_sessions_for_user(db, user.id)
     db.commit()
     _clear_auth_cookies(response)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)

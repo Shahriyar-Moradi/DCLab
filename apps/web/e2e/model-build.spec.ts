@@ -45,11 +45,13 @@ async function uploadCsv(
   ).toBeVisible();
   const input = page.locator('input[type="file"]').first();
   await input.setInputFiles(fixture);
-  await page.locator("select").first().selectOption(target);
+  await page
+    .getByRole("combobox", { name: "Outcome column to predict" })
+    .selectOption(target);
   const uploaded = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/app/labs/uploads",
+      new URL(response.url()).pathname === "/api/backend/app/labs/uploads",
   );
   await page.getByRole("button", { name: "Save file" }).first().click();
   const response = await uploaded;

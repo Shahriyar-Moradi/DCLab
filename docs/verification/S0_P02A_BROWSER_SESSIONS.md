@@ -14,10 +14,19 @@ Authorization loads `User` from PostgreSQL; JWT `role` is not used.
 
 ## Evidence
 
+### 2026-09-11 local browser re-verification
+
+The same-origin BFF now preserves the API-authored cookie attributes instead of
+inferring `Secure` from Next.js production mode, and it emits `null` bodies for
+204/205/304 responses. API logout returns the response carrying both deletion
+cookies. Focused session Playwright passed 5/5 and the complete browser suite
+passed 18/18 against a fresh database at `0058_simulation_workspace`. The full
+backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
+
 ```text
 Plan/prompt ID: S0-P02A
 Claim: Browser no longer reads/decodes/attaches a long-lived bearer; sessions are hashed, HttpOnly, rotatable, and revocable; production boot fails closed
-Status: VERIFIED (API + source + drift); browser E2E NOT_TESTED locally (helpers updated for CI)
+Status: VERIFIED (API + source + drift + local browser E2E)
 Commit/image digest: uncommitted working tree on top of 49da76b
 Environment: local macOS, .venv CPython 3.12, Postgres 16 on localhost:5432
 Migration path tested: alembic upgrade 0054 → 0055; pytest historical Alembic fresh and 0028→head catalogs

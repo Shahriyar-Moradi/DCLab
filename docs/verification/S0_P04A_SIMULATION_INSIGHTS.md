@@ -12,10 +12,17 @@ does not grow an insights/simulations API.
 
 ## Evidence
 
+### 2026-09-11 local browser re-verification
+
+The complete browser acceptance suite passed 18/18 against a fresh database at
+`0058_simulation_workspace`, including workspace Insights payloads, capability
+fail-closed behavior, and cross-tenant identifier rejection. The full
+backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
+
 ```text
 Plan/prompt ID: S0-P04A
 Claim: /app/insights and simulation derivatives cannot expose another tenant; unowned historical rows are not assigned to a default workspace
-Status: VERIFIED (API + drift + tsc); local Playwright NOT_TESTED (CI required)
+Status: VERIFIED (API + drift + tsc + local browser E2E)
 Commit/image digest: uncommitted working tree on top of 49da76b
 Environment: local macOS, .venv CPython 3.12, Postgres 16 on localhost:5432
 Migration path tested: 0058_simulation_workspace; historical Alembic catalogs match
@@ -28,7 +35,7 @@ Observed result: 1025 passed, 3 skipped, 21 warnings, 615.09s; drift all [clean]
 Artifact/log/dashboard link: docs/adr/0004-simulation-insights-tenancy.md
 Security and tenant checks: same use_case and subject_id across workspaces; cross-workspace run ids 404; unowned archive hidden
 Rollback/kill switch: alembic downgrade to the previous session-workspace revision
-Known limitations: experiment/client-trial rows on admin monitoring/registry remain global; S0-P03B capability matrix; local Playwright NOT_TESTED
+Known limitations: experiment/client-trial rows on admin monitoring/registry remain global; S0-P03B capability matrix
 Reviewer/date: S0-P04A / 2026-09-10
 ```
 

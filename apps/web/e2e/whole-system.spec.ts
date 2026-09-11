@@ -96,11 +96,13 @@ async function uploadCsv(
   ).toBeVisible();
   const input = page.locator('input[type="file"]').first();
   await input.setInputFiles(fixture);
-  await page.locator("select").first().selectOption(target);
+  await page
+    .getByRole("combobox", { name: "Outcome column to predict" })
+    .selectOption(target);
   const uploaded = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/app/labs/uploads",
+      new URL(response.url()).pathname === "/api/backend/app/labs/uploads",
   );
   await page.getByRole("button", { name: "Save file" }).first().click();
   const response = await uploaded;
@@ -737,7 +739,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     const uploaded = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
-        new URL(response.url()).pathname === "/app/opportunities/upload",
+        new URL(response.url()).pathname === "/api/backend/app/opportunities/upload",
     );
     await page.locator('input[type="file"]').setInputFiles(fixture);
     const uploadResponse = await uploaded;
@@ -777,8 +779,9 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     page,
   }, testInfo) => {
     await login(page, "dclab-admin@verification.invalid");
-    await expect(page.getByText("Business A", { exact: true })).toBeVisible();
-    await expect(page.getByText("Business B", { exact: true })).toBeVisible();
+    const main = page.locator("#main");
+    await expect(main.getByRole("link", { name: "Business A", exact: true })).toBeVisible();
+    await expect(main.getByRole("link", { name: "Business B", exact: true })).toBeVisible();
     await page.screenshot({
       path: path.join(ARTIFACTS, "dclab-admin-businesses.png"),
       fullPage: true,
@@ -890,8 +893,9 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
-    await expect(page.getByText("Business A", { exact: true })).toBeVisible();
-    await expect(page.getByText("Business B", { exact: true })).toBeVisible();
+    const main = page.locator("#main");
+    await expect(main.getByRole("link", { name: "Business A", exact: true })).toBeVisible();
+    await expect(main.getByRole("link", { name: "Business B", exact: true })).toBeVisible();
     await page.goto(`/admin/pipeline-runs/${adminPipelineId}/monitor`);
     await expect(
       page.getByRole("heading", { name: "Pipeline Monitor" }),
@@ -924,8 +928,9 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
     await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
     await expect(navigation.getByRole("link", { name: "Model Registry" })).toHaveCount(0);
-    await expect(page.getByText("Business A", { exact: true })).toBeVisible();
-    await expect(page.getByText("Business B", { exact: true })).toHaveCount(0);
+    const main = page.locator("#main");
+    await expect(main.getByText("Business A", { exact: true })).toBeVisible();
+    await expect(main.getByText("Business B", { exact: true })).toHaveCount(0);
     const workspacesResponse = await page.request.get(backend("/business/workspaces"));
     expect(workspacesResponse.ok()).toBeTruthy();
     const workspaces = (await workspacesResponse.json()) as JsonRecord[];
@@ -1159,6 +1164,6 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     );
     expect(substitutedPipeline.status()).toBe(404);
     await page.goto(`/business/workspaces/${businessBWorkspaceId}`);
-    await expect(page.getByText("Business B", { exact: true })).toHaveCount(0);
+    await expect(page.locator("#main").getByText("Business B", { exact: true })).toHaveCount(0);
   });
 });

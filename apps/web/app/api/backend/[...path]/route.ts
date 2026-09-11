@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const SESSION_COOKIE = "dclab_session";
 const CSRF_COOKIE = "dclab_csrf";
+const BODYLESS_STATUSES = new Set([204, 205, 304]);
 
 function apiOrigin(): string {
   return (
@@ -9,10 +10,6 @@ function apiOrigin(): string {
     process.env.NEXT_PUBLIC_API_URL ||
     "http://127.0.0.1:8001"
   ).replace(/\/$/, "");
-}
-
-function cookieSecure(): boolean {
-  return process.env.NODE_ENV === "production";
 }
 
 function setCookieHeaders(response: Response): string[] {
@@ -36,14 +33,24 @@ function applyCopiedCookie(
     const rawValue = first.slice(name.length + 1);
     const value = decodeURIComponent(rawValue);
     const maxAgeMatch = header.match(/Max-Age=(\d+)/i);
+    const pathMatch = header.match(/(?:^|;)\s*Path=([^;]+)/i);
+    const sameSiteMatch = header.match(/(?:^|;)\s*SameSite=(Lax|Strict|None)/i);
     const deleting = value === "" || /max-age=0/i.test(header);
+    const sameSite = sameSiteMatch?.[1]?.toLowerCase() as
+      | "lax"
+      | "strict"
+      | "none"
+      | undefined;
     nextResponse.cookies.set({
       name,
       value: deleting ? "" : value,
       httpOnly,
-      secure: cookieSecure(),
-      sameSite: "lax",
-      path: "/",
+      // The API is the cookie-policy authority. In production it refuses to
+      // boot with an insecure cookie configuration; the BFF must preserve the
+      // resulting attribute instead of inferring it from Next.js mode.
+      secure: /(?:^|;)\s*Secure(?:;|$)/i.test(header),
+      sameSite: sameSite ?? "lax",
+      path: pathMatch?.[1]?.trim() || "/",
       maxAge: deleting ? 0 : maxAgeMatch ? Number(maxAgeMatch[1]) : undefined,
     });
   }
@@ -89,12 +96,16 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
     init.body = await req.arrayBuffer();
   }
   const apiResponse = await fetch(target, init);
-  const body = await apiResponse.arrayBuffer();
+  const body =
+    req.method === "HEAD" || BODYLESS_STATUSES.has(apiResponse.status)
+      ? null
+      : await apiResponse.arrayBuffer();
+  const headers = new Headers();
+  const contentType = apiResponse.headers.get("content-type");
+  if (body !== null && contentType) headers.set("content-type", contentType);
   const nextResponse = new NextResponse(body, {
     status: apiResponse.status,
-    headers: {
-      "content-type": apiResponse.headers.get("content-type") ?? "application/octet-stream",
-    },
+    headers,
   });
   const disposition = apiResponse.headers.get("content-disposition");
   if (disposition) nextResponse.headers.set("content-disposition", disposition);

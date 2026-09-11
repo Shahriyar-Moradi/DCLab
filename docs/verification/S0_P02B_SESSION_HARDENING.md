@@ -12,10 +12,18 @@ hashed password-reset / email-verification hooks without SMTP.
 
 ## Evidence
 
+### 2026-09-11 local browser re-verification
+
+Cookie continuity, reload persistence, logout, logout-all, and CSRF rejection
+all pass through the real browser/BFF path (5/5 focused). The complete browser
+acceptance suite passes 18/18, including role-aware routing, capability
+fail-closed behavior, and tenant substitution rejection. The full backend/SDK
+regression passes 1,031 tests with one live-OpenAI skip.
+
 ```text
 Plan/prompt ID: S0-P02B
 Claim: Cookie-authenticated mutations require CSRF and a trusted origin; production refuses email-delivery without a provider; recovery tokens are hashed and never returned
-Status: VERIFIED (API + source + drift); browser E2E added, local Playwright NOT_TESTED (CI required)
+Status: VERIFIED (API + source + drift + local browser E2E)
 Commit/image digest: uncommitted working tree on top of 49da76b
 Environment: local macOS, .venv CPython 3.12, Postgres 16 on localhost:5432
 Migration path tested: alembic upgrade head through 0058_simulation_workspace; historical Alembic catalogs

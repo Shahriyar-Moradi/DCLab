@@ -220,6 +220,10 @@ def test_logout_all_revokes_every_session(client, client_user, db_session):
     browser_login(client, client_user.email, "client-pass-123")
     done = client.post("/auth/logout-all", headers=csrf_headers(client))
     assert done.status_code == 204
+    cookie = done.headers.get("set-cookie", "").lower()
+    assert "dclab_session=" in cookie
+    assert "dclab_csrf=" in cookie
+    assert "max-age=0" in cookie
     assert client.get("/auth/me").status_code == 401
     assert (
         client.get("/auth/me", headers={"X-DCLab-Session": first_raw}).status_code

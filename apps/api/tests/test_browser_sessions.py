@@ -115,6 +115,10 @@ def test_logout_revokes_server_session(client, client_user, db_session):
     assert client.get("/auth/me").status_code == 200
     logout = client.post("/auth/logout", headers=csrf_headers(client))
     assert logout.status_code == 204
+    cookie = _cookie_header(logout).lower()
+    assert "dclab_session=" in cookie
+    assert "dclab_csrf=" in cookie
+    assert "max-age=0" in cookie
     assert client.get("/auth/me").status_code == 401
     replay = client.get("/auth/me", headers={"X-DCLab-Session": raw})
     assert replay.status_code == 401

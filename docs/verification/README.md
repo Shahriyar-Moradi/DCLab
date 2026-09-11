@@ -16,7 +16,7 @@ Older reports below keep their original evidence. Their executive counts are
 
 | Document | Status | Freeze / SHA | Do not use as current |
 | --- | --- | --- | --- |
-| [S0_P01A_CURRENT_TRUTH.md](S0_P01A_CURRENT_TRUTH.md) | **CURRENT** | `49da76b` product SHA, Alembic `0058_simulation_workspace` | — |
+| [S0_P01A_CURRENT_TRUTH.md](S0_P01A_CURRENT_TRUTH.md) | **CURRENT** | `c91b05a` product/document baseline, Alembic `0058_simulation_workspace`, local Playwright 18/18, refreshed 2026-09-11 | Exact-SHA CI failed at the repaired docs-link parser false positive; no post-repair remote run until commit/push |
 | [S0_P01B_TRUTH_DRIFT.md](S0_P01B_TRUTH_DRIFT.md) | **CURRENT** | Drift CI, snapshots, refresh rules; head `0058_simulation_workspace` | — |
 | [S0_P02A_BROWSER_SESSIONS.md](S0_P02A_BROWSER_SESSIONS.md) | **CURRENT** | HttpOnly BFF sessions; ADR 0001 | — |
 | [S0_P02B_SESSION_HARDENING.md](S0_P02B_SESSION_HARDENING.md) | **CURRENT** | CSRF, CSP, throttle, recovery hooks; ADR 0002 | — |

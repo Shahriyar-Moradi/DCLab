@@ -15,10 +15,44 @@ import json
 import subprocess
 import sys
 from collections import Counter
-from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# These path groups make the two requested lineage SHAs reproducible. Product
+# truth intentionally excludes generated/current evidence, so refreshing this
+# report in a later documentation-only commit does not immediately make its
+# product SHA stale.
+PRODUCT_PATHS: tuple[str, ...] = (
+    ".env.example",
+    "alembic.ini",
+    "apps/api/alembic",
+    "apps/api/app",
+    "apps/web/app",
+    "apps/web/lib",
+    "apps/web/middleware.ts",
+    "apps/web/next.config.mjs",
+    "apps/web/package-lock.json",
+    "apps/web/package.json",
+    "docker-compose.yml",
+    "package-lock.json",
+    "packages/dclab_client/dclab_client",
+    "pyproject.toml",
+    "scripts",
+    ":(exclude)scripts/check_truth_drift.py",
+    ":(exclude)scripts/record_repo_truth.py",
+    ":(exclude)scripts/truth_drift.py",
+)
+DOCUMENTATION_PATHS: tuple[str, ...] = (
+    ".github/workflows/ci.yml",
+    "Makefile",
+    "README.md",
+    "contracts",
+    "docs",
+    "scripts/check_truth_drift.py",
+    "scripts/record_repo_truth.py",
+    "scripts/truth_drift.py",
+)
 
 
 def _run(args: list[str], *, cwd: Path = REPO_ROOT) -> str:
@@ -32,6 +66,16 @@ def _run(args: list[str], *, cwd: Path = REPO_ROOT) -> str:
     return result.stdout.strip()
 
 
+def latest_commit_for_paths(
+    paths: tuple[str, ...], *, repo_root: Path = REPO_ROOT
+) -> str:
+    """Return the latest commit that changed one of ``paths``."""
+
+    return _run(
+        ["git", "log", "-1", "--format=%H", "--", *paths], cwd=repo_root
+    )
+
+
 def _git_facts() -> dict[str, object]:
     sha = _run(["git", "rev-parse", "HEAD"])
     branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
@@ -42,6 +86,16 @@ def _git_facts() -> dict[str, object]:
         origin = _run(["git", "rev-parse", "origin/main"])
     except subprocess.CalledProcessError:
         origin = ""
+    merge_base = ""
+    ahead = None
+    behind = None
+    if origin:
+        merge_base = _run(["git", "merge-base", "HEAD", "origin/main"])
+        ahead_raw, behind_raw = _run(
+            ["git", "rev-list", "--left-right", "--count", "HEAD...origin/main"]
+        ).split()
+        ahead = int(ahead_raw)
+        behind = int(behind_raw)
     dirty = any(
         line and not line.startswith("##") for line in status.splitlines()
     )
@@ -51,6 +105,11 @@ def _git_facts() -> dict[str, object]:
         "status_short": tracking,
         "origin_main_sha": origin or None,
         "equal_to_origin_main": bool(origin) and sha == origin,
+        "merge_base_origin_main": merge_base or None,
+        "ahead_of_origin_main": ahead,
+        "behind_origin_main": behind,
+        "product_sha": latest_commit_for_paths(PRODUCT_PATHS),
+        "documentation_sha": latest_commit_for_paths(DOCUMENTATION_PATHS),
         "working_tree_clean": not dirty,
         "subject": _run(["git", "log", "-1", "--format=%s"]),
         "committed_at": _run(["git", "log", "-1", "--format=%cI"]),
@@ -196,7 +255,6 @@ def _line_count(path: Path) -> int:
 
 def collect() -> dict[str, object]:
     return {
-        "recorded_at": datetime.now(UTC).isoformat(),
         "read_only": True,
         "git": _git_facts(),
         "alembic": _alembic_facts(),

@@ -64,6 +64,7 @@ INSECURE_SECRET_ALLOW_PREFIXES: tuple[str, ...] = (
 
 V1_PATH_LITERAL = re.compile(r"""f?["'](/v1/[^"']+)["']""")
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+MARKDOWN_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 ALEMBIC_REV = re.compile(r"\b(\d{4}_[a-z0-9_]+)\b")
 CURRENT_STATUS = re.compile(r"(?im)^\s*(?:>\s*)?\**Status:\**\s*CURRENT")
 
@@ -511,10 +512,29 @@ def check_baseline_counts(
 
 
 def iter_markdown_links(text: str) -> list[str]:
+    """Return Markdown link targets, excluding fenced and inline code examples."""
+
     found: list[str] = []
-    for match in MD_LINK.finditer(text):
-        raw = match.group(1).strip().split()[0].strip("<>")
-        found.append(raw)
+    fence_char = ""
+    fence_length = 0
+    for line in text.splitlines():
+        fence = MARKDOWN_FENCE.match(line)
+        if fence:
+            marker = fence.group(1)
+            if not fence_char:
+                fence_char = marker[0]
+                fence_length = len(marker)
+            elif marker[0] == fence_char and len(marker) >= fence_length:
+                fence_char = ""
+                fence_length = 0
+            continue
+        if fence_char:
+            continue
+        # Link-like strings in inline code are examples, not navigable links.
+        prose = re.sub(r"`+[^`\n]*`+", "", line)
+        for match in MD_LINK.finditer(prose):
+            raw = match.group(1).strip().split()[0].strip("<>")
+            found.append(raw)
     return found
 
 
@@ -564,6 +584,8 @@ def check_current_status_docs(
     ledger: Path | None = None,
     index: Path | None = None,
     current_scan_files: Sequence[str] | None = None,
+    expected_product_sha: str | None = None,
+    current_truth_commit_sha: str | None = None,
 ) -> DriftReport:
     head = expected_head
     if head is None:
@@ -580,6 +602,23 @@ def check_current_status_docs(
         problems.append(f"{CURRENT_TRUTH_REL} must be marked CURRENT")
     if head not in truth_text:
         problems.append(f"{CURRENT_TRUTH_REL} must name Alembic head {head}")
+    # A Markdown file cannot embed the hash of the commit that contains it.
+    # Accept that unavoidable case only when the same commit is both the latest
+    # product change and the latest CURRENT-truth change. A later product-only
+    # commit still fails because the two lineage SHAs then differ.
+    truth_covers_product_commit = (
+        current_truth_commit_sha is not None
+        and current_truth_commit_sha == expected_product_sha
+    )
+    if (
+        expected_product_sha
+        and expected_product_sha not in truth_text
+        and not truth_covers_product_commit
+    ):
+        problems.append(
+            f"{CURRENT_TRUTH_REL} must name current product SHA "
+            f"{expected_product_sha}"
+        )
     for rel, label in ((LEDGER_REL, ledger), (INDEX_REL, index)):
         path = label or (repo_root / rel)
         text = path.read_text(encoding="utf-8")
@@ -737,6 +776,8 @@ def _live_metadata_diffs(database_url: str | None) -> list:
 
 
 def collect_reports(*, include_alembic_metadata: bool = False) -> list[DriftReport]:
+    from scripts.record_repo_truth import PRODUCT_PATHS, latest_commit_for_paths
+
     reports = [
         check_alembic_graph(
             expected_head=str(_load_json(BASELINE_SNAPSHOT)["alembic_heads"][0])
@@ -748,7 +789,10 @@ def collect_reports(*, include_alembic_metadata: bool = False) -> list[DriftRepo
         check_sdk_types(),
         check_baseline_counts(),
         check_docs_links(),
-        check_current_status_docs(),
+        check_current_status_docs(
+            expected_product_sha=latest_commit_for_paths(PRODUCT_PATHS),
+            current_truth_commit_sha=latest_commit_for_paths((CURRENT_TRUTH_REL,)),
+        ),
         check_production_secrets(),
         *check_tracked_generated_output(),
     ]
