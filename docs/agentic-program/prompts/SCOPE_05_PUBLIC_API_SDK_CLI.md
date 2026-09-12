@@ -3,6 +3,8 @@
 Start after Scope 3 and applicable resource scopes. Apply `README.md` and
 `EXECUTION_STANDARD.md`. Public clients use `/v1` over HTTP; they never import
 API internals, open the database, read storage keys or inherit browser cookies.
+Inspect and extend the private Core ML SDK/CLI preview from S3-P06F; do not
+replace it with another client or break its command/output contracts silently.
 
 ## Scope implementation boundary
 
@@ -12,6 +14,8 @@ machine identity, workspace, scopes, request/client IDs, bounded pages/streams,
 safe retries and versioned OpenAPI compatibility. Agent resources expose only
 DCLab-owned sessions/runs/steps/events/tool calls/citations; LangGraph checkpoint
 rows, graph-private state and framework types never enter OpenAPI, SDK or CLI.
+Lifecycle, decision, model-release, batch-prediction and monitoring resources
+remain DCLab product contracts and use the same IDs as the project UI.
 
 ## Plan 5.1 — machine identity and scoped credentials
 
@@ -83,7 +87,8 @@ client parity are CI-enforced.
 ```text
 Map supported product workflows to projects, ProblemSpecs, data sources/access,
 ingestions/datasets/profiles, workflows/runs/builds/stages/events, models,
-artifacts, agents/proposals/approvals and notebooks. For every operation list
+artifacts, lifecycle/decisions, agents/proposals/approvals, model releases/batch
+predictions/monitoring and notebooks. For every operation list
 method/path, capability/scope, request/response/page, states, ETag/idempotency,
 rate/quota and legacy owner. Mark unsupported/private surfaces. Approve the
 inventory before adding routes.
@@ -150,6 +155,7 @@ retry, implicit workspace or credential logging.
 ```text
 Write the SDK ADR and refactor `packages/dclab_client` into transport, auth,
 errors, models and cohesive resource clients without breaking supported imports.
+Inventory S3-P06F first and preserve or explicitly deprecate its preview surface.
 Define sync/async transport interfaces, timeout phases, body limits, user agent,
 request/client IDs, workspace precedence and redaction. Preserve HTTP-only
 boundary. Add compatibility tests for existing client API.
@@ -207,8 +213,9 @@ authorization or approval.
 ```text
 Choose the existing-project-compatible CLI framework and create
 `packages/dclab_cli` with entry point, dependency on public SDK, version and
-test harness. Define command groups auth/config/workspace/project/dataset/build/
-artifact/agent/approval/notebook, global profile/workspace/output/timeout flags
+test harness, reusing the S3-P06F skeleton if present. Define command groups
+auth/config/workspace/project/lifecycle/decision/dataset/build/model-release/
+batch/monitor/artifact/agent/approval/notebook, global profile/workspace/output/timeout flags
 and stable help. Explicitly prohibit API internal/database imports. Add startup/
 help/version tests.
 ```

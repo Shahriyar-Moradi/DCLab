@@ -14,6 +14,7 @@ Prepend this contract when giving any prompt to a coding agent:
 
 ```text
 You are implementing one bounded DCLab work package. Read
+docs/agentic-program/DCLAB_CORE_CONCEPT.md,
 docs/agentic-program/MASTER_SCOPE_0_TO_10_PLAN.md, this complete scope prompt
 file, docs/agentic-program/prompts/EXECUTION_STANDARD.md, AGENTS.md if present,
 and every repository file named by the prompt.
@@ -64,6 +65,10 @@ the user separately authorizes it.
   contracts, and DCLab services own authorization, tools, budgets and product
   state. Do not add PydanticAI, `pydantic-graph`, LangChain `create_agent`, or a
   second agent/checkpoint authority without a replacement ADR and plan update.
+- The primary product unit is the immutable ML lifecycle, not an agent run,
+  notebook or source file. Reuse canonical project/dataset/feature/experiment/
+  model lineage and `ProjectDecisionRecord`; never create a competing lifecycle
+  or hidden memory store.
 
 ## How to execute a plan
 
@@ -108,9 +113,9 @@ Reviewer/date:
 | Scope file | Plans | Prompts |
 | --- | ---: | ---: |
 | [`SCOPE_00_FOUNDATION.md`](SCOPE_00_FOUNDATION.md) | 8 | 39 |
-| [`SCOPE_01_READ_ONLY_AGENT.md`](SCOPE_01_READ_ONLY_AGENT.md) | 11 | 59 |
+| [`SCOPE_01_READ_ONLY_AGENT.md`](SCOPE_01_READ_ONLY_AGENT.md) | 12 | 67 |
 | [`SCOPE_02_AGENTIC_OPERATING_SYSTEM.md`](SCOPE_02_AGENTIC_OPERATING_SYSTEM.md) | 11 | 58 |
-| [`SCOPE_03_CONTROLLED_COMMANDS.md`](SCOPE_03_CONTROLLED_COMMANDS.md) | 7 | 36 |
+| [`SCOPE_03_CONTROLLED_COMMANDS.md`](SCOPE_03_CONTROLLED_COMMANDS.md) | 8 | 45 |
 | [`SCOPE_04_AGENTIC_NOTEBOOK.md`](SCOPE_04_AGENTIC_NOTEBOOK.md) | 7 | 37 |
 | [`SCOPE_05_PUBLIC_API_SDK_CLI.md`](SCOPE_05_PUBLIC_API_SDK_CLI.md) | 6 | 30 |
 | [`SCOPE_06_MCP.md`](SCOPE_06_MCP.md) | 5 | 25 |
@@ -118,4 +123,4 @@ Reviewer/date:
 | [`SCOPE_08_ACTIONS_AND_OUTCOMES.md`](SCOPE_08_ACTIONS_AND_OUTCOMES.md) | 6 | 32 |
 | [`SCOPE_09_PRODUCTION_RELEASE.md`](SCOPE_09_PRODUCTION_RELEASE.md) | 7 | 37 |
 | [`SCOPE_10_SCALE_AND_AUTONOMY.md`](SCOPE_10_SCALE_AND_AUTONOMY.md) | 7 | 35 |
-| **Total** | **81** | **420** |
+| **Total** | **83** | **437** |

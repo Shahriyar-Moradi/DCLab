@@ -146,6 +146,9 @@ identity. Keep migrations/admin/debug tools out of runtime entrypoints. Build,
 scan, sign and test images in CI; tag deployments by digest, not mutable tag.
 The agent-worker image contains the reviewed LangGraph/checkpointer pins and no
 PydanticAI, high-level LangChain agent or unused alternate graph runtime.
+The ML worker allowlist includes only the reviewed model-build, batch-prediction
+and model-monitor handlers; release activation remains an API/service command,
+not a worker-selected action.
 ```
 
 ### S9-P03B — deployment manifests and safe rollout
@@ -187,7 +190,8 @@ dependency outages, region network loss, worker drain and recovery order.
 Deploy to staging via protected pipeline, run migration then full smoke and
 representative load/soak/worker-restart/node-loss tests. Verify handler/identity/
 network separation, no secret in image/env output, bounded scaling and graceful
-rollback to compatible image. Publish capacity, costs, flags and runbooks before
+rollback to compatible image. Exercise verified model release, batch prediction,
+monitoring window and rollback with immutable artifacts. Publish capacity, costs, flags and runbooks before
 production canary.
 ```
 
@@ -212,7 +216,8 @@ signed URLs and arbitrary user labels. Add propagation/redaction tests.
 
 ```text
 Implement RED/USE plus domain metrics for auth/session, API, DB/pool, queue/lease,
-ML, agent/eval/budget, notebook/sandbox, connector/freshness and action/outcome.
+ML/model-release/batch-prediction/drift, agent/eval/budget, notebook/sandbox,
+connector/freshness and action/outcome.
 Use enumerated low-cardinality dimensions and exemplars/trace links where safe.
 Centralize JSON log schema with safe reason codes and stack detail only in
 protected sink. Add cardinality budget and canary-secret scans.
@@ -223,7 +228,8 @@ protected sink. Add cardinality budget and canary-secret scans.
 ```text
 Define user-journey SLIs/SLOs for authenticated API availability/latency, durable
 job acceptance/completion/queue age, agent response, connector freshness, action
-delivery and critical recovery, with exclusions and windows. Derive targets from
+delivery, batch prediction, monitoring-window freshness and critical recovery,
+with exclusions and windows. Derive targets from
 business impact plus staging evidence; distinguish asynchronous latency. Define
 error-budget policy that pauses risky releases/autonomy. Review with owners.
 ```
@@ -233,7 +239,8 @@ error-budget policy that pauses risky releases/autonomy. Review with owners.
 ```text
 Create role-specific dashboards and symptom-based alerts for SLO burn, auth/
 tenant anomaly, DB/pool/replication, queue stuck, object errors, provider breaker,
-agent cost/safety eval, connector stale and action ambiguous. Every alert links
+agent cost/safety eval, model-release invalidation, batch failure/age, stale drift
+window, rollback failure, connector stale and action ambiguous. Every alert links
 owner/runbook/query/rollback and avoids secret/customer content. Test alert rules
 against synthetic signals and remove unactionable noise.
 ```
@@ -389,17 +396,22 @@ do not broaden scope to avoid a failed control.
 
 ## Plan 9.7 — allowlisted pilot and release decision
 
-**Contract.** Pilot has named users/workspaces/use case/provider/action, quotas,
-support and success/safety metrics. It is reversible and does not imply general
-availability or higher autonomy.
+**Contract.** Pilot has named Data Scientist and ML Engineer participants,
+workspaces, use case, quotas, support and success/safety metrics. It exercises
+the Core ML lifecycle through batch release/monitoring/rollback. Business action
+and outcome are optional and included only when the charter names them. The
+pilot is reversible and does not imply general availability or higher autonomy.
 
 ### S9-P07A — pilot charter and eligibility
 
 ```text
-Define target users/use case, included/excluded scopes, data/provider/region,
+Define separate Data Scientist and ML Engineer jobs, use case, included/excluded
+scopes, data/provider/region,
 maximum users/workspaces/datasets/size/jobs/agent cost/notebook/action value,
 onboarding/offboarding, consent/support and stop criteria. Set measurable workflow,
-quality, reliability, safety and business-learning goals with owner/window.
+time-to-valid-baseline, investigation usefulness, constraint satisfaction,
+reproducibility, batch release/rollback, quality, reliability, safety and
+business-learning goals with owner/window.
 Configure server-side allowlists/flags/quotas; no marketing availability claim.
 ```
 
@@ -416,11 +428,15 @@ data in planning evidence. Validate offboarding/revoke/delete path before use.
 ### S9-P07C — full supported workflow pilot
 
 ```text
-Have users complete ingest -> profile/classification -> problem/plan -> agent
-supervision -> approved build -> evidence/report/notebook -> recommendation ->
-approved action if included -> outcome, using only supported UI/API/clients and
-no DB intervention. Capture telemetry/evaluation/support issues and user feedback
-under policy. Do not manually hide failed states.
+Have a data scientist complete ingest -> lifecycle -> goal/business constraints
+-> profile/investigation -> plan -> approved build -> compare/improve -> decision
+-> evidence/implementation/reproduction. Have an ML engineer complete the same
+resource path through SDK/CLI, then verified model registration -> batch prediction
+-> monitoring investigation -> rollback, using no DB intervention. Exercise all
+three synchronized views and reconstruct project decisions. Add recommendation
+-> approved business action -> outcome only when included by the charter. Capture
+telemetry/evaluation/support issues and user feedback under policy. Do not
+manually hide failed states.
 ```
 
 ### S9-P07D — soak, support and operational review
@@ -429,7 +445,9 @@ under policy. Do not manually hide failed states.
 Operate for the charter window, reviewing SLO/error budget, incidents, auth/
 tenant anomalies, scientific/eval safety, cost/quota, connector freshness, action
 ambiguity, outcome coverage and support burden. Exercise one rollback/kill switch
-and one restore/recovery drill. Triage defects by severity and pause on stop
+and one restore/recovery drill. Include lifecycle reconstruction, decision-memory
+correctness, batch feature skew and drift-alert usefulness. Triage defects by
+severity and pause on stop
 criteria. Record denominator/context for metrics.
 ```
 
@@ -438,6 +456,9 @@ criteria. Record denominator/context for metrics.
 ```text
 Compare observed pilot evidence to every charter and Scope 9 gate. List blockers,
 accepted limitations, capacity/cost, residual risks, owners and next milestone.
+Require explicit sign-off from the Data Scientist and ML Engineer workflow owners;
+neither infrastructure-only success nor optional business-side completion can
+hide a failure in the Core ML path.
 Approve continue/expand/pause/rollback explicitly; expansion names a bounded new
 population, never automatic GA. Publish immutable release/evidence versions and
 execute offboarding/rollback if no-go.

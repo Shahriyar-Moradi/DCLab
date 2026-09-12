@@ -479,7 +479,10 @@ components.
 ```text
 Complete ADRs for browser identity/BFF, workspace authority, application-service
 boundary, PostgreSQL job queue, object/secret placement, agent boundary,
-versioning/immutability and environment topology. Each ADR records context,
+versioning/immutability, the core product/lifecycle authority and environment
+topology. Confirm that the future ML lifecycle projection will reuse existing
+Project/Dataset/FeatureSet/WorkflowRun/PipelineRun/ModelVersion lineage and stay
+distinct from agent/notebook graphs. Each ADR records context,
 decision, rejected alternatives, security/tenant consequences, compatibility,
 operational owner, measurable revisit trigger and rollback. Link code/evidence
 and mark superseded decisions explicitly. Do not claim decisions already made

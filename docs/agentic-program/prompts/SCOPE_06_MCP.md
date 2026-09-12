@@ -43,6 +43,9 @@ scope/capability, workspace argument/source, read/write/risk, page/byte/time
 bounds, citation/resource URI and safe errors. Exclude raw rows, secrets, signed
 URLs, prompt bodies, hidden reasoning and private/admin internals. Approve the
 manifest before implementation.
+Include the canonical ML lifecycle, project decisions, model releases, batch
+prediction and monitoring resources; do not expose LangGraph/task/notebook
+graphs as substitutes for lifecycle truth.
 ```
 
 ### S6-P01C — package skeleton and dependency boundary
@@ -86,8 +89,9 @@ oversized messages and stderr separation.
 ### S6-P02B — read-only tools
 
 ```text
-Implement the approved identity/project/dataset/build/evidence/agent/notebook read
-tools by calling public SDK methods only. Validate input schema/unknown fields,
+Implement the approved identity/project/lifecycle/decision/dataset/build/evidence/
+model-release/batch-monitor/agent/notebook read tools by calling public SDK methods
+only. Validate input schema/unknown fields,
 explicit workspace/resource IDs and maximum pages/items/bytes/time. Return
 structured bounded results and DCLab request/resource IDs; translate SDK errors
 to stable protocol errors without provider/internal bodies. Add per-tool tests.
@@ -97,7 +101,8 @@ to stable protocol errors without provider/internal bodies. Add per-tool tests.
 
 ```text
 Define stable non-secret DCLab resource URIs for authorized metadata/evidence and
-templates for workspace/project/dataset/run/model/agent/notebook where useful.
+templates for workspace/project/lifecycle/decision/dataset/run/model/release/
+batch-monitor/agent/notebook where useful.
 Resolve through SDK on each read, re-authorize server-side, bound content/MIME and
 include version/digest/citation metadata. Reject traversal, unknown scheme/type,
 unbounded lists and changed/deleted resources. No local filesystem URI exposure.
@@ -202,7 +207,9 @@ generic confirmation that substitutes for exact DCLab approval.
 
 ```text
 Select the smallest write catalog: agent message/run/cancel, model-build create/
-cancel/retry, notebook execution and approval review only if policies permit.
+cancel/retry, batch-prediction create/cancel, model-release activate/rollback,
+notebook execution and approval review only if policies permit and the
+corresponding Scope 3 capability is released.
 For each map MCP schema/name, DCLab command, OAuth scope, capability, risk,
 approval requirement, idempotency field, current version/ETag and result handle.
 Exclude arbitrary mutation/export/external action. Approve a separately versioned

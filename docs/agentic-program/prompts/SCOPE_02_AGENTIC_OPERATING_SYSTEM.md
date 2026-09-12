@@ -12,6 +12,8 @@ Extend Scope 1 through cohesive `domain/agent_supervision.py`,
 router such as `api/v1_agent_operations.py`. Proposals are typed immutable
 records, not SQL/code blobs. Specialists call existing dataset, ProblemSpec,
 scientific, model-build, evidence, artifact and observability query services.
+They also use the Scope 1 lifecycle projection and ProjectDecisionService; they
+never reconstruct a competing project graph or memory from task/message history.
 Extend the same pinned raw LangGraph runtime through code-owned supervisor and
 specialist subgraphs. Do not introduce PydanticAI, `pydantic-graph`, LangChain
 `create_agent`, another checkpointer authority or a hidden specialist tool loop.
@@ -30,7 +32,9 @@ Architect, Preparation/Feature Reviewer, Leakage/Validation Critic, Experiment
 Director, Candidate/Metric Critic, Artifact/Provenance Auditor, audience-safe
 Reporters and Reliability/Recovery Analyst. For each specify objective, typed
 input/output, allowed read tools, forbidden behavior, citations, escalation and
-completion. Define when the single Scope 1 agent is sufficient and how each
+completion. Bind inputs/outputs to canonical lifecycle node IDs/versions and
+define which proposed/reviewed outcomes append a ProjectDecisionRecord. Define
+when the single Scope 1 agent is sufficient and how each
 specialist maps to a versioned LangGraph subgraph invoked through the same
 ToolRunner/gateway/checkpointer boundary. Add contract schemas/tests only; do
 not spawn specialists or add another runtime.
@@ -117,8 +121,10 @@ Add append-only AgentReview, AgentConflict and AgentProposal. Reviews bind
 reviewer version, subject version/digest, verdict, structured concerns, citations
 and requested revision. Conflicts bind competing outputs and resolution state.
 Proposals bind target type/id/version/digest, versioned patch schema, expected
-effect, risk, validation and supersession. Store large bodies as artifacts and
-reject cross-tenant/unknown target types.
+effect, risk, validation and supersession. Link proposal/review/conflict outcomes
+to ProjectDecisionRecord rather than adding another memory table; a proposed or
+accepted decision still cannot apply the patch. Store large bodies as artifacts
+and reject cross-tenant/unknown target types.
 ```
 
 ### S2-P02D — supervision events and query indexes
@@ -586,15 +592,17 @@ observed safety/value/cost evidence.
 ## Plan 2.10 — agentic operations UI
 
 **Contract.** Extend Agent Studio with server-projected graph/task/review/
-proposal/evaluation state. UI controls request deterministic services; they do
-not mutate rows or interpret raw agent/provider bodies.
+proposal/evaluation state synchronized with the Scope 1 project lifecycle and
+decision timeline. UI controls request deterministic services; they do not
+mutate rows or interpret raw agent/provider bodies.
 
 ### S2-P10A — API projections and client hooks
 
 ```text
 Add bounded `/v1` resources for graph runs, tasks/dependencies, specialist
-activity, reviews, conflicts, proposals, escalations and release/evaluation
-metadata. Define role/audience projections, pages/cursors/ETags and safe diff
+activity, reviews, conflicts, proposals, escalations, linked lifecycle nodes,
+project decisions and release/evaluation metadata. Define role/audience
+projections, pages/cursors/ETags and safe diff
 schemas. Add Python/TypeScript client types/hooks keyed by workspace/run. Raw
 prompt/output/policy bodies remain separately protected or absent.
 ```
@@ -602,11 +610,13 @@ prompt/output/policy bodies remain separately protected or absent.
 ### S2-P10B — task graph and specialist timeline
 
 ```text
-Build accessible graph/list fallback, task detail and chronological event views
+Build accessible agent-task graph/list fallback, task detail and chronological event views
 showing state, dependencies, specialist/version, citations, bounded budget and
 safe failure. Support large graphs through pagination/virtualization rather than
 loading all nodes. Handle partial/out-of-order updates, reconnect and workspace
-switch. Add component tests for every state and keyboard navigation.
+switch. Clearly distinguish this execution DAG from the ML lifecycle graph and
+deep-link tasks to their lifecycle subjects. Add component tests for every state
+and keyboard navigation.
 ```
 
 ### S2-P10C — review, proposal diff and conflict experience
@@ -616,7 +626,9 @@ Render typed resource-aware diffs with base/current/proposed version, validation
 risk, expected effect and citations. Provide review/escalation controls only when
 the server exposes capability/state; use ETag and explicit confirmation. In Scope
 2 controls may review/reject/request revision, never execute domain mutation.
-Test stale proposal, concurrent reviewer, malicious labels and denied role.
+Append the corresponding proposed/accepted/rejected/superseded project decision
+with the exact reviewed digest, rationale and citations. Test stale proposal,
+concurrent reviewer, malicious labels, denied role and decision/proposal mismatch.
 ```
 
 ### S2-P10D — release/evaluation administration

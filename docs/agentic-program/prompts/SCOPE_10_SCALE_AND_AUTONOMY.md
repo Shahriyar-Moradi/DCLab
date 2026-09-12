@@ -348,16 +348,20 @@ Marketplace/catalog publication requires multiple stable adapters and versioned
 compatibility; otherwise keep internal.
 ```
 
-## Plan 10.7 — model operations and controlled L3/L4 autonomy
+## Plan 10.7 — advanced model operations and controlled L3/L4 autonomy
 
-**Contract.** Model serving/retraining/autonomous action are separate capabilities.
+**Contract.** Extend, do not replace, the Scope 3 verified model-registration,
+batch-prediction, monitoring and rollback path. Online/streaming serving,
+retraining and autonomous action are separate capabilities.
 Agents diagnose/propose; deterministic validators and policy decide. High-impact,
 irreversible or legally sensitive actions remain exact-approved.
 
 ### S10-P07A — serving and autonomy eligibility ADR
 
 ```text
-Define exact online prediction/use case, latency/availability/freshness, feature
+Inventory Scope 3 ModelRelease/FeatureContract/BatchPredictionRun/MonitoringWindow
+owners first. Define exact online or streaming prediction use case,
+latency/availability/freshness, feature
 consistency, population/region, risk/action class and outcome evidence. Separately
 define L0–L4 autonomy levels and eligibility thresholds for quality, calibration,
 false action, cost, outcome, incident and reversibility. Record prohibited classes,
@@ -367,8 +371,9 @@ approver separation, do-nothing and rollback. No serving/autonomy implementation
 ### S10-P07B — versioned model deployment and prediction service
 
 ```text
-If triggered, add DeploymentTarget/Release/TrafficPolicy with exact ModelVersion,
-environment, eligibility, feature contract, image/runtime digest, canary and state.
+If triggered, extend the existing ModelRelease with DeploymentTarget/TrafficPolicy
+for exact ModelVersion, environment, eligibility, feature contract, image/runtime
+digest, canary and state; do not create a second release/registry model.
 Implement prediction through authorized typed service with request/feature digest,
 bounded batch/latency, monitoring and audience-safe result; no arbitrary pickle/
 code. Test offline/online feature parity, tenant, load, rollback and unavailable
@@ -378,7 +383,8 @@ features.
 ### S10-P07C — drift, calibration and outcome monitoring
 
 ```text
-Implement versioned reference/current windows and deterministic metrics for input/
+Extend the existing versioned reference/current monitoring windows and
+deterministic metrics for input/
 prediction/label drift, data quality, calibration, performance, fairness only when
 defined, and downstream outcome. Handle delayed/missing/corrected labels and
 multiple testing honestly. Alert creates investigation/proposal, not automatic

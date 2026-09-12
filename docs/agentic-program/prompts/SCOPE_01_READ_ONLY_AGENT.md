@@ -1,8 +1,9 @@
 # Scope 1 execution prompts — complete durable read-only agent
 
 Start only after the Scope 0 gate. Apply `README.md` and
-`EXECUTION_STANDARD.md`. The released catalog is metadata/evidence read-only:
-no build, export, connector, notebook-code, approval, or domain-mutation tool.
+`EXECUTION_STANDARD.md` and preserve `DCLAB_CORE_CONCEPT.md`. The released
+catalog is metadata/evidence read-only:
+no build, export, connector, notebook-code, approval, or ML-domain-mutation tool.
 
 ## Scope implementation boundary
 
@@ -17,6 +18,147 @@ adapter uses the official OpenAI SDK. Do not add PydanticAI, `pydantic-graph`,
 LangChain `create_agent`, Agent Server as a second product API, or another
 agent loop. Exact names may change only when current conventions require it and
 the implementation packet records why.
+
+The primary product unit is the project ML lifecycle, not the agent session.
+Agent/session/checkpoint/task graphs remain separate from the canonical lifecycle
+projection. Scope 1 may append and review immutable project-decision memory, but
+that memory never executes or edits an ML resource.
+
+## Plan 1.0 — Core ML lifecycle and durable project memory
+
+**Contract.** Reuse existing Project, ProblemSpec, Dataset/DatasetProfile,
+FeatureSetVersion/FeatureTransformation/FeatureLineage, WorkflowRun/PipelineRun,
+ExperimentCandidate, ModelVersion, RuntimeEnvironment, CodeSnapshot, Artifact
+and scientific-lineage owners. Expose one typed project lifecycle projection and
+immutable `ProjectDecisionRecord` memory. Do not create a generic graph database,
+copy domain rows, infer authority from a graph edge, or use embeddings/messages/
+LangGraph checkpoints as memory truth.
+Use focused test homes `apps/api/tests/test_ml_lifecycle_contract.py`,
+`test_project_decision_persistence.py`, `test_ml_lifecycle_service.py`,
+`test_project_decision_service.py`, `test_ml_lifecycle_api.py`,
+`packages/dclab_client/tests/test_ml_lifecycle.py` and
+`apps/web/e2e/ml-project-workspace.spec.ts`; if an equivalent current test owner
+exists, extend it and record the substitution instead of duplicating coverage.
+
+### S1-P00A — product, persona and ownership ADR
+
+```text
+Read DCLAB_CORE_CONCEPT.md and inventory `db/models.py`, `domain/technical_explorer.py`,
+`domain/model_build_reproduction.py`, `services/platform_explorer_service.py`,
+`services/scientific_lineage_service.py`, `services/lineage_service.py`,
+`services/model_build_reproduction_service.py`, `api/technical_explorer.py`,
+`api/reproducibility.py`, `ModelBuildInspector.tsx`, `ModelBuildStagePanels.tsx`
+and `PipelineMonitorView.tsx`. Write an ADR mapping every canonical lifecycle
+node/edge to its existing owner, naming missing relationships only, and defining
+Data Scientist/ML Engineer MVP jobs and three synchronized views. Resolve lifecycle
+graph versus LangGraph/task/notebook graph authority explicitly. Record non-goals:
+no agent runtime, generic graph store, new training path, deployment or hidden
+memory in this prompt. Add a checked ownership matrix and ADR link tests.
+```
+
+### S1-P00B — lifecycle projection contracts
+
+```text
+Add `domain/ml_lifecycle.py` with bounded Pydantic contracts for MlLifecycleNode,
+MlLifecycleEdge, MlLifecycleProjection, MlLifecycleStatus and ImpactPreview.
+Enumerate supported resource types from Dataset through ModelVersion; carry
+workspace/project, ID, version, digest, state, freshness/verification/staleness,
+producer run, authorized implementation/artifact references and parent/child
+edges. Define deterministic edge direction, stable ordering, cursor/page bounds,
+unknown/deleted/quarantined representation and schema version. An edge is lineage,
+not authorization. Add fixtures for empty, partial, branched, failed, superseded
+and completed projects plus validation/property tests; do not create tables.
+```
+
+### S1-P00C — durable project-decision contracts
+
+```text
+Add `domain/project_memory.py` defining ProjectDecisionRecord, citation/result
+links and proposed/accepted/rejected/superseded transitions. Require decision
+type, subject type/ID/version/digest, actor, occurred/recorded time, bounded
+rationale labeled fact/hypothesis/judgment, alternatives, business/scientific
+objectives and constraints, policy/source agent/proposal/tool versions, evidence
+citations, resulting resources and optional superseded record. Define canonical
+digest/idempotency, correction and retention rules. Reject hidden reasoning,
+secrets, raw rows, authority claims, mutable accepted records and acceptance that
+purports to execute a change. Add exhaustive transition/schema/golden-digest tests.
+```
+
+### S1-P00D — project-memory persistence and lifecycle relationship gaps
+
+```text
+Discover the live Alembic head. Add one reviewable migration and SQLAlchemy models
+for `project_decision_records`, normalized `project_decision_citations` and
+`project_decision_results`. Include UUID id/workspace_id/project_id, type/state,
+subject tuple/digest, actor/source/version fields, bounded safe rationale and
+typed constraints, policy/digest/idempotency, occurred/recorded timestamps and
+self-FK supersession. Enforce composite workspace/project lineage, terminal
+immutability, one same-digest replay, no self/cross-project supersession and
+indexes for project timeline, subject history and decision state/type. Add an
+`ml_lifecycle_links` table only for ADR-proven relationships not already derived
+from canonical FKs; otherwise add no graph table. Use artifact references for
+oversized safe bodies. Test empty/live-head upgrade, constraints, concurrency,
+retention/tombstone and rollback/forward repair with PostgreSQL.
+```
+
+### S1-P00E — lifecycle projection and impact services
+
+```text
+Implement `services/ml_lifecycle_service.py` over existing authorization,
+platform explorer, lineage, reproducibility and evidence services. Build the
+projection from authoritative rows in deterministic topological/stable order;
+never trust client edges. Compute impact/staleness for an upstream version change
+without mutating downstream history, distinguishing definitely affected,
+possibly affected, already superseded and insufficient evidence. Re-authorize
+every resource and omit/deny rather than leak an inaccessible node. Add service
+tests for branches, missing artifacts, changed dataset/feature/plan, stale model,
+cross-workspace substitution, bounded large projects and identical regeneration.
+```
+
+### S1-P00F — ProjectDecisionService and retrieval policy
+
+```text
+Implement `services/project_decision_service.py` for append proposal, record
+human decision, reject and supersede plus bounded project/subject retrieval.
+Resolve current membership/capability and subject version at every write/read;
+validate citations through existing evidence owners and append audit/event in the
+same transaction. Acceptance records judgment only and cannot call ML services,
+consume approval or modify the subject. Retrieval is purpose/audience scoped,
+stable and limited by count/bytes/time; accepted/rejected history is not silently
+treated as a current policy. Test replay/conflict, concurrent decisions, stale/
+deleted subject, correction, forged citation, cross-tenant access and redaction.
+```
+
+### S1-P00G — lifecycle and decision `/v1` plus Python client
+
+```text
+Add cohesive `/v1/projects/{project_id}/ml-lifecycle`, impact-preview and
+`/v1/projects/{project_id}/decisions` list/get/create/accept/reject/supersede
+resources through the services. Use explicit workspace, stable error envelope,
+opaque cursor, ETag where mutable, Idempotency-Key/canonical digest on commands
+and current capability. Return 200 reads/replays, 201 append, 409 stale/conflict,
+422 invalid transition and anti-enumerating 403/404 policy; never expose internal
+paths or unrestricted rationale artifacts. Add typed HTTP-only methods/models in
+`packages/dclab_client` and operation parity. Test OpenAPI, two workspaces,
+pagination, replay, changed subject, revoked access and lifecycle determinism.
+```
+
+### S1-P00H — synchronized project workspace and core-domain gate
+
+```text
+Create the project-centric UI foundation under `apps/web/app/app/projects/` and
+reusable components under `apps/web/app/components/ml-project/`. Provide
+accessible Conversation, ML Workflow and Implementation tabs/deep links that
+resolve the same project/resource IDs; Conversation may show a clearly unavailable
+agent state until Plan 1.10. Reuse ModelBuildInspector, ModelBuildStagePanels,
+PipelineMonitorView and existing reproduction downloads instead of cloning them.
+Render lifecycle graph plus list fallback, decision timeline and authorized
+formulas/config/code/environment/artifact links with loading/empty/partial/stale/
+denied states. Add component/Playwright cases for both personas, workspace switch,
+malicious labels, large graphs and keyboard navigation. Run migration/API/SDK/UI,
+two-workspace, immutability, reconstruction and clean-disable gates; record that
+no ML behavior or agent runtime was added before Plan 1.1.
+```
 
 ## Plan 1.1 — agent and policy contracts
 
@@ -330,7 +472,8 @@ PostgreSQL tests for mixed-column/two-workspace cases.
 
 ```text
 Build immutable bounded envelopes from authorized project, ProblemSpec, dataset
-schema/profile, run state, completed metrics and artifact metadata. Every item
+schema/profile, run state, completed metrics, applicable lifecycle nodes,
+reviewed project decisions and artifact metadata. Every item
 records resource/version/digest, classification, audience and citation target.
 Separate system instructions, user text, trusted structured facts and untrusted
 source text. Deterministically sort, truncate and digest. Do not include rows,
@@ -531,16 +674,17 @@ enable the handler for an internal allowlist.
 ## Plan 1.8 — read-only tool catalog
 
 **Contract.** Tools are typed adapters over existing application queries, never
-raw DB/object access. Initial results are metadata/evidence summaries with hard
-page/byte/time bounds and citation targets.
+raw DB/object access. Initial results include lifecycle/decision memory and
+metadata/evidence summaries with hard page/byte/time bounds and citation targets.
 
 ### S1-P08A — inventory and version the first catalog
 
 ```text
 Map user questions to the smallest initial tools: identity/capabilities,
-projects/ProblemSpec, dataset schema/profile/readiness, execution/build status,
-bounded events, completed scientific evidence, artifact metadata and safe
-technical/business summaries. For each define name/version, JSON input/output,
+projects/ProblemSpec, lifecycle/impact, reviewed project decisions, dataset
+schema/profile/readiness, execution/build status, bounded events, completed
+scientific evidence, artifact metadata and safe technical/business summaries.
+For each define name/version, JSON input/output,
 required capability/data policy, allowed states, maximum items/bytes/time and
 citation mapping. Register code-owned descriptors; no dynamic import/tool name.
 ```
@@ -646,15 +790,18 @@ and rollback behavior before Agent Studio consumes the API.
 ## Plan 1.10 — Agent Studio UI
 
 **Contract.** Build beneath `apps/web/app/app/agent/`; reuse AppShell, session/
-query providers and UI primitives. The UI renders server capabilities and run
-state but never invents authorization or success.
+query providers, the Plan 1.0 project workspace and UI primitives. Agent Studio
+is the conversation view synchronized with lifecycle, decision and implementation
+views. The UI renders server capabilities and run state but never invents
+authorization or success.
 
 ### S1-P10A — information architecture and typed client hooks
 
 ```text
-Define routes for session list/new/session detail and component boundaries for
+Define routes for session list/new/session detail plus project/lifecycle deep
+links and component boundaries for
 messages, composer, run progress, tool steps, citations, budget/policy notices
-and feedback. Add schemas/hooks keyed by workspace/session/run using the BFF.
+and feedback. Add schemas/hooks keyed by workspace/project/session/run using the BFF.
 Model loading/empty/blocked/error/offline/terminal states explicitly. Keep raw
 prompts, hidden reasoning and admin policy bodies out of client types.
 ```
@@ -686,7 +833,9 @@ Render claim-linked citations with resource type/name/version/digest and an
 authorized navigation target; never render arbitrary provider URLs/HTML. Show
 policy/budget blocks with safe reason and next action. Add explicit helpful/not-
 helpful plus bounded comment feedback as evidence only, not automatic learning.
-Test missing/revoked citations, malicious labels and keyboard/screen-reader flow.
+Expose referenced ProjectDecisionRecord history and allow an authorized user to
+record an accept/reject rationale without executing the proposal. Test missing/
+revoked citations, malicious labels and keyboard/screen-reader flow.
 ```
 
 ### S1-P10E — browser and accessibility gate
@@ -695,6 +844,8 @@ Test missing/revoked citations, malicious labels and keyboard/screen-reader flow
 Run component and Playwright journeys for zero/one/many workspaces, new and
 existing session, direct answer, tool answer, policy block, provider error,
 cancel, retry, reload/reconnect, revoked membership and narrow/mobile viewport.
+Deep-link from conversation to lifecycle node, decision and implementation view
+and back while preserving exact project/resource/version identity.
 Perform automated accessibility checks and manual keyboard/focus review. Verify
 no tokens/raw internals leak into DOM/storage/errors before allowlisted release.
 ```
@@ -713,7 +864,10 @@ completed builds, insufficient evidence and audience-safe explanation. Assert
 tool choice/arguments, policy decision, structured schema, citation coverage,
 unsupported-claim refusal, bounds and terminal state; add injection/exfiltration/
 cross-tenant/secret/provider-failure cases. Store large fixtures/results as
-artifacts with digests. One safety failure fails the run regardless of average.
+artifacts with digests. Include Data Scientist and ML Engineer questions about
+why a feature/model/metric/version exists and prove answers use lifecycle plus
+reviewed decision citations rather than chat memory. One safety failure fails
+the run regardless of average.
 ```
 
 ### S1-P11B — evaluation runner and baseline comparison
@@ -755,6 +909,9 @@ runtime-schema forward repair and product/checkpoint reconciliation.
 Run migrations, full regression, two-workspace, fake/provider synthetic,
 adversarial, budget-concurrency, crash-injection, API/SDK and browser E2E. Have an
 allowlisted user complete the supported questions without DB intervention.
+Exercise the project lifecycle, decision timeline and all three synchronized
+views, including a rejected decision that remains searchable but is not treated
+as current policy.
 Publish the Scope 1 evidence record with versions, quality/cost/latency, safety
 assertions and limitations, including exact LangGraph/checkpointer pins and proof
 that no nested agent runtime is installed or invoked. Do not start Scope 2 until

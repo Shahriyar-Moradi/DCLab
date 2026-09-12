@@ -3,6 +3,8 @@
 Start after Scope 2; any write/build cell also requires Scope 3. Apply
 `README.md` and `EXECUTION_STANDARD.md`. Managed cells call typed DCLab services.
 Python remains disabled until the real isolated runtime passes Plan 4.7.
+The notebook is a secondary investigation/implementation view, never DCLab's
+project or ML-lifecycle source of truth.
 
 ## Scope implementation boundary
 
@@ -13,7 +15,8 @@ large immutable outputs in object storage. Never execute code inside API/worker-
 ML processes. Agent-initiated notebook work enters through DCLab application
 services and the same LangGraph/ToolRunner boundary. The notebook scheduler and
 isolated code runtime are not agent graphs and must not embed PydanticAI or
-another orchestration loop.
+another orchestration loop. Notebook revisions bind canonical lifecycle node and
+ProjectDecisionRecord IDs/versions; they do not duplicate either state.
 
 ## Plan 4.1 — notebook domain and storage model
 
@@ -260,6 +263,8 @@ kill switch and rollback through selecting prior revision, not row mutation.
 
 **Contract.** Use existing AppShell/UI primitives and BFF. The browser edits
 draft state but persists immutable revisions and renders only typed safe outputs.
+Notebook UI is synchronized with the project Conversation, ML Workflow and
+Implementation views through canonical IDs and deep links.
 
 ### S4-P05A — routes, hooks and editor state
 
@@ -287,8 +292,10 @@ keyboard reorder/focus and slow/error/reload tests.
 Render allowlisted text/table/chart/resource/file outputs with size/pagination/
 download bounds and safe escaping. Add provenance drawer showing cell/revision/
 environment/input/output digests, command/agent/run links and citations. Never
-render arbitrary HTML/script/provider URL or expose storage keys. Test malicious
-content, missing/quarantined output and revoked access.
+render arbitrary HTML/script/provider URL or expose storage keys. Include links
+to the producing lifecycle node and relevant project decisions; implementation
+content remains inspectable when authorized. Test malicious content, missing/
+quarantined output and revoked access.
 ```
 
 ### S4-P05D — agent diff/review experience
@@ -307,6 +314,8 @@ malicious label tests.
 Run component and Playwright journeys for create/edit/revise/execute/cancel/retry/
 reload/export, conflict, agent proposal and workspace/policy revocation. Test
 large cells/outputs, narrow viewport, keyboard/focus and automated accessibility.
+Verify notebook, lifecycle and conversation routes display the same resource
+versions and that cell order/kernel history cannot change project truth.
 Scan DOM/network/storage for secrets/raw internals/cross-tenant content. Record
 performance and keep Python controls absent until isolated runtime release.
 ```

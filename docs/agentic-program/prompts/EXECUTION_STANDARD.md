@@ -20,6 +20,8 @@ Inspect these existing surfaces before inventing a new path:
 | Durable intent/jobs | `services/execution_request_service.py`, `services/ml_job_service.py`, `services/job_dispatcher.py`, `services/job_handlers.py` | Reuse `ExecutionRequest` and `MlJob`; add code-owned handler keys and bounded ID-only payloads. |
 | Deterministic ML | `domain/model_build.py`, `services/model_build_service.py`, `services/workflow_execution_service.py`, `ml/` | Agents may call typed services; they must not duplicate or bypass scientific logic. |
 | Evidence/artifacts | `services/artifact_service.py`, `artifact_store.py`, `lineage_service.py`, `evidence_lock_service.py`, `pipeline_verifier.py` | Store metadata/digests in PostgreSQL and large immutable bodies in object storage. |
+| Core ML lifecycle | `Project`, `ProblemSpec`, `Dataset`, `DatasetProfile`, `FeatureSetVersion`, `FeatureTransformation`, `FeatureLineage`, `WorkflowRun`, `PipelineRun`, `ExperimentCandidate`, `ModelVersion`, `RuntimeEnvironment`, `CodeSnapshot` and current lineage/reproducibility services | Expose one typed project lifecycle projection over these owners. Add a lifecycle link only for a relationship the current schema cannot derive; never create a parallel generic graph as product truth. |
+| Project decision memory | Planned in S1-P00; existing agent messages, events and checkpoints are not substitutes | Store immutable, tenant-scoped `ProjectDecisionRecord` facts/rationale/citations and supersession. Memory never authorizes, executes a change or stores hidden reasoning. |
 | Agent orchestration (Scope 1+) | Not implemented until S1-P01A; planned owner is a pinned raw LangGraph `StateGraph` runtime invoked by `agent.turn.v1` | LangGraph owns graph routing/checkpoint execution only. DCLab owns product state, authorization, tools, budgets, events and recovery policy. Do not add a second agent loop. |
 | LLM integration | `services/openai_provider.py`, `openai_smoke.py`, existing `LlmInvocation` model | Introduce a DCLab provider-neutral gateway around, not beside, existing usage; retain a deterministic fake and use the official OpenAI SDK as the first adapter. PydanticAI is not part of the production MVP. |
 | Observability | `services/observability_service.py`, `domain/observability.py`, `api/observability.py` | Emit bounded structured events and metrics; never log prompts, secrets, raw rows, or tokens. |
@@ -54,6 +56,9 @@ working notes or PR description:
 6. **Operations:** metrics, trace attributes, safe logs, alerts/runbook, feature
    flag, kill switch, capacity bound, and rollout owner.
 7. **Non-goals:** behavior deliberately excluded from this work unit.
+8. **Core-product impact:** applicable Data Scientist/ML Engineer job, lifecycle
+   nodes/edges and synchronized conversation/workflow/implementation views; or
+   an explicit statement that the prompt is infrastructure-only.
 
 No edit begins until this packet shows that the prompt can be completed without
 an unrelated refactor. If the packet exposes an unresolved architecture choice,
@@ -96,6 +101,19 @@ finish only the ADR/design prompt and stop before implementation.
   one provider or tool operation, persists its DCLab result and checkpoint, and
   stops before scheduling the next turn. All replayable operations are
   idempotent and budget-settled exactly once.
+- The ML lifecycle graph is a DCLab domain projection and remains distinct from
+  LangGraph runtime topology, multi-agent task DAGs and notebook cell graphs.
+  All surfaces use the same resource IDs, versions, digests and permissions.
+- Project memory consists of immutable decision records with observed facts,
+  hypotheses, rationale, alternatives, constraints, citations and resulting
+  versions. Conversation history may provide evidence but is not silently
+  promoted into memory. Accepted memory cannot bypass a typed command.
+- Code is inspectable but not the primary interface. An implementation view may
+  expose authorized reproduction source, formulas, configuration, environment,
+  artifacts, jobs and safe logs; edits create reviewed immutable versions.
+- Existing business-side routes remain supported and the Scope 8 plans remain in
+  force. The Core ML MVP release gate is independent unless a selected pilot
+  explicitly includes a business action/outcome journey.
 
 ## 4. Prompt size and change budget
 

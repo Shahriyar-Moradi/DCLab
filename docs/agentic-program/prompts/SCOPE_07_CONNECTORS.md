@@ -14,6 +14,8 @@ context and secret reference; no DB session, global object store or raw secret.
 Agent access is only through versioned DCLab ToolRunner/application-service
 adapters. LangGraph never receives connector credentials or invokes provider
 SDKs directly, and connectors do not host their own agent loop.
+Published source/dataset versions appear as canonical project lifecycle nodes;
+connector run graphs and cursors never become a competing lifecycle authority.
 
 ## Plan 7.1 — direct upload and asynchronous ingest
 
@@ -355,7 +357,8 @@ stale ETag, workspace switch and malicious provider label tests.
 Expose current dataset/source/config/mapping/checkpoint/freshness/quality/
 classification lineage with bounded metrics and safe diffs. Distinguish last
 attempt, last success, source high-water and dataset publication. Provide review
-and resume workflow for drift through new versions. Test missing/late/deleted
+and resume workflow for drift through new versions, refresh lifecycle impact and
+append reviewed mapping/drift rationale to ProjectDecisionService. Test missing/late/deleted
 data and never claim “up to date” beyond provider semantics.
 ```
 
