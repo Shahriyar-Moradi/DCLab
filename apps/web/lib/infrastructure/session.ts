@@ -1,6 +1,6 @@
 "use client";
 
-export const SESSION_COOKIE = "dclab_session";
+/** Presentation helpers for /auth/me. The API authorizes every operation. */
 export const SESSION_CHANGED_EVENT = "dclab-session-changed";
 
 export type SessionWorkspace = {

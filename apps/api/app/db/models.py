@@ -415,8 +415,29 @@ class AuthSession(Base):
     __tablename__ = "auth_sessions"
     __table_args__ = (
         UniqueConstraint("token_hash", name="uq_auth_sessions_token_hash"),
+        UniqueConstraint("id", "user_id", name="uq_auth_sessions_id_user_id"),
+        ForeignKeyConstraint(
+            ["rotated_from_id", "user_id"],
+            ["auth_sessions.id", "auth_sessions.user_id"],
+            name="fk_auth_sessions_rotated_from_user",
+            ondelete="SET NULL (rotated_from_id)",
+        ),
+        CheckConstraint(
+            "token_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_auth_sessions_token_hash_sha256",
+        ),
+        CheckConstraint(
+            "rotated_from_id IS NULL OR rotated_from_id <> id",
+            name="ck_auth_sessions_rotated_from_not_self",
+        ),
         Index("ix_auth_sessions_user_id", "user_id"),
         Index("ix_auth_sessions_idle_expires_at", "idle_expires_at"),
+        Index("ix_auth_sessions_absolute_expires_at", "absolute_expires_at"),
+        Index(
+            "ix_auth_sessions_revoked_at",
+            "revoked_at",
+            postgresql_where=text("revoked_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -433,7 +454,6 @@ class AuthSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rotated_from_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("auth_sessions.id", ondelete="SET NULL"),
         nullable=True,
     )
     user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -456,8 +476,17 @@ class AuthRecoveryToken(Base):
             "purpose IN ('password_reset', 'email_verification')",
             name="ck_auth_recovery_tokens_purpose",
         ),
+        CheckConstraint(
+            "token_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_auth_recovery_tokens_token_hash_sha256",
+        ),
         Index("ix_auth_recovery_tokens_user_id", "user_id"),
         Index("ix_auth_recovery_tokens_expires_at", "expires_at"),
+        Index(
+            "ix_auth_recovery_tokens_consumed_at",
+            "consumed_at",
+            postgresql_where=text("consumed_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

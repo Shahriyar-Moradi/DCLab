@@ -23,7 +23,8 @@ reset token in JSON” fallback while SMTP is deferred.
    `login` / `register` / recovery posts, require CSRF.
 2. **Bearer JWT** (`Authorization: Bearer` and `POST /auth/tokens`) is
    **exempt**. API clients are not browser cookie sessions.
-3. **Session CSRF** is HMAC-SHA256(`jwt_secret`, `"csrf-v1:" + raw_session`).
+3. **Session CSRF** is HMAC-SHA256(`AUTH_CSRF_SECRET` or `jwt_secret`,
+   `"csrf-v1:" + raw_session`). Production requires `AUTH_CSRF_SECRET`.
    The value is issued as non-HttpOnly cookie `dclab_csrf` and must be sent
    as `X-CSRF-Token`. The raw session never appears in the CSRF cookie.
 4. **Anonymous CSRF** is double-submit: `GET /auth/csrf` sets `dclab_csrf`;
@@ -125,8 +126,16 @@ React text nodes only. No `dangerouslySetInnerHTML`. Auth JSON uses
 
 - Browser and Playwright `page.request` mutations must send `X-CSRF-Token`
   and a trusted `Origin`.
-- Alembic `0056_auth_hardening` is additive.
+- Alembic `0056_auth_hardening` is additive identity-plane state. S0-P02C
+  `0059_auth_session_constraints` adds same-user rotation lineage, hash CHECKs,
+  expiry/revocation indexes, and bounded cleanup. Current head is named by
+  [`truth_baseline.json`](../../contracts/truth_baseline.json).
 - Full SMTP / IdP is **deferred**. Recovery is hook + hashed row only.
+- Durable cleanup uses the existing `ml_jobs` handler registry
+  (`auth.session_cleanup`); it does not introduce Redis.
+- S0-P02E adds `AUTH_BROWSER_SESSIONS_ENABLED`, `AUTH_TOKEN_HASH_SECRET`,
+  `AUTH_CSRF_SECRET`, bounded `auth_event family=… reason=…` metrics, and
+  incident runbooks under `docs/runbooks/`.
 
 ## Rollback
 

@@ -43,12 +43,35 @@ class Settings(BaseSettings):
     session_absolute_minutes: int = 60 * 24 * 7
     session_retention_days: int = 30
     session_max_concurrent: int = 5
+    session_cleanup_batch_size: int = 500
+    session_cleanup_max_batches: int = 20
     csrf_cookie_name: str = "dclab_csrf"
     csrf_header_name: str = "X-CSRF-Token"
     login_throttle_attempts: int = 5
     login_throttle_window_minutes: int = 15
     auth_trust_forwarded: bool = False
     auth_email_delivery_enabled: bool = False
+    auth_browser_sessions_enabled: bool = True
+    # Empty in CI/dev: unkeyed SHA-256 (existing rows). Production requires a
+    # dedicated secret; lookups also accept unkeyed SHA-256 and the previous
+    # HMAC during rotation. Never put production values in tests.
+    auth_token_hash_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "AUTH_TOKEN_HASH_SECRET", "AUTH_SESSION_HASH_SECRET"
+        ),
+    )
+    auth_token_hash_secret_previous: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "AUTH_TOKEN_HASH_SECRET_PREVIOUS", "AUTH_SESSION_HASH_SECRET_PREVIOUS"
+        ),
+    )
+    # Empty uses jwt_secret for CSRF HMAC. Production requires a dedicated value.
+    auth_csrf_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("AUTH_CSRF_SECRET"),
+    )
     recovery_token_minutes: int = 60
     # Lab decision agent (LLM). Off by default so local/dev/CI never call a provider.
     # DECISION_AGENT_API_KEY (or OPENAI_API_KEY) is required when this is on.
@@ -94,29 +117,63 @@ def cookie_secure(settings: Settings) -> bool:
     return is_production_env(settings)
 
 
+def csrf_hmac_secret(settings: Settings) -> str:
+    return settings.auth_csrf_secret.strip() or settings.jwt_secret
+
+
+def _secret_is_unsafe(value: str) -> bool:
+    return not value.strip() or value.strip() == INSECURE_JWT_SECRET
+
+
 def validate_runtime_settings(settings: Settings) -> None:
-    """Fail closed when a production process would ship unsafe auth cookies/secrets."""
+    """Fail closed when a process would ship unsafe auth cookies/secrets."""
     if settings.auth_email_delivery_enabled:
         raise RuntimeError(
             "unsafe authentication configuration: AUTH_EMAIL_DELIVERY_ENABLED "
             "must stay false until a mail provider exists"
         )
-    if not is_production_env(settings):
-        return
     problems: list[str] = []
-    if not settings.jwt_secret or settings.jwt_secret == INSECURE_JWT_SECRET:
-        problems.append("JWT_SECRET is missing or the development default")
-    if not cookie_secure(settings):
-        problems.append("session cookies must be Secure in production")
+    if settings.login_throttle_attempts < 1:
+        problems.append("LOGIN_THROTTLE_ATTEMPTS must be at least 1")
+    if settings.login_throttle_window_minutes < 1:
+        problems.append("LOGIN_THROTTLE_WINDOW_MINUTES must be at least 1")
+    if settings.session_idle_minutes < 1:
+        problems.append("SESSION_IDLE_MINUTES must be at least 1")
+    if settings.session_absolute_minutes < settings.session_idle_minutes:
+        problems.append("SESSION_ABSOLUTE_MINUTES must be >= SESSION_IDLE_MINUTES")
+    if not settings.session_cookie_name.strip():
+        problems.append("SESSION_COOKIE_NAME must be set")
+    if not settings.csrf_cookie_name.strip() or not settings.csrf_header_name.strip():
+        problems.append("CSRF cookie and header names must be set")
     same_site = settings.session_cookie_samesite.strip().lower()
     if same_site not in {"lax", "strict", "none"}:
         problems.append("SESSION_COOKIE_SAMESITE must be lax, strict, or none")
+    if not is_production_env(settings):
+        if problems:
+            raise RuntimeError(
+                "unsafe authentication configuration: " + "; ".join(problems)
+            )
+        return
+    if _secret_is_unsafe(settings.jwt_secret):
+        problems.append("JWT_SECRET is missing or the development default")
+    if _secret_is_unsafe(settings.auth_token_hash_secret):
+        problems.append("AUTH_TOKEN_HASH_SECRET is missing or the development default")
+    if _secret_is_unsafe(settings.auth_csrf_secret):
+        problems.append("AUTH_CSRF_SECRET is missing or the development default")
+    if not cookie_secure(settings):
+        problems.append("session cookies must be Secure in production")
     if same_site == "none" and not cookie_secure(settings):
         problems.append("SameSite=None requires Secure cookies")
     if settings.session_cookie_path != "/":
         problems.append("session cookie Path must be / in production")
+    if not any(origin.strip() for origin in settings.cors_origins.split(",")):
+        problems.append("CORS_ORIGINS must list at least one trusted origin")
     if settings.session_max_concurrent < 1:
         problems.append("SESSION_MAX_CONCURRENT must be at least 1")
+    if settings.session_cleanup_batch_size < 1:
+        problems.append("SESSION_CLEANUP_BATCH_SIZE must be at least 1")
+    if settings.session_cleanup_max_batches < 1:
+        problems.append("SESSION_CLEANUP_MAX_BATCHES must be at least 1")
     if problems:
         raise RuntimeError(
             "unsafe production authentication configuration: " + "; ".join(problems)

@@ -10,7 +10,10 @@ Add `domain/notebook.py`, cohesive `services/notebook_*.py`, code-owned notebook
 job handlers, `api/v1_notebooks.py`, SDK resources and
 `apps/web/app/app/notebooks/`. Store revision/cell metadata in PostgreSQL and
 large immutable outputs in object storage. Never execute code inside API/worker-
-ML processes.
+ML processes. Agent-initiated notebook work enters through DCLab application
+services and the same LangGraph/ToolRunner boundary. The notebook scheduler and
+isolated code runtime are not agent graphs and must not embed PydanticAI or
+another orchestration loop.
 
 ## Plan 4.1 — notebook domain and storage model
 

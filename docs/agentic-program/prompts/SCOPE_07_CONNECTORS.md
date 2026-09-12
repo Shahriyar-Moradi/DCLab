@@ -11,6 +11,9 @@ Reuse DataSource, DataAccess, IngestionRun, DatasetAsset/Dataset, Artifact,
 ingestion/materialization, object storage and jobs. Add cohesive connector domain,
 services/adapters/workers and `api/v1_connectors.py`. Adapters receive a narrow
 context and secret reference; no DB session, global object store or raw secret.
+Agent access is only through versioned DCLab ToolRunner/application-service
+adapters. LangGraph never receives connector credentials or invokes provider
+SDKs directly, and connectors do not host their own agent loop.
 
 ## Plan 7.1 — direct upload and asynchronous ingest
 

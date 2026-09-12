@@ -1,7 +1,8 @@
 """Worker handler registry: handler_key -> callable.
 
-auto_train is one registered handler. Future capabilities register here
-without a second queue table. MCP jobs are not registered.
+``labs.auto_train`` and ``auth.session_cleanup`` are shipped handlers. Future
+capabilities register here without a second queue table. MCP jobs are not
+registered.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import MlJob
 from app.domain.errors import UnknownJobHandlerError
-from app.domain.ml_jobs import HANDLER_LABS_AUTO_TRAIN
+from app.domain.ml_jobs import HANDLER_AUTH_SESSION_CLEANUP, HANDLER_LABS_AUTO_TRAIN
 
 Heartbeat = Callable[[], None]
 
@@ -72,3 +73,19 @@ def handle_labs_auto_train(
     if upload_id is None:
         raise ValueError("labs.auto_train requires upload_id")
     run_auto_train_job(db, upload_id, on_heartbeat=on_heartbeat)
+
+
+@register_handler(HANDLER_AUTH_SESSION_CLEANUP)
+def handle_auth_session_cleanup(
+    db: Session,
+    job: MlJob,
+    *,
+    on_heartbeat: Heartbeat | None = None,
+) -> None:
+    from app.services.session_cleanup_service import cleanup_expired_auth_state
+
+    if on_heartbeat is not None:
+        on_heartbeat()
+    cleanup_expired_auth_state(db)
+    if on_heartbeat is not None:
+        on_heartbeat()

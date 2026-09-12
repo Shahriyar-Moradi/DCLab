@@ -3,7 +3,7 @@
 **Program baseline date:** 2026-09-11
 **Repository:** `Shahriyar-Moradi/DCLab`
 **Reviewed product commit:** `3d54994e83283d34665f9589687108627284ab3f`
-**Documentation baseline:** `3d54994e83283d34665f9589687108627284ab3f`
+**Verified truth/checkout baseline:** `91986b9b39bb54c907d50274e94de2febecffaa0`
 **Current Git facts:** use the stdout-only recorder and CURRENT verification report
 **Default branch:** `main`
 **Canonical database/API/inventory facts:** [`contracts/truth_baseline.json`](../../contracts/truth_baseline.json)
@@ -24,13 +24,18 @@ The decision is:
 
 1. Keep the deterministic ML, authorization, lineage, evidence, queue, and
    artifact layers as the authoritative software layer.
-2. Complete Scope 0 and the whole of Scope 1 before broadening autonomy.
-3. Insert a new, complete Scope 2 after the read-only agent: a durable
+2. Use one agent orchestration runtime: pinned raw LangGraph `StateGraph`.
+   Ordinary Pydantic owns typed contracts; DCLab owns product state,
+   authorization, tools, budgets, citations and audit. PydanticAI,
+   `pydantic-graph` and high-level LangChain agent loops are excluded from the
+   production MVP.
+3. Complete Scope 0 and the whole of Scope 1 before broadening autonomy.
+4. Insert a new, complete Scope 2 after the read-only agent: a durable
    multi-agent operating system that supervises every important pipeline area
    in read-only, shadow, and proposal modes.
-4. Activate mutations only in Scope 3 through typed commands, exact approvals,
+5. Activate mutations only in Scope 3 through typed commands, exact approvals,
    budgets, idempotency, cancellation, and immutable child-run lineage.
-5. Add notebook, public developer interfaces, MCP, connectors, actions,
+6. Add notebook, public developer interfaces, MCP, connectors, actions,
    outcomes, production operations, and measured scale in dependency order.
 
 “Agentic” does not mean deleting the software layer. It means agents plan,
@@ -65,18 +70,20 @@ the current checkout, current evidence below wins.
 
 ### 3.1 Verified on this review
 
-S0-P01A re-measured the product/document baseline, now committed at `3d54994`. Full ledger:
-`docs/verification/S0_P01A_CURRENT_TRUTH.md`.
+S0-P01A re-measured the product baseline at `3d54994`; S0-P01B/C truth tooling
+is committed at `91986b9`, and S0-P01D closed the complete local and exact-SHA
+gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
+`docs/verification/S0_P01D_BASELINE_GATE.md`.
 
 | Evidence | Observed result |
 | --- | --- |
-| Git | committed baseline: `main` = `origin/main` at `3d54994`, ahead 0 and behind 0; use the recorder for later movement |
-| GitHub CI | exact-SHA status for the current commit is not inferred from the older `c91b05a` run; S0-P01D owns exact-SHA closure. |
-| Backend and SDK tests | `1031 passed, 1 skipped, 20 warnings` in 599.07s on the repaired working tree; isolated PostgreSQL enforcement tests ran. |
+| Git | verified source: `main` = `origin/main` at `91986b9`, ahead 0 and behind 0; use the recorder for later movement |
+| GitHub CI | exact-SHA [run 34598999220](https://github.com/Shahriyar-Moradi/DCLab/actions/runs/34598999220) succeeded on attempt 1. |
+| Backend and SDK tests | `1036 passed, 1 skipped, 20 warnings` in 484.80s against isolated PostgreSQL 16.15; standalone SDK 8/8. |
 | Frontend lint | exit 0 with three existing React hook dependency warnings and tooling notices. |
 | Frontend production build | succeeded; 31 static pages generated. |
 | Standalone TypeScript check | exit 0 when run before `next build`; do not race generated `.next` state. |
-| Local Playwright | fresh `0058` database: complete uninterrupted run `18 passed` in 1.6m after repairing session-cookie forwarding, bodyless 204 handling, and stale E2E locators. |
+| Local Playwright | fresh canonical-head database: complete uninterrupted run `18 passed` in 91.25s; exact-SHA CI browser job also succeeded. |
 | Alembic, repository scale, and source/test/web inventory | [`contracts/truth_baseline.json`](../../contracts/truth_baseline.json) is the sole generated CURRENT owner. |
 | Relational schema | [`contracts/sqlalchemy_tables.json`](../../contracts/sqlalchemy_tables.json) is the sole generated CURRENT table registry. |
 | HTTP and `/v1` surface | [`contracts/openapi_operations.json`](../../contracts/openapi_operations.json) and [`contracts/v1_openapi.json`](../../contracts/v1_openapi.json) are canonical. |
@@ -161,6 +168,14 @@ S0-P01A re-measured the product/document baseline, now committed at `3d54994`. F
 15. Scaling components are introduced from measured thresholds. A vector store,
     message broker, Kubernetes, partitioning, replicas, and GPU pools are not
     default proof of maturity.
+16. LangGraph owns only versioned graph topology, node routing and private
+    execution checkpoints. DCLab AgentRun/Step/Event/ToolCall/Citation rows are
+    the product authority; checkpoint state never authorizes access or becomes
+    a public API contract.
+17. There is exactly one agent loop. Do not nest PydanticAI,
+    `pydantic-graph`, LangChain `create_agent`, or another autonomous executor
+    inside LangGraph nodes. One durable turn performs at most one provider or
+    tool operation before checkpointing and yielding.
 
 ## 5. Target product and platform topology
 
@@ -169,9 +184,10 @@ flowchart TD
     UI[Studio, business workspace, notebook] --> EDGE[BFF and /v1 API]
     DEV[SDK, CLI, MCP] --> EDGE
     EDGE --> AUTH[Identity, workspace, scope, capability, rate and quota]
-    AUTH --> AOS[Agentic operating system]
-    AOS --> LLM[Provider-neutral LLM gateway]
-    AOS --> TOOLS[Versioned tool registry]
+    AUTH --> AOS[DCLab agent control plane]
+    AOS --> GRAPH[LangGraph StateGraph runtime]
+    GRAPH --> LLM[Provider-neutral LLM gateway]
+    GRAPH --> TOOLS[Versioned DCLab tool registry]
     TOOLS --> APP[Deterministic commands and queries]
     APP --> QUEUE[Durable jobs and transactional outbox]
     QUEUE --> ML[ML and profiling workers]
@@ -180,6 +196,7 @@ flowchart TD
     APP --> DB[(Managed PostgreSQL)]
     ML --> OBJ[(Private object storage)]
     INT --> EXT[Approved external providers]
+    GRAPH --> CHECKPOINT[(Private runtime checkpoints)]
     AOS --> OBS[Audit, traces, metrics, evals, cost]
     APP --> OBS
     QUEUE --> OBS
@@ -189,7 +206,9 @@ Initial deployment units are `web`, `api`, `worker-ml`, `worker-agent`,
 `worker-integration`, managed PostgreSQL, private object storage, managed
 secrets/KMS, and telemetry. An isolated notebook execution service is added only
 for code cells. Workers may initially share an image but use disjoint handler
-allowlists and deployment identities.
+allowlists and deployment identities. LangGraph runs inside `worker-agent`; it
+is not a second API or authorization service. Its checkpointer uses a dedicated
+PostgreSQL schema and lifecycle separate from DCLab product/audit tables.
 
 ## 6. Scope map and critical path
 
@@ -305,13 +324,13 @@ tool catalog contains no write, export, connector, or code-execution capability.
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 1.1 | Agent, prompt, model, tool, budget, and data-policy domain contracts plus ADR/state diagrams | Scope 0 | S1-P01A–E (5) |
-| 1.2 | Additive agent-control schema: definitions/versions, sessions/messages, runs/steps, tool calls, checkpoints, citations/events, approvals placeholder | 1.1 | S1-P02A–F (6) |
+| 1.1 | Agent, prompt, model, tool, budget, and data-policy contracts plus the LangGraph-only runtime ADR, dependency pins and state diagrams | Scope 0 | S1-P01A–E (5) |
+| 1.2 | Additive DCLab agent-control schema: definitions/versions, sessions/messages, runs/steps, product checkpoint references, tool calls, citations/events, approvals placeholder | 1.1 | S1-P02A–F (6) |
 | 1.3 | Policy/version and ledger schema: prompt releases, model/tool/budget/data versions, reservations/settlements, LLM invocation agent context | 1.2 | S1-P03A–E (5) |
-| 1.4 | Provider-neutral LLM gateway, deterministic fake, first provider adapter, structured output, timeout/retry/circuit breaker | 1.3 | S1-P04A–F (6) |
+| 1.4 | DCLab provider-neutral LLM gateway, ordinary Pydantic structured contracts, deterministic fake and official OpenAI SDK adapter; no PydanticAI | 1.3 | S1-P04A–F (6) |
 | 1.5 | DataPolicyService and immutable ContextEnvelopeBuilder with metadata-only default, digests, injection boundaries, and deletion hooks | 1.3 | S1-P05A–E (5) |
 | 1.6 | AgentSessionService, AgentRunService, AgentBudgetService, PromptRegistry, ToolRegistry, CitationValidator, AgentEventService | 1.2–1.5 | S1-P06A–F (6) |
-| 1.7 | Bounded state machine and `agent.turn.v1` worker: one durable step, leases, checkpoint/recovery, cancellation, expiry and terminal bounds | 1.6 | S1-P07A–F (6) |
+| 1.7 | Pinned raw LangGraph `StateGraph` and `agent.turn.v1` worker: dedicated PostgreSQL checkpointer, one external operation per turn, leases, recovery, cancellation and bounds | 1.6 | S1-P07A–F (6) |
 | 1.8 | Read-only tool catalog for identity, projects, dataset metadata/profile, requests/builds/events, completed evidence, safe summaries and artifact metadata | 1.6 | S1-P08A–E (5) |
 | 1.9 | `/v1/agent` sessions/messages/runs/steps/events/citations/cancel/retry APIs and Python-client coverage | 1.7–1.8 | S1-P09A–E (5) |
 | 1.10 | Agent Studio UI: session list, objective/message flow, progress, citations, budgets, policy block, retry/cancel, explicit feedback | 1.9 | S1-P10A–E (5) |
@@ -322,6 +341,8 @@ tool catalog contains no write, export, connector, or code-execution capability.
 - metadata-only context with null/unknown denied;
 - immutable versions identify the agent, graph, prompt, model, tools, data policy, and budget;
 - every run is durable, bounded, cancellable, resumable, and terminalizable;
+- exactly one LangGraph runtime is pinned and the product/checkpoint persistence
+  boundary is tested; no nested agent framework or high-level agent loop exists;
 - crash injection before and after every checkpoint proves no repeated side effect;
 - every evidence claim has a currently authorized workspace-scoped citation;
 - tool calls are re-authorized at execution time and the catalog is read-only;
@@ -370,7 +391,10 @@ The supervisor owns decomposition, dependency ordering, shared budget, conflict
 resolution, and final synthesis. Specialists receive smaller context envelopes
 and narrower tools. A specialist cannot delegate unless its agent version and
 policy explicitly allow it. Delegation records parent run, task contract,
-input/output digests, child budget, allowed tools, result, and citations.
+input/output digests, child budget, allowed tools, result, and citations. Scope
+2 extends the same pinned LangGraph runtime with code-owned supervisor and
+specialist subgraphs; it does not introduce another agent framework or allow a
+specialist to run a hidden nested tool loop.
 
 Agents may inspect and propose:
 
@@ -393,7 +417,7 @@ Scope 3 activates selected proposals as approved commands.
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 2.1 | Agent task/delegation/critique contracts, hierarchical budgets, graph registry, policy snapshots, and multi-agent ADR/threat model | complete Scope 1 | S2-P01A–E (5) |
+| 2.1 | Agent task/delegation/critique contracts, hierarchical budgets, LangGraph graph-release registry, policy snapshots, and multi-agent ADR/threat model | complete Scope 1 | S2-P01A–E (5) |
 | 2.2 | AgentTask, delegation, review, proposal, conflict, and supervision event schema with immutable lineage | 2.1 | S2-P02A–E (5) |
 | 2.3 | Full prompt/model/data/tool operations: evaluation suites, promotion records, shadow/canary/rollback, provider/data rules and kill switches | 2.1 | S2-P03A–F (6) |
 | 2.4 | Dataset steward: ingest/profile/classification/readiness/drift review and safe mapping proposals | 2.2–2.3 | S2-P04A–E (5) |
@@ -401,7 +425,7 @@ Scope 3 activates selected proposals as approved commands.
 | 2.6 | Preparation/feature and leakage/validation critics with plan-diff schemas and deterministic verifier precedence | 2.4–2.5 | S2-P06A–E (5) |
 | 2.7 | Experiment director and candidate/metric critic over stage state, failures, search evidence, stability, winner/holdout and bounded child proposals | 2.5–2.6 | S2-P07A–E (5) |
 | 2.8 | Artifact/provenance auditor and audience-safe reporter for digests, missing objects, reproductions, visualizations, reports and citations | 2.4–2.7 | S2-P08A–E (5) |
-| 2.9 | Supervisor orchestration, conflict/consensus rules, human escalation, partial-result synthesis, global stop conditions and recovery | 2.4–2.8 | S2-P09A–F (6) |
+| 2.9 | LangGraph supervisor/subgraph orchestration, conflict rules, human escalation, partial-result synthesis, global stop conditions and recovery | 2.4–2.8 | S2-P09A–F (6) |
 | 2.10 | Agentic operations UI: task graph, specialist activity, proposals/diffs, critiques, unresolved decisions, cost, policy and evidence | 2.9 | S2-P10A–E (5) |
 | 2.11 | Whole-pipeline shadow evaluations, counterfactual replay, failure injection, specialist ablation, quality/cost/latency dashboards and promotion gate | 2.3–2.10 | S2-P11A–F (6) |
 
@@ -418,6 +442,8 @@ Scope 3 activates selected proposals as approved commands.
 - prompt/model/tool/data-policy promotion requires immutable evaluation evidence
   and separation of duties;
 - full shadow workflow survives provider failures and process loss;
+- supervisor and specialist execution uses the same pinned LangGraph runtime,
+  DCLab authority and checkpoint boundary proven in Scope 1;
 - no write tool is active yet except safe creation of agent-domain proposal records.
 
 Prompt file: [`prompts/SCOPE_02_AGENTIC_OPERATING_SYSTEM.md`](prompts/SCOPE_02_AGENTIC_OPERATING_SYSTEM.md).
@@ -624,7 +650,8 @@ must inspect the real head and choose the next unique revision. Logical slices:
 
 1. Scope 0 session/workspace/retention and lifecycle corrections.
 2. Agent definitions/versions, sessions/messages, runs/steps/events,
-   tool calls/checkpoints/citations.
+   tool calls/product checkpoint references/citations; private LangGraph
+   checkpointer tables live in a dedicated runtime schema.
 3. Prompt/model/tool/budget/data-policy versions and budget ledger.
 4. `llm_invocations` agent/evaluation context and precise numeric cost.
 5. Dataset policy decision history and context envelopes.

@@ -13,9 +13,14 @@ original evidence; do not copy their executive counts into new plans.
 
 | Document | Status | What it is | How it was produced |
 | --- | --- | --- | --- |
-| [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md) | **CURRENT** | Product/document SHAs, Git relationship, Alembic, OpenAPI, inventories and current gate results | deterministic `scripts/record_repo_truth.py` + local gates + exact-SHA GitHub Actions run 34519255834 (observed failure at repaired link parser) |
+| [verification/S0_P01A_CURRENT_TRUTH.md](verification/S0_P01A_CURRENT_TRUTH.md) | **CURRENT — VERIFIED** | Product/document SHAs, Git relationship, Alembic, OpenAPI, inventories and current gate results | deterministic recorder + canonical generator/checker + complete local gate + exact-SHA CI |
+| [verification/S0_P01D_BASELINE_GATE.md](verification/S0_P01D_BASELINE_GATE.md) | **CURRENT — VERIFIED** | S0-P01 gate commands, durations, warnings, owners, adversarial evidence and exact-SHA agreement | local PostgreSQL/web/browser gates + [GitHub Actions run 34598999220](https://github.com/Shahriyar-Moradi/DCLab/actions/runs/34598999220) |
 | [verification/S0_P02A_BROWSER_SESSIONS.md](verification/S0_P02A_BROWSER_SESSIONS.md) | **CURRENT** | HttpOnly BFF sessions, ADR 0001 | S0-P02A tests + source assertions |
 | [verification/S0_P02B_SESSION_HARDENING.md](verification/S0_P02B_SESSION_HARDENING.md) | **CURRENT** | CSRF, CSP, throttle, recovery | S0-P02B tests + Playwright spec |
+| [verification/S0_P02C_SESSION_PERSISTENCE.md](verification/S0_P02C_SESSION_PERSISTENCE.md) | **CURRENT** | Session/recovery constraints, lineage, bounded cleanup | S0-P02C tests |
+| [verification/S0_P02D_BROWSER_BFF.md](verification/S0_P02D_BROWSER_BFF.md) | **CURRENT** | BFF cookie/error/request-id/bounds contract | S0-P02D source + Playwright spec |
+| [verification/S0_P02E_SESSION_OPERATIONS.md](verification/S0_P02E_SESSION_OPERATIONS.md) | **CURRENT** | Auth settings, kill switch, bounded audit, runbooks | S0-P02E tests + docs/runbooks |
+| [verification/S0_P02F_ADVERSARIAL_GATE.md](verification/S0_P02F_ADVERSARIAL_GATE.md) | **CURRENT** | Two-user/two-workspace session adversarial matrix; production-shaped kill switch | S0-P02F tests |
 | [verification/S0_P03A_WORKSPACE_SELECTION.md](verification/S0_P03A_WORKSPACE_SELECTION.md) | **CURRENT** | Active workspace selector and ADR 0003; head is owned by canonical truth | S0-P03A tests |
 | [verification/S0_P04A_SIMULATION_INSIGHTS.md](verification/S0_P04A_SIMULATION_INSIGHTS.md) | **CURRENT** | SimulationRun/Insights tenancy and ADR 0004; head is owned by canonical truth | S0-P04A tests |
 | [verification/S0_P01B_TRUTH_DRIFT.md](verification/S0_P01B_TRUTH_DRIFT.md) | **CURRENT** | Drift CI, synthetic-fail tests, snapshot refresh | `scripts/check_truth_drift.py` + `contracts/` |

@@ -22,11 +22,6 @@ WEB_CSRF = REPO_ROOT / "apps" / "web" / "lib" / "infrastructure" / "csrf.ts"
 WEB_CLIENT = REPO_ROOT / "apps" / "web" / "lib" / "infrastructure" / "api-client.ts"
 WEB_MIDDLEWARE = REPO_ROOT / "apps" / "web" / "middleware.ts"
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-WEB_SESSION = REPO_ROOT / "apps" / "web" / "lib" / "infrastructure" / "session.ts"
-WEB_CLIENT = REPO_ROOT / "apps" / "web" / "lib" / "infrastructure" / "api-client.ts"
-WEB_MIDDLEWARE = REPO_ROOT / "apps" / "web" / "middleware.ts"
-
 
 def _cookie_header(response) -> str:
     if hasattr(response.headers, "get_list"):
@@ -79,6 +74,10 @@ def test_javascript_sources_do_not_read_or_attach_bearer():
     assert "jose" not in middleware_src
     assert "jwtVerify" not in middleware_src
     assert "X-DCLab-Session" in WEB_MIDDLEWARE.read_text(encoding="utf-8")
+    package = (REPO_ROOT / "apps" / "web" / "package.json").read_text(encoding="utf-8")
+    assert '"jose"' not in package
+    assert "localStorage" not in session_src
+    assert "localStorage" not in client_src
 
 
 def test_tokens_path_issues_bearer_without_cookie(client, client_user):
@@ -128,7 +127,7 @@ def test_logout_revokes_server_session(client, client_user, db_session):
     assert raw not in row.token_hash
 
 
-def test_login_rotates_and_revokes_previous_cookie(client, client_user):
+def test_login_rotates_and_revokes_previous_cookie(client, client_user, db_session):
     first = browser_login(client, client_user.email, "client-pass-123")
     first_raw = first.cookies.get("dclab_session")
     second = browser_login(client, client_user.email, "client-pass-123")
@@ -139,6 +138,27 @@ def test_login_rotates_and_revokes_previous_cookie(client, client_user):
         client.get("/auth/me", headers={"X-DCLab-Session": first_raw}).status_code
         == 401
     )
+    db_session.expire_all()
+    predecessor = (
+        db_session.query(AuthSession)
+        .filter(AuthSession.token_hash == hash_session_token(first_raw))
+        .one()
+    )
+    successor = (
+        db_session.query(AuthSession)
+        .filter(AuthSession.token_hash == hash_session_token(second_raw))
+        .one()
+    )
+    assert predecessor.revoked_at is not None
+    assert successor.revoked_at is None
+    assert successor.rotated_from_id == predecessor.id
+
+
+def test_unknown_session_fails_safely_without_echoing_token(client):
+    raw = "unknown-session-secret-that-must-not-be-echoed"
+    response = client.get("/auth/me", headers={"X-DCLab-Session": raw})
+    assert response.status_code == 401
+    assert raw not in response.text
 
 
 def test_idle_expiry_with_injected_clock(client, client_user, monkeypatch):
@@ -274,9 +294,12 @@ def test_production_boot_accepts_secure_configuration():
     settings = Settings.model_construct(
         dclab_env="production",
         jwt_secret="deployed-secret-not-the-default",
+        auth_token_hash_secret="deployed-hash-secret-not-the-default",
+        auth_csrf_secret="deployed-csrf-secret-not-the-default",
         session_cookie_secure=True,
         session_cookie_samesite="lax",
         session_cookie_path="/",
+        cors_origins="https://app.example.test",
     )
     validate_runtime_settings(settings)
     assert cookie_secure(settings) is True

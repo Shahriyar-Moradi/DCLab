@@ -58,6 +58,8 @@ Known limitations: GitHub exact-SHA result requires a separately authorized comm
 Reviewer/date: S0-P01C / 2026-09-11
 ```
 
-## Next prompt
+## Closure
 
-**S0-P01D** — close the baseline gate from a clean environment and exact-SHA CI.
+**S0-P01D is VERIFIED** in
+[`S0_P01D_BASELINE_GATE.md`](S0_P01D_BASELINE_GATE.md). The next implementation
+prompt is **S0-P02C**.

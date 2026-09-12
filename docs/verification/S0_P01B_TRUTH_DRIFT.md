@@ -88,3 +88,6 @@ Rollback/kill switch: revert this prompt's scripts, contracts, CI step, and test
 Known limitations: web middleware JWT fallback allowlisted; metadata compare only after migrate
 Reviewer/date: S0-P01B re-verification / 2026-09-11
 ```
+
+S0-P01D subsequently verified the complete local gate and successful exact-SHA
+CI; see [`S0_P01D_BASELINE_GATE.md`](S0_P01D_BASELINE_GATE.md).

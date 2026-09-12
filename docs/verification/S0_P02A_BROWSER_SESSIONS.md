@@ -14,14 +14,39 @@ Authorization loads `User` from PostgreSQL; JWT `role` is not used.
 
 ## Evidence
 
-### 2026-09-11 local browser re-verification
+### 2026-09-11 S0-P02A repair verification
 
-The same-origin BFF now preserves the API-authored cookie attributes instead of
-inferring `Secure` from Next.js production mode, and it emits `null` bodies for
-204/205/304 responses. API logout returns the response carrying both deletion
-cookies. Focused session Playwright passed 5/5 and the complete browser suite
-passed 18/18 against a fresh database at `0058_simulation_workspace`. The full
-backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
+The accepted ADR and live session, authentication, dependency, migration,
+configuration, BFF, frontend-session, and browser-test paths were inspected
+before editing. The product implementation already satisfied S0-P02A, so this
+repair did not add a second session mechanism, change an API, or add a
+migration. It strengthened the PostgreSQL proof that rotation revokes the
+predecessor and links the successor through `rotated_from_id`, added a safe
+unknown-session rejection check, and corrected stale BFF setup documentation.
+
+Observed on a fresh PostgreSQL database migrated through the canonical head
+named by [`truth_baseline.json`](../../contracts/truth_baseline.json):
+
+- `pytest apps/api/tests/test_browser_sessions.py apps/api/tests/test_browser_hardening.py -q --tb=short`: **41 passed**, one dependency deprecation warning, 23.81s.
+
+Historical measurement used Alembic `0058_simulation_workspace` as head before
+S0-P02C added session-constraint reconciliation.
+- `npx tsc --noEmit`: passed with no diagnostics.
+- `npm run lint`: passed with three pre-existing React hook warnings.
+- `playwright test e2e/session-security.spec.ts`: **5 passed**, 25.5s; its web server performed a successful production build before the tests.
+- `scripts.generate_truth_artifacts --verify-idempotent`: two generations were byte-identical.
+- `scripts.generate_truth_artifacts --check` and `scripts.check_truth_drift`: all detectors clean.
+
+The broader exact-SHA baseline and complete regression evidence remains in
+[S0-P01D](S0_P01D_BASELINE_GATE.md); this prompt changed only tests,
+documentation, and generated truth facts on top of that verified source.
+
+The exercised state contract is: an active row has no `revoked_at` and is
+inside both expiry bounds; logout/rotation sets `revoked_at`; and an idle- or
+absolute-expired row is rejected. Only the hash is stored. Browser cookies are
+HttpOnly with explicit SameSite/path and deployed-mode Secure; browser code
+uses `/api/backend/*`, while `POST /auth/tokens` remains the explicit
+non-browser bearer flow.
 
 The evidence block below preserves the original prompt measurement; its
 mechanical counts are historical, not a second CURRENT inventory.
@@ -55,4 +80,5 @@ Reviewer/date: S0-P02A / 2026-09-10
 
 ## Next prompt
 
-**S0-P02B** — session, CSRF, CSP, and abuse verification.
+**S0-P02C** — persistence, constraints, and cleanup reconciliation. S0-P02B is
+already recorded as verified.

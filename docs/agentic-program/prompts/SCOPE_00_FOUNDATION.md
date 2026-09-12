@@ -14,6 +14,9 @@ creating a second implementation.
   baseline. Always discover the live head before adding a revision.
 - Existing evidence IDs `S0-P01A`, `S0-P01B`, `S0-P02A`, `S0-P02B`, and
   `S0-P03A` retain their original meaning.
+- Scope 0 does not install an agent framework. S1-P01A later pins LangGraph and
+  its PostgreSQL checkpointer; PydanticAI and other nested agent loops remain
+  outside the production MVP.
 
 ## Plan 0.1 — current truth package
 

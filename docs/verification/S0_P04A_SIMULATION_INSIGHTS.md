@@ -15,7 +15,7 @@ does not grow an insights/simulations API.
 ### 2026-09-11 local browser re-verification
 
 The complete browser acceptance suite passed 18/18 against a fresh database at
-`0058_simulation_workspace`, including workspace Insights payloads, capability
+the canonical Alembic head, including workspace Insights payloads, capability
 fail-closed behavior, and cross-tenant identifier rejection. The full
 backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
 

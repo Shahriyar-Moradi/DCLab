@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import logging
 import secrets
 from urllib.parse import urlsplit
 
 from fastapi import Request, Response
 from starlette.datastructures import Headers
 
-from app.config import Settings, cookie_secure, get_settings
-
-logger = logging.getLogger(__name__)
+from app.config import Settings, cookie_secure, csrf_hmac_secret, get_settings
+from app.services.auth_metrics import record_auth_event
 
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 BEARER_EXEMPT_PATHS = frozenset({"/auth/tokens"})
@@ -57,7 +55,7 @@ def tokens_match(left: str, right: str) -> bool:
 def csrf_token_for_session(raw_session: str, settings: Settings | None = None) -> str:
     cfg = settings or get_settings()
     return hmac.new(
-        cfg.jwt_secret.encode("utf-8"),
+        csrf_hmac_secret(cfg).encode("utf-8"),
         f"csrf-v1:{raw_session}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
@@ -133,7 +131,7 @@ def validate_csrf(request: Request, settings: Settings | None = None) -> str | N
     origin = request_origin(request)
     trusted = trusted_origins(cfg)
     if origin is None or origin not in trusted:
-        logger.info("csrf origin rejected path=%s", request.url.path)
+        record_auth_event("csrf", "untrusted_origin")
         return "untrusted origin"
     header_name = cfg.csrf_header_name
     presented = (request.headers.get(header_name) or "").strip()
@@ -142,10 +140,10 @@ def validate_csrf(request: Request, settings: Settings | None = None) -> str | N
     if raw_session:
         expected = csrf_token_for_session(raw_session, cfg)
         if not presented or not tokens_match(presented, expected):
-            logger.info("csrf session token rejected path=%s", request.url.path)
+            record_auth_event("csrf", "mismatch" if presented else "missing_token")
             return "csrf validation failed"
         return None
     if not presented or not cookie or not tokens_match(presented, cookie):
-        logger.info("csrf anonymous token rejected path=%s", request.url.path)
+        record_auth_event("csrf", "mismatch" if presented and cookie else "missing_token")
         return "csrf validation failed"
     return None

@@ -11,11 +11,14 @@ from __future__ import annotations
 from app.domain.data_plane import sql_in_clause
 
 # Shipped types. Not a closed database enum — see CK_ML_JOB_TYPE.
-ML_JOB_TYPES = ("auto_train",)
+ML_JOB_TYPES = ("auto_train", "auth_cleanup")
 JOB_TYPE_AUTO_TRAIN = "auto_train"
+JOB_TYPE_AUTH_CLEANUP = "auth_cleanup"
 
 HANDLER_LABS_AUTO_TRAIN = "labs.auto_train"
 HANDLER_VERSION_LABS_AUTO_TRAIN = "1"
+HANDLER_AUTH_SESSION_CLEANUP = "auth.session_cleanup"
+HANDLER_VERSION_AUTH_SESSION_CLEANUP = "1"
 
 ML_JOB_STATUSES = (
     "queued",

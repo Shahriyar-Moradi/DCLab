@@ -10,6 +10,9 @@ Reuse ExecutionRequest, MlJob, WorkflowRun, PipelineRun, ProblemSpec,
 `model_build_service.py`, workflow/job handlers, evidence locks and Scope 2
 proposals. Add cohesive command/approval services and a router such as
 `api/v1_model_builds.py`; web, SDK and agent tools call the same services.
+LangGraph nodes may request only versioned ToolRunner operations; they never
+execute commands directly, hold approval authority or introduce a second tool/
+agent loop. Do not add PydanticAI or framework-native command tools.
 
 ## Plan 3.1 — canonical atomic model-build command
 

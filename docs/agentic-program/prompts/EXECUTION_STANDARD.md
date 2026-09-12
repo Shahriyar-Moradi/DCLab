@@ -20,7 +20,8 @@ Inspect these existing surfaces before inventing a new path:
 | Durable intent/jobs | `services/execution_request_service.py`, `services/ml_job_service.py`, `services/job_dispatcher.py`, `services/job_handlers.py` | Reuse `ExecutionRequest` and `MlJob`; add code-owned handler keys and bounded ID-only payloads. |
 | Deterministic ML | `domain/model_build.py`, `services/model_build_service.py`, `services/workflow_execution_service.py`, `ml/` | Agents may call typed services; they must not duplicate or bypass scientific logic. |
 | Evidence/artifacts | `services/artifact_service.py`, `artifact_store.py`, `lineage_service.py`, `evidence_lock_service.py`, `pipeline_verifier.py` | Store metadata/digests in PostgreSQL and large immutable bodies in object storage. |
-| LLM integration | `services/openai_provider.py`, `openai_smoke.py`, existing `LlmInvocation` model | Introduce a provider-neutral gateway around, not beside, existing usage; retain a deterministic fake. |
+| Agent orchestration (Scope 1+) | Not implemented until S1-P01A; planned owner is a pinned raw LangGraph `StateGraph` runtime invoked by `agent.turn.v1` | LangGraph owns graph routing/checkpoint execution only. DCLab owns product state, authorization, tools, budgets, events and recovery policy. Do not add a second agent loop. |
+| LLM integration | `services/openai_provider.py`, `openai_smoke.py`, existing `LlmInvocation` model | Introduce a DCLab provider-neutral gateway around, not beside, existing usage; retain a deterministic fake and use the official OpenAI SDK as the first adapter. PydanticAI is not part of the production MVP. |
 | Observability | `services/observability_service.py`, `domain/observability.py`, `api/observability.py` | Emit bounded structured events and metrics; never log prompts, secrets, raw rows, or tokens. |
 | Python client | `packages/dclab_client/dclab_client/` and `packages/dclab_client/tests/` | Use HTTP only. Add typed resource modules when `client.py` would become another monolith. |
 | Web application | `apps/web/app/`, `apps/web/lib/application/`, `apps/web/lib/infrastructure/api-client.ts` | Use the existing App Router, query/session providers, UI primitives, and BFF. |
@@ -39,7 +40,8 @@ Before editing, the coding agent must add a short implementation packet to its
 working notes or PR description:
 
 1. **Baseline:** branch/SHA, dirty files, database head, relevant routes,
-   models, services, jobs, client modules, UI routes, tests, and flags.
+   models, services, jobs, client modules, UI routes, tests, flags, and—when
+   agent work begins—the pinned LangGraph/checkpointer versions and schemas.
 2. **Change map:** exact files to add/change and why each existing owner is
    reused. Mark generated files separately.
 3. **Contract:** input/output schemas, state transitions, authorization,
@@ -82,6 +84,18 @@ finish only the ADR/design prompt and stop before implementation.
 - LLM output is untrusted input. Validate typed output, re-authorize every tool
   call, bound all context/results, and never use the LLM as an authorization or
   scientific-verification authority.
+- There is one agent loop. LangGraph may select the next code-owned graph node;
+  it may not authorize, choose arbitrary worker handler keys, execute private
+  services, or replace DCLab product records. Use ordinary Pydantic models for
+  graph state and structured output; do not nest PydanticAI, `pydantic-graph`,
+  LangChain `create_agent`, or another autonomous loop inside a node.
+- LangGraph checkpoint rows are private runtime reconstruction data in a
+  dedicated PostgreSQL schema. Public APIs, UI and SDK read DCLab-owned
+  AgentRun/Step/Event/ToolCall/Citation records, never checkpoint internals.
+- One `agent.turn.v1` job may traverse bounded pure nodes but performs at most
+  one provider or tool operation, persists its DCLab result and checkpoint, and
+  stops before scheduling the next turn. All replayable operations are
+  idempotent and budget-settled exactly once.
 
 ## 4. Prompt size and change budget
 
@@ -92,6 +106,8 @@ Each prompt should produce one reviewable pull request. Default limits are:
 - no more than one new public resource family;
 - no more than one worker handler family;
 - no drive-by formatting, renaming, dependency upgrade, or unrelated cleanup;
+- no additional agent/orchestration framework without an approved replacement
+  ADR, dependency/supply-chain review and migration plan;
 - generated snapshots may be large but must be reproducible;
 - if the implementation exceeds roughly 800 non-generated changed lines or 20
   hand-edited files, stop and split at a contract boundary unless the prompt

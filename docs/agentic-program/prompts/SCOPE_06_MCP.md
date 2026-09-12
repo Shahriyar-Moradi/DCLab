@@ -13,7 +13,9 @@ when Plan 6.1 begins and pin the accepted revision in the repository ADR.
 Create `packages/dclab_mcp` as a thin adapter over the public Python SDK. It has
 no database/API-internal/object-store imports and no authority beyond the caller.
 Expose bounded tools/resources/prompts mapped from the approved `/v1` inventory.
-Read and write releases and kill switches remain independent.
+Read and write releases and kill switches remain independent. The MCP package
+does not import LangGraph, PydanticAI or agent-runtime/checkpointer internals;
+MCP requests use `/v1` and cannot create a parallel agent or tool authority.
 
 ## Plan 6.1 — package architecture, protocol pin and threat model
 

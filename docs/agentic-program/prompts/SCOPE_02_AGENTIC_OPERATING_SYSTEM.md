@@ -12,6 +12,9 @@ Extend Scope 1 through cohesive `domain/agent_supervision.py`,
 router such as `api/v1_agent_operations.py`. Proposals are typed immutable
 records, not SQL/code blobs. Specialists call existing dataset, ProblemSpec,
 scientific, model-build, evidence, artifact and observability query services.
+Extend the same pinned raw LangGraph runtime through code-owned supervisor and
+specialist subgraphs. Do not introduce PydanticAI, `pydantic-graph`, LangChain
+`create_agent`, another checkpointer authority or a hidden specialist tool loop.
 
 ## Plan 2.1 — multi-agent contracts and governance
 
@@ -27,8 +30,10 @@ Architect, Preparation/Feature Reviewer, Leakage/Validation Critic, Experiment
 Director, Candidate/Metric Critic, Artifact/Provenance Auditor, audience-safe
 Reporters and Reliability/Recovery Analyst. For each specify objective, typed
 input/output, allowed read tools, forbidden behavior, citations, escalation and
-completion. Define when the single Scope 1 agent is sufficient. Add contract
-schemas/tests only; do not spawn specialists yet.
+completion. Define when the single Scope 1 agent is sufficient and how each
+specialist maps to a versioned LangGraph subgraph invoked through the same
+ToolRunner/gateway/checkpointer boundary. Add contract schemas/tests only; do
+not spawn specialists or add another runtime.
 ```
 
 ### S2-P01B — task DAG, review, conflict and proposal contracts
@@ -61,7 +66,9 @@ input/output schemas, conflict policy, budget allocation, concurrency and stop
 rules. Specify draft/shadow/canary/active/retired compatibility with prompt,
 model, tool and data policy releases. Canonical digest includes every behavior-
 relevant field. Add validation for missing nodes, cycles, incompatible schemas,
-unbounded branches and retired dependency.
+unbounded branches and retired dependency. Bind each release to a code-owned
+LangGraph topology key/digest and compatible pinned runtime version; never store
+or execute LLM-generated Python/graph code.
 ```
 
 ### S2-P01E — multi-agent threat and acceptance gate
@@ -495,22 +502,25 @@ runbooks; promote only read/proposal views with independent auditor/reporter
 kill switches.
 ```
 
-## Plan 2.9 — supervisor orchestration
+## Plan 2.9 — LangGraph supervisor orchestration
 
 **Contract.** The supervisor schedules persisted tasks whose dependencies are
 satisfied, applies hierarchical budgets, requests reviews, surfaces conflicts
-and produces a cited partial/final synthesis. One job performs one bounded task
-transition.
+and produces a cited partial/final synthesis through the same pinned LangGraph
+runtime established in Scope 1. One job performs one bounded task transition or
+external operation and then yields; specialists are code-owned subgraphs, not
+nested autonomous frameworks.
 
 ### S2-P09A — decomposition and DAG materialization
 
 ```text
 Implement validated supervisor decomposition from a supported objective/template
-into an AgentGraphVersion DAG. Materialize tasks/dependencies/delegations
-idempotently with current policy snapshots and child reservations. Reject unknown
-specialists/tools, cycles, excessive depth/fan-out or unjustified task creation.
-For the first release prefer code-owned graph templates with bounded structured
-parameterization over unconstrained LLM graph generation.
+into an AgentGraphVersion DAG compiled from a code-owned LangGraph topology.
+Materialize tasks/dependencies/delegations idempotently with current policy
+snapshots and child reservations. Reject unknown specialists/tools, cycles,
+excessive depth/fan-out or unjustified task creation. The first release permits
+only code-owned graph templates with bounded structured parameters; the LLM may
+select among authorized templates but cannot generate executable graph code.
 ```
 
 ### S2-P09B — ready-task scheduler and specialist dispatch
@@ -519,9 +529,12 @@ parameterization over unconstrained LLM graph generation.
 Register a bounded supervision handler that claims ready tasks with leases,
 re-authorizes parent/child scope, dispatches exactly one specialist operation,
 checkpoints result, settles allocation and emits events before scheduling the
-next transition. Enforce graph parallelism and workspace fairness. Test duplicate
-claim, dependency race, child timeout, cancellation and worker restart using
-PostgreSQL jobs.
+next transition through the Scope 1 runtime/checkpointer boundary. Invoke a
+specialist as a versioned per-task LangGraph subgraph with narrowed context,
+tools and budget; it cannot retain hidden cross-task memory. Enforce graph
+parallelism and workspace fairness. Test duplicate claim, checkpoint namespace,
+dependency race, child timeout, cancellation and worker restart using PostgreSQL
+jobs.
 ```
 
 ### S2-P09C — review, revision and conflict resolution
@@ -553,7 +566,8 @@ Enforce graph-wide steps/tasks/depth/fanout/parallelism/tokens/cost/time/bytes/j
 plus per-specialist limits. Reconcile lost leases, orphan child reservations,
 ready tasks without jobs and terminal graphs with active children. Cancellation
 propagates top-down while completed evidence remains. Add failure injection at
-every task/delegation/review checkpoint and prove deterministic reconstruction.
+every task/delegation/review checkpoint, including DCLab/runtime divergence, and
+prove deterministic reconstruction without invoking a second agent loop.
 ```
 
 ### S2-P09F — supervisor system gate
@@ -563,6 +577,8 @@ Run complete fake-provider graph cases for dataset-to-report supervision,
 clarifying question, deterministic block, critic conflict, specialist outage,
 partial result, budget exhaustion, cancellation and restart. Verify authority
 narrowing, proposal-only catalog, citations, events and terminal accounting.
+Verify the exact LangGraph/checkpointer release, code-owned graph digest, bounded
+subgraph namespaces and absence of PydanticAI/high-level agent dependencies.
 Benchmark against Scope 1 single agent and enable only shadow graphs after
 observed safety/value/cost evidence.
 ```
@@ -667,7 +683,9 @@ Run code-owned graph variants removing or combining specialists. Measure hard-
 case detection, useful supported proposal rate, question quality, unsupported
 claim/conflict rate, task/tool count, latency, tokens and cost. Define uncertainty
 and reviewer sample size; do not promote complexity whose incremental value does
-not exceed the agreed threshold. Store analysis/version/digests as evidence.
+not exceed the agreed threshold. All variants compile through the same
+LangGraph runtime and DCLab policies; do not compare by adding another framework.
+Store analysis/version/digests as evidence.
 ```
 
 ### S2-P11E — dashboards, thresholds and operational drill

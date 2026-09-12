@@ -1,8 +1,8 @@
 # DCLab agentic program documentation
 
 This directory is the executable program of work for evolving DCLab from the
-verified deterministic platform at product/document baseline
-`3d54994e83283d34665f9589687108627284ab3f`; see
+verified deterministic platform at product commit `3d54994e83283d34665f9589687108627284ab3f`
+and verified truth/checkout baseline `91986b9b39bb54c907d50274e94de2febecffaa0`; see
 [`../verification/S0_P01A_CURRENT_TRUTH.md`](../verification/S0_P01A_CURRENT_TRUTH.md)
 into a secure, scalable, agentic decision-intelligence product.
 
@@ -39,3 +39,18 @@ older reports. Product and architecture decisions in the master plan govern new
 work. Existing scientific, tenant, and evidence invariants remain mandatory.
 If implementation discovers a conflict, stop that plan, add an ADR, update the
 master plan, and obtain review before broadening behavior.
+
+## Agent runtime decision
+
+Scope 1 and later agent execution use one orchestration runtime: a pinned
+LangGraph `StateGraph` release. Ordinary Pydantic models define DCLab-owned
+domain, state, tool and structured-output contracts; a provider-neutral DCLab
+gateway wraps the official OpenAI SDK as its first adapter. DCLab services and
+PostgreSQL remain authoritative for tenancy, authorization, product run state,
+tools, budgets, citations, audit and scientific behavior.
+
+The production MVP does not use PydanticAI, `pydantic-graph`, LangChain
+`create_agent`, or another nested agent loop. LangGraph checkpoints are private
+execution state, never API authority or proof of access. S1-P01A must record the
+exact package/checkpointer versions and compatibility policy before any runtime
+dependency or agent table is added.

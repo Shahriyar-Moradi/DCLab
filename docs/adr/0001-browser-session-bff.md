@@ -13,9 +13,13 @@ attach as `Authorization: Bearer`. Next.js middleware verified that JWT with
 from PostgreSQL after `sub`; the token role was not used for API authorization,
 but the browser treated it as session state.
 
-The web origin (`:3001`) and API origin (`:8001`) are different. A `Set-Cookie`
+The browser origin (`:3001`) and API origin (`:8001`) are different. A `Set-Cookie`
 from the API with `SameSite=Lax` is not sent on cross-site `fetch` from the
-Next app. `SameSite=None; Secure` is not usable on local HTTP.
+Next app. `SameSite=None; Secure` is not usable on local HTTP. S0-P02D completes
+the BFF contract: generate/echo `X-Request-Id`, always `Cache-Control: no-store`,
+bounded upload/download streaming, JSON `502 {"detail":"backend unavailable"}`
+when FastAPI is unreachable, and never forward `Authorization`. The BFF is not
+a second authorization layer and must not log bodies or credentials.
 
 ## Decision
 
@@ -105,8 +109,10 @@ concurrent-session policy are S0-P02B.
 ### Retention
 
 Rows with `absolute_expires_at` or `revoked_at` older than
-`session_retention_days` (default 30) are deleted on session issue and
-authenticate. No background worker in P02A.
+`session_retention_days` (default 30) are deleted in bounded batches on
+session issue and authenticate, and by the `auth.session_cleanup` worker
+handler (S0-P02C). PostgreSQL is the session store; do not add Redis for
+sessions.
 
 ### Tenancy
 
@@ -129,7 +135,11 @@ each request via membership + `X-Workspace-Id` (S0-P03).
   `access_token`. That is an intentional breaking change for anyone who used
   those routes as an API token factory; they must call `POST /auth/tokens`.
 - Next.js must proxy API calls; `NEXT_PUBLIC_API_URL` is not used from browser
-  JavaScript.
+  JavaScript. Cookie names on the BFF (`DCLAB_SESSION_COOKIE` /
+  `DCLAB_CSRF_COOKIE`) must match the API. Upload/download caps are BFF process
+  protection (`DCLAB_BFF_MAX_UPLOAD_BYTES` / `DCLAB_BFF_MAX_DOWNLOAD_BYTES`),
+  not a product ingest policy.
+- Emergency kill switch: `AUTH_BROWSER_SESSIONS_ENABLED=false` (S0-P02E).
 - Alembic `0055_auth_sessions` adds one table.
 - S0-P02B still owns CSRF tokens, CSP, login throttling, concurrent-session
   caps, and browser E2E for refresh/revocation abuse cases.

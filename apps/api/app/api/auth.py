@@ -18,6 +18,7 @@ from app.db.models import AuthSession, User
 from app.db.session import get_db
 from app.domain.application_api import PrincipalWorkspaceRead
 from app.domain.errors import IdentityError
+from app.services.auth_metrics import record_auth_event
 from app.services.auth_service import (
     AuthError,
     authenticate,
@@ -149,6 +150,7 @@ def _authenticate_posted(
     try:
         check_login_throttle(email, ip)
     except ThrottleError as exc:
+        record_auth_event("login", "throttled")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
@@ -157,12 +159,23 @@ def _authenticate_posted(
         user = authenticate(db, email, password)
     except AuthError as exc:
         record_login_failure(email, ip)
+        record_auth_event("login", "invalid_credentials")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
     record_login_success(email, ip)
+    record_auth_event("login", "success")
     return user
+
+
+def _require_browser_sessions() -> None:
+    if not get_settings().auth_browser_sessions_enabled:
+        record_auth_event("session", "kill_switch")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="browser sessions are disabled",
+        )
 
 
 def _issue_browser_session(
@@ -211,6 +224,7 @@ def register(
     response: Response,
     db: Session = Depends(get_db),
 ) -> SessionResponse:
+    _require_browser_sessions()
     try:
         user = register_customer(
             db,
@@ -230,6 +244,7 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> SessionResponse:
+    _require_browser_sessions()
     user = _authenticate_posted(db, request, payload.email, payload.password)
     return _issue_browser_session(db, user, request, response)
 

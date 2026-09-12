@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import Response
-from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.config import Settings, cookie_secure, get_settings
 from app.db.models import AuthSession, User
+from app.services.auth_hashing import token_hash, token_hash_candidates
+from app.services.auth_metrics import record_auth_event
 from app.services.auth_service import AuthError
-
-logger = logging.getLogger(__name__)
 
 SESSION_HEADER = "X-DCLab-Session"
 
@@ -25,8 +23,20 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _session_row_for_raw(db: Session, raw: str) -> AuthSession | None:
+    for digest in token_hash_candidates(raw):
+        row = (
+            db.query(AuthSession)
+            .filter(AuthSession.token_hash == digest)
+            .one_or_none()
+        )
+        if row is not None:
+            return row
+    return None
+
+
 def hash_session_token(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return token_hash(raw)
 
 
 def hash_user_agent(user_agent: str | None) -> str | None:
@@ -40,38 +50,20 @@ def generate_session_token() -> str:
 
 
 def purge_stale_sessions(db: Session, now: datetime | None = None) -> int:
-    settings = get_settings()
-    moment = now or utcnow()
-    cutoff = moment - timedelta(days=settings.session_retention_days)
-    deleted = (
-        db.query(AuthSession)
-        .filter(
-            or_(
-                AuthSession.absolute_expires_at < cutoff,
-                and_(
-                    AuthSession.revoked_at.is_not(None),
-                    AuthSession.revoked_at < cutoff,
-                ),
-            )
-        )
-        .delete(synchronize_session=False)
-    )
-    return int(deleted or 0)
+    from app.services.session_cleanup_service import cleanup_expired_auth_state
+
+    return cleanup_expired_auth_state(db, now=now, max_batches=1).deleted
 
 
 def revoke_session_token(
     db: Session, raw: str, *, now: datetime | None = None
 ) -> AuthSession | None:
     moment = now or utcnow()
-    row = (
-        db.query(AuthSession)
-        .filter(AuthSession.token_hash == hash_session_token(raw))
-        .one_or_none()
-    )
+    row = _session_row_for_raw(db, raw)
     if row is None or row.revoked_at is not None:
         return row
     row.revoked_at = moment
-    logger.info("session revoked session_id=%s user_id=%s", row.id, row.user_id)
+    record_auth_event("session", "logout")
     return row
 
 
@@ -87,7 +79,7 @@ def revoke_sessions_for_user(
     for row in rows:
         row.revoked_at = moment
     if rows:
-        logger.info("sessions revoked_for_user user_id=%s count=%s", user_id, len(rows))
+        record_auth_event("session", "logout_all")
     return len(rows)
 
 
@@ -101,12 +93,16 @@ def issue_session(
 ) -> tuple[AuthSession, str]:
     moment = now or utcnow()
     settings = get_settings()
-    purge_stale_sessions(db, moment)
+    if not settings.auth_browser_sessions_enabled:
+        raise AuthError("browser sessions are disabled")
+    from app.services.session_cleanup_service import cleanup_expired_auth_state
+
+    cleanup_expired_auth_state(db, now=moment, max_batches=1)
     rotated_from_id = None
     previous_selected = None
     if replace_raw:
         previous = revoke_session_token(db, replace_raw, now=moment)
-        if previous is not None:
+        if previous is not None and previous.user_id == user.id:
             rotated_from_id = previous.id
             previous_selected = previous.selected_workspace_id
     raw = generate_session_token()
@@ -141,7 +137,7 @@ def issue_session(
     db.add(row)
     db.flush()
     _enforce_concurrent_session_cap(db, user.id, keep_id=row.id, now=moment)
-    logger.info("session issued session_id=%s user_id=%s", row.id, user.id)
+    record_auth_event("session", "issued")
     return row, raw
 
 
@@ -166,7 +162,7 @@ def _enforce_concurrent_session_cap(
         if row.id == keep_id:
             continue
         row.revoked_at = now
-    logger.info("sessions capped user_id=%s cap=%s", user_id, cap)
+    record_auth_event("session", "capped")
 
 
 def _session_expired(row: AuthSession, now: datetime) -> bool:
@@ -175,15 +171,18 @@ def _session_expired(row: AuthSession, now: datetime) -> bool:
 
 def lookup_session(db: Session, raw: str, *, now: datetime | None = None) -> AuthSession:
     moment = now or utcnow()
-    purge_stale_sessions(db, moment)
-    row = (
-        db.query(AuthSession)
-        .filter(AuthSession.token_hash == hash_session_token(raw))
-        .one_or_none()
-    )
+    from app.services.session_cleanup_service import cleanup_expired_auth_state
+
+    cleanup_expired_auth_state(db, now=moment, max_batches=1)
+    if not get_settings().auth_browser_sessions_enabled:
+        record_auth_event("session", "kill_switch")
+        raise AuthError("browser sessions are disabled")
+    row = _session_row_for_raw(db, raw)
     if row is None or row.revoked_at is not None:
+        record_auth_event("session", "invalid")
         raise AuthError("session is not valid")
     if _session_expired(row, moment):
+        record_auth_event("session", "expired")
         raise AuthError("session expired")
     return row
 

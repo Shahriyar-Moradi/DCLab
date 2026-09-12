@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import logging
 import secrets
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -12,10 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models import AuthRecoveryToken, User
+from app.services.auth_hashing import token_hash, token_hash_candidates
+from app.services.auth_metrics import record_auth_event
 from app.services.auth_service import AuthError, hash_password
 from app.services.session_service import revoke_sessions_for_user, utcnow
-
-logger = logging.getLogger(__name__)
 
 PURPOSE_PASSWORD_RESET = "password_reset"
 PURPOSE_EMAIL_VERIFICATION = "email_verification"
@@ -23,7 +21,7 @@ RECOVERY_PURPOSES = frozenset({PURPOSE_PASSWORD_RESET, PURPOSE_EMAIL_VERIFICATIO
 
 
 def hash_recovery_token(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return token_hash(raw)
 
 
 def generate_recovery_token() -> str:
@@ -63,7 +61,7 @@ def issue_recovery_token(
     )
     db.add(row)
     db.flush()
-    logger.info("recovery token issued purpose=%s user_id=%s", purpose, user.id)
+    record_auth_event("recovery", "issued")
     return raw
 
 
@@ -72,20 +70,28 @@ def request_recovery(db: Session, email: str, purpose: str) -> None:
     normalized = email.strip().lower()
     user = db.query(User).filter(User.email == normalized).one_or_none()
     if user is None or not user.is_active:
-        logger.info("recovery request ignored purpose=%s", purpose)
+        record_auth_event("recovery", "ignored")
         return
     issue_recovery_token(db, user, purpose)
+
+
+def _recovery_row_for_raw(db: Session, raw: str) -> AuthRecoveryToken | None:
+    for digest in token_hash_candidates(raw.strip()):
+        row = (
+            db.query(AuthRecoveryToken)
+            .filter(AuthRecoveryToken.token_hash == digest)
+            .one_or_none()
+        )
+        if row is not None:
+            return row
+    return None
 
 
 def _consume_recovery_token(
     db: Session, raw: str, purpose: str, *, now: datetime | None = None
 ) -> tuple[AuthRecoveryToken, User]:
     moment = now or utcnow()
-    row = (
-        db.query(AuthRecoveryToken)
-        .filter(AuthRecoveryToken.token_hash == hash_recovery_token(raw.strip()))
-        .one_or_none()
-    )
+    row = _recovery_row_for_raw(db, raw)
     if (
         row is None
         or row.purpose != purpose
@@ -97,6 +103,7 @@ def _consume_recovery_token(
     if user is None or not user.is_active:
         raise AuthError("invalid or expired token")
     row.consumed_at = moment
+    record_auth_event("recovery", "consumed")
     return row, user
 
 
@@ -108,7 +115,6 @@ def confirm_password_reset(
     )
     user.password_hash = hash_password(new_password)
     revoke_sessions_for_user(db, user.id, now=now)
-    logger.info("password reset confirmed user_id=%s", user.id)
     return user
 
 
@@ -120,5 +126,4 @@ def confirm_email_verification(
         db, raw, PURPOSE_EMAIL_VERIFICATION, now=moment
     )
     user.email_verified_at = moment
-    logger.info("email verification confirmed user_id=%s", user.id)
     return user

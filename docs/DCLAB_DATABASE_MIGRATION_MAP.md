@@ -1,11 +1,10 @@
 # DCLab database migration map
 
 > **Status:** this map froze the redesign spine at `0053_pipeline_run_branch`.
-> **Current Alembic head is `0058_simulation_workspace`** (simulation tenancy;
-> see [adr/0004-simulation-insights-tenancy.md](adr/0004-simulation-insights-tenancy.md)).
-> `0057_session_workspace` remains the browser session workspace selector.
-> `0056_auth_hardening` remains recovery tokens and membership suspension.
-> `0055_auth_sessions` remains the hashed browser-session table.
+> **Current Alembic head is named by** [`contracts/truth_baseline.json`](../contracts/truth_baseline.json)
+> (session-constraint reconciliation after simulation tenancy).
+> `0058_simulation_workspace` remains simulation tenancy with an honest empty
+> backfill. `0057_session_workspace` remains the browser session workspace selector.
 > `0054_execution_needs_input` remains the CHECK-only `needs_input` revision.
 
 Head revision at freeze: `0053_pipeline_run_branch`.
@@ -43,7 +42,8 @@ Workflows were the same case study.
 | `0055_auth_sessions` | Hashed opaque browser sessions (`auth_sessions`). Identity-plane; not workspace-scoped. See ADR 0001. |
 | `0056_auth_hardening` | Recovery token hashes, `users.email_verified_at`, `workspace_memberships.suspended_at`. CSRF/CSP/throttle are application-layer (ADR 0002). |
 | `0057_session_workspace` | `auth_sessions.selected_workspace_id` selector (ADR 0003). Identity-plane FK, not tenant proof. |
-| `0058_simulation_workspace` | **Current head.** Nullable `simulation_runs.workspace_id` / `project_id`; honest empty backfill (ADR 0004). |
+| `0058_simulation_workspace` | Nullable `simulation_runs.workspace_id` / `project_id`; honest empty backfill (ADR 0004). |
+| `0059_auth_session_constraints` | **Current head.** Same-user session rotation lineage, hash CHECKs, expiry/revocation indexes (S0-P02C). |
 
 ## Object classification
 

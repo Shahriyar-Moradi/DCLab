@@ -10,25 +10,38 @@ Extend the existing API service using `domain/agent.py` and cohesive
 `services/agent_*.py` modules; mount a resource router such as `api/v1_agent.py`.
 Use current SQLAlchemy metadata and PostgreSQL jobs. Add SDK resources beneath
 `packages/dclab_client`; add Agent Studio under `apps/web/app/app/agent/` with
-components under `apps/web/app/components/agent/`. Exact names may change only
-when current conventions require it and the implementation packet records why.
+components under `apps/web/app/components/agent/`. Use a pinned raw LangGraph
+`StateGraph` as the only orchestration runtime, ordinary Pydantic models for
+typed state/contracts, and a DCLab-owned provider-neutral gateway whose first
+adapter uses the official OpenAI SDK. Do not add PydanticAI, `pydantic-graph`,
+LangChain `create_agent`, Agent Server as a second product API, or another
+agent loop. Exact names may change only when current conventions require it and
+the implementation packet records why.
 
 ## Plan 1.1 — agent and policy contracts
 
-**Contract.** Freeze framework-neutral schemas and state machines before a
-migration. Runs are immutable-version-bound and bounded; tool outputs and LLM
-outputs are untrusted; approvals are inactive placeholders.
+**Contract.** Freeze DCLab-owned, framework-independent product schemas and
+state machines before a migration while selecting LangGraph as the sole private
+execution runtime. Runs are immutable-version-bound and bounded; tool outputs
+and LLM outputs are untrusted; approvals are inactive placeholders.
 
 ### S1-P01A — agent runtime ADR and resource contracts
 
 ```text
 Inventory existing LlmInvocation, job, event, authorization and evidence models.
-Write the agent-runtime ADR and `domain/agent.py` value objects for definition,
-version, session, message, run, step, tool call, checkpoint, citation and event.
+Write the agent-runtime ADR selecting one pinned LangGraph `StateGraph` and
+compatible PostgreSQL checkpointer release, with Python support, lockfile,
+upgrade/deprecation policy and rejected alternatives. Explicitly exclude
+PydanticAI, `pydantic-graph`, LangChain `create_agent` and nested autonomous
+loops. Define `domain/agent.py` value objects for definition, version, session,
+message, run, step, tool call, product checkpoint reference, citation and event.
 Specify IDs, workspace/project lineage, actor, immutable version references,
-timestamps, input/output digests and audience. Include read-only product slice,
-non-goals, service ownership and how existing OpenAI usage is wrapped. Add schema
-serialization tests only; do not create tables or call a provider.
+timestamps, input/output digests and audience. Assign LangGraph only graph
+routing/private checkpoint execution; assign DCLab services/PostgreSQL product
+state, authorization, tools, budgets, citations, events and recovery policy.
+Define how current official-OpenAI-SDK usage is wrapped by the DCLab gateway.
+Add schema/dependency-boundary tests only; do not create tables, install an
+unpinned package or call a provider.
 ```
 
 ### S1-P01B — run, step and session state machines
@@ -39,7 +52,8 @@ waiting/cancel_requested/succeeded/failed/cancelled/expired; and step pending/
 running/waiting/succeeded/failed/skipped/cancelled. List allowed initiators,
 terminal behavior, retry/child semantics and event emitted for every transition.
 Reject backward/unknown transitions and edits after terminal state. Add exhaustive
-table-driven/property tests. Do not encode state transitions only in route code.
+table-driven/property tests. Keep these DCLab product transitions independent of
+LangGraph private classes and do not encode them only in graph nodes or routes.
 ```
 
 ### S1-P01C — tool, context, citation and structured-output contracts
@@ -50,7 +64,10 @@ ContextEnvelope, context item, citation target/span/digest and final answer with
 claim/citation mapping. Bound names, strings, lists, nesting, bytes and item
 counts; distinguish user text from trusted instructions and tool/provider data.
 Specify safe error categories and redacted previews. Add round-trip and hostile
-payload tests. No arbitrary Python object, SQL, URL or storage key is accepted.
+payload tests. Define a Pydantic `AgentGraphState` containing bounded IDs,
+versions, counters, digests and typed previous/next results—never ORM/session,
+provider SDK or secret-bearing objects. No arbitrary Python object, SQL, URL or
+storage key is accepted.
 ```
 
 ### S1-P01D — prompt, model, data and budget policy contracts
@@ -69,17 +86,22 @@ unknown/null to deny. Add monotonic policy and canonical-digest tests.
 ```text
 Threat-model injection, confused deputy, unauthorized citations, tool argument
 smuggling, context exfiltration, provider retention, replay, budget race, event
-leakage and forged version IDs. Map every threat to a contract invariant and a
-future test owner. Review schemas against Scope 0 API/error/version conventions.
-Publish state diagrams and a compatibility matrix; close only if no table/service
-implementation must invent an unresolved state or authority decision.
+leakage, forged version IDs, nested-loop amplification, checkpoint forgery,
+checkpoint/product-state divergence, framework supply-chain compromise and
+unsafe framework upgrade. Map every threat to a contract invariant and future
+test owner. Review schemas against Scope 0 API/error/version conventions.
+Publish state, graph-boundary and recovery diagrams plus a compatibility matrix;
+close only if no table/service implementation must invent an unresolved state
+or authority decision.
 ```
 
 ## Plan 1.2 — agent control-plane persistence
 
-**Contract.** Add tenant-safe tables through current metadata/migrations. Large
-message, checkpoint and tool bodies become immutable artifacts when over the
-bounded inline threshold. No prompt secrets or hidden reasoning are stored.
+**Contract.** Add tenant-safe DCLab product tables through current metadata and
+migrations. Large message, product-checkpoint and tool bodies become immutable
+artifacts when over the bounded inline threshold. LangGraph runtime checkpoint
+tables are private, separately named and introduced only in Plan 1.7. No prompt
+secrets, hidden reasoning or framework-serialized ORM objects are stored.
 
 ### S1-P02A — definitions, versions, sessions and messages schema
 
@@ -109,10 +131,12 @@ indexes for session timeline, worker claim and operator terminal scans.
 ```text
 Add AgentToolCall, AgentCheckpoint and AgentCitation. Tool calls bind step,
 tool-version key, canonical arguments/result digest, status, timing and bounded
-safe error; checkpoints bind state-machine cursor and resume digest; citations
-bind answer/message, authorized resource type/id/version/digest and safe label.
-Use artifact references for large bodies. Enforce sequence, workspace lineage,
-append-only records and no raw credentials/URLs. Add migration integrity tests.
+safe error; product checkpoints bind the DCLab state-machine cursor, graph
+release, opaque runtime checkpoint ID and resume digest, but never contain a
+serialized LangGraph state blob. Citations bind answer/message, authorized
+resource type/id/version/digest and safe label. Use artifact references for
+large bodies. Enforce sequence, workspace lineage, append-only records and no
+raw credentials/URLs. Add migration integrity tests.
 ```
 
 ### S1-P02D — agent events and approval placeholder
@@ -134,7 +158,9 @@ repair, and application compatibility before/after expand. Define retention for
 messages, inline/tool bodies, checkpoints, events and artifact objects; preserve
 audit/citation evidence while honoring deletion/tombstone policy. Add bounded
 cleanup/reconciliation intent, not destructive ad-hoc SQL. Verify indexes and
-query plans for session/run/event reads with versioned fixtures.
+query plans for session/run/event reads with versioned fixtures. Specify
+independent retention for future private LangGraph checkpoint rows versus DCLab
+audit and citation evidence.
 ```
 
 ### S1-P02F — persistence adversarial gate
@@ -142,8 +168,9 @@ query plans for session/run/event reads with versioned fixtures.
 ```text
 Exercise two workspaces, forged parent/session/version IDs, concurrent message/
 step/event creation, duplicate tool/checkpoint writes, terminal-row mutation,
-orphan artifact references and process loss around commits. Prove database and
-service invariants reject cross-tenant or inconsistent lineage. Run migration
+orphan artifact references, forged opaque runtime checkpoint IDs and process
+loss around commits. Prove database and service invariants reject cross-tenant
+or inconsistent lineage and no checkpoint can prove authorization. Run migration
 and integrity suites and record the live head/digests before services depend on
 the schema. Repair only Plan 1.2 defects.
 ```
@@ -210,9 +237,10 @@ Record query plans and rollback/disable behavior before provider work begins.
 
 ## Plan 1.4 — provider-neutral LLM gateway
 
-**Contract.** Add `services/llm_gateway.py` and a narrow adapter package while
-wrapping `openai_provider.py`. All callers use structured request/result types;
-CI uses a deterministic fake.
+**Contract.** Add DCLab-owned `services/llm_gateway.py` and a narrow adapter
+package while wrapping `openai_provider.py`. All callers use ordinary Pydantic
+request/result contracts; CI uses a deterministic fake. Do not use PydanticAI
+or a framework-provided model/tool loop.
 
 ### S1-P04A — gateway interface and request pipeline
 
@@ -222,7 +250,8 @@ policy snapshots, ContextEnvelope digest, deadline, idempotency/correlation and
 reserved budget. Resolve provider/model server-side, validate context exposure,
 bound serialized bytes and reject unsupported capabilities before network I/O.
 Return typed content/usage/finish/safe-error metadata. Unit-test with no provider;
-do not expose provider SDK types outside the adapter.
+do not expose OpenAI, LangGraph or other provider/framework SDK types outside
+their adapters.
 ```
 
 ### S1-P04B — deterministic fake provider
@@ -243,8 +272,9 @@ Refactor existing OpenAI integration behind the gateway as the first adapter.
 Configure endpoint/model/region/retention/training guarantees through model/data
 policy and secret references. Apply connect/read/total timeouts, bounded retries
 with jitter and Retry-After, circuit breaker and cancellation. Validate structured
-output strictly and record only safe invocation metadata. Add mocked transport
-tests; no live credential in PR CI.
+output strictly with ordinary Pydantic models and record only safe invocation
+metadata. Use the official OpenAI SDK directly inside this adapter. Add mocked
+transport tests; no live credential in PR CI and no PydanticAI dependency.
 ```
 
 ### S1-P04D — usage, budget and idempotency settlement
@@ -410,51 +440,69 @@ rollback leaves no orphan job/reservation/event and replay is stable. Document
 service ownership and forbid routes/workers from direct agent-row mutation.
 ```
 
-## Plan 1.7 — bounded orchestrator and worker
+## Plan 1.7 — LangGraph runtime and bounded worker
 
-**Contract.** Register only `agent.turn.v1` in the existing dispatcher. One job
-executes one bounded state-machine step and checkpoints before scheduling the
-next; no in-memory recursive loop owns durability.
+**Contract.** Register only `agent.turn.v1` in the existing dispatcher and use
+one pinned raw LangGraph `StateGraph` as the sole orchestration runtime. One job
+may traverse bounded pure nodes but performs at most one provider or tool
+operation, persists DCLab product records plus a private runtime checkpoint, and
+stops before scheduling the next turn. No in-memory recursive or nested agent
+loop owns durability.
 
-### S1-P07A — planner state and next-step decision
+### S1-P07A — versioned graph topology and typed state
 
 ```text
-Implement a deterministic orchestrator reducer that accepts the persisted run,
-last checkpoint, bounded events and validated provider/tool result, then returns
-exactly one next action: call provider, call one tool, finalize, wait, fail or
-cancel. Validate structured provider decisions against allowed graph/tool/version
-and remaining budgets. Add pure traces for common questions and every terminal/
-invalid state. The LLM cannot choose authorization or worker handler keys.
+Implement the code-owned `read_only_agent_v1` raw LangGraph `StateGraph` using
+the Pydantic AgentGraphState contract. Nodes load/authorize, build context,
+reserve, request one typed NextAction, validate, execute zero or one tool,
+validate citations, checkpoint/yield, finalize or fail. Routing predicates are
+pure deterministic functions over validated state. Do not use LangChain
+`create_agent`, PydanticAI, `pydantic-graph`, ORM/provider objects in state or
+dynamic graph generation. Add graph compilation/version-digest and pure traces
+for every route and terminal/invalid state. The LLM cannot authorize, select
+worker handler keys or introduce nodes/tools.
 ```
 
-### S1-P07B — worker handler and durable checkpoint
+### S1-P07B — PostgreSQL checkpointer and ownership boundary
+
+```text
+Install the ADR-pinned LangGraph and compatible PostgreSQL checkpointer packages
+through the project lockfile. Configure private runtime tables in a dedicated
+`agent_runtime` schema with a least-privilege worker role, bounded serialization,
+encryption/retention requirements and an explicit migration/upgrade procedure.
+Map LangGraph thread/checkpoint IDs opaquely to DCLab AgentRun and
+AgentCheckpoint references; public services never query runtime tables and a
+thread ID never proves tenancy. Test create/resume/list-for-recovery, schema
+upgrade, malformed/oversized state, cross-run substitution, cleanup and product/
+checkpoint mismatch. Do not deploy LangGraph Agent Server or expose checkpoint
+APIs.
+```
+
+### S1-P07C — worker turn, checkpoint and next-job handoff
 
 ```text
 Register `agent.turn.v1` with a narrow handler. Claim run/step under lease,
-re-authorize, reserve, execute at most one external operation, persist result and
-checkpoint, settle, append event, and enqueue the next step atomically or through
-a recoverable outbox pattern. Payload contains IDs/version only. Add heartbeat,
-deadline and bounded result serialization. Test no nested unbounded execution.
+re-authorize, invoke only the pinned graph release, reserve, execute at most one
+provider or ToolRunner operation, persist result/product checkpoint, settle,
+append event, commit the runtime checkpoint, and enqueue the next turn atomically
+or through explicit recoverable intent. Payload contains IDs/version only. Stop
+the graph at the defined turn boundary; never call an until-complete autonomous
+loop. Add heartbeat, deadline, bounded serialization and tests proving one
+external operation per delivered job.
 ```
 
-### S1-P07C — cancellation, wait, expiry and terminalization
+### S1-P07D — cancellation, interrupts and crash recovery
 
 ```text
 Check cancellation/policy revocation/deadline before dispatch and after external
-return. Define cooperative cancellation for provider/tool calls, safe late
-results, waiting state, maximum wait and expiry. A reconciler terminalizes runs
-with lost jobs/leases or exhausted bounds and releases reservations. Test cancel
-at every checkpoint and ensure terminal state/message/event are consistent.
-```
-
-### S1-P07D — crash and duplicate recovery
-
-```text
-Inject failure before/after claim, external dispatch, result persistence,
-checkpoint, settlement, event and next-job enqueue. Prove duplicate delivery
-cannot repeat a non-idempotent operation; Scope 1 tools are reads but provider
-cost still settles once. Reconstruct from database after process restart and
-detect ambiguous dispatch conservatively. Add PostgreSQL concurrency tests.
+return. Use LangGraph interrupt/resume only at named idempotent boundaries; code
+before an interrupt must be safe to replay. Define safe late results, waiting,
+maximum wait and expiry. Inject failure before/after claim, provider/tool
+dispatch, DCLab result, runtime/product checkpoint, settlement, event and
+next-job enqueue. Prove duplicate delivery cannot repeat a tool/provider
+operation or cost settlement. Reconcile product/checkpoint divergence,
+terminalize lost work and reconstruct after process restart with PostgreSQL
+concurrency tests.
 ```
 
 ### S1-P07E — orchestration limits and backpressure
@@ -463,8 +511,9 @@ detect ambiguous dispatch conservatively. Add PostgreSQL concurrency tests.
 Enforce maximum steps, tool/provider calls, tokens, cost, context/result bytes,
 wall time, active runs per workspace/user and queue age. Reject or queue fairly
 with stable reason/retry metadata; never create unlimited child jobs. Add metrics
-for state/queue/lease/recovery/exhaustion by bounded labels and a worker drain/
-kill-switch runbook. Benchmark with synthetic bounded fixtures.
+for state/queue/lease/checkpoint/recovery/exhaustion by bounded labels and a
+worker drain/graph kill-switch runbook. Bound graph checkpoint bytes and pure
+node traversal per turn. Benchmark with synthetic bounded fixtures.
 ```
 
 ### S1-P07F — orchestrator system gate
@@ -473,8 +522,10 @@ kill-switch runbook. Benchmark with synthetic bounded fixtures.
 Run deterministic fake-provider system cases for direct answer, multi-tool,
 policy block, insufficient evidence, malformed decision, outage, cancellation,
 crash recovery, duplicate job and every budget. Verify terminal reconstruction,
-events, citations, reservations and no write tool. Record latency/cost step
-baselines and only then enable the handler for an internal allowlist.
+events, citations, reservations, product/runtime checkpoint agreement, exactly
+one agent loop and no write tool. Include pinned dependency/SBOM and framework
+upgrade/rollback evidence. Record latency/cost step baselines and only then
+enable the handler for an internal allowlist.
 ```
 
 ## Plan 1.8 — read-only tool catalog
@@ -522,7 +573,9 @@ Implement one ToolRunner that validates schema, canonicalizes arguments,
 re-authorizes, reserves budget, applies timeout/page/byte limits, invokes the
 mapped service and validates/sanitizes results. Record call/result digests and
 safe error category. Reject unknown version/fields/resource types and provider-
-supplied tool names. Add malicious argument/result, timeout and revocation tests.
+supplied tool names. LangGraph nodes can call only this runner; framework-native
+or directly decorated tools are prohibited. Add malicious argument/result,
+timeout and revocation tests.
 ```
 
 ### S1-P08E — catalog safety and coverage gate
@@ -691,7 +744,9 @@ Document provider outage, runaway cost, stuck queue, corrupt checkpoint,
 unauthorized citation, policy rollback, user deletion and total agent disable.
 Implement global/workspace/user allowlist plus independent orchestration/provider
 flags with fail-closed defaults. Drill cancellation, worker restart, breaker,
-policy rollback and disable without schema rollback; record observed recovery.
+policy rollback, LangGraph/checkpointer compatible upgrade and total disable
+without schema rollback; record observed recovery. Document dependency rollback,
+runtime-schema forward repair and product/checkpoint reconciliation.
 ```
 
 ### S1-P11E — internal end-to-end release gate
@@ -701,5 +756,7 @@ Run migrations, full regression, two-workspace, fake/provider synthetic,
 adversarial, budget-concurrency, crash-injection, API/SDK and browser E2E. Have an
 allowlisted user complete the supported questions without DB intervention.
 Publish the Scope 1 evidence record with versions, quality/cost/latency, safety
-assertions and limitations. Do not start Scope 2 until every hard gate passes.
+assertions and limitations, including exact LangGraph/checkpointer pins and proof
+that no nested agent runtime is installed or invoked. Do not start Scope 2 until
+every hard gate passes.
 ```

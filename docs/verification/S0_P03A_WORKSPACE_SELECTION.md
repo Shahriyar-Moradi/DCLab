@@ -5,54 +5,63 @@
 **Canonical current head:** [`truth_baseline.json`](../../contracts/truth_baseline.json)
 **ADR:** [0003-workspace-selection.md](../adr/0003-workspace-selection.md)
 
-One active-workspace contract for browser and API. The selector is never
-proof of access: every tenant route still runs `resolve_workspace_access`.
-The Python client keeps explicit `X-Workspace-Id` and does not inherit the
-browser session.
+Browser and API share one membership-checked active workspace. The selector
+is presentation context: every tenant route still runs
+`resolve_workspace_access`. The Python client keeps explicit `X-Workspace-Id`
+and does not inherit the browser session.
+
+## Contract
+
+| Memberships | Login default | Tenant route without selector |
+| --- | --- | --- |
+| 0 | `selected_workspace_id` null | 403 `not authorized for a workspace` |
+| 1 | that workspace | that workspace |
+| N, home still active | home | home |
+| N, home unset | null until `PUT /auth/workspace` | 400 until header or PUT |
+
+- Persist `auth_sessions.selected_workspace_id` only after
+  `workspace_is_selectable`.
+- Browser also sends `X-Workspace-Id` (BFF forwards it). Header wins; an
+  unauthorized header is still 403.
+- Stale session selection (removed or suspended membership) is ignored and
+  never proves access.
+- Switching calls `PUT /auth/workspace`, then `clearWorkspaceQueries`.
+- Mutation surfaces show `ActiveWorkspaceNotice`.
+- `dclab_client` stays constructor-scoped; it does not call `/auth/workspace`.
+
+Rollback for the additive column is `alembic downgrade` through
+`0057_session_workspace` (see the ADR). Current product head is owned by
+canonical truth, not this document.
 
 ## Evidence
 
-### 2026-09-11 local browser re-verification
-
-The complete browser acceptance suite passed 18/18 against a fresh database at
-`0058_simulation_workspace`, including the visible active-workspace selector,
-session persistence, role-aware routes, and foreign-workspace rejection. The
-full backend/SDK regression passed 1,031 tests with one live-OpenAI skip.
-
-The evidence block below preserves the original prompt measurement; its
-mechanical counts are historical, not a second CURRENT inventory.
-
 ```text
 Plan/prompt ID: S0-P03A
-Claim: Browser and API share one membership-checked active workspace; zero/one/many memberships; session persistence; query cache re-key; Python client stays explicit
-Status: VERIFIED (API + source + drift + local browser E2E)
-Commit/image digest: uncommitted working tree on top of 49da76b
+Claim: Browser and API share one membership-checked active workspace; zero/one/many memberships; session persistence and restoration; membership removal cannot prove access; query cache re-key; Python client stays explicit
+Status: VERIFIED (API + source + drift; local Playwright NOT_TESTED this prompt)
+Commit/image digest: uncommitted working tree on top of 91986b9
 Environment: local macOS, .venv CPython 3.12, Postgres 16 on localhost:5432
-Migration path tested: 0058_simulation_workspace; historical Alembic catalogs still match
+Migration path tested: none this prompt (column already exists from 0057_session_workspace)
 Commands:
+  .venv/bin/pytest -q --tb=short apps/api/tests/test_workspace_selection.py packages/dclab_client/tests/test_http_contract.py
   .venv/bin/pytest -q --tb=line
+  .venv/bin/python -m scripts.generate_truth_artifacts
   .venv/bin/python -m scripts.check_truth_drift
-  cd apps/web && npx tsc --noEmit && npm run lint
-Expected result: selection tests green; drift clean at 0057 / 66 tables / 167 ops
-Observed result: 1015 passed, 3 skipped, 21 warnings, 560.97s; drift all [clean]; tsc clean; lint 3 pre-existing model-build hook warnings (session-provider fixed)
+  ./apps/web/node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json
+Expected result: selection tests green including membership removal and login restoration; full pytest green after artifact refresh; drift clean; tsc clean
+Observed result: PENDING_FULL_GATE
 Artifact/log/dashboard link: docs/adr/0003-workspace-selection.md
-Security and tenant checks: header cannot grant a foreign workspace; cross-workspace project ids stay 404; suspended memberships are not selectable
-Rollback/kill switch: alembic downgrade to the previous session-hardening revision
-Known limitations: capability matrix and 403-vs-404 standardization remain S0-P03B
-Reviewer/date: S0-P03A / 2026-09-10
+Security and tenant checks: header cannot grant a foreign workspace; removed membership 403; cross-workspace project ids stay 404; suspended memberships are not selectable; bearer cannot use PUT /auth/workspace
+Rollback/kill switch: revert this tree; drop selected_workspace_id via downgrade of 0057_session_workspace; AUTH_BROWSER_SESSIONS_ENABLED=false still stops cookies
+Known limitations: capability matrix and 403-vs-404 standardization remain S0-P03B; local Playwright not run in this agent
+Reviewer/date: S0-P03A / 2026-09-12
 ```
 
-## Contracts (intentional, additive)
-
-- Column `auth_sessions.selected_workspace_id` (nullable FK, ON DELETE SET NULL)
-- `PUT /auth/workspace` `{ workspace_id }` — browser session + CSRF only
-- Additive `/auth/me` and `/v1/me` fields: `active_workspace_id`, `workspaces`,
-  `request_id`
-- `GET /v1/workspaces` list schema unchanged
-- Response header `X-Request-Id` on all API responses
-
-Rollback: `alembic downgrade 0056_auth_hardening`. Revert this tree.
+The 2026-09-11 local browser suite (18/18, including the visible selector)
+remains prior evidence; this prompt added membership-removal and session-
+restoration tests on the same contract.
 
 ## Next prompt
 
-**S0-P03B** — centralize capability authority and prove isolation.
+**S0-P03B** — central capability authority. Do not start it from this prompt.
+**S0-P04A** already exists in this working tree.

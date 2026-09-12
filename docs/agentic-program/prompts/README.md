@@ -59,6 +59,11 @@ the user separately authorizes it.
 - Generated SDK or schema outputs must be reproducible and checked for drift.
 - Feature flags limit rollout; they do not excuse broken authorization,
   tenancy, privacy, idempotency, or evidence integrity.
+- Agent work uses the architecture selected by the master plan: raw LangGraph
+  `StateGraph` is the sole orchestration loop, ordinary Pydantic owns typed
+  contracts, and DCLab services own authorization, tools, budgets and product
+  state. Do not add PydanticAI, `pydantic-graph`, LangChain `create_agent`, or a
+  second agent/checkpoint authority without a replacement ADR and plan update.
 
 ## How to execute a plan
 

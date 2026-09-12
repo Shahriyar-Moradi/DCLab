@@ -47,10 +47,10 @@ def test_drift_checks_pass_on_current_tree():
     assert failed == []
 
 
-def test_alembic_parser_matches_one_head_0058():
+def test_alembic_parser_matches_one_head_0059():
     records = parse_alembic_revisions()
-    assert len(records) == 58
-    report = check_alembic_graph(records, expected_head="0058_simulation_workspace")
+    assert len(records) == 59
+    report = check_alembic_graph(records, expected_head="0059_auth_session_constraints")
     assert report.ok
 
 

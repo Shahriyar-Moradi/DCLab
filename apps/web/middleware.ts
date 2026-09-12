@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const SESSION_COOKIE = "dclab_session";
+const SESSION_COOKIE = process.env.DCLAB_SESSION_COOKIE || "dclab_session";
 
 type Role =
   | "dclab_admin"
@@ -66,6 +66,7 @@ function forbidden(area: string): NextResponse {
       status: 403,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "Content-Security-Policy":
@@ -76,13 +77,16 @@ function forbidden(area: string): NextResponse {
 }
 
 export async function middleware(request: NextRequest) {
+  // Session probe only. Area 403 HTML is presentation; the API authorizes.
   const { pathname } = request.nextUrl;
   const role = await roleFromRequest(request);
 
   if (!role) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
-    return NextResponse.redirect(login);
+    const redirect = NextResponse.redirect(login);
+    redirect.headers.set("Cache-Control", "no-store");
+    return redirect;
   }
 
   if (

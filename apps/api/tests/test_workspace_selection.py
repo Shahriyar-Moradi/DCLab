@@ -11,6 +11,7 @@ from app.db.models import AuthSession, UserRole, WorkspaceMembership
 from app.services.auth_service import create_access_token, create_user, register_customer
 from app.services.csrf_service import csrf_token_for_session
 from app.services.project_service import create_project
+from app.services.session_service import hash_session_token
 from app.services.workspace_service import create_business_workspace
 from conftest import TRUSTED_ORIGIN, browser_login, csrf_headers
 
@@ -222,14 +223,116 @@ def test_v1_me_is_additive_and_echoes_request_id(auth_client, client_user):
     assert response.headers.get("x-request-id") == "trace-workspace-1"
 
 
+def test_removed_membership_is_ignored_and_does_not_prove_access(client, db_session):
+    owner, first, second = _two_workspaces(db_session, home=False)
+    browser_login(client, owner.email, "test-password")
+    chosen = client.put(
+        "/auth/workspace",
+        json={"workspace_id": str(second.id)},
+        headers=csrf_headers(client),
+    )
+    assert chosen.status_code == 200, chosen.text
+    membership = (
+        db_session.query(WorkspaceMembership)
+        .filter(
+            WorkspaceMembership.user_id == owner.id,
+            WorkspaceMembership.workspace_id == second.id,
+        )
+        .one()
+    )
+    db_session.delete(membership)
+    db_session.commit()
+    db_session.expire_all()
+
+    me = client.get("/auth/me")
+    assert me.status_code == 200
+    assert me.json()["active_workspace_id"] == str(first.id)
+    assert {row["id"] for row in me.json()["workspaces"]} == {str(first.id)}
+    row = db_session.query(AuthSession).filter(AuthSession.revoked_at.is_(None)).one()
+    assert row.selected_workspace_id == second.id
+
+    listed = client.get("/v1/projects")
+    assert listed.status_code == 200, listed.text
+    stolen = client.get("/v1/projects", headers={"X-Workspace-Id": str(second.id)})
+    assert stolen.status_code == 403
+    assert stolen.json()["detail"] == "not authorized for this workspace"
+    denied = client.put(
+        "/auth/workspace",
+        json={"workspace_id": str(second.id)},
+        headers=csrf_headers(client),
+    )
+    assert denied.status_code == 403
+
+
+def test_login_restores_selection_only_while_membership_is_current(client, db_session):
+    owner, first, second = _two_workspaces(db_session, home=False)
+    first_login = browser_login(client, owner.email, "test-password")
+    raw_one = first_login.cookies.get("dclab_session")
+    selected = client.put(
+        "/auth/workspace",
+        json={"workspace_id": str(second.id)},
+        headers=csrf_headers(client),
+    )
+    assert selected.status_code == 200, selected.text
+
+    restored = browser_login(client, owner.email, "test-password")
+    assert restored.status_code == 200, restored.text
+    raw_two = restored.cookies.get("dclab_session")
+    assert raw_two != raw_one
+    me = client.get("/auth/me")
+    assert me.json()["active_workspace_id"] == str(second.id)
+    db_session.expire_all()
+    successor = (
+        db_session.query(AuthSession)
+        .filter(AuthSession.token_hash == hash_session_token(raw_two))
+        .one()
+    )
+    assert successor.selected_workspace_id == second.id
+    assert successor.revoked_at is None
+
+    membership = (
+        db_session.query(WorkspaceMembership)
+        .filter(
+            WorkspaceMembership.user_id == owner.id,
+            WorkspaceMembership.workspace_id == second.id,
+        )
+        .one()
+    )
+    db_session.delete(membership)
+    db_session.commit()
+
+    after_removal = browser_login(client, owner.email, "test-password")
+    assert after_removal.status_code == 200, after_removal.text
+    me_after = client.get("/auth/me")
+    assert me_after.json()["active_workspace_id"] == str(first.id)
+    assert str(second.id) not in {row["id"] for row in me_after.json()["workspaces"]}
+
+
 def test_web_client_propagates_workspace_header_and_sdk_does_not_use_sessions():
     client_src = WEB_CLIENT.read_text(encoding="utf-8")
     header_src = (
         REPO_ROOT / "apps" / "web" / "lib" / "infrastructure" / "active-workspace.ts"
     ).read_text(encoding="utf-8")
+    provider_src = (
+        REPO_ROOT / "apps" / "web" / "lib" / "application" / "session-provider.tsx"
+    ).read_text(encoding="utf-8")
+    notice_src = (
+        REPO_ROOT / "apps" / "web" / "app" / "components" / "layout" / "ActiveWorkspaceNotice.tsx"
+    ).read_text(encoding="utf-8")
+    selector_src = (
+        REPO_ROOT / "apps" / "web" / "app" / "components" / "layout" / "WorkspaceSelector.tsx"
+    ).read_text(encoding="utf-8")
+    bff_src = (
+        REPO_ROOT / "apps" / "web" / "lib" / "infrastructure" / "bff-proxy.ts"
+    ).read_text(encoding="utf-8")
     sdk_src = SDK_HTTP.read_text(encoding="utf-8")
     assert "WORKSPACE_HEADER" in client_src
     assert 'WORKSPACE_HEADER = "X-Workspace-Id"' in header_src
+    assert "clearWorkspaceQueries" in provider_src
+    assert "workspaceQueryKey" in header_src
+    assert "active-workspace-notice" in notice_src
+    assert 'aria-label="Active workspace"' in selector_src
+    assert "X-Workspace-Id" in bff_src
     assert "Authorization" not in client_src
     assert "Cookie" not in sdk_src
     assert "dclab_session" not in sdk_src

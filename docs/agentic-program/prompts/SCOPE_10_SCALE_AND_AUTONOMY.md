@@ -10,7 +10,9 @@ Do not install every listed technology.
 Reuse the production application contracts. Scaling can change deployment/storage
 internals only behind those contracts. Enterprise and autonomy features use the
 same workspace, policy, approval, evidence and audit boundaries; no premium path
-may weaken tenancy or scientific correctness.
+may weaken tenancy or scientific correctness. Scale the same pinned LangGraph
+runtime and DCLab product/checkpoint boundary; measured load is not permission
+to add PydanticAI, a second graph engine or framework-owned authorization.
 
 ## Plan 10.1 — capacity, cardinality and cost governance
 
@@ -307,8 +309,11 @@ shared services or unbounded generic HTTP/code tools.
 Implement the selected addition behind existing code-owned interface and versioned
 registry. Reuse secret/egress/cursor/drift/outbox/reconciliation or agent context/
 tool/budget/review contracts exactly; provider/specialist-specific logic stays in
-adapter. Add faithful fake/golden fixtures and shared contract, tenant, injection,
-rate/bounds/recovery tests. No forked business command.
+adapter. New specialists compile as code-owned subgraphs in the existing pinned
+LangGraph runtime and use the same gateway/ToolRunner/checkpointer boundary; do
+not add a second agent framework. Add faithful fake/golden fixtures and shared
+contract, tenant, injection, rate/bounds/recovery tests. No forked business
+command.
 ```
 
 ### S10-P06C — reusable template contract
@@ -317,8 +322,10 @@ rate/bounds/recovery tests. No forked business command.
 Define immutable template version containing supported objective, input schema,
 graph/agent/tool/data/model/budget releases, expected outputs, required user
 decisions, evaluation suite and stop conditions. Parameters cannot widen authority
-or select arbitrary prompt/tool/model. Add compatibility/canonical-digest tests
-and publish only after value/safety evaluation against non-template baseline.
+or select arbitrary prompt/tool/model. Bind the template to a code-owned
+LangGraph topology key/digest, never executable generated graph code. Add
+compatibility/canonical-digest tests and publish only after value/safety
+evaluation against non-template baseline.
 ```
 
 ### S10-P06D — proactive schedule and notification

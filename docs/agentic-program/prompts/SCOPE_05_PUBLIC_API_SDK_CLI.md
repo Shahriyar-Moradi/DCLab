@@ -9,7 +9,9 @@ API internals, open the database, read storage keys or inherit browser cookies.
 Extend resource routers/application services, `packages/dclab_client`, and add a
 separate package such as `packages/dclab_cli`. Stable contracts use explicit
 machine identity, workspace, scopes, request/client IDs, bounded pages/streams,
-safe retries and versioned OpenAPI compatibility.
+safe retries and versioned OpenAPI compatibility. Agent resources expose only
+DCLab-owned sessions/runs/steps/events/tool calls/citations; LangGraph checkpoint
+rows, graph-private state and framework types never enter OpenAPI, SDK or CLI.
 
 ## Plan 5.1 — machine identity and scoped credentials
 

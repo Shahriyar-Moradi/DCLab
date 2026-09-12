@@ -12,6 +12,9 @@ Create a reviewed `infra/` layout only after the platform ADR. Separate dev, CI,
 staging and production accounts/projects, state, identities and secrets. Deploy
 web, API and handler-allowlisted workers independently. Notebook compute remains
 isolated or disabled. Managed PostgreSQL/object/secrets/telemetry are private.
+Run the pinned LangGraph runtime only inside `worker-agent`; its dedicated
+PostgreSQL checkpointer schema uses a least-privilege identity and is not public.
+Do not deploy LangGraph Agent Server or a second agent-facing API for the MVP.
 
 ## Plan 9.1 — environment and infrastructure architecture
 
@@ -141,6 +144,8 @@ dependencies, read-only filesystem where practical, health/readiness and gracefu
 shutdown. Configure each worker with an explicit code-owned handler allowlist and
 identity. Keep migrations/admin/debug tools out of runtime entrypoints. Build,
 scan, sign and test images in CI; tag deployments by digest, not mutable tag.
+The agent-worker image contains the reviewed LangGraph/checkpointer pins and no
+PydanticAI, high-level LangChain agent or unused alternate graph runtime.
 ```
 
 ### S9-P03B — deployment manifests and safe rollout
@@ -150,7 +155,10 @@ Codify replicas/resources/ports/network/service accounts/config/secrets/probes/
 disruption for each unit in selected IaC/platform. Use rolling/canary settings
 that preserve API/worker schema compatibility; drain workers and leases on
 termination. Define smoke, rollback and feature-flag ordering. Add manifest policy
-tests for privilege, host mounts, public exposure and mutable images.
+tests for privilege, host mounts, public exposure and mutable images. Order
+private checkpointer-schema compatibility before agent-worker rollout and keep
+runtime rollback compatible with persisted checkpoints or use documented
+forward repair.
 ```
 
 ### S9-P03C — autoscaling, quotas and tenant fairness
@@ -263,7 +271,10 @@ Generate lockfiles/SBOMs for Python/Node/images/IaC, scan dependencies/images/co
 IaC/secrets/licenses and define severity/exploitability/license policy with owner/
 expiry for exceptions. Block known test canary secrets and unreviewed dependency
 changes. Make scans reproducible/bounded and upload protected reports. Do not
-auto-fix dependencies in release jobs.
+auto-fix dependencies in release jobs. Treat LangGraph/checkpointer upgrades as
+runtime migrations: require compatibility tests against persisted fixtures,
+checkpoint-schema review and confirmation that no prohibited second agent
+framework entered the dependency graph.
 ```
 
 ### S9-P05C — build signing and provenance
@@ -282,8 +293,9 @@ key/build response runbook.
 Promote the exact signed digest dev -> staging -> production with environment-
 specific config references, migration preflight, smoke/e2e/eval/security/SLO gates
 and required approval. Record deployment, release/policy/graph versions and
-rollback target. Prevent concurrent incompatible deploy/migration and direct
-mutable production apply. Test dry run and failed gate.
+LangGraph/checkpointer versions plus rollback target. Prevent concurrent
+incompatible product/checkpointer deploy/migration and direct mutable production
+apply. Test dry run and failed gate.
 ```
 
 ### S9-P05E — canary and rollback automation
@@ -319,7 +331,9 @@ Reconcile all scope threat models with deployed data/network/identity flows and
 inventory assets, principals, trust boundaries, entry/egress, abuse cases and
 kill switches. Map each risk to control/evidence/owner/residual rating. Include
 tenant/auth, LLM/tool/delegation, sandbox, OAuth/MCP, connector secrets/SSRF,
-outbox/approval and supply chain. Block launch on unowned critical risk.
+outbox/approval and supply chain. Include checkpoint forgery, product/runtime
+state divergence, replay after interrupt, nested-loop amplification and
+framework dependency compromise. Block launch on unowned critical risk.
 ```
 
 ### S9-P06B — application/cloud security verification

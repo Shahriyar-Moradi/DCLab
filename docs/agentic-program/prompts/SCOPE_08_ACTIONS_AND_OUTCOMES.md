@@ -11,6 +11,9 @@ Reuse decisions/predictions/translation, Scope 3 approvals, connector secrets/
 egress/adapters, jobs/events and artifact/evidence lineage. Add domain-neutral
 decision/action/outcome services and `api/v1_decision_cases.py`. The first
 outbound action must be low-risk, reversible or compensatable and pilot-approved.
+LangGraph may propose or request a typed action only through DCLab ToolRunner and
+approval services; it never delivers an external effect itself. No framework
+callback, PydanticAI tool or graph node may bypass the transactional outbox.
 
 ## Plan 8.1 — decision cases and recommendation versions
 

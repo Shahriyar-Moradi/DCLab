@@ -59,4 +59,6 @@ Browser mutations must send `X-CSRF-Token` and a trusted `Origin`.
 
 ## Next prompt
 
-**S0-P03A** — implement workspace selection contract.
+**S0-P02C** was the persistence/cleanup reconciliation gate and is recorded
+separately. **S0-P02D** / **S0-P02E** complete the BFF contract and operations
+controls. Plan 0.2 closes at **S0-P02F**.

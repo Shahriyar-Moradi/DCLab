@@ -45,6 +45,7 @@ function LoginForm() {
       {
         onSuccess: (data) => {
           const requested = params.get("next");
+          // Presentation default only. Middleware/API still authorize the destination.
           const platformMember = isPlatformRole(data.user.role);
           const businessMember = isBusinessAdministrationRole(data.user.role);
           const personalDeveloper = data.user.role === "personal_developer";

@@ -14,7 +14,7 @@ from app.services.recovery_service import (
     PURPOSE_PASSWORD_RESET,
     issue_recovery_token,
 )
-from conftest import browser_login, csrf_headers
+from conftest import TRUSTED_ORIGIN, browser_login, csrf_headers
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WEB_ROOT = REPO_ROOT / "apps" / "web"
@@ -389,3 +389,123 @@ def test_next_csp_header_is_configured():
     assert "Content-Security-Policy" in config
     assert "frame-ancestors 'none'" in config
     assert "form-action 'self'" in config
+
+
+def test_login_rejects_session_fixation(client, client_user):
+    client.cookies.set("dclab_session", "fixed-attacker-session")
+    response = browser_login(client, client_user.email, "client-pass-123")
+    issued = response.cookies.get("dclab_session")
+    assert issued
+    assert issued != "fixed-attacker-session"
+    assert (
+        client.get(
+            "/auth/me", headers={"X-DCLab-Session": "fixed-attacker-session"}
+        ).status_code
+        == 401
+    )
+
+
+def test_cookie_authenticated_mutation_requires_csrf(client, client_user):
+    browser_login(client, client_user.email, "client-pass-123")
+    denied = client.post("/auth/logout")
+    assert denied.status_code == 403
+    assert client.get("/auth/me").status_code == 200
+    workspace = client.put("/auth/workspace", json={"workspace_id": None})
+    assert workspace.status_code == 403
+
+
+def test_csrf_hmac_uses_header_session_not_cookie(client, client_user):
+    from app.services.csrf_service import csrf_token_for_session
+
+    first = browser_login(client, client_user.email, "client-pass-123")
+    raw_a = first.cookies.get("dclab_session")
+    client.cookies.clear()
+    second = browser_login(client, client_user.email, "client-pass-123")
+    raw_b = second.cookies.get("dclab_session")
+    mismatched = client.post(
+        "/auth/logout",
+        headers={
+            "Origin": TRUSTED_ORIGIN,
+            "X-DCLab-Session": raw_a,
+            "X-CSRF-Token": csrf_token_for_session(raw_b),
+        },
+    )
+    assert mismatched.status_code == 403
+    assert (
+        client.get("/auth/me", headers={"X-DCLab-Session": raw_a}).status_code == 200
+    )
+    revoked = client.post(
+        "/auth/logout",
+        headers={
+            "Origin": TRUSTED_ORIGIN,
+            "X-DCLab-Session": raw_a,
+            "X-CSRF-Token": csrf_token_for_session(raw_a),
+        },
+    )
+    assert revoked.status_code == 204
+    assert (
+        client.get("/auth/me", headers={"X-DCLab-Session": raw_a}).status_code == 401
+    )
+    assert (
+        client.get("/auth/me", headers={"X-DCLab-Session": raw_b}).status_code == 200
+    )
+
+
+def test_csrf_accepts_trusted_referer_when_origin_missing(client, client_user):
+    headers = csrf_headers(client)
+    headers.pop("Origin", None)
+    headers["Referer"] = f"{TRUSTED_ORIGIN}/login"
+    response = client.post(
+        "/auth/login",
+        json={"email": client_user.email, "password": "client-pass-123"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+
+def test_forwarded_for_used_when_trusted(client, client_user, monkeypatch):
+    reset_login_throttle()
+    monkeypatch.setenv("AUTH_TRUST_FORWARDED", "true")
+    get_settings.cache_clear()
+    try:
+        for _ in range(5):
+            failed = client.post(
+                "/auth/login",
+                json={"email": client_user.email, "password": "wrong-password"},
+                headers={
+                    **csrf_headers(client),
+                    "X-Forwarded-For": "203.0.113.9",
+                },
+            )
+            assert failed.status_code == 401
+        other_ip = client.post(
+            "/auth/login",
+            json={"email": client_user.email, "password": "wrong-password"},
+            headers={
+                **csrf_headers(client),
+                "X-Forwarded-For": "198.51.100.10",
+            },
+        )
+        assert other_ip.status_code == 401
+        blocked = client.post(
+            "/auth/login",
+            json={"email": client_user.email, "password": "wrong-password"},
+            headers={
+                **csrf_headers(client),
+                "X-Forwarded-For": "203.0.113.9",
+            },
+        )
+        assert blocked.status_code == 429
+        assert blocked.json()["detail"] == "too many attempts"
+    finally:
+        get_settings.cache_clear()
+        reset_login_throttle()
+
+
+def test_hsts_header_when_production(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.middleware.security.is_production_env", lambda _settings=None: True
+    )
+    response = client.get("/health")
+    assert response.headers["strict-transport-security"].startswith("max-age=")
+    assert "includeSubDomains" in response.headers["strict-transport-security"]
