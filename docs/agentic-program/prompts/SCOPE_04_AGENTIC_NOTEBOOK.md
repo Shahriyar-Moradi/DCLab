@@ -1,10 +1,16 @@
 # Scope 4 execution prompts — managed agentic notebook and isolated compute
 
-Start after Scope 2; any write/build cell also requires Scope 3. Apply
+Start after the authoritative S2-P11F gate; S2-P12/S2-P13 may run in parallel
+and do not block this scope. Any write/build cell also requires Scope 3. Apply
 `README.md` and `EXECUTION_STANDARD.md`. Managed cells call typed DCLab services.
 Python remains disabled until the real isolated runtime passes Plan 4.7.
 The notebook is a secondary investigation/implementation view, never DCLab's
 project or ML-lifecycle source of truth.
+Read `../JUPYTER_RUNTIME_MVP_BLUEPRINT.md` and
+`../EXTERNAL_COMPUTE_PROVIDER_ARCHITECTURE.md` before runtime work. Execute
+RT1-A before Plan 4.1 and RT7-A before adding runtime placement persistence or
+an external adapter; the RT work packages refine these plans without changing
+their evidence IDs.
 
 ## Scope implementation boundary
 
@@ -15,8 +21,50 @@ large immutable outputs in object storage. Never execute code inside API/worker-
 ML processes. Agent-initiated notebook work enters through DCLab application
 services and the same LangGraph/ToolRunner boundary. The notebook scheduler and
 isolated code runtime are not agent graphs and must not embed PydanticAI or
-another orchestration loop. Notebook revisions bind canonical lifecycle node and
+another orchestration loop. An OpenAI Agents or Deep Investigation runtime may
+request a separately authorized sandbox task only through the same DCLab
+control-plane contract; no agent framework runs inside the sandbox. Notebook revisions bind canonical lifecycle node and
 ProjectDecisionRecord IDs/versions; they do not duplicate either state.
+Notebook cells may cite DCLab TrackingReference, ModelPackageManifest,
+FeatureContract and MonitoringWindow projections after Plan 3.0, but never use
+MLflow credentials/URLs/types, persist Pandera/Evidently objects, or load a model
+package outside the approved isolated/ML worker boundary. Notebook output is not
+an experiment tracker, registry, release decision or monitoring authority.
+Managed query/profile cells call the S0-P09 DataScan application service with
+an authorized immutable artifact and registered typed operation. DuckDB remains
+inside the ML/data worker; notebook/API/agent processes receive neither DuckDB,
+SQL, paths nor Arrow readers. Python sandboxes do not gain DuckDB or Polars as
+preinstalled capabilities in the MVP.
+The S2-P12 Deep Investigation worker has no model-visible shell. A separately
+approved code-assisted investigation or S2-P13 OpenAI Agents purpose may request
+this sandbox only through a versioned, read-input/write-quarantined-output DCLab
+tool with its own run, policy and budget. Deep Agents/OpenAI Agents never become
+part of the sandbox control plane, and the sandbox never receives an agent
+runtime credential, connector secret or product-database access.
+An interactive Python session owns one isolated sandbox and kernel only for the
+same authorized owner, notebook revision and runtime epoch. Cells within that
+epoch may reuse volatile memory; a restart creates a new epoch and never claims
+to restore RAM. Fresh verification, training and batch work use disposable
+attempts. If completion is uncertain, reconcile provider and control-plane state
+before retrying and never automatically replay a cell with possible side effects.
+
+## AWS/GCP portability requirements
+
+Notebook and arbitrary-Python execution use one `SandboxRuntimePort` and one
+immutable execution contract. The AWS adapter targets an approved isolated EKS
+Fargate/equivalent profile; the GCP adapter targets GKE Sandbox/gVisor. Both
+must enforce no service-account token/metadata credential, no host mount or
+privilege, denied-by-default egress, identical resource/output/time bounds,
+quarantine, cancellation and cleanup. If either cloud cannot satisfy the
+verified profile, Python stays disabled there—never fall back to an ordinary
+worker. Notebook APIs and records contain no provider runtime identifiers.
+
+Runpod, Railway, Lambda GPU Cloud, Vast.ai and Nebius are optional execution
+targets behind the same runtime/placement contracts, not alternate DCLab homes.
+Use RT7/RT8 for explicit workspace grants, current capabilities and quotes,
+data-transfer policy, provider-scoped credentials and cleanup verification.
+Canonical lifecycle rows and artifacts remain in the deployment's AWS/GCP home;
+an external target receives only an attempt-scoped manifest and bounded inputs.
 
 ## Plan 4.1 — notebook domain and storage model
 
@@ -31,8 +79,9 @@ Write the notebook ADR covering Notebook, Revision, Cell, Environment, Execution
 InputBinding and Output contracts; draft/published/archived notebook state;
 revision parent/digest; cell type/order/config schema; execution lifecycle; and
 managed versus isolated runtimes. Define collaboration boundary, retention,
-authorization and non-goals. Add pure schema/state tests. Do not create tables or
-enable Python.
+authorization and non-goals. Reconcile stateful session/epoch ownership with
+disposable verification/batch attempts and the external placement owner defined
+by RT7-A. Add pure schema/state tests. Do not create tables or enable Python.
 ```
 
 ### S4-P01B — notebook/revision/cell persistence
@@ -90,8 +139,13 @@ agent objective. No arbitrary SQL, Python, shell, network or storage path.
 Define a versioned code-owned registry for each managed cell with config/input/
 output schema, required capability/data policy, allowed resource states, timeout,
 page/byte/output bounds, cacheability and whether it is read, proposal or Scope 3
-command. Reject unknown versions/fields and arbitrary handler names. Add shared
-schema contract tests and a disabled feature release.
+command. For query/profile cells, define a closed typed grammar containing only
+registered operation/template version, immutable dataset/artifact binding,
+approved columns, allowlisted comparison/group/filter operators, aggregate
+enum, stable ordering and row/byte/time limits. Do not accept SQL, expressions,
+paths, URLs, pragmas, DuckDB options or extension names. Reject unknown versions/
+fields and arbitrary handler names. Add shared schema contract tests and a
+disabled feature release.
 ```
 
 ### S4-P02B — Markdown/query/profile/evidence cells
@@ -100,8 +154,18 @@ schema contract tests and a disabled feature release.
 Implement deterministic Markdown rendering plus query/profile/evidence cells over
 authorized application services. Bind explicit workspace/resource/version/digest,
 use bounded pages and audience-safe projections, and produce typed outputs with
-citations. Sanitize rendered content and never accept provider HTML/URLs. Test
-empty/denied/deleted/quarantined/stale/two-workspace and malicious Markdown.
+citations. Query/profile cells call only the DataScan query service; it resolves
+authorization/digest, chooses a code-owned template and returns a normalized
+bounded table/profile artifact. Never pass SQL or adapter settings through cell
+config, expose DuckDB/Arrow objects, or silently fall back to an unbounded pandas
+load. Record operation/template version, inputs, limits and result digest in
+cell lineage. After Plan 3.0, render only normalized DCLab tracking/package/feature-
+contract/monitoring evidence with DCLab citations; never render an MLflow URL or
+type, Pandera schema/error, Evidently report object or backend locator. Sanitize
+rendered content and never accept provider HTML/URLs. Test empty/denied/deleted/
+quarantined/stale/degraded/two-workspace, digest mismatch, oversized result,
+timeout/cancel, malicious typed filters and Markdown. Assert SQL/path/extension
+payloads fail validation before job creation.
 ```
 
 ### S4-P02C — chart/decision cells
@@ -331,7 +395,9 @@ strict resources and a narrow artifact publisher. Disabled by default.
 ```text
 Threat-model host escape, metadata/private network, cross-job files/processes,
 secret/env leakage, fork bombs, disk/output exhaustion, dependency poisoning and
-artifact smuggling. Evaluate deployment-native isolation options and choose one
+artifact smuggling. Include future model-generated investigation code and prove
+that neither raw LangGraph nor Deep Agents runs inside the sandbox or reaches
+its control interface from model-generated code. Evaluate deployment-native isolation options and choose one
 with measurable CPU/memory/PID/disk/time/network controls, immutable image and
 disposable workspace. Define trust boundary, operator owner, residual risk and
 kill switch. Do not implement in the API container.
@@ -350,11 +416,17 @@ Add reproducible build and signature verification tests before scheduling.
 ### S4-P06C — sandbox control-plane service
 
 ```text
-Implement a narrow service that accepts execution ID, signed short-lived input
-manifest and resource/network/output policy; creates one disposable sandbox;
-streams bounded status; captures exit/resource use; and destroys it. Use workload
-identity only for control plane, never inside user code. Support cancel/deadline
-and idempotent reconciliation. Add fake backend contract plus staging backend tests.
+Implement a narrow service that accepts execution/session ID, runtime epoch,
+signed short-lived input manifest and resource/network/output policy. Create one
+isolated sandbox per interactive epoch, reuse it only for authorized cells in the
+same owner/notebook/revision epoch, and destroy it on stop, expiry, revocation or
+failure. Fresh verification, training and batch attempts remain disposable.
+Stream bounded status and capture exit/resource use. Use workload identity only
+for the control plane, never inside user code. Support cancel/deadline, heartbeat,
+lease and idempotent provider reconciliation; an uncertain result must not
+automatically replay user code. Do not expose it to Investigation Copilot in this
+scope; define a future capability boundary rather than a generic execute tool.
+Add fake-backend contract plus staging-backend tests.
 ```
 
 ### S4-P06D — input staging and no-egress execution
@@ -405,11 +477,14 @@ approved safe test payloads and record platform/image/policy digests.
 ### S4-P07B — egress and metadata campaign
 
 ```text
-Attempt DNS, IPv4/IPv6, loopback, link-local, cloud metadata, private ranges,
-redirects, proxy/env, Unix socket and covert straightforward egress. Verify no
-network path and no credentials/tokens in environment/files/process metadata.
-Test control-plane callbacks cannot be forged by code. One successful connection
-or secret observation blocks release.
+Attempt DNS, IPv4/IPv6, unexpected loopback services, link-local, cloud metadata,
+private ranges, redirects, proxy/env, unapproved Unix sockets and straightforward
+covert egress. Allow only the exact local Jupyter/kernel IPC and authenticated,
+attempt-scoped control/transfer channel required by the reviewed runtime design.
+Verify every other path is denied and no credentials/tokens appear in environment,
+files or process metadata. Test that code cannot forge control-plane callbacks or
+reuse another attempt's channel. Any connection outside the allowlist or any secret
+observation blocks release.
 ```
 
 ### S4-P07C — exhaustion and artifact-smuggling campaign
@@ -432,12 +507,17 @@ terminal state without duplicate publish. Test cancel, timeout, lost callback,
 node loss and image retirement. Execute restore/runbooks.
 ```
 
-### S4-P07E — Python canary decision
+### S4-P07E — production-MVP Python release gate
 
 ```text
 Run full regressions plus real attack campaigns under independent security
 review. Publish isolation evidence, residual risks, platform limits, capacity/
 cost and incident owner. If passed, enable one signed image and bounded cell type
 for a tiny allowlist/canary with real-time kill switch and no egress. Otherwise
-keep Python disabled while managed notebook remains available.
+keep Python disabled and block the production-MVP go/no-go while managed notebook
+remains available for remediation/testing. Passing this gate does not
+automatically give code execution to an agent runtime; each runtime/purpose/tool
+requires a separate policy release, smaller-or-equal budgets and an independent
+kill switch. Prove the deterministic ML path and managed notebook remain healthy
+when isolated Python is globally disabled.
 ```

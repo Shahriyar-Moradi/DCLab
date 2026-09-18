@@ -11,8 +11,33 @@ Reuse the production application contracts. Scaling can change deployment/storag
 internals only behind those contracts. Enterprise and autonomy features use the
 same workspace, policy, approval, evidence and audit boundaries; no premium path
 may weaken tenancy or scientific correctness. Scale the same pinned LangGraph
-runtime and DCLab product/checkpoint boundary; measured load is not permission
-to add PydanticAI, a second graph engine or framework-owned authorization.
+runtime and DCLab product/checkpoint boundary; preserve the separate S2-P12
+Deep Investigation and S2-P13 OpenAI Agents adapter boundaries. Measured load is
+not permission to add a second graph engine, cross-runtime invocation or
+framework-owned authorization. The production-MVP specialist roster, three
+investigation modes, isolated Python, hosted MCP and initial connector pack are
+already baseline capabilities; Scope 10 expands them only from measured demand.
+Preserve the Plan 3.0 ML-platform ownership boundary. MLflow remains the MVP
+tracking adapter; Pandera/Evidently/model formats stay behind DCLab ports; DCLab
+remains lifecycle/decision/registry/release/monitoring authority. W&B,
+OpenLineage and Optuna require separate measured decisions and cannot introduce
+provider types into domain/API/SDK/CLI/MCP contracts or a second control plane.
+Preserve S0-P09 DataScanPort as the only tabular-scan contract. First tune
+DuckDB/templates/file layout/batching and worker limits. Polars or another engine
+is not an additive MVP library: it can be evaluated only after measured evidence,
+behind the same port, and must replace or be mutually exclusive with DuckDB for
+each operation. Neither engine may become public SQL/dataframe API or storage.
+
+## AWS/GCP portability requirements
+
+Scale decisions use normalized workload/SLO/cost evidence from both supported
+clouds. A provider-native optimization may be adopted behind an existing port
+only with an equivalent implementation or an explicit provider capability
+status; it cannot leak into domain/public contracts or silently make one cloud
+second-class. Broker, GPU, replica, regional-data-plane, identity and autonomy
+changes require AWS/GCP cost/security/limit comparisons, same workload digests,
+independent rollback and dual-cloud conformance. Cross-cloud active-active
+remains a separate measured program, not an implied Scope 10 default.
 
 ## Plan 10.1 — capacity, cardinality and cost governance
 
@@ -29,6 +54,10 @@ resources, connector rates/freshness, actions/outcomes, DB/storage/queue cardina
 and p50/p95/p99 latency/error/saturation. Break down cost by bounded service/
 resource class without high-cardinality tenant metrics. Record sampling, retention,
 uncertainty and current capacity envelope.
+Include DataScan operation/template, format, size/row/column buckets, Arrow batch
+counts, p50/p95/p99 duration, peak memory/temp, timeout/cancel/limit/cleanup rate,
+worker saturation and bounded pandas-rollback frequency without tenant/column
+cardinality labels.
 ```
 
 ### S10-P01B — workload forecasts and trigger registry
@@ -49,6 +78,10 @@ ML/agent/notebook workers, connector/action traffic and object throughput. Inclu
 noisy tenant, burst and dependency throttling. Validate quotas/backpressure before
 adding capacity. Add budgets/alerts for cloud, provider and model spend with
 safe degradation/disable. Store fixtures/results/environment digests.
+Exercise CSV and partitioned/unpartitioned Parquet/Arrow scan templates at low/
+base/high bounds, cancellation and noisy-tenancy. Tune code-owned projections,
+predicate/column pruning, row-group sizing and Arrow batch size before proposing
+a second engine.
 ```
 
 ### S10-P01D — architecture review gate
@@ -131,6 +164,10 @@ duration variance, cold start and tenant fairness by handler/resource class.
 Identify whether bottleneck is capacity, head-of-line blocking, dependency limit,
 job granularity or queue database. Define SLO/cost/operational requirements and
 approved remediation. Do not assume a message broker solves compute saturation.
+For DataScan, distinguish inefficient templates/file layout, absent pruning,
+batch conversion, spill/temp pressure, worker concurrency and DuckDB limits from
+an actual engine limitation. A replacement proposal needs a reproducible corpus,
+semantic parity target, measured SLO/cost gap and explicit non-additive migration.
 ```
 
 ### S10-P03B — resource-class worker pools
@@ -141,6 +178,9 @@ ML-light/ML-heavy/agent/integration/notebook pools with identities/allowlists,
 min/max resources, concurrency and workspace quotas. Scheduler validates requested
 class and prevents user/LLM arbitrary escalation. Test fairness, cancellation,
 drain, lost worker and wrong-handler/class; compare queue/SLO/cost evidence.
+Keep DuckDB connections per-operation and in-process only; enforce aggregate
+worker/workspace memory, threads, temp and connection concurrency so parallel
+scans cannot multiply beyond container or tenant budgets.
 ```
 
 ### S10-P03C — distributed CPU/GPU and notebook pool
@@ -151,6 +191,13 @@ environment/command manifests and returning artifact/result digests. Preserve
 MlJob/ExecutionRequest as authoritative intent, idempotent dispatch, checkpoint,
 cancel, quotas and reconciliation. Enforce GPU/image/network/tenant isolation and
 cost bounds. Add faithful fake plus staging backend failure/restart tests.
+If the measured change is a DataScan engine replacement, implement the candidate
+behind the unchanged port and code-owned templates, run shadow parity/performance
+on the immutable corpus, and select exactly one engine per operation by a server-
+owned flag. Never import both in a shared hot path, return engine-native objects,
+expose SQL/dataframe expressions or silently fail over after partial execution.
+Removing DuckDB or adopting Polars requires supply-chain/security review,
+complete parity, canary, rollback and proof that no durable state is stranded.
 ```
 
 ### S10-P03D — broker decision and compatibility design
@@ -288,7 +335,10 @@ Publish contractual limits, operations/incident owners and rollback.
 
 ## Plan 10.6 — additional adapters, agents and schedules
 
-**Contract.** Expand only through proven connector/action/specialist contracts.
+**Contract.** Expand only through proven connector/action/specialist/ML-platform
+adapter contracts. This plan does not postpone the production-MVP connector
+pack, specialist roster, three Deep Investigation modes, hosted MCP or isolated
+Python; it covers additional providers/roles/subagents and proactive schedules.
 Every addition has a maintenance owner, pinned provider/schema versions, shared
 contract suite and measured user value. Scheduled agents have explicit authority
 and expiry.
@@ -300,20 +350,43 @@ Rank proposed connector/action/specialist/template/schedule by measured requests
 workflow value, contract reuse, provider/test support, risk, maintenance and cost.
 Select one bounded addition and document official API/schema, owner, support/SLO,
 data/secret/egress/action risk and deprecation. Reject items requiring bypass of
-shared services or unbounded generic HTTP/code tools.
+shared services or unbounded generic HTTP/code tools. If considering a Deep
+Agents Investigation Copilot subagent, require S2-P12/S9 production evidence,
+measured context-quality benefit over the single-harness baseline, a fixed named
+role, read-only tools, typed output and proof it remains inside
+worker-investigation rather than the authoritative raw LangGraph graph.
+For ML-platform demand, begin from observed Plan 3.0 gaps. A W&B option is an
+outbound, one-way collaboration/reporting adapter over normalized DCLab evidence,
+never a second build-path tracker or registry; OpenLineage is a one-way lineage
+event adapter, never DCLab lifecycle truth. Select at most one bounded adapter in
+a release, require customer/workflow evidence, and reject it if MLflow plus DCLab
+already satisfies the job. Record exact fields, redaction, tenant routing,
+idempotency, deletion, outage, cost and disable/removal behavior.
 ```
 
 ### S10-P06B — adapter/specialist implementation
 
 ```text
-Implement the selected addition behind existing code-owned interface and versioned
-registry. Reuse secret/egress/cursor/drift/outbox/reconciliation or agent context/
-tool/budget/review contracts exactly; provider/specialist-specific logic stays in
-adapter. New specialists compile as code-owned subgraphs in the existing pinned
-LangGraph runtime and use the same gateway/ToolRunner/checkpointer boundary; do
-not add a second agent framework. Add faithful fake/golden fixtures and shared
-contract, tenant, injection, rate/bounds/recovery tests. No forked business
-command.
+Implement the selected addition behind the existing code-owned interface and
+versioned registry. Reuse secret/egress/cursor/drift/outbox/reconciliation or
+agent context/tool/budget/review contracts exactly; provider/specialist-specific
+logic stays in its adapter. New authoritative workflow specialists compile as
+code-owned subgraphs in the pinned raw LangGraph runtime and use its existing
+gateway/ToolRunner/checkpointer boundary. A selected Deep Agents Copilot
+subagent instead stays only in worker-investigation, is statically configured,
+inherits an explicitly narrower read-only SDK tool/budget/data scope, has typed
+output, depth/fan-out/concurrency limits and cannot call/be called by raw
+LangGraph. Never move Deep Agents dependencies or state into worker-agent and
+never let either kind of specialist spawn the other. Add faithful fake/golden
+fixtures and shared contract, tenant, injection, rate/bounds/recovery and
+cross-runtime conformance tests. No forked business command.
+For an approved W&B/OpenLineage adapter, consume only immutable normalized DCLab
+events through an outbox; map external IDs in a private adapter table and never
+write provider state back as scientific/release authority. Do not install the
+provider SDK in API/agent/ML execution paths. Prove same event/digest replay,
+deletion/revocation, outage recovery, cross-tenant denial, redaction and that the
+adapter can be disabled/removed while MLflow tracking and DCLab workflows remain
+healthy. Never activate W&B tracking for a run already tracked by MLflow.
 ```
 
 ### S10-P06C — reusable template contract
@@ -323,7 +396,9 @@ Define immutable template version containing supported objective, input schema,
 graph/agent/tool/data/model/budget releases, expected outputs, required user
 decisions, evaluation suite and stop conditions. Parameters cannot widen authority
 or select arbitrary prompt/tool/model. Bind the template to a code-owned
-LangGraph topology key/digest, never executable generated graph code. Add
+LangGraph topology key/digest or, only for an approved Copilot template, the
+isolated Deep Agents harness/subagent release digest; never executable generated
+graph code and never both runtimes in one template. Add
 compatibility/canonical-digest tests and publish only after value/safety
 evaluation against non-template baseline.
 ```
@@ -344,6 +419,9 @@ trigger, inactive owner, revoked membership, budget and notification failure.
 Run shared plus provider/template/schedule E2E, failure/recovery, tenant/security,
 cost and operational ownership tests. Compare measured value/support burden with
 selection case, canary to bounded workspaces and exercise independent disable.
+For a Copilot subagent, re-run dependency/image/identity/network/runtime-state
+separation and prove depth zero after disabling the feature without affecting
+worker-agent.
 Marketplace/catalog publication requires multiple stable adapters and versioned
 compatibility; otherwise keep internal.
 ```
@@ -355,17 +433,27 @@ batch-prediction, monitoring and rollback path. Online/streaming serving,
 retraining and autonomous action are separate capabilities.
 Agents diagnose/propose; deterministic validators and policy decide. High-impact,
 irreversible or legally sensitive actions remain exact-approved.
+SHAP is not inherited from the MVP. Any future proposal requires its own
+measured ADR, supported-model/resource/privacy contract and release gate.
+Optuna is not assumed: it may implement one bounded search-strategy port only
+after measured evidence shows the deterministic Scope 3 portfolio is inadequate.
 
 ### S10-P07A — serving and autonomy eligibility ADR
 
 ```text
 Inventory Scope 3 ModelRelease/FeatureContract/BatchPredictionRun/MonitoringWindow
-owners first. Define exact online or streaming prediction use case,
+owners and the deterministic experiment-selection baseline first. Define exact online or streaming prediction use case,
 latency/availability/freshness, feature
 consistency, population/region, risk/action class and outcome evidence. Separately
 define L0–L4 autonomy levels and eligibility thresholds for quality, calibration,
 false action, cost, outcome, incident and reversibility. Record prohibited classes,
 approver separation, do-nothing and rollback. No serving/autonomy implementation.
+If proposing Optuna, include measured baseline gap, supported candidate families,
+fixed search space, maximum trials/time/cost/concurrency, seed/sampler/pruner
+versions, failure/cancel/resume semantics and proof it cannot read final holdout,
+change DCLab budgets or promote a model. Reject a separate Optuna service,
+dashboard, database or new provider-native public type; the existing dormant
+scientific source enum may become active only through this approved adapter.
 ```
 
 ### S10-P07B — versioned model deployment and prediction service
@@ -399,6 +487,13 @@ scientific, approval and release services. Challenger uses immutable data/proble
 plan versions and evaluation; promotion requires predefined gates/separation and
 creates new deployment release. Agents may diagnose/propose only. Test holdout
 reuse, feedback leakage, stale data, concurrent promotion and rollback.
+Only when the S10-P07A Optuna trigger is approved, implement it behind the
+DCLab SearchStrategy port inside the ML worker. Persist trials as ordinary DCLab
+child ExperimentCandidate/build lineage and mirror bounded details through the
+existing MLflow adapter; store no authoritative Optuna study state. Enforce the
+same portfolio reservation/stop/cancel/idempotency policy and deterministic seed.
+Add fake/real-adapter parity, interrupted-resume-without-duplicate-trial,
+budget/holdout/tenant and removal-to-baseline tests.
 ```
 
 ### S10-P07E — narrow autonomous action policy

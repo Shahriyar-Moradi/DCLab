@@ -1,9 +1,10 @@
-# Scope 7 execution prompts — scalable data plane and inbound connector
+# Scope 7 execution prompts — data-integration plane and connector pack
 
-Start Plan 7.1 after Scope 0; connector identity/API work also requires Scope 5
-and agent integration requires Scope 2. Apply `README.md` and
-`EXECUTION_STANDARD.md`. Provider selection happens through evidence, not by
-inventing credentials or assuming an API.
+Start Plan 7.1 after Scope 0. Plans 7.2–7.4 may join the early Core ML MVP slice
+after S1-P00H and the required machine-identity/secret foundations; public API
+packaging still requires Scope 5 and agent integration requires Scope 2. Apply
+`README.md` and `EXECUTION_STANDARD.md`. Provider/source selection happens
+through evidence, not invented credentials or assumed API behavior.
 
 ## Scope implementation boundary
 
@@ -11,11 +12,44 @@ Reuse DataSource, DataAccess, IngestionRun, DatasetAsset/Dataset, Artifact,
 ingestion/materialization, object storage and jobs. Add cohesive connector domain,
 services/adapters/workers and `api/v1_connectors.py`. Adapters receive a narrow
 context and secret reference; no DB session, global object store or raw secret.
+Use pinned Apache-2.0 `dlt` OSS as a private extraction/loading engine behind a
+DCLab-owned ConnectorPort/Runner. DCLab—not `dlt`—owns connector/config versions,
+authorization, credential references, SyncRun/job state, cursor contract,
+schema policy, quarantine, publication, lineage and audit. `dlt` state is an
+opaque per-run engine checkpoint and never enters `/v1` or determines product
+completion by itself.
 Agent access is only through versioned DCLab ToolRunner/application-service
 adapters. LangGraph never receives connector credentials or invokes provider
 SDKs directly, and connectors do not host their own agent loop.
 Published source/dataset versions appear as canonical project lifecycle nodes;
 connector run graphs and cursors never become a competing lifecycle authority.
+MLflow is an internal Plan 3.0 tracking adapter, not a Scope 7 inbound data
+connector. W&B is deferred to a measured, one-way Scope 10 adapter decision and
+must not be added beside MLflow or become a lifecycle/registry authority.
+All supported tabular profile/classification work reuses S0-P09 DataScanPort
+after staging authorization and digest verification. Connectors never call
+DuckDB, submit SQL, select templates, open DCLab artifact paths or receive Arrow
+readers; Polars is not added. DataScan remains a deterministic DCLab service,
+not a connector or a new storage/database tier.
+
+The production-MVP connector pack is direct CSV/Parquet, AWS S3 and Google
+Cloud Storage object sources, read-only PostgreSQL/general SQL, one pilot-selected HubSpot or
+Salesforce CRM, and read-only Snowflake. Airbyte or Snowflake Openflow may be
+customer-operated upstream replication behind an `ExternalReplicationPort`;
+neither is deployed as DCLab's control plane. MVP connectors are read-only and
+do not provide CDC, reverse ETL, arbitrary user/agent SQL or provider actions.
+
+## AWS/GCP portability requirements
+
+Connector control, cursors, publication and public contracts are cloud-neutral.
+The object-source family must support AWS S3 and Google Cloud Storage through
+the existing storage/credential boundaries with one normalized object-version,
+digest, prefix, pagination and error contract. Connector workers use EKS/GKE
+workload identity and private secret adapters rather than static keys. Egress,
+rate/cost limits, cancellation, schema quarantine and DatasetVersion atomicity
+must pass both provider contract suites and staging canaries. A DCLab deployment
+may ingest from either object provider regardless of its hosting cloud when an
+explicit cross-cloud egress/residency policy permits it.
 
 ## Plan 7.1 — direct upload and asynchronous ingest
 
@@ -59,21 +93,28 @@ tests with a safe scanner fake.
 ### S7-P01D — profile and atomic dataset publication
 
 ```text
-Profile approved staged content asynchronously using bounded streaming/chunks,
-persist quality/schema/classification lineage, then publish DatasetAsset/Dataset
+Profile approved staged content asynchronously through the registered
+`dataset_profile.v1` DataScan operation using an ephemeral hardened DuckDB
+adapter and bounded Arrow batches. The service—not connector input—selects the
+code-owned template and enforced memory/thread/input/output/temp/time limits.
+Persist normalized quality/schema/classification lineage, then publish DatasetAsset/Dataset
 metadata atomically and mark the immutable object active. Never expose a partial
-dataset or advance on missing/mismatched object. Add idempotent replay, profile
-failure, duplicate completion, cancellation and two-workspace tests.
+dataset or advance on missing/mismatched object. Reject SQL/path/extension/
+network controls before job creation. Add idempotent replay, pandas-semantic
+parity, profile failure, digest mismatch, bound violation, duplicate completion,
+cancellation/temp cleanup and two-workspace tests.
 ```
 
 ### S7-P01E — upload/ingest operational gate
 
 ```text
-Run local/S3-compatible adapter contracts, large-object memory bounds, malformed/
+Run local/S3/GCS adapter contracts, large-object memory bounds, malformed/
 archive/malware, cancellation/recovery, orphan cleanup, classification and
 two-workspace E2E through API/SDK/web upload. Add bytes/rate/quarantine/profile/
 publish/failure metrics, backpressure and cleanup runbooks. Record tested size/
-throughput limits and keep unsafe bypass disabled.
+throughput limits and keep unsafe bypass disabled. Verify no persistent DuckDB
+catalog/runtime artifact and no Polars dependency; exercise DataScan and ingest
+kill switches plus the bounded pandas rollback path independently.
 ```
 
 ## Plan 7.2 — connector control-plane and secret references
@@ -139,7 +180,9 @@ secret audit metrics and compromise/rotation/cleanup runbooks.
 
 **Contract.** Code-owned adapters implement validate config, test connection,
 discover, inspect schema, read page and resolve checkpoint through a narrow
-ConnectorContext. All endpoints/egress are reviewed and bounded.
+ConnectorContext. A `DltExtractionEngine` may implement bounded REST/SQL/
+filesystem mechanics but cannot own product state or receive unrestricted
+configuration. All endpoints/egress are reviewed and bounded.
 
 ### S7-P03A — adapter interface and registry
 
@@ -148,7 +191,11 @@ Create typed provider adapter protocol, capability descriptor and code-owned
 registry. ConnectorContext contains run/config/secret handles, deadline, page/
 row/byte budgets, cancellation, safe logger/metrics and restricted HTTP transport;
 it contains no DB session/global store. Validate config JSON Schema/version and
-reject unknown handler/provider keys. Add shared interface/type tests.
+reject unknown handler/provider keys. Define a separate ConnectorEngine protocol
+with normalized Arrow batch/page and opaque bounded engine-state outputs; provider
+adapters may delegate only reviewed extraction mechanics to pinned `dlt` and may
+not pass raw user config, SQL or secrets as source code. Add shared interface,
+import-boundary and type tests.
 ```
 
 ### S7-P03B — restricted HTTP and egress policy
@@ -188,74 +235,205 @@ Run every adapter/fake through config/discovery/schema/page/checkpoint, egress,
 pagination progress, retry/cancel, secret rotation, malicious response, bounds
 and redaction contracts. Verify no adapter imports database/global store or opens
 an unrestricted client. Add per-provider bounded metrics and egress/credential/
-rate-limit runbooks. Freeze interface version before real provider work.
+rate-limit runbooks. Assert `dlt` and provider packages exist only in the
+connector worker dependency/image, and no Airbyte/Openflow service or control-
+plane dependency is present. Freeze interface version before connector-pack work.
 ```
 
-## Plan 7.4 — first real inbound connector
+## Plan 7.4 — production-MVP connector pack
 
-**Contract.** Select one provider only after a scored pilot decision. Implement
-the strongest reliable incremental semantics its official API supports and make
-limitations explicit; never pretend timestamps are exact change tokens.
+**Contract.** Implement one shared DCLab connector contract and pinned `dlt` OSS
+engine across AWS S3/Google Cloud Storage files, SQL, one pilot-selected CRM and Snowflake.
+Direct upload remains Plan 7.1. Source credentials are least-privilege/read-only;
+outputs are bounded Arrow batches and immutable staged Parquet artifacts.
+Every source documents its strongest reliable incremental semantics; timestamps
+are never presented as exact change tokens. Each prompt is one reviewable PR and
+no connector can introduce its own scheduler, product state, secret store,
+agent loop, arbitrary SQL or publication path.
 
-### S7-P04A — provider selection and API contract record
+### S7-P04A — connector-pack and `dlt` dependency ADR
 
 ```text
-Score candidate pilot providers on user value, official sandbox, stable IDs,
-updated/deleted semantics, incremental cursor/token, snapshot consistency,
-pagination, schema discovery, scoped auth, quotas/webhooks, reconciliation,
-region/retention and testability. Choose one with product owner and write an ADR
-pinning official API/version and known limits. Stop for user/product decision if
-no candidate meets minimum safety/reliability.
+Read AGENT_FIRST_MVP_ARCHITECTURE.md and current official `dlt` OSS, SQL,
+filesystem, REST/incremental and verified HubSpot/Salesforce source documentation.
+Inventory Python/dependency images, DataSource/DataAccess/IngestionRun/Dataset,
+Artifact/ObjectStore, ConnectorPort/fakes and current upload/database/cloud
+adapters. Write an ADR pinning `dlt` version/license/Python support and assigning
+DCLab versus `dlt` ownership for config, secrets, pipeline/engine state, cursors,
+schema evolution, normalization, loading, staging and publication. Define the
+pack: AWS S3 and Google Cloud Storage object files, read-only SQL with PostgreSQL conformance, one
+pilot-selected HubSpot or Salesforce CRM and read-only Snowflake. Score the CRM
+choice on pilot value, official sandbox, OAuth/private-app scopes, stable IDs,
+updated/deleted semantics, quotas, schema discovery, region/retention and testability;
+stop if neither meets minimum evidence. Define connector-worker-only dependency
+placement, Arrow/Parquet boundary, resource/egress budgets, feature flags, per-
+connector kill switches and removal/upgrade plan. Explicitly reject Airbyte/
+Openflow as an embedded control plane, arbitrary generated REST config/SQL,
+reverse ETL, CDC/Kafka/Debezium, product-DB writes and `dlt` completion as DCLab
+publication authority. Add architecture/import assertions and exact source/API
+reference links. Do not install, connect, migrate or create credentials. Maximum
+change: ADR, decision matrix and test skeleton under 500 hand-edited lines.
 ```
 
-### S7-P04B — config/auth/connection/discovery adapter
+### S7-P04B — bounded `dlt` extraction engine
 
 ```text
-Implement provider config schema without secret fields, secret credential shape,
-connection validation, capability discovery, object/table/entity discovery and
-schema inspection using restricted transport. Map provider auth scopes to least
-privilege and safe errors. Add official sandbox/mocked contract cases for invalid/
-expired/revoked credentials, quota, empty discovery and malicious names.
+Add pinned `dlt` only to the connector-worker dependency group, lock and image and
+implement `DltExtractionEngine` behind the S7-P03 ConnectorEngine protocol.
+Accept only a code-owned source key/version, sanitized config-version ID,
+short-lived SecretRef resolution handle, selected resource/table/object allowlist,
+immutable lower/upper bounds, page/row/byte/time limits, cancellation and trace
+context. Instantiate reviewed Python source factories; never evaluate generated
+source, accept arbitrary module/function names, SQL strings or serialize raw
+credentials/state to jobs/logs. Return bounded normalized Arrow RecordBatches or
+immutable Parquet page artifacts plus opaque size-limited engine state and
+schema/load metadata. DCLab validates and atomically commits the durable
+checkpoint only with DatasetVersion publication. Disable `dlt` telemetry/cloud
+features and local durable pipeline directories unless the ADR specifies an
+isolated per-attempt temp path with guaranteed cleanup. Map library exceptions
+to stable DCLab reason codes. Add a deterministic fake and tests for empty/
+multi-batch, schema evolution, duplicate range, cancellation, timeout, memory/
+disk/output limits, corrupted state, secret redaction, cleanup and dependency/
+import boundaries. No real provider or public API in this PR; keep under
+approximately 800 non-generated lines and 20 hand-edited files.
 ```
 
-### S7-P04C — full sync and immutable staging
+### S7-P04C — AWS S3 and Google Cloud Storage object-file sources
 
 ```text
-Implement bounded full read with captured snapshot/lower/upper bounds where
-supported, deterministic page order, streamed immutable page artifacts/digests
-and resume after checkpointed page. Normalize/map into tenant staging without
-publishing partial data. Handle duplicate IDs and provider pagination anomalies.
-Add fake plus official sandbox tests and memory/size/cancel bounds.
+Implement one read-only cloud-object source family using the existing
+Artifact/ObjectStore contract and `apps/api/app/storage/s3.py`/`gcs.py`; use a
+code-owned `dlt` filesystem factory only where it adds value. Provider-neutral
+config contains a source kind, opaque credential/config version, approved
+region/location and tenant-owned bucket/prefix plus format/compression/resource
+allowlists. AWS/GCP resource names and credentials remain private adapter
+configuration resolved in the connector worker. Normalize S3 version ID/ETag
+and GCS generation/metageneration into an opaque ObjectVersionRef while retaining
+private source metadata needed for safe conditional access. List stable pages
+and snapshot object key/version/size/checksum. Accept CSV, Parquet and explicitly
+approved JSONL within file/count/byte/row/decompression/time limits; reject
+archives, traversal, wildcard escape, missing version/precondition, unknown
+codecs and provider URLs supplied by agents. Stream to immutable quarantine,
+verify content digest, produce schema snapshot and never publish a partial
+listing. Checkpoint the deterministic object-version tuple and reconcile
+delete/change through a new SyncRun. Extend the shared adapter suite with MinIO/
+S3 and GCS fake/emulator fixtures for empty, pagination, changed/deleted/versioned
+objects, duplicate listing, multipart/resumable upload residue, precondition
+races, credential rotation, denied prefix, cross-cloud egress policy, cancel/
+restart, safe provider errors and cleanup. Add documented protected live-canary
+commands for both clouds but no network in PR CI. Expose no new route; give S3
+and GCS separate feature/egress kill switches. Maximum change: the common source
+plus two thin adapters/tests under approximately 900 non-generated lines; split
+provider adapters into sequential PRs if that limit cannot be met.
 ```
 
-### S7-P04D — incremental/deletion/late-data sync
+### S7-P04D — read-only SQL/PostgreSQL source
 
 ```text
-Implement the strongest supported change token/cursor/monotonic ID/overlapping
-timestamp watermark strategy. Record overlap/dedup key, high-water snapshot,
-late/out-of-order/deleted behavior and reconciliation requirement. Do not advance
-durable checkpoint until atomic dataset publication. Test duplicate, missing,
-late, update, delete, clock skew, repeated cursor and restart.
+Implement the generic SQL source with PostgreSQL as the conformance database.
+Use a least-privilege read-only account, TLS policy, allowlisted database/schema/
+table/view and selected columns discovered server-side. Use the reviewed `dlt`
+SQL source/SQLAlchemy construction; users and agents never provide SQL, WHERE,
+join, expression, connection string or driver option. The server selects a
+code-owned extraction template and quoted identifiers from discovery. Support
+bounded full snapshot plus one declared cursor column with stable primary/dedup
+key, deterministic ordering, optional overlapping watermark and captured upper
+bound. Reject missing/non-monotonic/nullable cursor contracts unless a reviewed
+full-snapshot policy applies. Deletions require a source tombstone/version or a
+bounded reconciliation plan; do not claim CDC. Add real PostgreSQL tests for
+read-only enforcement, discovery allowlist, malicious identifiers, concurrent
+updates, duplicate cursor value, late row, clock skew, restart, schema/type
+drift, connection loss, statement timeout, cancel and cross-workspace secret.
+Record query/row/byte/time limits and source-index guidance without modifying the
+customer database.
 ```
 
-### S7-P04E — mapping, classification and atomic publish
+### S7-P04E — pilot CRM source
 
 ```text
-Version source-to-DCLab mapping and schema snapshot; validate types/required IDs,
-quality/classification/residency and schema compatibility. Publish a new immutable
-Dataset version plus IngestionRun/Artifact/mapping/checkpoint in one recoverable
-transaction; drift/unsafe classification blocks for review. Add rollback via
-prior dataset version and object reconciliation tests.
+Implement only the HubSpot or Salesforce CRM selected by S7-P04A using its
+official API/auth flow and a pinned reviewed `dlt` verified/REST source copied or
+wrapped in the connector-worker package according to its license/update model.
+Pin object/entity allowlist, API version, required read scopes, pagination,
+property selection, stable ID and updated/deleted semantics. Config contains no
+token; SecretRef supports rotation/revocation and the restricted transport
+allowlists exact provider hosts. Capture initial and incremental bounds, use an
+overlap window/dedup key when timestamps are the strongest available cursor,
+and record unsupported deletions/formulas/attachments/custom fields honestly.
+Normalize contacts/companies/deals or the pilot-approved minimal objects into
+versioned mappings without assuming business meaning; classification can only
+tighten exposure. Add deterministic recorded fixtures plus official sandbox
+tests for OAuth/private-app failure, pagination, rate/Retry-After, custom fields,
+large property sets, duplicate/late/update/delete behavior, schema drift,
+malicious labels, cancel/restart and credential rotation. Do not add CRM writes,
+webhooks or generalized arbitrary REST configuration in this prompt.
 ```
 
-### S7-P04F — provider sandbox end-to-end gate
+### S7-P04F — read-only Snowflake source
 
 ```text
-Run connection/discovery/full/incremental/restart/rotation/rate/schema-drift/
-delete/late-data/cancel and two-workspace paths against the faithful fake and
-official sandbox using synthetic data. Verify secret/egress/redaction, exact
-publication/checkpoint lineage and no duplicates/loss within documented provider
-limits. Record API/version/quota/limitations before staging canary.
+Implement Snowflake as a deployable read-only warehouse source behind the same SQL
+connector contract, not as DCLab PostgreSQL, object storage, job queue, lifecycle
+or connector control plane. Use a dedicated least-privilege role/warehouse,
+key-pair or approved workload authentication, TLS and allowlisted account/
+database/schema/table/view/columns. Credentials and private keys remain in the
+secret manager. Build only code-owned quoted SELECT/range templates from
+authorized discovery; reject client/agent SQL, session parameters, stored
+procedures, stages, external functions and writes. Bound warehouse size/timeout,
+statement count, rows/bytes/batches, concurrent runs and cost; cancel the remote
+query on DCLab cancellation/deadline. Produce Arrow/Parquet through the common
+engine and snapshot query/source metadata needed for reproducibility without
+exposing query IDs or account locators publicly. Add mocked/official trial or
+pilot-account synthetic tests as available for discovery, role denial, cursor/
+snapshot, schema drift, large result, timeout/cancel, auth rotation, cost limit
+and safe errors. Document that Snowflake Openflow may populate upstream tables
+for an existing customer but is not deployed or controlled by DCLab.
+```
+
+### S7-P04G — cross-source mapping, incremental and publication semantics
+
+```text
+Implement the shared path from connector batches/page artifacts through
+versioned source schema and mapping, classification, quality checks, immutable
+Parquet staging and atomic DatasetVersion publication. Define one normalized
+checkpoint envelope containing connector/config/source/mapping/engine versions,
+source lower/upper bounds, opaque engine state digest/size, dedup key/window,
+schema digest, page/artifact digests and prior checkpoint. Validate engine state
+as untrusted bounded data; never expose it publicly. Advance the DCLab checkpoint
+only in the recoverable publication transaction after every artifact digest,
+classification and schema rule passes. Compatible additive drift follows an
+explicit policy; rename/type/delete/sensitivity/primary-key/cursor drift pauses
+and quarantines for review. Backfill is a bounded new SyncRun with explicit
+range and cannot overwrite history. Reconciliation detects missing/duplicate
+pages, stale object/query snapshots and ambiguous engine completion before
+retry. Add a connector conformance suite applied to object, SQL, CRM and
+Snowflake fakes for full/incremental/overlap, late/update/delete, schema drift,
+crash before/after artifact/publication/checkpoint, cancel, retry, idempotency,
+rollback to prior DatasetVersion and deterministic lineage reconstruction.
+Maximum change: shared publication/checkpoint services and tests only; do not
+add UI, scheduling or another provider.
+```
+
+### S7-P04H — connector-pack staging and clean-disable gate
+
+```text
+Run pinned dependency/license/SBOM and import-boundary checks plus the shared
+adapter/engine/publication suite for direct upload, AWS S3 and Google Cloud Storage files,
+PostgreSQL SQL, the selected CRM and Snowflake. Use real PostgreSQL/MinIO and
+official CRM/Snowflake synthetic sandboxes or recorded contract fixtures with a
+documented AWS and GCP live canary commands; PR CI remains network-free. Prove two-workspace
+isolation, least-privilege/read-only credentials, secret redaction/rotation/
+revocation, source/egress allowlists, row/byte/time/cost/concurrency bounds,
+schema quarantine, cancellation, restart, ambiguous reconciliation and no
+duplicate/lost records within each source's documented semantics. Verify no
+Airbyte/Openflow service, CDC broker, arbitrary SQL/REST generator, reverse ETL,
+connector-owned agent loop or durable local `dlt` state exists. Publish the
+exact connector/version/capability/limitation matrix, metrics, dashboards,
+alerts, credential/schema/backfill/reconciliation runbooks, per-source flags and
+kill switches. Demonstrate disabling `dlt` or any connector leaves direct
+upload and existing deterministic datasets healthy. This gate is required for
+the production-MVP connector-pack release; unsupported/unselected sources must
+remain absent rather than simulated as production-ready.
 ```
 
 ## Plan 7.5 — scheduling, webhook, backpressure and recovery
@@ -375,9 +553,15 @@ metadata/errors and stale/revoked connector.
 ### S7-P06E — staging product and operations gate
 
 ```text
-Have an allowlisted user configure least-privilege sandbox credentials, discover,
-map, full sync, incremental sync, observe freshness, handle drift/rotation and
-publish a dataset without DB intervention. Run API/SDK/CLI/UI/agent, two-workspace,
-secret scan, load/recovery and accessibility gates. Publish provider limits,
-support/runbooks, flags and rollback before broader use.
+Have allowlisted users configure least-privilege AWS S3, Google Cloud Storage,
+PostgreSQL, selected
+CRM and Snowflake credentials, discover, map, full sync, incremental sync,
+observe freshness, handle drift/rotation and publish immutable datasets without
+DB intervention. Run API/SDK/CLI/UI/agent, two-workspace, shared `dlt` engine,
+secret/egress scan, load/recovery and accessibility gates. Publish every source/
+API/library version, capability, limit, cost, support/runbook, flag and rollback
+before broader use. Block the production-MVP connector gate if any advertised
+source lacks its shared conformance and protected live-canary evidence on its
+provider; disabling one source must not
+degrade the others or direct upload.
 ```

@@ -7,6 +7,8 @@ specification; do not silently mix sessionful 2025 behavior with its stateless
 core, request-scoped Streamable HTTP, routing headers or authorization model.
 Re-check the official [MCP specification](https://modelcontextprotocol.io/specification/2026-07-28)
 when Plan 6.1 begins and pin the accepted revision in the repository ADR.
+Hosted read MCP plus its OAuth/security gate is part of the production MVP;
+controlled writes remain limited to the explicitly approved manifest.
 
 ## Scope implementation boundary
 
@@ -14,8 +16,33 @@ Create `packages/dclab_mcp` as a thin adapter over the public Python SDK. It has
 no database/API-internal/object-store imports and no authority beyond the caller.
 Expose bounded tools/resources/prompts mapped from the approved `/v1` inventory.
 Read and write releases and kill switches remain independent. The MCP package
-does not import LangGraph, PydanticAI or agent-runtime/checkpointer internals;
-MCP requests use `/v1` and cannot create a parallel agent or tool authority.
+does not import LangGraph, Deep Agents, PydanticAI or agent-runtime/checkpointer
+internals; MCP requests use `/v1` and cannot create a parallel agent or tool
+authority. If Investigation Copilot is exposed, MCP sees only the same DCLab-
+owned run/proposal/citation resources and start/cancel operations as the public
+SDK, never harness tools, memory, subagents or state.
+Internal LangGraph/Deep Investigation workers call DCLab ToolRunner or the
+public SDK contract directly and do not loop back through hosted MCP. An S2-P13
+OpenAI Agents session may connect only to this DCLab-hosted resource when its
+purpose/tool manifest explicitly permits it; arbitrary remote MCP discovery or
+connection is denied.
+ML-platform implementations are equally private: MCP exposes only the public
+DCLab tracking/package/feature-contract/monitoring projections and reason codes.
+It never connects to MLflow, returns an MLflow locator/type, serializes Pandera
+or Evidently objects, loads a model, or introduces W&B-specific resources.
+It also never imports DuckDB/Polars, exposes SQL or artifact paths, or transfers
+Arrow handles. If the public SDK contains the bounded aggregate-slice query,
+MCP maps that exact typed operation and limits without widening its grammar.
+
+## AWS/GCP portability requirements
+
+The hosted MCP image, protocol manifest, OAuth audience/scope and `/v1` adapter
+are identical behind AWS and GCP HTTPS edges. Load balancer/WAF/DNS differences
+remain in Scope 9 modules; trusted proxy, Origin/Host, request-size, timeout,
+streaming and rate-limit behavior has one conformance suite. MCP tools/resources
+never reveal provider topology or gain cloud APIs. Both cloud releases must
+prove tenant isolation, DNS-rebinding defense, drain/restart and independent
+read/write kill switches.
 
 ## Plan 6.1 — package architecture, protocol pin and threat model
 
@@ -43,9 +70,15 @@ scope/capability, workspace argument/source, read/write/risk, page/byte/time
 bounds, citation/resource URI and safe errors. Exclude raw rows, secrets, signed
 URLs, prompt bodies, hidden reasoning and private/admin internals. Approve the
 manifest before implementation.
+Any dataset aggregate-slice tool is read-only and accepts only the SDK's
+registered operation/template version, immutable dataset binding, allowlisted
+columns/group/filter/aggregate enums and smaller-or-equal row/byte/time caps.
+Never add a generic query, SQL, expression, path, URL or engine-settings tool.
 Include the canonical ML lifecycle, project decisions, model releases, batch
-prediction and monitoring resources; do not expose LangGraph/task/notebook
-graphs as substitutes for lifecycle truth.
+prediction and monitoring resources. Provider-neutral tracking references and
+package manifests remain bounded evidence links on owning DCLab resources, not
+generic experiment-tracker tools. Do not expose LangGraph/task/notebook graphs
+as substitutes for lifecycle truth or synthesize provider-native tools.
 ```
 
 ### S6-P01C — package skeleton and dependency boundary
@@ -54,8 +87,10 @@ graphs as substitutes for lifecycle truth.
 Create `packages/dclab_mcp` with isolated metadata/lock, console entry point,
 server factory, transport/config modules, generated/declarative catalog and tests.
 Depend only on public `dclab_client` plus pinned MCP SDK and narrow utilities.
-Add an import-boundary test rejecting `apps.api`, SQLAlchemy/database/storage and
-provider SDK imports. Implement initialize/list skeleton only; no DCLab call yet.
+Add an import-boundary test rejecting `apps.api`, SQLAlchemy/database/storage,
+provider SDK and MLflow/Pandera/Evidently/skops/W&B/DuckDB/Polars imports, plus an output-
+schema scan for their private types/locators. Implement initialize/list skeleton
+only; no DCLab call yet.
 ```
 
 ### S6-P01D — MCP threat model and architecture gate
@@ -90,11 +125,14 @@ oversized messages and stderr separation.
 
 ```text
 Implement the approved identity/project/lifecycle/decision/dataset/build/evidence/
-model-release/batch-monitor/agent/notebook read tools by calling public SDK methods
+model-release/batch-monitor/agent/investigation/notebook and approved bounded
+dataset aggregate-slice read tools by calling public SDK methods
 only. Validate input schema/unknown fields,
 explicit workspace/resource IDs and maximum pages/items/bytes/time. Return
 structured bounded results and DCLab request/resource IDs; translate SDK errors
-to stable protocol errors without provider/internal bodies. Add per-tool tests.
+to stable protocol errors without provider/internal bodies. Add per-tool tests,
+including rejection of SQL-shaped payloads, unknown template versions, excess
+bounds and cross-workspace artifacts before any scan job is accepted.
 ```
 
 ### S6-P02C — resources and resource templates
@@ -102,7 +140,7 @@ to stable protocol errors without provider/internal bodies. Add per-tool tests.
 ```text
 Define stable non-secret DCLab resource URIs for authorized metadata/evidence and
 templates for workspace/project/lifecycle/decision/dataset/run/model/release/
-batch-monitor/agent/notebook where useful.
+batch-monitor/agent/investigation/notebook where useful.
 Resolve through SDK on each read, re-authorize server-side, bound content/MIME and
 include version/digest/citation metadata. Reject traversal, unknown scheme/type,
 unbounded lists and changed/deleted resources. No local filesystem URI exposure.
@@ -208,11 +246,14 @@ generic confirmation that substitutes for exact DCLab approval.
 ```text
 Select the smallest write catalog: agent message/run/cancel, model-build create/
 cancel/retry, batch-prediction create/cancel, model-release activate/rollback,
-notebook execution and approval review only if policies permit and the
+Investigation Copilot start/cancel, notebook execution and approval review only
+if policies permit and the
 corresponding Scope 3 capability is released.
 For each map MCP schema/name, DCLab command, OAuth scope, capability, risk,
 approval requirement, idempotency field, current version/ETag and result handle.
-Exclude arbitrary mutation/export/external action. Approve a separately versioned
+Copilot start binds only an existing server-owned operation bundle and budget;
+exclude prompt/model/tool/subagent/memory/shell/runtime configuration plus
+arbitrary mutation/export/external action. Approve a separately versioned
 write manifest disabled by default.
 ```
 
@@ -308,7 +349,12 @@ read/write kill switches. Assign owners.
 ```text
 Run supply-chain, protocol/client, OAuth/transport security, two-workspace,
 read/write, rate/load and recovery gates in production-shaped staging. Confirm
-the package imports only SDK/public dependencies and authority is never wider
+the package imports only SDK/public dependencies—never `deepagents` or agent
+runtime modules—and authority is never wider
 than `/v1`. Publish pinned version matrix and evidence. Roll out reads first;
-writes remain independently canaried and immediately disableable.
+writes remain independently canaried and immediately disableable. Block the
+production-MVP go/no-go unless hosted read transport, OAuth/resource audience,
+tenant isolation, protocol conformance, rate/load, audit and independent kill-
+switch evidence pass. Prove disabling hosted MCP leaves `/v1`, SDK/CLI and all
+internal agent/deterministic workflows healthy.
 ```

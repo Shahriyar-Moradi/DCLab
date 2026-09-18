@@ -11,9 +11,30 @@ Reuse decisions/predictions/translation, Scope 3 approvals, connector secrets/
 egress/adapters, jobs/events and artifact/evidence lineage. Add domain-neutral
 decision/action/outcome services and `api/v1_decision_cases.py`. The first
 outbound action must be low-risk, reversible or compensatable and pilot-approved.
-LangGraph may propose or request a typed action only through DCLab ToolRunner and
-approval services; it never delivers an external effect itself. No framework
-callback, PydanticAI tool or graph node may bypass the transactional outbox.
+LangGraph or an explicitly approved whole-run provider runtime may propose or
+request a typed action only through DCLab ToolRunner and approval services; no
+agent delivers an external effect itself. No framework callback, PydanticAI
+leaf, OpenAI required action or graph node may bypass the transactional outbox.
+The S2-P12 Deep Investigation modes have no action/outbox tool and may only cite
+an existing outcome or draft a proposal for separate deterministic review.
+Experiment tracking, package formats, feature validation and drift calculation
+remain behind the Plan 3.0 DCLab application ports. Action/outcome services do
+not call MLflow, Pandera or Evidently, accept their identifiers as authority, or
+write business outcomes back into an external experiment tracker. They cite the
+canonical DCLab model/release/monitoring versions instead.
+They also never call DuckDB or DataScan directly, accept SQL/paths/Arrow handles,
+or reinterpret dataset aggregates. Where a recommendation cites profile/slice/
+drift evidence, it cites the normalized immutable DCLab result and template/
+artifact digests produced by the bounded DataScan service. Polars is absent.
+
+## AWS/GCP portability requirements
+
+Recommendation, approval, outbox, delivery, outcome and impact schemas contain
+no deployment-provider state. Durable outbox truth remains PostgreSQL; do not
+create parallel SQS and Pub/Sub authorities. Provider ingress/egress, secret,
+network and telemetry adapters may differ, but idempotency, ambiguous-delivery
+reconciliation, compensation, audit and kill-switch semantics must be equal on
+EKS and GKE. Any cloud-native wake-up/event is an untrusted idempotent hint.
 
 ## Plan 8.1 — decision cases and recommendation versions
 

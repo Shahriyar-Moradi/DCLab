@@ -13,9 +13,32 @@ separate package such as `packages/dclab_cli`. Stable contracts use explicit
 machine identity, workspace, scopes, request/client IDs, bounded pages/streams,
 safe retries and versioned OpenAPI compatibility. Agent resources expose only
 DCLab-owned sessions/runs/steps/events/tool calls/citations; LangGraph checkpoint
-rows, graph-private state and framework types never enter OpenAPI, SDK or CLI.
+rows, Deep Agents messages/todos/files/checkpoints, graph-private state and all
+framework types never enter OpenAPI, SDK or CLI. Deep Investigation and any
+OpenAI-hosted runtime expose only DCLab-owned run/proposal/citation projections
+and use the same HTTP client; framework/provider session IDs and `deepagents`/
+OpenAI Agents dependencies never enter public SDK or CLI contracts.
 Lifecycle, decision, model-release, batch-prediction and monitoring resources
 remain DCLab product contracts and use the same IDs as the project UI.
+External ML-platform libraries are private implementation details. `/v1`, SDK
+and CLI must not expose MLflow run URLs/types/storage locators or credentials,
+Pandera schemas/errors, Evidently reports, skops internals or W&B concepts. They
+expose stable DCLab TrackingReference, ModelPackageManifest, FeatureContract and
+MonitoringWindow projections and DCLab reason codes only.
+DuckDB is equally private. Public data inspection uses a typed DCLab aggregate-
+slice request whose operation/template grammar is code-owned and bounded; no
+SQL, expression language, artifact path, Arrow stream/provider object or
+DuckDB configuration crosses HTTP. Public packages do not depend on DuckDB or
+Polars, and the server re-authorizes the immutable artifact before every scan.
+
+## AWS/GCP portability requirements
+
+OpenAPI, SDK and CLI contracts are byte-for-byte provider-neutral. Do not expose
+cloud account/project IDs, regions, ARNs, Google resource names, bucket paths,
+cluster names or provider-native signed URLs/errors. Machine identity and OAuth
+remain DCLab identity; deployed workload federation is private infrastructure.
+Contract tests run once for public behavior and against AWS/GCP staging base
+URLs to prove equal status, pagination, streaming, retry and error semantics.
 
 ## Plan 5.1 — machine identity and scoped credentials
 
@@ -86,12 +109,21 @@ client parity are CI-enforced.
 
 ```text
 Map supported product workflows to projects, ProblemSpecs, data sources/access,
-ingestions/datasets/profiles, workflows/runs/builds/stages/events, models,
+ingestions/datasets/profiles and bounded aggregate-slice queries, workflows/runs/builds/stages/events, models,
 artifacts, lifecycle/decisions, agents/proposals/approvals, model releases/batch
-predictions/monitoring and notebooks. For every operation list
+predictions/monitoring, all released Deep Investigation modes, connector-pack
+runs/checkpoints/schema reviews, isolated notebooks and hosted-MCP-visible
+resources. Treat provider-neutral tracking references and package manifests as
+subresources/links of the owning DCLab build/model resources, not a public
+MLflow proxy. For every operation list
 method/path, capability/scope, request/response/page, states, ETag/idempotency,
 rate/quota and legacy owner. Mark unsupported/private surfaces. Approve the
-inventory before adding routes.
+inventory before adding routes. Define one read-only scan operation such as
+`POST /v1/datasets/{dataset_id}/aggregate-slices:query`: its typed body binds
+dataset version/digest, registered operation/template version, approved columns,
+allowlisted group/filter/aggregate enums and row/byte/time bounds. The body has
+no SQL, path, URL, extension or engine option; 422 rejects unsupported grammar/
+bounds and normal authorization uses the anti-enumerating 403/404 policy.
 ```
 
 ### S5-P02B — core resource reads and pages
@@ -101,14 +133,25 @@ Implement missing get/list resources in cohesive routers over application query
 services. Use explicit workspace, opaque cursor, bounded limit/filter/sort and
 audience-safe representation. Enforce resource tenant lineage before lookup and
 consistent 404/403 policy. Add OpenAPI examples and contract tests for empty,
-tampered cursor, wrong tenant, deleted/quarantined and large collections.
+tampered cursor, wrong tenant, deleted/quarantined and large collections. Route
+the aggregate-slice operation only through DataScan application service after
+artifact authorization/digest verification. Return normalized JSON/page or a
+DCLab artifact reference, never raw rows, DuckDB/Arrow types or storage paths.
+Test unknown template, malicious SQL-shaped values, excess cardinality/output,
+timeout/cancel, digest mismatch and cross-workspace substitution.
 ```
 
 ### S5-P02C — commands, lifecycle and concurrency
 
 ```text
 Expose only existing canonical commands for ingestion, build, cancel/retry,
-agent/proposal/approval and notebook execution. Require idempotency/canonical
+agent/proposal/approval, explicit Investigation Copilot start/cancel/review and
+notebook execution. Starting an investigation creates only the S2-P12 durable
+proposal job and cannot select tools, framework state or a worker handler.
+Expose each Deep Investigation mode only when its S2-P12H capability is
+VERIFIED; temporary disablement must not prevent deterministic model operations,
+but all three modes must be available for production-MVP go/no-go.
+Require idempotency/canonical
 digest, ETag/preconditions, capability/scope, quota/budget and current source
 versions. Return durable resources/202 for async work. Add duplicate/conflict,
 stale ETag, cancellation race and transaction-failure tests.
@@ -141,7 +184,10 @@ Run operation inventory parity, OpenAPI diff, two-workspace/scope, pagination,
 upload/download, event reconnect, idempotency/concurrency, rate/quota and redaction
 tests against live PostgreSQL/object storage. Measure representative latency and
 payload bounds. Publish support/deprecation/runbook and exact supported surface;
-do not label legacy/private routes public.
+do not label legacy/private routes public. Scan schemas/examples/errors for
+MLflow, Pandera, Evidently, skops, W&B and storage/backend implementation leakage.
+Also scan for DuckDB SQL/config/types, Arrow reader/path leakage and any Polars
+dependency; execute bounded-slice contract, authorization and resource-limit tests.
 ```
 
 ## Plan 5.3 — public Python SDK
@@ -179,7 +225,10 @@ Implement sync/async methods for the approved `/v1` inventory, grouped by
 resource, with validated request/response models and stable error mapping. Use a
 generated or declarative operation manifest and CI parity; do not hand-duplicate
 paths inconsistently. Model unknown additive response fields compatibly while
-rejecting invalid required data. Add per-operation mocked and live tests.
+rejecting invalid required data. Include typed Investigation Copilot create/get/
+list/cancel/events/result/review methods over DCLab contracts; do not expose
+Deep Agents configuration, memory, tasks, tools or checkpoints. Add per-operation
+mocked and live tests.
 ```
 
 ### S5-P03D — iterators, waiters and streaming
@@ -215,7 +264,7 @@ Choose the existing-project-compatible CLI framework and create
 `packages/dclab_cli` with entry point, dependency on public SDK, version and
 test harness, reusing the S3-P06F skeleton if present. Define command groups
 auth/config/workspace/project/lifecycle/decision/dataset/build/model-release/
-batch/monitor/artifact/agent/approval/notebook, global profile/workspace/output/timeout flags
+batch/monitor/investigation/artifact/agent/approval/notebook, global profile/workspace/output/timeout flags
 and stable help. Explicitly prohibit API internal/database imports. Add startup/
 help/version tests.
 ```
@@ -235,7 +284,10 @@ redaction tests.
 
 ```text
 Implement workspace/project/dataset/build/model/artifact/agent/notebook reads and
-bounded lists using SDK iterators. Add watch/wait with signal/timeout and artifact
+bounded lists plus normalized tracking/package/feature-contract/monitoring
+projections. Include Deep Investigation status/result/citations and mode only
+when its public capability is enabled, using the same SDK
+iterators. Add watch/wait with signal/timeout and artifact
 download with safe destination, overwrite confirmation, temp file, digest and
 atomic rename. Human output is concise; structured output follows Plan 5.5.
 Test empty, pagination, interrupted download and denied scope.
@@ -247,8 +299,13 @@ Test empty, pagination, interrupted download and denied scope.
 Implement supported create/cancel/retry/message/review commands with explicit
 workspace, idempotency and exact input from flags or validated JSON/file. Show
 the server approval summary/digest/risk and require interactive confirmation
-unless a previously exact-approved noninteractive flow is used. Never prompt in
-machine mode. Test duplicate, stale ETag, policy denial and SIGINT.
+unless a previously exact-approved noninteractive flow is used. Investigation
+commands may start/cancel/review the S2-P12 proposal resource but cannot select
+hidden tools, subagents, shell, memory, runtime/checkpoint or worker handler.
+These commands are feature-detected and independently disableable; they never
+gate deterministic model release, batch, monitoring or rollback commands, but
+their conformance evidence is part of the production-MVP release review.
+Never prompt in machine mode. Test duplicate, stale ETag, policy denial and SIGINT.
 ```
 
 ### S5-P04E — CLI integration and isolation gate
@@ -357,6 +414,7 @@ replaced. Record recovery time and owner.
 Run public API, SDK, CLI, automation, package matrix, supply-chain and two-
 workspace E2E. Publish exact operation/command/version support, checksums,
 signatures, SBOM/provenance and known limitations. Confirm no internal imports,
-plaintext credentials or unbounded operations. Release only after protected CI
+Deep Agents/LangChain agent dependency, plaintext credentials or unbounded
+operations in public SDK/CLI artifacts. Release only after protected CI
 evidence; otherwise keep artifacts internal candidates.
 ```

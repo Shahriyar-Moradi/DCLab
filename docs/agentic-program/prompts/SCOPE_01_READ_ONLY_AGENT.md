@@ -12,17 +12,39 @@ Extend the existing API service using `domain/agent.py` and cohesive
 Use current SQLAlchemy metadata and PostgreSQL jobs. Add SDK resources beneath
 `packages/dclab_client`; add Agent Studio under `apps/web/app/app/agent/` with
 components under `apps/web/app/components/agent/`. Use a pinned raw LangGraph
-`StateGraph` as the only orchestration runtime, ordinary Pydantic models for
+`StateGraph` as the only lifecycle-supervisor graph inside `worker-agent`,
+ordinary Pydantic models for
 typed state/contracts, and a DCLab-owned provider-neutral gateway whose first
-adapter uses the official OpenAI SDK. Do not add PydanticAI, `pydantic-graph`,
-LangChain `create_agent`, Agent Server as a second product API, or another
-agent loop. Exact names may change only when current conventions require it and
+adapter uses the official OpenAI SDK/Responses API. Do not add `pydantic-graph`,
+LangChain `create_agent`, OpenAI Agents sessions, Agent Server as a second
+product API, or another agent loop. Ordinary Pydantic is the default; PydanticAI
+may be used only after an ADR as a no-tool, single-response typed leaf and is
+not required by this scope. Exact names may change only when current conventions require it and
 the implementation packet records why.
 
 The primary product unit is the project ML lifecycle, not the agent session.
 Agent/session/checkpoint/task graphs remain separate from the canonical lifecycle
 projection. Scope 1 may append and review immutable project-decision memory, but
 that memory never executes or edits an ML resource.
+Scope 1 reads only DCLab-owned lifecycle, decision, evidence and normalized
+tracking projections through application services. It does not connect to
+MLflow, import MLflow/Pandera/Evidently/skops, expose provider IDs/URLs, or create
+a tracking/monitoring/model-registry tool. Those adapters begin behind Plan 3.0.
+Reuse the verified S0-P09 `DataScanPort` only through deterministic DCLab query/
+profile services. Neither the LLM, LangGraph node nor ToolRunner receives a
+DuckDB connection, SQL, object path, Arrow reader or scan configuration. Agent-
+visible data remains classification-aware aggregates with citations; raw rows
+and Polars are outside Scope 1.
+
+## AWS/GCP portability requirements
+
+Agent domain, service, `/v1`, SDK and UI contracts are cloud-neutral. The raw
+LangGraph runtime and checkpointer use standard PostgreSQL behavior and produce
+the same OCI workload on EKS and GKE. Provider/model access stays behind the
+LLM gateway; telemetry stays OpenTelemetry. Do not import AWS/GCP SDKs, store
+ARNs/GCP resource names or use cloud queues as run truth. Tests must run without
+cloud credentials and assert that provider-specific configuration cannot enter
+AgentRun, citation, decision-memory or public error schemas.
 
 ## Plan 1.0 — Core ML lifecycle and durable project memory
 
@@ -164,7 +186,7 @@ no ML behavior or agent runtime was added before Plan 1.1.
 
 **Contract.** Freeze DCLab-owned, framework-independent product schemas and
 state machines before a migration while selecting LangGraph as the sole private
-execution runtime. Runs are immutable-version-bound and bounded; tool outputs
+lifecycle-supervisor graph for `worker-agent`. Runs are immutable-version-bound and bounded; tool outputs
 and LLM outputs are untrusted; approvals are inactive placeholders.
 
 ### S1-P01A — agent runtime ADR and resource contracts
@@ -174,8 +196,13 @@ Inventory existing LlmInvocation, job, event, authorization and evidence models.
 Write the agent-runtime ADR selecting one pinned LangGraph `StateGraph` and
 compatible PostgreSQL checkpointer release, with Python support, lockfile,
 upgrade/deprecation policy and rejected alternatives. Explicitly exclude
-PydanticAI, `pydantic-graph`, LangChain `create_agent` and nested autonomous
-loops. Define `domain/agent.py` value objects for definition, version, session,
+`pydantic-graph`, LangChain `create_agent`, OpenAI Agents and nested autonomous
+loops from `worker-agent`; record the separately isolated, proposal-only Deep
+Investigation worker and whole-run OpenAI Agents adapter as Scope 2 runtimes
+outside this graph. Record ordinary Pydantic as the default and constrain any
+future PydanticAI use to a no-tool, single-response leaf with no session,
+checkpoint, retry, tool or routing authority.
+Define `domain/agent.py` value objects for definition, version, session,
 message, run, step, tool call, product checkpoint reference, citation and event.
 Specify IDs, workspace/project lineage, actor, immutable version references,
 timestamps, input/output digests and audience. Assign LangGraph only graph
@@ -381,8 +408,10 @@ Record query plans and rollback/disable behavior before provider work begins.
 
 **Contract.** Add DCLab-owned `services/llm_gateway.py` and a narrow adapter
 package while wrapping `openai_provider.py`. All callers use ordinary Pydantic
-request/result contracts; CI uses a deterministic fake. Do not use PydanticAI
-or a framework-provided model/tool loop.
+request/result contracts; CI uses a deterministic fake. Use the official
+Responses API only as inference behind this gateway, not as product state or an
+agent loop. PydanticAI is unnecessary here unless a separate ADR proves value
+for a no-tool single-response leaf.
 
 ### S1-P04A — gateway interface and request pipeline
 
@@ -393,7 +422,10 @@ reserved budget. Resolve provider/model server-side, validate context exposure,
 bound serialized bytes and reject unsupported capabilities before network I/O.
 Return typed content/usage/finish/safe-error metadata. Unit-test with no provider;
 do not expose OpenAI, LangGraph or other provider/framework SDK types outside
-their adapters.
+their adapters. Include explicit provider storage/retention mode, allowed
+capability set, parallel-tool policy and server-enforced maximum function-call
+count in the provider-neutral request; authoritative read-only completion
+defaults to no built-in tools and no parallel function calls.
 ```
 
 ### S1-P04B — deterministic fake provider
@@ -415,8 +447,14 @@ Configure endpoint/model/region/retention/training guarantees through model/data
 policy and secret references. Apply connect/read/total timeouts, bounded retries
 with jitter and Retry-After, circuit breaker and cancellation. Validate structured
 output strictly with ordinary Pydantic models and record only safe invocation
-metadata. Use the official OpenAI SDK directly inside this adapter. Add mocked
-transport tests; no live credential in PR CI and no PydanticAI dependency.
+metadata. Use the official OpenAI SDK Responses API directly inside this
+adapter. Set `store` explicitly from the approved retention policy (`false` for
+the default sensitive/stateless path), set `parallel_tool_calls=false`, expose
+no built-in web/file/computer/shell/MCP tool, and reject response/tool items not
+allowed by the DCLab request. DCLab—not a provider limit—enforces function-call
+count. Add mocked transport tests for request serialization, storage mode,
+strict schema, disallowed tool output, cancellation and redaction; no live
+credential in PR CI and no PydanticAI dependency.
 ```
 
 ### S1-P04D — usage, budget and idempotency settlement
@@ -586,7 +624,10 @@ service ownership and forbid routes/workers from direct agent-row mutation.
 ## Plan 1.7 — LangGraph runtime and bounded worker
 
 **Contract.** Register only `agent.turn.v1` in the existing dispatcher and use
-one pinned raw LangGraph `StateGraph` as the sole orchestration runtime. One job
+one pinned raw LangGraph `StateGraph` as DCLab's sole authoritative lifecycle-
+supervisor graph for this worker. The separately gated Deep Investigation worker is owned
+by S2-P12 and remains outside this process, dependency set and checkpoint
+namespace. One job
 may traverse bounded pure nodes but performs at most one provider or tool
 operation, persists DCLab product records plus a private runtime checkpoint, and
 stops before scheduling the next turn. No in-memory recursive or nested agent
@@ -666,7 +707,7 @@ Run deterministic fake-provider system cases for direct answer, multi-tool,
 policy block, insufficient evidence, malformed decision, outage, cancellation,
 crash recovery, duplicate job and every budget. Verify terminal reconstruction,
 events, citations, reservations, product/runtime checkpoint agreement, exactly
-one agent loop and no write tool. Include pinned dependency/SBOM and framework
+one loop inside worker-agent and no write tool. Include pinned dependency/SBOM and framework
 upgrade/rollback evidence. Record latency/cost step baselines and only then
 enable the handler for an internal allowlist.
 ```
@@ -682,21 +723,32 @@ metadata/evidence summaries with hard page/byte/time bounds and citation targets
 ```text
 Map user questions to the smallest initial tools: identity/capabilities,
 projects/ProblemSpec, lifecycle/impact, reviewed project decisions, dataset
-schema/profile/readiness, execution/build status, bounded events, completed
+schema/profile/readiness and allowlisted aggregate slices, execution/build status, bounded events, completed
 scientific evidence, artifact metadata and safe technical/business summaries.
 For each define name/version, JSON input/output,
 required capability/data policy, allowed states, maximum items/bytes/time and
-citation mapping. Register code-owned descriptors; no dynamic import/tool name.
+citation mapping. Any tracking/package information is the normalized DCLab
+projection and DCLab resource/version citation—not an MLflow run, URL, artifact
+locator or provider object. Register code-owned descriptors; no dynamic import/
+tool name and no direct external-library client. A dataset-slice descriptor
+names a registered DCLab operation/template version and typed dimensions,
+filters and aggregate—not SQL—and specifies maximum input bytes, result rows/
+bytes and wall time.
 ```
 
 ### S1-P08B — implement identity/project/dataset tools
 
 ```text
-Implement tools through workspace, project, problem, data access, dataset column
-and profile services. Require explicit resource IDs where ambiguity is unsafe;
-lists use opaque cursors and bounded fields. Return classification-aware schema/
-aggregate metadata only, never rows or signed URLs. Re-authorize on every call.
-Add contract tests for empty, denied, deleted, quarantined and cross-workspace.
+Implement tools through workspace, project, problem, data access, dataset column,
+profile and bounded DataScan query services. Require the immutable dataset/
+artifact version and digest where ambiguity is unsafe; lists use opaque cursors
+and bounded fields. Return classification-aware schema/aggregate metadata only,
+never rows, SQL, paths, DuckDB/Arrow handles or signed URLs. Re-authorize before
+artifact resolution and at the tool call. Permit only code-owned operations such
+as profile and aggregate_slice; reject unknown template versions, free-form
+expressions, excessive grouping/filter cardinality and result bounds. Add tests
+for empty, denied, deleted, quarantined, digest mismatch, timeout, cancellation
+and cross-workspace.
 ```
 
 ### S1-P08C — implement execution/evidence/artifact tools
@@ -706,8 +758,10 @@ Wrap execution request, model build, observability, evidence lock, verification,
 lineage and artifact metadata queries. Expose audience-safe stage/status/failure,
 metrics and provenance only for completed/authorized evidence; clearly label
 provisional state. Artifact tool returns metadata/digest, not content/download.
-Test missing/failed/running/locked states, large timelines and internal-detail
-redaction.
+If provider-neutral tracking state later exists, query it through the owning
+DCLab service and distinguish pending/synced/degraded without exposing its
+external locator. Test missing/failed/running/locked/degraded states, large
+timelines and internal/provider-detail redaction.
 ```
 
 ### S1-P08D — tool runner and result sanitation
@@ -720,6 +774,9 @@ safe error category. Reject unknown version/fields/resource types and provider-
 supplied tool names. LangGraph nodes can call only this runner; framework-native
 or directly decorated tools are prohibited. Add malicious argument/result,
 timeout and revocation tests.
+For scan-backed tools, prove ToolRunner can pass only the typed DCLab request,
+never SQL or adapter configuration, and returns a bounded stable error on scan
+denial/failure without silently retrying through an unbounded pandas load.
 ```
 
 ### S1-P08E — catalog safety and coverage gate
@@ -730,6 +787,11 @@ membership, policy change, huge result, injection text, secret/storage/internal
 field scan and citation resolution. Prove catalog diff contains no create/update/
 delete/export/code/connector action. Measure result sizes/latency, document tool
 owners and independent catalog kill switch, and freeze the Scope 1 tool release.
+Inspect dependencies and egress to prove the API/agent worker cannot reach or
+import MLflow, Pandera, Evidently or model deserializers through these tools.
+Also prove the API/agent worker cannot import DuckDB, install/load extensions,
+open artifact paths or issue SQL; scan execution remains in the bounded ML/data
+service behind `DataScanPort`.
 ```
 
 ## Plan 1.9 — agent `/v1` API and Python client

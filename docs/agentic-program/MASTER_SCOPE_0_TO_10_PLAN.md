@@ -10,6 +10,15 @@
 and [`contracts/truth_manifest.json`](../../contracts/truth_manifest.json)
 **Current truth report:** `docs/verification/S0_P01A_CURRENT_TRUTH.md`
 **Canonical product north star:** [`DCLAB_CORE_CONCEPT.md`](DCLAB_CORE_CONCEPT.md)
+**Canonical agent-first/data-integration architecture:**
+[`AGENT_FIRST_MVP_ARCHITECTURE.md`](AGENT_FIRST_MVP_ARCHITECTURE.md)
+**Canonical AWS/GCP deployment architecture:**
+[`AWS_GCP_DEPLOYMENT_ARCHITECTURE.md`](AWS_GCP_DEPLOYMENT_ARCHITECTURE.md)
+**Requested external CPU/GPU execution extension (design, not implemented):**
+[`EXTERNAL_COMPUTE_PROVIDER_ARCHITECTURE.md`](EXTERNAL_COMPUTE_PROVIDER_ARCHITECTURE.md)
+and [RT7/RT8 work packages](JUPYTER_RUNTIME_MVP_PROMPTS.md#plan-rt7--external-compute-placement-foundation)
+**Canonical ML platform boundary:**
+[`ML_PLATFORM_INTEGRATION_ARCHITECTURE.md`](ML_PLATFORM_INTEGRATION_ARCHITECTURE.md)
 **Authority:** this document orders future work; verified code and tests remain
 the authority for current behavior.
 
@@ -29,23 +38,59 @@ The decision is:
    work. The complete contract is [`DCLAB_CORE_CONCEPT.md`](DCLAB_CORE_CONCEPT.md).
 2. Keep the deterministic ML, authorization, lineage, evidence, queue, and
    artifact layers as the authoritative software layer.
-3. Use one agent orchestration runtime: pinned raw LangGraph `StateGraph`.
-   Ordinary Pydantic owns typed contracts; DCLab owns product state,
-   authorization, tools, budgets, citations and audit. PydanticAI,
-   `pydantic-graph` and high-level LangChain agent loops are excluded from the
-   production MVP.
+3. Use one authoritative DCLab lifecycle-supervisor graph: pinned raw LangGraph
+   `StateGraph`. Ordinary Pydantic owns typed contracts; DCLab owns product
+   state, authorization, tools, budgets, citations and audit. PydanticAI may be
+   approved only as a no-tool, single-response typed leaf. Plan 2.12 separately
+   deploys the proposal-only three-mode Deep Investigation worker, and Plan 2.13
+   evaluates the OpenAI Agents API as a whole-run adapter. Every AgentRun has
+   exactly one runtime; none embeds, invokes or authorizes another.
 4. Complete Scope 0 and the whole of Scope 1 before broadening autonomy.
 5. Insert a new, complete Scope 2 after the read-only agent: a durable
    multi-agent operating system that supervises every important pipeline area
    in read-only, shadow, and proposal modes.
 6. Activate mutations only in Scope 3 through typed commands, exact approvals,
    budgets, idempotency, cancellation, and immutable child-run lineage.
-7. Add notebook, public developer interfaces, MCP, connectors, actions,
-   outcomes, production operations, and measured scale in dependency order.
+7. Add notebook, public developer interfaces, hosted MCP, data integration,
+   actions, outcomes, production operations, and measured scale in dependency
+   order. The bounded notebook sandbox, hosted MCP and initial connector pack
+   are production-MVP workstreams, not post-MVP ideas.
 8. Preserve the complete roadmap and existing business behavior while tracking
    a cross-scope Core ML MVP release slice. The slice introduces no duplicate
    services or numbering; it proves that the roadmap produces the intended
    data-scientist and ML-engineer workflow.
+9. Reuse one implementation per commodity ML concern: MLflow for detailed run
+   tracking/model-package metadata, Pandera for generated dataframe validation,
+   Evidently for drift calculations, safe native/skops model formats and
+   OpenTelemetry for operations signals. DCLab remains the sole lifecycle,
+   registry, tenant, approval, release, decision and audit authority. W&B is
+   deferred and cannot run beside MLflow as a second tracker.
+10. Use DuckDB only as an ephemeral, resource-bounded implementation of the
+    DCLab `DataScanPort` for approved Parquet/Arrow tabular analytics. It is not
+    a product database, public SQL engine or agent tool; PyArrow is the
+    interchange boundary, pandas remains the modeling compatibility layer, and
+    Polars is deliberately absent from the MVP.
+11. Use pinned `dlt` OSS only as a connector-worker extraction/load engine
+    behind DCLab ConnectorPort. Ship direct upload, AWS S3 and Google Cloud Storage object files,
+    read-only SQL/PostgreSQL, one HubSpot-or-Salesforce CRM and read-only
+    Snowflake in the MVP. DCLab owns secrets, jobs, cursors, schema policy,
+    publication and lineage; Airbyte/Openflow are external interoperability,
+    not another control plane.
+12. Do not add SHAP to the production MVP. Use deterministic metrics,
+    calibration/confusion, threshold trade-offs, residual/error slices, feature
+    statistics and carefully labeled native/permutation importance.
+13. Support AWS and Google Cloud as equal production targets through one
+    OpenTofu/Kubernetes/application contract and two private provider modules.
+    Use EKS/RDS/S3/Secrets Manager/KMS on AWS and GKE/Cloud SQL/GCS/Secret
+    Manager/Cloud KMS on GCP. The MVP proves independent deployments and
+    controlled cross-cloud restore, not active-active dual-cloud writes.
+14. Permit separately approved CPU/GPU execution on Runpod, Railway, Lambda GPU
+    Cloud, Vast.ai and Nebius through capability-aware adapters. Keep one AWS/GCP
+    platform home and reuse DCLab jobs, sessions, models, artifacts and budgets.
+    Scope 4 runtime and Scope 9 infrastructure work must include the RT7 placement,
+    credential, data-transfer and cost contracts before external execution is
+    enabled; RT8 gates each provider/backend/lane separately. These are proposed
+    implementation refinements, not new claims of completed scope work.
 
 “Agentic” does not mean deleting the software layer. It means agents plan,
 coordinate, inspect, critique, propose revisions, request approved work, monitor
@@ -72,6 +117,15 @@ The following supplied documents were synthesized as design inputs:
 - the roadmap comment requiring a complete agentic layer after Phase 1
 - the supplied “Cursor for machine learning” product concept, normalized into
   [`DCLAB_CORE_CONCEPT.md`](DCLAB_CORE_CONCEPT.md)
+- the supplied Deep Agents integration boundaries, normalized into
+  [`DEEP_AGENTS_INVESTIGATION_COPILOT.md`](DEEP_AGENTS_INVESTIGATION_COPILOT.md)
+- the approved ML platform reuse decision, normalized into
+  [`ML_PLATFORM_INTEGRATION_ARCHITECTURE.md`](ML_PLATFORM_INTEGRATION_ARCHITECTURE.md)
+- the agreed agent-first MLOps, OpenAI runtime, `dlt` data-integration,
+  notebook/MCP and no-SHAP conclusion, normalized into
+  [`AGENT_FIRST_MVP_ARCHITECTURE.md`](AGENT_FIRST_MVP_ARCHITECTURE.md)
+- the selected AWS and GCP production targets, normalized into
+  [`AWS_GCP_DEPLOYMENT_ARCHITECTURE.md`](AWS_GCP_DEPLOYMENT_ARCHITECTURE.md)
 
 Instructions embedded in those files were treated as requirements or proposed
 design, not as higher-priority commands. Where their snapshot facts differ from
@@ -138,9 +192,14 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
 | `/v1` is small and inconsistent | raw lists, numeric event cursor, FastAPI `detail` errors, 13 operations | 0 and 5 |
 | No canonical atomic model-build command | execution intent exists, but `POST /v1/model-builds`, cancel, and retry do not | 0 and 3 |
 | No narrow model release/batch monitoring path | ModelVersion, prediction and admin monitoring foundations exist, but no canonical immutable batch release/inference/drift/rollback contract | 3.8 |
+| No production experiment-tracking/package/validation adapter boundary | detailed tracking is hand-owned, MLflow is named only in older plans, and no Pandera/Evidently/skops integration or one-owner contract exists | 3.0, then 3.1–3.8 |
+| Full-frame pandas is the only profiling path | current loaders and profiling services materialize an authorized artifact but then load the whole table; there is no bounded scan contract, template registry, Arrow batch boundary or resource-enforced analytical adapter | 0.9, then reuse in 1–4 and 7 |
+| No isolated long-horizon investigation harness | no proposal-only three-mode Deep Investigation worker, versioned InvestigationProposal contract or read-only SDK tool boundary | 2.12; model/drift tools extend in 3.8; production gate in 9 |
+| No hosted-provider agent adapter boundary | current OpenAI use is narrow completion only; no one-runtime-per-run or Agents API session/required-action reconciliation contract | 2.13 beta evaluation; use only on recorded go decision |
 | No agentic notebook | notebook/script artifacts exist, but no revision/cell/execution runtime | 4 |
+| No external CPU/GPU placement control | no provider-neutral account, target, grant, capability, quote, placement, transfer, usage or cleanup contract for Runpod/Railway/Lambda GPU Cloud/Vast/Nebius | RT7–RT8 supplement; integrate through Scopes 4 and 9 without renumbering S IDs |
 | No customer CLI or MCP | internal DB CLI exists; public client is read-heavy | 5–6 |
-| Connector records are registries only | no secrets, adapter runtime, cursors, drift, webhooks, scheduler | 7 |
+| Connector records are registries only | no secrets, adapter runtime, cursors, drift, webhooks, scheduler or reusable engine; direct upload plus object/SQL/CRM/Snowflake ingestion is absent | 7.1–7.6, with 7.1–7.4 in the early MVP slice |
 | No generic recommendation/action/outcome ledger | legacy Opportunity/Prediction/Decision is one vertical | 8 |
 | Development topology is not production | Compose has only PostgreSQL and API; no managed deployment proof | 9 |
 | Documentation was stale | 0027/0053 reports are indexed HISTORICAL (S0-P01A). Drift CI (S0-P01B) fails contradictory CURRENT docs and snapshot drift | — |
@@ -186,10 +245,13 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
     execution checkpoints. DCLab AgentRun/Step/Event/ToolCall/Citation rows are
     the product authority; checkpoint state never authorizes access or becomes
     a public API contract.
-17. There is exactly one agent loop. Do not nest PydanticAI,
-    `pydantic-graph`, LangChain `create_agent`, or another autonomous executor
-    inside LangGraph nodes. One durable turn performs at most one provider or
-    tool operation before checkpointing and yielding.
+17. There is exactly one authoritative DCLab agent loop. Do not nest
+    PydanticAI, `pydantic-graph`, LangChain `create_agent`, Deep Agents or
+    another autonomous executor inside raw LangGraph nodes. One durable turn
+    performs at most one provider or tool operation before checkpointing and
+    yielding. Plan 2.12 is the sole exception for a high-level harness: its
+    Deep Agent runs in a separate proposal-only worker from an explicit DCLab
+    job and neither runtime invokes, embeds, checkpoints or authorizes the other.
 18. The ML lifecycle is a DCLab-owned domain projection over immutable
     Project/Dataset/FeatureSet/Experiment/Model/Release/Monitoring resources.
     It is distinct from LangGraph topology, supervisor task DAGs and notebooks.
@@ -209,6 +271,63 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
 23. Existing business-side behavior and Scope 8 remain intact. They extend the
     platform but are not required to pass the first Core ML MVP pilot unless the
     pilot explicitly includes them.
+24. Investigation Copilot has only short-lived working state and allowlisted
+    read-only DCLab SDK/API tools. It cannot access product SQL/object-store
+    credentials, call commands, approve work or persist project memory. Its
+    structured result becomes an immutable proposal only after deterministic
+    validation; review and any later command remain separate DCLab operations.
+25. Deep Agents dependencies, process identity, handler allowlist, runtime
+    state/checkpointer namespace and feature kill switch are isolated from
+    `worker-agent`. The first release disables its subagents, persistent memory,
+    host filesystem, shell, arbitrary HTTP and code execution.
+26. MLflow is the only production-MVP detailed experiment tracker and package-
+    metadata service. DCLab stores provider-neutral external references and
+    remains authoritative for run identity, canonical scientific summaries,
+    models, approvals, promotion, rollback, tenancy and audit. MLflow tags and
+    UI state never authorize or mutate DCLab.
+27. A DCLab `FeatureContract` compiles deterministically to strict Pandera
+    validation; Evidently only calculates versioned monitoring reports; safe
+    skops/native formats load only in workers. Provider-native objects and
+    exceptions never enter `/v1`, SDK, CLI, MCP, agent or domain contracts.
+28. ML platform integrations use private endpoints, optional worker dependency
+    groups, separate database/schema and object-storage identities, bounded
+    idempotent reconciliation, fail-closed production settings and independent
+    kill switches. W&B, Optuna, OpenLineage and distributed ML platforms remain
+    off until a measured/customer trigger and new ADR.
+29. Every analytical scan follows `Authorized DatasetArtifact → DCLab
+    DataScanPort → ephemeral DuckDB connection → bounded Arrow batches →
+    deterministic DCLab services`. DCLab code owns the query templates and
+    scientific semantics. DuckDB has no persistent catalog, direct product-
+    database/object-store/network authority or public SQL surface; extensions
+    are disabled, resource limits and cancellation are enforced, and agents,
+    users, notebooks, APIs, SDKs and MCP cannot submit arbitrary SQL. Do not add
+    Polars beside DuckDB, Arrow and pandas in the MVP.
+30. Every AgentRun binds one runtime kind/version: authoritative raw LangGraph,
+    isolated Deep Investigation or the separately gated OpenAI Agents adapter.
+    No runtime can start, resume, checkpoint, call as a tool, wrap or authorize
+    another runtime. Cross-runtime work is a new DCLab request/run/budget.
+31. OpenAI Responses is inference behind the DCLab gateway with explicit
+    retention/storage and tool policy. OpenAI Agents required actions are
+    pending untrusted requests mediated by ToolRunner; provider sessions,
+    history and state are never product memory, lifecycle or command truth.
+32. Connector extraction follows `DCLab ConnectorPort → pinned dlt source →
+    bounded Arrow → immutable Parquet staging → deterministic publication`.
+    DCLab owns secrets, SyncRun/job, cursor contract, schema/quarantine,
+    DatasetVersion, audit and recovery. `dlt`, Airbyte, Openflow and Snowflake
+    never become the DCLab control plane.
+33. The production-MVP connector pack is direct CSV/Parquet, AWS S3/GCS
+    objects, read-only SQL/PostgreSQL, one pilot-selected CRM and read-only
+    Snowflake. Isolated Python and hosted read MCP also pass their security
+    gates before production-MVP go/no-go while remaining independently
+    disableable from the deterministic golden path.
+34. SHAP is absent from the production MVP. A legacy enum or historical
+    visualization label is unsupported until a separate measured ADR and gate.
+35. AWS and GCP are equal deployment targets behind one provider-neutral
+    product/application contract. Cloud SDKs and resource IDs stay in private
+    adapters/IaC; the same image/schema/API passes both provider gates.
+36. One environment uses one cloud. No active-active cross-cloud PostgreSQL,
+    dual object writes or automatic failover exists in the MVP. Portability is
+    proven with bidirectional controlled restore and independent rollback.
 
 ## 5. Target product and platform topology
 
@@ -225,13 +344,27 @@ flowchart TD
     GRAPH --> LLM[Provider-neutral LLM gateway]
     GRAPH --> TOOLS[Versioned DCLab tool registry]
     TOOLS --> APP[Deterministic commands and queries]
+    APP --> SCAN[DCLab DataScanPort and code-owned templates]
+    SCAN --> DDB[Ephemeral resource-bounded DuckDB]
+    DDB --> ARROW[Bounded Arrow batches]
+    ARROW --> ML[Deterministic ML and profiling services]
     APP --> QUEUE[Durable jobs and transactional outbox]
     QUEUE --> ML[ML and profiling workers]
+    ML --> TRACK[Private MLflow tracking and model-package metadata]
+    ML --> VALIDATE[Pandera and Evidently worker libraries]
     QUEUE --> INT[Connector and action workers]
     QUEUE --> NB[Isolated notebook workers]
+    QUEUE --> LEASE[API-owned investigation lease transport]
+    LEASE --> INV[Isolated Deep Agents investigation worker]
+    INV --> READ[Allowlisted read-only DCLab SDK/API tools]
+    READ --> APP
+    INV --> PROP[Validated InvestigationProposal]
+    PROP --> APP
     APP --> DB[(Managed PostgreSQL product truth)]
     LIFE --> DB
     ML --> OBJ[(Private object storage)]
+    TRACK --> MLFDB[(Separate MLflow backend schema/database)]
+    TRACK --> OBJ
     INT --> EXT[Approved external providers]
     GRAPH --> CHECKPOINT[(Private runtime checkpoints)]
     AOS --> OBS[Audit, traces, metrics, evals, cost]
@@ -240,12 +373,36 @@ flowchart TD
 ```
 
 Initial deployment units are `web`, `api`, `worker-ml`, `worker-agent`,
-`worker-integration`, managed PostgreSQL, private object storage, managed
-secrets/KMS, and telemetry. An isolated notebook execution service is added only
-for code cells. Workers may initially share an image but use disjoint handler
-allowlists and deployment identities. LangGraph runs inside `worker-agent`; it
-is not a second API or authorization service. Its checkpointer uses a dedicated
-PostgreSQL schema and lifecycle separate from DCLab product/audit tables.
+`worker-investigation`, `worker-integration`, managed PostgreSQL, private object
+storage, managed secrets/KMS, and telemetry. An isolated notebook execution
+service is added only for code cells. Workers may initially share images except
+that `worker-investigation` has a separate Deep Agents dependency lock/image;
+all use disjoint handler allowlists and deployment identities. Raw LangGraph
+runs inside `worker-agent`; it is not a second API or authorization service. Its
+checkpointer uses a dedicated PostgreSQL schema and lifecycle separate from
+DCLab product/audit tables. Deep Agents runs only inside `worker-investigation`
+and uses job-scoped state or a different short-retention runtime namespace; it
+has no product database or object-store credentials and calls DCLab through
+allowlisted SDK/API tools. The API-side lease service owns PostgreSQL job claim,
+heartbeat and terminal settlement; the worker uses a narrow non-public workload
+transport that is never visible to the model.
+
+Plan 3.0 adds the private MLflow service boundary and in-worker Pandera,
+Evidently and safe-package adapters. MLflow has a separate database/schema
+identity and object prefix; DCLab Alembic never migrates its tables. No public
+or agent surface reaches MLflow directly. OpenTelemetry exports redacted
+operations signals independently from experiment telemetry and DCLab audit.
+Plan 0.9 first establishes the provider-neutral `DataScanPort`. DuckDB is an
+in-process worker adapter opened per bounded operation against an already
+authorized, digest-verified artifact; it is never a deployment unit or durable
+store. Later services and managed notebook query cells call DCLab scan methods,
+not DuckDB and not SQL.
+
+Scope 9 maps this one topology to AWS and GCP under
+[`AWS_GCP_DEPLOYMENT_ARCHITECTURE.md`](AWS_GCP_DEPLOYMENT_ARCHITECTURE.md).
+Identical signed images and Kubernetes base run on EKS/GKE; standard PostgreSQL
+runs on RDS/Cloud SQL; objects, secrets, keys, edge and telemetry use private
+S3/GCS and provider adapters. Cloud resources never change this product graph.
 
 ## 6. Scope map and critical path
 
@@ -253,21 +410,23 @@ PostgreSQL schema and lifecycle separate from DCLab product/audit tables.
 | --- | --- | --- | --- |
 | 0 | Verified secure, tenant-safe, production-shaped foundation | deterministic only | current baseline |
 | 1 | Core ML lifecycle/decision memory plus durable read-only agent with citations and recovery | L0 explain, L1 propose | 0 release gate |
-| 2 | Full agentic operating system and supervised multi-agent pipeline coverage | shadow/read/proposal | complete 1 |
-| 3 | Controlled agent commands, model builds/iteration and one batch model-release/monitoring path | L2; limited L3 | complete 2 |
-| 4 | Managed agentic notebook and later isolated code cells | governed compute | 2; writes require 3 |
+| 2 | Full authoritative agentic operating system, supervised specialist coverage, required three-mode Deep Investigation, and a gated OpenAI Agents adapter decision | shadow/read/proposal | complete 1; S2-P11F unblocks 3 while 2.12/2.13 run in parallel |
+| 3 | ML platform reuse foundation, controlled agent commands, model builds/iteration and one batch model-release/monitoring path | L2; limited L3 | S2-P11F authoritative gate; S2-P12H required before production MVP |
+| 4 | Managed agentic notebook and required isolated Python release | governed compute | 2; writes require 3 |
 | 5 | Stable public API, machine identity, SDK, and customer CLI | external machine clients | 0–3 |
-| 6 | Local and hosted MCP over the public SDK | read then controlled write | 5; write also 3 |
-| 7 | Production-grade upload and one real inbound connector | durable integration | 0, 2, 5 |
+| 6 | Local and production-MVP hosted MCP over the public SDK | read then controlled write | 5; write also 3 |
+| 7 | Production-grade upload and `dlt`-backed S3/GCS/SQL/CRM/Snowflake connector pack | durable integration | 7.1–7.4 may start after 0/S1-P00H; public/agent surfaces require 5/2 |
 | 8 | Recommendation, exact action, outbox, outcome, and impact loop | approved external effect | 3 and 7 |
-| 9 | Production platform, security, observability, recovery, and pilot release | controlled beta | applicable 0–8 gates |
+| 9 | AWS/GCP production platform, security, observability, recovery, pilot and dual-cloud certification | controlled beta | applicable 0–8 gates |
 | 10 | Evidence-driven scale, enterprise controls, and increased autonomy | measured L3/L4 | 9 plus usage evidence |
 
 ```mermaid
 flowchart LR
     S0[Scope 0] --> S1[Scope 1]
-    S1 --> S2[Scope 2]
+    S1 --> S2[Scope 2 through S2-P11F]
     S2 --> S3[Scope 3]
+    S2 --> COP[Plan 2.12 Deep Investigation]
+    S2 --> OAI[Plan 2.13 OpenAI adapter decision]
     S2 --> S4[Scope 4]
     S3 --> S4
     S3 --> S5[Scope 5]
@@ -295,20 +454,26 @@ reuse the named plan owner.
 
 | Product milestone | Owning plans | Required outcome |
 | --- | --- | --- |
-| Secure project/data foundation | 0.1–0.8 | Tenant, identity, classification, `/v1`, job and evidence controls pass. |
+| Secure project/data foundation | 0.1–0.10 | Tenant, identity, classification, `/v1`, job/evidence controls, bounded deterministic dataset scanning and cloud-portable immutable object storage pass. |
 | Lifecycle graph and project memory | 1.0 | Canonical lifecycle projection, deterministic impact/staleness and immutable decision records exist. |
+| Data integration | 7.1–7.4, then 7.5–7.6 | Direct upload plus AWS S3/GCS object, read-only SQL/PostgreSQL, one CRM and Snowflake sources publish immutable DatasetVersions through one `dlt`-backed DCLab contract. |
 | Goal and investigation | 1.8, 2.4–2.6 | Objective/business constraints, dataset findings, leakage and validation are cited and reviewable. |
+| ML platform reuse | 0.9, 3.0, then 3.1–3.8 | DuckDB/Arrow, MLflow, Pandera, Evidently and safe model formats supply bounded mechanics behind DCLab-owned ports while DCLab remains product authority; Polars and W&B stay absent. |
+| Deep Investigation | 2.12; 3.8 model/drift extension | Dataset/scientific, experiment/model and operations/drift modes use only read-only DCLab tools and return validated cited proposals without entering the authoritative graph or executing commands. The worker is independently disableable but required for production-MVP go/no-go. |
+| OpenAI hosted-agent decision | 2.13 | Record a beta adapter go/no-go from comparative, retention, required-action, sandbox and clean-disable evidence. Activation is not forced and never changes LangGraph authority. |
 | Experiment proposal and execution | 2.5–2.7, 3.1–3.4 | A proposal becomes one canonical approved build without bypassing scientific services. |
 | Compare and improve | 2.7–2.10, 3.5–3.6 | Candidates, metrics, cost, rationale and one bounded improvement loop are visible and controllable. |
 | Three synchronized views | 1.0, 1.10, 2.10, 3.6, 4.5 | Conversation, workflow and implementation routes deep-link to the same versions and state. |
+| Isolated Python and hosted MCP | 4.6–4.7, 6.1–6.5 | Arbitrary Python exists only in the verified disposable sandbox; hosted MCP has no authority beyond `/v1` and independent read/write controls. |
 | ML engineer automation | 1.9, 3.6, 5.1–5.6 | An allowlisted preview arrives with the Core ML path; Scope 5 hardens and publicly releases it. |
 | Register, batch predict and monitor | 3.8 | One immutable model release, authorized batch inference, drift investigation and rollback pass. |
-| Production pilot | 9.1–9.7 | Named data scientists and ML engineers complete the path without DB intervention. |
+| Production pilot and cloud certification | 9.1–9.8 | Named data scientists and ML engineers complete the path without DB intervention; identical releases pass AWS/GCP and bidirectional restore gates. |
 
-The full multi-agent system, isolated Python notebooks, hosted MCP, connectors,
-business actions/outcomes and Scope 10 remain in the roadmap. Their independent
-release gates cannot redefine the lifecycle or create parallel memory/client/
-deployment paths.
+The bounded multi-agent roster, Deep Investigation modes, isolated Python,
+hosted MCP and initial connector pack are part of the production-MVP release
+program. Business actions/outcomes remain optional for the Core ML pilot; Scope
+10 covers measured expansion. Independent workstream failure never authorizes a
+fallback that redefines lifecycle, memory, client or execution authority.
 
 ## 7. How every plan is delivered
 
@@ -330,8 +495,12 @@ coding-agent prompts in the linked prompt file. The normal order is:
 Every prompt should normally be one reviewable pull request. Database changes
 use expand-and-contract compatibility. Risky features remain disabled until the
 scope gate passes.
+Every prompt also completes the AWS/GCP portability questions in the execution
+standard. Provider-independent work records that evidence; cloud-backed work
+implements and tests both adapters without putting provider branches in product
+logic.
 
-The execution-grade pack contains 83 plans and 437 prompts. Every scope file
+The execution-grade pack contains 89 plans and 477 prompts. Every scope file
 defines plan-specific code/data/API/job/UI/test/operations contracts; the shared
 [`prompts/EXECUTION_STANDARD.md`](prompts/EXECUTION_STANDARD.md) defines the
 repository routing map, implementation packet, change budget and completion
@@ -356,6 +525,8 @@ tables. Scope 0 does not rewrite the working ML platform.
 | 0.6 | `/v1` foundation: uniform error envelope, opaque cursors, request IDs, list contracts, artifact authorization, cancel/retry lifecycle skeleton | 0.3 | S0-P06A–F (6) |
 | 0.7 | Development/CI parity: migration paths, worker/web/object-store Compose services, safe seed, scans, frontend component-test runner, lint modernization | 0.1 | S0-P07A–E (5) |
 | 0.8 | Architecture decision set, Alembic cycle analysis, current DB scale baseline, operational risk register | 0.1 | S0-P08A–D (4) |
+| 0.9 | Provider-neutral bounded analytical scan foundation: inventory/parity corpus, `DataScanPort`, code-owned templates, ephemeral hardened DuckDB, bounded Arrow batches, profiling/slice/leakage/drift preparation and rollback gate | 0.5, 0.7–0.8 | S0-P09A–F (6) |
+| 0.10 | Cloud-portable immutable object storage: opaque versions/preconditions, bounded streaming, repaired S3/GCS adapters, authorized signed access, conformance and release gate | 0.5–0.9 | S0-P10A–E (5) |
 
 ### Scope 0 exit gate
 
@@ -367,6 +538,13 @@ tables. Scope 0 does not rewrite the working ML platform.
 - `/v1` errors, correlation, pagination, and lifecycle rules are stable enough for Scope 1;
 - empty and previous-head migrations, backend suite, frontend checks, browser E2E,
   and container smoke pass;
+- profiling parity, bounded-output/resource/cancellation and malicious-template
+  tests prove DuckDB cannot persist, install/load extensions, reach the network,
+  access an unauthorized path or accept arbitrary SQL; pandas rollback remains
+  available behind one flag without creating a second public scan contract;
+- local/S3/GCS storage conformance proves bounded streaming, exact object
+  versions/preconditions, digest integrity, authorized signed access, safe
+  errors and clean provider disablement without cloud details in public state;
 - documentation names the current SHA, revision 0054+, actual OpenAPI facts, and limitations.
 
 Prompt file: [`prompts/SCOPE_00_FOUNDATION.md`](prompts/SCOPE_00_FOUNDATION.md).
@@ -388,7 +566,7 @@ executes or edits an ML resource.
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
 | 1.0 | Core ML project contract: lifecycle projection, deterministic dependency/staleness rules, durable ProjectDecisionRecord memory, read API/SDK and synchronized project UI foundation | Scope 0 | S1-P00A–H (8) |
-| 1.1 | Agent, prompt, model, tool, budget, and data-policy contracts plus the LangGraph-only runtime ADR, dependency pins and state diagrams | 1.0 | S1-P01A–E (5) |
+| 1.1 | Agent, prompt, model, tool, budget and data-policy contracts plus the LangGraph lifecycle-supervisor ADR, cross-runtime prohibition, dependency pins and state diagrams | 1.0 | S1-P01A–E (5) |
 | 1.2 | Additive DCLab agent-control schema: definitions/versions, sessions/messages, runs/steps, product checkpoint references, tool calls, citations/events, approvals placeholder | 1.1 | S1-P02A–F (6) |
 | 1.3 | Policy/version and ledger schema: prompt releases, model/tool/budget/data versions, reservations/settlements, LLM invocation agent context | 1.2 | S1-P03A–E (5) |
 | 1.4 | DCLab provider-neutral LLM gateway, ordinary Pydantic structured contracts, deterministic fake and official OpenAI SDK adapter; no PydanticAI | 1.3 | S1-P04A–F (6) |
@@ -459,12 +637,23 @@ The supervisor owns decomposition, dependency ordering, shared budget, conflict
 resolution, and final synthesis. Specialists receive smaller context envelopes
 and narrower tools. A specialist cannot delegate unless its agent version and
 policy explicitly allow it. Delegation records parent run, task contract,
-input/output digests, child budget, allowed tools, result, and citations. Scope
-2 extends the same pinned LangGraph runtime with code-owned supervisor and
-specialist subgraphs; it does not introduce another agent framework or allow a
-specialist to run a hidden nested tool loop. Specialists read the Scope 1 ML
+input/output digests, child budget, allowed tools, result, and citations. Plans
+2.1–2.11 extend the same pinned raw LangGraph runtime with code-owned supervisor
+and specialist subgraphs; they do not introduce another framework or allow a
+specialist to run a hidden nested tool loop. Plan 2.12 separately adds the
+bounded Deep Agents Investigation Copilot across an API/SDK and process
+boundary with three typed modes. Plan 2.13 separately evaluates the OpenAI
+Agents API as a whole-run adapter. Neither separate runtime is a supervisor
+specialist, and no runtime can invoke, embed, checkpoint or authorize another.
+Specialists read the Scope 1 ML
 lifecycle projection and emit findings/proposals linked to durable project
 decision records; their task DAG never becomes lifecycle product truth.
+
+S2-P11F is the authoritative Scope 2 gate and unblocks Scope 3. Plans 2.12 and
+2.13 may run in parallel after that gate. S2-P12H is required for production-MVP
+go/no-go; S2-P13F must record an explicit allow/disable/reject decision. Failure
+or disablement of either adapter cannot block deterministic ML, controlled
+commands or model operations while remediation continues.
 
 Agents may inspect and propose:
 
@@ -497,9 +686,11 @@ Scope 3 activates selected proposals as approved commands.
 | 2.8 | Artifact/provenance auditor and audience-safe reporter for digests, missing objects, reproductions, visualizations, reports and citations | 2.4–2.7 | S2-P08A–E (5) |
 | 2.9 | LangGraph supervisor/subgraph orchestration, conflict rules, human escalation, partial-result synthesis, global stop conditions and recovery | 2.4–2.8 | S2-P09A–F (6) |
 | 2.10 | Agentic operations UI: task graph, specialist activity, proposals/diffs, critiques, unresolved decisions, cost, policy and evidence | 2.9 | S2-P10A–E (5) |
-| 2.11 | Whole-pipeline shadow evaluations, counterfactual replay, failure injection, specialist ablation, quality/cost/latency dashboards and promotion gate | 2.3–2.10 | S2-P11A–F (6) |
+| 2.11 | Whole-pipeline raw-LangGraph shadow evaluations, counterfactual replay, failure injection, specialist ablation, quality/cost/latency dashboards and authoritative-graph promotion gate | 2.3–2.10 | S2-P11A–F (6) |
+| 2.12 | Required production-MVP three-mode Deep Investigation worker: non-conflicting ADR, immutable context bundle, claim-level citations, read-only SDK tools, separate worker/runtime state, bounds, shadow evaluation and independent release gate | S2-P11F; parallel with Scope 3; required before production go/no-go | S2-P12A–H (8) |
+| 2.13 | OpenAI Agents API whole-run adapter: beta/maturity ADR, provider-neutral session reference, dedicated adapter, DCLab-mediated required actions, isolated environment policy, comparative evaluation and explicit release decision | S2-P11F; S4 sandbox for code purposes; never wraps another runtime | S2-P13A–F (6) |
 
-### Scope 2 exit gate
+### Authoritative Scope 2 exit gate — unblocks Scope 3
 
 - every canonical pipeline stage has a named supervising capability and typed outputs;
 - delegation cannot widen workspace, data, tool, model, time, or cost authority;
@@ -516,6 +707,23 @@ Scope 3 activates selected proposals as approved commands.
   DCLab authority and checkpoint boundary proven in Scope 1;
 - no write tool is active yet except safe creation of agent-domain proposal records.
 
+### Plans 2.12–2.13 independent runtime gates
+
+- Deep Investigation runs only in its isolated process and never inside or
+  as a tool/subagent of the supervisor; dependency locks, identities, handlers,
+  checkpoint namespaces and kill switches are disjoint;
+- its model-visible external/product tools are read-only DCLab SDK/API calls;
+  built-in planning/virtual files stay in job-scoped StateBackend, the immutable
+  context bundle and every proposal claim are cited, and subagents/persistent
+  memory/shell/code execution are off;
+- dataset/scientific, experiment/model and operations/drift mode manifests are
+  code-owned, non-overlapping and release-gated against their source resources;
+- the OpenAI adapter records exactly one S2-P13F outcome, mediates every
+  required action through DCLab and proves retention/environment/clean-disable;
+- failure or disablement leaves the S2-P11F raw-LangGraph path and every Scope 3
+  command healthy; S2-P12H is required only for production-MVP release, not for
+  deterministic Scope 3 development.
+
 Prompt file: [`prompts/SCOPE_02_AGENTIC_OPERATING_SYSTEM.md`](prompts/SCOPE_02_AGENTIC_OPERATING_SYSTEM.md).
 
 ## 11. Scope 3 — controlled commands, approvals, and agent-directed builds
@@ -528,18 +736,26 @@ iteration, then one verified model-registration/batch-prediction/monitoring path
 without permitting arbitrary mutation, code execution, online serving or
 automatic retraining.
 
+First reuse the verified bounded `DataScanPort` from Plan 0.9, then establish
+the one-owner ML platform boundary in Plan 3.0. MLflow supplies
+detailed run tracking/model-package metadata; Pandera, Evidently and safe model
+formats are bounded worker libraries; OpenTelemetry supplies operations signals.
+DCLab remains authoritative and W&B is absent. See
+[`ML_PLATFORM_INTEGRATION_ARCHITECTURE.md`](ML_PLATFORM_INTEGRATION_ARCHITECTURE.md).
+
 ### Ordered plans
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 3.1 | Canonical atomic ModelBuildCommandService and `POST /v1/model-builds` with intent, readiness, quota, preconditions and idempotency | Scope 2 | S3-P01A–F (6) |
+| 3.0 | ML platform reuse foundation: reuse the S0-P09 `DataScanPort`; add ownership ADR, provider-neutral external references and ports, private MLflow tracking/model-package adapter, safe model formats, generated Pandera validation, Evidently calculator and isolation/reconciliation gate | S0-P09F and S2-P11F; does not require S2-P12 | S3-P00A–G (7) |
+| 3.1 | Canonical atomic ModelBuildCommandService and `POST /v1/model-builds` with intent, readiness, quota, preconditions, idempotency and MLflow-linked tracking | 3.0 | S3-P01A–F (6) |
 | 3.2 | Cooperative cancellation, child retry/branch lineage, event aggregation, recovery and artifact quarantine | 3.1 | S3-P02A–E (5) |
 | 3.3 | Exact ApprovalService and policy for sensitive reads, compute, internal mutation, publish and external action risk tiers | 3.1 | S3-P03A–E (5) |
 | 3.4 | Activate typed agent tools: draft ProblemSpec, validate readiness, create/cancel/retry build, request export, create corrective child proposal | 3.2–3.3 | S3-P04A–E (5) |
 | 3.5 | Bounded experiment iteration: hypothesis/change digest, parent citation, holdout discipline, total portfolio budget and stop policy | 3.4 | S3-P05A–E (5) |
 | 3.6 | Unified web/SDK/CLI/agent command and approval experience with exact summary, comparison, project decisions, cost, state, denials, notifications and audit | 3.4–3.5 | S3-P06A–F (6) |
 | 3.7 | Scientific, concurrency, recovery, approval-substitution and agent-mutation evaluation gate | 3.1–3.6 | S3-P07A–E (5) |
-| 3.8 | Core ML model operations MVP: verified model registration, immutable batch release, feature/environment contract, batch inference, drift monitoring, investigation proposals and rollback | 3.7 | S3-P08A–H (8) |
+| 3.8 | Core ML model operations MVP: verified MLflow/native package reference, DCLab-owned model registration, generated feature/environment validation, immutable batch release, Evidently-backed drift monitoring, gated S2-P12 `operations_drift` read-tool extension and rollback | 3.0 and 3.7 | S3-P08A–H (8) |
 
 ### Scope 3 exit gate
 
@@ -550,10 +766,24 @@ automatic retraining.
 - changed payloads conflict and any material edit invalidates prior approval;
 - cancellation and child retry preserve existing evidence;
 - bounded iteration cannot reuse holdout evidence to tune candidates;
+- MLflow detailed telemetry and model-package references reconcile through the
+  private adapter without becoming DCLab registry, authorization or promotion
+  state; tracking-degraded runs cannot verify or promote;
+- each versioned DCLab FeatureContract compiles to strict Pandera validation,
+  Evidently reports are normalized into DCLab MonitoringWindow evidence, and
+  only digest-verified safe model formats load in the batch worker;
+- profiling, leakage-candidate aggregates, experiment slices and drift-window
+  preparation reuse typed `DataScanPort` templates and bounded Arrow batches;
+  neither MLflow, Evidently, agents nor notebooks can submit DuckDB SQL;
 - accept/reject/modify/compare actions append decision memory and any execution
   still enters through a typed command;
 - one verified ModelVersion can be registered, released for bounded batch
   prediction, monitored and rolled back with complete input/output lineage;
+- after S2-P12H, Deep Investigation `operations_drift` mode can read the verified
+  model/package/batch/monitoring projections only through the extended SDK tool
+  bundle and returns a cited proposal without invoking a command, approval, raw
+  graph or deployment; Scope 3 development may complete independently, but its
+  absence blocks the combined production-MVP release gate;
 - the early SDK/CLI preview and web/agent views resolve identical lifecycle,
   command, release and decision state;
 - client users receive only audience-safe summaries;
@@ -573,12 +803,20 @@ dataset, plan, feature set, model release or monitoring policy.
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
 | 4.1 | Notebook/revision/cell/environment/input/output domain and storage model | Scope 2; write cells need 3 | S4-P01A–E (5) |
-| 4.2 | Managed cells for Markdown, DCLab query, profile, chart, build intent, evidence, decision and agent objective | 4.1 | S4-P02A–E (5) |
+| 4.2 | Managed cells for Markdown, typed DCLab query/profile through bounded `DataScanPort` templates, chart, build intent, evidence, decision and agent objective; no arbitrary SQL | 4.1 and S0-P09F | S4-P02A–E (5) |
 | 4.3 | Notebook APIs, optimistic concurrency, execution jobs, cancel/retry, lineage and exports | 4.2 | S4-P03A–F (6) |
 | 4.4 | Agent-generated reviewable diffs, revision proposals, resource binding and error explanation | 4.2–4.3 | S4-P04A–E (5) |
 | 4.5 | Studio notebook UI, collaboration boundary, provenance drawer and accessible output states | 4.3–4.4 | S4-P05A–E (5) |
-| 4.6 | Isolated Python beta: disposable sandbox, immutable images, no secrets/network, quotas, manifests, publisher and cleanup | managed notebook gate | S4-P06A–F (6) |
-| 4.7 | Reproducibility, sandbox escape, egress, exhaustion, artifact-smuggling and export verification | 4.6 | S4-P07A–E (5) |
+| 4.6 | Isolated Python MVP: disposable sandbox, immutable images, no product credentials/default network, quotas, manifests, publisher and cleanup | managed notebook gate | S4-P06A–F (6) |
+| 4.7 | Reproducibility, sandbox escape, egress, exhaustion, artifact-smuggling and production-MVP release verification | 4.6 | S4-P07A–E (5) |
+
+Execute RT1-A from
+[`JUPYTER_RUNTIME_MVP_PROMPTS.md`](JUPYTER_RUNTIME_MVP_PROMPTS.md) before Plan
+4.1 so stateful session/epoch ownership is reconciled with these existing plan
+IDs. Execute RT7-A before persistence or placement work and complete the
+applicable RT7/RT8 adapter gates before advertising external execution through
+Plan 4.6. The RT IDs refine these prompts; they do not replace or renumber S4
+evidence.
 
 ### Scope 4 exit gate
 
@@ -587,6 +825,12 @@ lineage-backed before Python is considered. Python remains disabled until the
 real deployment sandbox cannot access the host, metadata service, other jobs,
 secrets, private networks, or open internet and reliably enforces CPU, memory,
 process, file, disk, output, and wall-time limits.
+Managed query/profile cells execute only registered DCLab scan operations over
+authorized immutable artifacts and bounded Arrow outputs. DuckDB is not
+installed as a user-code capability and neither a cell nor an agent supplies SQL.
+Plan 4.7 must pass before production-MVP go/no-go. A failed sandbox gate keeps
+Python disabled and blocks that release claim without disabling managed cells
+or deterministic ML.
 
 Prompt file: [`prompts/SCOPE_04_AGENTIC_NOTEBOOK.md`](prompts/SCOPE_04_AGENTIC_NOTEBOOK.md).
 
@@ -635,30 +879,36 @@ MCP is a thin SDK adapter with no broader authority. Hosted access validates
 issuer, signature, audience, expiry, scope, membership, workspace, Origin, host,
 protocol revision/request metadata and rate limits. Results contain no raw rows, internal-only details,
 secrets, prompts, hidden reasoning, storage keys, or signed URLs. Read and write
-surfaces have independent kill switches.
+surfaces have independent kill switches. Hosted read conformance/OAuth/tenant/
+load/kill-switch evidence is required before production-MVP go/no-go; internal
+agents never loop back through hosted MCP.
 
 Prompt file: [`prompts/SCOPE_06_MCP.md`](prompts/SCOPE_06_MCP.md).
 
-## 15. Scope 7 — scalable data plane and one real inbound connector
+## 15. Scope 7 — data-integration plane and production-MVP connector pack
 
 ### Ordered plans
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 7.1 | Direct multipart upload, quarantine/staging, streaming digest/MIME/archive/malware checks and async profile/classification | Scope 0 | S7-P01A–E (5) |
-| 7.2 | Connector definitions/config versions, sync plans/runs, checkpoints, schema snapshots, webhook receipts and managed secret references | 7.1 and Scope 5 identity | S7-P02A–E (5) |
+| 7.1 | Direct multipart upload, quarantine/staging, streaming digest/MIME/archive/malware checks and async profile/classification through the verified bounded `DataScanPort` | Scope 0 | S7-P01A–E (5) |
+| 7.2 | Connector definitions/config versions, sync plans/runs, checkpoints, schema snapshots, webhook receipts and managed secret references | 7.1 plus machine-identity/secret foundation; public surface needs Scope 5 | S7-P02A–E (5) |
 | 7.3 | Narrow adapter/secret/egress contract and faithful fake contract suite | 7.2 | S7-P03A–E (5) |
-| 7.4 | One pilot-selected provider: connection test, discovery, full/incremental sync, atomic publish, mapping and classification lineage | 7.3 | S7-P04A–F (6) |
+| 7.4 | Pinned `dlt` engine and production-MVP pack: AWS S3/GCS objects, read-only SQL/PostgreSQL, one HubSpot-or-Salesforce CRM, read-only Snowflake, shared incremental/publication semantics and conformance gate | 7.3 | S7-P04A–H (8) |
 | 7.5 | Scheduler, webhook, backpressure, rate limit, reconciliation, schema-drift review, pause/resume/revoke and cleanup | 7.4 | S7-P05A–F (6) |
 | 7.6 | Connector UI/CLI/agent integration, freshness/quality dashboards, runbooks and staging provider proof | 7.4–7.5 | S7-P06A–E (5) |
 
 ### Scope 7 exit gate
 
-One real provider works end-to-end in sandbox and staging; secrets exist only in
-the managed secret boundary; cursor advances only after atomic publication;
+Direct upload and every advertised AWS-S3/GCS/SQL/CRM/Snowflake source work end-
+to-end in sandbox/staging; secrets exist only in the managed secret boundary;
+`dlt` remains a connector-worker library and the DCLab cursor advances only
+after atomic publication;
 duplicate/late/deleted/out-of-order data and worker loss are safe; schema drift
 cannot silently change an analytical dataset; every dataset has source, mapping,
-quality, classification and freshness evidence.
+quality, classification and freshness evidence. Airbyte/Openflow, reverse ETL,
+CDC and arbitrary SQL remain absent. The pack gate is required for production-
+MVP go/no-go and each source has an independent kill switch.
 
 Prompt file: [`prompts/SCOPE_07_CONNECTORS.md`](prompts/SCOPE_07_CONNECTORS.md).
 
@@ -696,22 +946,46 @@ Prompt file: [`prompts/SCOPE_08_ACTIONS_AND_OUTCOMES.md`](prompts/SCOPE_08_ACTIO
 
 | Plan | Deliverable | Dependencies | Prompt IDs |
 | --- | --- | --- | --- |
-| 9.1 | Environment/IaC architecture for dev, CI, staging, production, network, DNS/TLS/WAF, identities and configuration | applicable product scopes | S9-P01A–E (5) |
-| 9.2 | Managed PostgreSQL, PgBouncer, private object storage, secrets/KMS, roles, migration pipeline, PITR, lifecycle and reconciliation | 9.1 | S9-P02A–E (5) |
-| 9.3 | Separate web/API/ML/agent/integration/notebook deployments, handler allowlists, autoscaling, quotas and graceful degradation | 9.1–9.2 | S9-P03A–E (5) |
-| 9.4 | OpenTelemetry traces, structured redacted logs, metrics, SLO/error budgets, dashboards, alerts and runbooks | 9.2–9.3 | S9-P04A–E (5) |
-| 9.5 | CI/CD: lint/types/tests/evals, migrations, containers, SBOM, vulnerability/license/secret scan, signing, provenance, canary and rollback | 9.1–9.4 | S9-P05A–F (6) |
-| 9.6 | Privacy retention/deletion, backup/restore, incident response, penetration test and compliance evidence | 9.2–9.5 | S9-P06A–F (6) |
-| 9.7 | Allowlisted Data Scientist/ML Engineer pilot, quotas/limits, support path, Core ML lifecycle success metrics and go/no-go review; business action/outcome is optional | 9.1–9.6 | S9-P07A–E (5) |
+| 9.1 | One pinned OpenTofu/Kubernetes contract with AWS/GCP account/project, state, EKS/GKE, network, edge, workload-identity and configuration modules | applicable product scopes | S9-P01A–E (5) |
+| 9.2 | RDS/Cloud SQL PostgreSQL, separate MLflow backend identity, S3/GCS, Secrets Manager/Secret Manager, KMS, migrations, PITR, lifecycle and reconciliation | 9.1 | S9-P02A–E (5) |
+| 9.3 | Identical OCI/Kubernetes web/API/ML/agent/investigation/integration/notebook/MCP deployments on EKS/GKE plus private MLflow and connector-worker `dlt`; disjoint identities, handler/runtime state, autoscaling and degradation | 9.1–9.2 | S9-P03A–E (5) |
+| 9.4 | Provider-neutral OpenTelemetry schema with AWS/GCP exporters, traces/metrics/logs, SLO/error budgets, dashboards, alerts and runbooks for all MVP workstreams | 9.2–9.3 | S9-P04A–E (5) |
+| 9.5 | Dual-cloud CI/CD: tests/evals, both OpenTofu plans/Kubernetes overlays, migrations, images/SBOM/signing/provenance, independent canary and rollback | 9.1–9.4 | S9-P05A–F (6) |
+| 9.6 | AWS/GCP privacy/deletion, cloud/runtime threat models, same-cloud and cross-cloud recovery, incident response, penetration test and compliance evidence | 9.2–9.5 | S9-P06A–F (6) |
+| 9.7 | Allowlisted Data Scientist/ML Engineer pilot on one primary cloud plus identical second-cloud synthetic golden path; business action/outcome remains optional | 9.1–9.6 plus S2-P12H/S2-P13F/S4-P07E/S6-P05E/S7-P06E | S9-P07A–E (5) |
+| 9.8 | AWS/GCP capability freeze, offline plan/manifest/adapter parity, independent live target gates, bidirectional controlled restore and combined dual-cloud release verdict | 9.1–9.7 | S9-P08A–F (6) |
+
+RT7/RT8 extend this scope with provider-neutral placement and five optional
+external compute adapters. Keep `AWS_READY`/`GCP_READY` for the authoritative
+platform-home contract and record external readiness separately per provider,
+backend kind, execution lane, region and data class. An external target never
+inherits readiness from either home cloud.
 
 ### Scope 9 exit gate
 
 At least one data scientist and one ML engineer complete their supported Core ML
 jobs without database intervention, including batch release/monitoring rollback.
-Migrations, rollback, restore, object consistency, deletion,
-security, load, chaos, agent evaluation and provider sandbox gates pass in
-staging. Every critical state is inspectable. Dashboards, alerts and runbooks
-have owners. No unresolved P0/P1 launch blocker remains.
+The journey proves private MLflow reconciliation, strict feature-contract
+validation, safe package loading and DCLab-owned promotion. Each persona reviews
+applicable proposals from all three Deep Investigation modes with valid resource
+citations, bounded execution and proven raw-graph/process/state isolation. It
+also proves connector-pack lineage/drift, isolated-Python containment and hosted-
+MCP authority parity. S2-P13F records the OpenAI adapter allow/disable/reject
+decision; provider activation is not mandatory.
+It also proves bounded-scan parity and resource enforcement on production-sized
+Parquet/Arrow fixtures without persistent DuckDB state, extension loading,
+unrestricted filesystem/network access, arbitrary SQL or a Polars dependency.
+Migrations, rollback, restore, object consistency, deletion, security, load,
+chaos, agent evaluation and provider sandbox gates pass in AWS and GCP staging
+for the same release. S9-P08F records independent `AWS_READY`/`GCP_READY` and
+only records `DUAL_CLOUD_READY` after both and the bidirectional controlled
+restore pass. Every critical state is inspectable. Dashboards, alerts and
+runbooks have owners. No unresolved P0/P1 launch blocker remains. Active-active
+cross-cloud writes and automatic failover remain outside the MVP.
+Any external target advertised for production must also pass RT8-F from both
+supported platform homes for its exact capability combination. Unverified
+provider/lane/region/data-class combinations remain disabled and are never used
+as silent fallback capacity.
 
 Prompt file: [`prompts/SCOPE_09_PRODUCTION_RELEASE.md`](prompts/SCOPE_09_PRODUCTION_RELEASE.md).
 
@@ -723,11 +997,11 @@ Prompt file: [`prompts/SCOPE_09_PRODUCTION_RELEASE.md`](prompts/SCOPE_09_PRODUCT
 | --- | --- | --- | --- |
 | 10.1 | Capacity/cardinality/cost baseline, workload forecasts, thresholds and quarterly architecture review | production telemetry | S10-P01A–D (4) |
 | 10.2 | Database evolution only when triggered: query/index tuning, PgBouncer, RLS proof, read replicas, partition/archive and restore | 10.1 evidence | S10-P02A–E (5) |
-| 10.3 | Compute/queue evolution: resource-class workers, distributed CPU/GPU, notebook pool and broker only after SLO evidence | 10.1 evidence | S10-P03A–E (5) |
+| 10.3 | Compute/queue evolution: tune or replace the exclusive `DataScanPort` adapter and add resource-class workers, distributed CPU/GPU, notebook pool or broker only after SLO evidence; a Polars evaluation requires a separate measured ADR and cannot run simultaneously on one scan path | 10.1 evidence | S10-P03A–E (5) |
 | 10.4 | Retrieval benchmark, PostgreSQL full text/pgvector first, poisoning/deletion/tenant tests; separate vector service only if justified | measured retrieval need | S10-P04A–E (5) |
 | 10.5 | Enterprise identity, SSO/SCIM, organization hierarchy, regional data planes, CMK and audit export | customer demand/contracts | S10-P05A–E (5) |
-| 10.6 | Additional connectors, actions, specialized agent teams, templates and scheduled proactive agents with contract suites | proven first adapters/agents | S10-P06A–E (5) |
-| 10.7 | Extend the Scope 3 batch release into online/streaming model serving, advanced drift/champion-challenger and controlled L3/L4 autonomy through shadow, approval, canary and rollback | long-running outcome evidence | S10-P07A–F (6) |
+| 10.6 | Additional providers/actions/roles beyond the MVP connector pack and specialist roster, optional one-way W&B/OpenLineage adapters, fixed Deep Investigation subagents, templates and proactive schedules with strict cross-runtime suites | proven MVP adapters/agents and measured/customer demand | S10-P06A–E (5) |
+| 10.7 | Extend Scope 3 batch release into measured Optuna-backed search, online/streaming serving, advanced drift/champion-challenger and controlled L3/L4 autonomy through shadow, approval, canary and rollback | long-running outcome evidence | S10-P07A–F (6) |
 
 ### Scope 10 exit rule
 
@@ -744,6 +1018,8 @@ Do not build the future schema in one revision. At execution time, each agent
 must inspect the real head and choose the next unique revision. Logical slices:
 
 1. Scope 0 session/workspace/retention and lifecycle corrections.
+   Ephemeral DuckDB needs no product migration or persistent database identity;
+   scan templates/configuration are code and versioned artifacts.
 2. Core ML lifecycle relationship gaps and immutable ProjectDecisionRecord
    memory; reuse existing domain foreign keys rather than duplicating them.
 3. Agent definitions/versions, sessions/messages, runs/steps/events,
@@ -753,13 +1029,19 @@ must inspect the real head and choose the next unique revision. Logical slices:
 5. `llm_invocations` agent/evaluation context and precise numeric cost.
 6. Dataset policy decision history and context envelopes.
 7. Multi-agent tasks, delegation, reviews, conflicts and proposals.
+   Investigation Copilot reuses these product owners; any short-lived Deep
+   Agents runtime state lives in a different private schema/store and is not a
+   new lifecycle, memory or public run authority.
 8. Exact approvals and model-build cancellation/retry additions.
-9. Model release, batch prediction and monitoring-window records only where
+9. Provider-neutral MLflow external-run/model references and reconciliation
+   state; MLflow owns its separate database/schema and DCLab migrations never
+   reproduce its private tables.
+10. Model release, batch prediction and monitoring-window records only where
    existing ModelVersion/Prediction/observability owners cannot express them.
-10. Notebooks, immutable revisions/cells and managed executions.
-11. Service accounts/tokens and OAuth metadata owned by the chosen identity design.
-12. Direct upload/quarantine and connector definitions/plans/runs/checkpoints/schema/webhooks.
-13. Outbox and delivery attempts.
+11. Notebooks, immutable revisions/cells and managed executions.
+12. Service accounts/tokens and OAuth metadata owned by the chosen identity design.
+13. Direct upload/quarantine and connector definitions/plans/runs/checkpoints/schema/webhooks.
+14. Outbox and delivery attempts.
 14. Decision cases, recommendations, action proposals/executions, outcomes,
     impact assessments and feedback.
 15. Optional isolated notebook environment/mount/execution usage records.
@@ -814,6 +1096,8 @@ workspaces/{workspace_id}/projects/{project_id}/
 ```text
 dataset.inspect.v1          dataset.profile.v1
 agent.turn.v1               agent.supervise.v1
+investigation.copilot.v1
+agent.openai.session.v1
 model_build.run.v1          notebook.render.v1
 model_release.publish.v1    batch_prediction.run.v1
 model_monitor.evaluate.v1   model_release.rollback.v1
@@ -862,6 +1146,72 @@ Before any agent mutates DCLab:
 - run/workspace token, cost, step, time, job and compute budgets;
 - typed risk-tier tool policy and independent kill switches.
 
+Before a dataset scan uses the DuckDB adapter:
+
+- the caller supplies an authorized, tenant-scoped, immutable DatasetArtifact
+  whose content digest was verified by DCLab materialization;
+- the operation name and typed arguments resolve to a registered code-owned
+  query template; SQL text, paths, URLs and extension names are never inputs;
+- a fresh in-memory connection applies locked memory, thread, input/output,
+  temporary-disk and wall-time limits with external access, extension auto-
+  install/auto-load and community/unsigned extensions disabled;
+- results cross the adapter as bounded Arrow batches and are normalized by a
+  deterministic DCLab service before persistence or public presentation; and
+- cancellation, cleanup, metrics and the feature kill switch are proven, with
+  no `.duckdb` artifact, direct product database access, network dependency,
+  silent unbounded pandas fallback or Polars installation.
+
+Before a model run depends on the ML platform adapters:
+
+- the ownership ADR proves DCLab remains lifecycle/tenant/approval/release/audit
+  authority and that W&B or another second tracker is absent;
+- the private MLflow endpoint, separate database/schema identity, object prefix,
+  TLS/workload authentication, timeouts and retention are configured;
+- external references and ambiguous writes reconcile idempotently, while a
+  tracking-degraded run cannot verify or promote;
+- the DCLab FeatureContract deterministically compiles to strict Pandera checks,
+  Evidently returns only a versioned calculation, and safe package type/digest/
+  environment validation occurs before worker load; and
+- provider-native types stay out of domain, `/v1`, SDK, CLI, MCP and agent
+  contracts, with independent adapter kill switches and no production local-
+  filesystem fallback.
+
+Before Deep Investigation receives an allowlisted request:
+
+- explicit DCLab authorization and immutable resource versions;
+- read-only, purpose/workspace/project/resource-scoped SDK tools only;
+- DCLab gateway model routing with reserved token/cost/time/tool budgets;
+- separate worker identity, dependency image, handler and runtime namespace;
+- no product database/object/provider credential, raw LangGraph edge, subagent,
+  persistent memory, host filesystem, shell, arbitrary HTTP or code execution;
+- structured citation validation and proposal-only completion; and
+- independent disable, cancellation, retention cleanup and rollback proof.
+
+Before the OpenAI Agents adapter receives an allowlisted request:
+
+- exactly one AgentRun runtime owner and no LangGraph/Deep Agents invocation edge;
+- pinned beta API/SDK, explicit data retention/deletion and eligible purpose;
+- DCLab-owned immutable input/context, budget, citations and terminal state;
+- every `required_action` bound to the pending turn/call and mediated by
+  ToolRunner authorization, idempotency, approval and reconciliation;
+- `environment=none` or the verified Scope 4 sandbox with allowlisted egress and
+  externally brokered credentials; and
+- deterministic fake/replay, ambiguous-session/tool-result recovery, clean
+  disable/removal and an explicit S2-P13F release decision.
+
+Before a connector publishes a DatasetVersion:
+
+- a tenant-scoped ConnectorDefinition/ConfigVersion, read-only SecretRef,
+  selected source resources and row/byte/time/cost/concurrency budgets;
+- a pinned code-owned `dlt` source factory behind ConnectorPort, with no
+  arbitrary module, SQL, REST configuration, path or durable local state;
+- immutable Arrow/Parquet staging, content/schema/mapping digests,
+  classification and incompatible-drift quarantine;
+- DCLab-owned checkpoint advancement in the atomic publication transaction,
+  bounded retry/backfill/reconciliation and exact source semantics; and
+- per-source conformance, egress/secret evidence, kill switch and proof no
+  Airbyte/Openflow control plane or Snowflake product authority was introduced.
+
 Before external beta:
 
 - secure browser and machine credentials;
@@ -871,6 +1221,19 @@ Before external beta:
 - migration/rollback/PITR/object-consistency restore drill;
 - redacted audit/log/trace coverage, dashboards, alerts and incident runbooks;
 - privacy access/export/deletion workflow and external security assessment.
+
+Before advertising either cloud target:
+
+- the same signed application/image/schema release and provider-neutral
+  capability matrix;
+- provider-isolated IaC state, account/project, workload identity, private
+  network, PostgreSQL, object, secret/KMS, edge and telemetry evidence;
+- offline plan/manifest/adapter parity plus the complete live staging golden
+  path, security, failure, cost and rollback gate for that provider;
+- same-cloud PITR/object restore and accurate provider-specific limitations;
+- `AWS_READY` or `GCP_READY` recorded independently; and
+- `DUAL_CLOUD_READY` only after both pass and the controlled bidirectional
+  restore drill preserves DCLab IDs, versions, digests and evidence.
 
 ## 22. Testing and evidence matrix
 
@@ -891,6 +1254,8 @@ Every applicable plan must cover:
 - migration empty/upgrade/N-1/restore paths;
 - accessibility and role-safe presentation;
 - performance threshold in a recorded environment rather than an unqualified claim.
+- cloud impact classification, provider-neutral owner, AWS/GCP adapter or not-
+  applicable evidence, offline parity and independent provider rollback.
 
 An agent or LLM feature additionally needs deterministic fake-provider CI,
 structured-output failures, tool selection/argument assertions, policy and
@@ -898,11 +1263,41 @@ citation hard gates, provider synthetic smoke, offline golden/adversarial eval,
 shadow/canary comparison, and rollback proof. One safety violation fails an
 evaluation regardless of average quality.
 
+Deep Investigation additionally needs automated proof that the API and
+`worker-agent` dependency graphs do not contain Deep Agents, the two runtimes
+cannot call or checkpoint one another, every model-visible tool is read-only,
+working state expires, and subagent depth/shell/code authority remain zero.
+
+The OpenAI Agents adapter additionally needs one-runtime-per-run import/call
+proof, provider-session/event reconciliation, pending required-action binding,
+duplicate/ambiguous tool-result tests, explicit retention/deletion, environment/
+credential/egress attacks, comparative value/cost evaluation and clean removal.
+
+Connector work additionally needs one shared `dlt` engine/adapter conformance
+suite, real PostgreSQL and S3/GCS fixtures, recorded plus official
+CRM/Snowflake synthetic canaries, schema/cursor/late/delete semantics, secret/
+egress attacks, bounded backfill, atomic publication/checkpoint crash tests,
+cross-source clean disable and absence of embedded Airbyte/Openflow/CDC.
+
+ML platform work additionally needs faithful fake adapters; MLflow outage,
+timeout and ambiguous-create reconciliation; external-reference uniqueness;
+tracking-degraded promotion denial; Pandera compile/strict validation fixtures;
+Evidently stable/shifted/insufficient-volume fixtures; safe and malicious model-
+package loading; absence of W&B/provider objects from public contracts; and
+OpenTelemetry cardinality/redaction assertions.
+Bounded scan work additionally needs pandas-semantic parity fixtures; CSV and
+Parquet/Arrow coverage; null/cardinality/distribution, slice, leakage-candidate
+and drift-window template tests; authorization/digest checks; Arrow batch and
+byte/row caps; timeout/cancellation/temp cleanup; adversarial path/SQL/extension
+rejection; two-run determinism; performance evidence; and rollback proof.
+
 ## 23. Full-program definition of done
 
 The Core ML production-MVP gate is the cross-scope slice in section 6.1 and
 `DCLAB_CORE_CONCEPT.md`; it does not require optional business actions/outcomes,
-hosted MCP or isolated Python. DCLab reaches the complete Scope 0–10 platform
+but it does require the bounded specialist roster, three-mode Deep
+Investigation, isolated Python, hosted MCP and initial connector pack described
+by `AGENT_FIRST_MVP_ARCHITECTURE.md`. DCLab reaches the complete Scope 0–10 platform
 outcome when it has:
 
 - a project-centric immutable ML lifecycle and durable, searchable decision
@@ -911,18 +1306,35 @@ outcome when it has:
 - a secure multi-tenant web, `/v1`, SDK, CLI and MCP boundary;
 - a durable bounded supervisor and specialist agents that plan, cite, critique,
   pause, resume, recover and operate under hierarchical budgets;
+- an isolated, explicitly requested three-mode Deep Investigation worker that
+  produces useful cited proposals through read-only DCLab APIs without becoming
+  an orchestration, scientific, execution or memory authority;
 - immutable prompt/model/tool/data/budget policies with evaluation and promotion;
 - deterministic, reproducible ML commands and evidence that agents cannot bypass;
+- authorized dataset profiling, slices, leakage-candidate statistics and drift-
+  window preparation through one resource-bounded `DataScanPort`, with ephemeral
+  DuckDB and Arrow hidden behind deterministic services and no arbitrary SQL or
+  Polars dependency;
 - one verified model registration/batch prediction path with feature/environment
   contract, drift investigation and rollback;
+- private MLflow tracking/package references, generated Pandera feature
+  validation, Evidently-backed monitoring calculations, safe model formats and
+  OpenTelemetry signals without a second product registry or W&B dependency;
 - a managed notebook and isolated code plane wherever Python is enabled;
-- scalable direct ingest and one reliable incremental connector;
+- scalable direct ingest and the AWS-S3/GCS/read-only SQL/one-CRM/read-only
+  Snowflake connector pack behind pinned `dlt`, with DCLab-owned publication;
 - one exact-approved low-risk external action through outbox/reconciliation;
 - separate outcome and impact evidence with honest causal language;
 - request-to-outcome audit, observability, cost and policy lineage;
 - managed deployment, SLOs, capacity limits, backup/restore, privacy deletion,
   incident response and supply-chain evidence;
+- independently releasable AWS and GCP deployments of the same application
+  digest, with EKS/GKE, RDS/Cloud SQL, S3/GCS, workload identity, secret/KMS,
+  sandbox and controlled bidirectional restore conformance;
 - automated proof that tenant isolation and scientific invariants remain intact.
+- hosted MCP authority parity, isolated-Python containment and a recorded
+  OpenAI Agents adapter go/disable/reject decision with clean removal; and
+- no production-MVP dependency, computation, job, artifact, API or UI for SHAP.
 
 Earlier scopes are valuable releases, but each must be named by its actual
 autonomy and readiness: internal, read-only, shadow, controlled write, private

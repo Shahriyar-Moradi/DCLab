@@ -16,7 +16,31 @@ They also use the Scope 1 lifecycle projection and ProjectDecisionService; they
 never reconstruct a competing project graph or memory from task/message history.
 Extend the same pinned raw LangGraph runtime through code-owned supervisor and
 specialist subgraphs. Do not introduce PydanticAI, `pydantic-graph`, LangChain
-`create_agent`, another checkpointer authority or a hidden specialist tool loop.
+`create_agent`, OpenAI Agents, another checkpointer authority or a hidden
+specialist tool loop inside that runtime. Plan 2.12 is the approved separate
+Deep Investigation harness; Plan 2.13 is the approved whole-run OpenAI Agents
+adapter. Neither can embed, invoke or be invoked by the supervisor, a
+specialist, `agent.turn.v1` or the other runtime. Every AgentRun binds exactly
+one code-owned runtime kind/version.
+All Scope 2 agents consume DCLab-owned lifecycle, decision, evidence and
+normalized monitoring/tracking projections only. They never connect to MLflow,
+load model packages, import Pandera/Evidently/skops, or receive provider IDs,
+storage locators or credentials. Plan 3.0 owns those adapters; a later read-tool
+extension can expose only authorized DCLab projections and citations.
+Dataset investigation reuses S0-P09 deterministic scan/profile services. An
+agent may request only a registered operation over an authorized DatasetArtifact
+and receive bounded aggregate/citation results. It never sees DuckDB, SQL,
+paths, Arrow streams or scan configuration, and Polars is not introduced.
+
+## AWS/GCP portability requirements
+
+Supervisor, specialist, Deep Investigation and OpenAI-adapter product contracts
+are identical on AWS and GCP. Each worker is one digest-pinned OCI image with a
+provider-neutral workload/resource profile; EKS/GKE identity, network and
+runtime-state endpoints are injected only by deployment adapters. No agent may
+see cloud credentials, bucket URLs, cluster APIs or provider resource IDs.
+Cancellation, restart, budgets, checkpoints, citations, metrics and kill
+switches must pass the same offline suite and both-cloud staging gate.
 
 ## Plan 2.1 — multi-agent contracts and governance
 
@@ -232,9 +256,11 @@ assessment and typed proposal; it cannot publish data or change classifications.
 Define DatasetStewardInput with dataset/version/purpose and minimal envelope;
 output contains readiness findings, quality/drift concerns, mapping/classification
 questions, proposed typed patches, uncertainty and citations. Register only
-dataset/source/access/schema/profile/readiness/drift read tools with strict
-bounds. Add schema/tool contract tests and an agent version/prompt candidate.
-Do not expose rows or mutation tools.
+dataset/source/access/schema/profile/readiness/drift and allowlisted aggregate-
+slice read tools with strict bounds. Each scan-backed tool identifies a DCLab
+operation/template version and typed dimensions/filters/aggregates; it accepts
+no SQL, expression, path, URL or DuckDB setting. Add schema/tool contract tests
+and an agent version/prompt candidate. Do not expose rows or mutation tools.
 ```
 
 ### S2-P04B — deterministic evidence assembler
@@ -244,8 +270,11 @@ Build a service that assembles authorized Dataset, DatasetColumn, DataSource,
 DataAccess, IngestionRun, profile, quarantine/classification and prior-version
 drift facts into a minimal ContextEnvelope. Compute deterministic readiness and
 hard blockers before LLM invocation. Every fact maps to a citation/version/
-digest. Test null policy, partial profile, failed ingest, deleted object and
-cross-workspace access.
+digest. When a missing fact requires calculation, call the S0-P09 DataScan
+application service with an authorized artifact and registered bounded template;
+persist/reuse its normalized DCLab result rather than returning Arrow or scanning
+inside the agent worker. Test null policy, partial profile, failed ingest,
+deleted object, digest mismatch, scan timeout/cancellation and cross-workspace.
 ```
 
 ### S2-P04C — steward execution and proposal validation
@@ -265,7 +294,8 @@ uncited and stale-source output.
 Create synthetic datasets covering type ambiguity, target leakage indicators,
 missingness, duplicates, schema drift, sensitive columns, poisoned names and
 conflicting metadata. Assert hard blockers, citation correctness, no row/secret
-exposure, calibrated uncertainty and safe questions. Compare steward versus
+exposure, no SQL/template injection, enforced scan limits, calibrated
+uncertainty and safe questions. Compare steward versus
 deterministic-only baseline on predefined usefulness, cost and latency measures.
 ```
 
@@ -573,7 +603,8 @@ plus per-specialist limits. Reconcile lost leases, orphan child reservations,
 ready tasks without jobs and terminal graphs with active children. Cancellation
 propagates top-down while completed evidence remains. Add failure injection at
 every task/delegation/review checkpoint, including DCLab/runtime divergence, and
-prove deterministic reconstruction without invoking a second agent loop.
+prove deterministic reconstruction without invoking a second loop inside the
+authoritative graph. The later S2-P12 worker is not a recovery target or tool.
 ```
 
 ### S2-P09F — supervisor system gate
@@ -584,7 +615,8 @@ clarifying question, deterministic block, critic conflict, specialist outage,
 partial result, budget exhaustion, cancellation and restart. Verify authority
 narrowing, proposal-only catalog, citations, events and terminal accounting.
 Verify the exact LangGraph/checkpointer release, code-owned graph digest, bounded
-subgraph namespaces and absence of PydanticAI/high-level agent dependencies.
+subgraph namespaces and absence of PydanticAI/Deep Agents/high-level agent
+dependencies from the API and authoritative worker-agent environment.
 Benchmark against Scope 1 single agent and enable only shadow graphs after
 observed safety/value/cost evidence.
 ```
@@ -697,7 +729,9 @@ claim/conflict rate, task/tool count, latency, tokens and cost. Define uncertain
 and reviewer sample size; do not promote complexity whose incremental value does
 not exceed the agreed threshold. All variants compile through the same
 LangGraph runtime and DCLab policies; do not compare by adding another framework.
-Store analysis/version/digests as evidence.
+S2-P12 separately evaluates Deep Agents only after this authoritative-graph gate
+passes and only across the isolated SDK/API worker boundary. Store analysis/
+version/digests as evidence.
 ```
 
 ### S2-P11E — dashboards, thresholds and operational drill
@@ -710,7 +744,7 @@ Drill graph/provider/specialist kill switches, rollback, worker drain and stuck
 graph recovery. Assign owners and link exact runbooks.
 ```
 
-### S2-P11F — Scope 2 promotion gate
+### S2-P11F — authoritative-graph promotion gate
 
 ```text
 Run migrations, full regression, scenario corpus, counterfactual replay,
@@ -718,5 +752,504 @@ adversarial/failure campaign, ablations, API/UI and operator recovery in a
 production-shaped environment. Publish exact release set and evidence showing
 pipeline coverage, authority narrowing, citations, proposal-only behavior and
 incremental value/cost. Enable proposal mode only for allowlisted workspaces;
-do not start Scope 3 until all hard gates pass.
+mark Scope 3 eligible when this gate passes. S2-P12A and S2-P13A may begin as
+parallel tracks. Their failure cannot delay safe deterministic Scope 3
+development, but the required Deep Investigation gate and the recorded OpenAI
+adapter go/no-go decision must close before the production-MVP release review.
+```
+
+## Plan 2.12 — isolated multi-mode Deep Investigation worker
+
+**Contract.** Implement the architecture in
+`docs/agentic-program/DEEP_AGENTS_INVESTIGATION_COPILOT.md` as explicitly
+requested, proposal-only dataset/scientific, experiment/model and
+operations/drift investigation jobs. The API owns authorization, an
+InvestigationRun view over the same AgentRun ID/state/events, budgets and
+terminal state plus an immutable InvestigationContextBundle; it is not a
+parallel table or lifecycle. A
+separate `services/deep_investigation_agent/` worker owns the pinned Deep Agents
+harness and only calls allowlisted DCLab SDK/API reads plus a non-model-visible
+claim/lease/gateway/completion client. The API-side lease service owns every
+PostgreSQL MlJob operation. The worker does not import `apps/api`, receive product database or
+object-store credentials, share the `worker-agent` dependency environment or
+checkpoint namespace, or call/be called by raw LangGraph nodes. The first
+release disables Deep Agents subagents, persistent memory, skills that mutate
+behavior, host filesystem, shell, arbitrary HTTP and code execution.
+This plan may run in parallel with Scope 3 after S2-P11F. It is independently
+deployable/removable and no S2-P12 failure can disable or delay the authoritative
+agent graph, controlled commands or model operations. S2-P12H is nevertheless a
+production-MVP release prerequisite for the three agreed modes; disablement
+degrades investigation only and never disables the deterministic workflow.
+
+### S2-P12A — architecture ADR and zero-conflict dependency proof
+
+```text
+Read docs/agentic-program/DEEP_AGENTS_INVESTIGATION_COPILOT.md, the Scope 1
+runtime ADR/pins produced by S1-P01A/S1-P07B, the Scope 2 supervisor ADR, root
+pyproject.toml, Dockerfile, docker-compose.yml, apps/api/app/config.py,
+apps/api/app/services/job_dispatcher.py, apps/api/app/services/job_handlers.py
+and packages/dclab_client/pyproject.toml. Add an ADR that approves exactly one
+Deep Agents runtime: the isolated Deep Investigation worker with
+dataset_scientific, experiment_model and operations_drift modes. Record that deepagents is
+a LangChain create_agent harness using LangGraph internally; compare its full
+transitive LangChain/LangGraph/checkpointer requirements with worker-agent pins.
+Choose independently supported/tested pins and treat versioned DCLab HTTP/worker
+schemas—not a shared Python ABI—as the compatibility boundary. Never upgrade
+worker-agent to satisfy Deep Agents. Require a separate
+services/deep_investigation_agent/pyproject.toml, lock/SBOM, image/process,
+workload identity, handler allowlist, trace namespace and runtime-state schema/
+store. Diagram both execution paths and prove there is no import, invocation,
+tool, subagent, checkpoint, database-role or lifecycle-authority edge between
+them. Define rollout, dependency-upgrade compatibility/replay, kill switch and
+rollback to the pre-Deep-Agents image. List rejected alternatives: embedding
+create_deep_agent in a raw LangGraph node, implementing Scope 2 specialists as
+Deep Agents subagents, sharing provider credentials/checkpoints, or exposing a
+second public agent server. Do not install a dependency or implement behavior
+in this prompt. Add a static architecture assertion/test design and stop on any
+unresolved version or ownership conflict. Maximum change: ADR, diagrams and
+contract-test skeleton under 500 hand-edited lines.
+Explicitly record S2-P11F—not S2-P12H—as the gate that unblocks Scope 3,
+S2-P12H as a production-MVP release prerequisite, and removal of
+`worker-investigation` as a no-impact rollback for deterministic Core ML.
+```
+
+### S2-P12B — DCLab-owned investigation contracts and durable intent
+
+```text
+Inspect the AgentRun/AgentStep/AgentEvent/AgentProposal/Citation, ExecutionRequest,
+MlJob, budget, lifecycle and ProjectDecisionRecord owners implemented by Scopes
+1–2 before adding a table. Add ordinary Pydantic contracts in the existing
+agent domain module or apps/api/app/domain/agent_investigation.py for
+investigation-request.v1, InvestigationProposal, InvestigationClaim,
+InvestigationContextBundle, ResourceCitation, LeakageFinding, ValidationFinding,
+ProposedAction and Alternative. Request fields bind workspace/project, objective
+version/digest, immutable dataset/resource versions, context-bundle ID/version/
+digest, code-owned investigation mode enum and maximum iterations/model calls/tool calls/
+tokens/cost/time/context/result bytes. Result assertions are classified as
+deterministic_fact, cited_observation, hypothesis, recommendation or unknown;
+each has a stable claim ID, bounded text, finite optional confidence and its own
+citations. Every fact/observation requires a supporting resource/version/digest;
+each recommendation references the evidence and assumption claim IDs it uses.
+Build the immutable audience-safe context bundle through existing profile,
+target/prediction-moment, leakage/validation, lineage, experiment/cost and
+ProjectDecisionService queries. Store IDs, versions, freshness and digests, not
+raw rows or duplicated reports; a refresh creates a new version. Any new profile
+or aggregate slice is prepared before model execution by the DCLab DataScan
+service using an authorized artifact, registered template and bounded Arrow
+result. The context builder and Deep Agents worker cannot import DuckDB,
+receive SQL/paths or retain Arrow batches.
+Reuse AgentRun with purpose=investigation_copilot and AgentProposal with a typed
+proposal kind unless the current schema demonstrably cannot enforce the state
+machine. The public `investigation_id` is that AgentRun ID, not a new identity.
+Reuse ExecutionRequest and MlJob with code-owned handler
+investigation.copilot.v1. States are queued, running, cancelling, succeeded,
+blocked, failed, cancelled and expired; attempts are append-only and terminal
+results immutable. Implement InvestigationService so authorization, current
+source versions, policy and budget reservation plus run/job/event persist
+atomically with same-key/same-digest replay and same-key/different-digest 409.
+If a migration is necessary, inspect the live Alembic head and add at most one
+expand revision with composite workspace/project FKs, checks, unique idempotency
+digest and indexes for tenant/state/created-at and active jobs. Add PostgreSQL
+tests in apps/api/tests/test_agent_investigation_persistence.py for empty/live
+upgrade, two-workspace substitution, concurrent create, stale source, terminal
+immutability, context-bundle digest mismatch and failure injection. No agent framework dependency or provider
+call belongs in the API. Maximum change: one resource family, one migration and
+approximately 800 non-generated lines.
+```
+
+### S2-P12C — read-only DCLab API/SDK tool boundary
+
+```text
+Extend the cohesive /v1 agent/project routers established by S1-P09 and S2-P10,
+packages/dclab_client/dclab_client/types.py and its resource client modules; do
+not create a private SQL/service import path. Add
+`POST /v1/projects/{project_id}/investigations`,
+`GET /v1/projects/{project_id}/investigations`,
+`GET /v1/projects/{project_id}/investigations/{investigation_id}`,
+`GET .../{investigation_id}/events`, `GET .../{investigation_id}/result`,
+`POST .../{investigation_id}/cancel` and
+`POST .../{investigation_id}/reviews`. Return 202 for first accepted async work,
+200 for exact idempotent replay/read/cancel replay and 201 for a newly persisted
+review; list/events use bounded opaque cursors. Add an API-owned
+InvestigationWorkerLeaseService over the existing
+MlJob claim/heartbeat/settlement services plus non-public worker endpoints for
+claim, lease heartbeat, cancellation status and complete/fail, protected by
+dedicated investigations:work and investigations:complete workload capabilities,
+private ingress and attempt/lease tokens. Use exact private paths
+`POST /internal/worker-investigations/claim`,
+`POST /internal/worker-investigations/{attempt_id}/heartbeat`,
+`GET /internal/worker-investigations/{attempt_id}/cancellation`,
+`POST /internal/worker-investigations/{attempt_id}/complete` and
+`POST /internal/worker-investigations/{attempt_id}/fail`. The worker transport contains IDs,
+bounds, safe status and validated terminal result only; it is not public OpenAPI
+and is never registered as a model tool. Use the standard
+error envelope: 400 invalid cursor/request shape, anti-enumerating 403/404,
+409 idempotency/source/state/ETag conflict, 422 invalid scientific/resource
+contract, 429 quota/budget, and safe 503 dependency unavailable. Define a
+versioned worker SDK tool bundle containing only inspect_dataset_version,
+get_dataset_profile, get_dataset_aggregate_slice,
+get_investigation_context_bundle, get_feature_contract, get_lineage_subgraph,
+get_project_constraints, search_project_decisions and compare_experiment_runs.
+Define three signed mode manifests with strict subsets of this catalog;
+model-package/batch/drift tools remain unavailable to operations_drift until
+S3-P08F/G and are never silently exposed to another mode. Each call
+uses immutable IDs, current short-lived service identity narrowed to initiating
+workspace/project/resources/purpose, server re-authorization, strict Pydantic
+request/result, stable citations, pagination, timeout and response-byte limits.
+`get_dataset_aggregate_slice` accepts only a public typed DCLab request backed by
+an allowlisted operation/template version and immutable dataset version. It
+accepts no SQL, arbitrary expression, path, URL, DuckDB setting or raw-row
+output, and is a normal API call to DataScan query service—not a DuckDB
+dependency in `worker-investigation`.
+Return trusted DCLab metadata/policy separately from untrusted user/dataset/
+artifact text and never interpolate the latter into system instructions. Create
+a signed/versioned capability manifest containing each custom tool schema,
+purpose, resource types, maximum response bytes and rollout state; the custom-
+tool registry and Deep Agents filesystem allowlist both deny by default.
+The DCLab product tool catalog contains no claim/heartbeat/complete,
+create/update/delete, generic HTTP,
+SQL, object path/URL, raw row, prompt, secret, command, approval, graph dispatch
+or completion tool. Add OpenAPI/SDK parity, route, scope, cancellation, stale-
+version, malicious-filter, huge-result and two-workspace tests in apps/api/tests
+and packages/dclab_client/tests. Document token TTL/audience and emergency read/
+completion revocation. Keep the PR below one public resource family and 20
+hand-edited files.
+```
+
+### S2-P12D — separate Deep Agents worker and DCLab gateway adapter
+
+```text
+Create services/deep_investigation_agent/ with its own pyproject.toml and locked
+dependency group from the S2-P12A pins, package modules for config, DCLab SDK
+tools, DCLabGatewayChatModel, contracts, harness, handler and tests, plus a
+minimal non-root worker image. Do not import apps/api or reuse worker-agent graph
+modules. Implement a LangChain-compatible chat model adapter that sends all
+model requests through the DCLab provider-neutral gateway with purpose, release,
+workspace/project/run/attempt, data-policy, budget, deadline and trace context;
+the worker receives no provider secret. Reuse the Scope 1 internal gateway
+transport if present; otherwise add the non-public workload-authenticated
+`POST /internal/llm/invocations` adapter over the same gateway service, accepting
+only a registered purpose/release/run/attempt and bounded structured messages,
+and returning the standard validated provider-neutral response/usage/error.
+It returns 409 for stale release/run, 422 for contract/policy failure, 429 for
+budget/rate and safe 503 for provider unavailability. Construct create_deep_agent with the
+validated InvestigationProposal response format and only the S2-P12C tool
+objects. Explicitly disable the general-purpose subagent, pass no sync/async
+subagents, configure no persistent memory or behavior-changing skill, and use
+job-scoped StateBackend/virtual state with no host filesystem or execute tool.
+Permit only the reviewed Deep Agents planning/todo and virtual file operations
+against that StateBackend in addition to the DCLab read tools; remove the task
+delegation tool and prove virtual paths cannot reach host/product/durable state.
+Inspect the final model-visible tool list at startup and fail closed if `task`,
+`execute`, a mutation tool or an unregistered custom tool is present. Verify
+filesystem restrictions independently from custom DCLab tool authorization.
+System instructions require deterministic-service precedence, fact/hypothesis
+separation, citations, alternatives, unresolved questions and no action claim.
+The handler accepts only investigation.copilot.v1 IDs/bounds, fetches its request
+through the workload-authenticated lease client/SDK, heartbeats and observes
+cancellation outside the harness, rechecks policy before each model/tool
+boundary, validates the final response, and submits it through the non-model-
+visible completion client. It never imports a queue/ORM model or opens product
+PostgreSQL.
+Add deterministic fake model/SDK tests proving the exact combined tool inventory,
+no subagent/task/execute tool, no virtual-filesystem path or network escape,
+gateway routing, context-bundle binding, claim-level citation output,
+schema/citation rejection, timeout and sanitized errors. Add a dependency/import
+test that fails if deepagents/LangChain agent modules enter root API or
+worker-agent runtime packages. No UI, database migration or production deploy
+in this prompt; keep the worker scaffold reviewable under approximately 800
+non-generated lines.
+```
+
+### S2-P12E — bounds, cancellation, recovery and runtime-state isolation
+
+```text
+Implement hierarchical limits across InvestigationService, MlJob,
+worker-investigation, DCLabGatewayChatModel and SDK tools: iterations, model
+calls, tool calls, tokens, precise cost microunits, wall time, context/result
+bytes and workspace concurrency. Reserve before work and settle exactly once;
+add fail-closed typed API limits/flags to apps/api/app/config.py and .env.example,
+and worker transport/backend/timeouts to
+services/deep_investigation_agent/config.py and its example environment file.
+Production rejects missing limits, unknown backend, StateBackend persistence
+beyond policy, enabled subagents and any FilesystemBackend/LocalShellBackend.
+Fallback/retry cannot exceed the original policy. Support cooperative cancel at
+job lease, model gateway, tool HTTP and harness turn boundaries, with terminal
+reason codes budget_exhausted, deadline_exceeded, cancelled, policy_revoked,
+source_stale and dependency_unavailable. A worker loss closes or creates one
+numbered retry attempt from the immutable request after re-authorization; it
+never recursively resumes or duplicates a submitted proposal. The first release
+uses job-scoped StateBackend only and restarts from the pinned immutable request/
+InvestigationContextBundle; do not add a durable Deep Agents checkpointer or
+store in this plan. Record observed duration and restart cost. A later dedicated
+prompt/ADR may approve a short-retention `deep_agents_runtime` schema only when
+evidence proves restart-from-request insufficient; it must use a least-privilege
+identity, separate migrations/IDs/encryption/deletion and no shared worker-agent
+checkpointer table.
+Implement per-workspace and global flags DCLAB_INVESTIGATION_COPILOT_ENABLED=false
+by default and DCLAB_INVESTIGATION_COPILOT_KILL_SWITCH=true as fail-closed
+emergency disable semantics, with production validation rejecting unbounded or
+host-backed configuration. Add race/failure tests for cancel during model/tool,
+budget concurrency, worker death before/after completion, duplicate callback,
+stale source mid-run, context-bundle mismatch, membership revocation and gateway
+outage. Emit bounded attempt/budget/terminal events and add recovery/kill-switch/
+state-cleanup runbooks at docs/runbooks/investigation-copilot.md. Instrument low-cardinality
+run duration/status/reason, model/tool count, token/cost reservation/settlement,
+cancellation latency, citation-validation failure and active-work metrics; never
+label with tenant/project/resource ID or log working content. Do not add
+persistent agent memory, shell or sandbox.
+```
+
+### S2-P12F — cited proposal review and synchronized product experience
+
+```text
+Add deterministic output validation and projection before any result is visible:
+resolve every ResourceCitation through current authorization, verify resource
+type/ID/version/digest and evidence span, reject fact/observation claims without
+citations and recommendation claims without evidence/assumption claim IDs, mark
+novel leakage/validation ideas as hypotheses until deterministic verification,
+and prohibit unsupported causal or completion claims. Persist only bounded
+validated AgentProposal/result metadata and protected artifact bodies according
+to Scope 1 retention; do not persist hidden reasoning, todos or raw temporary
+files. Extend the project/Agent Studio routes established by S1-P10/S2-P10 using
+apps/web/lib/infrastructure/api-client.ts, apps/web/lib/domain/schemas.ts and
+apps/web/app/components/agent/InvestigationCopilotPanel.tsx,
+InvestigationProposalView.tsx and the established project Agent Studio route
+with an Investigation Copilot start form, queued/
+running/cancelling/blocked/failed/cancelled/expired/succeeded states, budget and
+cost display, visually distinct facts/observations/hypotheses/recommendations/
+unknowns, a keyboard-accessible “Why this claim?” citation drawer, alternatives,
+unresolved questions and a resource-aware proposal diff. Show source freshness,
+cost and missing evidence before review. Conversation, ML workflow and
+implementation views deep-link to the same project/resource versions. Review
+may accept, reject, request revision or supersede the proposal through existing
+services; that review appends the corresponding ProjectDecisionRecord but does
+not execute a command. “Create reviewed command” is a separate explicit action
+with fresh validation, authorization, idempotency and approval. Hide unavailable Scope 3 model/drift tools through server
+capability, not client inference. Add component/accessibility/browser tests for
+keyboard and screen-reader use, reload/reconnect, stale citation, malicious
+Markdown/labels, denied role, workspace switch, revision conflict and all states.
+No arbitrary chat, deployment button, raw prompt/checkpoint view or client-side
+authorization logic. Split API projection and UI if the change would exceed 20
+hand-edited files. Emit investigation.requested, claimed, cancelled,
+proposal_validated, proposal_rejected and completed audit/event types with
+bounded reason and correlated AgentRun/attempt/tool/citation IDs.
+```
+
+### S2-P12G — comparative, adversarial and scientific evaluation
+
+```text
+Extend the S2-P11 evaluation corpus/replay runner rather than building a second
+eval store. Add synthetic/de-identified cases for unfamiliar tabular datasets,
+schema/profile/lineage interpretation, known and tempting false leakage,
+temporal/group split errors, metric/constraint conflict, experiment comparison,
+model-selection rationale, incomplete evidence, malicious data labels, prompt
+injection in metadata, stale/tampered InvestigationContextBundle and unavailable future model/drift capabilities. Compare
+Investigation Copilot with deterministic query/report output and the authoritative
+Scope 2 raw-LangGraph supervisor; measure useful-proposal rate, citation precision/
+recall, deterministic-finding coverage, unsupported-claim and false-leakage rate,
+claim-level citation completeness, abstention quality, reviewer calibration,
+review revision/acceptance, time saved, cost per accepted proposal, latency,
+model/tool calls, tokens and cost. Inject
+malformed model output, unauthorized/oversized/poisoned tool results, timeouts,
+429/5xx, cancellation, worker loss, stale source, policy change and kill switch.
+Hard-fail on cross-tenant data, command/write attempt, invalid citation,
+deterministic-fact override, holdout weakening, hidden second-runtime invocation,
+unbounded retry or secret/raw-row leakage regardless of average quality. Verify
+that no deepagents checkpoint/memory record appears in lifecycle, decision,
+OpenAPI or public SDK truth. Store release/pin/fixture/result digests as existing
+EvaluationRun evidence and publish an explicit cost/value threshold. Run with a
+deterministic fake in PR CI; any live-provider smoke uses synthetic content,
+bounded spend and protected credentials through the DCLab gateway only.
+Place API/evaluation cases in
+apps/api/tests/test_agent_investigation_evaluation.py and worker harness cases in
+services/deep_investigation_agent/tests/test_investigation_harness.py; execute
+them with the package-manager commands pinned by S2-P12A plus the existing Scope
+2 evaluation command, and record the exact commands/results in evidence.
+```
+
+### S2-P12H — multi-mode shadow release and architecture-conformance gate
+
+```text
+Build and scan the separate worker-investigation image and SBOM; assert that the
+API/worker-agent images contain no deepagents package and that the investigation
+image contains no product DB/object-store/provider credential or API private
+imports. In a production-shaped staging environment, submit an explicit DCLab
+investigation request and prove API -> durable job -> isolated Deep Agent ->
+read-only SDK tools -> validated cited proposal -> authorized review ->
+ProjectDecisionRecord, with no raw LangGraph invocation and no domain command.
+Exercise two-workspace isolation, service-token narrowing/expiry, dependency and
+gateway outage, cancellation, restart-from-request, duplicate completion, budget/time/
+response limits, feature flag, global kill switch, image rollback and state TTL
+cleanup. Verify separate process identity, network policy, handler allowlist,
+dependency lock and checkpoint/runtime namespace using automated conformance
+tests. Run accessibility/UI/API/SDK parity and the S2-P12G hard evaluations.
+Enable dataset_scientific and experiment_model in shadow for allowlisted
+synthetic/de-identified projects when their safety assertions pass; enable
+operations_drift in shadow only after the Scope 3.8 resource/tool gate. Do not
+enable customer command execution, shell, persistent memory or subagents.
+Record commands,
+durations, digests, dashboards, alerts, owners, runbooks, rollback and known
+limitations in the S2-P12 evidence record. Prove worker removal/disablement
+leaves the S2-P11F authoritative graph and every eligible Scope 3 path healthy.
+This gate releases the three Deep Investigation modes for the production-MVP
+review; it does not gate Scope 3 development or authorize any command.
+```
+
+## Plan 2.13 — isolated OpenAI Agents API runtime adapter
+
+**Contract.** Evaluate and, only if the gates pass, implement the OpenAI Agents
+API as a provider-hosted runtime selected for an entire DCLab AgentRun. It is
+not the default DCLab agent operating system, a LangGraph node/tool/subagent, a
+Deep Investigation tool or a replacement for DCLab product state. Initial use
+is limited to an explicitly requested bounded audit or Scope 4 sandbox task.
+The official SDK remains inside a dedicated adapter/worker package. DCLab owns
+authorization, immutable inputs, runtime selection, budgets, function-tool
+execution, approvals, usage reconciliation, citations, terminal state,
+retention and audit. The provider owns only its private harness/session.
+
+Use focused test homes
+`apps/api/tests/test_external_agent_runtime_contract.py`,
+`apps/api/tests/test_openai_agent_session_service.py`,
+`services/openai_agent_runtime/tests/test_openai_agents_adapter.py`,
+`test_required_action_gateway.py`, `test_environment_policy.py` and
+`test_openai_agents_release_gate.py`. Extend equivalent current owners rather
+than creating parallel tests. No live credential or network belongs in PR CI.
+
+### S2-P13A — runtime authority, API maturity and retention ADR
+
+```text
+Read docs/agentic-program/AGENT_FIRST_MVP_ARCHITECTURE.md and the current
+official OpenAI Agents API architecture, session, function-tool, environment,
+sandbox-security, data-retention and changelog/deprecation documentation.
+Inventory S1-P01/S1-P07 runtime contracts, AgentRun/Step/Event/ToolCall/Citation,
+LLM gateway, budgets, ToolRunner, MlJob, Scope 4 sandbox contracts and all
+installed OpenAI packages. Write an ADR that treats the API/SDK as beta until
+official maturity evidence says otherwise and selects one whole-run runtime
+key such as `openai_agents.v1`. Define the only eligible purposes, supported
+environment kinds (`none` and a separately approved isolated sandbox), data
+classes, regional/retention rules, required scopes and unavailable built-ins.
+Diagram DCLab -> dedicated adapter -> OpenAI harness/session and required action
+-> DCLab gateway; prove no edge invokes or is invoked by raw LangGraph or Deep
+Agents. Compare managed-session benefit, lock-in, data handling, failure modes,
+latency and cost against DCLab LangGraph and Deep Investigation baselines.
+Define provider API/SDK pin, compatibility window, removal path, feature flag,
+global kill switch and explicit no-go criteria. Do not install a package, create
+an agent/session, migrate data or enable a tool. Maximum change: ADR, dependency
+proof and test skeleton under 500 hand-edited lines.
+```
+
+### S2-P13B — provider-neutral external runtime/session contracts
+
+```text
+Extend the existing AgentRun domain contract with one code-owned runtime_kind,
+runtime_version and provider-neutral ExternalAgentSessionReference rather than
+creating a second public agent-run model. Define fields for provider key,
+opaque external agent/session/turn references, configured agent release digest,
+environment policy/version, input/context digest, provider state/last event
+cursor, required-action count, usage/cost reconciliation state, retention/
+deletion deadline, result digest, safe failure reason and timestamps. Do not
+store provider chain-of-thought, unbounded session events, raw dataset rows,
+secret values or provider SDK objects. Reuse AgentRun queued/running/waiting/
+cancelling/succeeded/failed/cancelled/expired states and map provider states
+explicitly; unknown state fails closed and never implies completion. If current
+columns cannot enforce uniqueness/reconciliation, inspect the live Alembic head
+and add one bounded tenant-scoped external-session reference table with
+workspace/project/run composite lineage, unique provider/session reference,
+immutable release/input digest, monotonic event sequence and retention indexes.
+Add pure transition/digest plus real-PostgreSQL empty/live upgrade, cross-tenant,
+duplicate webhook/session, stale run, retention and forward-repair tests. This
+prompt creates no provider call or public route.
+```
+
+### S2-P13C — dedicated adapter, session lifecycle and reconciliation
+
+```text
+Create `services/openai_agent_runtime/` with its own pinned dependency group,
+configuration, provider-neutral transport contracts, adapter, deterministic
+fake, redaction and tests. It must not import raw LangGraph/Deep Agents runtime
+packages, SQLAlchemy models, product DB sessions or object-store clients. Build
+an API-side OpenAIAgentSessionService that authorizes the purpose/resources,
+resolves a server-owned agent release, reserves budget and atomically persists
+AgentRun/ExecutionRequest/MlJob/event before dispatch. The dedicated worker uses
+the official beta Agents API to create/continue/cancel/retrieve one session and
+maps streaming/webhook/poll events to bounded versioned DCLab inputs. Persist
+intent before each network operation; correlate by DCLab run/attempt/idempotency
+digest; reconcile create/continue/cancel timeouts by retrieving the known
+session before retrying. Never retry an ambiguous session create with a new
+identity until reconciliation proves absence. Add explicit connect/read/total
+timeouts, bounded retries, rate handling and cancellation. Store only normalized
+status/usage/result/citation metadata. Test malformed/unknown provider events,
+duplicates/out-of-order delivery, disconnect, webhook replay/forgery, 429/5xx,
+ambiguous create/cancel, worker loss and kill switch with a scripted fake.
+Maximum change: one adapter package and one handler family under approximately
+800 non-generated lines; split API/webhook transport if needed.
+```
+
+### S2-P13D — DCLab-mediated required actions and tool denial
+
+```text
+Define a signed/versioned OpenAI agent tool manifest derived from the existing
+DCLab ToolRegistry for the eligible purpose. Use strict JSON Schema with
+additionalProperties=false and smaller-or-equal argument/result bounds. When a
+session enters requires_action, read only the authoritative pending
+required_actions and bind provider session/turn/call/name/arguments digest to a
+DCLab AgentToolCall. Re-authorize current workspace/project/resources, runtime
+purpose, tool release, capability, policy, source versions, budget, idempotency
+and exact approval before ToolRunner execution. A function_call in provider
+history alone is not pending authority. Persist normalized result/failure before
+submitting the matching tool result; on ambiguous submission retrieve the
+session and reconcile the same turn/call rather than execute again. Default
+manifest is read-only. Any Scope 3 command is separately allowlisted and uses
+its existing approval/idempotency behavior; no generic SQL, HTTP, filesystem,
+shell, code, provider, MCP-discovery, agent-runtime or worker-dispatch tool is
+available. Reject parallel actions in the first release and enforce one
+external operation per DCLab durable turn. Add tests for forged/duplicate/stale
+calls, changed arguments, unknown tool, revoked access, approval race, budget,
+cancel, result replay, malicious output and cross-runtime invocation attempts.
+```
+
+### S2-P13E — environment, sandbox, credential and MCP policy
+
+```text
+Implement code-owned environment policy resolution. Use `environment.type=none`
+for read-only audit/proposal work. A task requiring files or code may use only
+the Scope 4 verified isolated sandbox adapter with per-run image, unprivileged
+identity, no product database, scoped immutable inputs, quarantined outputs,
+CPU/memory/disk/process/time/output limits and denied-by-default egress; do not
+create a second sandbox product. Keep the application OpenAI key and all
+third-party/provider credentials outside the environment. If outbound access is
+approved, route only allowlisted destinations through the DCLab credential
+broker using short-lived purpose-bound credentials. The environment receives no
+connector secret, object-store master credential, unrestricted network, host
+mount or production deployment token. Disable OpenAI built-in web, computer,
+shell/apply-patch, remote MCP, plugin and arbitrary package-install capabilities
+unless a later per-tool ADR and threat gate approves one. If hosted MCP is used,
+allow only DCLab's Scope 6 facade with audience/resource-bound token and the same
+tool manifest; no arbitrary remote MCP server. Add isolation, metadata-service,
+DNS/redirect, egress, credential-read, host-path, resource-exhaustion and output-
+smuggling tests plus credential compromise and sandbox termination runbooks.
+```
+
+### S2-P13F — comparative evaluation and beta release decision
+
+```text
+Extend the existing agent evaluation/replay store with identical synthetic and
+de-identified tasks executed through raw LangGraph, Deep Investigation and the
+OpenAI Agents adapter only where their purposes overlap. Measure task success,
+citation validity, unsupported claims, tool-call correctness, retries, time,
+tokens/cost, cancellation latency, session reconciliation and operator effort.
+Hard-fail on cross-tenant output, unauthorized/duplicate tool execution,
+retention violation, secret/raw-row leakage, hidden runtime nesting, unbounded
+retry, deterministic-fact override or sandbox/egress escape. Run dependency and
+import assertions proving the official Agents SDK is absent from API,
+worker-agent and worker-investigation images. Exercise provider outage,
+webhook/poll loss, ambiguous required-action result, deletion, feature disable,
+global kill switch and rollback to an image without the adapter. Record one of
+three outcomes: SHADOW_ALLOWED for named purposes, DISABLED_PENDING_EVIDENCE or
+REJECTED. The production-MVP review requires this recorded decision, not forced
+provider activation. If allowed, enable only for allowlisted synthetic or
+de-identified projects first and publish pins, retention, limits, dashboard,
+alerts, owner and removal runbook. Prove disabling/removing the adapter leaves
+all LangGraph, Deep Investigation and deterministic ML tests healthy.
 ```
