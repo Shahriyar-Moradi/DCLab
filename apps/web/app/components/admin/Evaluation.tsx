@@ -9,13 +9,13 @@ export function Evaluation({ run }: { run: AdminMlRun | null }) {
   if (!run) {
     return (
       <Panel className="mt-6">
-        <div className="flex items-center gap-3 border-b border-hairline pb-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
-            <ClipboardCheck className="h-5 w-5" />
+        <div className="flex items-center gap-3 border-b border-hairline pb-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
+            <ClipboardCheck className="h-4 w-4" />
           </span>
           <h2 className="font-sans text-section text-ink">Evaluation</h2>
         </div>
-        <p className="mt-4 text-body text-ink-muted">No evaluation yet.</p>
+        <p className="mt-3 text-body text-ink-muted">No evaluation yet.</p>
       </Panel>
     );
   }
@@ -25,30 +25,26 @@ export function Evaluation({ run }: { run: AdminMlRun | null }) {
 
   return (
     <Panel className="mt-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-hairline pb-4">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
-          <ClipboardCheck className="h-5 w-5" />
+      <div className="flex items-center gap-3 border-b border-hairline pb-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
+          <ClipboardCheck className="h-4 w-4" />
         </span>
         <h2 className="font-sans text-section text-ink">Evaluation</h2>
       </div>
 
       {entries.length === 0 ? (
-        <p className="mt-4 text-body text-ink-muted">No test metrics persisted yet.</p>
+        <p className="mt-3 text-body text-ink-muted">No test metrics persisted yet.</p>
       ) : (
-        <ul className="mt-1">
-          {entries.map(([name, value], i) => (
-            <li
-              key={name}
-              className={`flex items-center justify-between gap-4 px-1 py-2 ${i > 0 ? "border-t border-hairline" : ""}`}
-            >
-              <span className="font-mono text-data text-ink-muted">{name}</span>
-              <span className="font-mono text-data text-ink">
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0 md:grid-cols-3">
+          {entries.map(([name, value]) => (
+            <div key={name} className="flex items-center justify-between gap-2 border-b border-hairline/50 py-1">
+              <dt className="font-mono text-data text-ink-muted">{name}</dt>
+              <dd className="font-mono text-data text-ink">
                 {Number.isInteger(value) ? String(value) : value.toFixed(4)}
-              </span>
-            </li>
+              </dd>
+            </div>
           ))}
-        </ul>
+        </dl>
       )}
     </Panel>
   );

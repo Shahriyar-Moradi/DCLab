@@ -5,28 +5,23 @@ import { numericMetricEntries } from "@/app/components/admin/format";
 import type { AdminMlRun } from "@/lib/domain";
 import { Award } from "lucide-react";
 
-function MetricTable({ title, entries }: { title: string; entries: [string, number][] }) {
+function MetricGrid({ title, entries }: { title: string; entries: [string, number][] }) {
   return (
     <div className="min-w-0">
-      <div className="border-b border-hairline pb-2">
-        <h3 className="font-sans text-body font-medium text-ink">{title}</h3>
-      </div>
+      <h3 className="border-b border-hairline pb-1.5 font-sans text-body font-medium text-ink">{title}</h3>
       {entries.length === 0 ? (
-        <p className="mt-3 text-body text-ink-muted">No metrics recorded.</p>
+        <p className="mt-2 text-body text-ink-muted">No metrics recorded.</p>
       ) : (
-        <ul className="mt-1">
-          {entries.map(([name, value], i) => (
-            <li
-              key={name}
-              className={`flex items-center justify-between gap-4 px-1 py-2 ${i > 0 ? "border-t border-hairline" : ""}`}
-            >
-              <span className="font-mono text-data text-ink-muted">{name}</span>
-              <span className="font-mono text-data text-ink">
+        <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0">
+          {entries.map(([name, value]) => (
+            <div key={name} className="flex items-center justify-between gap-2 border-b border-hairline/50 py-1">
+              <dt className="font-mono text-data text-ink-muted">{name}</dt>
+              <dd className="font-mono text-data text-ink">
                 {Number.isInteger(value) ? String(value) : value.toFixed(4)}
-              </span>
-            </li>
+              </dd>
+            </div>
           ))}
-        </ul>
+        </dl>
       )}
     </div>
   );
@@ -36,13 +31,13 @@ export function FinalModel({ model }: { model: AdminMlRun["final_model"] }) {
   if (!model) {
     return (
       <Panel className="mt-6">
-        <div className="flex items-center gap-3 border-b border-hairline pb-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
-            <Award className="h-5 w-5" />
+        <div className="flex items-center gap-3 border-b border-hairline pb-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
+            <Award className="h-4 w-4" />
           </span>
           <h2 className="font-sans text-section text-ink">Final Model</h2>
         </div>
-        <p className="mt-4 text-body text-ink-muted">No model has been locked yet.</p>
+        <p className="mt-3 text-body text-ink-muted">No model has been locked yet.</p>
       </Panel>
     );
   }
@@ -53,10 +48,9 @@ export function FinalModel({ model }: { model: AdminMlRun["final_model"] }) {
 
   return (
     <Panel className="mt-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-hairline pb-4">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
-          <Award className="h-5 w-5" />
+      <div className="flex items-center gap-3 border-b border-hairline pb-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-soft text-navy">
+          <Award className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="font-sans text-section text-ink">Final Model</h2>
@@ -66,10 +60,9 @@ export function FinalModel({ model }: { model: AdminMlRun["final_model"] }) {
         </span>
       </div>
 
-      {/* Metric tables */}
-      <div className="mt-4 grid gap-6 md:grid-cols-2">
-        <MetricTable title="CV performance" entries={cvEntries} />
-        <MetricTable title="Test performance" entries={testEntries} />
+      <div className="mt-3 grid gap-6 md:grid-cols-2">
+        <MetricGrid title="CV performance" entries={cvEntries} />
+        <MetricGrid title="Test performance" entries={testEntries} />
       </div>
     </Panel>
   );
