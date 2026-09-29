@@ -1,0 +1,18 @@
+# Base44 dev image for the FastAPI backend.
+# Installs all Python dependencies (including boosting extras) in the image.
+# A minimal package stub lets `pip install -e .` create an editable install
+# pointing at /app/apps/api; the bind mount in compose overlays it with live source.
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# libgomp1 needed by xgboost/lightgbm at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+RUN mkdir -p apps/api/app && touch apps/api/app/__init__.py && \
+    pip install --no-cache-dir -e ".[boosting]" && \
+    pip install --no-cache-dir "psycopg[binary]>=3.2"
