@@ -34,7 +34,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
+      init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health').status==200 else 1)\""]
@@ -67,7 +67,7 @@ services:
       start_period: 40s
     restart: on-failure
 
-  migrate:
+  init:
     build:
       context: .
       dockerfile: Dockerfile.base44.api
@@ -77,25 +77,10 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/decisionai
       - DCLAB_ENV=development
-    command: ["sh", "-c", "alembic upgrade head"]
+    command: ["sh", "-ec", "alembic upgrade head && dclab user seed"]
     depends_on:
       postgres:
         condition: service_healthy
-
-  seed:
-    build:
-      context: .
-      dockerfile: Dockerfile.base44.api
-    working_dir: /app
-    volumes:
-      - .:/app
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/decisionai
-      - DCLAB_ENV=development
-    command: ["sh", "-c", "dclab user seed"]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
 
 volumes:
   postgres_data:
