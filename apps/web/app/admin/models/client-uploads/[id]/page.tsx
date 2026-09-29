@@ -1,5 +1,7 @@
 "use client";
 
+import { ModelComparison } from "@/app/components/admin/ModelComparison";
+import { ProcessingSummary } from "@/app/components/admin/ProcessingSummary";
 import { formatDurationSeconds, formatWhen, numericMetricEntries } from "@/app/components/admin/format";
 import { Badge } from "@/app/components/ui/Badge";
 import { buttonClassName } from "@/app/components/ui/Button";
@@ -30,11 +32,6 @@ function formatFill(value: unknown): string {
   return ` fill ${JSON.stringify(value)}`;
 }
 
-function formatScore(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return "—";
-  return value.toFixed(3);
-}
-
 function taskLabel(taskType: string | null | undefined): string {
   if (!taskType) return "—";
   if (taskType === "binary" || taskType === "multiclass") return "Classification";
@@ -48,32 +45,6 @@ function featureCount(analysis: AdminMlRun["analysis"] | undefined): string {
   if (counted > 0) return String(counted);
   if (analysis.columns != null) return String(analysis.columns);
   return "—";
-}
-
-function cvScore(row: AdminMlRun["model_comparison"][number]): number | null {
-  if (row.cv_auc != null) return row.cv_auc;
-  const r2 = row.cv_metrics.r2;
-  return typeof r2 === "number" ? r2 : null;
-}
-
-function testScore(row: AdminMlRun["model_comparison"][number]): number | null {
-  if (row.test_auc != null) return row.test_auc;
-  const r2 = row.test_metrics?.r2;
-  return typeof r2 === "number" ? r2 : null;
-}
-
-function Flag({ done, label, detail }: { done: boolean; label: string; detail?: string | null }) {
-  return (
-    <li className="flex items-baseline gap-3 text-body text-ink">
-      <span className="w-4 font-mono text-data text-ink-muted" aria-hidden>
-        {done ? "✓" : "○"}
-      </span>
-      <span>
-        {label}
-        {detail ? <span className="ml-2 font-mono text-data text-ink-muted">{detail}</span> : null}
-      </span>
-    </li>
-  );
 }
 
 export default function ClientUploadAutoTrainPage() {
@@ -196,24 +167,9 @@ export default function ClientUploadAutoTrainPage() {
         </div>
       </Panel>
 
-      <Panel className="mt-6" title="Processing Summary">
-        {summary ? (
-          <ul className="space-y-2">
-            <Flag done={summary.cleaning_completed} label="Cleaning completed" />
-            <Flag done={summary.feature_engineering_completed} label="Feature engineering completed" />
-            <Flag done={summary.preprocessing_completed} label="Preprocessing completed" />
-            <Flag done={Boolean(summary.train_test_split)} label="Train/test split" detail={summary.train_test_split} />
-            <Flag done={Boolean(summary.cross_validation)} label="Cross-validation" detail={summary.cross_validation} />
-            <Flag done={summary.training_completed} label="Training completed" />
-            <Flag done={summary.evaluation_completed} label="Evaluation completed" />
-            <Flag done={summary.predictions_completed} label="Predictions completed" />
-          </ul>
-        ) : (
-          <p className="text-body text-ink-muted">No processing summary yet.</p>
-        )}
-      </Panel>
+      <ProcessingSummary summary={summary} />
 
-      <ModelComparisonSection rows={run?.model_comparison ?? []} />
+      <ModelComparison rows={run?.model_comparison ?? []} />
       <FinalModelSection model={run?.final_model ?? null} />
       <EvaluationSection run={run} />
       <PredictionsSection runId={upload.id} predictions={run?.predictions} />
@@ -288,64 +244,6 @@ function FeatureEngineeringSection({ fe }: { fe: AdminMlRun["feature_engineering
           }
         />
       </div>
-    </Panel>
-  );
-}
-
-function ModelComparisonSection({ rows }: { rows: AdminMlRun["model_comparison"] }) {
-  const scores = rows
-    .map((row) => ({ name: row.name, value: cvScore(row), selected: row.selected }))
-    .filter((row): row is { name: string; value: number; selected: boolean } => row.value != null);
-  const max = Math.max(...scores.map((row) => row.value), 0.0001);
-
-  return (
-    <Panel className="mt-6" title="Model Comparison">
-      {rows.length === 0 ? (
-        <p className="text-body text-ink-muted">No candidate metrics persisted yet.</p>
-      ) : (
-        <>
-          {scores.length > 0 ? (
-            <ul className="mb-6 space-y-3">
-              {scores.map((row) => (
-                <li key={row.name}>
-                  <div className="flex justify-between gap-3 text-body text-ink">
-                    <span>
-                      {row.name}
-                      {row.selected ? (
-                        <span className="ml-2 text-eyebrow uppercase tracking-[0.06em] text-ink-muted">selected</span>
-                      ) : null}
-                    </span>
-                    <span className="font-mono text-data">{formatScore(row.value)}</span>
-                  </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded bg-paper">
-                    <div className="h-2 rounded bg-ink" style={{ width: `${(row.value / max) * 100}%` }} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <DataTable
-            columns={[
-              {
-                id: "model",
-                header: "Model",
-                cell: (row) => (
-                  <span>
-                    {row.name}
-                    {row.selected ? (
-                      <span className="ml-2 text-eyebrow uppercase tracking-[0.06em] text-ink-muted">selected</span>
-                    ) : null}
-                  </span>
-                ),
-              },
-              { id: "cv", header: "CV", mono: true, cell: (row) => formatScore(cvScore(row)) },
-              { id: "test", header: "Test", mono: true, cell: (row) => formatScore(testScore(row)) },
-            ]}
-            rows={rows}
-            rowKey={(row) => row.model_family}
-          />
-        </>
-      )}
     </Panel>
   );
 }
