@@ -1,8 +1,10 @@
 "use client";
 
+import { Evaluation } from "@/app/components/admin/Evaluation";
+import { FinalModel } from "@/app/components/admin/FinalModel";
 import { ModelComparison } from "@/app/components/admin/ModelComparison";
 import { ProcessingSummary } from "@/app/components/admin/ProcessingSummary";
-import { formatDurationSeconds, formatWhen, numericMetricEntries } from "@/app/components/admin/format";
+import { formatDurationSeconds, formatWhen } from "@/app/components/admin/format";
 import { Badge } from "@/app/components/ui/Badge";
 import { buttonClassName } from "@/app/components/ui/Button";
 import { Button } from "@/app/components/ui/Button";
@@ -170,8 +172,8 @@ export default function ClientUploadAutoTrainPage() {
       <ProcessingSummary summary={summary} />
 
       <ModelComparison rows={run?.model_comparison ?? []} />
-      <FinalModelSection model={run?.final_model ?? null} />
-      <EvaluationSection run={run} />
+      <FinalModel model={run?.final_model ?? null} />
+      <Evaluation run={run} />
       <PredictionsSection runId={upload.id} predictions={run?.predictions} />
 
       <details className="mt-10">
@@ -245,68 +247,6 @@ function FeatureEngineeringSection({ fe }: { fe: AdminMlRun["feature_engineering
         />
       </div>
     </Panel>
-  );
-}
-
-function FinalModelSection({ model }: { model: AdminMlRun["final_model"] }) {
-  if (!model) {
-    return (
-      <Panel className="mt-6" title="Final Model">
-        <p className="text-body text-ink-muted">No model has been locked yet.</p>
-      </Panel>
-    );
-  }
-  return (
-    <Panel className="mt-6" title="Final Model">
-      <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Selected model" value={model.selected_model ?? model.model_family ?? "—"} />
-        <div className="product-metric-card product-metric-card-default">
-          <p className="product-eyebrow">CV performance</p>
-          <MetricList entries={numericMetricEntries(model.cv_metrics)} />
-        </div>
-        <div className="product-metric-card product-metric-card-default">
-          <p className="product-eyebrow">Test performance</p>
-          <MetricList entries={numericMetricEntries(model.test_metrics)} />
-        </div>
-      </div>
-    </Panel>
-  );
-}
-
-function EvaluationSection({ run }: { run: AdminMlRun | null }) {
-  const selected = run?.model_comparison.find((row) => row.selected) ?? null;
-  const test = numericMetricEntries(run?.final_model?.test_metrics ?? selected?.test_metrics);
-  if (!run) {
-    return (
-      <Panel className="mt-6" title="Evaluation">
-        <p className="text-body text-ink-muted">No evaluation yet.</p>
-      </Panel>
-    );
-  }
-  return (
-    <Panel className="mt-6" title="Evaluation">
-      {test.length === 0 ? (
-        <p className="text-body text-ink-muted">No test metrics persisted yet.</p>
-      ) : (
-        <MetricList entries={test} />
-      )}
-    </Panel>
-  );
-}
-
-function MetricList({ entries }: { entries: [string, number][] }) {
-  if (!entries.length) {
-    return <p className="mt-2 font-mono text-data text-ink">—</p>;
-  }
-  return (
-    <ul className="mt-2 space-y-1">
-      {entries.map(([name, value]) => (
-        <li key={name} className="flex justify-between gap-4 font-mono text-data text-ink">
-          <span className="text-ink-muted">{name}</span>
-          <span>{Number.isInteger(value) ? String(value) : value.toFixed(4)}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 
