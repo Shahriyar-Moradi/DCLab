@@ -420,3 +420,91 @@ def test_explicit_policy_publication_and_changed_object_denial(db_session, tmp_p
             db_session, workspace_id=workspace.id, artifact_id=artifact.id, storage=storage,
         )
     assert exc.value.status_code == 409
+
+
+def test_enforced_publication_upload_trains_end_to_end(auth_client, db_session, monkeypatch, tmp_path):
+    """P1.3-A: with publication enforced (production), an own-workspace upload
+    trains end to end; run outputs are published to object storage and the
+    prepared table is a derived_dataset artifact, not a repo file."""
+    import random
+
+    from app.config import REPO_ROOT, get_settings
+    from app.db.models import Artifact, ClientLabUpload, Dataset, Experiment
+    from app.services.auto_train_service import run_auto_train_job
+
+    enforced = lambda _settings: True  # noqa: E731
+    for target in (
+        "app.config.publication_enforced",
+        "app.services.artifact_service.publication_enforced",
+        "app.services.dataset_materialization.publication_enforced",
+        "app.services.client_lab_upload_service.publication_enforced",
+    ):
+        monkeypatch.setattr(target, enforced)
+    monkeypatch.setattr(get_settings(), "run_scratch_root", tmp_path)
+    monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
+    rng = random.Random(7)
+    lines = ["age,income,region,defaulted"]
+    for _ in range(160):
+        income = rng.randint(20, 150)
+        lines.append(f"{rng.randint(18, 70)},{income},{rng.choice('NSEW')},{int(income < 50 or rng.random() < 0.1)}")
+    response = auth_client.post(
+        "/app/labs/uploads", data={"category": "Sales", "target_column": "defaulted"},
+        files={"file": ("loans.csv", ("\n".join(lines) + "\n").encode(), "text/csv")},
+    )
+    assert response.status_code == 200, response.text
+    upload_id = response.json()["id"]
+    run_auto_train_job(db_session, upload_id)
+    db_session.expire_all()
+    upload = db_session.get(ClientLabUpload, upload_id)
+    experiment = db_session.get(Experiment, upload.experiment_id)
+    assert experiment.status == "COMPLETED", (experiment.status, experiment.failure_reason)
+    types = set(db_session.scalars(
+        select(Artifact.artifact_type).where(Artifact.pipeline_run_id == experiment.id)
+    ))
+    assert {"report", "result_json", "predictions"} <= types
+    prepared = db_session.get(Dataset, experiment.dataset_id)
+    assert db_session.get(Artifact, prepared.artifact_id).artifact_type == "derived_dataset"
+    assert not (REPO_ROOT / "data" / "client_lab_datasets" / f"{upload_id}.csv").exists()
+    assert str(tmp_path) in (experiment.artifact_dir or "")
+
+    # The derived table inherits its source upload's gate and is never signable.
+    from app.services.ingestion_run_service import require_published_artifact
+    from app.services.reproducibility_service import read_run_file, signed_url_for_artifact
+    from app.db.models import User
+
+    uploader = db_session.get(User, upload.requested_by)
+    prepared_artifact = db_session.get(Artifact, prepared.artifact_id)
+    assert require_published_artifact(db_session, prepared_artifact) is not None
+    with pytest.raises(IdentityError) as exc:
+        signed_url_for_artifact(
+            db_session, uploader,
+            artifact_id=prepared_artifact.id, workspace_id=prepared_artifact.workspace_id,
+        )
+    assert exc.value.status_code == 409
+    orphan = Artifact(
+        workspace_id=prepared_artifact.workspace_id, artifact_type="derived_dataset",
+        provider=prepared_artifact.provider, object_key=f"{prepared_artifact.object_key}.orphan",
+        content_digest=prepared_artifact.content_digest, size_bytes=1,
+        extra_metadata={"derived_from_upload_id": str(uuid4())},
+    )
+    db_session.add(orphan)
+    db_session.flush()
+    with pytest.raises(IdentityError) as exc:
+        require_published_artifact(db_session, orphan)
+    assert exc.value.status_code == 409
+    db_session.rollback()
+
+    # A stored run file whose object vanished degrades instead of raising.
+    from app.storage.factory import storage_for_artifact
+
+    report = db_session.scalar(
+        select(Artifact).where(Artifact.pipeline_run_id == experiment.id, Artifact.artifact_type == "report")
+    )
+    storage_for_artifact(report).delete(report.object_key)
+    # Falls back to the worker's local scratch copy while it exists ...
+    assert read_run_file(db_session, experiment, "report.md")
+    # ... and degrades to None (no 500) once that is gone too.
+    from pathlib import Path
+
+    (Path(experiment.artifact_dir) / "report.md").unlink()
+    assert read_run_file(db_session, experiment, "report.md") is None

@@ -333,11 +333,10 @@ def get_report(experiment_id: UUID, db: Session = Depends(get_db)) -> dict:
     row = db.get(Experiment, experiment_id)
     if row is None:
         raise HTTPException(404, "experiment not found")
-    report = None
-    if row.artifact_dir:
-        path = Path(row.artifact_dir) / "report.md"
-        if path.exists():
-            report = path.read_text()
+    from app.services.reproducibility_service import read_run_file
+
+    data = read_run_file(db, row, "report.md")
+    report = data.decode("utf-8") if data else None
     return {"markdown": report, "result": row.result}
 
 

@@ -314,7 +314,14 @@ def _gate_one_run(
             assert evaluation.get("candidate_id") != str(row["id"])
 
     assert location, "production Labs path must persist an authorized dataset file"
-    executed = _try_execute_script(script, location, spec)
+    # P1.3-A: run the reproduction against the dataset materialized from object
+    # storage (the worker's scratch copy is not durable).
+    from sqlalchemy.orm import object_session
+
+    from app.services.dataset_materialization import materialize_dataset
+
+    with materialize_dataset(experiment.dataset, db=object_session(experiment)) as materialized:
+        executed = _try_execute_script(script, str(materialized), spec)
     assert executed is not None, "standalone execution should be supported for this fixture"
     primary = spec["metric_plan"]["primary_metric"]
     _assert_metrics_within_tolerance(executed, spec["final_holdout"]["metrics"], primary)

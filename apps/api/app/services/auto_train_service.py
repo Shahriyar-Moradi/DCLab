@@ -25,7 +25,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import REPO_ROOT, get_settings
+from app.config import get_settings
 from app.db.models import (
     ClientLabUpload,
     Dataset,
@@ -979,10 +979,36 @@ def run_auto_train_job(
 
         _stage(PREPROCESSING)
         evidence_timer = _evidence_start("preprocessing_setup")
-        dataset_dir = REPO_ROOT / "data" / "client_lab_datasets"
-        dataset_dir.mkdir(parents=True, exist_ok=True)
-        dataset_path = dataset_dir / f"{upload.id}.csv"
-        frame.to_csv(dataset_path, index=False)
+        # P1.3-A: the prepared CSV is written to worker scratch and published to
+        # object storage as a ``derived_dataset`` (derived in this job from the
+        # already-published upload), so any process can materialize it and the
+        # publication gate keeps applying to externally supplied ``dataset`` bytes.
+        from app.domain.data_plane import DERIVED_DATASET_TYPE
+        from app.engine.serving.artifacts import run_scratch_root
+        from app.services.artifact_service import store_artifact
+
+        # Per-job file (re-runs of one upload never share it); serialize once so
+        # the stored bytes and the Dataset digest are the same bytes.
+        import tempfile
+
+        prepared_root = run_scratch_root() / "prepared"
+        prepared_root.mkdir(parents=True, exist_ok=True)
+        prepared_dir = Path(tempfile.mkdtemp(prefix=f"{upload.id}-", dir=prepared_root))
+        dataset_path = prepared_dir / "prepared.csv"
+        prepared_bytes = frame.to_csv(index=False).encode("utf-8")
+        dataset_path.write_bytes(prepared_bytes)
+        prepared_project_id = _resolve_auto_train_project_id(db, upload, workflow_run)
+        prepared_artifact = store_artifact(
+            db,
+            workspace_id=upload.workspace_id,
+            project_id=prepared_project_id,
+            artifact_type=DERIVED_DATASET_TYPE,
+            filename=f"prepared-{upload.id}.csv",
+            data=prepared_bytes,
+            mime_type="text/csv",
+            created_by=upload.requested_by,
+            extra_metadata={"derived_from_upload_id": str(upload.id), "role": "prepared_dataset"},
+        )
 
         env = seed_dogfood(db)
         # Prepared CSV is a new Dataset version. Keep the Labs ingest lineage:
@@ -996,9 +1022,14 @@ def run_auto_train_job(
             source_type="csv",
             version="v1",
             workspace_id=upload.workspace_id,
-            project_id=_resolve_auto_train_project_id(db, upload, workflow_run),
+            project_id=prepared_project_id,
             ingestion_run_id=upload.ingestion_run_id,
+            artifact_id=prepared_artifact.id,
         )
+        # The Dataset now materializes from its artifact; drop the scratch copy.
+        import shutil
+
+        shutil.rmtree(prepared_dir, ignore_errors=True)
 
         task_type = target.task_type
         metric = _metric_plan.primary_metric

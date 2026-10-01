@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     object_storage_root: Path = REPO_ROOT / "data" / "object_store"
     object_storage_bucket: str = ""
     object_storage_region: str = "us-east-1"
+    # P1.3-A: per-run working directory for the engine (worker-local scratch).
+    # Durable outputs are published to object storage; nothing is written under
+    # the repository. Default: <system temp>/dclab-runs.
+    run_scratch_root: Path | None = None
     # Development-only compatibility while legacy upload callers are migrated.
     # Production always enforces the audited publication gate.
     dataset_publication_enforced: bool | None = None

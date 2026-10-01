@@ -226,12 +226,14 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     db = _session()
     from app.db.models import Experiment
 
+    from app.services.reproducibility_service import read_run_file
+
     row = db.get(Experiment, args.id)
-    if row is None or not row.artifact_dir:
+    if row is None:
         print("not found", file=sys.stderr)
         return 1
-    path = Path(row.artifact_dir) / "report.md"
-    print(path.read_text() if path.exists() else json.dumps(row.result, default=str, indent=2))
+    report = read_run_file(db, row, "report.md")
+    print(report.decode("utf-8") if report else json.dumps(row.result, default=str, indent=2))
     db.close()
     return 0
 

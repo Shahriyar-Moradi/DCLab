@@ -335,7 +335,21 @@ def publish_upload_for_internal_training(
 
 
 def require_published_artifact(db: Session, artifact: Artifact) -> IngestionRun | None:
-    """Dataset objects without a verified run are never downloadable."""
+    """Dataset objects without a verified run are never downloadable.
+
+    A ``derived_dataset`` (P1.3-A, e.g. the prepared training table) inherits the
+    publication state of the upload it was derived from, so it can never outlive
+    or bypass its source's gate.
+    """
+    if artifact.artifact_type == "derived_dataset":
+        from app.db.models import ClientLabUpload
+
+        source_id = (artifact.extra_metadata or {}).get("derived_from_upload_id")
+        upload = db.get(ClientLabUpload, UUID(str(source_id))) if source_id else None
+        source = db.get(Artifact, upload.artifact_id) if upload is not None and upload.artifact_id else None
+        if source is None or source.workspace_id != artifact.workspace_id:
+            raise IdentityError("dataset is not published", status_code=409)
+        return require_published_artifact(db, source)
     if artifact.artifact_type != "dataset":
         return None
     run = db.scalar(select(IngestionRun).where(

@@ -3,7 +3,7 @@
 **Status:** CURRENT — re-verified locally on head 0061 (2026-10-01); exact-SHA CI pending, so Plan 0.4 is not formally closed  
 **Baseline:** `02d9f04bad25e5f03bda3ae761c9ec0e8cb3e2a4`, existing dirty Scope 0 checkout preserved  
 **Alembic head at this gate:** `0059_auth_session_constraints`  
-**Re-verification head:** `0061_ingestion_publication`  
+**Re-verification head:** `0061_ingestion_publication` (observed then, at P0.2-A)  
 **Decision:** [ADR 0004](../adr/0004-simulation-insights-tenancy.md)
 
 ## Pre-edit execution card

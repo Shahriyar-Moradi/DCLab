@@ -8,7 +8,7 @@
     {
       "table": "artifacts",
       "name": "ck_artifacts_type_valid",
-      "definition": "CHECK (((artifact_type)::text = ANY ((ARRAY['dataset'::character varying, 'source_code'::character varying, 'training_script'::character varying, 'model'::character varying, 'preprocessor'::character varying, 'report'::character varying, 'plot'::character varying, 'result_json'::character varying, 'feature_manifest'::character varying, 'dependency_lock'::character varying, 'reproduction_notebook'::character varying, 'reproduction_script'::character varying])::text[])))"
+      "definition": "CHECK (((artifact_type)::text = ANY ((ARRAY['dataset'::character varying, 'source_code'::character varying, 'training_script'::character varying, 'model'::character varying, 'preprocessor'::character varying, 'report'::character varying, 'plot'::character varying, 'result_json'::character varying, 'feature_manifest'::character varying, 'dependency_lock'::character varying, 'reproduction_notebook'::character varying, 'reproduction_script'::character varying, 'predictions'::character varying, 'derived_dataset'::character varying])::text[])))"
     },
     {
       "table": "auth_recovery_tokens",

@@ -10,13 +10,14 @@
 `91986b9b39bb54c907d50274e94de2febecffaa0`
 **2026-10-01 update (P0.1-A):** active plan moved to [`docs/mvp/`](../mvp/README.md);
 backend driver is now SQLAlchemy 2.1 + psycopg 3 (plain `postgresql://` URLs);
-Alembic head unchanged at `0061_ingestion_publication`; progress is recorded in
+Alembic head at the time was `0061_ingestion_publication`; progress is recorded in
 [`docs/mvp/STATUS.md`](../mvp/STATUS.md).
-P0.2-B (2026-10-01) re-enabled production Labs uploads under [ADR 0005](../adr/0005-upload-policy.md); head still `0061_ingestion_publication`.
+P0.2-B (2026-10-01) re-enabled production Labs uploads under [ADR 0005](../adr/0005-upload-policy.md); head at the time was `0061_ingestion_publication`.
 P0.3-A (2026-10-01): dev topology runs training only in a `worker` service (Postgres queue).
 P0.4-A (2026-10-01): generated case-study CSVs untracked; business documents moved to `docs/archive/`.
 P1.1-A (2026-10-01): admin Lab training runs only through the open-ingest path (worker).
 P1.2-A (2026-10-01): legacy runner branch deleted; one engine path.
+P1.3-A (2026-10-01): run outputs published to object storage; current Alembic head `0062_run_artifact_types`.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

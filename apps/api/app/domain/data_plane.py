@@ -15,8 +15,12 @@ ARTIFACT_TYPES = (
     "dependency_lock",
     "reproduction_notebook",
     "reproduction_script",
+    "predictions",
+    "derived_dataset",
 )
 
+PREDICTIONS_TYPE = "predictions"
+DERIVED_DATASET_TYPE = "derived_dataset"
 REPRODUCTION_NOTEBOOK_TYPE = "reproduction_notebook"
 REPRODUCTION_SCRIPT_TYPE = "reproduction_script"
 
