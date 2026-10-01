@@ -154,10 +154,15 @@ def run_split_plan(ctx: RunContext, inp: SplitPlanInput) -> SplitPlanOutput:
             derive_assignment=derive_assignment,
             stored=inp.stored_holdout,
             created_by=upload.requested_by,
+            # A branch reuses its parent's plan or fails closed; it never creates one.
+            required_plan=ctx.branch.split_plan if ctx.branch is not None else None,
         )
         db.commit()
     except SplitPlanUnavailable as exc:
         db.rollback()
+        if ctx.branch is not None:
+            # A branch never falls back to a per-run split: fail closed.
+            raise SplitPlanLineageError(f"branch split plan unavailable: {exc}", code="split_plan_missing") from exc
         logger.info("auto-train %s: no split plan (%s)", upload.id, exc)
         ctx.trace("split_plan", "app.services.split_plan_service.resolve_split_plan", skipped=str(exc))
         return _unchanged(inp)

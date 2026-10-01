@@ -29,7 +29,11 @@ from app.db.models import (
     Project,
     WorkflowRun,
 )
-from app.domain.errors import ScientificEvidenceLockedError, SplitPlanLineageError
+from app.domain.errors import (
+    InvalidChangeSetError,
+    ScientificEvidenceLockedError,
+    SplitPlanLineageError,
+)
 from app.domain.lab_run_stages import (
     COMPLETED,
     FAILED,
@@ -46,6 +50,7 @@ from app.engine.modeling.objective import Objective, parse_objective
 from app.engine.schema.profiler import profile_frame  # noqa: F401
 from app.engine.types import SearchConfig
 from app.engine.validation.split_assignment import SplitAssignmentMismatchError
+from app.services.auto_train.branch import load_branch_run
 from app.services.auto_train.cleaning import StructuralCleaningInput, run_structural_cleaning
 from app.services.auto_train.column_roles import ColumnRolesInput, run_column_roles
 from app.services.auto_train.context import RunContext, StageHalt
@@ -120,7 +125,9 @@ def _run_objective(
     return None if objective.is_empty else objective
 
 
-def _search_config(*, holdout_plan=None, development_plan=None, objective=None) -> SearchConfig:
+def _search_config(
+    *, holdout_plan=None, development_plan=None, objective=None, branch_overrides=None
+) -> SearchConfig:
     return SearchConfig(
         strategy="open_ingest",
         max_candidates=8,
@@ -140,6 +147,7 @@ def _search_config(*, holdout_plan=None, development_plan=None, objective=None) 
         holdout_plan=None if holdout_plan is None else holdout_plan.to_dict(),
         model_development_plan=None if development_plan is None else development_plan.to_dict(),
         objective=None if objective is None else objective.to_dict(),
+        branch_overrides=branch_overrides,
     )
 
 
@@ -256,6 +264,7 @@ def run_auto_train_job(
 
     ctx.stage(INGESTING)
     try:
+        ctx.branch = load_branch_run(db, upload)
         loaded = run_load_profile(ctx, LoadProfileInput(upload=upload))
         resolved = run_target_resolution(
             ctx,
@@ -432,8 +441,9 @@ def run_auto_train_job(
         )
     except StageHalt:
         return
-    except (SplitAssignmentMismatchError, SplitPlanLineageError) as exc:
-        # A run whose rows or lineage disagree with its SplitPlan fails closed.
+    except (SplitAssignmentMismatchError, SplitPlanLineageError, InvalidChangeSetError) as exc:
+        # A run whose rows or lineage disagree with its SplitPlan (or a branch
+        # change that cannot apply to this run) fails closed.
         logger.exception("auto-train split plan check failed for upload %s", upload_id)
         db.rollback()
         ctx.fail(str(exc))

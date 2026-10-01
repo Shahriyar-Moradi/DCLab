@@ -23,6 +23,11 @@ from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan
 from app.engine.modeling.objective import Objective
 from app.engine.types import SearchConfig
+from app.services.auto_train.branch import (
+    apply_role_overrides,
+    datetime_overrides,
+    forced_datetime_action,
+)
 from app.services.auto_train.context import RunContext, StageHalt, service_module
 from app.services.lab_decision_ledger import record_column_type_decisions
 
@@ -86,7 +91,16 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
 
     ctx.stage(FEATURE_ENGINEERING)
     evidence_timer = ctx.evidence_start("feature_engineering")
-    engineered_train, fe_transformations = engineer_features(locked_train, inp.modeled_kept_columns)
+    branch = ctx.branch
+    no_datetime, force_datetime = datetime_overrides(branch) if branch is not None else (set(), [])
+    engineered_train, fe_transformations = engineer_features(
+        locked_train, [name for name in inp.modeled_kept_columns if name not in no_datetime]
+    )
+    if force_datetime:
+        converted = {str(name) for action in fe_transformations for name in action.get("columns") or []}
+        engineered_train, forced = forced_datetime_action(engineered_train, force_datetime, converted)
+        if forced is not None:
+            fe_transformations.append(forced)
     frame = apply_feature_engineering_actions(frame, fe_transformations)
     ctx.evidence_finish(evidence_timer)
     ctx.trace(
@@ -116,6 +130,15 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
     entity_column = infer_entity_column(engineered_train, kept_columns)
     num_cols = [name for name in num_cols if name in inp.allowed_predictors]
     cat_cols = [name for name in cat_cols if name in inp.allowed_predictors]
+    if branch is not None:
+        num_cols, cat_cols = apply_role_overrides(
+            branch,
+            engineered_train,
+            num_cols,
+            cat_cols,
+            allowed_predictors=inp.allowed_predictors,
+            identifiers=set(identifier_cols),
+        )
     ctx.evidence_finish(evidence_timer)
     transformed_datetime = {
         str(name)
@@ -145,8 +168,13 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
             llm_used = target.raw_llm_output is not None
         elif column in missing_plan.dropped_columns:
             final_role = "ignored/free_text"
-            source = "rule"
-            reason = "Excluded by the train-only missing-value policy before modeling."
+            branch_drop = branch is not None and branch.columns.get(column, {}).get("treatment") == "drop"
+            source = "branch_change_set" if branch_drop else "rule"
+            reason = (
+                "Excluded by the branch change set (drop_column)."
+                if branch_drop
+                else "Excluded by the train-only missing-value policy before modeling."
+            )
             confidence = 1.0
             verdict = "not_run"
             llm_used = False
@@ -212,7 +240,10 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
         raise StageHalt
 
     search = svc._search_config(
-        holdout_plan=inp.holdout_plan, development_plan=development_plan, objective=inp.run_objective
+        holdout_plan=inp.holdout_plan,
+        development_plan=development_plan,
+        objective=inp.run_objective,
+        branch_overrides=None if branch is None else dict(branch.overrides),
     )
     groups_map = {"features": num_cols + cat_cols}
     combos = generate_group_combinations(

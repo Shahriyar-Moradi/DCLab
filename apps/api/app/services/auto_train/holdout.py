@@ -7,7 +7,8 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
-from app.db.models import ClientLabUpload, Dataset, WorkflowRun
+from app.db.models import ClientLabUpload, Dataset, Experiment, WorkflowRun
+from app.domain.errors import SplitPlanLineageError
 from app.domain.lab_run_stages import SPLITTING
 from app.domain.state_graph import SPLIT_PLAN_HOLDOUT_STRATEGIES
 from app.engine.lab.schema_inference import TargetChoice
@@ -22,7 +23,11 @@ from app.engine.modeling.holdout_planner import (
 from app.engine.validation.splits import split_holdout_by_assignment, split_train_test_holdout
 from app.services.auto_train.context import RunContext, StageHalt
 from app.services.auto_train.split_plan import partition_source
-from app.services.split_plan_service import StoredHoldout, find_stored_holdout
+from app.services.split_plan_service import (
+    StoredHoldout,
+    branch_stored_holdout,
+    find_stored_holdout,
+)
 
 
 class HoldoutLockInput(BaseModel):
@@ -50,6 +55,12 @@ class HoldoutLockOutput(BaseModel):
     stored_holdout: StoredHoldout | None = None
 
 
+def _locked(ctx: RunContext, upload: ClientLabUpload | None) -> bool:
+    """A re-finalized run whose evidence is already locked (and was verified then)."""
+    shell = ctx.db.get(Experiment, upload.experiment_id) if upload and upload.experiment_id else None
+    return shell is not None and shell.scientific_evidence_locked_at is not None
+
+
 def run_holdout_lock(ctx: RunContext, inp: HoldoutLockInput) -> HoldoutLockOutput:
     frame = inp.frame
     target = inp.target
@@ -73,7 +84,23 @@ def run_holdout_lock(ctx: RunContext, inp: HoldoutLockInput) -> HoldoutLockOutpu
         else None
     )
     stored: StoredHoldout | None = None
-    if source is not None and holdout_plan.strategy in SPLIT_PLAN_HOLDOUT_STRATEGIES:
+    branch = ctx.branch
+    if branch is not None and (source is not None or not _locked(ctx, inp.upload)):
+        # ADR 0006 §3: a branch never plans; its parent's map partitions the
+        # frame. No partitionable source or another identity fails closed.
+        if source is None:
+            raise SplitPlanLineageError("branch run has no partitionable source dataset", code="split_plan_missing")
+        stored = branch_stored_holdout(
+            ctx.db,
+            branch.split_plan,
+            source_dataset=source,
+            target_column=target.column,
+            task_type=target.task_type,
+            holdout_plan=holdout_plan,
+            cleaning_log=inp.cleaning_log,
+        )
+        holdout_plan = stored.holdout_plan
+    elif source is not None and holdout_plan.strategy in SPLIT_PLAN_HOLDOUT_STRATEGIES:
         try:
             stored = find_stored_holdout(
                 ctx.db,

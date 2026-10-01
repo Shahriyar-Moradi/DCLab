@@ -120,6 +120,43 @@ def _apply_tuned_params(model: Any, tuned: dict[str, Any]) -> Any:
     return model
 
 
+def _class_weight(hp: dict[str, Any]) -> Any:
+    """``class_weight`` as sklearn/LightGBM expect it.
+
+    A per-class mapping (branch ``class_weighting: custom``) is stored with JSON
+    string keys ("0", "1"); labels reach the estimator as integer codes, so
+    digit keys are restored to ints. ``"balanced"`` and ``None`` pass through.
+    """
+
+    value = hp.get("class_weight")
+    if isinstance(value, dict):
+        return {int(key) if str(key).isdigit() else key: float(item) for key, item in value.items()}
+    return value
+
+
+# Constructor values a branch ``hyperparameter_override`` may set (ADR 0006 §4):
+# exactly the keys ``make_model`` reads from ``hyperparameters`` today, with
+# bounds. Anything else would be recorded but never applied, so it is refused.
+HYPERPARAMETER_OVERRIDES: dict[str, dict[str, tuple[type, float, float]]] = {
+    "logistic_regression": {"max_iter": (int, 50, 10_000)},
+    "xgboost": {"n_estimators": (int, 10, 2_000), "max_depth": (int, 1, 16)},
+    "xgboost_regressor": {"n_estimators": (int, 10, 2_000), "max_depth": (int, 1, 16)},
+    **{
+        family: {"n_estimators": (int, 10, 2_000)}
+        for family in (
+            "random_forest",
+            "extra_trees",
+            "random_forest_regressor",
+            "extra_trees_regressor",
+            "lightgbm",
+            "lightgbm_regressor",
+            "catboost",
+            "catboost_regressor",
+        )
+    },
+}
+
+
 def _make_base_model(family: str, *, seed: int, hp: dict[str, Any], task_type: str | None) -> Any:
     if family == "xgboost" and task_type == "multiclass":
         from xgboost import XGBClassifier
@@ -149,7 +186,7 @@ def _make_base_model(family: str, *, seed: int, hp: dict[str, Any], task_type: s
                     LogisticRegression(
                         max_iter=hp.get("max_iter", 1000),
                         random_state=seed,
-                        class_weight=hp.get("class_weight"),
+                        class_weight=_class_weight(hp),
                     ),
                 ),
             ]
@@ -159,14 +196,14 @@ def _make_base_model(family: str, *, seed: int, hp: dict[str, Any], task_type: s
             n_estimators=hp.get("n_estimators", 80),
             random_state=seed,
             n_jobs=1,
-            class_weight=hp.get("class_weight"),
+            class_weight=_class_weight(hp),
         )
     if family == "extra_trees":
         return ExtraTreesClassifier(
             n_estimators=hp.get("n_estimators", 80),
             random_state=seed,
             n_jobs=1,
-            class_weight=hp.get("class_weight"),
+            class_weight=_class_weight(hp),
         )
     if family == "gradient_boosting":
         return GradientBoostingClassifier(random_state=seed)
@@ -216,7 +253,7 @@ def _make_base_model(family: str, *, seed: int, hp: dict[str, Any], task_type: s
             random_state=seed,
             n_jobs=1,
             verbose=-1,
-            class_weight=hp.get("class_weight"),
+            class_weight=_class_weight(hp),
         )
     if family == "lightgbm_regressor":
         from lightgbm import LGBMRegressor

@@ -479,7 +479,11 @@ def create_pipeline_run(
     branch_key: str | None = None,
     branch_reason: str | None = None,
     source_dataset_id: UUID | None = None,
+    split_plan_id: UUID | None = None,
+    intent: str | None = None,
+    change_set: dict | None = None,
 ) -> Experiment:
+    """``split_plan_id``/``intent``/``change_set`` are insert-only (ADR 0006 §4 lineage guard)."""
     if dataset.workspace_id != workflow_run.workspace_id:
         raise LineageError("pipeline dataset belongs to another workspace")
     parent_id, key, reason = resolve_pipeline_run_branch(
@@ -556,6 +560,9 @@ def create_pipeline_run(
         branch_key=key,
         branch_reason=reason,
         source_dataset_id=source_dataset_id,
+        split_plan_id=split_plan_id,
+        intent=intent,
+        change_set=change_set,
     )
 
 

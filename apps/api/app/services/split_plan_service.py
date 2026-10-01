@@ -308,6 +308,48 @@ def find_stored_holdout(
     return None
 
 
+def branch_stored_holdout(
+    db: Session,
+    split_plan: SplitPlan,
+    *,
+    source_dataset: Dataset,
+    target_column: str,
+    task_type: str,
+    holdout_plan: HoldoutPlan,
+    cleaning_log: dict[str, Any],
+    storage: ObjectStorage | None = None,
+) -> StoredHoldout:
+    """A branch's holdout is its parent's plan, never a lookup (ADR 0006 §3).
+
+    The run's own holdout identity must equal the stored one; a different
+    dataset, target, task, cleaning or planner version fails closed.
+    """
+
+    if split_plan.dataset_id != source_dataset.id or split_plan.project_id != source_dataset.project_id:
+        raise SplitPlanLineageError("branch split plan partitions another source dataset")
+    wanted = _json_ready(
+        holdout_identity(
+            source_dataset=source_dataset,
+            target_column=target_column,
+            task_type=task_type,
+            holdout_plan=holdout_plan,
+            cleaning_log=cleaning_log,
+        )
+    )
+    stored_identity = dict((split_plan.plan_evidence or {}).get("identity") or {})
+    if {key: stored_identity.get(key) for key in _HOLDOUT_IDENTITY_KEYS} != wanted:
+        raise SplitPlanLineageError(
+            "the branch's holdout identity differs from its parent's split plan; start a new root",
+            code="branch_split_plan_mismatch",
+        )
+    evidence = dict(split_plan.plan_evidence or {})
+    return StoredHoldout(
+        split_plan=split_plan,
+        assignment=load_assignment(db, split_plan, storage=storage),
+        holdout_plan=HoldoutPlan.from_dict(evidence.get("holdout_plan")),
+    )
+
+
 def _require_partition(
     assignment: SplitAssignment, holdout_rows: Collection[int], train_rows: Collection[int]
 ) -> None:
@@ -468,11 +510,14 @@ def resolve_split_plan(
     stored: StoredHoldout | None = None,
     created_by: UUID | None = None,
     storage: ObjectStorage | None = None,
+    required_plan: SplitPlan | None = None,
 ) -> ResolvedSplitPlan:
     """Lookup by ``(project, plan_digest)``; reuse (rows verified) or create. Caller commits.
 
     ``derive_assignment`` (outer folds on the locked train partition) is only
     called when a new plan is created; a reused plan supplies its stored folds.
+    ``required_plan`` (a branch's parent plan) must be the one selected; a
+    branch never creates a plan.
     """
 
     identity = plan_identity(
@@ -484,6 +529,11 @@ def resolve_split_plan(
         cleaning_log=cleaning_log,
     )
     digest = plan_digest(identity)
+    if required_plan is not None and required_plan.plan_digest != digest:
+        raise SplitPlanLineageError(
+            "the branch's validation plan differs from its parent's split plan; start a new root",
+            code="branch_split_plan_mismatch",
+        )
     for _attempt in range(_CREATE_ATTEMPTS):
         existing = _find(
             db,
@@ -491,6 +541,10 @@ def resolve_split_plan(
             project_id=source_dataset.project_id,
             digest=digest,
         )
+        if required_plan is not None and (existing is None or existing.id != required_plan.id):
+            raise SplitPlanLineageError(
+                "the branch did not resolve to its parent's split plan", code="branch_split_plan_mismatch"
+            )
         if existing is not None:
             if existing.dataset_id != source_dataset.id:
                 raise SplitPlanLineageError("split plan partitions another source dataset")

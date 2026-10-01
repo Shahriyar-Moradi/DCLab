@@ -63,6 +63,10 @@ class SearchConfig:
     model_development_plan: dict[str, Any] | None = None
     # User objective from the ProblemSpec (app.engine.modeling.objective.Objective.to_dict()).
     objective: dict[str, Any] | None = None
+    # Branch experiments (ADR 0006 §4): the parent's materialized overrides ⊕ the
+    # change set (portfolio, hyperparameters, class weighting, column treatments).
+    # None for root runs. Shape: ``app.services.experiment_branch_service``.
+    branch_overrides: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

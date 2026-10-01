@@ -202,3 +202,54 @@ class SplitPlanLineageError(ValueError):
     def __init__(self, message: str, *, code: str = "split_plan_dataset_mismatch") -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+class ExperimentNotFoundError(LookupError):
+    """No experiment matches the workspace-scoped id (also: no ML-write access). Maps to 404."""
+
+
+class InvalidChangeSetError(ValueError):
+    """A branch change set is rejected (ADR 0006 §4). Stable code ``invalid_change_set``.
+
+    ``reason`` is a stable sub-code (e.g. ``unknown_family``) and ``path`` points at
+    the offending change (``changes[0].family``).
+    """
+
+    code = "invalid_change_set"
+    status_code = 422
+
+    def __init__(self, reason: str, message: str, *, path: str = "changes") -> None:
+        super().__init__(f"{self.code}: {reason}: {message}")
+        self.reason = reason
+        self.path = path
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "reason": self.reason,
+            "path": self.path,
+            "message": self.detail_message,
+        }
+
+
+class ExperimentNotBranchableError(Exception):
+    """The parent cannot be branched (not completed/locked, no split plan, ...). Maps to 409."""
+
+    status_code = 409
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message}
+
+
+class ExperimentComparisonError(ValueError):
+    """Two experiments are not comparable (different SplitPlan or missing evidence)."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code

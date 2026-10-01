@@ -78,11 +78,25 @@ def test_engine():
     from app.db.models import DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_SLUG
 
     engine = create_engine(TEST_URL, pool_pre_ping=True)
-    with engine.begin() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-        conn.execute(text("CREATE SCHEMA public"))
-        conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
-    Base.metadata.create_all(engine)
+    # Dropping a populated schema takes one lock per object (~500 relations);
+    # concurrent xdist workers doing it at once overflow PostgreSQL's shared
+    # lock table ("out of shared memory"). Reset one worker database at a time.
+    from sqlalchemy.engine.url import make_url
+
+    lock_engine = create_engine(
+        make_url(ADMIN_URL).set(database="postgres"), isolation_level="AUTOCOMMIT"
+    )
+    with lock_engine.connect() as lock:
+        lock.execute(text("SELECT pg_advisory_lock(hashtext('dclab-pytest-schema-reset'))"))
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+                conn.execute(text("CREATE SCHEMA public"))
+                conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+            Base.metadata.create_all(engine)
+        finally:
+            lock.execute(text("SELECT pg_advisory_unlock(hashtext('dclab-pytest-schema-reset'))"))
+    lock_engine.dispose()
     from app.db.integrity import install_immutability_triggers
 
     # create_all doesn't run Alembic trigger DDL. Install the same immutability

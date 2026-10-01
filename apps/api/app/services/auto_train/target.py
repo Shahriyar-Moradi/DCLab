@@ -14,7 +14,8 @@ from app.domain.errors import TargetIntentConflictError, TargetNotInDatasetError
 from app.domain.lab_run_stages import NEEDS_INPUT
 from app.engine.lab.auto_prepare import coerce_numeric_like
 from app.engine.lab.schema_inference import TargetChoice
-from app.engine.modeling.objective import Objective, ObjectiveError
+from app.engine.modeling.objective import Objective, ObjectiveError, objective_from_dict
+from app.services.auto_train.branch import require_same_target
 from app.services.auto_train.context import RunContext, StageHalt, service_module
 from app.services.target_intent_service import (
     UNRESOLVED_TARGET_STATUS,
@@ -147,7 +148,14 @@ def run_target_resolution(ctx: RunContext, inp: TargetResolutionInput) -> Target
         )
         raise StageHalt
     try:
-        run_objective = svc._run_objective(db, upload, workflow_run, target.task_type)
+        if ctx.branch is not None:
+            # A branch never changes target/task; its objective is the parent's
+            # materialized objective ⊕ the change set (no ProblemSpec re-read).
+            require_same_target(ctx.branch, target.column, target.task_type)
+            run_objective = objective_from_dict(ctx.branch.objective, task_type=target.task_type)
+            run_objective = None if run_objective is None or run_objective.is_empty else run_objective
+        else:
+            run_objective = svc._run_objective(db, upload, workflow_run, target.task_type)
     except ObjectiveError as exc:
         ctx.fail(
             f"the problem spec objective is invalid for a {target.task_type} target: {exc}",

@@ -85,6 +85,9 @@ class RunContext:
         self.evidence_stage_timings: list[dict[str, Any]] = []
         self.current_rows = int(upload.record_count)
         self.active_stage: dict[str, Any] | None = None
+        # A branch run (ADR 0006 §4): its parent's split plan and materialized
+        # change set (``app.services.auto_train.branch.BranchRun``); None = root.
+        self.branch: Any = None
 
     def emit_event(
         self,

@@ -231,6 +231,9 @@ def create_experiment(
     branch_key: str | None = None,
     branch_reason: str | None = None,
     source_dataset_id: UUID | None = None,
+    split_plan_id: UUID | None = None,
+    intent: str | None = None,
+    change_set: dict | None = None,
 ) -> Experiment:
     if workflow_run is not None and workflow_run.workspace_id != dataset.workspace_id:
         raise ValueError("workflow run and dataset belong to different workspaces")
@@ -266,11 +269,16 @@ def create_experiment(
         branch_key=key,
         branch_reason=reason,
         source_dataset_id=source_dataset_id,
+        split_plan_id=split_plan_id,
+        intent=intent,
         status="CREATED",
         config=cfg.to_dict(),
         seed=cfg.seed,
         git_commit=_git_hash(),
     )
+    if change_set is not None:
+        # Only when present: a JSONB None would be stored as JSON null, not SQL NULL.
+        row.change_set = change_set
     db.add(row)
     if commit:
         db.commit()

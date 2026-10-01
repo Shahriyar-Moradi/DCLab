@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.db.models import ClientLabUpload, Experiment, WorkflowRun
 from app.domain.lab_run_stages import COMPLETED
-from app.services.auto_train.context import RunContext, service_module
+from app.services.auto_train.context import RunContext, logger, service_module
 from app.services.pipeline_verifier import verify_pipeline
 from app.services.technical_run_report import build_technical_run_report
 
@@ -35,6 +35,23 @@ class FinalizeOutput(BaseModel):
     result: dict[str, Any]
 
 
+def _record_branch(ctx: RunContext, experiment: Experiment, result: dict[str, Any]) -> None:
+    """ADR 0006 §4: what each change did, plus the cached (non-authoritative) diff vs parent."""
+    from app.services.experiment_branch_service import applied_change_evidence, branch_comparison
+
+    result["branch"] = {
+        "parent_experiment_id": str(experiment.parent_pipeline_run_id),
+        "split_plan_id": str(experiment.split_plan_id),
+        "change_set_digest": ctx.branch.overrides.get("change_set_digest"),
+        "applied_changes": applied_change_evidence(dict(experiment.change_set or {}), result),
+    }
+    try:
+        result["branch_comparison"] = branch_comparison(ctx.db, experiment)
+    except Exception:  # noqa: BLE001 - evidence is locked; the cached diff is advisory
+        logger.exception("branch comparison failed for experiment %s", experiment.id)
+        result["branch_comparison"] = {"status": "not_comparable", "reason": "comparison_failed"}
+
+
 def run_finalize(ctx: RunContext, inp: FinalizeInput) -> FinalizeOutput:
     svc = service_module()
     db = ctx.db
@@ -44,6 +61,8 @@ def run_finalize(ctx: RunContext, inp: FinalizeInput) -> FinalizeOutput:
     log = inp.log
     from app.services.reproducibility_service import store_report_artifacts
 
+    if ctx.branch is not None:
+        _record_branch(ctx, experiment, result)
     preliminary_report = build_technical_run_report(
         db,
         upload=upload,

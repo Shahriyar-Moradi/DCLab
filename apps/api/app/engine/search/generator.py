@@ -43,8 +43,13 @@ def _plan_problem_profile(development_plan) -> dict | None:
     return profile if isinstance(profile, dict) else None
 
 
-def balanced_variants(task_type: str, families: list[str], development_plan) -> list[tuple[str, dict]]:
-    """Imbalance-weighted variants when the TRAIN-partition profile is imbalanced."""
+def balanced_variants(
+    task_type: str, families: list[str], development_plan, *, force: bool = False
+) -> list[tuple[str, dict]]:
+    """Imbalance-weighted variants when the TRAIN-partition profile is imbalanced.
+
+    ``force`` (branch ``class_weighting: balanced``) skips the imbalance gate.
+    """
     if task_type not in {"binary", "multiclass"}:
         return []
     profile = _plan_problem_profile(development_plan)
@@ -53,13 +58,13 @@ def balanced_variants(task_type: str, families: list[str], development_plan) -> 
     from app.engine.modeling.metric_planner import MEANINGFUL_IMBALANCE_RATIO, _meaningful_imbalance
     from app.engine.modeling.problem_profile import ProblemProfile
 
-    if task_type == "multiclass":
+    if not force and task_type == "multiclass":
         # The minority-fraction rule is meaningless with 3+ classes (a balanced
         # 3-class table has 33% per class); use the majority/minority ratio only.
         ratio = profile.get("imbalance_ratio")
         if not isinstance(ratio, (int, float)) or ratio < MEANINGFUL_IMBALANCE_RATIO:
             return []
-    elif not _meaningful_imbalance(ProblemProfile.from_dict(profile)):
+    elif not force and not _meaningful_imbalance(ProblemProfile.from_dict(profile)):
         return []
     variants: list[tuple[str, dict]] = []
     for family in families:
@@ -127,6 +132,54 @@ def open_ingest_families(task_type: str) -> list[str]:
             "catboost_regressor",
         ]
     return [name for name in wanted if name in avail]
+
+
+# Families whose estimator takes a per-class ``class_weight`` mapping.
+CUSTOM_CLASS_WEIGHT_FAMILIES = ("logistic_regression", "random_forest", "extra_trees", "lightgbm")
+
+
+def open_ingest_portfolio(task_type: str, overrides: dict | None = None) -> list[str]:
+    """Learned families of a run: defaults − branch exclusions + branch inclusions (installed)."""
+    overrides = overrides or {}
+    excluded = set(overrides.get("families_exclude") or [])
+    avail = set(available_families(task_type))
+    families = [name for name in open_ingest_families(task_type) if name not in excluded]
+    for name in overrides.get("families_include") or []:
+        if name in avail and name not in excluded and name not in families and name not in DUMMY_FAMILIES:
+            families.append(name)
+    return families
+
+
+def class_weight_variants(
+    task_type: str, families: list[str], development_plan, class_weighting: dict | None = None
+) -> list[tuple[str, str, dict]]:
+    """(candidate-id suffix, family, hyperparameters) of the class-weighted variants.
+
+    Default: balanced variants only under a meaningful train-partition imbalance.
+    A branch ``class_weighting`` overrides that: ``none`` adds no variant,
+    ``balanced`` always adds them, ``custom`` adds ``__weighted`` variants with the
+    per-class weights (label codes) for the families that accept them.
+    """
+    mode = (class_weighting or {}).get("mode")
+    if mode is None or mode == "balanced":
+        return [
+            ("balanced", family, hp)
+            for family, hp in balanced_variants(
+                task_type, families, development_plan, force=mode == "balanced"
+            )
+        ]
+    if mode != "custom" or task_type not in {"binary", "multiclass"}:
+        return []
+    weights = {str(key): float(value) for key, value in dict(class_weighting.get("weights") or {}).items()}
+    variants = [
+        ("weighted", family, {"class_weight": dict(weights)})
+        for family in families
+        if family in CUSTOM_CLASS_WEIGHT_FAMILIES
+    ]
+    if task_type == "binary" and "xgboost" in families:
+        ratio = weights.get("1", 1.0) / weights.get("0", 1.0)
+        variants.append(("weighted", "xgboost", {"scale_pos_weight": round(ratio, 6)}))
+    return variants
 
 
 def _candidate_fingerprint(
@@ -250,7 +303,13 @@ def _open_ingest_candidates(
         development_plan=development_plan,
         task=task,
     )
-    families = open_ingest_families(task.task_type)
+    overrides = dict(config.branch_overrides or {})
+    families = open_ingest_portfolio(task.task_type, overrides)
+    # Branch hyperparameter overrides apply to every untuned candidate of a family.
+    hp_overrides = {
+        str(family): dict(values)
+        for family, values in dict(overrides.get("hyperparameters") or {}).items()
+    }
 
     def _candidate(candidate_id: str, family: str, hyperparameters: dict) -> Candidate:
         return Candidate(
@@ -281,12 +340,20 @@ def _open_ingest_candidates(
 
     planned: list[tuple[str, str, dict]] = [(family, family, {}) for family in families]
     planned += [
-        (f"{family}__balanced", family, hp)
-        for family, hp in balanced_variants(task.task_type, families, development_plan)
+        (f"{family}__{suffix}", family, hp)
+        for suffix, family, hp in class_weight_variants(
+            task.task_type, families, development_plan, overrides.get("class_weighting")
+        )
     ]
+    # A branch evaluates every candidate its change set implies: the count cap
+    # never silently drops a requested family or class-weighted variant (the
+    # wall-clock budget still applies, and skipped candidates are reported).
+    cap = max(0, config.max_candidates)
+    if overrides:
+        cap = max(cap, len(planned))
     candidates = [
-        _candidate(cid, family, hp)
-        for cid, family, hp in planned[: max(0, config.max_candidates)]
+        _candidate(cid, family, {**hp, **hp_overrides.get(family, {})})
+        for cid, family, hp in planned[:cap]
     ]
     tuned = tuning_plan(task.task_type, families, n_trials=config.max_hyperparameter_trials, seed=config.seed)
     if tuned is not None and candidates:

@@ -24,6 +24,7 @@ from app.engine.modeling.metric_planner import MetricPlan
 from app.engine.modeling.objective import Objective
 from app.engine.modeling.validation_planner import ValidationPlan
 from app.engine.validation.splits import SOURCE_ROW_COLUMN
+from app.services.auto_train.branch import apply_missing_value_overrides
 from app.services.auto_train.context import RunContext, StageHalt
 from app.services.lab_decision_ledger import record_missing_value_decisions
 
@@ -122,6 +123,9 @@ def run_train_only_decisions(
         c for c in inp.feature_columns if c in locked_train.columns and c != SOURCE_ROW_COLUMN
     ]
     missing_plan = plan_missing_values(locked_train, decision_columns)
+    if ctx.branch is not None:
+        # Branch column treatments (drop / keep), decided before the ledger records them.
+        apply_missing_value_overrides(ctx.branch, missing_plan, leakage_excluded=set(leakage_excluded))
     locked_train = record_missing_value_decisions(
         db,
         upload.id,
