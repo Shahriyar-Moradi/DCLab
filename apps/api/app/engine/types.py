@@ -33,6 +33,15 @@ class TaskType(str, Enum):
     SURVIVAL = "survival"
 
 
+CLASSIFICATION_TASK_TYPES = frozenset({TaskType.BINARY.value, TaskType.MULTICLASS.value})
+# Task types the open-ingest engine trains end to end.
+SUPPORTED_TASK_TYPES = CLASSIFICATION_TASK_TYPES | {TaskType.REGRESSION.value}
+
+
+def is_classification(task_type: str | None) -> bool:
+    return str(task_type or "") in CLASSIFICATION_TASK_TYPES
+
+
 @dataclass
 class SearchConfig:
     strategy: str = "progressive"
@@ -40,7 +49,9 @@ class SearchConfig:
     max_candidates: int = 48
     max_hyperparameter_trials: int = 0
     max_ensemble_size: int = 7
-    max_training_seconds: float = 60.0
+    # Opt-in wall-clock cap (seconds) for candidate training; None = no cap.
+    # Auto-train sets it explicitly; skipped candidates are reported.
+    max_training_seconds: float | None = None
     seed: int = 42
     exclude_high_leakage: bool = True
     min_metric: float = 0.55

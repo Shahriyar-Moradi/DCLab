@@ -66,6 +66,47 @@ def classification_metrics(y_true, scores, *, threshold: float = 0.5) -> dict[st
     }
 
 
+def multiclass_metrics(y_true, proba, *, n_classes: int) -> dict[str, Any]:
+    """Metrics for integer-coded labels 0..n_classes-1 and an (n, n_classes) probability matrix.
+
+    A class absent from the training fold has a zero probability column, so rows of
+    that class count as misclassified instead of being dropped.
+    """
+    y = np.asarray(y_true).astype(int)
+    p = np.asarray(proba, dtype=float).reshape(len(y), n_classes)
+    p = np.clip(p, 1e-7, 1.0)
+    p = p / p.sum(axis=1, keepdims=True)
+    # Ties go to the lowest code (first label in sorted order), deterministically.
+    pred = p.argmax(axis=1)
+    labels = list(range(n_classes))
+    present = sorted(set(int(value) for value in y))
+    aucs = []
+    for cls in present:
+        positives = y == cls
+        if positives.all() or not positives.any():
+            continue
+        aucs.append(float(roc_auc_score(positives.astype(int), p[:, cls])))
+    roc_ovr = float(np.mean(aucs)) if aucs else 0.5
+    # Macro averages run over the classes present in y_true only, so every
+    # candidate scored on a fold shares the same denominator; predicting a class
+    # absent from the fold costs recall of the true class, not an extra F1=0 term.
+    scored = present or labels
+    return {
+        "accuracy": float(accuracy_score(y, pred)),
+        "balanced_accuracy": float(balanced_accuracy_score(y, pred)) if len(y) else 0.0,
+        "macro_f1": float(f1_score(y, pred, labels=scored, average="macro", zero_division=0)),
+        "weighted_f1": float(f1_score(y, pred, labels=scored, average="weighted", zero_division=0)),
+        "macro_precision": float(
+            precision_score(y, pred, labels=scored, average="macro", zero_division=0)
+        ),
+        "macro_recall": float(recall_score(y, pred, labels=scored, average="macro", zero_division=0)),
+        "log_loss": float(log_loss(y, p, labels=labels)),
+        "roc_auc_ovr": roc_ovr,
+        "confusion_matrix": confusion_matrix(y, pred, labels=labels).tolist(),
+        "n_classes": n_classes,
+    }
+
+
 def regression_metrics(y_true, pred) -> dict[str, Any]:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(pred, dtype=float)
@@ -108,6 +149,8 @@ def primary_score(metrics: dict[str, Any], metric_name: str, task_type: str) -> 
         return score
     if task_type == "binary":
         return float(metrics.get("pr_auc") or metrics.get("roc_auc") or 0.0)
+    if task_type == "multiclass":
+        return float(metrics.get("macro_f1") or 0.0)
     if "mae" in metrics:
         return float(-metrics["mae"])
     return 0.0

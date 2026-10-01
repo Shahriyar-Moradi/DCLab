@@ -154,7 +154,9 @@ def _search_config(*, holdout_plan=None, development_plan=None) -> SearchConfig:
         max_candidates=8,
         max_feature_group_combinations=1,
         max_ensemble_size=1,
-        max_training_seconds=120.0,
+        # Honoured by the runner since P1.4-A1: later candidates are skipped (and
+        # reported) once exceeded, never before one learned model has trained.
+        max_training_seconds=600.0,
         n_robustness_folds=5,
         min_metric=0.0,
         retain_min=1,
@@ -604,7 +606,7 @@ def run_auto_train_job(
             db.commit()
             return
         _evidence_finish(evidence_timer)
-        if target.task_type not in {"binary", "regression"}:
+        if target.task_type not in {"binary", "multiclass", "regression"}:
             _fail(
                 f"target {target.column!r} implies unsupported task type {target.task_type!r}",
                 extra={"target": target_evidence, "analysis": profile, "quality": quality},
@@ -622,6 +624,12 @@ def run_auto_train_job(
         )
         if target.task_type == "binary":
             frame[target.column] = coerce_binary_target(frame[target.column])
+        elif target.task_type == "multiclass":
+            # Labels stay as-is; the engine codes them over the full label set.
+            # Surrounding whitespace never defines a class; blank labels are unusable.
+            frame[target.column] = frame[target.column].map(
+                lambda value: (value.strip() or None) if isinstance(value, str) else value
+            )
         else:
             frame[target.column] = pd.to_numeric(frame[target.column], errors="coerce")
         invalid_target_rows = int(frame[target.column].isna().sum())
@@ -1217,6 +1225,8 @@ def run_auto_train_job(
         eval_fn = (
             "app.engine.evaluation.metrics.classification_metrics"
             if task_type == "binary"
+            else "app.engine.evaluation.metrics.multiclass_metrics"
+            if task_type == "multiclass"
             else "app.engine.evaluation.metrics.regression_metrics"
         )
         _trace(
@@ -1281,11 +1291,11 @@ def run_auto_train_job(
                 "numeric_scaler": "StandardScaler",
                 "categorical_imputer_strategy": "most_frequent",
                 "categorical_encoder": "OneHotEncoder",
-                "categorical_encoder_drop": "first",
+                "categorical_encoder_drop": None,
                 "handle_unknown": "ignore",
                 "fit_partition": "fold_train_only_then_full_train_for_locked_winner",
                 "numerical": ["imputer:median", "scaler:standard"],
-                "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+                "categorical": ["imputer:most_frequent", "onehot:all_categories"],
             },
             "target": target_evidence,
             "entity": {

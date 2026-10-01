@@ -199,6 +199,8 @@ class _ColumnSignals:
     single_feature_score_kind: str | None
     datetime_after_fraction: float | None
     class_purity: float | None
+    # Multiclass: the feature is a one-to-one relabelling of the target.
+    target_recoding: bool = False
 
 
 def _tokens(name: str) -> set[str]:
@@ -279,6 +281,54 @@ def _class_purity(series: pd.Series, target: pd.Series) -> float | None:
     return float((aligned * weights).sum() / max(float(weights.sum()), 1.0))
 
 
+def _is_target_recoding(series: pd.Series, target: pd.Series) -> bool:
+    """True when feature values and target classes map one-to-one (a renamed or
+    permuted code of the target), whatever the dtypes."""
+    frame = pd.DataFrame({"x": series.to_numpy(), "y": target.to_numpy()}).dropna()
+    if len(frame) < 20:
+        return False
+    x_levels = int(frame["x"].nunique())
+    if x_levels < 3 or x_levels != int(frame["y"].nunique()):
+        return False
+    forward = frame.groupby("x")["y"].agg(lambda v: v.value_counts().iloc[0]).sum()
+    backward = frame.groupby("y")["x"].agg(lambda v: v.value_counts().iloc[0]).sum()
+    return min(forward, backward) / len(frame) >= EXACT_MATCH_THRESHOLD
+
+
+def _multiclass_single_feature_score(series: pd.Series, y: pd.Series) -> tuple[float | None, str | None]:
+    """Strength of one feature alone against a 3+ class target.
+
+    Frequency-weighted one-vs-rest AUC is near 1.0 only when a numeric feature
+    separates every class. A code of the target can score far lower (a middle
+    class sits between its neighbours), so low-cardinality features are also
+    scored by class purity and the stronger signal wins. Purity is skipped for
+    high-cardinality values, where every group is trivially pure.
+    """
+    auc_score: float | None = None
+    numeric = pd.to_numeric(series, errors="coerce")
+    if int(numeric.notna().sum()) >= 20 and int(numeric.nunique()) >= 2:
+        valid = numeric.notna()
+        values = numeric[valid].to_numpy(dtype=float)
+        labels = y[valid]
+        weights = labels.value_counts(normalize=True)
+        score = 0.0
+        for cls, weight in weights.items():
+            positives = (labels == cls).to_numpy()
+            if positives.all() or not positives.any():
+                continue
+            auc = float(roc_auc_score(positives.astype(int), values))
+            score += float(weight) * max(auc, 1.0 - auc)
+        auc_score = score
+    purity = _class_purity(series, y) if int(series.nunique()) * 5 <= len(series) else None
+    if purity is not None and (
+        auc_score is None or purity >= STRONG_PURITY or (purity >= MODERATE_PURITY and auc_score < MODERATE_AUC)
+    ):
+        return purity, "purity"
+    if auc_score is not None:
+        return auc_score, "auc"
+    return None, None
+
+
 def _single_feature_score(
     series: pd.Series,
     target: pd.Series,
@@ -288,6 +338,8 @@ def _single_feature_score(
     if int(mask.sum()) < 20:
         return None, None
     y = target[mask]
+    if task_type == "multiclass" and int(y.nunique()) > 2:
+        return _multiclass_single_feature_score(series[mask], y)
     if task_type in {"binary", "multiclass"}:
         numeric = pd.to_numeric(series[mask], errors="coerce")
         if numeric.notna().sum() >= 20 and int(numeric.nunique()) >= 2 and int(y.nunique()) >= 2:
@@ -422,6 +474,7 @@ def _collect_signals(
         single_feature_score_kind=kind,
         datetime_after_fraction=_datetime_after_fraction(series, time_series, column=column),
         class_purity=_class_purity(series, y) if task_type in {"binary", "multiclass"} else None,
+        target_recoding=task_type == "multiclass" and _is_target_recoding(series, y),
     )
 
 
@@ -496,6 +549,7 @@ def _direct_duplicate(signals: _ColumnSignals) -> bool:
     return (
         signals.exact_match_fraction >= EXACT_MATCH_THRESHOLD
         or signals.complement_match_fraction >= EXACT_MATCH_THRESHOLD
+        or signals.target_recoding
     )
 
 

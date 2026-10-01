@@ -293,7 +293,7 @@ def _persist_experiment_test_predictions(db: Session, experiment_id, result: dic
         ExperimentTestPrediction.experiment_id == experiment_id
     ).delete(synchronize_session=False)
     task = result.get("task") if isinstance(result.get("task"), dict) else {}
-    classifier = str(task.get("task_type") or "") == "binary"
+    classifier = str(task.get("task_type") or "") in {"binary", "multiclass"}
     for row in result.get("test_predictions") or []:
         if not isinstance(row, dict):
             continue

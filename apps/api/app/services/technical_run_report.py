@@ -90,6 +90,7 @@ def build_technical_run_report(
             "candidate_models": candidates,
             "expected_candidate_ids": result.get("expected_candidate_ids") or [],
             "selection": selection,
+            "baseline_comparison": result.get("baseline_comparison"),
             "final_model": selected,
             "final_fit": result.get("final_fit") or {},
             "final_test_evaluation": result.get("final_test_evaluation") or {},

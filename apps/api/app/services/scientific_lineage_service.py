@@ -747,7 +747,7 @@ def _persist_preprocessing(
                 "encode",
                 "sklearn.preprocessing.OneHotEncoder",
                 {
-                    "drop": "first",
+                    "drop": None,
                     "handle_unknown": "ignore",
                     "columns": list(evidence.categorical_cols),
                 },

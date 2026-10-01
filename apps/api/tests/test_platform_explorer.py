@@ -125,7 +125,7 @@ def test_platform_hierarchy_fast_replay_multi_pipeline_and_readonly_role(
     assert any(row["event_type"] == "winner_locked" for row in body["events"])
     assert body["preprocessing"]["numerical"] == ["Median Imputer", "StandardScaler"]
     assert body["preprocessing"]["one_hot"] == {
-        "drop": "first",
+        "drop": None,
         "handle_unknown": "ignore",
     }
     assert body["predictions"]["raw_rows_included"] is False

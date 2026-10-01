@@ -22,6 +22,15 @@ BINARY_SECONDARY = (
     "log_loss",
     "brier_score",
 )
+MULTICLASS_SECONDARY = (
+    "balanced_accuracy",
+    "accuracy",
+    "weighted_f1",
+    "macro_precision",
+    "macro_recall",
+    "log_loss",
+    "roc_auc_ovr",
+)
 REGRESSION_SECONDARY = ("rmse", "r2", "mse")
 
 
@@ -81,6 +90,16 @@ def plan_metrics(profile: ProblemProfile) -> MetricPlan:
             reason=(
                 "DCLab's safe binary convention is PR-AUC even when classes are balanced, "
                 "because it remains a ranking metric and matches existing Labs winner selection."
+            ),
+        )
+    if profile.task_type == "multiclass":
+        return MetricPlan(
+            primary_metric="macro_f1",
+            secondary_metrics=list(MULTICLASS_SECONDARY),
+            reason=(
+                "Multiclass model selection uses macro-F1 so every class counts equally "
+                "regardless of its frequency; balanced accuracy, log-loss and one-vs-rest "
+                "ROC-AUC are reported."
             ),
         )
     raise ValueError(f"Metric planning does not support task_type={profile.task_type!r}.")

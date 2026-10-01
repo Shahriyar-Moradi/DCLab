@@ -425,7 +425,7 @@ def _build_validation(
     cv_strategy = validation.get("cv_strategy") or sample.get("cv_strategy")
     if not cv_strategy:
         task = result.get("task") if isinstance(result.get("task"), dict) else {}
-        cv_strategy = "StratifiedKFold" if task.get("task_type") == "binary" else "KFold"
+        cv_strategy = "StratifiedKFold" if task.get("task_type") in {"binary", "multiclass"} else "KFold"
     random_state = validation.get("random_state")
     if random_state is None:
         random_state = split.get("random_state")

@@ -18,6 +18,8 @@ P0.4-A (2026-10-01): generated case-study CSVs untracked; business documents mov
 P1.1-A (2026-10-01): admin Lab training runs only through the open-ingest path (worker).
 P1.2-A (2026-10-01): legacy runner branch deleted; one engine path.
 P1.3-A (2026-10-01): run outputs published to object storage; current Alembic head `0062_run_artifact_types`.
+P1.4-A1 (2026-10-01): dummy baseline always evaluated (never the winner), balanced class-weight variants, opt-in time budget, one-hot keeps all categories.
+P1.4-A2 (2026-10-01): multiclass classification end to end (macro-F1 primary, stratified planners, verifier support).
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

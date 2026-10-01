@@ -21,6 +21,7 @@ from app.engine.data.quality import quality_report
 from app.engine.evaluation.metrics import (
     aggregate_fold_metrics,
     classification_metrics,
+    multiclass_metrics,
     primary_score,
     regression_metrics,
     robustness_stats,
@@ -58,7 +59,7 @@ from app.engine.modeling.validation_planner import (
 )
 from app.engine.schema.profiler import profile_frame
 from app.engine.search.generator import DUMMY_FAMILIES, assemble_candidates
-from app.engine.types import Candidate, ExperimentStatus, SearchConfig, TaskSpec
+from app.engine.types import Candidate, ExperimentStatus, SearchConfig, TaskSpec, is_classification
 from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
 
 logger = logging.getLogger(__name__)
@@ -345,13 +346,63 @@ def _scientific_evidence_payload(
     }
 
 
-def _predict(model, X: np.ndarray, classifier: bool) -> np.ndarray:
+def _class_probabilities(model, X, n_classes: int) -> np.ndarray:
+    """(n, n_classes) probabilities aligned to label codes 0..n_classes-1.
+
+    A class missing from the fitted rows keeps a zero column, so its rows are
+    scored as misclassified rather than silently dropped.
+    """
+    out = np.zeros((len(X), n_classes), dtype=float)
+    if hasattr(model, "predict_proba"):
+        classes = np.asarray(model.classes_, dtype=int)
+        out[:, classes] = np.asarray(model.predict_proba(X), dtype=float)
+    else:
+        predicted = np.asarray(model.predict(X), dtype=int)
+        out[np.arange(len(predicted)), predicted] = 1.0
+    return out
+
+
+def _predict(model, X: np.ndarray, classifier: bool, n_classes: int | None = None) -> np.ndarray:
+    if classifier and n_classes:
+        return _class_probabilities(model, X, n_classes)
     if classifier:
         if hasattr(model, "predict_proba"):
             proba = model.predict_proba(X)
             return np.asarray(proba[:, 1] if proba.shape[1] > 1 else proba[:, 0], dtype=float)
         return np.asarray(model.predict(X), dtype=float)
     return np.asarray(model.predict(X), dtype=float)
+
+
+def _encode_multiclass_target(work: pd.DataFrame, target: str) -> tuple[pd.DataFrame, list[Any]]:
+    """Code labels 0..k-1 over the full label set before the split.
+
+    Only the set of label values is used (no statistic is fitted), so a class
+    present only in the holdout still has a code and counts as misclassified.
+    """
+    work = work.dropna(subset=[target]).copy()
+    values = [_json_safe(value) for value in pd.unique(work[target])]
+    try:
+        class_labels = sorted(values)
+    except TypeError:
+        class_labels = sorted(values, key=str)
+    if len(class_labels) < 2:
+        raise ValueError(f"target {target!r} has fewer than two classes")
+    codes = {label: index for index, label in enumerate(class_labels)}
+    work[target] = [codes[_json_safe(value)] for value in work[target]]
+    work[target] = work[target].astype(int)
+    return work, class_labels
+
+
+def _decoded_target(frame: pd.DataFrame, target: str, class_labels: list[Any] | None) -> pd.DataFrame:
+    """Planning and the leakage audit see original labels, so a feature that
+    copies the raw target still matches it exactly and evidence names classes."""
+    if not class_labels:
+        return frame
+    decoded = frame.copy()
+    decoded[target] = pd.Series(
+        [class_labels[int(code)] for code in frame[target]], index=frame.index, dtype=object
+    )
+    return decoded
 
 
 def _json_safe(value: Any) -> Any:
@@ -375,7 +426,9 @@ def _matrix(frame: pd.DataFrame, features: tuple[str, ...]) -> np.ndarray:
     return frame.loc[:, list(features)].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy(dtype=float)
 
 
-def _metrics(y_true, pred, *, classifier: bool) -> dict[str, Any]:
+def _metrics(y_true, pred, *, classifier: bool, n_classes: int | None = None) -> dict[str, Any]:
+    if classifier and n_classes:
+        return multiclass_metrics(y_true, pred, n_classes=n_classes)
     return classification_metrics(y_true, pred) if classifier else regression_metrics(y_true, pred)
 
 
@@ -415,7 +468,7 @@ def _open_ingest_validation(
             "stratified": plan.stratified,
             "reason": plan.reason,
         }
-    default_cv = "StratifiedKFold" if task_type == "binary" else "KFold"
+    default_cv = "StratifiedKFold" if is_classification(task_type) else "KFold"
     return {
         "train_rows": split_meta.get("n_train"),
         "test_rows": split_meta.get("n_test"),
@@ -435,10 +488,18 @@ def _prediction_rows(
     classifier: bool,
     test: pd.DataFrame | None = None,
     entity_col: str | None = None,
+    class_labels: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     y_true_arr = np.asarray(y_true)
     y_score_arr = np.asarray(y_score, dtype=float)
-    y_pred = (y_score_arr >= 0.5).astype(int) if classifier else y_score_arr
+    if classifier and class_labels:
+        # Multiclass: report original labels and the winning class probability.
+        codes = y_score_arr.argmax(axis=1)
+        y_pred = np.asarray([class_labels[int(code)] for code in codes], dtype=object)
+        y_true_arr = np.asarray([class_labels[int(code)] for code in y_true_arr], dtype=object)
+        y_score_arr = y_score_arr.max(axis=1)
+    else:
+        y_pred = (y_score_arr >= 0.5).astype(int) if classifier else y_score_arr
     rows: list[dict[str, Any]] = []
     for index in range(len(y_true_arr)):
         record_id = str(index)
@@ -472,6 +533,7 @@ def _fit_and_score_holdout(
     classifier: bool,
     on_stage: Callable[[str], None] | None = None,
     on_event: RunEventCallback | None = None,
+    n_classes: int | None = None,
 ) -> tuple[
     Any,
     dict[str, Any],
@@ -497,6 +559,7 @@ def _fit_and_score_holdout(
                     row["model_family"],
                     seed=row["random_seed"],
                     hyperparameters=row.get("hyperparameters"),
+                    task_type=task.task_type,
                 ),
             ),
         ]
@@ -514,8 +577,8 @@ def _fit_and_score_holdout(
         fit_row_count=int(len(X_train)),
     )
     pipeline.fit(X_train, y_train)
-    train_pred = _predict(pipeline, X_train, classifier)
-    train_metrics = _metrics(y_train, train_pred, classifier=classifier)
+    train_pred = _predict(pipeline, X_train, classifier, n_classes)
+    train_metrics = _metrics(y_train, train_pred, classifier=classifier, n_classes=n_classes)
     final_fit = _timing("final_fit", fit_started, fit_timer)
     final_fit.update(
         {
@@ -550,8 +613,8 @@ def _fit_and_score_holdout(
         candidate_id=row.get("candidate_id"),
         test_row_count=int(len(X_test)),
     )
-    test_pred = _predict(pipeline, X_test, classifier)
-    test_metrics = _metrics(y_test, test_pred, classifier=classifier)
+    test_pred = _predict(pipeline, X_test, classifier, n_classes)
+    test_metrics = _metrics(y_test, test_pred, classifier=classifier, n_classes=n_classes)
     test_evaluation = _timing("final_test_evaluation", test_started, test_timer)
     test_evaluation.update(
         {
@@ -601,9 +664,13 @@ def _run_open_ingest_candidates(
     on_stage: Callable[[str], None] | None = None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
     on_event: RunEventCallback | None = None,
+    max_training_seconds: float | None = None,
+    class_labels: list[Any] | None = None,
 ) -> dict[str, Any]:
     """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked."""
-    classifier = task.task_type == "binary"
+    classifier = is_classification(task.task_type)
+    # Multiclass labels arrive as codes 0..k-1 over the full label set.
+    n_classes = len(class_labels) if task.task_type == "multiclass" and class_labels else None
     selection_metric = primary_metric or task.evaluation_metric
     # Val is empty for the 80/20 holdout path; never concatenate test.
     pool = pd.concat([train, val], ignore_index=True) if len(val) else train
@@ -619,8 +686,54 @@ def _run_open_ingest_candidates(
     cv_started = datetime.now(UTC)
     cv_timer = time.perf_counter()
 
-    for candidate in candidates:
+    # Baselines first (cheap) so a time budget can never drop the chance check.
+    ordered = sorted(candidates, key=lambda c: c.model_family not in DUMMY_FAMILIES)
+    budget_started = time.time()
+    learned_trained = 0
+    for candidate in ordered:
         t0 = time.time()
+        if (
+            max_training_seconds
+            and learned_trained > 0
+            and candidate.model_family not in DUMMY_FAMILIES
+            and (t0 - budget_started) > max_training_seconds
+        ):
+            reason = f"skipped: training time budget of {max_training_seconds:.0f}s reached"
+            records.append(
+                {
+                    **candidate.to_dict(),
+                    "candidate": candidate.candidate_id,
+                    "feature_set": list(candidate.features),
+                    "preprocessing_config": {
+                        "numerical": ["imputer:median", "scaler:standard"],
+                        "categorical": ["imputer:most_frequent", "onehot:all_categories"],
+                    },
+                    "status": "SKIPPED",
+                    "failure_reason": reason,
+                    "cv_strategy": validation_plan.strategy,
+                    "requested_folds": validation_plan.requested_folds,
+                    "actual_folds": None,
+                    "metrics": None,
+                    "fold_metrics": [],
+                    "folds": [],
+                    "cv_mean": None,
+                    "cv_std": None,
+                    "train_seconds": 0.0,
+                    "fit_duration_ms": 0.001,
+                    "test_metrics": None,
+                }
+            )
+            funnel_updates["skipped"] = funnel_updates.get("skipped", 0) + 1
+            _emit_event(
+                on_event,
+                "candidate_skipped",
+                stage="candidate_training",
+                status="skipped",
+                candidate_id=candidate.candidate_id,
+                model_family=candidate.model_family,
+                reason=reason,
+            )
+            continue
         _emit_event(
             on_event,
             "candidate_started",
@@ -651,6 +764,7 @@ def _run_open_ingest_candidates(
                                 candidate.model_family,
                                 seed=candidate.random_seed,
                                 hyperparameters=candidate.hyperparameters,
+                                task_type=task.task_type,
                             ),
                         ),
                     ]
@@ -677,9 +791,11 @@ def _run_open_ingest_candidates(
                 )
                 fold_pipeline = _fresh_pipeline()
                 fold_pipeline.fit(X_train.iloc[fold_train_idx], y_train[fold_train_idx])
-                fold_pred = _predict(fold_pipeline, X_train.iloc[fold_holdout_idx], classifier)
+                fold_pred = _predict(
+                    fold_pipeline, X_train.iloc[fold_holdout_idx], classifier, n_classes
+                )
                 fold_y = y_train[fold_holdout_idx]
-                fold_metrics = _metrics(fold_y, fold_pred, classifier=classifier)
+                fold_metrics = _metrics(fold_y, fold_pred, classifier=classifier, n_classes=n_classes)
                 fold_metrics_list.append(fold_metrics)
                 fold_scores.append(primary_score(fold_metrics, selection_metric, task.task_type))
                 train_provenance = (
@@ -750,7 +866,7 @@ def _run_open_ingest_candidates(
                     "feature_set": list(candidate.features),
                     "preprocessing_config": {
                         "numerical": ["imputer:median", "scaler:standard"],
-                        "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+                        "categorical": ["imputer:most_frequent", "onehot:all_categories"],
                     },
                     "status": "trained",
                     "failure_reason": None,
@@ -777,6 +893,8 @@ def _run_open_ingest_candidates(
                 }
             )
             funnel_updates["trained"] += 1
+            if candidate.model_family not in DUMMY_FAMILIES:
+                learned_trained += 1
             _emit_event(
                 on_event,
                 "candidate_completed",
@@ -798,7 +916,7 @@ def _run_open_ingest_candidates(
                     "feature_set": list(candidate.features),
                     "preprocessing_config": {
                         "numerical": ["imputer:median", "scaler:standard"],
-                        "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+                        "categorical": ["imputer:most_frequent", "onehot:all_categories"],
                     },
                     "status": "FAILED",
                     "error": str(exc),
@@ -840,9 +958,32 @@ def _run_open_ingest_candidates(
     selection_timer = time.perf_counter()
     trained = [row for row in records if row.get("status") == "trained"]
     learned = [row for row in trained if row.get("model_family") not in DUMMY_FAMILIES]
-    pool_rows = learned or trained
+    # A chance-level dummy is a baseline, never a shippable winner: when no
+    # learned model trains, the run fails instead of locking a dummy.
+    pool_rows = learned
     best_single = max(pool_rows, key=lambda row: row["score"]) if pool_rows else None
     selected_ids = [best_single["candidate_id"]] if best_single else []
+    baseline_row = next(
+        (row for row in trained if row.get("model_family") in DUMMY_FAMILIES), None
+    )
+    baseline_comparison = None
+    if baseline_row is not None and best_single is not None:
+        margin = float(best_single["score"]) - float(baseline_row["score"])
+        winner_std = (best_single.get("cv_std") or {}).get(selection_metric)
+        winner_std = float(winner_std) if isinstance(winner_std, (int, float)) else 0.0
+        baseline_comparison = {
+            "metric": selection_metric,
+            "baseline_candidate_id": baseline_row.get("candidate_id"),
+            "baseline_cv_score": baseline_row["score"],
+            "winner_candidate_id": best_single.get("candidate_id"),
+            "winner_cv_score": best_single["score"],
+            # Scores are oriented so larger is better (primary_score).
+            "margin": margin,
+            "beats_baseline": margin > 0,
+            # Margin larger than the winner's fold-to-fold spread on that metric.
+            "winner_cv_std": winner_std,
+            "clear_margin": margin > winner_std,
+        }
     funnel_updates["robust"] = len(pool_rows)
     funnel_updates["strong"] = len(pool_rows)
     funnel_updates["diverse"] = len(selected_ids)
@@ -912,6 +1053,7 @@ def _run_open_ingest_candidates(
             classifier,
             on_stage=on_stage,
             on_event=on_event,
+            n_classes=n_classes,
         )
         stage_timings.extend([final_fit, {key: value for key, value in final_test_evaluation.items() if key != "metrics"}])
         best_single["train_metrics"] = train_metrics
@@ -927,6 +1069,7 @@ def _run_open_ingest_candidates(
             classifier=classifier,
             test=test,
             entity_col=task.entity_id,
+            class_labels=class_labels if n_classes else None,
         )
         stage_timings.append(_timing("prediction_persistence", prediction_started, prediction_timer))
         _emit_event(
@@ -969,6 +1112,7 @@ def _run_open_ingest_candidates(
         "final_test_evaluation": final_test_evaluation,
         "final_fit": final_fit if best_single is not None else {},
         "stage_timings": stage_timings,
+        "baseline_comparison": baseline_comparison,
     }
 
 
@@ -994,10 +1138,13 @@ def _run_open_ingest_experiment(
         work[SOURCE_ROW_COLUMN] = work.index.astype(int)
     if task.target not in work.columns:
         raise ValueError(f"Frame is missing target {task.target!r}")
+    class_labels: list[Any] | None = None
     if task.task_type == "binary":
         work[task.target] = coerce_binary_target(work[task.target])
         work = work.dropna(subset=[task.target])
         work[task.target] = work[task.target].astype(int)
+    elif task.task_type == "multiclass":
+        work, class_labels = _encode_multiclass_target(work, task.target)
     else:
         work[task.target] = pd.to_numeric(work[task.target], errors="coerce")
         work = work.dropna(subset=[task.target])
@@ -1014,7 +1161,9 @@ def _run_open_ingest_experiment(
         leakage,
         development_plan,
         plan_source,
-    ) = _resolve_model_development_plan(train, task, config, on_event)
+    ) = _resolve_model_development_plan(
+        _decoded_target(train, task.target, class_labels), task, config, on_event
+    )
     if validation_plan.strategy == "unsupported" or not validation_plan.actual_folds:
         raise ValidationUnsupportedError(
             validation_plan.reason
@@ -1108,6 +1257,8 @@ def _run_open_ingest_experiment(
         on_stage=on_stage,
         on_checkpoint=_checkpoint,
         on_event=on_event,
+        max_training_seconds=config.max_training_seconds,
+        class_labels=class_labels,
     )
     funnel.update(outcome["funnel"])
     records = outcome["records"]
@@ -1171,10 +1322,10 @@ def _run_open_ingest_experiment(
             "numeric_scaler": "StandardScaler",
             "categorical_imputer_strategy": "most_frequent",
             "categorical_encoder": "OneHotEncoder",
-            "categorical_encoder_drop": "first",
+            "categorical_encoder_drop": None,
             "handle_unknown": "ignore",
             "numerical": ["imputer:median", "scaler:standard"],
-            "categorical": ["imputer:most_frequent", "onehot:drop_first"],
+            "categorical": ["imputer:most_frequent", "onehot:all_categories"],
             "fit_scope": "cv_fold_train_only_then_full_training_partition",
             "fit_partition": "fold_train_only_then_full_train_for_locked_winner",
         },
@@ -1199,8 +1350,11 @@ def _run_open_ingest_experiment(
         "baselines": [
             row
             for row in records
-            if row.get("model_family") in {"majority", "mean", "logistic_regression", "linear_regression"}
+            if row.get("model_family") in DUMMY_FAMILIES | {"logistic_regression", "linear_regression"}
         ],
+        "baseline_comparison": outcome.get("baseline_comparison"),
+        # Multiclass label code i is class_labels[i]; None for binary/regression.
+        "class_labels": class_labels,
     }
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")

@@ -8,6 +8,8 @@ It must not use predictive performance.
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -25,6 +27,9 @@ HOLDOUT_PLAN_VERSION = "dclab.holdout_plan.v1"
 DEFAULT_TEST_SIZE = 0.2
 
 STRATIFIED_RANDOM = "stratified_random"
+# Every class needs this many rows for a stratified holdout to leave at least two
+# per class in training (so stratified CV stays feasible).
+MIN_STRATIFIED_CLASS_ROWS = 3
 RANDOM = "random"
 GROUP_DISJOINT = "group_disjoint"
 TEMPORAL_FUTURE = "temporal_future"
@@ -138,7 +143,7 @@ def plan_holdout(
             strategy=UNSUPPORTED,
             test_size=size,
             random_state=random_state,
-            stratified=task_type == "binary",
+            stratified=task_type in {"binary", "multiclass"},
             group_column=str(entity["column"]),
             time_column=str(temporal["column"]),
             reason=(
@@ -191,6 +196,45 @@ def plan_holdout(
                 "appears in both train and test."
             ),
             evidence={**evidence, "unique_groups": unique_groups},
+        )
+
+    if task_type == "multiclass":
+        counts = frame[target].value_counts(dropna=True) if target in frame.columns else None
+        smallest = int(counts.min()) if counts is not None and len(counts) else 0
+        n_classes = int(len(counts)) if counts is not None else 0
+        n_rows = int(len(frame))
+        n_test = int(math.ceil(size * n_rows))
+        # train_test_split can only stratify when both sides hold every class.
+        room = n_test >= n_classes and (n_rows - n_test) >= n_classes
+        evidence = {**evidence, "smallest_class_rows": smallest, "class_count": n_classes}
+        if smallest >= MIN_STRATIFIED_CLASS_ROWS and room:
+            return HoldoutPlan(
+                strategy=STRATIFIED_RANDOM,
+                test_size=size,
+                random_state=random_state,
+                stratified=True,
+                group_column=None,
+                time_column=None,
+                reason="Ordinary multiclass classification uses a stratified random 80/20 final holdout.",
+                evidence=evidence,
+            )
+        return HoldoutPlan(
+            strategy=RANDOM,
+            test_size=size,
+            random_state=random_state,
+            stratified=False,
+            group_column=None,
+            time_column=None,
+            reason=(
+                (
+                    f"A class has only {smallest} row(s), too few to stratify"
+                    if smallest < MIN_STRATIFIED_CLASS_ROWS
+                    else f"{n_classes} classes do not fit a stratified {n_test}-row test set"
+                )
+                + "; the final holdout is a random 80/20 split and a class missing from "
+                "training counts as misclassified."
+            ),
+            evidence=evidence,
         )
 
     if task_type == "binary":

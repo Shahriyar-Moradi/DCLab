@@ -172,7 +172,7 @@ def plan_validation(
             random_state=random_state,
             group_column=str(entity["column"]),
             time_column=str(temporal["column"]),
-            stratified=profile.task_type == "binary",
+            stratified=profile.task_type in {"binary", "multiclass"},
             reason=(
                 "Repeated-entity grouping and strong temporal prediction structure "
                 "are both present. No verified joint splitter is available."
@@ -223,7 +223,7 @@ def plan_validation(
         group_column = str(entity["column"])
         groups = frame[group_column] if frame is not None and group_column in frame.columns else None
         labels = y if y is not None else None
-        if profile.task_type == "binary" and labels is not None and groups is not None:
+        if profile.task_type in {"binary", "multiclass"} and labels is not None and groups is not None:
             feasible = _max_stratified_group_splits(labels, groups)
             actual, fallback = _adapt_folds(
                 requested,
@@ -286,13 +286,42 @@ def plan_validation(
             evidence=evidence,
         )
 
-    if profile.task_type == "binary":
+    multiclass_fallback: str | None = None
+    if profile.task_type in {"binary", "multiclass"}:
         if y is not None:
-            feasible = _max_stratified_splits(y)
+            counts = [int(value) for value in y.value_counts(dropna=True).tolist()]
         elif profile.class_distribution:
-            feasible = min(profile.class_distribution.values())
+            counts = [int(value) for value in profile.class_distribution.values()]
         else:
-            feasible = requested
+            counts = []
+        feasible = min(counts) if counts else requested
+    if profile.task_type == "multiclass" and counts and feasible < requested:
+        # StratifiedKFold only needs the largest class to fill every fold; a rare
+        # class lands in fewer folds (sklearn warns) and is never silently dropped.
+        largest = max(counts)
+        if largest >= MIN_FOLDS:
+            actual = min(requested, largest)
+            return ValidationPlan(
+                strategy=STRATIFIED_KFOLD,
+                requested_folds=requested,
+                actual_folds=actual,
+                shuffle=True,
+                random_state=random_state,
+                group_column=None,
+                time_column=None,
+                stratified=True,
+                reason="Ordinary multiclass classification uses StratifiedKFold on the locked training partition.",
+                fallback_reason=(
+                    f"The rarest class has {feasible} training row(s), fewer than {actual} folds; "
+                    "it appears in only some validation folds."
+                    + (" Reduced folds because the largest class is small." if actual < requested else "")
+                ),
+                evidence={**evidence, "class_counts_min": feasible, "class_counts_max": largest},
+            )
+        multiclass_fallback = (
+            "StratifiedKFold is infeasible because no class has two training rows; using shuffled KFold."
+        )
+    elif profile.task_type in {"binary", "multiclass"}:
         actual, fallback = _adapt_folds(
             requested,
             feasible,
@@ -307,7 +336,9 @@ def plan_validation(
             group_column=None,
             time_column=None,
             stratified=True,
-            reason="Ordinary binary classification uses StratifiedKFold on the locked training partition.",
+            reason=(
+                f"Ordinary {profile.task_type} classification uses StratifiedKFold on the locked training partition."
+            ),
             fallback_reason=fallback,
             evidence=evidence,
         )
@@ -328,8 +359,12 @@ def plan_validation(
         group_column=None,
         time_column=None,
         stratified=False,
-        reason="Ordinary regression uses shuffled KFold on the locked training partition.",
-        fallback_reason=fallback,
+        reason=(
+            "Ordinary regression uses shuffled KFold on the locked training partition."
+            if multiclass_fallback is None
+            else "Multiclass classification uses shuffled KFold because stratification is infeasible."
+        ),
+        fallback_reason=multiclass_fallback or fallback,
         evidence=evidence,
     )
 
