@@ -287,6 +287,21 @@ class PipelineRunObserver:
         self.emit(stage, event_type, status, data, duration_ms)
 
 
+def provider_kind_for(*, mode: str, llm_used: bool) -> str:
+    """Port kind of the gateway that produced an invocation (ADR 0006 §7).
+
+    No LLM call ran -> ``deterministic_fallback``; a semantic decision that used
+    the LLM -> ``semantic_decision``; any other LLM call -> ``llm_provider``.
+    ``agent_runtime`` is reserved for Phase 6 agent runs.
+    """
+
+    if not llm_used:
+        return "deterministic_fallback"
+    if mode == "semantic_decision":
+        return "semantic_decision"
+    return "llm_provider"
+
+
 def create_llm_invocation(
     db: Session,
     *,
@@ -337,6 +352,8 @@ def create_llm_invocation(
         workspace_id=pipeline.workspace_id,
         workflow_run_id=workflow_run.id,
         experiment_id=pipeline.id,
+        project_id=pipeline.project_id,
+        provider_kind=provider_kind_for(mode=mode, llm_used=llm_used),
         purpose=purpose,
         provider=provider if llm_used else None,
         model=model if llm_used else None,

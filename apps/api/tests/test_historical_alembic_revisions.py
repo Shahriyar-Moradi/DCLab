@@ -351,6 +351,8 @@ def test_previous_head_state_graph_backfill_and_guarded_downgrade(monkeypatch):
             command.upgrade(alembic_config, "head")
             assert _source_datasets(engine, ids) == expected
 
+            # Exercise the 0063 downgrade guard directly from its own revision.
+            command.downgrade(alembic_config, "0063_state_graph_nodes")
             with engine.begin() as connection:
                 connection.execute(
                     text(
@@ -368,6 +370,183 @@ def test_previous_head_state_graph_backfill_and_guarded_downgrade(monkeypatch):
             with engine.connect() as connection:
                 head = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
             assert head == "0063_state_graph_nodes"
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)
+
+
+def _seed_tenant_backfill_rows(engine) -> dict[str, object]:
+    """0063 rows in all four 0064 tables for one new workspace.
+
+    Includes a prediction of a locked run and an invocation whose experiment has
+    no project (its ``project_id`` must stay NULL after the backfill).
+    """
+
+    ids = _seed_state_graph_links(engine)
+    ids.update({name: uuid4() for name in (
+        "workflow", "run", "input", "prediction", "invocation", "verification",
+        "noproj", "noproj_invocation",
+    )})
+    params = {key: value for key, value in ids.items()}
+    statements = (
+        "INSERT INTO ml_workflows (id, workspace_id, name, slug, description, "
+        "business_objective, status, config) VALUES (:workflow, :ws, 'w', 'w', '', 'o', "
+        "'active', '{}'::jsonb)",
+        "INSERT INTO workflow_runs (id, workspace_id, workflow_id, project_id, trigger_type, "
+        "source_type, status) VALUES (:run, :ws, :workflow, :p1, 'manual', 'dataset', 'queued')",
+        "INSERT INTO workflow_run_inputs (id, workflow_run_id, dataset_id, input_role, position) "
+        "VALUES (:input, :run, :ds_a, 'training', 0)",
+        "INSERT INTO experiment_test_predictions (id, experiment_id, row_index, record_id, "
+        "predicted_value) VALUES (:prediction, :single, 0, 'r0', '1'::jsonb)",
+        "INSERT INTO llm_invocations (id, workspace_id, workflow_run_id, experiment_id, purpose, "
+        "mode, prompt_version, schema_version, input_evidence_digest, redaction_summary, "
+        "llm_used, reason, status, validator_verdict, started_at) VALUES (:invocation, :ws, "
+        ":run, :single, 'pipeline_audit_routine', 'routine', 'v1', '1', repeat('a', 64), "
+        "'{}'::jsonb, false, 'r', 'not_used', 'not_run', now())",
+        "INSERT INTO ml_run_verifications (id, run_id, experiment_id, llm_invocation_id, "
+        "audit_mode, deterministic_status, deterministic_checks, deterministic_schema_version, "
+        "llm_provider, llm_model, llm_status, prompt_version, schema_version, input_digest, "
+        "redaction_summary, started_at) SELECT :verification, u.id, :single, :invocation, "
+        "'routine', 'PASS', '[]'::jsonb, 1, 'openai', 'm', 'pending', 'v1', 1, repeat('b', 64), "
+        "'{}'::jsonb, now() FROM client_lab_uploads AS u WHERE u.experiment_id = :single",
+        "INSERT INTO experiments (id, workspace_id, project_id, environment_id, dataset_id, "
+        "status, config, seed) VALUES (:noproj, :ws, NULL, :env, :ds_a, 'COMPLETED', "
+        "'{}'::jsonb, 42)",
+        "INSERT INTO llm_invocations (id, workspace_id, workflow_run_id, experiment_id, purpose, "
+        "mode, prompt_version, schema_version, input_evidence_digest, redaction_summary, "
+        "llm_used, reason, status, validator_verdict, started_at) VALUES (:noproj_invocation, "
+        ":ws, :run, :noproj, 'pipeline_audit_routine', 'routine', 'v1', '1', repeat('e', 64), "
+        "'{}'::jsonb, false, 'r', 'not_used', 'not_run', now())",
+        # Lock the run so the prediction backfill must pass the named evidence trigger.
+        "ALTER TABLE experiments DISABLE TRIGGER experiments_evidence_lock_stamp",
+        "UPDATE experiments SET scientific_evidence_locked_at = now() WHERE id = :single",
+        "ALTER TABLE experiments ENABLE TRIGGER experiments_evidence_lock_stamp",
+    )
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement), params)
+    return ids
+
+
+def test_previous_head_tenant_backfill_and_llm_attribution(monkeypatch):
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="from63"
+    )
+    try:
+        command.upgrade(alembic_config, "0063_state_graph_nodes")
+        engine = create_engine(database_url)
+        try:
+            ids = _seed_tenant_backfill_rows(engine)
+            other = _seed_tenant_backfill_rows(engine)  # a second workspace
+            assert other["ws"] != ids["ws"]
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
+            with engine.connect() as connection:
+                for seeded in (ids, other):
+                    for table, key in (
+                        ("workflow_run_inputs", "input"),
+                        ("experiment_test_predictions", "prediction"),
+                        ("ml_run_verifications", "verification"),
+                    ):
+                        workspace = connection.execute(
+                            text(f"SELECT workspace_id FROM {table} WHERE id = :id"),
+                            {"id": seeded[key]},
+                        ).scalar()
+                        assert workspace == seeded["ws"], table
+                nullable = dict(
+                    connection.execute(
+                        text(
+                            "SELECT table_name, is_nullable FROM information_schema.columns "
+                            "WHERE column_name = 'workspace_id' AND table_name IN "
+                            "('workflow_run_inputs', 'experiment_test_predictions', "
+                            "'ml_run_verifications')"
+                        )
+                    ).all()
+                )
+                assert set(nullable.values()) == {"NO"} and len(nullable) == 3
+                enabled = connection.execute(
+                    text(
+                        "SELECT tgenabled FROM pg_trigger "
+                        "WHERE tgname = 'experiment_test_predictions_evidence_locked'"
+                    )
+                ).scalar()
+                assert enabled == "O"
+                project = connection.execute(
+                    text("SELECT project_id FROM llm_invocations WHERE id = :id"),
+                    {"id": ids["invocation"]},
+                ).scalar()
+                assert project == ids["p1"]
+                unprojected = connection.execute(
+                    text("SELECT project_id FROM llm_invocations WHERE id = :id"),
+                    {"id": ids["noproj_invocation"]},
+                ).scalar()
+                assert unprojected is None
+
+            # Nothing project-only yet: downgrade and upgrade are repeatable.
+            command.downgrade(alembic_config, "-1")
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
+
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO llm_invocations (id, workspace_id, project_id, purpose, "
+                        "mode, prompt_version, schema_version, input_evidence_digest, "
+                        "redaction_summary, llm_used, reason, status, validator_verdict, "
+                        "started_at) VALUES (gen_random_uuid(), :ws, :p1, "
+                        "'pipeline_audit_routine', 'routine', 'v1', '1', repeat('c', 64), "
+                        "'{}'::jsonb, false, 'r', 'not_used', 'not_run', now())"
+                    ),
+                    {"ws": ids["ws"], "p1": ids["p1"]},
+                )
+            with pytest.raises(Exception, match="0064 downgrade refused"):
+                command.downgrade(alembic_config, "-1")
+            with engine.connect() as connection:
+                head = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            assert head == "0064_tenant_llm_attribution"
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)
+
+
+def test_previous_head_tenant_backfill_refuses_cross_workspace_input(monkeypatch):
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="xws63"
+    )
+    try:
+        command.upgrade(alembic_config, "0063_state_graph_nodes")
+        engine = create_engine(database_url)
+        try:
+            ids = _seed_tenant_backfill_rows(engine)
+            other = _seed_state_graph_links(engine)
+            # Single-column FKs allowed this; the 0064 composite FK must not.
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO workflow_run_inputs (id, workflow_run_id, dataset_id, "
+                        "input_role, position) VALUES (:id, :run, :dataset, 'foreign', 0)"
+                    ),
+                    {"id": uuid4(), "run": ids["run"], "dataset": other["ds_a"]},
+                )
+            with pytest.raises(
+                Exception,
+                match=r"0064: cross-workspace references: workflow_run_inputs.dataset_id=1, "
+                r"ml_run_verifications.experiment_id=0, "
+                r"ml_run_verifications.llm_invocation_id=0",
+            ):
+                command.upgrade(alembic_config, "head")
+            with engine.connect() as connection:
+                head = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+                columns = connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'workflow_run_inputs' AND column_name = 'workspace_id'"
+                    )
+                ).scalar()
+            assert head == "0063_state_graph_nodes"
+            assert columns == 0
         finally:
             engine.dispose()
     finally:

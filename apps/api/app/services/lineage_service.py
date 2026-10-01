@@ -363,6 +363,7 @@ def add_workflow_run_input(
     if existing is not None:
         return existing
     row = WorkflowRunInput(
+        workspace_id=workflow_run.workspace_id,
         workflow_run_id=workflow_run.id,
         dataset_id=dataset.id,
         input_role=input_role,

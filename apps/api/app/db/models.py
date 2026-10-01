@@ -1710,9 +1710,34 @@ class MlRunVerification(Base):
             "audit_mode IN ('routine', 'deep')",
             name="ck_ml_run_verifications_audit_mode",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "run_id"],
+            ["client_lab_uploads.workspace_id", "client_lab_uploads.id"],
+            name="fk_ml_run_verifications_workspace_run",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "experiment_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_ml_run_verifications_workspace_experiment",
+            ondelete="SET NULL (experiment_id)",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "llm_invocation_id"],
+            ["llm_invocations.workspace_id", "llm_invocations.id"],
+            name="fk_ml_run_verifications_workspace_llm_invocation",
+            ondelete="SET NULL (llm_invocation_id)",
+        ),
+        Index("ix_ml_run_verifications_workspace_id", "workspace_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Tenant key (ADR 0006 §7, Alembic 0064): parent-derived, never defaulted.
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", name="fk_ml_run_verifications_workspace_id"),
+        nullable=False,
+    )
     llm_invocation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("llm_invocations.id", ondelete="SET NULL"),
@@ -2627,7 +2652,9 @@ class Dataset(Base):
         back_populates="dataset",
         foreign_keys="Experiment.dataset_id",
     )
-    workflow_inputs: Mapped[list["WorkflowRunInput"]] = relationship(back_populates="dataset")
+    workflow_inputs: Mapped[list["WorkflowRunInput"]] = relationship(
+        back_populates="dataset", foreign_keys="WorkflowRunInput.dataset_id"
+    )
     model_versions: Mapped[list["ModelVersion"]] = relationship(
         back_populates="dataset",
         foreign_keys="ModelVersion.dataset_id",
@@ -3281,7 +3308,9 @@ class WorkflowRun(Base):
         foreign_keys="WorkflowRun.source_upload_id",
     )
     inputs: Mapped[list["WorkflowRunInput"]] = relationship(
-        back_populates="workflow_run", cascade="all, delete-orphan"
+        back_populates="workflow_run",
+        cascade="all, delete-orphan",
+        foreign_keys="WorkflowRunInput.workflow_run_id",
     )
     pipeline_runs: Mapped[list["Experiment"]] = relationship(
         back_populates="workflow_run",
@@ -3298,6 +3327,7 @@ class WorkflowRun(Base):
     llm_invocations: Mapped[list["LlmInvocation"]] = relationship(
         back_populates="workflow_run",
         foreign_keys="LlmInvocation.workflow_run_id",
+        passive_deletes=True,
     )
 
 
@@ -3313,10 +3343,28 @@ class WorkflowRunInput(Base):
         Index("ix_workflow_run_inputs_workflow_run_id", "workflow_run_id"),
         Index("ix_workflow_run_inputs_dataset_id", "dataset_id"),
         Index("ix_workflow_run_inputs_input_role", "input_role"),
+        ForeignKeyConstraint(
+            ["workspace_id", "workflow_run_id"],
+            ["workflow_runs.workspace_id", "workflow_runs.id"],
+            name="fk_workflow_run_inputs_workspace_workflow_run",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "dataset_id"],
+            ["datasets.workspace_id", "datasets.id"],
+            name="fk_workflow_run_inputs_workspace_dataset",
+        ),
+        Index("ix_workflow_run_inputs_workspace_id", "workspace_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    # Tenant key (ADR 0006 §7, Alembic 0064): parent-derived, never defaulted.
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", name="fk_workflow_run_inputs_workspace_id"),
+        nullable=False,
     )
     workflow_run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -3332,8 +3380,12 @@ class WorkflowRunInput(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    workflow_run: Mapped[WorkflowRun] = relationship(back_populates="inputs")
-    dataset: Mapped[Dataset] = relationship(back_populates="workflow_inputs")
+    workflow_run: Mapped[WorkflowRun] = relationship(
+        back_populates="inputs", foreign_keys="WorkflowRunInput.workflow_run_id"
+    )
+    dataset: Mapped[Dataset] = relationship(
+        back_populates="workflow_inputs", foreign_keys="WorkflowRunInput.dataset_id"
+    )
 
 
 class Experiment(Base):
@@ -3573,7 +3625,9 @@ class Experiment(Base):
         foreign_keys="CodeSnapshot.pipeline_run_id",
         passive_deletes=True,
     )
-    test_predictions: Mapped[list["ExperimentTestPrediction"]] = relationship(back_populates="experiment")
+    test_predictions: Mapped[list["ExperimentTestPrediction"]] = relationship(
+        back_populates="experiment", foreign_keys="ExperimentTestPrediction.experiment_id"
+    )
     model_version: Mapped["ModelVersion | None"] = relationship(
         back_populates="pipeline_run",
         uselist=False,
@@ -3591,6 +3645,7 @@ class Experiment(Base):
     llm_invocations: Mapped[list["LlmInvocation"]] = relationship(
         back_populates="pipeline_run",
         foreign_keys="LlmInvocation.experiment_id",
+        passive_deletes=True,
     )
     data_quality_findings: Mapped[list["DataQualityFinding"]] = relationship(
         back_populates="pipeline_run",
@@ -4958,9 +5013,22 @@ class ExperimentTestPrediction(Base):
             "row_index",
             name="uq_experiment_test_predictions_experiment_row",
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "experiment_id"],
+            ["experiments.workspace_id", "experiments.id"],
+            name="fk_experiment_test_predictions_workspace_experiment",
+            ondelete="CASCADE",
+        ),
+        Index("ix_experiment_test_predictions_workspace_id", "workspace_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Tenant key (ADR 0006 §7, Alembic 0064): parent-derived, never defaulted.
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", name="fk_experiment_test_predictions_workspace_id"),
+        nullable=False,
+    )
     experiment_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("experiments.id", ondelete="CASCADE"),
@@ -4977,7 +5045,9 @@ class ExperimentTestPrediction(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    experiment: Mapped[Experiment] = relationship(back_populates="test_predictions")
+    experiment: Mapped[Experiment] = relationship(
+        back_populates="test_predictions", foreign_keys="ExperimentTestPrediction.experiment_id"
+    )
 
 
 class RuntimeEnvironment(Base):
@@ -5466,6 +5536,23 @@ class LlmInvocation(Base):
             "'pipeline_audit_deep')",
             name="ck_llm_invocations_purpose",
         ),
+        # ADR 0006 §7 (Alembic 0064): every invocation is attributable, possibly
+        # to a project or agent run only.
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_llm_invocations_workspace_project",
+        ),
+        CheckConstraint(
+            "provider_kind IS NULL OR provider_kind IN ('llm_provider', 'semantic_decision', "
+            "'agent_runtime', 'deterministic_fallback')",
+            name="ck_llm_invocations_provider_kind",
+        ),
+        CheckConstraint(
+            "num_nonnulls(workflow_run_id, experiment_id, project_id, agent_run_id) >= 1",
+            name="ck_llm_invocations_attributed",
+        ),
+        Index("ix_llm_invocations_project_id", "project_id"),
         Index(
             "ix_llm_invocations_workspace_created_at",
             "workspace_id",
@@ -5484,12 +5571,17 @@ class LlmInvocation(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
     )
-    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=False
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=True
     )
-    experiment_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=True
     )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Internal agent run (Phase 6 adds agent_runs and the FK additively).
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Port kind of the gateway that produced the row; ``provider`` keeps the vendor.
+    provider_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
     purpose: Mapped[str] = mapped_column(String(64), nullable=False)
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -5516,11 +5608,11 @@ class LlmInvocation(Base):
     )
 
     workspace: Mapped[Workspace] = relationship(back_populates="llm_invocations")
-    workflow_run: Mapped[WorkflowRun] = relationship(
+    workflow_run: Mapped[WorkflowRun | None] = relationship(
         back_populates="llm_invocations",
         foreign_keys="LlmInvocation.workflow_run_id",
     )
-    pipeline_run: Mapped[Experiment] = relationship(
+    pipeline_run: Mapped[Experiment | None] = relationship(
         back_populates="llm_invocations",
         foreign_keys="LlmInvocation.experiment_id",
     )

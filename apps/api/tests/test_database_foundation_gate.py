@@ -92,6 +92,14 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_pdr_workspace_project_supersedes": "a",
     "fk_experiments_workspace_source_dataset": "a",
     "fk_experiments_workspace_project_split_plan": "a",
+    # 0064 tenant keys (ADR 0006 §7): actions match the pre-existing single FKs.
+    "fk_workflow_run_inputs_workspace_workflow_run": "c",
+    "fk_workflow_run_inputs_workspace_dataset": "a",
+    "fk_experiment_test_predictions_workspace_experiment": "c",
+    "fk_ml_run_verifications_workspace_run": "c",
+    "fk_ml_run_verifications_workspace_experiment": "n",
+    "fk_ml_run_verifications_workspace_llm_invocation": "n",
+    "fk_llm_invocations_workspace_project": "a",
 }
 
 

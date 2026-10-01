@@ -457,6 +457,16 @@
     },
     {
       "table": "llm_invocations",
+      "name": "ck_llm_invocations_attributed",
+      "definition": "CHECK ((num_nonnulls(workflow_run_id, experiment_id, project_id, agent_run_id) >= 1))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_provider_kind",
+      "definition": "CHECK (((provider_kind IS NULL) OR ((provider_kind)::text = ANY ((ARRAY['llm_provider'::character varying, 'semantic_decision'::character varying, 'agent_runtime'::character varying, 'deterministic_fallback'::character varying])::text[]))))"
+    },
+    {
+      "table": "llm_invocations",
       "name": "ck_llm_invocations_purpose",
       "definition": "CHECK (((purpose)::text = ANY ((ARRAY['semantic_target'::character varying, 'semantic_missing_value'::character varying, 'semantic_column_type'::character varying, 'semantic_leakage'::character varying, 'pipeline_audit_routine'::character varying, 'pipeline_audit_deep'::character varying])::text[])))"
     },

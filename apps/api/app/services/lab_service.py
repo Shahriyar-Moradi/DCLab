@@ -287,10 +287,10 @@ def _persist_pipeline_stage_runs(db: Session, experiment: Experiment, result: di
     reconcile_pipeline_stage_runs(db, experiment, timings)
 
 
-def _persist_experiment_test_predictions(db: Session, experiment_id, result: dict) -> None:
+def _persist_experiment_test_predictions(db: Session, experiment: Experiment, result: dict) -> None:
     """Replace holdout rows for this experiment. Opportunity `predictions` are untouched."""
     db.query(ExperimentTestPrediction).filter(
-        ExperimentTestPrediction.experiment_id == experiment_id
+        ExperimentTestPrediction.experiment_id == experiment.id
     ).delete(synchronize_session=False)
     task = result.get("task") if isinstance(result.get("task"), dict) else {}
     classifier = str(task.get("task_type") or "") in {"binary", "multiclass"}
@@ -308,7 +308,8 @@ def _persist_experiment_test_predictions(db: Session, experiment_id, result: dic
             record_id = row_index
         db.add(
             ExperimentTestPrediction(
-                experiment_id=experiment_id,
+                workspace_id=experiment.workspace_id,
+                experiment_id=experiment.id,
                 row_index=row_index,
                 source_row_index=(
                     int(row["source_row_index"])
@@ -406,7 +407,7 @@ def execute_experiment(
         experiment.status,
         (result.get("funnel") or {}).get("trained"),
     )
-    _persist_experiment_test_predictions(db, experiment.id, result)
+    _persist_experiment_test_predictions(db, experiment, result)
     _persist_pipeline_stage_runs(db, experiment, result)
     if persist_scientific:
         from app.services.scientific_lineage_service import persist_scientific_lineage_from_result

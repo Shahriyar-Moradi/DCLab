@@ -222,6 +222,7 @@ def request_pipeline_verification(
             "production_evidence": package.redaction_summary,
         }
     attempt = MlRunVerification(
+        workspace_id=upload.workspace_id,
         llm_invocation_id=invocation.id if invocation is not None else None,
         run_id=upload.id,
         experiment_id=upload.experiment_id,
