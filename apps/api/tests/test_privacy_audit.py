@@ -133,10 +133,12 @@ def test_labs_upload_leaves_columns_unclassified_and_records_copy_event(
         .all()
     )
     assert [column.name for column in columns] == ["tenure", "churn"]
-    assert all(column.sensitivity_class is None for column in columns)
-    assert all(column.classification_source is None for column in columns)
-    assert all(column.model_use_policy is None for column in columns)
-    assert all(column.llm_exposure_policy is None for column in columns)
+    # ADR 0005: the upload carries the conservative internal_training labels,
+    # declared as policy defaults rather than a classification.
+    assert all(column.sensitivity_class == "restricted" for column in columns)
+    assert all(column.classification_source == "policy" for column in columns)
+    assert all(column.model_use_policy == "allow" for column in columns)
+    assert all(column.llm_exposure_policy == "deny" for column in columns)
 
     tenure = columns[0]
     labeled = set_dataset_column_policy(
@@ -185,6 +187,11 @@ def test_dataset_policy_defaults_are_versioned_and_null_columns_stay_denied(
 ):
     monkeypatch.setattr(
         "app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None
+    )
+    # Resolver semantics on an unclassified dataset: skip ADR 0005 auto-publication.
+    monkeypatch.setattr(
+        "app.services.client_lab_upload_service.publish_upload_for_internal_training",
+        lambda *_args, **_kwargs: None,
     )
     response = auth_client.post(
         "/app/labs/uploads",

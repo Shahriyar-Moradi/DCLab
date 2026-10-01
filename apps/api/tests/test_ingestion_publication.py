@@ -124,26 +124,158 @@ def test_unpublished_dataset_cannot_be_downloaded_or_signed(db_session, tmp_path
     assert exc.value.status_code == 409
 
 
-def test_production_upload_path_refuses_before_writing(db_session, monkeypatch):
-    from app.services.client_lab_upload_service import save_upload
+def _published_events(db, run_id):
+    return list(db.scalars(
+        select(IngestionPublicationEvent)
+        .where(IngestionPublicationEvent.ingestion_run_id == run_id)
+        .order_by(IngestionPublicationEvent.version)
+    ))
 
-    monkeypatch.setattr("app.services.client_lab_upload_service.is_production_env", lambda _settings: True)
+
+def test_own_workspace_upload_is_published_for_internal_training(auth_client, db_session, monkeypatch):
+    """ADR 0005: structural validation publishes an own-workspace upload."""
+    monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
+    monkeypatch.setattr("app.services.client_lab_upload_service.publication_enforced", lambda _settings: True)
+    response = auth_client.post(
+        "/app/labs/uploads", data={"category": "Marketing"},
+        files={"file": ("data.csv", b"amount,region,target\n5,north,1\n7,south,0\n", "text/csv")},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["dataset_id"] is not None and body["record_count"] == 2
+    from app.db.models import ClientLabUpload, DatasetPolicyRevision
+    upload = db_session.get(ClientLabUpload, body["id"])
+    run = db_session.get(IngestionRun, upload.ingestion_run_id)
+    assert run.publication_state == "published" and run.status == "completed"
+    events = _published_events(db_session, run.id)
+    assert [(e.to_state, e.reason_code) for e in events] == [
+        ("quarantined", "upload_received"),
+        ("scanned", "structural_validation_passed"),
+        ("classified", "internal_training_policy_applied"),
+        ("publishable", "internal_training_policy_complete"),
+        ("published", "internal_training_published"),
+    ]
+    assert all(e.actor_type == "user" and e.actor_user_id == upload.requested_by for e in events)
+    policy = db_session.scalar(
+        select(DatasetPolicyRevision).where(DatasetPolicyRevision.dataset_id == upload.dataset_id)
+    )
+    assert (policy.sensitivity_class, policy.llm_exposure_policy, policy.classification_source) == (
+        "restricted", "deny", "policy",
+    )
+    columns = list(db_session.scalars(select(DatasetColumn).where(DatasetColumn.dataset_id == upload.dataset_id)))
+    assert columns and all(
+        c.llm_exposure_policy == "deny" and c.model_use_policy == "allow" and c.classification_source == "policy"
+        for c in columns
+    )
+    # The published projection is complete (not the redacted awaiting-review one).
+    assert auth_client.get(f"/app/labs/uploads/{body['id']}").json()["dataset_id"] == body["dataset_id"]
+
+
+def test_production_upload_is_published_under_internal_training_policy(auth_client, db_session, monkeypatch):
+    monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
+    monkeypatch.setattr("app.services.ingestion_run_service.is_production_env", lambda _settings: True)
+    monkeypatch.setattr("app.services.client_lab_upload_service.publication_enforced", lambda _settings: True)
+    response = auth_client.post(
+        "/app/labs/uploads", data={"category": "Marketing"},
+        files={"file": ("data.csv", b"x,y\n1,2\n3,4\n", "text/csv")},
+    )
+    assert response.status_code == 200, response.text
+    from app.db.models import ClientLabUpload
+    upload = db_session.get(ClientLabUpload, response.json()["id"])
+    assert db_session.get(IngestionRun, upload.ingestion_run_id).publication_state == "published"
+
+
+def test_structurally_invalid_upload_is_rejected_with_reason_and_not_retained(auth_client, db_session, monkeypatch):
+    from app.db.models import Artifact
+    before = db_session.scalar(select(text("count(*)")).select_from(Artifact.__table__))
+    response = auth_client.post(
+        "/app/labs/uploads", data={"category": "Marketing"},
+        files={"file": ("data.csv", b"MZ" + b"\0" * 20, "text/csv")},
+    )
+    assert response.status_code == 422
+    assert "does not match" in response.json()["detail"]
+    after = db_session.scalar(select(text("count(*)")).select_from(Artifact.__table__))
+    assert after == before
+
+
+def test_internal_training_attestation_cannot_be_forged(db_session, tmp_path, monkeypatch):
+    workspace, actor, artifact, run = _setup(db_session, tmp_path)
+    _advance(db_session, workspace, actor, artifact, run, "quarantined")
+    monkeypatch.setattr("app.services.ingestion_run_service.is_production_env", lambda _settings: True)
+    # The policy reason without the attestation is still the generic path: 503.
     with pytest.raises(IdentityError) as exc:
-        save_upload(
-            db_session, user=None, category="Marketing", filename="data.csv",
-            data=b"x,y\n1,2\n", workspace_id=uuid4(),
+        transition_publication(
+            db_session, workspace_id=workspace.id, ingestion_run_id=run.id,
+            to_state="scanned", content_digest=artifact.content_digest,
+            reason_code="structural_validation_passed", actor_type="user", actor_user_id=actor.id,
         )
     assert exc.value.status_code == 503
+    # The attestation with a mismatched reason or a system actor is rejected.
+    for reason, actor_type, actor_id in (
+        ("test_scanned", "user", actor.id),
+        ("structural_validation_passed", "system", None),
+    ):
+        with pytest.raises(IdentityError) as exc:
+            transition_publication(
+                db_session, workspace_id=workspace.id, ingestion_run_id=run.id,
+                to_state="scanned", content_digest=artifact.content_digest,
+                reason_code=reason, actor_type=actor_type, actor_user_id=actor_id,
+                attestation="structural_internal_training",
+            )
+        assert exc.value.status_code == 400
+    assert run.publication_state == "quarantined"
 
 
-def test_direct_upload_api_denies_when_production_scanner_is_absent(auth_client, monkeypatch):
-    monkeypatch.setattr("app.services.client_lab_upload_service.is_production_env", lambda _settings: True)
+def test_internal_training_attestation_rejects_other_strings_actors_and_users(db_session, tmp_path):
+    workspace, actor, artifact, run = _setup(db_session, tmp_path)
+    _advance(db_session, workspace, actor, artifact, run, "quarantined")
+    other = create_user(
+        db_session, email=f"other-{uuid4().hex}@test.invalid", password="test-password",
+        role=UserRole.WORKSPACE_OWNER, full_name="Other", workspace_id=workspace.id,
+    )
+    cases = [
+        ("forged_attestation", "user", actor.id, 400),
+        ("structural_internal_training", "operator", actor.id, 400),
+        # Same workspace writer, but not the uploader of this artifact.
+        ("structural_internal_training", "user", other.id, 403),
+    ]
+    for attestation, actor_type, actor_id, status in cases:
+        with pytest.raises(IdentityError) as exc:
+            transition_publication(
+                db_session, workspace_id=workspace.id, ingestion_run_id=run.id,
+                to_state="scanned", content_digest=artifact.content_digest,
+                reason_code="structural_validation_passed", actor_type=actor_type,
+                actor_user_id=actor_id, attestation=attestation,
+            )
+        assert exc.value.status_code == status, (attestation, actor_type)
+    assert run.publication_state == "quarantined"
+
+
+def test_failed_publication_rolls_back_upload_and_object(auth_client, db_session, monkeypatch):
+    from app.db.models import Artifact
+
+    def boom(*_args, **_kwargs):
+        raise IdentityError("dataset classification incomplete", status_code=409)
+
+    deleted: list[str] = []
+    monkeypatch.setattr("app.services.client_lab_upload_service.publish_upload_for_internal_training", boom)
+    monkeypatch.setattr("app.storage.local.LocalStorage.delete", lambda self, key: deleted.append(key))
+    before = db_session.scalar(select(text("count(*)")).select_from(Artifact.__table__))
     response = auth_client.post(
         "/app/labs/uploads", data={"category": "Marketing"},
         files={"file": ("data.csv", b"x,y\n1,2\n", "text/csv")},
     )
-    assert response.status_code == 503
-    assert "safety review" in response.text
+    assert response.status_code == 409
+    assert db_session.scalar(select(text("count(*)")).select_from(Artifact.__table__)) == before
+    assert len(deleted) == 1
+
+
+def test_production_refuses_llm_flags_until_dataset_policy_is_enforced():
+    from app.config import Settings, validate_runtime_settings
+
+    for flags in ({"decision_agent_enabled": True}, {"pipeline_llm_verifier_enabled": True}):
+        with pytest.raises(RuntimeError, match="llm_exposure_policy"):
+            validate_runtime_settings(Settings(dclab_env="production", **flags))
 
 
 def test_unverified_upload_projection_hides_preview_and_dataset(auth_client, monkeypatch):
@@ -153,6 +285,14 @@ def test_unverified_upload_projection_hides_preview_and_dataset(auth_client, mon
         files={"file": ("data.csv", b"secret,target\nprivate,1\n", "text/csv")},
     )
     assert uploaded.status_code == 200
+    # Make it a real legacy row: pre-ADR-0005 runs never recorded artifact_id,
+    # so no publication can be found for the upload's artifact.
+    from app.db.models import ClientLabUpload
+    from app.db.session import get_session_factory
+    with get_session_factory()() as db:
+        upload = db.get(ClientLabUpload, uploaded.json()["id"])
+        db.execute(text("UPDATE ingestion_runs SET artifact_id = NULL WHERE id = :id"), {"id": upload.ingestion_run_id})
+        db.commit()
     monkeypatch.setattr("app.services.client_lab_upload_service.publication_enforced", lambda _settings: True)
     result = auth_client.get(f"/app/labs/uploads/{uploaded.json()['id']}")
     assert result.status_code == 200
@@ -161,6 +301,7 @@ def test_unverified_upload_projection_hides_preview_and_dataset(auth_client, mon
     assert body["fields_noticed"] == []
     assert body["record_count"] == 0
     assert body["insights"] == [] and body["outcome"] is None
+    assert "quarantined" in body["message"] and "Upload it again" in body["message"]
 
 
 def test_legacy_csv_import_api_is_not_a_production_bypass(auth_client, monkeypatch):

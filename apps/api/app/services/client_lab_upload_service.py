@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_settings, is_production_env, publication_enforced
+from app.config import get_settings, publication_enforced
 from app.db.models import Artifact, ClientLabUpload, Dataset, DatasetAsset, User
 from app.domain.client_lab import ClientLabUploadRead, TargetConfirmationRequired
 from app.domain.data_access import ACCESS_TYPE_UPLOAD, EXECUTION_MODE_COPY
@@ -54,7 +54,10 @@ from app.services.data_access_service import create_data_access
 from app.services.data_source_service import create_data_source
 from app.services.dataset_column_service import persist_dataset_columns, schema_digest_from_columns
 from app.services.ingestion_run_service import complete_ingestion_run, start_ingestion_run
-from app.services.ingestion_run_service import require_published_artifact
+from app.services.ingestion_run_service import (
+    publish_upload_for_internal_training,
+    require_published_artifact,
+)
 from app.services.lab_service import seed_dogfood
 from app.services.project_service import get_or_create_labs_project, get_project
 from app.services.upload_structure_scan import inspect_upload_structure
@@ -111,7 +114,7 @@ def _persist_upload_dataset(
 ) -> Dataset:
     """Persist the physical upload even when it is not yet training-ready."""
 
-    env = seed_dogfood(db)
+    env = seed_dogfood(db, commit=False)
     from app.services.lineage_service import slugify
 
     name = (Path(filename).stem or "upload")[:128]
@@ -224,7 +227,7 @@ def _to_read(
             steps=[], category=InsightCategory(row.category),
             filename=row.original_filename, kind="unverified", record_count=0,
             fields_noticed=[], has_named_fields=False, structured=False,
-            progress="saved", message="This file is awaiting safety review.",
+            progress="saved", message="This file was uploaded before data publication was enforced and is quarantined. Upload it again to train on it.",
             pipeline_status="queued", insights=[], outcome=None,
             target_confirmation=None, created_at=row.created_at,
         )
@@ -300,10 +303,6 @@ def save_upload(
     project_id: UUID | None = None,
     problem_spec_id: UUID | None = None,
 ) -> ClientLabUploadRead:
-    # Until a production scanner/classifier can publish through the audited
-    # ingestion state machine, never run the legacy preview-before-scan path.
-    if is_production_env(get_settings()):
-        raise IdentityError("dataset upload is unavailable pending safety review", status_code=503)
     parsed_category = _parse_category(category)
     if data is None and upload_stream is None:
         raise ValueError("data or upload_stream is required")
@@ -399,6 +398,7 @@ def save_upload(
                 project_id=project.id,
                 data_source_id=source.id,
                 data_access_id=access.id,
+                artifact_id=artifact.id,
                 status="running",
             )
 
@@ -424,6 +424,16 @@ def save_upload(
                 bytes_read=put.size_bytes,
                 schema_digest=dataset.schema_digest,
                 content_digest=put.content_digest,
+            )
+            # ADR 0005: structural validation passed above, so the uploader's own
+            # workspace may train on it. Grants no LLM exposure or export.
+            publish_upload_for_internal_training(
+                db,
+                workspace_id=workspace_id,
+                ingestion_run_id=ingestion.id,
+                dataset_id=dataset.id,
+                content_digest=put.content_digest,
+                actor=user,
             )
             from app.services.problem_spec_service import populate_unlocked_problem_spec_target
             from app.services.target_intent_service import (

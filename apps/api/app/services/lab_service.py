@@ -49,7 +49,12 @@ def _git_hash() -> str | None:
         return None
 
 
-def seed_dogfood(db: Session) -> Environment:
+def seed_dogfood(db: Session, *, commit: bool = True) -> Environment:
+    """Get or create the shared dogfood Environment.
+
+    Callers inside a larger transaction pass ``commit=False`` so a later failure
+    can still roll back everything (the upload path must never commit midway).
+    """
     existing = db.scalars(
         select(Environment).where(Environment.org_id == DOGFOOD_ORG, Environment.name == DOGFOOD_NAME)
     ).first()
@@ -57,8 +62,11 @@ def seed_dogfood(db: Session) -> Environment:
         return existing
     env = Environment(org_id=DOGFOOD_ORG, name=DOGFOOD_NAME)
     db.add(env)
-    db.commit()
-    db.refresh(env)
+    if commit:
+        db.commit()
+        db.refresh(env)
+    else:
+        db.flush()
     return env
 
 

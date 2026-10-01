@@ -150,6 +150,7 @@ end to end, API never loads a model.
 | P8.4 Metering & plans | Usage records, quotas, entitlements enforced |
 | P8.5 Observability | OTel traces/metrics, alerts, runbooks |
 | P8.6 Open-source readiness | Package boundaries for engine/SDK/MCP, license, extraction plan |
+| P8.7 Data safety (old S0-P05C–E) | Content/malware scanner and classifier adapters, resumable quarantine worker, retention and deletion jobs, residency enforcement, operator quarantine-review UI (see ADR 0005) |
 
 **Exit gate:** 3 design partners complete a real project on the hosted beta
 without database intervention.

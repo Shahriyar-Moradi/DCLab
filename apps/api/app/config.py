@@ -165,6 +165,14 @@ def validate_runtime_settings(settings: Settings) -> None:
         return
     if not publication_enforced(settings):
         problems.append("DATASET_PUBLICATION_ENFORCED cannot be false in production")
+    # ADR 0005: published uploads carry llm_exposure_policy=deny, but the LLM
+    # paths do not consult dataset policy yet (Phase 6 gateway). Until they do,
+    # production must not send dataset-derived evidence to an LLM provider.
+    if settings.decision_agent_enabled or settings.pipeline_llm_verifier_enabled:
+        problems.append(
+            "DECISION_AGENT_ENABLED / PIPELINE_LLM_VERIFIER_ENABLED cannot be on in "
+            "production until LLM calls enforce dataset llm_exposure_policy"
+        )
     if _secret_is_unsafe(settings.jwt_secret):
         problems.append("JWT_SECRET is missing or the development default")
     if _secret_is_unsafe(settings.auth_token_hash_secret):

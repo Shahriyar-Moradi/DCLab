@@ -267,8 +267,9 @@ def test_csv_labs_upload_produces_canonical_lineage(
         .all()
     )
     assert [column.name for column in columns] == ["channel", "spend"]
-    assert all(column.sensitivity_class is None for column in columns)
-    assert all(column.llm_exposure_policy is None for column in columns)
+    # ADR 0005 internal_training labels: restricted and never exposed to an LLM.
+    assert all(column.sensitivity_class == "restricted" for column in columns)
+    assert all(column.llm_exposure_policy == "deny" for column in columns)
     assert dataset.schema_digest
 
 

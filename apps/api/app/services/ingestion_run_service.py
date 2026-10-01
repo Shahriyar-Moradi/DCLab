@@ -26,6 +26,30 @@ _PUBLICATION_NEXT = {
     "publishable": "published",
 }
 _REASON = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+# ADR 0005: the MVP upload policy. An owner/member upload to its own workspace is
+# published for internal deterministic training after structural validation.
+# This attests file structure only (type, signature, encoding, schema); it is
+# NOT a malware or content scan, and grants no LLM exposure or export.
+INTERNAL_TRAINING_ATTESTATION = "structural_internal_training"
+INTERNAL_TRAINING_REASONS = {
+    "quarantined": "upload_received",
+    "scanned": "structural_validation_passed",
+    "classified": "internal_training_policy_applied",
+    "publishable": "internal_training_policy_complete",
+    "published": "internal_training_published",
+}
+# Conservative labels: unknown content is treated as most sensitive; the source
+# says "policy" because nothing was classified. A person can append a manual
+# policy revision later.
+INTERNAL_TRAINING_LABELS = {
+    "sensitivity_class": "restricted",
+    "llm_exposure_policy": "deny",
+    "retention_class": "standard",
+    "residency_class": "home_cloud_only",
+    "classification_source": "policy",
+    "classification_confidence": 1.0,
+}
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -131,6 +155,7 @@ def transition_publication(
     actor_type: str,
     actor_user_id: UUID | None = None,
     policy_schema_version: int = 1,
+    attestation: str | None = None,
 ) -> IngestionRun:
     """Advance exactly one audited state under a database row lock.
 
@@ -143,7 +168,19 @@ def transition_publication(
         raise IdentityError("invalid publication actor", status_code=400)
     if policy_schema_version != 1:
         raise IdentityError("unsupported publication policy version", status_code=400)
-    if to_state in {"scanned", "classified", "publishable", "published"} and is_production_env(get_settings()):
+    if attestation is not None and (
+        attestation != INTERNAL_TRAINING_ATTESTATION
+        or INTERNAL_TRAINING_REASONS.get(to_state) != reason_code
+        or actor_type != "user"
+    ):
+        raise IdentityError("invalid publication attestation", status_code=400)
+    if (
+        to_state in {"scanned", "classified", "publishable", "published"}
+        and attestation is None
+        and is_production_env(get_settings())
+    ):
+        # Only the ADR 0005 internal-training policy may publish in production;
+        # there is still no malware/content scanner attestation.
         raise IdentityError("production scan attestation is unavailable", status_code=503)
     run = db.scalar(
         select(IngestionRun)
@@ -176,6 +213,17 @@ def transition_publication(
     artifact = db.get(Artifact, run.artifact_id) if run.artifact_id else None
     if artifact is None or artifact.workspace_id != workspace_id or artifact.content_digest != content_digest:
         raise IdentityError("publication artifact digest mismatch", status_code=409)
+    if attestation is not None:
+        # The internal-training attestation only covers a direct upload by the
+        # same user; it can never publish connector, admin-import or other runs.
+        source = db.get(DataSource, run.data_source_id) if run.data_source_id else None
+        if (
+            source is None
+            or source.workspace_id != workspace_id
+            or source.source_type != "upload"
+            or artifact.created_by != actor_user_id
+        ):
+            raise IdentityError("attestation does not match an upload by this user", status_code=403)
     if run.publication_digest is not None and run.publication_digest != content_digest:
         raise IdentityError("publication object changed", status_code=409)
     if to_state in {"publishable", "published"}:
@@ -213,6 +261,76 @@ def transition_publication(
     run.publication_version = next_version
     run.publication_digest = content_digest
     db.flush()
+    return run
+
+
+def publish_upload_for_internal_training(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    ingestion_run_id: UUID,
+    dataset_id: UUID,
+    content_digest: str,
+    actor: User,
+) -> IngestionRun:
+    """Publish a structurally validated own-workspace upload (ADR 0005).
+
+    Applies the conservative internal-training policy labels to the dataset and
+    every column, then advances the audited state machine to ``published``.
+    The ingestion run must already be completed with its dataset lineage. The
+    caller owns commit; any failure leaves nothing published.
+    """
+    from app.services.dataset_column_service import (
+        publish_dataset_policy_defaults,
+        set_dataset_column_policy,
+    )
+    from app.db.models import DatasetColumn, DatasetPolicyRevision
+
+    current_revision = db.scalar(
+        select(DatasetPolicyRevision.revision)
+        .where(
+            DatasetPolicyRevision.dataset_id == dataset_id,
+            DatasetPolicyRevision.workspace_id == workspace_id,
+        )
+        .order_by(DatasetPolicyRevision.revision.desc())
+        .limit(1)
+    ) or 0
+    publish_dataset_policy_defaults(
+        db,
+        actor=actor,
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
+        expected_revision=current_revision,
+        **INTERNAL_TRAINING_LABELS,
+    )
+    column_ids = db.scalars(
+        select(DatasetColumn.id).where(
+            DatasetColumn.dataset_id == dataset_id,
+            DatasetColumn.workspace_id == workspace_id,
+        )
+    ).all()
+    for column_id in column_ids:
+        set_dataset_column_policy(
+            db,
+            workspace_id=workspace_id,
+            column_id=column_id,
+            model_use_policy="allow",  # deterministic training is the granted use
+            **INTERNAL_TRAINING_LABELS,
+        )
+    run = None
+    for state, reason in INTERNAL_TRAINING_REASONS.items():
+        run = transition_publication(
+            db,
+            workspace_id=workspace_id,
+            ingestion_run_id=ingestion_run_id,
+            to_state=state,
+            content_digest=content_digest,
+            reason_code=reason,
+            actor_type="user",
+            actor_user_id=actor.id,
+            attestation=INTERNAL_TRAINING_ATTESTATION,
+        )
+    assert run is not None
     return run
 
 
