@@ -25,6 +25,7 @@ P1.4-C (2026-10-01): CatBoost in the portfolio; one bounded, nested-CV Optuna-tu
 P1.5-A (2026-10-01): `run_auto_train_job` split into typed stages (`app/services/auto_train/`); event sequence pinned by a golden snapshot.
 P1.6-A (2026-10-01): finish-line E2E suite `test_e2e_lab_run.py`; explicit two-label targets train as binary. Latest product commit: `a9cded6f17d046f612c4e5b0a5b81c5bf8e7e768`.
 R1-A (2026-10-01): engine-only benchmark harness (`benchmarks/harness/`, 23 pinned tasks) with an accepted baseline and a weekly workflow.
+CI fix (2026-10-01): XGBoost library version resolves from the `xgboost-cpu` distribution used on Linux.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

@@ -315,11 +315,18 @@ def _applied_base(family: str, *, seed: int, hp: dict[str, Any]) -> dict[str, An
     return dict(hp)
 
 
+# The same import can ship under several distribution names: XGBoost installs
+# as `xgboost-cpu` on Linux/Windows (pyproject `boosting` extra), `xgboost` on macOS.
+_DISTRIBUTION_ALIASES = {"xgboost": ("xgboost", "xgboost-cpu")}
+
+
 def _package_version(name: str) -> str | None:
-    try:
-        return version(name)
-    except PackageNotFoundError:
-        return None
+    for distribution in _DISTRIBUTION_ALIASES.get(name, (name,)):
+        try:
+            return version(distribution)
+        except PackageNotFoundError:
+            continue
+    return None
 
 
 def implementation_for_family(family: str) -> tuple[str, str, str | None]:

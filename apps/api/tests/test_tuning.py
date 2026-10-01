@@ -218,3 +218,18 @@ def test_deterministic_under_a_budget_that_is_never_hit():
     second = _run(_config(max_training_seconds=3600.0))
     assert first["selection"]["selected_candidate_id"] == second["selection"]["selected_candidate_id"]
     assert first["test_metrics"] == second["test_metrics"]
+
+
+def test_xgboost_version_resolves_from_the_cpu_distribution(monkeypatch):
+    """Linux installs `xgboost-cpu`; model evidence must still record the version."""
+    import importlib.metadata as metadata
+
+    import app.engine.models.registry as registry
+
+    def only_cpu_build(name):
+        if name == "xgboost-cpu":
+            return "3.4.1"
+        raise metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(registry, "version", only_cpu_build)
+    assert registry.implementation_for_family("xgboost")[2] == "3.4.1"
