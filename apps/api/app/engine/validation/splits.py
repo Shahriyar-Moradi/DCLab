@@ -10,6 +10,16 @@ import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
 SOURCE_ROW_COLUMN = "__dclab_source_row__"
+SPLIT_ASSIGNMENT_MISMATCH = "split_assignment_mismatch"
+
+
+class SplitAssignmentMismatchError(ValueError):
+    """A stored split map and the rows a run would use disagree. Fail closed."""
+
+    code = SPLIT_ASSIGNMENT_MISMATCH
+
+    def __init__(self, message: str) -> None:
+        super().__init__(f"{SPLIT_ASSIGNMENT_MISMATCH}: {message}")
 
 
 def split_frame(
@@ -217,6 +227,82 @@ def _split_holdout_from_plan(
             stratify=False,
         )
     raise ValueError(f"Unknown holdout strategy {strategy!r}.")
+
+
+def split_holdout_by_assignment(
+    frame: pd.DataFrame,
+    *,
+    plan: Any,
+    holdout_rows: Any,
+    train_rows: Any,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Partition by a stored SplitPlan map (ADR 0006 §3) instead of re-splitting.
+
+    The frame's source rows must be exactly the map's rows (fail closed
+    otherwise). Rows keep frame order. Group/time invariants are re-proven and
+    the split evidence has the same shape as a planned split.
+    """
+    if SOURCE_ROW_COLUMN not in frame.columns:
+        raise SplitAssignmentMismatchError("modeling frame has no source-row provenance")
+    sources = frame[SOURCE_ROW_COLUMN].astype(int)
+    holdout = {int(row) for row in holdout_rows}
+    expected = holdout | {int(row) for row in train_rows}
+    if sources.duplicated().any() or set(sources.tolist()) != expected:
+        raise SplitAssignmentMismatchError(
+            "modeling rows differ from the split plan's row set"
+        )
+    mask = sources.isin(holdout).to_numpy()
+    train, test = frame.loc[~mask], frame.loc[mask]
+    strategy = str(getattr(plan, "strategy", "") or "")
+    requested = float(getattr(plan, "test_size", 0.2) or 0.2)
+    seed = int(getattr(plan, "random_state", 42) or 42)
+    common = {"requested_test_size": requested, "random_state": seed}
+    if strategy == "group_disjoint":
+        group_column = str(getattr(plan, "group_column", None) or "")
+        if group_column not in frame.columns:
+            raise SplitAssignmentMismatchError("group column is missing from the modeling frame")
+        overlap = sorted(
+            set(pd.unique(train[group_column].dropna())) & set(pd.unique(test[group_column].dropna())),
+            key=str,
+        )
+        if overlap:
+            raise SplitAssignmentMismatchError(f"stored holdout leaks groups {overlap!r}")
+        _t, _v, _h, meta = _finalize_holdout(
+            frame, train, test, strategy=strategy, stratify=False,
+            group_column=group_column, group_overlap=overlap, **common,
+        )
+    elif strategy == "temporal_future":
+        time_column = str(getattr(plan, "time_column", None) or "")
+        if time_column not in frame.columns:
+            raise SplitAssignmentMismatchError("time column is missing from the modeling frame")
+        times = _sortable_timeline(frame[time_column])
+        train_times = times.loc[~mask].dropna()
+        test_times = times.loc[mask].dropna()
+        train_max = train_times.max() if len(train_times) else None
+        test_min = test_times.min() if len(test_times) else None
+        if train_max is not None and test_min is not None and train_max > test_min:
+            raise SplitAssignmentMismatchError("stored holdout is not chronological")
+        _t, _v, _h, meta = _finalize_holdout(
+            frame, train, test, strategy=strategy, stratify=False,
+            time_column=time_column,
+            train_time_min=_iso_time(train_times.min() if len(train_times) else None),
+            train_time_max=_iso_time(train_max),
+            test_time_min=_iso_time(test_min),
+            test_time_max=_iso_time(test_times.max() if len(test_times) else None),
+            strict_temporal_order=bool(
+                train_max is not None and test_min is not None and train_max < test_min
+            ),
+            **common,
+        )
+    elif strategy in {"stratified_random", "random"}:
+        _t, _v, _h, meta = _finalize_holdout(
+            frame, train, test, strategy=strategy,
+            stratify=bool(getattr(plan, "stratified", False)), **common,
+        )
+    else:
+        raise SplitAssignmentMismatchError(f"holdout strategy {strategy!r} cannot be applied")
+    meta["partitioned_by"] = "split_plan_assignment"
+    return _t, _v, _h, meta
 
 
 def _group_disjoint_holdout(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
@@ -230,6 +230,7 @@ def create_experiment(
     parent_pipeline_run_id: UUID | None = None,
     branch_key: str | None = None,
     branch_reason: str | None = None,
+    source_dataset_id: UUID | None = None,
 ) -> Experiment:
     if workflow_run is not None and workflow_run.workspace_id != dataset.workspace_id:
         raise ValueError("workflow run and dataset belong to different workspaces")
@@ -264,6 +265,7 @@ def create_experiment(
         parent_pipeline_run_id=parent_id,
         branch_key=key,
         branch_reason=reason,
+        source_dataset_id=source_dataset_id,
         status="CREATED",
         config=cfg.to_dict(),
         seed=cfg.seed,
@@ -331,6 +333,8 @@ def execute_experiment(
     on_stage: Callable[[str], None] | None = None,
     on_event: Callable[[str, dict], None] | None = None,
     persist_scientific: bool = True,
+    outer_fold_assignment: Mapping[int, int] | None = None,
+    holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
 ) -> Experiment:
     if experiment.scientific_evidence_locked_at is not None:
         # Re-running replaces preprocessing, findings, and stage facts. PostgreSQL
@@ -380,6 +384,8 @@ def execute_experiment(
             on_stage=on_stage,
             on_checkpoint=_persist_checkpoint,
             on_event=on_event,
+            outer_fold_assignment=outer_fold_assignment,
+            holdout_partition=holdout_partition,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)

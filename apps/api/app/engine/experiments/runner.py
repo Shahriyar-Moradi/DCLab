@@ -6,7 +6,7 @@ import json
 from dataclasses import replace
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -71,7 +71,12 @@ from app.engine.modeling.validation_planner import (
 from app.engine.schema.profiler import profile_frame
 from app.engine.search.generator import DUMMY_FAMILIES, assemble_candidates
 from app.engine.types import Candidate, ExperimentStatus, SearchConfig, TaskSpec, is_classification
-from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
+from app.engine.validation.split_assignment import folds_for_pool
+from app.engine.validation.splits import (
+    SOURCE_ROW_COLUMN,
+    split_holdout_by_assignment,
+    split_train_test_holdout,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -176,8 +181,18 @@ def _split_open_ingest_holdout(
     task: TaskSpec,
     config: SearchConfig,
     on_event: RunEventCallback | None,
+    holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any], HoldoutPlan, str]:
     provided = from_mapping(HoldoutPlan, config.holdout_plan)
+    if holdout_partition is not None:
+        # A reused SplitPlan: partition by its stored map, never re-split.
+        if provided is None:
+            raise ValueError("a stored holdout partition requires the plan's HoldoutPlan")
+        holdout_rows, train_rows = holdout_partition
+        train, val, test, split_meta = split_holdout_by_assignment(
+            frame, plan=provided, holdout_rows=holdout_rows, train_rows=train_rows
+        )
+        return train, val, test, split_meta, provided, "split_plan"
     if provided is not None:
         require_supported_holdout(provided)
         train, val, test, split_meta = split_train_test_holdout(
@@ -865,8 +880,13 @@ def _run_open_ingest_candidates(
     max_training_seconds: float | None = None,
     class_labels: list[Any] | None = None,
     objective: dict[str, Any] | None = None,
+    outer_fold_assignment: Mapping[int, int] | None = None,
 ) -> dict[str, Any]:
-    """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked."""
+    """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked.
+
+    ``outer_fold_assignment`` (source row -> fold) is a stored SplitPlan's fold
+    map: when given, the outer folds are taken from it instead of re-derived.
+    """
     classifier = is_classification(task.task_type)
     # Multiclass labels arrive as codes 0..k-1 over the full label set.
     n_classes = len(class_labels) if task.task_type == "multiclass" and class_labels else None
@@ -874,7 +894,11 @@ def _run_open_ingest_candidates(
     # Val is empty for the 80/20 holdout path; never concatenate test.
     pool = pd.concat([train, val], ignore_index=True) if len(val) else train
     y_pool = pool[task.target].to_numpy()
-    fold_splits = list(iter_validation_folds(validation_plan, pool, y_pool))
+    fold_splits = (
+        folds_for_pool(validation_plan, pool, outer_fold_assignment)
+        if outer_fold_assignment is not None
+        else list(iter_validation_folds(validation_plan, pool, y_pool))
+    )
     n_splits = len(fold_splits)
     funnel_updates = {"trained": 0, "failed": 0, "cache_hits": 0}
     records: list[dict[str, Any]] = []
@@ -1424,6 +1448,8 @@ def _run_open_ingest_experiment(
     on_stage: Callable[[str], None] | None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None,
     on_event: RunEventCallback | None,
+    outer_fold_assignment: Mapping[int, int] | None = None,
+    holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
 ) -> dict[str, Any]:
     """Leakage-safe open-ingest experiment with an early locked holdout."""
     profile = profile_frame(frame)
@@ -1447,7 +1473,7 @@ def _run_open_ingest_experiment(
     if on_stage:
         on_stage(SPLITTING)
     train, val, test, split_meta, holdout_plan, _holdout_source = _split_open_ingest_holdout(
-        work, task, config, on_event
+        work, task, config, on_event, holdout_partition
     )
     (
         problem_profile,
@@ -1555,6 +1581,7 @@ def _run_open_ingest_experiment(
         max_training_seconds=config.max_training_seconds,
         class_labels=class_labels,
         objective=config.objective,
+        outer_fold_assignment=outer_fold_assignment,
     )
     funnel.update(outcome["funnel"])
     records = outcome["records"]
@@ -1675,8 +1702,15 @@ def run_experiment(
     on_event: RunEventCallback | None = None,
     holdout_plan: Any = None,
     model_development_plan: Any = None,
+    outer_fold_assignment: Mapping[int, int] | None = None,
+    holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
 ) -> dict[str, Any]:
-    """Train, filter, select, and report. Returns a JSON-serializable result dict."""
+    """Train, filter, select, and report. Returns a JSON-serializable result dict.
+
+    ``holdout_partition`` (holdout rows, train rows) and ``outer_fold_assignment``
+    come from a stored SplitPlan (ADR 0006 §3); the run then applies them
+    instead of re-deriving the holdout or the outer folds.
+    """
     started = time.time()
     config = _overlay_scientific_plans(
         config or SearchConfig(),
@@ -1705,6 +1739,8 @@ def run_experiment(
         on_stage=on_stage,
         on_checkpoint=on_checkpoint,
         on_event=on_event,
+        outer_fold_assignment=outer_fold_assignment,
+        holdout_partition=holdout_partition,
     )
 
 

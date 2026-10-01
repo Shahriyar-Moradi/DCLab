@@ -288,6 +288,20 @@
     ]
    ],
    [
+    "split_plan",
+    "split_plan_resolved",
+    "completed",
+    [
+     "assignment_digest",
+     "holdout_row_count",
+     "plan_digest",
+     "reused",
+     "split_plan_id",
+     "train_row_count",
+     "version"
+    ]
+   ],
+   [
     "column_roles",
     "operation_started",
     "started",
@@ -2430,6 +2444,20 @@
     [
      "rows_in",
      "rows_out"
+    ]
+   ],
+   [
+    "split_plan",
+    "split_plan_resolved",
+    "completed",
+    [
+     "assignment_digest",
+     "holdout_row_count",
+     "plan_digest",
+     "reused",
+     "split_plan_id",
+     "train_row_count",
+     "version"
     ]
    ],
    [

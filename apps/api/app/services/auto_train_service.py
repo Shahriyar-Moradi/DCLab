@@ -29,7 +29,7 @@ from app.db.models import (
     Project,
     WorkflowRun,
 )
-from app.domain.errors import ScientificEvidenceLockedError
+from app.domain.errors import ScientificEvidenceLockedError, SplitPlanLineageError
 from app.domain.lab_run_stages import (
     COMPLETED,
     FAILED,
@@ -45,6 +45,7 @@ from app.engine.modeling.objective import Objective, parse_objective
 # through this module (``service_module()``) so patches on it keep applying.
 from app.engine.schema.profiler import profile_frame  # noqa: F401
 from app.engine.types import SearchConfig
+from app.engine.validation.split_assignment import SplitAssignmentMismatchError
 from app.services.auto_train.cleaning import StructuralCleaningInput, run_structural_cleaning
 from app.services.auto_train.column_roles import ColumnRolesInput, run_column_roles
 from app.services.auto_train.context import RunContext, StageHalt
@@ -54,6 +55,7 @@ from app.services.auto_train.holdout import HoldoutLockInput, run_holdout_lock
 from app.services.auto_train.load_profile import LoadProfileInput, run_load_profile
 from app.services.auto_train.persistence import PersistenceInput, run_persistence
 from app.services.auto_train.preprocessing import PreprocessingSetupInput, run_preprocessing_setup
+from app.services.auto_train.split_plan import SplitPlanInput, run_split_plan
 from app.services.auto_train.target import TargetResolutionInput, run_target_resolution
 from app.services.auto_train.training import TrainingInput, run_training
 from app.services.dataset_materialization import materialize_client_upload  # noqa: F401
@@ -283,6 +285,8 @@ def run_auto_train_job(
                 target_evidence=resolved.target_evidence,
                 profile=loaded.profile,
                 cleaning_log=cleaned.cleaning_log,
+                upload=upload,
+                workflow_run=resolved.workflow_run,
             ),
         )
         decisions = run_train_only_decisions(
@@ -301,6 +305,23 @@ def run_auto_train_job(
                 run_objective=resolved.run_objective,
             ),
         )
+        split_plan = run_split_plan(
+            ctx,
+            SplitPlanInput(
+                upload=upload,
+                source_dataset=holdout.source_dataset,
+                stored_holdout=holdout.stored_holdout,
+                locked_train=holdout.locked_train,
+                locked_split=holdout.locked_split,
+                target=resolved.target,
+                target_evidence=resolved.target_evidence,
+                profile=loaded.profile,
+                cleaning_log=decisions.cleaning_log,
+                holdout_plan=holdout.holdout_plan,
+                validation_plan=decisions.validation_plan,
+                development_plan=decisions.development_plan,
+            ),
+        )
         roles = run_column_roles(
             ctx,
             ColumnRolesInput(
@@ -317,8 +338,8 @@ def run_auto_train_job(
                 profile=loaded.profile,
                 cleaning_log=decisions.cleaning_log,
                 missing_plan=decisions.missing_plan,
-                holdout_plan=holdout.holdout_plan,
-                development_plan=decisions.development_plan,
+                holdout_plan=split_plan.holdout_plan,
+                development_plan=split_plan.development_plan,
                 run_objective=resolved.run_objective,
             ),
         )
@@ -335,14 +356,15 @@ def run_auto_train_job(
                 identifier_cols=roles.identifier_cols,
                 final_roles=roles.final_roles,
                 leakage_excluded=decisions.leakage_excluded,
-                development_plan=decisions.development_plan,
-                validation_plan=decisions.validation_plan,
+                development_plan=split_plan.development_plan,
+                validation_plan=split_plan.validation_plan,
                 metric_plan=decisions.metric_plan,
                 entity_column=roles.entity_column,
                 modeled_cols=roles.modeled_cols,
                 num_cols=roles.num_cols,
                 cat_cols=roles.cat_cols,
                 search=roles.search,
+                split_plan_id=split_plan.split_plan_id,
             ),
         )
         trained = run_training(
@@ -352,14 +374,20 @@ def run_auto_train_job(
                 task_type=resolved.target.task_type,
                 profile=loaded.profile,
                 cleaning_log=decisions.cleaning_log,
-                holdout_plan=holdout.holdout_plan,
-                development_plan=decisions.development_plan,
+                holdout_plan=split_plan.holdout_plan,
+                development_plan=split_plan.development_plan,
                 feature_report=prepared.feature_report,
                 fe_transformations=roles.fe_transformations,
                 num_cols=roles.num_cols,
                 cat_cols=roles.cat_cols,
                 combos=roles.combos,
                 locked_split=holdout.locked_split,
+                outer_fold_assignment=(
+                    None
+                    if split_plan.assignment is None
+                    else dict(split_plan.assignment.train_folds)
+                ),
+                holdout_partition=split_plan.holdout_partition,
             ),
         )
         persisted = run_persistence(
@@ -387,8 +415,9 @@ def run_auto_train_job(
                 column_role_evidence=roles.column_role_evidence,
                 entity_column=roles.entity_column,
                 missing_plan=decisions.missing_plan,
-                holdout_plan=holdout.holdout_plan,
-                development_plan=decisions.development_plan,
+                holdout_plan=split_plan.holdout_plan,
+                development_plan=split_plan.development_plan,
+                split_assignment=split_plan.assignment,
             ),
         )
         run_finalize(
@@ -403,6 +432,11 @@ def run_auto_train_job(
         )
     except StageHalt:
         return
+    except (SplitAssignmentMismatchError, SplitPlanLineageError) as exc:
+        # A run whose rows or lineage disagree with its SplitPlan fails closed.
+        logger.exception("auto-train split plan check failed for upload %s", upload_id)
+        db.rollback()
+        ctx.fail(str(exc))
     except ScientificEvidenceLockedError as exc:
         logger.exception("auto-train hit locked pipeline run for upload %s", upload_id)
         db.rollback()

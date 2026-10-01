@@ -434,29 +434,34 @@ def _persist_selection_and_holdout(
     selected_score = selection.get("cv_score")
     if selected_score is None:
         selected_score = (winner.payload or {}).get("score")
-    db.add(
-        ModelSelectionDecision(
-            workspace_id=experiment.workspace_id,
-            project_id=experiment.project_id,
-            pipeline_run_id=experiment.id,
-            selected_candidate_id=winner.id,
-            selection_metric=str(
-                selection.get("selection_metric") or "score"
-            ),
-            selected_score=float(selected_score or 0.0),
-            selection_policy=str(
-                selection.get("selection_policy") or "maximum eligible primary CV score"
-            ),
-            runner_up_candidate_id=runner_up.id if runner_up is not None else None,
-            reason="Winner locked from eligible CV scores before final holdout evaluation.",
-            evidence={
-                "selection_source": selection.get("selection_source") or "cross_validation",
-                "eligible_candidate_ids": list(selection.get("eligible_candidate_ids") or []),
-                "locked": bool(selection.get("locked")),
-            },
-            locked_at=locked_at,
-        )
+    selection_row = ModelSelectionDecision(
+        workspace_id=experiment.workspace_id,
+        project_id=experiment.project_id,
+        pipeline_run_id=experiment.id,
+        selected_candidate_id=winner.id,
+        selection_metric=str(
+            selection.get("selection_metric") or "score"
+        ),
+        selected_score=float(selected_score or 0.0),
+        selection_policy=str(
+            selection.get("selection_policy") or "maximum eligible primary CV score"
+        ),
+        runner_up_candidate_id=runner_up.id if runner_up is not None else None,
+        reason="Winner locked from eligible CV scores before final holdout evaluation.",
+        evidence={
+            "selection_source": selection.get("selection_source") or "cross_validation",
+            "eligible_candidate_ids": list(selection.get("eligible_candidate_ids") or []),
+            "locked": bool(selection.get("locked")),
+        },
+        locked_at=locked_at,
     )
+    db.add(selection_row)
+    db.flush()
+    # ADR 0006 §5: the winner lock is a project decision; same idempotency key
+    # as the operator backfill, so the two paths never duplicate.
+    from app.services.decision_record_service import record_winner_locked
+
+    record_winner_locked(db, selection_row, winner)
     holdout = (
         result.get("final_test_evaluation")
         if isinstance(result.get("final_test_evaluation"), dict)

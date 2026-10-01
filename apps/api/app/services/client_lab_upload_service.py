@@ -511,6 +511,10 @@ def save_upload(
                 pipeline_purpose="training_and_scoring",
                 input_role=None,
                 commit=False,
+                # ADR 0006 §1: the published upload dataset is the run's
+                # DatasetVersion node; ``dataset_id`` is later rebound to the
+                # per-job prepared dataset.
+                source_dataset_id=dataset.id,
             )
             row.experiment_id = pipeline_run.id
             from app.services.execution_request_service import (

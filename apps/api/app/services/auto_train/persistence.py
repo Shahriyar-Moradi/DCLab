@@ -22,6 +22,7 @@ from app.db.models import (
 from app.engine.lab.auto_prepare import ColumnRoles, MissingValuePlan
 from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan
+from app.engine.validation.split_assignment import SplitAssignment
 from app.services.auto_train.context import RunContext, StageHalt
 from app.services.evidence_lock_service import (
     lock_scientific_evidence,
@@ -56,6 +57,8 @@ class PersistenceInput(BaseModel):
     missing_plan: MissingValuePlan
     holdout_plan: HoldoutPlan
     development_plan: ModelDevelopmentPlan
+    # The run's SplitPlan map (ADR 0006 §3); None for runs without a plan.
+    split_assignment: SplitAssignment | None = None
 
 
 class PersistenceOutput(BaseModel):
@@ -232,6 +235,12 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
             lab_decision_sources=lab_decision_sources_for_upload(db, upload.id),
             source_dataset_id=upload.dataset_id,
         )
+        if inp.split_assignment is not None:
+            from app.services.split_plan_service import verify_run_against_plan
+
+            # Fail closed before the lock: the run used exactly the plan's
+            # holdout rows, outer folds and HoldoutPlan, on its source dataset.
+            verify_run_against_plan(db, experiment, inp.split_assignment, result)
         from app.services.candidate_modeling_service import (
             link_candidates_to_feature_set_version,
             link_holdout_evaluation_to_model_version,
@@ -240,6 +249,7 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
 
         link_candidates_to_feature_set_version(db, experiment)
         repro = persist_reproducibility(db, experiment, result)
+        model_version = None
         if workflow_run is not None:
             from app.services.lineage_service import (
                 create_model_asset,
@@ -313,13 +323,19 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
         )
 
         persist_model_build_reproduction_artifacts(db, experiment)
-        # Last statement before the commit: the triggers this arms read the
-        # stamp inside this transaction.
+        # Last evidence write before the commit: the triggers this arms read
+        # the stamp inside this transaction.
         if lock_scientific_evidence(db, experiment) is None:
             missing = ", ".join(missing_scientific_evidence(db, experiment))
             raise RuntimeError(
                 "cannot finish pipeline run before scientific evidence is complete: "
                 f"{missing}"
             )
+        if model_version is not None:
+            from app.services.project_ref_service import initialize_refs_on_first_model
+
+            # refs.bootstrap.v1 (ADR 0006 §2): only project_refs and the
+            # ref_initialized record are written here, atomically with the lock.
+            initialize_refs_on_first_model(db, experiment=experiment, model_version=model_version)
         db.commit()
     return PersistenceOutput(upload=upload, experiment=experiment, result=result, log=log)

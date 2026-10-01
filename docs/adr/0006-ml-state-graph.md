@@ -38,6 +38,66 @@ decisions are unchanged except the Q10 refinement noted there.
   `_append_only` trigger name, `provider_kind` values, verifier row-list note,
   why existing decision tables are not reused).
 
+### Revision 2 (P2.2-B implementation, 2026-10-02)
+
+Implementation decisions taken while building the write paths. They refine
+§2/§3/§5 and do not change the schema.
+
+- **Source dataset in plan identity.** `plan_digest` also includes
+  `source_dataset_id` (besides its content digest). Every upload is its own
+  Dataset row and `split_plans.dataset_id` must equal
+  `experiments.source_dataset_id`, so a re-upload of identical bytes gets a new
+  plan version, whose deterministic map has the **same** `assignment_digest`.
+  The canonical identity is stored in `plan_evidence.identity` (bounded,
+  no row lists) so the holdout part can be matched at the holdout lock.
+- **Fold column.** In the assignment CSV, `fold` is the 1-based outer
+  validation fold of a train row; `0` marks a train row that is never a
+  validation row (TimeSeriesSplit warm-up). Expanding-window folds train fold
+  k on every row with fold < k; every other strategy trains on all rows outside
+  fold k.
+- **Partition-by-map on reuse.** At the holdout lock the oldest plan with the
+  same holdout identity (source dataset, target, task, holdout plan,
+  holdout planner version, `structural_cleaning_digest`) is loaded, its bytes
+  are verified against `assignment_digest`, and the frame is partitioned by the
+  map (`split_holdout_by_assignment`); on reuse nothing is re-split, in the
+  stage or in the runner (on plan creation the runner's own split must equal
+  the new map, or `folds_for_pool` / `verify_run_against_plan` fail closed). A frame whose source rows differ from the map fails closed
+  (`split_assignment_mismatch`); a logged cleaning change is a new identity and
+  therefore a new plan. After the train-only validation plan, the full
+  `plan_digest` selects the plan; a reused plan supplies the outer folds
+  (the runner applies the stored fold map) and its stored
+  HoldoutPlan/ValidationPlan (reuse copy rule). Outer folds are derived only
+  when a plan is created. Because reuse never re-derives, no library version is
+  part of the identity.
+- **Bootstrap preconditions.** `refs.bootstrap.v1` runs only for a locked
+  ModelVersion whose run satisfies `dataset`, `split_plan` and
+  `champion_model` (with a `final_holdout` evaluation); otherwise bootstrap is
+  deferred to a later run (no refs, no record). `problem_spec` (no locked spec)
+  and `feature_recipe` (no locked FeatureSetVersion) may be unsatisfiable; they
+  are listed in `details.skipped_refs`, and P2.5-A `move_ref` may INSERT such a
+  missing kind (`ref_moves[].from = null`) under an accepted record.
+- **Run cross-check, twice.** Write time: `verify_run_against_plan` runs before
+  the evidence lock and fails closed unless the plan partitions the run's
+  source dataset, the per-run `holdout_plan_digest` equals the plan's, and the
+  holdout rows and every candidate's per-fold train/validation rows equal the
+  map. Read time: the pipeline verifier's `split_plan_consistent` check compares
+  `holdout_plan_digest`, `n_train`/`n_test`, the recorded `assignment_digest`
+  and the source dataset with `split_plans` (FAIL on mismatch, NOT_VERIFIABLE
+  when the plan row is missing; runs without a plan get no check).
+- **Row lists.** `full_plan.split` drops `all/train/test_source_rows` only for
+  runs with a plan (counts + `split_plan_id`/`assignment_digest` instead); runs
+  without a plan keep them (their only immutable copy). The run result keeps
+  its own `split` provenance for the verifier and reports.
+- **Races.** Only SQLSTATE 23505 on the expected unique constraints is treated
+  as a concurrent creator (plan: `uq_split_plans_project_plan_digest`,
+  `uq_split_plans_project_version`, `uq_pdr_workspace_idempotency_key`;
+  bootstrap: the latter and `uq_project_refs_project_ref_kind`); any other
+  integrity error surfaces. An uploaded map whose row insert fails is deleted.
+- Deferred: reproduction codegen still re-derives folds (P2.4-B).
+- Carry-forward (P2.5-A, P4.4-A): a logged cleaning change or a new seed creates a
+  new plan with a fresh holdout on the same source dataset, so champion and
+  experiment comparisons require the same `split_plan_id`.
+
 ## Context
 
 Phase 1 produced one correct engine: holdout planned first, train-only

@@ -7,7 +7,9 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
+from app.db.models import ClientLabUpload, Dataset, WorkflowRun
 from app.domain.lab_run_stages import SPLITTING
+from app.domain.state_graph import SPLIT_PLAN_HOLDOUT_STRATEGIES
 from app.engine.lab.schema_inference import TargetChoice
 from app.engine.modeling.holdout_planner import (
     HoldoutPlan,
@@ -17,8 +19,10 @@ from app.engine.modeling.holdout_planner import (
     plan_holdout,
     require_supported_holdout,
 )
-from app.engine.validation.splits import split_train_test_holdout
+from app.engine.validation.splits import split_holdout_by_assignment, split_train_test_holdout
 from app.services.auto_train.context import RunContext, StageHalt
+from app.services.auto_train.split_plan import partition_source
+from app.services.split_plan_service import StoredHoldout, find_stored_holdout
 
 
 class HoldoutLockInput(BaseModel):
@@ -29,6 +33,9 @@ class HoldoutLockInput(BaseModel):
     target_evidence: dict[str, Any]
     profile: dict[str, Any]
     cleaning_log: dict[str, Any]
+    # For the SplitPlan lookup (ADR 0006 §3); None keeps the per-run split.
+    upload: ClientLabUpload | None = None
+    workflow_run: WorkflowRun | None = None
 
 
 class HoldoutLockOutput(BaseModel):
@@ -37,6 +44,10 @@ class HoldoutLockOutput(BaseModel):
     holdout_plan: HoldoutPlan
     locked_train: pd.DataFrame
     locked_split: dict[str, Any]
+    # The published source dataset a SplitPlan may partition (None: no plan).
+    source_dataset: Dataset | None = None
+    # A stored plan whose map partitioned this run (reuse; nothing re-split).
+    stored_holdout: StoredHoldout | None = None
 
 
 def run_holdout_lock(ctx: RunContext, inp: HoldoutLockInput) -> HoldoutLockOutput:
@@ -51,6 +62,33 @@ def run_holdout_lock(ctx: RunContext, inp: HoldoutLockInput) -> HoldoutLockOutpu
         test_size=0.2,
         random_state=42,
     )
+    failure_extra = {
+        "target": inp.target_evidence,
+        "analysis": inp.profile,
+        "cleaning": inp.cleaning_log,
+    }
+    source = (
+        partition_source(ctx, inp.upload, inp.workflow_run, frame)
+        if inp.upload is not None
+        else None
+    )
+    stored: StoredHoldout | None = None
+    if source is not None and holdout_plan.strategy in SPLIT_PLAN_HOLDOUT_STRATEGIES:
+        try:
+            stored = find_stored_holdout(
+                ctx.db,
+                source_dataset=source,
+                target_column=target.column,
+                task_type=target.task_type,
+                holdout_plan=holdout_plan,
+                cleaning_log=inp.cleaning_log,
+            )
+        except ValueError as exc:
+            ctx.fail(str(exc), extra={**failure_extra, "holdout_plan": holdout_plan.to_dict()})
+            raise StageHalt from exc
+        if stored is not None:
+            # Reuse copy rule: the stored HoldoutPlan (same identity) is this run's.
+            holdout_plan = stored.holdout_plan
     ctx.emit_event(
         "holdout_plan",
         "holdout_plan_selected",
@@ -72,13 +110,22 @@ def run_holdout_lock(ctx: RunContext, inp: HoldoutLockInput) -> HoldoutLockOutpu
     evidence_timer = ctx.evidence_start("splitting")
     try:
         require_supported_holdout(holdout_plan)
-        locked_train, _locked_val, _locked_test, locked_split = split_train_test_holdout(
-            frame,
-            target=target.column,
-            test_size=holdout_plan.test_size,
-            seed=holdout_plan.random_state,
-            plan=holdout_plan,
-        )
+        if stored is not None:
+            # Partition by the stored map; a frame with other rows fails closed.
+            locked_train, _locked_val, _locked_test, locked_split = split_holdout_by_assignment(
+                frame,
+                plan=holdout_plan,
+                holdout_rows=stored.assignment.holdout_rows,
+                train_rows=stored.assignment.train_folds.keys(),
+            )
+        else:
+            locked_train, _locked_val, _locked_test, locked_split = split_train_test_holdout(
+                frame,
+                target=target.column,
+                test_size=holdout_plan.test_size,
+                seed=holdout_plan.random_state,
+                plan=holdout_plan,
+            )
     except (HoldoutUnsupportedError, ValueError) as exc:
         ctx.fail(
             str(exc),
@@ -108,5 +155,9 @@ def run_holdout_lock(ctx: RunContext, inp: HoldoutLockInput) -> HoldoutLockOutpu
     )
     ctx.evidence_finish(evidence_timer)
     return HoldoutLockOutput(
-        holdout_plan=holdout_plan, locked_train=locked_train, locked_split=locked_split
+        holdout_plan=holdout_plan,
+        locked_train=locked_train,
+        locked_split=locked_split,
+        source_dataset=source,
+        stored_holdout=stored,
     )

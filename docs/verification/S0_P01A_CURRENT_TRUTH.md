@@ -28,6 +28,7 @@ R1-A (2026-10-01): engine-only benchmark harness (`benchmarks/harness/`, 23 pinn
 CI fix (2026-10-01): XGBoost library version resolves from the `xgboost-cpu` distribution used on Linux.
 P2.2-A1 (2026-10-01): migration 0063_state_graph_nodes (split_plans, project_refs, project_decision_records, experiment lineage columns); head at the time was 0063_state_graph_nodes.
 P2.2-A2 (2026-10-01): migration 0064 tenant backfill and LLM attribution (workspace_id + CFKs on workflow_run_inputs, experiment_test_predictions, ml_run_verifications; llm_invocations attribution); current Alembic head 0064_tenant_llm_attribution.
+P2.2-B (2026-10-01): auto-train persists and reuses split plans (object-storage assignment map), bootstraps project refs and writes winner/split/ref decision records.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

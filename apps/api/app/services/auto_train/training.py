@@ -30,6 +30,10 @@ class TrainingInput(BaseModel):
     cat_cols: list[str]
     combos: list[tuple[str, ...]]
     locked_split: dict[str, Any]
+    # Stored SplitPlan fold map (source row -> outer fold); None = derive folds.
+    outer_fold_assignment: dict[int, int] | None = None
+    # (holdout rows, train rows) of a reused SplitPlan; None = runner re-splits.
+    holdout_partition: tuple[frozenset[int], frozenset[int]] | None = None
 
 
 class TrainingOutput(BaseModel):
@@ -78,6 +82,8 @@ def run_training(ctx: RunContext, inp: TrainingInput) -> TrainingOutput:
             on_stage=_experiment_stage,
             on_event=_on_model_event,
             persist_scientific=False,
+            outer_fold_assignment=inp.outer_fold_assignment,
+            holdout_partition=inp.holdout_partition,
         )
         if experiment.status != "COMPLETED":
             result = dict(experiment.result or {})

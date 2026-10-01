@@ -28,6 +28,7 @@ from app.db.models import (
     PipelineStageRun,
     PreprocessingStep,
     Project,
+    SplitPlan,
 )
 from app.domain.scientific_plane import (
     LEDGER_SOURCE_TO_DECISION_SOURCE,
@@ -83,6 +84,28 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
+def holdout_plan_digest(holdout_plan: Any) -> str:
+    """``pipeline_scientific_plans.holdout_plan_digest`` (= ``split_plans.holdout_plan_digest``)."""
+
+    return content_digest(_json_ready(_as_plan_dict(holdout_plan)))
+
+
+# With a SplitPlan the row lists live in its assignment artifact (ADR 0006 §3),
+# not in ``full_plan.split``; the run result keeps them for the verifier and
+# reports. Runs without a plan keep them here (their only immutable copy).
+_SPLIT_ROW_LIST_KEYS = ("all_source_rows", "train_source_rows", "test_source_rows")
+
+
+def _bounded_split_payload(split: Any, split_plan: Any = None) -> dict[str, Any]:
+    payload = _as_plan_dict(split)
+    if split_plan is not None:
+        payload = {key: value for key, value in payload.items() if key not in _SPLIT_ROW_LIST_KEYS}
+        payload["split_plan_id"] = str(split_plan.id)
+        payload["split_plan_version"] = int(split_plan.version)
+        payload["assignment_digest"] = split_plan.assignment_digest
+    return payload
+
+
 def scientific_plan_columns_from_payloads(
     *,
     holdout_plan: Any,
@@ -90,6 +113,7 @@ def scientific_plan_columns_from_payloads(
     split: Any = None,
     validation_plan: Any = None,
     metric_plan: Any = None,
+    split_plan: Any = None,
 ) -> dict[str, Any] | None:
     """Map authoritative HoldoutPlan / ModelDevelopmentPlan into queryable columns."""
 
@@ -102,7 +126,7 @@ def scientific_plan_columns_from_payloads(
     validation = nested_validation or _as_plan_dict(validation_plan)
     metric = nested_metric or _as_plan_dict(metric_plan)
     profile = _as_plan_dict(development.get("problem_profile"))
-    split_payload = _as_plan_dict(split)
+    split_payload = _bounded_split_payload(split, split_plan)
     task_type = _required_str(profile.get("task_type"))
     holdout_strategy = _required_str(holdout.get("strategy"))
     validation_strategy = _required_str(validation.get("strategy"))
@@ -153,7 +177,7 @@ def scientific_plan_columns_from_payloads(
         "time_column": time_column,
         "allowed_feature_count": len(allowed),
         "excluded_feature_count": len(excluded),
-        "holdout_plan_digest": content_digest(_json_ready(holdout)),
+        "holdout_plan_digest": holdout_plan_digest(holdout),
         "model_development_plan_digest": content_digest(_json_ready(development_payload)),
         "full_plan": full_plan,
     }
@@ -168,6 +192,7 @@ def persist_scientific_plan(
     split: Any = None,
     validation_plan: Any = None,
     metric_plan: Any = None,
+    split_plan: Any = None,
 ) -> PipelineScientificPlan | None:
     """Insert-once scientific plan for this PipelineRun. Second persist is a no-op."""
 
@@ -184,6 +209,7 @@ def persist_scientific_plan(
         split=split,
         validation_plan=validation_plan,
         metric_plan=metric_plan,
+        split_plan=split_plan,
     )
     if values is None:
         return None
@@ -210,6 +236,11 @@ def persist_scientific_plan_from_result(
         split=result.get("split"),
         validation_plan=result.get("validation_plan"),
         metric_plan=result.get("metric_plan"),
+        split_plan=(
+            db.get(SplitPlan, experiment.split_plan_id)
+            if experiment.split_plan_id is not None
+            else None
+        ),
     )
 
 

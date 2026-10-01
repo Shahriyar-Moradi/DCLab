@@ -186,3 +186,11 @@ class ScientificEvidenceLockedError(Exception):
         )
         self.pipeline_run_id = pipeline_run_id
         self.status_code = 409
+
+
+class SplitPlanLineageError(ValueError):
+    """A run references a SplitPlan of another source dataset, project or tenant (ADR 0006 §3)."""
+
+    def __init__(self, message: str, *, code: str = "split_plan_dataset_mismatch") -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code

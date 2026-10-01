@@ -399,6 +399,65 @@ def _iso(value: Any) -> str | None:
     return stamp.isoformat()
 
 
+def _fold_axes(plan: ValidationPlan, frame: pd.DataFrame) -> tuple[np.ndarray | None, pd.Series | None]:
+    group_values = (
+        frame[plan.group_column].to_numpy()
+        if plan.group_column and plan.group_column in frame.columns
+        else None
+    )
+    times = None
+    if plan.time_column and plan.time_column in frame.columns:
+        times = pd.to_datetime(frame[plan.time_column], errors="coerce")
+    return group_values, times
+
+
+def _checked_fold(
+    plan: ValidationPlan,
+    fold_number: int,
+    train_idx: np.ndarray,
+    val_idx: np.ndarray,
+    group_values: np.ndarray | None,
+    times: pd.Series | None,
+) -> FoldSplit:
+    """Prove the group/time invariants of one outer fold."""
+    train_idx = np.asarray(train_idx)
+    val_idx = np.asarray(val_idx)
+    overlap: list[Any] = []
+    if group_values is not None and plan.group_column:
+        train_groups = set(pd.unique(group_values[train_idx]))
+        val_groups = set(pd.unique(group_values[val_idx]))
+        overlap = sorted(train_groups & val_groups, key=str)
+        if overlap:
+            raise ValueError(
+                f"{plan.strategy} fold {fold_number} leaked groups {overlap!r}."
+            )
+    train_tmin = train_tmax = val_tmin = val_tmax = None
+    if times is not None and plan.time_column:
+        train_times = times.iloc[train_idx].dropna()
+        val_times = times.iloc[val_idx].dropna()
+        train_tmin = _iso(train_times.min()) if len(train_times) else None
+        train_tmax = _iso(train_times.max()) if len(train_times) else None
+        val_tmin = _iso(val_times.min()) if len(val_times) else None
+        val_tmax = _iso(val_times.max()) if len(val_times) else None
+        if train_tmax and val_tmin and pd.Timestamp(train_tmax) > pd.Timestamp(val_tmin):
+            raise ValueError(
+                f"{plan.strategy} fold {fold_number} is not chronological: "
+                f"train_max={train_tmax} validation_min={val_tmin}."
+            )
+    return FoldSplit(
+        fold_number=fold_number,
+        train_index=train_idx,
+        validation_index=val_idx,
+        train_count=int(len(train_idx)),
+        validation_count=int(len(val_idx)),
+        group_overlap=overlap,
+        train_time_min=train_tmin,
+        train_time_max=train_tmax,
+        validation_time_min=val_tmin,
+        validation_time_max=val_tmax,
+    )
+
+
 def iter_validation_folds(
     plan: ValidationPlan,
     frame: pd.DataFrame,
@@ -409,15 +468,9 @@ def iter_validation_folds(
     n = len(frame)
     positions = np.arange(n)
     labels = np.asarray(y)
-    group_values = (
-        frame[plan.group_column].to_numpy()
-        if plan.group_column and plan.group_column in frame.columns
-        else None
-    )
-    times = None
+    group_values, times = _fold_axes(plan, frame)
     order = positions
-    if plan.time_column and plan.time_column in frame.columns:
-        times = pd.to_datetime(frame[plan.time_column], errors="coerce")
+    if times is not None:
         order = np.argsort(times.fillna(pd.Timestamp.max).to_numpy(), kind="mergesort")
 
     if plan.strategy == TIME_SERIES_SPLIT:
@@ -441,39 +494,40 @@ def iter_validation_folds(
         split_pairs = list(splitter.split(positions))
 
     for fold_number, (train_idx, val_idx) in enumerate(split_pairs, start=1):
-        train_idx = np.asarray(train_idx)
-        val_idx = np.asarray(val_idx)
-        overlap: list[Any] = []
-        if group_values is not None and plan.group_column:
-            train_groups = set(pd.unique(group_values[train_idx]))
-            val_groups = set(pd.unique(group_values[val_idx]))
-            overlap = sorted(train_groups & val_groups, key=str)
-            if overlap:
-                raise ValueError(
-                    f"{plan.strategy} fold {fold_number} leaked groups {overlap!r}."
-                )
-        train_tmin = train_tmax = val_tmin = val_tmax = None
-        if times is not None and plan.time_column:
-            train_times = times.iloc[train_idx].dropna()
-            val_times = times.iloc[val_idx].dropna()
-            train_tmin = _iso(train_times.min()) if len(train_times) else None
-            train_tmax = _iso(train_times.max()) if len(train_times) else None
-            val_tmin = _iso(val_times.min()) if len(val_times) else None
-            val_tmax = _iso(val_times.max()) if len(val_times) else None
-            if train_tmax and val_tmin and pd.Timestamp(train_tmax) > pd.Timestamp(val_tmin):
-                raise ValueError(
-                    f"{plan.strategy} fold {fold_number} is not chronological: "
-                    f"train_max={train_tmax} validation_min={val_tmin}."
-                )
-        yield FoldSplit(
-            fold_number=fold_number,
-            train_index=train_idx,
-            validation_index=val_idx,
-            train_count=int(len(train_idx)),
-            validation_count=int(len(val_idx)),
-            group_overlap=overlap,
-            train_time_min=train_tmin,
-            train_time_max=train_tmax,
-            validation_time_min=val_tmin,
-            validation_time_max=val_tmax,
+        yield _checked_fold(plan, fold_number, train_idx, val_idx, group_values, times)
+
+
+def folds_from_assignment(
+    plan: ValidationPlan,
+    frame: pd.DataFrame,
+    fold_of: np.ndarray,
+) -> list[FoldSplit]:
+    """Outer folds fixed by a stored SplitPlan (ADR 0006 §3), not re-derived.
+
+    ``fold_of[i]`` is the 1-based validation fold of row ``i`` of ``frame``; 0
+    marks a row that is never a validation row (TimeSeriesSplit warm-up).
+    Expanding-window TimeSeriesSplit trains fold k on every earlier row
+    (fold < k); every other strategy trains on all rows outside fold k. The
+    same group/time invariants as ``iter_validation_folds`` are re-proven.
+    """
+    fold_of = np.asarray(fold_of, dtype=int)
+    if len(fold_of) != len(frame):
+        raise ValueError("fold assignment length does not match the training frame")
+    group_values, times = _fold_axes(plan, frame)
+    numbers = sorted({int(value) for value in fold_of if int(value) > 0})
+    expected = list(range(1, int(plan.actual_folds or 0) + 1))
+    if numbers != expected:
+        raise ValueError(
+            f"fold assignment has folds {numbers}, plan expects {expected}"
         )
+    if plan.strategy != TIME_SERIES_SPLIT and bool((fold_of == 0).any()):
+        raise ValueError(f"{plan.strategy} fold assignment leaves rows unvalidated")
+    folds: list[FoldSplit] = []
+    for fold_number in expected:
+        val_idx = np.flatnonzero(fold_of == fold_number)
+        if plan.strategy == TIME_SERIES_SPLIT:
+            train_idx = np.flatnonzero(fold_of < fold_number)
+        else:
+            train_idx = np.flatnonzero(fold_of != fold_number)
+        folds.append(_checked_fold(plan, fold_number, train_idx, val_idx, group_values, times))
+    return folds

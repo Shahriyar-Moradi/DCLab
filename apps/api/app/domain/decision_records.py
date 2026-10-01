@@ -29,6 +29,8 @@ DECISION_TYPES = (
     "proposal_rejected",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
+DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
+DECISION_REF_INITIALIZED = "ref_initialized"
 
 DECISION_STATES = ("proposed", "accepted", "rejected")
 STATE_ACCEPTED = "accepted"
@@ -62,7 +64,11 @@ DECISION_POLICY_VERSION = "dclab.decisions.v1"
 RULE_WINNER_LOCKED = "selection.cv_winner.v1"
 RULE_WINNER_LOCKED_BACKFILL = "selection.cv_winner.backfill.v1"
 RULE_REFS_BOOTSTRAP = "refs.bootstrap.v1"
+RULE_HOLDOUT_PLANNER_PREFIX = "holdout.planner"
+REFS_BOOTSTRAP_RATIONALE = "first locked model; not a comparison"
 WINNER_LOCKED_SCHEMA_VERSION = 1
+SPLIT_PLAN_CREATED_SCHEMA_VERSION = 1
+REF_INITIALIZED_SCHEMA_VERSION = 1
 
 RATIONALE_MAX_CHARS = 4000
 EVIDENCE_REFS_MAX = 64
@@ -73,6 +79,25 @@ def winner_locked_idempotency_key(model_selection_decision_id: UUID | str) -> st
     """One ``winner_locked`` record per ModelSelection, whichever path writes it."""
 
     return f"winner_locked:{model_selection_decision_id}"
+
+
+def split_plan_created_idempotency_key(split_plan_id: UUID | str) -> str:
+    return f"split_plan_created:{split_plan_id}"
+
+
+def ref_initialized_idempotency_key(project_id: UUID | str) -> str:
+    """One bootstrap per project: a concurrent second bootstrap collides here."""
+
+    return f"ref_initialized:{project_id}"
+
+
+def holdout_planner_rule(planner_version: str) -> str:
+    """``holdout.planner.v<version>`` from e.g. ``dclab.holdout_plan.v1``."""
+
+    suffix = str(planner_version or "").rsplit(".", 1)[-1] or "v0"
+    if not suffix.startswith("v"):
+        suffix = f"v{suffix}"
+    return f"{RULE_HOLDOUT_PLANNER_PREFIX}.{suffix}"
 
 
 CK_PDR_DECISION_TYPE = "decision_type ~ '^[a-z][a-z0-9_]{0,63}$'"

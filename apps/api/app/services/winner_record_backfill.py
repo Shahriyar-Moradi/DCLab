@@ -14,26 +14,14 @@ non-finite ``selected_score`` is stored as ``null`` and flagged in ``details``.
 
 from __future__ import annotations
 
-import math
-import re
 from dataclasses import dataclass
 
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import ExperimentCandidate, ModelSelectionDecision, ProjectDecisionRecord
-from app.domain.decision_records import (
-    ACTOR_RULE,
-    DECISION_POLICY_VERSION,
-    DECISION_WINNER_LOCKED,
-    RULE_WINNER_LOCKED_BACKFILL,
-    STATE_ACCEPTED,
-    WINNER_LOCKED_SCHEMA_VERSION,
-    winner_locked_idempotency_key,
-)
-
-_DIGEST = re.compile(r"^[0-9a-f]{1,64}$")
-_CV_AGGREGATE = "cv_aggregate"
+from app.domain.decision_records import DECISION_WINNER_LOCKED, winner_locked_idempotency_key
+from app.services.decision_record_service import winner_locked_record
 
 
 @dataclass(frozen=True)
@@ -52,51 +40,8 @@ class WinnerBackfillResult:
         }
 
 
-def _evidence_ref(candidate_id, metric: str) -> dict[str, str]:
-    return {"kind": "candidate", "id": str(candidate_id), "metric": metric, "scope": _CV_AGGREGATE}
-
-
 def _record_for(selection: ModelSelectionDecision, fingerprint: str) -> ProjectDecisionRecord:
-    evidence = [_evidence_ref(selection.selected_candidate_id, selection.selection_metric)]
-    if selection.runner_up_candidate_id is not None:
-        evidence.append(
-            _evidence_ref(selection.runner_up_candidate_id, selection.selection_metric)
-        )
-    score = selection.selected_score
-    finite = score is not None and math.isfinite(score)
-    details: dict[str, object] = {
-        "backfilled": True,
-        "model_selection_decision_id": str(selection.id),
-    }
-    if not finite:
-        details["selected_score_non_finite"] = True
-    rationale = (selection.reason or "").strip() or (
-        f"CV winner locked by selection policy {selection.selection_policy}"
-    )
-    return ProjectDecisionRecord(
-        workspace_id=selection.workspace_id,
-        project_id=selection.project_id,
-        decision_type=DECISION_WINNER_LOCKED,
-        state=STATE_ACCEPTED,
-        subject_kind="candidate",
-        candidate_id=selection.selected_candidate_id,
-        subject_digest=fingerprint if _DIGEST.match(fingerprint or "") else None,
-        actor_kind=ACTOR_RULE,
-        actor_rule=RULE_WINNER_LOCKED_BACKFILL,
-        rationale=rationale,
-        rationale_untrusted=False,
-        facts={
-            "selected_score": score if finite else None,
-            "selection_metric": selection.selection_metric,
-            "selection_policy": selection.selection_policy,
-        },
-        evidence_refs=evidence,
-        details=details,
-        schema_version=WINNER_LOCKED_SCHEMA_VERSION,
-        policy_version=DECISION_POLICY_VERSION,
-        idempotency_key=winner_locked_idempotency_key(selection.id),
-        event_at=selection.locked_at,
-    )
+    return winner_locked_record(selection, fingerprint, backfilled=True)
 
 
 def backfill_winner_records(db: Session) -> WinnerBackfillResult:

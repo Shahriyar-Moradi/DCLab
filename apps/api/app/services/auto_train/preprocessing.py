@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
-from app.db.models import ClientLabUpload, Experiment, WorkflowRun
+from app.db.models import ClientLabUpload, Experiment, SplitPlan, WorkflowRun
 from app.domain.lab_run_stages import PREPROCESSING
 from app.engine.lab.auto_prepare import ColumnRoles, MissingValuePlan
 from app.engine.lab.schema_inference import TargetChoice
@@ -47,6 +48,8 @@ class PreprocessingSetupInput(BaseModel):
     num_cols: list[str]
     cat_cols: list[str]
     search: SearchConfig
+    # ADR 0006 §3: the SplitPlan this run's holdout/folds belong to, if any.
+    split_plan_id: UUID | None = None
 
 
 class PreprocessingSetupOutput(BaseModel):
@@ -210,6 +213,16 @@ def run_preprocessing_setup(
             task=task_row,
             config=search,
         )
+    if inp.split_plan_id is not None:
+        from app.services.lineage_service import attach_split_plan
+
+        attach_split_plan(
+            db,
+            pipeline_run=experiment,
+            split_plan=db.get(SplitPlan, inp.split_plan_id),
+            source_dataset_id=upload.dataset_id,
+        )
+        db.commit()
     ctx.evidence_finish(evidence_timer)
     return PreprocessingSetupOutput(
         experiment=experiment, workflow_run=workflow_run, feature_report=feature_report

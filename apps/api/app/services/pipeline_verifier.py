@@ -967,6 +967,52 @@ def _verify_scientific_plan(
         )
 
 
+def _verify_split_plan_lineage(add, report: dict[str, Any], db: Session) -> None:
+    """ADR 0006 §3: a run on a SplitPlan matches it. Runs without a plan are unaffected."""
+
+    from uuid import UUID
+
+    from app.db.models import Experiment, PipelineScientificPlan, SplitPlan
+
+    try:
+        experiment_id = UUID(str(_as_dict(report.get("run")).get("experiment_id")))
+    except ValueError:
+        return
+    experiment = db.get(Experiment, experiment_id)
+    if experiment is None or experiment.split_plan_id is None:
+        return
+    check, stage = "split_plan_consistent", "splitting"
+    plan = db.get(SplitPlan, experiment.split_plan_id)
+    if plan is None or plan.workspace_id != experiment.workspace_id:
+        add(check, stage, CHECK_NOT_VERIFIABLE, "The run's split plan row is missing.", "experiments.split_plan_id")
+        return
+    scientific = db.query(PipelineScientificPlan).filter(
+        PipelineScientificPlan.pipeline_run_id == experiment.id
+    ).one_or_none()
+    if scientific is None:
+        add(check, stage, CHECK_NOT_VERIFIABLE, "The run's scientific plan is missing.", "pipeline_scientific_plans")
+        return
+    split = _as_dict(report.get("split"))
+    recorded = _as_dict(_as_dict(scientific.full_plan).get("split")).get("assignment_digest")
+    mismatches = [
+        name
+        for name, ok in (
+            ("holdout_plan_digest", scientific.holdout_plan_digest == plan.holdout_plan_digest),
+            ("n_train", split.get("n_train") == plan.train_row_count),
+            ("n_test", split.get("n_test") == plan.holdout_row_count),
+            # A run with a plan must record the plan's map digest; absence means
+            # the scientific plan was written without the split plan.
+            ("assignment_digest", recorded == plan.assignment_digest),
+            ("source_dataset_id", experiment.source_dataset_id == plan.dataset_id),
+        )
+        if not ok
+    ]
+    if mismatches:
+        add(check, stage, CHECK_FAIL, f"The run differs from its split plan: {mismatches}.", "split", "split_plans")
+    else:
+        add(check, stage, CHECK_PASS, "Holdout plan, counts and assignment match the run's split plan.", "split", "split_plans")
+
+
 def _verify_reproducibility_lineage(add, report: dict[str, Any], db: Session) -> None:
     """DB-backed lineage checks. Skipped when verify() is called without a session."""
 
@@ -1754,6 +1800,7 @@ class PipelineVerifier:
             add("model_artifacts_persisted", "artifact_persistence", CHECK_PASS, "Model, result, and prediction artifacts exist.", "artifacts")
 
         if db is not None:
+            _verify_split_plan_lineage(add, report, db)
             _verify_reproducibility_lineage(add, report, db)
 
         failures = [row for row in checks if row["status"] == CHECK_FAIL]
