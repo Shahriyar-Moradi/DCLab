@@ -1,7 +1,7 @@
 """The `strategy="open_ingest"` search/runner path: ColumnTransformer +
 real K-fold on the training split only, then a locked-model holdout test.
-Must not change the default `use_case`/`progressive` behaviour used by
-manual `/admin/lab` experiments.
+Since P1.2-A every run_experiment call executes this path; legacy strategies
+are normalized onto it (the candidate generator still accepts them).
 """
 
 from __future__ import annotations

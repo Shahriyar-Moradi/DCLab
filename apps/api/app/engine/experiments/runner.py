@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 import logging
 import time
 from collections.abc import Callable
@@ -13,12 +14,10 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import ShuffleSplit
 from sklearn.pipeline import Pipeline as SkPipeline
 
 from app.domain.lab_run_stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
 from app.engine.data.quality import quality_report
-from app.engine.ensemble import blend_probabilities, blend_weights, choose_fusion
 from app.engine.evaluation.metrics import (
     aggregate_fold_metrics,
     classification_metrics,
@@ -26,8 +25,7 @@ from app.engine.evaluation.metrics import (
     regression_metrics,
     robustness_stats,
 )
-from app.engine.features.combinations import generate_group_combinations
-from app.engine.features.encode import coerce_binary_target, encode_feature_columns
+from app.engine.features.encode import coerce_binary_target
 from app.engine.lab.auto_prepare import (
     apply_feature_engineering_actions,
     build_preprocessor,
@@ -35,9 +33,9 @@ from app.engine.lab.auto_prepare import (
     missing_plan_from_applied_imputers,
     split_column_roles,
 )
-from app.engine.leakage.detector import detect_leakage
 from app.engine.models.registry import make_model
 from app.engine.modeling.holdout_planner import (
+    TEMPORAL_FUTURE,
     HoldoutPlan,
     holdout_locked_event_payload,
     holdout_plan_event_payload,
@@ -51,19 +49,17 @@ from app.engine.modeling.leakage_auditor import (
     leakage_report_from_audit,
     plan_model_development,
 )
-from app.engine.modeling.metric_planner import MetricPlan, plan_metrics
-from app.engine.modeling.problem_profile import ProblemProfile, build_problem_profile
+from app.engine.modeling.metric_planner import MetricPlan
+from app.engine.modeling.problem_profile import ProblemProfile
 from app.engine.modeling.validation_planner import (
     ValidationPlan,
     ValidationUnsupportedError,
     iter_validation_folds,
-    plan_validation,
 )
 from app.engine.schema.profiler import profile_frame
 from app.engine.search.generator import DUMMY_FAMILIES, assemble_candidates
-from app.engine.selection import greedy_diverse_selection
 from app.engine.types import Candidate, ExperimentStatus, SearchConfig, TaskSpec
-from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_frame, split_train_test_holdout
+from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
 
 logger = logging.getLogger(__name__)
 
@@ -1240,464 +1236,77 @@ def run_experiment(
     members_dir = artifact_dir / "members"
     members_dir.mkdir(parents=True, exist_ok=True)
 
-    if config.strategy == "open_ingest":
-        return _run_open_ingest_experiment(
-            frame,
-            task,
-            config,
-            artifact_dir=artifact_dir,
-            members_dir=members_dir,
-            dataset_version=dataset_version,
-            dataset_content_digest=dataset_content_digest,
-            started=started,
-            on_stage=on_stage,
-            on_checkpoint=on_checkpoint,
-            on_event=on_event,
-        )
-
-    funnel = {
-        "generated": 0,
-        "valid": 0,
-        "leakage_safe": 0,
-        "trained": 0,
-        "robust": 0,
-        "strong": 0,
-        "diverse": 0,
-        "failed": 0,
-        "cache_hits": 0,
-    }
-    status = ExperimentStatus.PROFILING.value
-    profile = profile_frame(frame)
-    quality = quality_report(frame, task.target)
-    leakage = detect_leakage(
+    # P1.2-A: one engine. Any legacy strategy ("progressive", "use_case") is
+    # executed by the open-ingest pipeline (fold-local preprocessing, CV-only
+    # selection, single holdout evaluation). The legacy branch was removed: it
+    # profiled, audited and encoded the full frame before splitting.
+    task, config = _normalize_to_open_ingest(frame, task, config)
+    return _run_open_ingest_experiment(
         frame,
-        target=task.target,
-        time_col=task.prediction_time_column,
-        entity_col=task.entity_id,
-    )
-    blocked = set(leakage["high_risk_columns"]) if config.exclude_high_leakage else set()
-    funnel["leakage_safe"] = int(frame.shape[1] - len(blocked))
-
-    work = frame.copy()
-    if task.target not in work.columns:
-        raise ValueError(f"Frame is missing target {task.target!r}")
-    if task.task_type == "binary":
-        work = work.dropna(subset=[task.target])
-        work[task.target] = coerce_binary_target(work[task.target])
-        work = work.dropna(subset=[task.target])
-        work[task.target] = work[task.target].astype(int)
-    else:
-        work[task.target] = pd.to_numeric(work[task.target], errors="coerce")
-        work = work.dropna(subset=[task.target])
-
-    status = ExperimentStatus.FEATURE_ENGINEERING.value
-    groups = {
-        name: [col for col in cols if col in work.columns and col not in blocked and col != task.target]
-        for name, cols in task.feature_groups.items()
-    }
-    groups = {name: cols for name, cols in groups.items() if cols}
-    feature_cols = [
-        col
-        for cols in groups.values()
-        for col in cols
-        if col != task.prediction_time_column and col != task.entity_id
-    ]
-    feature_engineering_log: list[dict[str, Any]] = []
-    if config.strategy != "open_ingest":
-        # open_ingest keeps raw dtypes: its ColumnTransformer (SimpleImputer +
-        # StandardScaler / OneHotEncoder) needs real strings/NaNs, not factor codes.
-        work = encode_feature_columns(work, feature_cols)
-        task = TaskSpec(**{**task.to_dict(), "feature_groups": groups})
-    else:
-        work, feature_engineering_log = engineer_features(work, feature_cols)
-        role_cols = [c for c in feature_cols if c in work.columns]
-        roles = task.column_roles or {}
-        if "numerical" in roles or "categorical" in roles:
-            numerical_cols = [c for c in (roles.get("numerical") or []) if c in role_cols]
-            categorical_cols = [c for c in (roles.get("categorical") or []) if c in role_cols]
-        else:
-            numerical_cols, categorical_cols = split_column_roles(work, role_cols)
-        modeled = numerical_cols + categorical_cols
-        task = TaskSpec(
-            **{
-                **task.to_dict(),
-                "feature_groups": {"features": modeled} if modeled else groups,
-                "column_roles": {"numerical": numerical_cols, "categorical": categorical_cols},
-            }
-        )
-    logger.info(
-        "lab features groups=%s columns=%s",
-        {name: len(cols) for name, cols in groups.items()},
-        feature_cols,
-    )
-
-    status = ExperimentStatus.GENERATING_CANDIDATES.value
-    candidates = assemble_candidates(
         task,
         config,
+        artifact_dir=artifact_dir,
+        members_dir=members_dir,
         dataset_version=dataset_version,
         dataset_content_digest=dataset_content_digest,
-        holdout_plan=config.holdout_plan,
-        development_plan=config.model_development_plan,
+        started=started,
+        on_stage=on_stage,
+        on_checkpoint=on_checkpoint,
+        on_event=on_event,
     )
-    funnel["generated"] = len(candidates)
-    funnel["valid"] = len(candidates)
-    logger.info(
-        "lab generated %s candidates: %s",
-        len(candidates),
-        [f"{row.model_family}[{'+'.join(row.feature_groups)}]" for row in candidates],
-    )
-    cache_dir = artifact_dir / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    status = ExperimentStatus.TRAINING.value
-    if on_stage:
-        on_stage(SPLITTING)
-    if config.strategy == "open_ingest":
-        train, val, test, split_meta, _holdout_plan = _lock_open_ingest_holdout(
-            work, task, config, on_event
-        )
-    else:
-        train, val, test, split_meta = split_frame(
-            work,
-            strategy=task.validation_strategy,
-            target=task.target,
-            time_col=task.prediction_time_column,
-            group_col=task.entity_id,
-            seed=config.seed,
-        )
 
+def _normalize_to_open_ingest(
+    frame: pd.DataFrame, task: TaskSpec, config: SearchConfig
+) -> tuple[TaskSpec, SearchConfig]:
+    """Map a legacy task/config onto the open-ingest contract.
+
+    * Features are the task's declared feature groups (never other columns, so
+      declared exclusions such as other labels stay excluded); without groups,
+      every column except target, entity and prediction time.
+    * Column roles are NOT fixed here: the runner infers them on the engineered
+      train partition, so holdout rows never inform them.
+    * A declared time-ordered task keeps a time-ordered final holdout: it is
+      passed as an explicit ``temporal_future`` plan instead of letting the
+      planner re-infer structure (which can fall back to a random split on
+      few snapshot dates). Too few distinct times fails loudly.
+    """
     if config.strategy == "open_ingest":
-        fallback_profile = build_problem_profile(
-            train,
-            target=task.target,
-            task_type=task.task_type,
-        )
-        fallback_plan = plan_validation(
-            fallback_profile,
-            y=train[task.target],
-            frame=train,
-            requested_folds=5,
+        return task, config
+    excluded = {task.target, task.entity_id, task.prediction_time_column}
+    declared = [
+        column
+        for columns in (task.feature_groups or {}).values()
+        for column in columns
+        if column in frame.columns and column not in excluded
+    ]
+    features = list(dict.fromkeys(declared)) or [c for c in frame.columns if c not in excluded]
+    task = replace(task, column_roles={}, feature_groups={"features": features})
+    holdout_plan = config.holdout_plan
+    time_column = task.prediction_time_column
+    if (
+        holdout_plan is None
+        and task.validation_strategy in {"time", "rolling"}
+        and time_column
+        and time_column in frame.columns
+    ):
+        distinct_times = int(frame[time_column].nunique(dropna=True))
+        if distinct_times < 2:
+            raise ValueError(
+                f"task declares a time-ordered split on {time_column!r} but it has "
+                f"{distinct_times} distinct value(s); refusing a random fallback"
+            )
+        holdout_plan = HoldoutPlan(
+            strategy=TEMPORAL_FUTURE,
+            test_size=0.2,
             random_state=config.seed,
-        )
-        outcome = _run_open_ingest_candidates(
-            candidates,
-            train,
-            val,
-            test,
-            task,
-            artifact_dir=artifact_dir,
-            members_dir=members_dir,
-            validation_plan=fallback_plan,
-            on_stage=on_stage,
-        )
-        funnel.update(outcome["funnel"])
-        records = outcome["records"]
-        selected_ids = outcome["selected_ids"]
-        fusion = None
-        weights = {}
-        blend_metrics = {}
-        best_single = outcome["best_single"]
-        test_metrics = outcome["test_metrics"]
-        train_metrics = outcome["train_metrics"]
-        test_predictions = outcome["test_predictions"]
-        group_scores = {}
-        combo_table = []
-        have_result = best_single is not None
-        status = ExperimentStatus.REPORTING.value
-        result = {
-            "task": task.to_dict(),
-            "config": config.to_dict(),
-            "status": ExperimentStatus.COMPLETED.value if have_result else ExperimentStatus.FAILED.value,
-            "funnel": funnel,
-            "profile": profile,
-            "profile_summary": {
-                "row_count": profile["row_count"],
-                "column_count": profile["column_count"],
-                "duplicate_rows": profile.get("duplicate_rows", profile.get("duplicate_count")),
-            },
-            "quality": quality,
-            "leakage": leakage,
-            "split": split_meta,
-            "validation": _open_ingest_validation(split_meta, records, config.seed, task.task_type),
-            "feature_engineering": {"transformations": feature_engineering_log},
-            "scientific_evidence": _scientific_evidence_payload(
-                leakage_exclusions=[
-                    {
-                        "column": name,
-                        "risk": "HIGH",
-                        "action": "exclude",
-                        "reason": "High-risk leakage column excluded by the detector.",
-                    }
-                    for name in list(leakage.get("high_risk_columns") or [])
-                ]
-                if config.exclude_high_leakage
-                else [],
-                feature_actions=list(feature_engineering_log),
-                fit_scope="non_learned",
+            stratified=False,
+            group_column=None,
+            time_column=time_column,
+            reason=(
+                "The task declares a time-ordered split; the final holdout is the "
+                "latest chronological slice."
             ),
-            "preprocessing": {
-                "numerical": ["imputer:median", "scaler:standard"],
-                "categorical": ["imputer:most_frequent", "onehot:drop_first"],
-            },
-            "candidates": records,
-            "selected_ids": selected_ids,
-            "best_single": best_single,
-            "fusion": fusion,
-            "weights": weights,
-            "validation_blend_metrics": blend_metrics,
-            "train_metrics": train_metrics,
-            "test_metrics": test_metrics,
-            "test_predictions": test_predictions,
-            "feature_group_scores": group_scores,
-            "combination_table": combo_table,
-            "artifact_dir": str(artifact_dir),
-            "duration_seconds": time.time() - started,
-            "baselines": [row for row in records if row.get("model_family") in {"majority", "mean", "logistic_regression", "linear_regression"}],
-        }
-        result = _json_safe(result)
-        (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")
-        from app.engine.reporting.report import render_markdown
-
-        (artifact_dir / "report.md").write_text(render_markdown(result))
-        logger.info("experiment completed status=%s funnel=%s", result["status"], funnel)
-        return result
-
-    records: list[dict[str, Any]] = []
-    fitted: dict[str, Any] = {}
-    val_preds: dict[str, np.ndarray] = {}
-    classifier = task.task_type == "binary"
-
-    for candidate in candidates:
-        logger.info(
-            "lab training %s family=%s groups=%s",
-            candidate.candidate_id,
-            candidate.model_family,
-            "+".join(candidate.feature_groups),
-        )
-        t0 = time.time()
-        try:
-            X_train = _matrix(train, candidate.features)
-            y_train = train[task.target].to_numpy()
-            X_val = _matrix(val, candidate.features)
-            y_val = val[task.target].to_numpy()
-            cache_file = cache_dir / f"{candidate.fingerprint}.joblib"
-            if cache_file.exists():
-                model = joblib.load(cache_file)
-                funnel["cache_hits"] += 1
-            else:
-                model = make_model(candidate.model_family, seed=candidate.random_seed)
-                model.fit(X_train, y_train)
-                joblib.dump(model, cache_file)
-            pred_val = _predict(model, X_val, classifier)
-            metrics = (
-                classification_metrics(y_val, pred_val)
-                if classifier
-                else regression_metrics(y_val, pred_val)
-            )
-            score = primary_score(metrics, task.evaluation_metric, task.task_type)
-            robust_scores = []
-            if len(val) >= 30 and config.n_robustness_folds > 1:
-                splitter = ShuffleSplit(
-                    n_splits=config.n_robustness_folds, test_size=0.4, random_state=config.seed
-                )
-                for _, idx in splitter.split(X_val):
-                    fold_pred = pred_val[idx]
-                    fold_y = y_val[idx]
-                    fold_m = (
-                        classification_metrics(fold_y, fold_pred)
-                        if classifier
-                        else regression_metrics(fold_y, fold_pred)
-                    )
-                    robust_scores.append(primary_score(fold_m, task.evaluation_metric, task.task_type))
-            robust = robustness_stats(robust_scores or [score])
-            fitted[candidate.candidate_id] = model
-            val_preds[candidate.candidate_id] = pred_val
-            records.append(
-                {
-                    **candidate.to_dict(),
-                    "status": "trained",
-                    "metrics": metrics,
-                    "score": score,
-                    "robustness": robust,
-                    "train_seconds": time.time() - t0,
-                    "stage": "trained",
-                }
-            )
-            funnel["trained"] += 1
-        except Exception as exc:  # noqa: BLE001
-            funnel["failed"] += 1
-            logger.exception("candidate %s failed", candidate.candidate_id)
-            records.append(
-                {
-                    **candidate.to_dict(),
-                    "status": "FAILED",
-                    "error": str(exc),
-                    "train_seconds": time.time() - t0,
-                }
-            )
-
-    status = ExperimentStatus.FILTERING.value
-    trained = [row for row in records if row.get("status") == "trained"]
-    learned = [row for row in trained if row.get("model_family") not in DUMMY_FAMILIES]
-    pool = learned or trained
-    if classifier:
-        robust = [
-            row
-            for row in pool
-            if row["robustness"]["std"] <= 0.15 and row["score"] > max(config.min_metric, 0.5)
-        ]
-        if not robust:
-            robust = [row for row in pool if row["score"] > 0.5]
-    else:
-        robust = [row for row in pool if row["robustness"]["std"] <= abs(row["score"]) * 2 + 1]
-    if not robust:
-        robust = pool
-    funnel["robust"] = len(robust)
-    strong = sorted(robust, key=lambda row: row["score"], reverse=True)
-    funnel["strong"] = len(strong)
-
-    status = ExperimentStatus.SELECTING.value
-    selected_ids: list[str] = []
-    fusion = None
-    weights: dict[str, float] = {}
-    blend_metrics: dict[str, Any] = {}
-    best_single: dict[str, Any] | None = None
-    test_metrics: dict[str, Any] = {}
-    test_predictions: list[dict[str, Any]] = []
-    group_scores: dict[str, float] = {}
-
-    if strong:
-        pred_frame = pd.DataFrame({row["candidate_id"]: val_preds[row["candidate_id"]] for row in strong})
-        scores = {row["candidate_id"]: row["score"] for row in strong}
-        selected_ids = greedy_diverse_selection(
-            pred_frame,
-            scores,
-            retain_max=min(config.retain_max, config.max_ensemble_size),
-            retain_min=min(config.retain_min, len(strong)),
-            max_abs_correlation=config.max_abs_correlation,
-        )
-        funnel["diverse"] = len(selected_ids)
-        by_id = {row["candidate_id"]: row for row in strong}
-        best_single = max(strong, key=lambda row: row["score"])
-        member_scores = {mid: scores[mid] for mid in selected_ids}
-        weights = blend_weights(member_scores, selected_ids)
-        blended = blend_probabilities({mid: val_preds[mid] for mid in selected_ids}, weights)
-        y_val = val[task.target].to_numpy()
-        blend_metrics = classification_metrics(y_val, blended) if classifier else regression_metrics(y_val, blended)
-        blend_score = primary_score(blend_metrics, task.evaluation_metric, task.task_type)
-        fusion = choose_fusion(
-            blend_metric=blend_score,
-            best_single_metric=best_single["score"],
-            best_single_id=best_single["candidate_id"],
-        )
-        persist_ids = selected_ids if fusion == "weighted_blend" else [best_single["candidate_id"]]
-        for mid in persist_ids:
-            joblib.dump(fitted[mid], members_dir / f"{mid}.joblib")
-
-        status = ExperimentStatus.ENSEMBLING.value
-        X_test_best = _matrix(test, tuple(best_single["features"]))
-        y_test = test[task.target].to_numpy()
-        if fusion == "weighted_blend":
-            parts = {}
-            for mid in selected_ids:
-                feats = tuple(by_id[mid]["features"])
-                parts[mid] = _predict(fitted[mid], _matrix(test, feats), classifier)
-            test_pred = blend_probabilities(parts, weights)
-        else:
-            test_pred = _predict(fitted[best_single["candidate_id"]], X_test_best, classifier)
-        test_metrics = (
-            classification_metrics(y_test, test_pred) if classifier else regression_metrics(y_test, test_pred)
-        )
-        test_predictions = _prediction_rows(
-            y_test,
-            test_pred,
-            classifier=classifier,
-            test=test,
-            entity_col=task.entity_id,
-        )
-        pd.DataFrame(test_predictions).to_csv(artifact_dir / "test_predictions.csv", index=False)
-
-        # Feature-group contribution: best score among candidates that used the group.
-        for name in task.feature_groups:
-            group_rows = [row for row in strong if name in row["feature_groups"]]
-            group_scores[name] = max((row["score"] for row in group_rows), default=0.0)
-
-        combo_table = []
-        for combo in generate_group_combinations(
-            list(task.feature_groups), strategy="limited", max_combinations=24, seed=config.seed
-        ):
-            matching = [row for row in strong if tuple(row["feature_groups"]) == combo]
-            if matching:
-                combo_table.append(
-                    {
-                        "groups": list(combo),
-                        "best_score": max(row["score"] for row in matching),
-                        "n_candidates": len(matching),
-                    }
-                )
-
-        serving = {
-            "fusion": fusion,
-            "members": persist_ids,
-            "weights": weights,
-            "task_id": task.id,
-            "dataset_version": dataset_version,
-        }
-        joblib.dump(serving, artifact_dir / "model.joblib")
-    else:
-        combo_table = []
-        persist_ids = []
-        serving = {}
-
-    status = ExperimentStatus.REPORTING.value
-    result = {
-        "task": task.to_dict(),
-        "config": config.to_dict(),
-        "status": ExperimentStatus.COMPLETED.value if strong else ExperimentStatus.FAILED.value,
-        "funnel": funnel,
-        "profile_summary": {
-            "row_count": profile["row_count"],
-            "column_count": profile["column_count"],
-            "duplicate_rows": profile["duplicate_rows"],
-        },
-        "quality": quality,
-        "leakage": leakage,
-        "split": split_meta,
-        "feature_engineering": {"transformations": feature_engineering_log},
-        "scientific_evidence": _scientific_evidence_payload(
-            leakage_exclusions=[
-                {
-                    "column": name,
-                    "risk": "HIGH",
-                    "action": "exclude",
-                    "reason": "High-risk leakage column excluded by the detector.",
-                }
-                for name in list(leakage.get("high_risk_columns") or [])
-            ]
-            if config.exclude_high_leakage
-            else [],
-            feature_actions=list(feature_engineering_log),
-            fit_scope="non_learned",
-        ),
-        "candidates": records,
-        "selected_ids": selected_ids,
-        "best_single": best_single,
-        "fusion": fusion,
-        "weights": weights,
-        "validation_blend_metrics": blend_metrics,
-        "test_metrics": test_metrics,
-        "test_predictions": test_predictions,
-        "feature_group_scores": group_scores,
-        "combination_table": combo_table,
-        "artifact_dir": str(artifact_dir),
-        "duration_seconds": time.time() - started,
-        "baselines": [row for row in records if row.get("model_family") in {"majority", "mean", "logistic_regression", "linear_regression"}],
-    }
-    result = _json_safe(result)
-    (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")
-    from app.engine.reporting.report import render_markdown
-
-    (artifact_dir / "report.md").write_text(render_markdown(result))
-    logger.info("experiment completed status=%s funnel=%s", result["status"], funnel)
-    return result
+            evidence={"declared_by": "task.validation_strategy", "distinct_times": distinct_times},
+        ).to_dict()
+    return task, replace(config, strategy="open_ingest", holdout_plan=holdout_plan)
