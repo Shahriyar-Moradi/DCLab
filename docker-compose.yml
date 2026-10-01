@@ -29,11 +29,26 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/decisionai
       CORS_ORIGINS: http://localhost:3001,http://127.0.0.1:3001
+      ML_JOB_DISPATCHER: postgres
     ports:
       - "8001:8001"
     depends_on:
       postgres:
         condition: service_healthy
+
+  worker:
+    profiles: ["docker"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/decisionai
+      ML_JOB_DISPATCHER: postgres
+    command: ["dclab", "worker", "run"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
 
 volumes:
   postgres_data:

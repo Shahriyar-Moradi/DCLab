@@ -8,7 +8,8 @@ endif
 UVICORN := $(dir $(PYTHON))uvicorn
 ALEMBIC := $(dir $(PYTHON))alembic
 PYTEST := $(dir $(PYTHON))pytest
-PG_BIN := /opt/homebrew/opt/postgresql@16/bin
+# Override on Linux, e.g. `make db PG_BIN=/usr/lib/postgresql/16/bin`.
+PG_BIN ?= /opt/homebrew/opt/postgresql@16/bin
 export PATH := $(PG_BIN):$(PATH)
 
 ifneq (,$(wildcard .env))
@@ -73,7 +74,7 @@ truth-idempotence:
 # CSV uploads on Queued unless a worker claims them — so `make run` uses the
 # in-process thread adapter unless ML_JOB_DISPATCHER is already set.
 run:
-	ML_JOB_DISPATCHER=$(or $(ML_JOB_DISPATCHER),thread) $(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
+	ML_JOB_DISPATCHER=$(or $(ML_JOB_DISPATCHER),postgres) $(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
 
 worker:
 	$(dir $(PYTHON))dclab worker run
