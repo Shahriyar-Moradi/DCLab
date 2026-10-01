@@ -21,6 +21,7 @@ P1.3-A (2026-10-01): run outputs published to object storage; current Alembic he
 P1.4-A1 (2026-10-01): dummy baseline always evaluated (never the winner), balanced class-weight variants, opt-in time budget, one-hot keeps all categories.
 P1.4-A2 (2026-10-01): multiclass classification end to end (macro-F1 primary, stratified planners, verifier support).
 P1.4-B (2026-10-01): ProblemSpec objective (metric override, constraints, cost matrix) and an out-of-fold decision threshold locked before the holdout.
+P1.4-C (2026-10-01): CatBoost in the portfolio; one bounded, nested-CV Optuna-tuned candidate (optional `tuning` extra).
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

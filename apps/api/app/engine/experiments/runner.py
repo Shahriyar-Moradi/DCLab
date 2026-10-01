@@ -35,6 +35,7 @@ from app.engine.lab.auto_prepare import (
     split_column_roles,
 )
 from app.engine.models.registry import make_model
+from app.engine.search.tuning import tune
 from app.engine.modeling.objective import (
     DEFAULT_THRESHOLD,
     constraint_status,
@@ -404,6 +405,48 @@ def _encode_multiclass_target(work: pd.DataFrame, target: str) -> tuple[pd.DataF
     return work, class_labels
 
 
+class _CandidateSkipped(Exception):
+    """A candidate deliberately not evaluated (budget); recorded as SKIPPED."""
+
+
+def _skipped_record(candidate: Candidate, reason: str, validation_plan: ValidationPlan) -> dict[str, Any]:
+    return {
+        **candidate.to_dict(),
+        "candidate": candidate.candidate_id,
+        "feature_set": list(candidate.features),
+        "preprocessing_config": {
+            "numerical": ["imputer:median", "scaler:standard"],
+            "categorical": ["imputer:most_frequent", "onehot:all_categories"],
+        },
+        "status": "SKIPPED",
+        "failure_reason": reason,
+        "cv_strategy": validation_plan.strategy,
+        "requested_folds": validation_plan.requested_folds,
+        "actual_folds": None,
+        "metrics": None,
+        "fold_metrics": [],
+        "folds": [],
+        "cv_mean": None,
+        "cv_std": None,
+        "train_seconds": 0.0,
+        "fit_duration_ms": 0.001,
+        "test_metrics": None,
+    }
+
+
+def _tuning_axes(
+    pool: pd.DataFrame, validation_plan: ValidationPlan | None
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Group labels or time values so inner tuning splits respect the outer plan."""
+    if validation_plan is None:
+        return None, None
+    if validation_plan.strategy == _TIME_SERIES_SPLIT and validation_plan.time_column in pool.columns:
+        return None, pool[validation_plan.time_column].to_numpy()
+    if validation_plan.group_column and validation_plan.group_column in pool.columns:
+        return pool[validation_plan.group_column].to_numpy(), None
+    return None, None
+
+
 def _lock_decision_threshold(
     task_type: str,
     winner: dict[str, Any],
@@ -647,6 +690,8 @@ def _fit_and_score_holdout(
     on_event: RunEventCallback | None = None,
     n_classes: int | None = None,
     threshold: float = DEFAULT_THRESHOLD,
+    selection_metric: str | None = None,
+    validation_plan: ValidationPlan | None = None,
 ) -> tuple[
     Any,
     dict[str, Any],
@@ -663,20 +708,55 @@ def _fit_and_score_holdout(
     cat_cols = list(row["categorical_cols"])
     X_train = pool.loc[:, cols]
     y_train = pool[task.target].to_numpy()
-    pipeline = SkPipeline(
-        [
-            ("prep", build_preprocessor(num_cols, cat_cols)),
-            (
-                "model",
-                make_model(
-                    row["model_family"],
-                    seed=row["random_seed"],
-                    hyperparameters=row.get("hyperparameters"),
-                    task_type=task.task_type,
+    base_hyperparameters = {
+        key: value for key, value in (row.get("hyperparameters") or {}).items() if key != "tuning"
+    }
+
+    def _pipeline(tuned: dict[str, Any] | None = None) -> SkPipeline:
+        hyperparameters = dict(base_hyperparameters)
+        if tuned:
+            hyperparameters["tuned"] = dict(tuned)
+        return SkPipeline(
+            [
+                ("prep", build_preprocessor(num_cols, cat_cols)),
+                (
+                    "model",
+                    make_model(
+                        row["model_family"],
+                        seed=row["random_seed"],
+                        hyperparameters=hyperparameters,
+                        task_type=task.task_type,
+                    ),
                 ),
-            ),
-        ]
-    )
+            ]
+        )
+
+    final_tuning: dict[str, Any] | None = None
+    tuning_spec = (row.get("hyperparameters") or {}).get("tuning")
+    if tuning_spec:
+        # Re-tune on the full training pool (inner split of training rows only).
+        def _score(params, X_fit, y_fit, X_val, y_val) -> float:
+            pipe = _pipeline(params)
+            pipe.fit(X_fit, y_fit)
+            return primary_score(
+                _metrics(y_val, _predict(pipe, X_val, classifier, n_classes), classifier=classifier, n_classes=n_classes),
+                selection_metric or task.evaluation_metric,
+                task.task_type,
+            )
+
+        groups, times = _tuning_axes(pool, validation_plan)
+        final_plan = {**tuning_spec, "n_trials": int(row.get("tuning_trials_used") or tuning_spec["n_trials"])}
+        final_tuning = tune(
+            final_plan,
+            X_train,
+            y_train,
+            classification=classifier,
+            score=_score,
+            groups=groups,
+            time_values=times,
+        )
+        row["tuned_params"] = dict(final_tuning.get("params") or {})
+    pipeline = _pipeline((final_tuning or {}).get("params"))
     if on_stage:
         on_stage(TRAINING)
     fit_started = datetime.now(UTC)
@@ -700,6 +780,7 @@ def _fit_and_score_holdout(
             "candidate_id": row.get("candidate_id"),
             "fit_row_count": int(len(X_train)),
             "fit_partition": "full_train",
+            "tuning": final_tuning,
             "final_fit_started_at": final_fit["started_at"],
             "final_fit_completed_at": final_fit["ended_at"],
             "final_fit_duration_ms": final_fit["duration_ms"],
@@ -820,30 +901,7 @@ def _run_open_ingest_candidates(
             and (t0 - budget_started) > max_training_seconds
         ):
             reason = f"skipped: training time budget of {max_training_seconds:.0f}s reached"
-            records.append(
-                {
-                    **candidate.to_dict(),
-                    "candidate": candidate.candidate_id,
-                    "feature_set": list(candidate.features),
-                    "preprocessing_config": {
-                        "numerical": ["imputer:median", "scaler:standard"],
-                        "categorical": ["imputer:most_frequent", "onehot:all_categories"],
-                    },
-                    "status": "SKIPPED",
-                    "failure_reason": reason,
-                    "cv_strategy": validation_plan.strategy,
-                    "requested_folds": validation_plan.requested_folds,
-                    "actual_folds": None,
-                    "metrics": None,
-                    "fold_metrics": [],
-                    "folds": [],
-                    "cv_mean": None,
-                    "cv_std": None,
-                    "train_seconds": 0.0,
-                    "fit_duration_ms": 0.001,
-                    "test_metrics": None,
-                }
-            )
+            records.append(_skipped_record(candidate, reason, validation_plan))
             funnel_updates["skipped"] = funnel_updates.get("skipped", 0) + 1
             _emit_event(
                 on_event,
@@ -875,7 +933,16 @@ def _run_open_ingest_candidates(
             X_train = pool.loc[:, cols]
             y_train = y_pool
 
-            def _fresh_pipeline() -> SkPipeline:
+            tuning_spec = (candidate.hyperparameters or {}).get("tuning")
+
+            def _fresh_pipeline(tuned: dict[str, Any] | None = None) -> SkPipeline:
+                hyperparameters = {
+                    key: value
+                    for key, value in (candidate.hyperparameters or {}).items()
+                    if key != "tuning"
+                }
+                if tuned:
+                    hyperparameters["tuned"] = dict(tuned)
                 return SkPipeline(
                     [
                         ("prep", build_preprocessor(num_cols, cat_cols)),
@@ -884,12 +951,27 @@ def _run_open_ingest_candidates(
                             make_model(
                                 candidate.model_family,
                                 seed=candidate.random_seed,
-                                hyperparameters=candidate.hyperparameters,
+                                hyperparameters=hyperparameters,
                                 task_type=task.task_type,
                             ),
                         ),
                     ]
                 )
+
+            def _tuning_score(params, X_fit, y_fit, X_val, y_val) -> float:
+                pipe = _fresh_pipeline(params)
+                pipe.fit(X_fit, y_fit)
+                pred = _predict(pipe, X_val, classifier, n_classes)
+                return primary_score(
+                    _metrics(y_val, pred, classifier=classifier, n_classes=n_classes),
+                    selection_metric,
+                    task.task_type,
+                )
+
+            tuning_deadline = (
+                budget_started + max_training_seconds if max_training_seconds else None
+            )
+            tuning_groups, tuning_times = _tuning_axes(pool, validation_plan)
 
             fold_metrics_list: list[dict[str, Any]] = []
             fold_scores: list[float] = []
@@ -912,7 +994,27 @@ def _run_open_ingest_candidates(
                     train_row_count=int(len(fold_train_idx)),
                     validation_row_count=int(len(fold_holdout_idx)),
                 )
-                fold_pipeline = _fresh_pipeline()
+                fold_tuning: dict[str, Any] | None = None
+                if tuning_spec:
+                    # Nested: tune on this fold's training rows only.
+                    fold_tuning = tune(
+                        tuning_spec,
+                        X_train.iloc[fold_train_idx],
+                        y_train[fold_train_idx],
+                        classification=classifier,
+                        score=_tuning_score,
+                        deadline=tuning_deadline,
+                        groups=None if tuning_groups is None else tuning_groups[fold_train_idx],
+                        time_values=None if tuning_times is None else tuning_times[fold_train_idx],
+                    )
+                    if not fold_tuning["trials_completed"]:
+                        # Defaults in this fold would make the CV score describe a
+                        # different procedure than the tuned model that would ship.
+                        raise _CandidateSkipped(
+                            f"skipped: training time budget of {max_training_seconds or 0:.0f}s "
+                            f"left no tuning trial in fold {fold.fold_number}"
+                        )
+                fold_pipeline = _fresh_pipeline((fold_tuning or {}).get("params"))
                 fold_pipeline.fit(X_train.iloc[fold_train_idx], y_train[fold_train_idx])
                 fold_pred = _predict(
                     fold_pipeline, X_train.iloc[fold_holdout_idx], classifier, n_classes
@@ -963,6 +1065,7 @@ def _run_open_ingest_candidates(
                         "metrics": fold_metrics,
                         "duration": duration,
                         "fit_duration_ms": duration,
+                        "tuning": fold_tuning,
                         "train_provenance": train_provenance,
                         "validation_provenance": validation_provenance,
                         "started_at": fold_started.isoformat(),
@@ -985,6 +1088,16 @@ def _run_open_ingest_candidates(
             cv_mean, cv_std = aggregate_fold_metrics(fold_metrics_list)
             robust = robustness_stats(fold_scores)
             oof_scores[candidate.candidate_id] = (oof_index, oof_pred)
+            tuning_summary: dict[str, Any] = {}
+            if tuning_spec:
+                completed = [fold["tuning"]["trials_completed"] for fold in fold_evidence]
+                tuning_summary = {
+                    # The final fit re-tunes with what every fold managed, so the
+                    # shipped model follows the procedure CV evaluated.
+                    "tuning_trials_used": int(min(completed)),
+                    # Representative constructor values until a final fit re-tunes.
+                    "tuned_params": dict(fold_evidence[0]["tuning"]["params"]),
+                }
             records.append(
                 {
                     **candidate.to_dict(),
@@ -1016,6 +1129,7 @@ def _run_open_ingest_candidates(
                     "numerical_cols": num_cols,
                     "categorical_cols": cat_cols,
                     "test_metrics": None,
+                    **tuning_summary,
                 }
             )
             funnel_updates["trained"] += 1
@@ -1031,6 +1145,18 @@ def _run_open_ingest_candidates(
                 cv_score=robust["mean"],
                 actual_folds=n_splits,
                 duration_ms=max(0.001, (time.time() - t0) * 1000.0),
+            )
+        except _CandidateSkipped as exc:
+            records.append(_skipped_record(candidate, str(exc), validation_plan))
+            funnel_updates["skipped"] = funnel_updates.get("skipped", 0) + 1
+            _emit_event(
+                on_event,
+                "candidate_skipped",
+                stage="candidate_training",
+                status="skipped",
+                candidate_id=candidate.candidate_id,
+                model_family=candidate.model_family,
+                reason=str(exc),
             )
         except Exception as exc:  # noqa: BLE001
             funnel_updates["failed"] += 1
@@ -1209,6 +1335,8 @@ def _run_open_ingest_candidates(
             on_event=on_event,
             n_classes=n_classes,
             threshold=threshold,
+            selection_metric=selection_metric,
+            validation_plan=validation_plan,
         )
         stage_timings.extend([final_fit, {key: value for key, value in final_test_evaluation.items() if key != "metrics"}])
         if decision_threshold is not None:

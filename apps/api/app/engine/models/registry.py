@@ -104,6 +104,23 @@ def make_model(
     task_type: str | None = None,
 ) -> Any:
     hp = dict(hyperparameters or {})
+    tuned = dict(hp.pop("tuned", None) or {})
+    model = _make_base_model(family, seed=seed, hp=hp, task_type=task_type)
+    return _apply_tuned_params(model, tuned) if tuned else model
+
+
+def _apply_tuned_params(model: Any, tuned: dict[str, Any]) -> Any:
+    """Set tuned constructor values on the estimator, wherever it sits."""
+    prefix = ""
+    if isinstance(model, ContiguousLabelClassifier):
+        prefix = "estimator__"
+    elif isinstance(model, Pipeline):
+        prefix = f"{model.steps[-1][0]}__"
+    model.set_params(**{f"{prefix}{key}": value for key, value in tuned.items()})
+    return model
+
+
+def _make_base_model(family: str, *, seed: int, hp: dict[str, Any], task_type: str | None) -> Any:
     if family == "xgboost" and task_type == "multiclass":
         from xgboost import XGBClassifier
 
@@ -197,19 +214,24 @@ def make_model(
         return LGBMClassifier(
             n_estimators=hp.get("n_estimators", 80),
             random_state=seed,
+            n_jobs=1,
             verbose=-1,
             class_weight=hp.get("class_weight"),
         )
     if family == "lightgbm_regressor":
         from lightgbm import LGBMRegressor
 
-        return LGBMRegressor(n_estimators=hp.get("n_estimators", 80), random_state=seed, verbose=-1)
+        return LGBMRegressor(
+            n_estimators=hp.get("n_estimators", 80), random_state=seed, n_jobs=1, verbose=-1
+        )
     if family == "catboost":
         from catboost import CatBoostClassifier
 
         return CatBoostClassifier(
             iterations=hp.get("n_estimators", 80),
             random_seed=seed,
+            thread_count=1,
+            allow_writing_files=False,
             verbose=False,
             auto_class_weights=hp.get("auto_class_weights"),
         )
@@ -217,7 +239,11 @@ def make_model(
         from catboost import CatBoostRegressor
 
         return CatBoostRegressor(
-            iterations=hp.get("n_estimators", 80), random_seed=seed, verbose=False
+            iterations=hp.get("n_estimators", 80),
+            random_seed=seed,
+            thread_count=1,
+            allow_writing_files=False,
+            verbose=False,
         )
     raise ValueError(f"Unknown model family: {family}")
 
@@ -229,6 +255,9 @@ def applied_hyperparameters(
 
     hp = dict(hyperparameters or {})
     values = _applied_base(family, seed=seed, hp=hp)
+    # Tuned values (P1.4-C) override the defaults they replace.
+    values.update(dict(hp.get("tuned") or {}))
+    # A tuning plan is not a constructor value; the fingerprint hashes it separately.
     # Imbalance weighting (P1.4-A1) is recorded only when set, so unweighted
     # candidates keep identical evidence.
     for key in ("class_weight", "scale_pos_weight", "auto_class_weights"):
@@ -269,11 +298,18 @@ def _applied_base(family: str, *, seed: int, hp: dict[str, Any]) -> dict[str, An
             values["eval_metric"] = "logloss"
         return values
     if family in {"lightgbm", "lightgbm_regressor"}:
-        return {"n_estimators": hp.get("n_estimators", 80), "random_state": seed, "verbose": -1}
+        return {
+            "n_estimators": hp.get("n_estimators", 80),
+            "random_state": seed,
+            "n_jobs": 1,
+            "verbose": -1,
+        }
     if family in {"catboost", "catboost_regressor"}:
         return {
             "iterations": hp.get("n_estimators", 80),
             "random_seed": seed,
+            "thread_count": 1,
+            "allow_writing_files": False,
             "verbose": False,
         }
     return dict(hp)

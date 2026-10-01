@@ -173,6 +173,10 @@ _THRESHOLD_DEPENDENT = frozenset(
 )
 
 
+# Evidence row holding a tuned candidate's search plan; never a constructor argument.
+TUNING_PLAN_PARAMETER = "tuning_plan"
+
+
 def _add_metrics(
     db: Session,
     evaluation: ModelEvaluation,
@@ -239,6 +243,10 @@ def persist_candidate_modeling(
         family = str(row.get("model_family") or "")
         library, implementation_class, library_version = implementation_for_family(family)
         original_hp = dict(row.get("hyperparameters") or {})
+        tuning_plan = original_hp.pop("tuning", None)
+        tuned_params = dict(row.get("tuned_params") or {})
+        if tuned_params:
+            original_hp["tuned"] = tuned_params
         seed = int(row.get("random_seed") or experiment.seed or 42)
         applied = applied_hyperparameters(family, seed=seed, hyperparameters=original_hp)
         if not applied:
@@ -278,7 +286,23 @@ def persist_candidate_modeling(
                     candidate_id=candidate.id,
                     parameter_name=str(name),
                     value_json=_json_safe(value),
-                    source="planner" if name in original_hp else "default",
+                    source=(
+                        "optuna"
+                        if name in tuned_params
+                        else "planner"
+                        if name in original_hp
+                        else "default"
+                    ),
+                )
+            )
+        if tuning_plan:
+            # Evidence of the search, not a constructor argument (codegen skips it).
+            db.add(
+                ModelHyperparameter(
+                    candidate_id=candidate.id,
+                    parameter_name=TUNING_PLAN_PARAMETER,
+                    value_json=_json_safe(tuning_plan),
+                    source="planner",
                 )
             )
         if str(row.get("status") or "").lower() != "trained":

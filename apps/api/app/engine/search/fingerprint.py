@@ -156,6 +156,8 @@ def scientific_candidate_config_payload(
             "library_version": library_version,
         },
         "hyperparameters": _strip_identity(applied),
+        # A tuned candidate is defined by its bounded search (space, trials, seed).
+        "tuning_plan": (hyperparameters or {}).get("tuning"),
         "preprocessing": _canonical_preprocessing(preprocessing),
         "seed": int(seed),
         "holdout_plan_digest": scientific_plan_digest(holdout_plan),

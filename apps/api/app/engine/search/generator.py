@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.engine.features.combinations import features_for_groups, generate_group_combinations
 from app.engine.models.registry import available_families, baseline_families, cheap_families, strong_families
 from app.engine.search.fingerprint import scientific_candidate_fingerprint
+from app.engine.search.tuning import tuning_plan
 from app.engine.types import Candidate, SearchConfig, TaskSpec
 
 DUMMY_FAMILIES = {"majority", "mean", "median"}
@@ -116,13 +117,14 @@ def open_ingest_families(task_type: str) -> list[str]:
     """
     avail = set(available_families(task_type))
     if task_type in {"binary", "multiclass"}:
-        wanted = ["logistic_regression", "random_forest", "xgboost", "lightgbm"]
+        wanted = ["logistic_regression", "random_forest", "xgboost", "lightgbm", "catboost"]
     else:
         wanted = [
             "linear_regression",
             "random_forest_regressor",
             "xgboost_regressor",
             "lightgbm_regressor",
+            "catboost_regressor",
         ]
     return [name for name in wanted if name in avail]
 
@@ -286,6 +288,10 @@ def _open_ingest_candidates(
         _candidate(cid, family, hp)
         for cid, family, hp in planned[: max(0, config.max_candidates)]
     ]
+    tuned = tuning_plan(task.task_type, families, n_trials=config.max_hyperparameter_trials, seed=config.seed)
+    if tuned is not None and candidates:
+        # One bounded, nested-CV-tuned variant of the strongest available family.
+        candidates.append(_candidate(f"{tuned['family']}__tuned", tuned["family"], {"tuning": tuned}))
     baseline = BASELINE_FAMILY.get(task.task_type)
     if baseline and candidates:
         # Outside the candidate cap: "beats chance" is never optional.

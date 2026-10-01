@@ -161,7 +161,8 @@ def _named_hyperparameters(rows: Iterable[Any]) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for row in sorted(rows, key=lambda item: item.parameter_name):
         name = str(row.parameter_name)
-        if _secret_key(name):
+        if _secret_key(name) or name == "tuning_plan":
+            # The tuned candidate's search plan is evidence, not a constructor value.
             continue
         values[name] = _safe_value(row.value_json)
     return values

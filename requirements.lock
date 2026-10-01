@@ -1,5 +1,7 @@
 alembic==1.20.0
-    # via decision-ai (pyproject.toml)
+    # via
+    #   decision-ai (pyproject.toml)
+    #   optuna
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -24,7 +26,12 @@ click==8.5.0
 cloudpickle==3.1.2
     # via joblib
 colorama==0.4.6 ; sys_platform == 'win32'
-    # via pytest
+    # via
+    #   colorlog
+    #   pytest
+    #   tqdm
+colorlog==6.12.0
+    # via optuna
 contourpy==1.4.0
     # via matplotlib
 coverage==7.16.2
@@ -91,6 +98,7 @@ numpy==2.5.3
     #   contourpy
     #   lightgbm
     #   matplotlib
+    #   optuna
     #   pandas
     #   scikit-learn
     #   scipy
@@ -100,9 +108,12 @@ openai==3.22.1
     # via decision-ai (pyproject.toml)
 opentelemetry-api==1.45.0
     # via fastapi
+optuna==4.9.0
+    # via decision-ai (pyproject.toml)
 packaging==26.3
     # via
     #   matplotlib
+    #   optuna
     #   plotly
     #   pytest
 pandas==3.0.6
@@ -159,6 +170,7 @@ python-multipart==0.0.32
 pyyaml==6.0.3
     # via
     #   decision-ai (pyproject.toml)
+    #   optuna
     #   uvicorn
 scikit-learn==1.9.1
     # via decision-ai (pyproject.toml)
@@ -179,10 +191,13 @@ sqlalchemy==2.1.1
     # via
     #   decision-ai (pyproject.toml)
     #   alembic
+    #   optuna
 starlette==1.7.0
     # via fastapi
 threadpoolctl==3.7.0
     # via scikit-learn
+tqdm==4.70.1
+    # via optuna
 truststore==0.10.4 ; sys_platform != 'emscripten'
     # via
     #   httpcore2

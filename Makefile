@@ -89,5 +89,5 @@ down:
 
 # Refresh the cross-platform dependency lock after editing pyproject.toml.
 lock:
-	uv pip compile pyproject.toml --extra boosting --extra dev --universal \
+	uv pip compile pyproject.toml --extra boosting --extra tuning --extra dev --universal \
 		--python-version 3.12 --no-header -o requirements.lock

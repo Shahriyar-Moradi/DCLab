@@ -179,6 +179,9 @@ def _search_config(*, holdout_plan=None, development_plan=None, objective=None) 
         # Honoured by the runner since P1.4-A1: later candidates are skipped (and
         # reported) once exceeded, never before one learned model has trained.
         max_training_seconds=600.0,
+        # One nested-CV-tuned variant of the strongest family (P1.4-C), bounded
+        # by this trial count and the time budget above; skipped without optuna.
+        max_hyperparameter_trials=12,
         n_robustness_folds=5,
         min_metric=0.0,
         retain_min=1,
