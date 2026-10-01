@@ -51,3 +51,7 @@ data/case_studies/*/frame*.csv
 
 # CatBoost training logs (models now set allow_writing_files=False)
 catboost_info/
+
+# Benchmark run outputs; only the accepted baseline is committed.
+benchmarks/results/latest-*.json
+benchmarks/results/20*.json

@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock
+.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock benchmark benchmark-quick
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -91,3 +91,13 @@ down:
 lock:
 	uv pip compile pyproject.toml --extra boosting --extra tuning --extra dev --universal \
 		--python-version 3.12 --no-header -o requirements.lock
+
+# R1-A benchmark harness (engine only, no database). `benchmark` adds OpenML
+# tasks (downloaded once into SCIKIT_LEARN_DATA); `benchmark-quick` needs no network.
+benchmark:
+	$(PYTHON) -m benchmarks.harness.run --suite full --out benchmarks/results/latest-full.json
+	$(PYTHON) -m benchmarks.harness.compare benchmarks/results/latest-full.json
+
+benchmark-quick:
+	$(PYTHON) -m benchmarks.harness.run --suite quick --out benchmarks/results/latest-quick.json
+	$(PYTHON) -m benchmarks.harness.compare benchmarks/results/latest-quick.json

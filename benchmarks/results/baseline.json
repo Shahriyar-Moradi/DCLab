@@ -1,0 +1,62 @@
+{
+ "accepted_from": "2026-10-01T15:30:36.711924+00:00",
+ "environment": {
+  "numpy": "2.5.2",
+  "python": "3.12.13",
+  "seed": 42,
+  "sklearn": "1.9.0"
+ },
+ "schema_version": 1,
+ "tasks": {
+  "sk-breast-cancer": {
+   "beats_baseline": true,
+   "cv_score": 0.9966842015432157,
+   "dummy_margin": 0.3703105751695893,
+   "holdout_primary": 0.9956390613467841,
+   "primary_metric": "pr_auc",
+   "rows": 569,
+   "seconds": 9.994,
+   "task_type": "binary"
+  },
+  "sk-diabetes": {
+   "beats_baseline": true,
+   "cv_score": -45.04819964235476,
+   "dummy_margin": 21.422947238932963,
+   "holdout_primary": 42.794094679599944,
+   "primary_metric": "mae",
+   "rows": 442,
+   "seconds": 2.091,
+   "task_type": "regression"
+  },
+  "sk-digits": {
+   "beats_baseline": true,
+   "cv_score": 0.9740492473628775,
+   "dummy_margin": 0.9557179771476476,
+   "holdout_primary": 0.9692041807086067,
+   "primary_metric": "macro_f1",
+   "rows": 1797,
+   "seconds": 49.97,
+   "task_type": "multiclass"
+  },
+  "sk-iris": {
+   "beats_baseline": true,
+   "cv_score": 0.9663367569249923,
+   "dummy_margin": 0.7996700902583257,
+   "holdout_primary": 0.899749373433584,
+   "primary_metric": "macro_f1",
+   "rows": 150,
+   "seconds": 2.156,
+   "task_type": "multiclass"
+  },
+  "sk-wine": {
+   "beats_baseline": true,
+   "cv_score": 0.9799004758272492,
+   "dummy_margin": 0.7890311825189315,
+   "holdout_primary": 1.0,
+   "primary_metric": "macro_f1",
+   "rows": 178,
+   "seconds": 2.966,
+   "task_type": "multiclass"
+  }
+ }
+}
