@@ -4,7 +4,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.section import WD_SECTION
 from pathlib import Path
 
-out = Path("Decision_AI_Agent_Coding_Context.docx")
+out = Path(__file__).with_name("Decision_AI_Agent_Coding_Context.docx")
 
 doc = Document()
 styles = doc.styles

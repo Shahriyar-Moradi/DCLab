@@ -14,6 +14,7 @@ Alembic head unchanged at `0061_ingestion_publication`; progress is recorded in
 [`docs/mvp/STATUS.md`](../mvp/STATUS.md).
 P0.2-B (2026-10-01) re-enabled production Labs uploads under [ADR 0005](../adr/0005-upload-policy.md); head still `0061_ingestion_publication`.
 P0.3-A (2026-10-01): dev topology runs training only in a `worker` service (Postgres queue).
+P0.4-A (2026-10-01): generated case-study CSVs untracked; business documents moved to `docs/archive/`.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)
