@@ -12,7 +12,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-TEST_DB_NAME = "decisionai_test"
+# pytest-xdist workers (gw0, gw1, ...) each get their own database so tests
+# never share rows or TRUNCATEs across processes; serial runs keep the old name.
+_XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+TEST_DB_NAME = "decisionai_test" + (f"_{_XDIST_WORKER}" if _XDIST_WORKER else "")
 ADMIN_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/decisionai"
 )

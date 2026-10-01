@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "pytest-xdist>=3.6"]
 # xgboost-cpu (Linux/Windows) is the official CPU-only build: ~6 MB instead of
 # ~360 MB with the NVIDIA NCCL GPU library. DCLab trains on CPU; macOS wheels
 # never include NCCL, so plain xgboost is used there. Both import as `xgboost`.

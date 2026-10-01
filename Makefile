@@ -56,8 +56,10 @@ users:
 seed:
 	curl -s -F "file=@data/sample/opportunities.csv" $(API_URL)/app/opportunities/upload
 
+# Parallel by default (one Postgres database per xdist worker); PYTEST_WORKERS=0 runs serially.
+PYTEST_WORKERS ?= auto
 test:
-	$(PYTEST) --cov=app --cov-report=term-missing
+	$(PYTEST) -n $(PYTEST_WORKERS) --cov=app --cov-report=term-missing
 
 truth-check:
 	$(PYTHON) -m scripts.check_truth_drift

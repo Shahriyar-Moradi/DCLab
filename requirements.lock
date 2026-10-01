@@ -38,6 +38,8 @@ coverage==7.16.2
     # via pytest-cov
 cycler==0.12.1
     # via matplotlib
+execnet==2.1.2
+    # via pytest-xdist
 fastapi==0.142.2
     # via decision-ai (pyproject.toml)
 fonttools==4.66.1
@@ -153,7 +155,10 @@ pytest==9.1.1
     # via
     #   decision-ai (pyproject.toml)
     #   pytest-cov
+    #   pytest-xdist
 pytest-cov==7.1.0
+    # via decision-ai (pyproject.toml)
+pytest-xdist==3.8.0
     # via decision-ai (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via
