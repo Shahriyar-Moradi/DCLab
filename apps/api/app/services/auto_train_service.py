@@ -90,9 +90,11 @@ from app.services.lab_decision_ledger import (
     record_column_type_decisions,
     record_missing_value_decisions,
 )
+from app.engine.modeling.objective import Objective, ObjectiveError, parse_objective
 from app.services.target_intent_service import (
     UNRESOLVED_TARGET_STATUS,
     audit_source_for_choice,
+    load_workspace_problem_spec,
     public_target_payload,
     requested_target_from_execution,
     resolve_execution_target,
@@ -148,7 +150,27 @@ def _load_upload_frame(stored_path: str) -> pd.DataFrame:
     return load_table(stored_path)
 
 
-def _search_config(*, holdout_plan=None, development_plan=None) -> SearchConfig:
+def _run_objective(
+    db: Session, upload: ClientLabUpload, workflow_run: WorkflowRun | None, task_type: str
+) -> Objective | None:
+    """The linked ProblemSpec's objective (primary metric, constraints, costs), if any."""
+    if workflow_run is None:
+        return None
+    spec = load_workspace_problem_spec(
+        db,
+        workspace_id=upload.workspace_id,
+        problem_spec_id=workflow_run.problem_spec_id,
+        project_id=workflow_run.project_id,
+    )
+    if spec is None:
+        return None
+    objective = parse_objective(
+        task_type, primary_metric=spec.primary_metric, constraints=spec.constraints or {}
+    )
+    return None if objective.is_empty else objective
+
+
+def _search_config(*, holdout_plan=None, development_plan=None, objective=None) -> SearchConfig:
     return SearchConfig(
         strategy="open_ingest",
         max_candidates=8,
@@ -164,6 +186,7 @@ def _search_config(*, holdout_plan=None, development_plan=None) -> SearchConfig:
         seed=42,
         holdout_plan=None if holdout_plan is None else holdout_plan.to_dict(),
         model_development_plan=None if development_plan is None else development_plan.to_dict(),
+        objective=None if objective is None else objective.to_dict(),
     )
 
 
@@ -612,6 +635,14 @@ def run_auto_train_job(
                 extra={"target": target_evidence, "analysis": profile, "quality": quality},
             )
             return
+        try:
+            run_objective = _run_objective(db, upload, workflow_run, target.task_type)
+        except ObjectiveError as exc:
+            _fail(
+                f"the problem spec objective is invalid for a {target.task_type} target: {exc}",
+                extra={"target": target_evidence, "analysis": profile, "quality": quality},
+            )
+            return
 
         _stage(CLEANING)
         evidence_timer = _evidence_start("structural_cleaning")
@@ -745,6 +776,7 @@ def run_auto_train_job(
             reviewer=consult_leakage_llm,
             conservative_auto_train=True,
             on_event=_planning_on_event,
+            objective=run_objective,
         )
         if _validation_plan.strategy == "unsupported" or not _validation_plan.actual_folds:
             _evidence_finish(evidence_timer, status="failed")
@@ -960,7 +992,9 @@ def run_auto_train_job(
             )
             return
 
-        search = _search_config(holdout_plan=holdout_plan, development_plan=development_plan)
+        search = _search_config(
+            holdout_plan=holdout_plan, development_plan=development_plan, objective=run_objective
+        )
         groups_map = {"features": num_cols + cat_cols}
         combos = generate_group_combinations(
             list(groups_map.keys()),

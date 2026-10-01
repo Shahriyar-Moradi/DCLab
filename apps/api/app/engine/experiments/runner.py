@@ -35,6 +35,16 @@ from app.engine.lab.auto_prepare import (
     split_column_roles,
 )
 from app.engine.models.registry import make_model
+from app.engine.modeling.objective import (
+    DEFAULT_THRESHOLD,
+    constraint_status,
+    evaluate_constraints,
+    fold_constraint_values,
+    objective_from_dict,
+    select_decision_threshold,
+    threshold_metrics,
+)
+from app.engine.modeling.validation_planner import TIME_SERIES_SPLIT as _TIME_SERIES_SPLIT
 from app.engine.modeling.holdout_planner import (
     TEMPORAL_FUTURE,
     HoldoutPlan,
@@ -207,6 +217,7 @@ def _resolve_model_development_plan(
         reviewer=consult_leakage_llm,
         conservative_auto_train=config.exclude_high_leakage,
         on_event=_planning_event_sink(on_event),
+        objective=objective_from_dict(config.objective),
     )
     return (
         problem_profile,
@@ -393,6 +404,94 @@ def _encode_multiclass_target(work: pd.DataFrame, target: str) -> tuple[pd.DataF
     return work, class_labels
 
 
+def _lock_decision_threshold(
+    task_type: str,
+    winner: dict[str, Any],
+    oof: tuple[list[np.ndarray], list[np.ndarray]] | None,
+    y_pool: np.ndarray,
+    pool: pd.DataFrame,
+    objective,
+    *,
+    primary_metric: str | None = None,
+    last_fold_only: bool = False,
+) -> dict[str, Any]:
+    """Choose the winner's decision threshold from its out-of-fold CV scores only.
+
+    K-fold / group folds pool every validation row (each row once). Under
+    TimeSeriesSplit early fold models see little data and older regimes, so only
+    the most recent validation fold is used.
+    """
+    cv_metrics = dict(winner.get("cv_mean") or {})
+    fold_index = list(oof[0]) if oof else []
+    fold_scores = list(oof[1]) if oof else []
+    if last_fold_only and fold_index:
+        fold_index, fold_scores = fold_index[-1:], fold_scores[-1:]
+    index = np.concatenate(fold_index) if fold_index else np.asarray([], dtype=int)
+    if task_type == "binary":
+        scores = np.concatenate(fold_scores) if fold_scores else np.asarray([], dtype=float)
+        decision = select_decision_threshold(
+            y_pool[index], scores, objective, cv_metrics=cv_metrics, primary_metric=primary_metric
+        )
+        decision["oof_folds"] = "last_fold" if last_fold_only else "all_folds"
+        all_folds = list(zip(oof[0], oof[1])) if oof else []
+        decision["per_fold"] = fold_constraint_values(
+            [(y_pool[idx], fold_score) for idx, fold_score in all_folds],
+            float(decision["value"]),
+            sorted({row["metric"] for row in decision["constraints"]} | {"precision", "recall"}),
+        )
+    else:
+        constraints = evaluate_constraints(objective, oof_metrics=cv_metrics)
+        decision = {
+            "value": None,
+            "source": "not_applicable",
+            "selected_on": "out_of_fold_cv",
+            "oof_row_count": int(len(index)),
+            "status": constraint_status(constraints),
+            "reason": f"No decision threshold applies to {task_type}; constraints are checked on CV means.",
+            "expected_cost": None,
+            "constraints": constraints,
+        }
+    # Provenance of the rows the threshold saw: training-pool rows only.
+    decision["oof_source_rows"] = (
+        sorted(int(value) for value in pool.iloc[np.unique(index)][SOURCE_ROW_COLUMN].tolist())
+        if SOURCE_ROW_COLUMN in pool.columns and len(index)
+        else []
+    )
+    decision["candidate_id"] = winner.get("candidate_id")
+    return decision
+
+
+def _apply_holdout_constraints(
+    decision: dict[str, Any], objective, test_metrics: dict[str, Any]
+) -> dict[str, Any]:
+    """Report each constraint on the holdout at the locked threshold (never re-tuned)."""
+    holdout_rows = evaluate_constraints(objective, holdout_metrics=test_metrics)
+    for row, holdout in zip(decision.get("constraints") or [], holdout_rows):
+        row["holdout_value"] = holdout["holdout_value"]
+        row["holdout_satisfied"] = holdout["holdout_satisfied"]
+    metrics = dict(test_metrics)
+    if decision.get("value") is not None:
+        metrics["decision_threshold"] = float(decision["value"])
+    matrix = metrics.get("confusion_matrix")
+    if (
+        objective is not None
+        and objective.has_cost_matrix
+        and isinstance(matrix, dict)
+        and sum(matrix.values())
+    ):
+        metrics["expected_cost"] = (
+            matrix["fp"] * objective.cost_false_positive + matrix["fn"] * objective.cost_false_negative
+        ) / sum(matrix.values())
+    rows = decision.get("constraints") or []
+    for row in rows:
+        if row.get("holdout_satisfied") is not None:
+            metrics[f"{row['label']}_satisfied"] = 1.0 if row["holdout_satisfied"] else 0.0
+    if rows:
+        metrics["constraints_satisfied"] = 1.0 if all(row.get("holdout_satisfied") for row in rows) else 0.0
+    decision["holdout_status"] = constraint_status(rows, "holdout_satisfied") if rows else None
+    return metrics
+
+
 def _decoded_target(frame: pd.DataFrame, target: str, class_labels: list[Any] | None) -> pd.DataFrame:
     """Planning and the leakage audit see original labels, so a feature that
     copies the raw target still matches it exactly and evidence names classes."""
@@ -426,10 +525,22 @@ def _matrix(frame: pd.DataFrame, features: tuple[str, ...]) -> np.ndarray:
     return frame.loc[:, list(features)].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy(dtype=float)
 
 
-def _metrics(y_true, pred, *, classifier: bool, n_classes: int | None = None) -> dict[str, Any]:
+def _metrics(
+    y_true,
+    pred,
+    *,
+    classifier: bool,
+    n_classes: int | None = None,
+    threshold: float = DEFAULT_THRESHOLD,
+) -> dict[str, Any]:
     if classifier and n_classes:
         return multiclass_metrics(y_true, pred, n_classes=n_classes)
-    return classification_metrics(y_true, pred) if classifier else regression_metrics(y_true, pred)
+    if classifier:
+        return {
+            **classification_metrics(y_true, pred, threshold=threshold),
+            **threshold_metrics(y_true, pred, threshold),
+        }
+    return regression_metrics(y_true, pred)
 
 
 def _timing(stage: str, started_at: datetime, timer: float, *, status: str = "completed") -> dict[str, Any]:
@@ -489,6 +600,7 @@ def _prediction_rows(
     test: pd.DataFrame | None = None,
     entity_col: str | None = None,
     class_labels: list[Any] | None = None,
+    threshold: float = DEFAULT_THRESHOLD,
 ) -> list[dict[str, Any]]:
     y_true_arr = np.asarray(y_true)
     y_score_arr = np.asarray(y_score, dtype=float)
@@ -499,7 +611,7 @@ def _prediction_rows(
         y_true_arr = np.asarray([class_labels[int(code)] for code in y_true_arr], dtype=object)
         y_score_arr = y_score_arr.max(axis=1)
     else:
-        y_pred = (y_score_arr >= 0.5).astype(int) if classifier else y_score_arr
+        y_pred = (y_score_arr >= threshold).astype(int) if classifier else y_score_arr
     rows: list[dict[str, Any]] = []
     for index in range(len(y_true_arr)):
         record_id = str(index)
@@ -534,6 +646,7 @@ def _fit_and_score_holdout(
     on_stage: Callable[[str], None] | None = None,
     on_event: RunEventCallback | None = None,
     n_classes: int | None = None,
+    threshold: float = DEFAULT_THRESHOLD,
 ) -> tuple[
     Any,
     dict[str, Any],
@@ -578,7 +691,9 @@ def _fit_and_score_holdout(
     )
     pipeline.fit(X_train, y_train)
     train_pred = _predict(pipeline, X_train, classifier, n_classes)
-    train_metrics = _metrics(y_train, train_pred, classifier=classifier, n_classes=n_classes)
+    train_metrics = _metrics(
+        y_train, train_pred, classifier=classifier, n_classes=n_classes, threshold=threshold
+    )
     final_fit = _timing("final_fit", fit_started, fit_timer)
     final_fit.update(
         {
@@ -614,7 +729,9 @@ def _fit_and_score_holdout(
         test_row_count=int(len(X_test)),
     )
     test_pred = _predict(pipeline, X_test, classifier, n_classes)
-    test_metrics = _metrics(y_test, test_pred, classifier=classifier, n_classes=n_classes)
+    test_metrics = _metrics(
+        y_test, test_pred, classifier=classifier, n_classes=n_classes, threshold=threshold
+    )
     test_evaluation = _timing("final_test_evaluation", test_started, test_timer)
     test_evaluation.update(
         {
@@ -666,6 +783,7 @@ def _run_open_ingest_candidates(
     on_event: RunEventCallback | None = None,
     max_training_seconds: float | None = None,
     class_labels: list[Any] | None = None,
+    objective: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked."""
     classifier = is_classification(task.task_type)
@@ -679,6 +797,9 @@ def _run_open_ingest_candidates(
     n_splits = len(fold_splits)
     funnel_updates = {"trained": 0, "failed": 0, "cache_hits": 0}
     records: list[dict[str, Any]] = []
+    # Out-of-fold (validation-row) scores per candidate; the only evidence the
+    # decision threshold may be tuned on. Never includes holdout rows.
+    oof_scores: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] = {}
     stage_timings: list[dict[str, Any]] = []
 
     if on_stage:
@@ -772,6 +893,8 @@ def _run_open_ingest_candidates(
 
             fold_metrics_list: list[dict[str, Any]] = []
             fold_scores: list[float] = []
+            oof_index: list[np.ndarray] = []
+            oof_pred: list[np.ndarray] = []
             fold_evidence: list[dict[str, Any]] = []
             for fold in fold_splits:
                 fold_number = fold.fold_number
@@ -796,6 +919,8 @@ def _run_open_ingest_candidates(
                 )
                 fold_y = y_train[fold_holdout_idx]
                 fold_metrics = _metrics(fold_y, fold_pred, classifier=classifier, n_classes=n_classes)
+                oof_index.append(np.asarray(fold_holdout_idx))
+                oof_pred.append(np.asarray(fold_pred))
                 fold_metrics_list.append(fold_metrics)
                 fold_scores.append(primary_score(fold_metrics, selection_metric, task.task_type))
                 train_provenance = (
@@ -859,6 +984,7 @@ def _run_open_ingest_candidates(
 
             cv_mean, cv_std = aggregate_fold_metrics(fold_metrics_list)
             robust = robustness_stats(fold_scores)
+            oof_scores[candidate.candidate_id] = (oof_index, oof_pred)
             records.append(
                 {
                     **candidate.to_dict(),
@@ -1022,6 +1148,34 @@ def _run_open_ingest_candidates(
         "metrics": {},
     }
 
+    parsed_objective = objective_from_dict(objective, task_type=task.task_type)
+    decision_threshold: dict[str, Any] | None = None
+    threshold = DEFAULT_THRESHOLD
+    if best_single is not None:
+        decision_threshold = _lock_decision_threshold(
+            task.task_type,
+            best_single,
+            oof_scores.get(best_single["candidate_id"]),
+            y_pool,
+            pool,
+            parsed_objective,
+            primary_metric=selection_metric,
+            last_fold_only=validation_plan.strategy == _TIME_SERIES_SPLIT,
+        )
+        if decision_threshold.get("value") is not None:
+            threshold = float(decision_threshold["value"])
+        selection["decision_threshold"] = decision_threshold.get("value")
+        _emit_event(
+            on_event,
+            "decision_threshold_locked",
+            stage="decision_threshold",
+            status="completed",
+            candidate_id=best_single.get("candidate_id"),
+            threshold=decision_threshold.get("value"),
+            source=decision_threshold.get("source"),
+            constraint_status=decision_threshold.get("status"),
+        )
+
     # Persist the CV-only selection checkpoint before the holdout is touched.
     if best_single is not None:
         best_single["locked"] = True
@@ -1054,8 +1208,12 @@ def _run_open_ingest_candidates(
             on_stage=on_stage,
             on_event=on_event,
             n_classes=n_classes,
+            threshold=threshold,
         )
         stage_timings.extend([final_fit, {key: value for key, value in final_test_evaluation.items() if key != "metrics"}])
+        if decision_threshold is not None:
+            test_metrics = _apply_holdout_constraints(decision_threshold, parsed_objective, test_metrics)
+            final_test_evaluation["metrics"] = test_metrics
         best_single["train_metrics"] = train_metrics
         best_single["test_metrics"] = test_metrics
         best_single["n_test_rows"] = n_test
@@ -1070,6 +1228,7 @@ def _run_open_ingest_candidates(
             test=test,
             entity_col=task.entity_id,
             class_labels=class_labels if n_classes else None,
+            threshold=threshold,
         )
         stage_timings.append(_timing("prediction_persistence", prediction_started, prediction_timer))
         _emit_event(
@@ -1085,7 +1244,14 @@ def _run_open_ingest_candidates(
         artifact_timer = time.perf_counter()
         joblib.dump(winner_pipeline, members_dir / f"{best_single['candidate_id']}.joblib")
         joblib.dump(
-            {"fusion": None, "members": selected_ids, "weights": {}, "task_id": task.id},
+            {
+                "fusion": None,
+                "members": selected_ids,
+                "weights": {},
+                "task_id": task.id,
+                # Scoring a positive needs probability >= decision_threshold (binary).
+                "decision_threshold": (decision_threshold or {}).get("value"),
+            },
             artifact_dir / "model.joblib",
         )
         pd.DataFrame(test_predictions).to_csv(artifact_dir / "test_predictions.csv", index=False)
@@ -1113,6 +1279,7 @@ def _run_open_ingest_candidates(
         "final_fit": final_fit if best_single is not None else {},
         "stage_timings": stage_timings,
         "baseline_comparison": baseline_comparison,
+        "decision_threshold": decision_threshold,
     }
 
 
@@ -1259,6 +1426,7 @@ def _run_open_ingest_experiment(
         on_event=on_event,
         max_training_seconds=config.max_training_seconds,
         class_labels=class_labels,
+        objective=config.objective,
     )
     funnel.update(outcome["funnel"])
     records = outcome["records"]
@@ -1355,6 +1523,8 @@ def _run_open_ingest_experiment(
         "baseline_comparison": outcome.get("baseline_comparison"),
         # Multiclass label code i is class_labels[i]; None for binary/regression.
         "class_labels": class_labels,
+        "objective": config.objective,
+        "decision_threshold": outcome.get("decision_threshold"),
     }
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")

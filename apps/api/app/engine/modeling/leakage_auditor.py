@@ -18,6 +18,7 @@ from sklearn.metrics import roc_auc_score
 from app.engine.lab.evidence import LeakageReviewEvidence
 from app.engine.lab.schema_inference import identifier_likelihood, looks_like_identifier, normalize_name
 from app.engine.modeling.metric_planner import MetricPlan, plan_metrics
+from app.engine.modeling.objective import Objective
 from app.engine.modeling.problem_profile import ProblemProfile, build_problem_profile
 from app.engine.modeling.validation_planner import ValidationPlan, plan_validation
 from app.engine.validation.splits import SOURCE_ROW_COLUMN
@@ -928,6 +929,7 @@ def plan_model_development(
     conservative_auto_train: bool = True,
     availability_overrides: dict[str, AvailabilityStatus] | None = None,
     on_event: PlanningEventCallback | None = None,
+    objective: Objective | None = None,
 ) -> tuple[ProblemProfile, ValidationPlan, MetricPlan, LeakageAuditResult, ModelDevelopmentPlan]:
     """Profile → validate → metrics → leakage → one ModelDevelopmentPlan (train only)."""
     feature_columns = [name for name in train.columns if name not in {target, SOURCE_ROW_COLUMN}]
@@ -983,7 +985,7 @@ def plan_model_development(
         fallback_reason=validation_plan.fallback_reason,
         version=validation_plan.version,
     )
-    metric_plan = plan_metrics(problem_profile)
+    metric_plan = plan_metrics(problem_profile, objective)
     _emit_planning(
         on_event,
         "metric_plan_selected",

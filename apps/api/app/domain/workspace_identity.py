@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # One compatibility Project per Workspace for historical rows that have no
 # Project. Attachment does not mean those rows were the same case study.
@@ -85,6 +85,15 @@ class ProblemSpecCreateRequest(BaseModel):
     constraints: dict[str, Any] = Field(default_factory=dict)
     success_criteria: dict[str, Any] = Field(default_factory=dict)
     status: str = Field(default="draft", max_length=32)
+
+    @model_validator(mode="after")
+    def _objective_is_valid(self) -> ProblemSpecCreateRequest:
+        # Structured objective keys (primary_metric, metric_constraints,
+        # cost_matrix) must be valid for the task before the spec is stored.
+        from app.engine.modeling.objective import parse_objective
+
+        parse_objective(self.task_type, primary_metric=self.primary_metric, constraints=self.constraints)
+        return self
 
 
 class ProblemSpecRead(BaseModel):

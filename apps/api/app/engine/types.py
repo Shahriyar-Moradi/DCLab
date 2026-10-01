@@ -61,6 +61,8 @@ class SearchConfig:
     n_robustness_folds: int = 3
     holdout_plan: dict[str, Any] | None = None
     model_development_plan: dict[str, Any] | None = None
+    # User objective from the ProblemSpec (app.engine.modeling.objective.Objective.to_dict()).
+    objective: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

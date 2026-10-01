@@ -167,13 +167,26 @@ def _delete_run_candidate_modeling(db: Session, pipeline_run_id: UUID) -> None:
     db.flush()
 
 
-def _add_metrics(db: Session, evaluation: ModelEvaluation, metrics: dict[str, float]) -> None:
+# Binary metrics that depend on the decision threshold; their rows record it.
+_THRESHOLD_DEPENDENT = frozenset(
+    {"accuracy", "precision", "recall", "f1", "balanced_accuracy", "specificity"}
+)
+
+
+def _add_metrics(
+    db: Session,
+    evaluation: ModelEvaluation,
+    metrics: dict[str, float],
+    *,
+    threshold: float | None = None,
+) -> None:
     for name, value in metrics.items():
         db.add(
             EvaluationMetric(
                 model_evaluation_id=evaluation.id,
                 metric_name=name,
                 metric_value=value,
+                threshold=threshold if name in _THRESHOLD_DEPENDENT else None,
             )
         )
 
@@ -207,6 +220,9 @@ def persist_candidate_modeling(
     feature_set_version_id = feature_set_version.id if feature_set_version is not None else None
     search_stage = _search_stage(experiment)
     rows = [row for row in list(result.get("candidates") or []) if isinstance(row, dict)]
+    task_payload = result.get("task") if isinstance(result.get("task"), dict) else {}
+    # CV threshold metrics (precision, recall, …) are always computed at 0.5.
+    cv_threshold = 0.5 if task_payload.get("task_type") == "binary" else None
     by_key: dict[str, ExperimentCandidate] = {}
     used_fingerprints: set[str] = set()
 
@@ -326,7 +342,7 @@ def persist_candidate_modeling(
                 )
                 db.add(evaluation)
                 db.flush()
-                _add_metrics(db, evaluation, fold_metrics)
+                _add_metrics(db, evaluation, fold_metrics, threshold=cv_threshold)
         cv_mean = _scalar_metrics(row.get("cv_mean") or row.get("metrics"))
         if cv_mean:
             aggregate = ModelEvaluation(
@@ -344,7 +360,7 @@ def persist_candidate_modeling(
             )
             db.add(aggregate)
             db.flush()
-            _add_metrics(db, aggregate, cv_mean)
+            _add_metrics(db, aggregate, cv_mean, threshold=cv_threshold)
         robustness = _scalar_metrics(row.get("robustness") or row.get("cv_score"))
         if robustness:
             robust_eval = ModelEvaluation(
@@ -448,7 +464,9 @@ def _persist_selection_and_holdout(
     )
     db.add(evaluation)
     db.flush()
-    _add_metrics(db, evaluation, holdout_metrics)
+    _add_metrics(
+        db, evaluation, holdout_metrics, threshold=holdout_metrics.get("decision_threshold")
+    )
 
 
 def link_candidates_to_feature_set_version(db: Session, experiment: Experiment) -> None:

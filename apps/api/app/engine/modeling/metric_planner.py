@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from app.engine.modeling.objective import PRIMARY_METRICS, Objective
 from app.engine.modeling.problem_profile import ProblemProfile
 
 METRIC_PLAN_VERSION = "dclab.metric_plan.v1"
@@ -65,7 +66,25 @@ def _meaningful_imbalance(profile: ProblemProfile) -> bool:
     return False
 
 
-def plan_metrics(profile: ProblemProfile) -> MetricPlan:
+def plan_metrics(profile: ProblemProfile, objective: Objective | None = None) -> MetricPlan:
+    plan = _default_metric_plan(profile)
+    override = objective.primary_metric if objective is not None else None
+    if override and override != plan.primary_metric:
+        if override not in PRIMARY_METRICS.get(profile.task_type, frozenset()):
+            raise ValueError(f"primary metric {override!r} is not valid for {profile.task_type}")
+        secondary = [plan.primary_metric, *[name for name in plan.secondary_metrics if name != override]]
+        reason = objective.primary_metric_reason or "no reason given"
+        return MetricPlan(
+            primary_metric=override,
+            secondary_metrics=list(dict.fromkeys(secondary)),
+            reason=f"The problem spec sets {override} as the primary metric ({reason}); the default was {plan.primary_metric}.",
+        )
+    if override and objective is not None and objective.primary_metric_reason:
+        plan.reason = f"{plan.reason} The problem spec agrees: {objective.primary_metric_reason}."
+    return plan
+
+
+def _default_metric_plan(profile: ProblemProfile) -> MetricPlan:
     if profile.task_type == "regression":
         return MetricPlan(
             primary_metric="mae",

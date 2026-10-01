@@ -26,8 +26,11 @@ from sklearn.metrics import (
 
 def classification_metrics(y_true, scores, *, threshold: float = 0.5) -> dict[str, Any]:
     y = np.asarray(y_true)
-    p = np.clip(np.asarray(scores, dtype=float), 1e-7, 1 - 1e-7)
-    pred = (p >= threshold).astype(int)
+    raw = np.asarray(scores, dtype=float)
+    p = np.clip(raw, 1e-7, 1 - 1e-7)
+    # Decisions use the unclipped scores so they match prediction rows at any
+    # threshold (including 1.0); clipping only protects log-loss and Brier.
+    pred = (raw >= threshold).astype(int)
     tn, fp, fn, tp = confusion_matrix(y, pred, labels=[0, 1]).ravel()
     order = np.argsort(-p)
     k = max(1, int(len(y) * 0.1))

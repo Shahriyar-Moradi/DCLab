@@ -419,6 +419,123 @@ class TestMulticlass:
         assert find_banned_terms(detail.text) == []
 
 
+class TestObjective:
+    """P1.4-B: a ProblemSpec objective drives the metric and the locked threshold."""
+
+    def test_spec_objective_sets_metric_and_cv_threshold(
+        self, auth_client, db_session, client_user, monkeypatch
+    ):
+        from app.db.models import DEFAULT_WORKSPACE_ID, EvaluationMetric, ModelEvaluation
+        from app.services.lineage_service import seed_business_domains
+        from app.services.problem_spec_service import create_problem_spec
+        from app.services.project_service import get_or_create_labs_project
+
+        _disable_background_job(monkeypatch)
+        seed_business_domains(db_session)
+        project = get_or_create_labs_project(
+            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+        )
+        spec = create_problem_spec(
+            db_session,
+            actor=client_user,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            project_id=project.id,
+            task_type="binary",
+            business_objective="Catch most churners; review capacity is not the bottleneck.",
+            target_column="churn",
+            primary_metric="roc_auc",
+            constraints={
+                "primary_metric_reason": "ranking customers for outreach",
+                "metric_constraints": [{"metric": "recall", "op": ">=", "value": 0.75}],
+            },
+            status="locked",
+        )
+        db_session.commit()
+        frame = _classification_frame_with_missing(n=400)
+        created = auth_client.post(
+            "/app/labs/uploads",
+            data={"category": "Revenue", "problem_spec_id": str(spec.id)},
+            files={"file": ("churn.csv", frame.to_csv(index=False).encode(), "text/csv")},
+        )
+        assert created.status_code == 200, created.text
+        upload = db_session.get(ClientLabUpload, created.json()["run_id"])
+        run_auto_train_job(db_session, upload.id)
+        db_session.expire_all()
+        db_session.refresh(upload)
+        assert upload.pipeline_status == "completed", upload.pipeline_log
+        result = db_session.get(Experiment, upload.experiment_id).result
+        assert result["metric_plan"]["primary_metric"] == "roc_auc"
+        assert result["selection"]["selection_metric"] == "roc_auc"
+        decision = result["decision_threshold"]
+        assert decision["source"] == "constraints"
+        assert decision["status"] == "satisfied"
+        assert not set(decision["oof_source_rows"]) & set(result["split"]["test_source_rows"])
+        threshold = decision["value"]
+        assert result["test_metrics"]["decision_threshold"] == threshold
+        checks = {
+            check["check_id"]: check["status"]
+            for check in result["deterministic_verification"]["checks"]
+        }
+        assert checks["decision_threshold_from_cv"] == "PASS"
+        expected = "PASS" if decision["holdout_status"] == "satisfied" else "WARN"
+        assert checks["objective_constraints_met"] == expected
+        assert "FAIL" not in checks.values(), [k for k, v in checks.items() if v == "FAIL"]
+        holdout_recall = db_session.scalar(
+            select(EvaluationMetric)
+            .join(ModelEvaluation, ModelEvaluation.id == EvaluationMetric.model_evaluation_id)
+            .where(
+                ModelEvaluation.evaluation_type == "final_holdout",
+                EvaluationMetric.metric_name == "recall",
+            )
+        )
+        assert holdout_recall is not None and holdout_recall.threshold == threshold
+
+    def test_invalid_spec_objective_fails_the_run_clearly(
+        self, auth_client, db_session, client_user, monkeypatch
+    ):
+        from app.db.models import DEFAULT_WORKSPACE_ID
+        from app.services.lineage_service import seed_business_domains
+        from app.services.problem_spec_service import create_problem_spec
+        from app.services.project_service import get_or_create_labs_project
+
+        _disable_background_job(monkeypatch)
+        seed_business_domains(db_session)
+        project = get_or_create_labs_project(
+            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+        )
+        # The spec says regression metrics, but the target is binary.
+        spec = create_problem_spec(
+            db_session,
+            actor=client_user,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            project_id=project.id,
+            task_type="regression",
+            business_objective="Mislabelled task.",
+            target_column="churn",
+            primary_metric="mae",
+            status="locked",
+        )
+        db_session.commit()
+        created = auth_client.post(
+            "/app/labs/uploads",
+            data={"category": "Revenue", "problem_spec_id": str(spec.id)},
+            files={
+                "file": (
+                    "churn.csv",
+                    _classification_frame_with_missing().to_csv(index=False).encode(),
+                    "text/csv",
+                )
+            },
+        )
+        assert created.status_code == 200, created.text
+        upload = db_session.get(ClientLabUpload, created.json()["run_id"])
+        run_auto_train_job(db_session, upload.id)
+        db_session.expire_all()
+        db_session.refresh(upload)
+        assert upload.pipeline_status == "failed"
+        assert "objective is invalid" in str(upload.pipeline_log)
+
+
 class Test5Failure:
     def test_unsupported_file_is_rejected_and_does_not_create_a_run(self, auth_client, db_session):
         response = auth_client.post(

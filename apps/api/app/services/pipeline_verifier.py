@@ -1596,6 +1596,35 @@ class PipelineVerifier:
             else:
                 add("winner_beats_baseline", "model_selection", CHECK_WARN, "The winner does not beat the chance-level baseline on CV; the model may carry no signal.", "baseline_comparison")
 
+        decision_threshold = report.get("decision_threshold")
+        if isinstance(decision_threshold, dict):
+            oof_rows = {str(value) for value in _as_list(decision_threshold.get("oof_source_rows"))}
+            test_rows = {str(value) for value in _as_list(split.get("test_source_rows"))}
+            locked = decision_threshold.get("value")
+            reported = _as_dict(final_test.get("metrics")).get("decision_threshold")
+            if decision_threshold.get("selected_on") != "out_of_fold_cv" or oof_rows & test_rows:
+                add("decision_threshold_from_cv", "model_selection", CHECK_FAIL, "The decision threshold was not chosen on out-of-fold training predictions only.", "decision_threshold", "split.test_source_rows")
+            elif locked is not None and reported is not None and float(reported) != float(locked):
+                add("decision_threshold_from_cv", "model_selection", CHECK_FAIL, "The holdout was scored at a threshold other than the locked one.", "decision_threshold", "final_test_evaluation.metrics")
+            else:
+                add("decision_threshold_from_cv", "model_selection", CHECK_PASS, "The decision threshold was locked from out-of-fold CV predictions before the holdout.", "decision_threshold")
+            statuses = {decision_threshold.get("status"), decision_threshold.get("holdout_status")}
+            if not decision_threshold.get("constraints"):
+                pass
+            elif statuses & {"unsatisfiable", "not_satisfied"}:
+                add("objective_constraints_met", "model_selection", CHECK_WARN, "The declared metric constraints are not met; see decision_threshold.constraints.", "decision_threshold.constraints")
+            elif "not_verifiable" in statuses:
+                add("objective_constraints_met", "model_selection", CHECK_NOT_VERIFIABLE, "A declared constraint metric was not measured.", "decision_threshold.constraints")
+            else:
+                add("objective_constraints_met", "model_selection", CHECK_PASS, "Declared metric constraints hold on out-of-fold predictions and the holdout.", "decision_threshold.constraints")
+            selection_metric = str(selection.get("selection_metric") or "")
+            if (
+                selection_metric in {"f1", "accuracy", "balanced_accuracy"}
+                and locked is not None
+                and float(locked) != 0.5
+            ):
+                add("threshold_dependent_selection", "model_selection", CHECK_WARN, f"Candidates were ranked by {selection_metric} at 0.5 but the winner ships at threshold {float(locked):.4g}.", "selection.selection_metric", "decision_threshold.value")
+
         locked_at = _timestamp(selection.get("locked_at"))
         fit_started = _timestamp(final_fit.get("started_at"))
         fit_ended = _timestamp(final_fit.get("ended_at"))
