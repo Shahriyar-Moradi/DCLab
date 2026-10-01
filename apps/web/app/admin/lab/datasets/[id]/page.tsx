@@ -116,7 +116,7 @@ export default function DatasetDetailPage() {
                   train.mutate(item.slug, { onSettled: () => setActiveSlug(null) });
                 }}
               >
-                {train.isPending && activeSlug === item.slug ? "Training…" : "Train 5 models"}
+                {train.isPending && activeSlug === item.slug ? "Queuing…" : "Train"}
               </Button>
             }
           >
@@ -149,7 +149,7 @@ export default function DatasetDetailPage() {
       </div>
       <p className="mt-6">
         <Button disabled={!canWrite || trainable.length === 0 || train.isPending} onClick={() => void trainAll()}>
-          {train.isPending && activeSlug ? `Training ${activeSlug}…` : `Train all ready use cases (${trainable.length})`}
+          {train.isPending && activeSlug ? `Queuing ${activeSlug}…` : `Train all ready use cases (${trainable.length})`}
         </Button>
       </p>
       {!canWrite ? <p className="mt-3 text-body text-ink-muted">Read-only platform access. Training requires DCLab Admin.</p> : null}

@@ -446,6 +446,13 @@ export function useLabUseCasePlan(datasetId: string | undefined) {
     queryKey: workspaceQueryKey("lab", "use-cases", datasetId),
     queryFn: () => apiGet(`/admin/datasets/${datasetId}/use-cases`, LabUseCasePlanSchema),
     enabled: Boolean(datasetId),
+    // Builds are queued and trained by the worker; poll only while one is unfinished.
+    refetchInterval: (query) =>
+      (query.state.data?.use_cases ?? []).some(
+        (item) => item.latest_status && !["COMPLETED", "FAILED"].includes(item.latest_status),
+      )
+        ? 3000
+        : false,
   });
 }
 

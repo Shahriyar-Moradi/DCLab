@@ -73,6 +73,11 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         "problem_spec_id",
         "fields_noticed",
         "column_count",
+        # Code-owned provenance for admin Lab builds (P1.1-A).
+        "admin_lab_dataset_id",
+        "use_case_slug",
+        "task_slug",
+        "excluded_columns",
     }
 )
 

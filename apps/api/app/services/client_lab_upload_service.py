@@ -302,6 +302,7 @@ def save_upload(
     workspace_id: UUID,
     project_id: UUID | None = None,
     problem_spec_id: UUID | None = None,
+    origin: dict[str, str] | None = None,
 ) -> ClientLabUploadRead:
     parsed_category = _parse_category(category)
     if data is None and upload_stream is None:
@@ -525,6 +526,7 @@ def save_upload(
                 workflow_run_id=workflow_run.id,
                 pipeline_run_id=pipeline_run.id,
                 problem_spec_id=problem_spec_id_resolved,
+                origin=origin,
             )
             ingestion.execution_request_id = request.id
             append_data_access_event(
