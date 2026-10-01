@@ -59,6 +59,8 @@ from app.translation.banned_terms import find_banned_terms  # noqa: E402
 from scripts.seed_conversion_model import seed_conversion_artifact  # noqa: E402
 
 API = os.environ.get("DCLAB_API_URL", "http://127.0.0.1:8001")
+# Bearer callers must name their workspace (ADR 0003); set once after login.
+_WORKSPACE_ID: str | None = None
 WEB = os.environ.get("DCLAB_WEB_URL", "http://127.0.0.1:3001")
 TOKEN_COOKIE = "dclab_session"
 
@@ -133,6 +135,8 @@ def _json_request(method: str, path: str, token: str | None = None, body: dict |
         request.add_header("Content-Type", "application/json")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
+        if _WORKSPACE_ID:
+            request.add_header("X-Workspace-Id", _WORKSPACE_ID)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             return response.status, response.read()
@@ -165,6 +169,8 @@ def _multipart_request(path: str, token: str | None, fields: dict[str, str], fil
     request.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
+        if _WORKSPACE_ID:
+            request.add_header("X-Workspace-Id", _WORKSPACE_ID)
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             return response.status, response.read()
@@ -202,6 +208,19 @@ def login(role: str) -> str:
         print(f"login failed for role={role} (HTTP {status})", file=sys.stderr)
         raise SystemExit(2)
     return json.loads(raw)["access_token"]
+
+
+def discover_workspace(token: str) -> str:
+    """The client's own workspace id, from /v1/workspaces (needs no selector)."""
+    status, raw = _json_request("GET", "/v1/workspaces", token=token)
+    workspaces = json.loads(raw) if status == 200 else []
+    if not workspaces:
+        print(
+            f"FAIL — client has no workspace to select (GET /v1/workspaces -> HTTP {status})",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    return str(workspaces[0]["id"])
 
 
 def browser_session(role: str) -> str:
@@ -273,7 +292,11 @@ def crawl_api(token: str) -> tuple[dict[str, list[str]], set[tuple[str, str]], d
 
     opportunity_id = items[0]["id"] if items else None
     if not opportunity_id:
-        print("FAIL — no opportunity available to generate a decision from", file=sys.stderr)
+        print(
+            "FAIL — no opportunity available to generate a decision from "
+            f"(last GET /app/opportunities -> HTTP {status})",
+            file=sys.stderr,
+        )
         raise SystemExit(2)
 
     discovered_ids["opportunities"] = opportunity_id
@@ -433,7 +456,9 @@ def main() -> int:
     parser.add_argument("--role", choices=["client"], required=True)
     args = parser.parse_args()
 
+    global _WORKSPACE_ID
     token = login(args.role)
+    _WORKSPACE_ID = discover_workspace(token)
     session = browser_session(args.role)
 
     print("Crawling every /app/* API operation the live schema reports...")
