@@ -26,6 +26,12 @@ Do:
 Verify: `python -W error::sqlalchemy.exc.SAWarning -c "import app.db.models"`; `alembic check`; full CI run.
 Done when: CI green on `main`.
 
+### P0.1-C — Live client audit sends the workspace selector
+Model: Sonnet 5.5 (medium) · Size: XS · Depends on: P0.1-B · Review: test-runner
+Goal: the CI step `audit_client_surface` passes now that bearer callers must send `X-Workspace-Id` (ADR 0003).
+Do: `scripts/audit_client_surface.py` discovers the client's workspace via `GET /v1/workspaces` and sends the selector on every bearer request; fail with a clear message if none; report the HTTP status when no opportunity is found.
+Done when: unpatched run fails and patched run passes locally with the CI seed steps, then CI `regression` is green. (Added after PR #13's first CI run.)
+
 ### P0.2-A — Close S0-P04D (legacy retirement isolation gate)
 Model: Opus 5.5 (high) · Size: M · Depends on: P0.1-B · Review: security-reviewer
 Goal: formally close S0-P04D on the current head (0061).

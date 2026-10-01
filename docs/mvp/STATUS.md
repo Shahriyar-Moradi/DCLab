@@ -39,6 +39,7 @@ The only progress record. One line per prompt: status · date · SHA · evidence
 | P0.2-B | TODO | | | |
 | P0.3-A | TODO | | | |
 | P0.4-A | TODO (banners done) | | | |
+| P0.1-C | IN_PROGRESS — fix verified locally, awaiting CI | 2026-10-01 | (pending) | Unplanned: PR #13 CI `regression` job passed migrations, truth drift and the full backend suite (first time since 2026-09-12) but failed at `audit_client_surface` ("no opportunity available") — latent since S0-P03A: bearer callers must send `X-Workspace-Id` (API returns 400 without it, 200 with it, reproduced with curl) and the audit never did. Fix: the script discovers its workspace via `GET /v1/workspaces` and sends the selector. Local CI-like run (migrate, 2 users, model seed, API + built web): unpatched FAIL, patched PASS 17/17 operations + 10/10 pages. The E2E job was skipped behind this failure, so its first real CI run is still ahead |
 
 ## Agent / Jev release decisions
 
