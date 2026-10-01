@@ -1,6 +1,8 @@
 
 # DCLab Master Product and Implementation Specification
 
+> **PAUSED (2026-10-01).** This document is design reference only. The active plan, order and status live in [`docs/mvp/`](docs/mvp/README.md). Do not execute prompts from this program unless a `docs/mvp` prompt cites them.
+
 **Repository:** `Shahriyar-Moradi/DCLab`  
 **Purpose:** Single source of truth for Codex/Coding Agent implementation  
 **Current phase:** General-purpose deterministic tabular ML platform with selective small-LLM assistance for ambiguity  

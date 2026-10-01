@@ -1,0 +1,47 @@
+# DCLab MVP status ledger
+
+The only progress record. One line per prompt: status · date · SHA · evidence
+(commands + result) · notes. Statuses: TODO · IN_PROGRESS · DONE · BLOCKED.
+
+## Carry-over from Scope 0 (old program)
+
+| Old ID | Status | Evidence | New home |
+| --- | --- | --- | --- |
+| S0-P01A–D truth/baseline | DONE (exact-SHA CI 91986b9, run 34598999220) | docs/verification/S0_P01*.md | — |
+| S0-P02A–F sessions/BFF/CSRF | Locally verified; CI pending | S0_P02*.md | closes at Phase 0 gate CI |
+| S0-P03A–E workspace/capabilities | Locally verified; P03A evidence says PENDING_FULL_GATE | S0_P03*.md | Phase 0 gate CI |
+| S0-P04A–C tenancy of legacy surfaces | Locally verified; CI pending | S0_P04*.md | Phase 0 gate CI |
+| S0-P04D retirement isolation gate | PARTIAL (no CI, no deprecation date, evidence at 0059) | S0_P04D_*.md | P0.2-A |
+| S0-P05A policy bootstrap | Locally verified at 0060 | S0_P05A_*.md | Phase 0 gate CI |
+| S0-P05B quarantine publication | PARTIAL (blocked on upload-policy decision) | S0_P05B_*.md | P0.2-B |
+| S0-P05C–E retention/deletion | Not started | — | Phase 8 |
+| S0 Plan 0.6 `/v1` foundations | Not started | — | P3.1 |
+| S0 Plan 0.7 CI/dev parity | Not started | — | P0.1, P0.3 |
+| S0 Plan 0.8 ADR/risk baseline | Not started | — | ADRs 0005–0008 as phases need them |
+| S0 Plan 0.9 DataScan (DuckDB) | Not started | — | Phase 9 trigger (dataset > memory cap) |
+| S0 Plan 0.10 portable storage | Not started | — | P1.3 |
+
+## Setup done on 2026-10-01 (this session)
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| docs/mvp program (architecture, agents, roadmap, guide, prompts) | DONE | replaces Scope 0–10 order |
+| Claude Code setup: CLAUDE.md, .claude/rules, agents, skills, settings | DONE | see EXECUTION_GUIDE.md |
+| "Paused" banners on docs/agentic-program + root master docs | DONE | part of P0.4-A pulled forward |
+
+## Phase 0
+
+| Prompt | Status | Date | SHA | Evidence |
+| --- | --- | --- | --- | --- |
+| P0.1-A | DONE locally — awaiting commit + CI | 2026-10-01 | (pending) | Fresh venv SQLAlchemy 2.1.1 + psycopg 3.3.6: `alembic upgrade head` on empty DB → 0061 OK; full backend+SDK suite 1136 passed / 4 skipped / 1 failed (`test_truth_drift` product-SHA rule, satisfied only once code + `S0_P01A_CURRENT_TRUTH.md` land in the same commit); truth artifacts regenerated (were already stale from the Base44 UI PR); banned-terms scan clean |
+| P0.1-B | DONE locally — awaiting commit + CI | 2026-10-01 | (pending) | Metadata cycle fixed (`use_alter` + Postgres-default names on `execution_requests.pipeline_run_id`, `ingestion_runs.execution_request_id`): `compare_metadata` on migrated DB cycle warnings 1→0, schema diffs 0→0 (no migration); `test_metadata_cycle.py` passes (raises SAWarning without the fix). `requirements.lock` (universal, 223 lines) wired into CI, both Dockerfiles, `make lock`; fresh venv via plain `pip install -r requirements.lock && pip install -e . --no-deps` → SQLAlchemy 2.1.1 / psycopg 3.3.6, `pip check` clean, `alembic upgrade head` on empty DB → 0061, 57 tests passed (metadata cycle, execution requests, DB foundation gate, historical alembic revisions, SDK) + 1 failed (`test_truth_drift`: only the product-SHA rule, resolves when code and `S0_P01A_CURRENT_TRUTH.md` are committed together). Node 22 in both CI jobs; empty root `package-lock.json` removed; truth artifacts regenerated; banned-terms scan clean. NOT verified: Docker image build, GitHub CI run |
+| P0.2-A | TODO | | | |
+| P0.2-B | TODO | | | |
+| P0.3-A | TODO | | | |
+| P0.4-A | TODO (banners done) | | | |
+
+## Agent / Jev release decisions
+
+| Agent or purpose | Decision | Evidence |
+| --- | --- | --- |
+| (filled at P6.8-A) | | |

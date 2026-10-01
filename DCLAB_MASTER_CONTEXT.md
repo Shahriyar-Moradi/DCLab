@@ -1,5 +1,7 @@
 # DCLab Master Context and Product Constitution
 
+> **PAUSED (2026-10-01).** This document is design reference only. The active plan, order and status live in [`docs/mvp/`](docs/mvp/README.md). Do not execute prompts from this program unless a `docs/mvp` prompt cites them.
+
 **Document status:** Draft authoritative context assembled from the sources available on 18 September 2026  
 **Intended owner:** DCLab founders  
 **Primary implementation repository reviewed:** `Shahriyar-Moradi/DCLab`, local checkout `/Users/shahriar/Downloads/decision_ai`  

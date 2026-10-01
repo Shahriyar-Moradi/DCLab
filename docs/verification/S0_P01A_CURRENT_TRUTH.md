@@ -8,6 +8,10 @@
 **Documentation SHA:** `91986b9b39bb54c907d50274e94de2febecffaa0`
 **Branch relationship:** `main` = `origin/main`; ahead 0, behind 0; merge base is
 `91986b9b39bb54c907d50274e94de2febecffaa0`
+**2026-10-01 update (P0.1-A):** active plan moved to [`docs/mvp/`](../mvp/README.md);
+backend driver is now SQLAlchemy 2.1 + psycopg 3 (plain `postgresql://` URLs);
+Alembic head unchanged at `0061_ingestion_publication`; progress is recorded in
+[`docs/mvp/STATUS.md`](../mvp/STATUS.md).
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

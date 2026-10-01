@@ -1,5 +1,7 @@
 # Coding-agent prompt execution protocol
 
+> **PAUSED (2026-10-01).** This document is design reference only. The active plan, order and status live in [`docs/mvp/`](../../mvp/README.md). Do not execute prompts from this program unless a `docs/mvp` prompt cites them.
+
 These prompt files are implementation work orders, not a request to implement
 all scopes in one change. Their order follows the master plan.
 
