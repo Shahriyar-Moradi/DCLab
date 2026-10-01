@@ -17,10 +17,13 @@ ARTIFACT_TYPES = (
     "reproduction_script",
     "predictions",
     "derived_dataset",
+    "split_assignment",
 )
 
 PREDICTIONS_TYPE = "predictions"
 DERIVED_DATASET_TYPE = "derived_dataset"
+# Row -> partition/fold map of a SplitPlan (ADR 0006 §3). Canonical CSV, digest-addressed.
+SPLIT_ASSIGNMENT_TYPE = "split_assignment"
 REPRODUCTION_NOTEBOOK_TYPE = "reproduction_notebook"
 REPRODUCTION_SCRIPT_TYPE = "reproduction_script"
 

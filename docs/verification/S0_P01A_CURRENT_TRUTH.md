@@ -17,7 +17,7 @@ P0.3-A (2026-10-01): dev topology runs training only in a `worker` service (Post
 P0.4-A (2026-10-01): generated case-study CSVs untracked; business documents moved to `docs/archive/`.
 P1.1-A (2026-10-01): admin Lab training runs only through the open-ingest path (worker).
 P1.2-A (2026-10-01): legacy runner branch deleted; one engine path.
-P1.3-A (2026-10-01): run outputs published to object storage; current Alembic head `0062_run_artifact_types`.
+P1.3-A (2026-10-01): run outputs published to object storage; Alembic head at the time was `0062_run_artifact_types`.
 P1.4-A1 (2026-10-01): dummy baseline always evaluated (never the winner), balanced class-weight variants, opt-in time budget, one-hot keeps all categories.
 P1.4-A2 (2026-10-01): multiclass classification end to end (macro-F1 primary, stratified planners, verifier support).
 P1.4-B (2026-10-01): ProblemSpec objective (metric override, constraints, cost matrix) and an out-of-fold decision threshold locked before the holdout.
@@ -26,6 +26,7 @@ P1.5-A (2026-10-01): `run_auto_train_job` split into typed stages (`app/services
 P1.6-A (2026-10-01): finish-line E2E suite `test_e2e_lab_run.py`; explicit two-label targets train as binary. Latest product commit: `a9cded6f17d046f612c4e5b0a5b81c5bf8e7e768`.
 R1-A (2026-10-01): engine-only benchmark harness (`benchmarks/harness/`, 23 pinned tasks) with an accepted baseline and a weekly workflow.
 CI fix (2026-10-01): XGBoost library version resolves from the `xgboost-cpu` distribution used on Linux.
+P2.2-A1 (2026-10-01): migration 0063_state_graph_nodes (split_plans, project_refs, project_decision_records, experiment lineage columns); current Alembic head 0063_state_graph_nodes.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

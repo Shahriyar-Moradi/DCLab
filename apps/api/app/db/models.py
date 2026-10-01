@@ -117,6 +117,53 @@ from app.domain.pipeline_run_branch import (
     CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
     CK_EXPERIMENTS_PARENT_NOT_SELF,
 )
+from app.domain.decision_records import (
+    CK_PDR_ACTOR,
+    CK_PDR_ACTOR_KIND,
+    CK_PDR_DECISION_TYPE,
+    CK_PDR_DETAILS_BOUNDED,
+    CK_PDR_DETAILS_NO_SECRETS,
+    CK_PDR_DETAILS_OBJECT,
+    CK_PDR_EVIDENCE_REFS_ARRAY,
+    CK_PDR_EVIDENCE_REFS_BOUNDED,
+    CK_PDR_FACTS_BOUNDED,
+    CK_PDR_FACTS_NO_SECRETS,
+    CK_PDR_FACTS_OBJECT,
+    CK_PDR_RATIONALE,
+    CK_PDR_RATIONALE_UNTRUSTED,
+    CK_PDR_SCHEMA_VERSION,
+    CK_PDR_STATE,
+    CK_PDR_SUBJECT_DIGEST,
+    CK_PDR_SUBJECT_KIND,
+    CK_PDR_SUBJECT_MATCHES_KIND,
+    CK_PDR_SUPERSEDES_NOT_SELF,
+)
+from app.domain.experiment_changes import (
+    CK_EXPERIMENTS_CHANGE_SET_BOUNDED,
+    CK_EXPERIMENTS_CHANGE_SET_CHANGES,
+    CK_EXPERIMENTS_CHANGE_SET_NO_SECRETS,
+    CK_EXPERIMENTS_CHANGE_SET_OBJECT,
+    CK_EXPERIMENTS_CHANGE_SET_REQUIRES_PARENT,
+    CK_EXPERIMENTS_CHANGE_SET_SCHEMA_VERSION,
+    CK_EXPERIMENTS_INTENT_NOT_BLANK,
+    CK_EXPERIMENTS_SPLIT_PLAN_REQUIRES_PROJECT,
+)
+from app.domain.state_graph import (
+    CK_PROJECT_REFS_REF_KIND,
+    CK_PROJECT_REFS_TARGET_MATCHES_KIND,
+    CK_PROJECT_REFS_VERSION,
+    CK_SPLIT_PLANS_ASSIGNMENT_DIGEST,
+    CK_SPLIT_PLANS_HOLDOUT_PLAN_DIGEST,
+    CK_SPLIT_PLANS_HOLDOUT_STRATEGY,
+    CK_SPLIT_PLANS_HOLDOUT_TEST_SIZE,
+    CK_SPLIT_PLANS_PLAN_DIGEST,
+    CK_SPLIT_PLANS_PLAN_EVIDENCE_BOUNDED,
+    CK_SPLIT_PLANS_PLAN_EVIDENCE_NO_SECRETS,
+    CK_SPLIT_PLANS_PLAN_EVIDENCE_OBJECT,
+    CK_SPLIT_PLANS_ROW_COUNTS,
+    CK_SPLIT_PLANS_VALIDATION_FOLDS,
+    CK_SPLIT_PLANS_VERSION,
+)
 from app.domain.visualizations import (
     CK_VISUALIZATIONS_DIGEST,
     CK_VISUALIZATIONS_RENDERER,
@@ -815,6 +862,9 @@ class ProblemSpec(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "version", name="uq_problem_specs_project_version"),
         UniqueConstraint("workspace_id", "id", name="uq_problem_specs_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_problem_specs_workspace_project_id"
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
@@ -2472,6 +2522,9 @@ class Dataset(Base):
             name="uq_datasets_asset_content_digest",
         ),
         UniqueConstraint("workspace_id", "id", name="uq_datasets_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_datasets_workspace_project_id"
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
@@ -3298,6 +3351,9 @@ class Experiment(Base):
             name="uq_experiments_workflow_run_pipeline_index",
         ),
         UniqueConstraint("workspace_id", "id", name="uq_experiments_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_experiments_workspace_project_id"
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
@@ -3340,6 +3396,43 @@ class Experiment(Base):
             CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
             name="ck_experiments_branch_requires_parent",
         ),
+        # ML state graph lineage (ADR 0006 §4, Alembic 0063).
+        ForeignKeyConstraint(
+            ["workspace_id", "source_dataset_id"],
+            ["datasets.workspace_id", "datasets.id"],
+            name="fk_experiments_workspace_source_dataset",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "split_plan_id"],
+            ["split_plans.workspace_id", "split_plans.project_id", "split_plans.id"],
+            name="fk_experiments_workspace_project_split_plan",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_SPLIT_PLAN_REQUIRES_PROJECT,
+            name="ck_experiments_split_plan_requires_project",
+        ),
+        CheckConstraint(CK_EXPERIMENTS_INTENT_NOT_BLANK, name="ck_experiments_intent_not_blank"),
+        CheckConstraint(
+            CK_EXPERIMENTS_CHANGE_SET_OBJECT, name="ck_experiments_change_set_object"
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_CHANGE_SET_SCHEMA_VERSION,
+            name="ck_experiments_change_set_schema_version",
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_CHANGE_SET_CHANGES, name="ck_experiments_change_set_changes"
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_CHANGE_SET_BOUNDED, name="ck_experiments_change_set_bounded"
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_CHANGE_SET_NO_SECRETS, name="ck_experiments_change_set_no_secrets"
+        ),
+        CheckConstraint(
+            CK_EXPERIMENTS_CHANGE_SET_REQUIRES_PARENT,
+            name="ck_experiments_change_set_requires_parent",
+        ),
         Index(
             "ix_experiments_workspace_created_at",
             "workspace_id",
@@ -3356,6 +3449,8 @@ class Experiment(Base):
         Index("ix_experiments_pipeline_id", "pipeline_id"),
         Index("ix_experiments_pipeline_version_id", "pipeline_version_id"),
         Index("ix_experiments_parent_pipeline_run_id", "parent_pipeline_run_id"),
+        Index("ix_experiments_source_dataset_id", "source_dataset_id"),
+        Index("ix_experiments_split_plan_id", "split_plan_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -3407,6 +3502,15 @@ class Experiment(Base):
     )
     branch_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     branch_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # ML state graph (ADR 0006 §4). All write-once; enforced by the
+    # experiments_lineage_guard trigger. ``source_dataset_id`` is the published
+    # source DatasetVersion; ``dataset_id`` stays the per-job prepared dataset.
+    source_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    split_plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    intent: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    change_set: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED", index=True)
     failure_reason: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -3948,6 +4052,9 @@ class FeatureSetVersion(Base):
             "feature_set_id", "version", name="uq_feature_set_versions_set_version"
         ),
         UniqueConstraint("workspace_id", "id", name="uq_feature_set_versions_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_feature_set_versions_workspace_project_id"
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
@@ -4243,6 +4350,9 @@ class ExperimentCandidate(Base):
             "experiment_id", "fingerprint", name="uq_experiment_candidates_experiment_fingerprint"
         ),
         UniqueConstraint("workspace_id", "id", name="uq_experiment_candidates_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_experiment_candidates_workspace_project_id"
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
@@ -4263,6 +4373,12 @@ class ExperimentCandidate(Base):
         Index("ix_experiment_candidates_project_id", "project_id"),
         Index("ix_experiment_candidates_model_family", "model_family"),
         Index("ix_experiment_candidates_feature_set_version_id", "feature_set_version_id"),
+        Index(
+            "ix_experiment_candidates_experiment_feature_set_version",
+            "experiment_id",
+            "feature_set_version_id",
+            postgresql_where=text("feature_set_version_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -5095,6 +5211,9 @@ class ModelVersion(Base):
             "selected_candidate_id", name="uq_model_versions_selected_candidate_id"
         ),
         UniqueConstraint("workspace_id", "id", name="uq_model_versions_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_model_versions_workspace_project_id"
+        ),
         ForeignKeyConstraint(
             ["workspace_id", "project_id"],
             ["projects.workspace_id", "projects.id"],
@@ -5472,6 +5591,347 @@ class MlRunEvent(Base):
     )
 
 
+class SplitPlan(Base):
+    """Immutable holdout + outer-fold partition of one source DatasetVersion (ADR 0006 §3).
+
+    The row -> partition map lives in object storage (``split_assignment``
+    artifact); PostgreSQL keeps counts and digests only. Locked from insert.
+    """
+
+    __tablename__ = "split_plans"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_split_plans_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_split_plans_workspace_project_id"
+        ),
+        UniqueConstraint("project_id", "version", name="uq_split_plans_project_version"),
+        UniqueConstraint("project_id", "plan_digest", name="uq_split_plans_project_plan_digest"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_split_plans_workspace_project",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "dataset_id"],
+            ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_split_plans_workspace_project_dataset",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "assignment_artifact_id"],
+            ["artifacts.workspace_id", "artifacts.id"],
+            name="fk_split_plans_workspace_assignment_artifact",
+        ),
+        CheckConstraint(CK_SPLIT_PLANS_VERSION, name="ck_split_plans_version"),
+        CheckConstraint(CK_SPLIT_PLANS_HOLDOUT_STRATEGY, name="ck_split_plans_holdout_strategy"),
+        CheckConstraint(CK_SPLIT_PLANS_HOLDOUT_TEST_SIZE, name="ck_split_plans_holdout_test_size"),
+        CheckConstraint(CK_SPLIT_PLANS_VALIDATION_FOLDS, name="ck_split_plans_validation_folds"),
+        CheckConstraint(CK_SPLIT_PLANS_ROW_COUNTS, name="ck_split_plans_row_counts"),
+        CheckConstraint(CK_SPLIT_PLANS_PLAN_DIGEST, name="ck_split_plans_plan_digest"),
+        CheckConstraint(CK_SPLIT_PLANS_ASSIGNMENT_DIGEST, name="ck_split_plans_assignment_digest"),
+        CheckConstraint(
+            CK_SPLIT_PLANS_HOLDOUT_PLAN_DIGEST, name="ck_split_plans_holdout_plan_digest"
+        ),
+        CheckConstraint(
+            CK_SPLIT_PLANS_PLAN_EVIDENCE_OBJECT, name="ck_split_plans_plan_evidence_object"
+        ),
+        CheckConstraint(
+            CK_SPLIT_PLANS_PLAN_EVIDENCE_BOUNDED, name="ck_split_plans_plan_evidence_bounded"
+        ),
+        CheckConstraint(
+            CK_SPLIT_PLANS_PLAN_EVIDENCE_NO_SECRETS,
+            name="ck_split_plans_plan_evidence_no_secrets",
+        ),
+        Index("ix_split_plans_project_created_at", "project_id", desc("created_at")),
+        Index("ix_split_plans_dataset_id", "dataset_id"),
+        Index("ix_split_plans_assignment_artifact_id", "assignment_artifact_id"),
+        Index("ix_split_plans_created_by", "created_by"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_column: Mapped[str] = mapped_column(String(256), nullable=False)
+    holdout_strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    holdout_test_size: Mapped[float] = mapped_column(Float, nullable=False)
+    holdout_seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    stratified: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    group_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    time_column: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    validation_strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_folds: Mapped[int] = mapped_column(Integer, nullable=False)
+    validation_seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    train_row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    holdout_row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    assignment_artifact_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    assignment_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    holdout_plan_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    holdout_planner_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_planner_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    plan_evidence: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    reason: Mapped[str] = mapped_column(String(2048), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    locked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+def _pdr_subject_fk(column: str, table: str) -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(
+        ["workspace_id", "project_id", column],
+        [f"{table}.workspace_id", f"{table}.project_id", f"{table}.id"],
+        name=f"fk_pdr_workspace_project_{column.removesuffix('_id')}",
+    )
+
+
+def _partial_index(name: str, *columns: str) -> Index:
+    return Index(name, *columns, postgresql_where=text(f"{columns[-1]} IS NOT NULL"))
+
+
+class ProjectDecisionRecord(Base):
+    """Append-only project memory (ADR 0006 §5). ``superseded`` is derived, never stored."""
+
+    __tablename__ = "project_decision_records"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_pdr_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_pdr_workspace_project_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_pdr_workspace_project",
+            ondelete="CASCADE",
+        ),
+        _pdr_subject_fk("problem_spec_id", "problem_specs"),
+        _pdr_subject_fk("dataset_id", "datasets"),
+        _pdr_subject_fk("split_plan_id", "split_plans"),
+        _pdr_subject_fk("feature_set_version_id", "feature_set_versions"),
+        _pdr_subject_fk("experiment_id", "experiments"),
+        _pdr_subject_fk("candidate_id", "experiment_candidates"),
+        _pdr_subject_fk("model_version_id", "model_versions"),
+        _pdr_subject_fk("supersedes_id", "project_decision_records"),
+        CheckConstraint(CK_PDR_DECISION_TYPE, name="ck_pdr_decision_type"),
+        CheckConstraint(CK_PDR_STATE, name="ck_pdr_state"),
+        CheckConstraint(CK_PDR_SUBJECT_KIND, name="ck_pdr_subject_kind"),
+        CheckConstraint(CK_PDR_SUBJECT_MATCHES_KIND, name="ck_pdr_subject_matches_kind"),
+        CheckConstraint(CK_PDR_SUBJECT_DIGEST, name="ck_pdr_subject_digest"),
+        CheckConstraint(CK_PDR_ACTOR_KIND, name="ck_pdr_actor_kind"),
+        CheckConstraint(CK_PDR_ACTOR, name="ck_pdr_actor"),
+        CheckConstraint(CK_PDR_RATIONALE, name="ck_pdr_rationale"),
+        CheckConstraint(CK_PDR_RATIONALE_UNTRUSTED, name="ck_pdr_rationale_untrusted"),
+        CheckConstraint(CK_PDR_FACTS_OBJECT, name="ck_pdr_facts_object"),
+        CheckConstraint(CK_PDR_FACTS_BOUNDED, name="ck_pdr_facts_bounded"),
+        CheckConstraint(CK_PDR_FACTS_NO_SECRETS, name="ck_pdr_facts_no_secrets"),
+        CheckConstraint(CK_PDR_EVIDENCE_REFS_ARRAY, name="ck_pdr_evidence_refs_array"),
+        CheckConstraint(CK_PDR_EVIDENCE_REFS_BOUNDED, name="ck_pdr_evidence_refs_bounded"),
+        CheckConstraint(CK_PDR_DETAILS_OBJECT, name="ck_pdr_details_object"),
+        CheckConstraint(CK_PDR_DETAILS_BOUNDED, name="ck_pdr_details_bounded"),
+        CheckConstraint(CK_PDR_DETAILS_NO_SECRETS, name="ck_pdr_details_no_secrets"),
+        CheckConstraint(CK_PDR_SCHEMA_VERSION, name="ck_pdr_schema_version"),
+        CheckConstraint(CK_PDR_SUPERSEDES_NOT_SELF, name="ck_pdr_supersedes_not_self"),
+        Index(
+            "ix_pdr_project_recorded_at",
+            "project_id",
+            desc("recorded_at"),
+            desc("id"),
+        ),
+        Index(
+            "ix_pdr_project_type_recorded_at",
+            "project_id",
+            "decision_type",
+            desc("recorded_at"),
+            desc("id"),
+        ),
+        _partial_index("ix_pdr_problem_spec_id", "problem_spec_id"),
+        _partial_index("ix_pdr_dataset_id", "dataset_id"),
+        _partial_index("ix_pdr_split_plan_id", "split_plan_id"),
+        _partial_index("ix_pdr_feature_set_version_id", "feature_set_version_id"),
+        _partial_index("ix_pdr_experiment_id", "experiment_id"),
+        _partial_index("ix_pdr_candidate_id", "candidate_id"),
+        _partial_index("ix_pdr_model_version_id", "model_version_id"),
+        Index("ix_pdr_actor_user_id", "actor_user_id"),
+        _partial_index("ix_pdr_actor_agent_run_id", "actor_agent_run_id"),
+        _partial_index("ix_pdr_actor_service_token_id", "actor_service_token_id"),
+        # At most one successor per record: DB-enforced linear chains.
+        Index(
+            "uq_pdr_supersedes_id",
+            "supersedes_id",
+            unique=True,
+            postgresql_where=text("supersedes_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_pdr_workspace_idempotency_key",
+            "workspace_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    decision_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    subject_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    problem_spec_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    split_plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    feature_set_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    subject_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    actor_rule: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # No FK until Phase 6 (agent_runs) / P3.2-A (service_tokens) add it additively.
+    actor_agent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    actor_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    rationale: Mapped[str] = mapped_column(String(4000), nullable=False)
+    rationale_untrusted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    facts: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    evidence_refs: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    details: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    event_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ProjectRef(Base):
+    """The project's current X (ADR 0006 §2). The only mutable graph pointers.
+
+    Moves are optimistic (``version``) and always cite an accepted decision record.
+    Identity columns are frozen and rows are never deleted (triggers).
+    """
+
+    __tablename__ = "project_refs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_project_refs_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "project_id", "id", name="uq_project_refs_workspace_project_id"
+        ),
+        UniqueConstraint("project_id", "ref_kind", name="uq_project_refs_project_ref_kind"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_project_refs_workspace_project",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "problem_spec_id"],
+            ["problem_specs.workspace_id", "problem_specs.project_id", "problem_specs.id"],
+            name="fk_project_refs_workspace_project_problem_spec",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "dataset_id"],
+            ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_project_refs_workspace_project_dataset",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "split_plan_id"],
+            ["split_plans.workspace_id", "split_plans.project_id", "split_plans.id"],
+            name="fk_project_refs_workspace_project_split_plan",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "feature_set_version_id"],
+            [
+                "feature_set_versions.workspace_id",
+                "feature_set_versions.project_id",
+                "feature_set_versions.id",
+            ],
+            name="fk_project_refs_workspace_project_feature_set_version",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_project_refs_workspace_project_model_version",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "decision_record_id"],
+            [
+                "project_decision_records.workspace_id",
+                "project_decision_records.project_id",
+                "project_decision_records.id",
+            ],
+            name="fk_project_refs_workspace_project_decision_record",
+        ),
+        CheckConstraint(CK_PROJECT_REFS_REF_KIND, name="ck_project_refs_ref_kind"),
+        CheckConstraint(
+            CK_PROJECT_REFS_TARGET_MATCHES_KIND, name="ck_project_refs_target_matches_kind"
+        ),
+        CheckConstraint(CK_PROJECT_REFS_VERSION, name="ck_project_refs_version"),
+        Index("ix_project_refs_problem_spec_id", "problem_spec_id"),
+        Index("ix_project_refs_dataset_id", "dataset_id"),
+        Index("ix_project_refs_split_plan_id", "split_plan_id"),
+        Index("ix_project_refs_feature_set_version_id", "feature_set_version_id"),
+        Index("ix_project_refs_model_version_id", "model_version_id"),
+        Index("ix_project_refs_decision_record_id", "decision_record_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    ref_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    problem_spec_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    split_plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    feature_set_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    decision_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    moved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 @event.listens_for(Dataset, "before_update")
 @event.listens_for(Dataset, "before_delete")
 def _protect_immutable_dataset(_mapper, _connection, _target: Dataset) -> None:
@@ -5554,3 +6014,17 @@ def _protect_immutable_selection_decision(
     _mapper, _connection, _target: ModelSelectionDecision
 ) -> None:
     raise ValueError("ModelSelectionDecision winner rows are immutable")
+
+
+@event.listens_for(SplitPlan, "before_update")
+@event.listens_for(SplitPlan, "before_delete")
+def _protect_immutable_split_plan(_mapper, _connection, _target: SplitPlan) -> None:
+    raise ValueError("SplitPlan rows are immutable")
+
+
+@event.listens_for(ProjectDecisionRecord, "before_update")
+@event.listens_for(ProjectDecisionRecord, "before_delete")
+def _protect_append_only_decision_record(
+    _mapper, _connection, _target: ProjectDecisionRecord
+) -> None:
+    raise ValueError("ProjectDecisionRecord rows are append-only")

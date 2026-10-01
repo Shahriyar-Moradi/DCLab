@@ -127,8 +127,8 @@ class RemoteLikeStorage:
         return None
 
 
-def _reject(db_session, sql: str, **params) -> None:
-    with pytest.raises((DBAPIError, IntegrityError), match="foreign key constraint"):
+def _reject(db_session, sql: str, *, _match: str = "foreign key constraint", **params) -> None:
+    with pytest.raises((DBAPIError, IntegrityError), match=_match):
         db_session.execute(text(sql), params)
         db_session.commit()
     db_session.rollback()
@@ -640,9 +640,19 @@ def test_greenfield_mvp_infrastructure_e2e(client, db_session, tmp_path):
         artifact=foreign_artifact.id,
         digest="b" * 64,
     )
+    # parent_pipeline_run_id is insert-only since 0063 (experiments_lineage_guard).
     _reject(
         db_session,
-        "UPDATE experiments SET parent_pipeline_run_id = :parent WHERE id = :id",
+        """
+        INSERT INTO experiments (
+            id, workspace_id, project_id, environment_id, dataset_id, status, config,
+            seed, parent_pipeline_run_id
+        )
+        SELECT gen_random_uuid(), workspace_id, project_id, environment_id, dataset_id,
+               'CREATED', '{}'::jsonb, 42, :parent
+        FROM experiments WHERE id = :id
+        """,
+        _match='foreign key constraint "fk_experiments_workspace_parent_pipeline_run"',
         parent=foreign_run.id,
         id=pipeline.id,
     )

@@ -232,8 +232,125 @@ def provenance_immutability_downgrade_statements() -> list[str]:
     return statements
 
 
+# --- ML state graph (ADR 0006, Alembic 0063) ---------------------------------
+# New tuples rather than additions to the frozen 0035/0042 inputs above. Alembic
+# 0063 inlines the identical literal SQL (revisions never import this module);
+# these helpers serve create_all only.
+STATE_GRAPH_IMMUTABLE_TABLES = ("split_plans",)
+STATE_GRAPH_APPEND_ONLY_TABLES = ("project_decision_records",)
+PROJECT_REFS_FROZEN_COLUMNS = ("id", "workspace_id", "project_id", "ref_kind", "created_at")
+
+PREVENT_EXPERIMENT_LINEAGE_VIOLATION_SQL = """
+CREATE OR REPLACE FUNCTION prevent_experiment_lineage_violation()
+RETURNS trigger AS $$
+DECLARE
+    parent_row record;
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF NEW.parent_pipeline_run_id IS DISTINCT FROM OLD.parent_pipeline_run_id
+            OR NEW.change_set IS DISTINCT FROM OLD.change_set
+            OR NEW.intent IS DISTINCT FROM OLD.intent THEN
+            RAISE EXCEPTION
+                'experiments.parent_pipeline_run_id, change_set and intent are insert-only';
+        END IF;
+        IF OLD.source_dataset_id IS NOT NULL
+            AND NEW.source_dataset_id IS DISTINCT FROM OLD.source_dataset_id THEN
+            RAISE EXCEPTION 'experiments.source_dataset_id is write-once';
+        END IF;
+        IF NEW.split_plan_id IS DISTINCT FROM OLD.split_plan_id THEN
+            IF OLD.split_plan_id IS NOT NULL THEN
+                RAISE EXCEPTION 'experiments.split_plan_id is write-once';
+            END IF;
+            IF OLD.scientific_evidence_locked_at IS NOT NULL THEN
+                RAISE EXCEPTION
+                    'experiments.split_plan_id cannot be set after the run is locked';
+            END IF;
+        END IF;
+    END IF;
+    IF NEW.change_set IS NOT NULL THEN
+        SELECT workspace_id, project_id, source_dataset_id, split_plan_id
+          INTO parent_row
+          FROM experiments
+         WHERE id = NEW.parent_pipeline_run_id;
+        IF NOT FOUND OR parent_row.workspace_id IS DISTINCT FROM NEW.workspace_id THEN
+            RAISE EXCEPTION 'branch parent must exist in the same workspace';
+        END IF;
+        IF NEW.project_id IS NULL
+            OR NEW.project_id IS DISTINCT FROM parent_row.project_id THEN
+            RAISE EXCEPTION 'branch must share project_id with its parent';
+        END IF;
+        IF NEW.source_dataset_id IS NULL
+            OR NEW.source_dataset_id IS DISTINCT FROM parent_row.source_dataset_id THEN
+            RAISE EXCEPTION 'branch must share source_dataset_id with its parent';
+        END IF;
+        IF parent_row.split_plan_id IS NULL
+            OR NEW.split_plan_id IS DISTINCT FROM parent_row.split_plan_id THEN
+            RAISE EXCEPTION 'branch must share split_plan_id with its parent';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+EXPERIMENTS_LINEAGE_GUARD_TRIGGER_SQL = """
+CREATE TRIGGER experiments_lineage_guard
+BEFORE INSERT OR UPDATE OF split_plan_id, parent_pipeline_run_id, change_set, intent,
+    source_dataset_id, project_id, workspace_id ON experiments
+FOR EACH ROW EXECUTE FUNCTION prevent_experiment_lineage_violation()
+"""
+
+
+def _append_only_trigger_name(table: str) -> str:
+    return f"{table}_append_only"
+
+
+def state_graph_immutability_upgrade_statements() -> list[str]:
+    """Trigger DDL Alembic 0063 installs (functions from 0035/0042 must exist). Re-runnable."""
+
+    def trigger(name: str, table: str, sql: str) -> list[str]:
+        return [f"DROP TRIGGER IF EXISTS {name} ON {table}", sql]
+
+    statements: list[str] = []
+    for table in STATE_GRAPH_IMMUTABLE_TABLES:
+        name = _always_trigger_name(table)
+        statements += trigger(
+            name,
+            table,
+            f"CREATE TRIGGER {name} BEFORE UPDATE OR DELETE ON {table} "
+            "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()",
+        )
+    for table in STATE_GRAPH_APPEND_ONLY_TABLES:
+        name = _append_only_trigger_name(table)
+        statements += trigger(
+            name,
+            table,
+            f"CREATE TRIGGER {name} BEFORE UPDATE OR DELETE ON {table} "
+            "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()",
+        )
+    name = _column_trigger_name("project_refs")
+    statements += trigger(
+        name,
+        "project_refs",
+        f"CREATE TRIGGER {name} BEFORE UPDATE ON project_refs "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation("
+        f"'{','.join(PROJECT_REFS_FROZEN_COLUMNS)}')",
+    )
+    statements += trigger(
+        "project_refs_no_delete",
+        "project_refs",
+        "CREATE TRIGGER project_refs_no_delete BEFORE DELETE ON project_refs "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    )
+    statements.append(PREVENT_EXPERIMENT_LINEAGE_VIOLATION_SQL)
+    statements += trigger(
+        "experiments_lineage_guard", "experiments", EXPERIMENTS_LINEAGE_GUARD_TRIGGER_SQL
+    )
+    return statements
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, and 0043 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043 and 0063 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -257,6 +374,8 @@ def install_immutability_triggers(connection) -> None:
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():
+        connection.execute(text(statement))
+    for statement in state_graph_immutability_upgrade_statements():
         connection.execute(text(statement))
 
 

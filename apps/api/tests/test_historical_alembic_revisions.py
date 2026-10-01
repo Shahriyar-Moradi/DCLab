@@ -237,3 +237,138 @@ def test_previous_head_ingestion_publication_upgrade_is_additive(monkeypatch):
             engine.dispose()
     finally:
         _drop_isolated(admin_engine, database_name)
+
+
+def _seed_state_graph_links(engine) -> dict[str, object]:
+    """Minimal 0062 rows: one single-link, one ambiguous and one cross-project upload."""
+
+    ids = {name: uuid4() for name in (
+        "ws", "p1", "p2", "env", "asset", "ds_a", "ds_b", "ds_other",
+        "single", "ambiguous", "cross",
+    )}
+    with engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO workspaces (id, slug, name) VALUES (:ws, :slug, 'Graph')"),
+            {"ws": ids["ws"], "slug": f"graph-{ids['ws'].hex[:8]}"},
+        )
+        for project, slug in (("p1", "one"), ("p2", "two")):
+            connection.execute(
+                text(
+                    "INSERT INTO projects (id, workspace_id, name, slug, description, status, "
+                    "provenance) VALUES (:id, :ws, :slug, :slug, '', 'active', "
+                    "'system_legacy_import')"
+                ),
+                {"id": ids[project], "ws": ids["ws"], "slug": slug},
+            )
+        connection.execute(
+            text("INSERT INTO environments (id, org_id, name) VALUES (:id, 'org', 'env')"),
+            {"id": ids["env"]},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO dataset_assets (id, workspace_id, name, slug, description) "
+                "VALUES (:id, :ws, 'asset', 'asset', '')"
+            ),
+            {"id": ids["asset"], "ws": ids["ws"]},
+        )
+        for dataset, project, version in (
+            ("ds_a", "p1", "v1"), ("ds_b", "p1", "v2"), ("ds_other", "p2", "v3"),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO datasets (id, workspace_id, dataset_asset_id, environment_id, "
+                    "project_id, name, source_type, location, version, row_count, column_count) "
+                    "VALUES (:id, :ws, :asset, :env, :project, 'd', 'csv', '/tmp/d.csv', "
+                    ":version, 2, 2)"
+                ),
+                {
+                    "id": ids[dataset], "ws": ids["ws"], "asset": ids["asset"],
+                    "env": ids["env"], "project": ids[project], "version": version,
+                },
+            )
+        for experiment in ("single", "ambiguous", "cross"):
+            connection.execute(
+                text(
+                    "INSERT INTO experiments (id, workspace_id, project_id, environment_id, "
+                    "dataset_id, status, config, seed) VALUES (:id, :ws, :p1, :env, :ds, "
+                    "'COMPLETED', '{}'::jsonb, 42)"
+                ),
+                {
+                    "id": ids[experiment], "ws": ids["ws"], "p1": ids["p1"],
+                    "env": ids["env"], "ds": ids["ds_a"],
+                },
+            )
+        for experiment, dataset in (
+            ("single", "ds_a"), ("ambiguous", "ds_a"), ("ambiguous", "ds_b"),
+            ("cross", "ds_other"),
+        ):
+            upload = uuid4()
+            connection.execute(
+                text(
+                    "INSERT INTO client_lab_uploads (id, run_id, workspace_id, category, "
+                    "original_filename, stored_path, kind, record_count, fields_noticed, "
+                    "has_named_fields, client_status, experiment_id, dataset_id) VALUES "
+                    "(:id, :id, :ws, 'Revenue', 'u.csv', '/tmp/u.csv', 'spreadsheet', 2, "
+                    "'[]'::jsonb, true, 'queued', :experiment, :dataset)"
+                ),
+                {
+                    "id": upload, "ws": ids["ws"], "experiment": ids[experiment],
+                    "dataset": ids[dataset],
+                },
+            )
+    return ids
+
+
+def _source_datasets(engine, ids) -> dict:
+    with engine.connect() as connection:
+        return dict(
+            connection.execute(
+                text(
+                    "SELECT id, source_dataset_id FROM experiments "
+                    "WHERE id IN (:single, :ambiguous, :cross)"
+                ),
+                {key: ids[key] for key in ("single", "ambiguous", "cross")},
+            ).all()
+        )
+
+
+def test_previous_head_state_graph_backfill_and_guarded_downgrade(monkeypatch):
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="from62"
+    )
+    try:
+        command.upgrade(alembic_config, "0062_run_artifact_types")
+        engine = create_engine(database_url)
+        try:
+            ids = _seed_state_graph_links(engine)
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
+            expected = {ids["single"]: ids["ds_a"], ids["ambiguous"]: None, ids["cross"]: None}
+            assert _source_datasets(engine, ids) == expected
+
+            # Only the deterministic backfill exists: downgrade is allowed and repeatable.
+            command.downgrade(alembic_config, "0062_run_artifact_types")
+            command.upgrade(alembic_config, "head")
+            assert _source_datasets(engine, ids) == expected
+
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO experiments (id, workspace_id, project_id, environment_id, "
+                        "dataset_id, status, config, seed, intent) VALUES (:id, :ws, :p1, :env, "
+                        ":ds, 'CREATED', '{}'::jsonb, 42, 'compare against the champion')"
+                    ),
+                    {
+                        "id": uuid4(), "ws": ids["ws"], "p1": ids["p1"],
+                        "env": ids["env"], "ds": ids["ds_a"],
+                    },
+                )
+            with pytest.raises(Exception, match="0063 downgrade refused"):
+                command.downgrade(alembic_config, "-1")
+            with engine.connect() as connection:
+                head = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            assert head == "0063_state_graph_nodes"
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)

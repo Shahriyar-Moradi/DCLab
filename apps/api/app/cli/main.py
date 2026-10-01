@@ -1,4 +1,4 @@
-"""Internal DCLab CLI: dclab dataset|task|experiment ..."""
+"""Internal DCLab CLI: dclab dataset|task|experiment|graph ..."""
 
 from __future__ import annotations
 
@@ -294,6 +294,19 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
             time.sleep(max(0.1, float(poll)))
 
 
+def cmd_graph_backfill_winner_records(_args: argparse.Namespace) -> int:
+    """Materialize winner_locked decision records from model_selection_decisions (ADR 0006 Q7)."""
+    from app.services.winner_record_backfill import backfill_winner_records
+
+    db = _session()
+    try:
+        result = backfill_winner_records(db)
+    finally:
+        db.close()
+    print(json.dumps(result.as_dict()))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     from app.db.models import UserRole
 
@@ -379,6 +392,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="sleep between empty polls (default: settings.ml_job_poll_seconds)",
     )
     worker_run.set_defaults(func=cmd_worker_run)
+
+    graph = sub.add_parser("graph", help="ML state graph operator commands (ADR 0006)")
+    graph_sub = graph.add_subparsers(dest="graph_cmd", required=True)
+    backfill = graph_sub.add_parser(
+        "backfill-winner-records",
+        help="idempotently write winner_locked decision records for existing winner locks",
+    )
+    backfill.set_defaults(func=cmd_graph_backfill_winner_records)
     return parser
 
 

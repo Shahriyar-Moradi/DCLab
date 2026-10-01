@@ -134,10 +134,23 @@ def test_cross_workspace_parent_is_rejected(db_session, tmp_path):
         commit=False,
     )
     db_session.commit()
-    with pytest.raises((DBAPIError, IntegrityError), match="foreign key constraint"):
+    # parent_pipeline_run_id is insert-only since 0063 (experiments_lineage_guard),
+    # so the cross-workspace parent is attempted on INSERT.
+    with pytest.raises(
+        (DBAPIError, IntegrityError),
+        match='foreign key constraint "fk_experiments_workspace_parent_pipeline_run"',
+    ):
         db_session.execute(
             text(
-                "UPDATE experiments SET parent_pipeline_run_id = :parent WHERE id = :id"
+                """
+                INSERT INTO experiments (
+                    id, workspace_id, project_id, environment_id, dataset_id, status, config,
+                    seed, parent_pipeline_run_id
+                )
+                SELECT gen_random_uuid(), workspace_id, project_id, environment_id, dataset_id,
+                       'CREATED', '{}'::jsonb, 42, :parent
+                FROM experiments WHERE id = :id
+                """
             ),
             {"parent": alpha_parent.id, "id": beta_child.id},
         )
