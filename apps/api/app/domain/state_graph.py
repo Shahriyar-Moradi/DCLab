@@ -1,8 +1,9 @@
 """ML state graph vocabulary (ADR 0006): node kinds, ref kinds, SplitPlan CHECKs.
 
-Only names and the SQL CHECK expressions shared by ``db/models.py`` live here.
-Alembic 0063 inlines the same strings literally (revisions never import
-``app.domain``); the graph, ref and split-plan services arrive in later prompts.
+Only names, graph bounds and the SQL CHECK expressions shared by
+``db/models.py`` live here. Alembic 0063 inlines the same strings literally
+(revisions never import ``app.domain``); read models are in
+``domain/project_graph.py``.
 """
 
 from __future__ import annotations
@@ -40,6 +41,50 @@ REF_TARGET_NODE_KINDS: dict[str, str] = {
     "feature_recipe": "feature_recipe",
     "champion_model": "model_version",
 }
+
+# --- project graph projection (§1, §6; P2.3-A graph_service) -----------------
+# Kinds projected into GET /v1/projects/{id}/graph. Candidates, model
+# selections and decision records are inspector children, never graph nodes;
+# the project itself is the response envelope.
+GRAPH_NODE_KINDS = (
+    "problem_spec",
+    "dataset_version",
+    "split_plan",
+    "feature_recipe",
+    "experiment",
+    "model_version",
+)
+# Edges point from child to the upstream node it was built from (§1 table).
+GRAPH_EDGE_RELATIONS = (
+    "uses_problem_spec",
+    "uses_dataset",
+    "prepared_as",
+    "uses_split_plan",
+    "branch_of",
+    "partitions",
+    "produced_by",
+    "uses_feature_recipe",
+)
+# Attribute edges are shown but never enter staleness or impact.
+GRAPH_ATTRIBUTE_RELATIONS = frozenset({"prepared_as"})
+# Refs that define staleness. ``feature_recipe`` is excluded until FeatureRecipe
+# is a reusable node (Phase 5; founder Q10 refined).
+STALENESS_REF_KINDS = ("problem_spec", "dataset", "split_plan", "champion_model")
+GRAPH_EXPERIMENT_WINDOW = 500
+GRAPH_KIND_CAP = 2000
+GRAPH_IMPACT_CAP = 1000
+GRAPH_STALE_REASON_CAP = 20
+GRAPH_LABEL_MAX_CHARS = 200
+GRAPH_INTENT_MAX_CHARS = 1000
+GRAPH_NO_SPLIT_PLAN_NOTE = "no split plan (pre-Phase-2)"
+GRAPH_NO_SOURCE_DATASET_NOTE = "no source dataset (legacy run)"
+
+
+def node_key(kind: str, node_id: object) -> str:
+    """Textual node id used in evidence references and MCP output: ``kind:uuid``."""
+
+    return f"{kind}:{node_id}"
+
 
 SPLIT_PLAN_HOLDOUT_STRATEGIES = (
     "stratified_random",

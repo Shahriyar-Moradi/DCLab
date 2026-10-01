@@ -855,6 +855,8 @@ Verify (each revision): `upgrade head`, `downgrade -1`, `upgrade head`;
   `GET /v1/split-plans/{id}`; MCP `inspect_project` returns the graph summary
   (nodes by kind, refs, stale counts; never row data), `list_decisions`,
   `record_decision`, `branch_experiment`.
+  Prerequisite (P2.3-A review): MCP projections wrap graph `intent` and
+  `label` as untrusted user/agent-authored data, never as instructions.
 - **P4.2-A–P4.4-A**: stale markers and ref badges come from the graph
   response; the decision timeline reads `effective_state`; Accept/Reject write
   `experiment_accepted/rejected` records.

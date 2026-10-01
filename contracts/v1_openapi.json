@@ -177,6 +177,29 @@
         "successSchema": null
       }
     },
+    "/v1/nodes/{kind}/{node_id}/impact": {
+      "GET": {
+        "operationId": "read_node_impact_v1_nodes__kind___node_id__impact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "NodeImpactRead"
+      }
+    },
     "/v1/projects": {
       "GET": {
         "operationId": "read_projects_v1_projects_get",
@@ -204,6 +227,34 @@
           "422"
         ],
         "successSchema": "ProjectRead"
+      }
+    },
+    "/v1/projects/{project_id}/graph": {
+      "GET": {
+        "operationId": "read_project_graph_v1_projects__project_id__graph_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "ProjectGraphRead"
       }
     },
     "/v1/workspaces": {
@@ -342,6 +393,26 @@
         "workspace_id"
       ]
     },
+    "NodeImpactRead": {
+      "properties": [
+        "counts_by_kind",
+        "graph_truncated",
+        "items",
+        "node",
+        "project_id",
+        "total",
+        "truncated"
+      ],
+      "required": [
+        "counts_by_kind",
+        "graph_truncated",
+        "items",
+        "node",
+        "project_id",
+        "total",
+        "truncated"
+      ]
+    },
     "PipelineModelBuildRead": {
       "properties": [
         "compatibility_fallback_used",
@@ -381,6 +452,32 @@
         "full_name",
         "id",
         "role"
+      ]
+    },
+    "ProjectGraphRead": {
+      "properties": [
+        "counts_by_kind",
+        "edges",
+        "experiment_limit",
+        "next_cursor",
+        "nodes",
+        "project",
+        "refs",
+        "refs_initialized",
+        "stale_counts_by_kind",
+        "truncated",
+        "truncated_kinds"
+      ],
+      "required": [
+        "counts_by_kind",
+        "edges",
+        "experiment_limit",
+        "nodes",
+        "project",
+        "refs",
+        "refs_initialized",
+        "stale_counts_by_kind",
+        "truncated"
       ]
     },
     "ProjectRead": {

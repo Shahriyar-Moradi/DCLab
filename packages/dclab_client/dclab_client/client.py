@@ -8,21 +8,43 @@ from uuid import UUID
 import httpx
 
 from dclab_client._http import DEFAULT_TIMEOUT_SECONDS, V1Transport
+from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
     Artifact,
     Dataset,
     EventPage,
     ExecutionRequest,
     ModelBuild,
+    NodeImpact,
     Principal,
     Project,
+    ProjectGraph,
     Visualization,
     Workspace,
 )
 
 
+# Kinds accepted by GET /v1/nodes/{kind}/{id}/impact (ADR 0006 §1).
+GRAPH_NODE_KINDS = frozenset(
+    {"problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"}
+)
+
+
 def _id(value: UUID | str) -> str:
-    return str(value)
+    """Path ids are always UUIDs; anything else never reaches a URL."""
+
+    try:
+        return str(UUID(str(value)))
+    except (TypeError, ValueError) as exc:
+        raise DCLabClientError("resource ids must be UUIDs") from exc
+
+
+def _node_kind(kind: str) -> str:
+    if kind not in GRAPH_NODE_KINDS:
+        raise DCLabClientError(
+            "kind must be one of: " + ", ".join(sorted(GRAPH_NODE_KINDS))
+        )
+    return kind
 
 
 class IdentityClient:
@@ -56,6 +78,41 @@ class ProjectsClient:
             "GET", f"/v1/projects/{_id(project_id)}", request_id=request_id
         )
         return Project.model_validate(payload)
+
+    def graph(
+        self,
+        project_id: UUID | str,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ProjectGraph:
+        """ML state graph: nodes, edges, refs and computed staleness (newest experiments first)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/projects/{_id(project_id)}/graph",
+            params={"cursor": cursor, "limit": limit},
+            request_id=request_id,
+        )
+        return ProjectGraph.model_validate(payload)
+
+
+class NodesClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def impact(
+        self, kind: str, node_id: UUID | str, *, request_id: str | None = None
+    ) -> NodeImpact:
+        """Downstream closure of one graph node (``kind`` is a graph node kind)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/nodes/{_node_kind(kind)}/{_id(node_id)}/impact",
+            request_id=request_id,
+        )
+        return NodeImpact.model_validate(payload)
 
 
 class DatasetsClient:
@@ -233,6 +290,7 @@ class DCLabClient:
         self.identity = IdentityClient(self._transport)
         self.workspaces = WorkspacesClient(self._transport)
         self.projects = ProjectsClient(self._transport)
+        self.nodes = NodesClient(self._transport)
         self.datasets = DatasetsClient(self._transport)
         self.execution_requests = ExecutionRequestsClient(self._transport)
         self.model_builds = ModelBuildsClient(self._transport)

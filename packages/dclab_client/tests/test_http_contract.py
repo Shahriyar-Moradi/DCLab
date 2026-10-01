@@ -195,3 +195,77 @@ def test_source_never_calls_browser_session_workspace_selection():
     assert "dclab_session" not in source
     assert "/auth/workspace" not in source
     assert "Cookie" not in source
+
+
+def test_project_graph_and_node_impact_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    node = {"kind": "split_plan", "id": "22222222-2222-2222-2222-222222222222",
+            "key": "split_plan:22222222-2222-2222-2222-222222222222"}
+    exp = {"kind": "experiment", "id": "33333333-3333-3333-3333-333333333333",
+           "key": "experiment:33333333-3333-3333-3333-333333333333"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path.endswith("/impact"):
+            return httpx.Response(200, json={
+                "node": node, "project_id": "11111111-1111-1111-1111-111111111111",
+                "items": [exp], "counts_by_kind": {"experiment": 1}, "total": 1,
+                "truncated": False, "graph_truncated": False,
+            })
+        return httpx.Response(200, json={
+            "project": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "workspace_id": "44444444-4444-4444-4444-444444444444",
+                "name": "P", "slug": "p", "description": "", "status": "active",
+                "created_by": None, "provenance": "user",
+                "created_at": "2026-10-02T00:00:00Z", "updated_at": "2026-10-02T00:00:00Z",
+            },
+            "refs_initialized": False, "refs": [],
+            "nodes": [{**exp, "label": "run #1"}],
+            "edges": [{"from": exp, "to": node, "relation": "uses_split_plan", "attribute": False}],
+            "counts_by_kind": {"experiment": 1}, "stale_counts_by_kind": {},
+            "experiment_limit": 200, "truncated": True, "next_cursor": "abc",
+        })
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    graph = api.projects.graph("11111111-1111-1111-1111-111111111111", cursor="prev", limit=200)
+    assert graph.edges[0].from_.key == exp["key"] and graph.next_cursor == "abc"
+    impact = api.nodes.impact("split_plan", node["id"])
+    assert impact.items[0].key == exp["key"]
+    assert recorded[0].url.path == "/v1/projects/11111111-1111-1111-1111-111111111111/graph"
+    assert dict(recorded[0].url.params) == {"cursor": "prev", "limit": "200"}
+    assert recorded[1].url.path == f"/v1/nodes/split_plan/{node['id']}/impact"
+
+
+def test_path_ids_and_node_kinds_cannot_escape_v1():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={})
+
+    api = _client(handler, token="secret-token", workspace_id="44444444-4444-4444-4444-444444444444")
+    node_id = "22222222-2222-2222-2222-222222222222"
+    for kind in ("../../auth/me/x", "candidate", "split_plan/..", ""):
+        with pytest.raises(DCLabClientError, match="kind"):
+            api.nodes.impact(kind, node_id)
+    for bad_id in ("../../auth/me", "abc", "11111111-1111-1111-1111-111111111111/../x"):
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.projects.get(bad_id)
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.nodes.impact("experiment", bad_id)
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.model_builds.get(bad_id)
+    assert recorded == []
+
+
+def test_transport_rejects_dot_segments_and_escapes():
+    http = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
+        base_url="http://api.test",
+    )
+    transport = V1Transport(base_url="http://api.test", http=http, workspace_id="44444444-4444-4444-4444-444444444444")
+    for path in ("/v1/../auth/me", "/v1/projects/./x", "/v1/%2e%2e/auth/me", "/v1/projects\\..\\auth", "/v1/.."):
+        with pytest.raises(DCLabClientError, match="/v1"):
+            transport.request("GET", path)
+    assert transport.request("GET", "/v1/projects") == {}

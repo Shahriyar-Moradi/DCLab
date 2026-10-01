@@ -49,6 +49,14 @@ class ProjectNotFoundError(LookupError):
     """No project matches the given workspace-scoped id."""
 
 
+class GraphNodeNotFoundError(LookupError):
+    """No project-graph node of this kind matches the workspace-scoped id."""
+
+
+class InvalidGraphCursorError(ValueError):
+    """A project-graph page cursor is malformed."""
+
+
 class SimulationRunNotFoundError(LookupError):
     """No simulation run matches the given workspace-scoped id."""
 

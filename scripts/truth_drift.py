@@ -50,6 +50,8 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     ("Visualization", "VisualizationRead"),
     ("EventPage", "EventPage"),
     ("ModelBuildEvent", "MlRunEventRead"),
+    ("ProjectGraph", "ProjectGraphRead"),
+    ("NodeImpact", "NodeImpactRead"),
 )
 
 HISTORICAL_BANNER_FILES: tuple[str, ...] = (

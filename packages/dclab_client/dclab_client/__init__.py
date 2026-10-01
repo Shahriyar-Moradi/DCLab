@@ -10,9 +10,11 @@ from dclab_client.types import (
     ExecutionRequest,
     ModelBuild,
     ModelBuildEvent,
+    NodeImpact,
     Principal,
     PrincipalWorkspace,
     Project,
+    ProjectGraph,
     Visualization,
     Workspace,
 )
@@ -29,9 +31,11 @@ __all__ = [
     "ExecutionRequest",
     "ModelBuild",
     "ModelBuildEvent",
+    "NodeImpact",
     "Principal",
     "PrincipalWorkspace",
     "Project",
+    "ProjectGraph",
     "Visualization",
     "Workspace",
 ]

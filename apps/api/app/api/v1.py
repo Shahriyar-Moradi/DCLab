@@ -31,7 +31,9 @@ from app.domain.application_api import (
 )
 from app.domain.errors import (
     ExecutionNotWaitingError,
+    GraphNodeNotFoundError,
     IdentityError,
+    InvalidGraphCursorError,
     ProjectNotFoundError,
     TargetIntentConflictError,
     TargetNotInDatasetError,
@@ -39,6 +41,8 @@ from app.domain.errors import (
 from app.domain.execution_requests import EXECUTION_OPERATIONS, SOURCE_API
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.observability import MlRunEventRead
+from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead
+from app.domain.state_graph import GRAPH_EXPERIMENT_WINDOW
 from app.domain.reproducibility import ArtifactRead
 from app.domain.technical_explorer import DatasetListItem
 from app.domain.workspace_identity import ProjectRead, WorkspaceRead
@@ -49,6 +53,7 @@ from app.services.execution_request_service import (
     create_execution_request,
     get_execution_request,
 )
+from app.services.graph_service import impact, project_graph
 from app.services.model_build_reproduction_service import load_model_build_experiment
 from app.services.model_build_service import get_pipeline_model_build
 from app.services.observatory_query_service import list_run_events
@@ -149,6 +154,54 @@ def read_project(
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ProjectRead.model_validate(project)
+
+
+@router.get("/projects/{project_id}/graph", response_model=ProjectGraphRead)
+def read_project_graph(
+    project_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    cursor: str | None = Query(None, max_length=256),
+    limit: int = Query(GRAPH_EXPERIMENT_WINDOW, ge=1, le=GRAPH_EXPERIMENT_WINDOW),
+) -> ProjectGraphRead:
+    """ML state graph of one project: nodes, edges, refs and computed staleness."""
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return project_graph(
+            db,
+            actor=user,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            cursor=cursor,
+            limit=limit,
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidGraphCursorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/nodes/{kind}/{node_id}/impact", response_model=NodeImpactRead)
+def read_node_impact(
+    kind: GraphNodeKind,
+    node_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> NodeImpactRead:
+    """Downstream closure of one graph node (what a change to it would affect)."""
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return impact(db, actor=user, workspace_id=workspace_id, kind=kind, node_id=node_id)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except (GraphNodeNotFoundError, ProjectNotFoundError) as exc:
+        raise _not_found() from exc
 
 
 @router.get("/datasets", response_model=list[DatasetListItem])

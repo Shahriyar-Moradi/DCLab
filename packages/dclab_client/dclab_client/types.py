@@ -181,3 +181,78 @@ class ModelBuild(BaseModel):
     reproduction_notebook: dict[str, Any] | None = None
     reproduction_script: dict[str, Any] | None = None
     stages: list[ModelBuildStage]
+
+
+class GraphNodeRef(BaseModel):
+    """A project-graph node reference; ``key`` is the textual ``kind:uuid`` id."""
+
+    kind: str
+    id: UUID
+    key: str
+
+
+class StaleReason(BaseModel):
+    ref_kind: str
+    expected: GraphNodeRef
+    actual: GraphNodeRef
+
+
+class GraphNode(GraphNodeRef):
+    label: str
+    status: str | None = None
+    created_at: datetime | None = None
+    version: str | None = None
+    digest: str | None = None
+    stale: bool = False
+    stale_reasons: list[StaleReason] = Field(default_factory=list)
+    ref_kinds: list[str] = Field(default_factory=list)
+    intent: str | None = None
+    outside_window: bool = False
+    lineage_incomplete: bool = False
+    derived: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+class GraphEdge(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_: GraphNodeRef = Field(alias="from")
+    to: GraphNodeRef
+    relation: str
+    attribute: bool = False
+
+
+class GraphRef(BaseModel):
+    ref_kind: str
+    target: GraphNodeRef
+    version: int
+    moved_at: datetime
+    decision_record_id: UUID
+    target_in_graph: bool
+    staleness_bearing: bool
+    stale: bool = False
+    stale_reasons: list[StaleReason] = Field(default_factory=list)
+
+
+class ProjectGraph(BaseModel):
+    project: Project
+    refs_initialized: bool
+    refs: list[GraphRef]
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    counts_by_kind: dict[str, int]
+    stale_counts_by_kind: dict[str, int]
+    experiment_limit: int
+    truncated: bool
+    truncated_kinds: list[str] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class NodeImpact(BaseModel):
+    node: GraphNodeRef
+    project_id: UUID
+    items: list[GraphNodeRef]
+    counts_by_kind: dict[str, int]
+    total: int
+    truncated: bool
+    graph_truncated: bool
