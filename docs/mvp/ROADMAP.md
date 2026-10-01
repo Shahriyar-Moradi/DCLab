@@ -161,4 +161,7 @@ R4 public evidence library (solved-problem cards with proof, similar-problem
 retrieval) · forecasting ModelType · SLM fine-tuning ModelType on external GPU ·
 DuckDB DataScanPort for large data · `dlt` connectors (Postgres, S3, CRM) ·
 stateful Jupyter runtime (RT plan) · business decision layer (old Scope 8 /
-Decision.ai) · second cloud · online serving.
+Decision.ai; decides removal or rework of the frozen legacy archive surfaces,
+which must be removed or formally re-homed by the hard deadline 2027-03-31 —
+see [S0-P04D gate](../verification/S0_P04D_RETIREMENT_ISOLATION_GATE.md)) ·
+second cloud · online serving.

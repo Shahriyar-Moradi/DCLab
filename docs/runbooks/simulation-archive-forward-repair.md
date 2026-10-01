@@ -4,7 +4,23 @@ Owner: DCLab platform operator and data-governance reviewer. Applies to
 `simulation_runs.workspace_id IS NULL` rows created before the tenant-aware
 `0058_simulation_workspace` migration (ADR 0004). These rows are an archive,
 not a default-workspace dataset. There is no approved automatic backfill,
-customer export, deletion or legacy-route removal date.
+customer export or deletion; legacy-route removal follows only the
+compatibility window below.
+
+## Compatibility window
+
+The legacy archive surfaces (`simulation_runs`, `/admin/simulations/*`,
+`/app/insights` and the translated Decision.ai opportunities, decisions,
+insights and dashboards surfaces) are **frozen now** (2026-10-01): no new
+features, and tenant filtering stays mandatory. The removal-or-rework decision
+is made at the Phase 9 business decision layer rework
+([roadmap](../mvp/ROADMAP.md)); the **hard deadline** is removal or formal
+re-homing no later than **2027-03-31**. Until then URLs and response shapes
+stay stable with mandatory tenant filtering, no feature flag guarding these
+surfaces is removed, and the pre-0058 global read is never restored. Archive
+recovery of null-owner rows is not part of that decision: it stays a
+separate, reviewed work order under the procedure below. Policy record:
+[S0-P04D gate](../verification/S0_P04D_RETIREMENT_ISOLATION_GATE.md).
 
 ## Contain a suspected leak
 

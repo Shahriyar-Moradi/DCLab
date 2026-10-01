@@ -205,7 +205,7 @@ recorded reason.
 | --- | --- |
 | Open-ingest runner (`runner.py:98-1215`), `engine/modeling/*`, `engine/lab/*`, profiler, search, metrics | **Keep** — core engine |
 | Legacy runner branch (`runner.py:1258-1703`), `engine/experiments/factory.py`, `app/ml/*` | **Delete** after admin Lab moves to open-ingest (P1.1–P1.2); move `ml/ensemble`, `ml/selection` into `engine/` first |
-| `app/sim/*`, opportunities/predictions/decisions/simulation/insights services + `/app` pages | **Freeze** (Decision.ai vertical): no new features, keep tests green, hide behind flag in Studio IA; revived in Phase 9 as the business layer |
+| `app/sim/*`, opportunities/predictions/decisions/simulation/insights services + `/app` pages | **Freeze** (Decision.ai vertical): frozen now (2026-10-01) — no new features, mandatory tenant filtering, keep tests green, hide behind flag in Studio IA; removal-or-rework decision at the Phase 9 business-layer rework; hard deadline: removed or formally re-homed by 2027-03-31 (see [S0-P04D gate](../verification/S0_P04D_RETIREMENT_ISOLATION_GATE.md)) |
 | Lineage, scientific lineage, evidence lock, model_build*, reproducibility, pipeline_verifier, explorers | **Keep** — state-graph writers and Studio read models |
 | `engine/serving/artifacts.py` and every `REPO_ROOT/data|artifacts` write | **Refactor** to `ObjectStorage` (P1.3) |
 | `llm_client.py`, `openai_provider.py`, `llm_invocations` | **Refactor** into one LLM gateway with provider interface and nullable run FKs (P2.2, P6.2) |
