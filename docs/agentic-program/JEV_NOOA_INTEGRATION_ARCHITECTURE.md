@@ -1,5 +1,7 @@
 # Jev and NVIDIA NOOA integration architecture
 
+> **PAUSED (2026-10-01).** This document is design reference only. The active plan, order and status live in [`docs/mvp/`](../mvp/AGENTS_NOOA_JEV.md). Do not execute prompts from this program unless a `docs/mvp` prompt cites them.
+
 **Status:** PROPOSED implementation design; not evidence that either integration
 exists or is enabled.
 

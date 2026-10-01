@@ -12,7 +12,7 @@ WORKDIR /app
 # libgomp1 needed by xgboost/lightgbm at runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
-RUN mkdir -p apps/api/app && touch apps/api/app/__init__.py && \
-    pip install --no-cache-dir -e ".[boosting]" && \
-    pip install --no-cache-dir "psycopg[binary]>=3.2"
+COPY pyproject.toml requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock && \
+    mkdir -p apps/api/app && touch apps/api/app/__init__.py && \
+    pip install --no-cache-dir -e . --no-deps

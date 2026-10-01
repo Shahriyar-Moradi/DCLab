@@ -115,9 +115,10 @@ def _is_idempotency_key_conflict(exc: IntegrityError) -> bool:
     name = getattr(diag, "constraint_name", None) if diag is not None else None
     if name == UQ_EXECUTION_REQUESTS_WORKSPACE_IDEMPOTENCY_KEY:
         return True
-    pgcode = getattr(orig, "pgcode", None)
+    # psycopg 3 exposes ``sqlstate``; ``pgcode`` remains as a compatibility alias.
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
     return (
-        pgcode == "23505"
+        sqlstate == "23505"
         and UQ_EXECUTION_REQUESTS_WORKSPACE_IDEMPOTENCY_KEY in str(orig)
     )
 

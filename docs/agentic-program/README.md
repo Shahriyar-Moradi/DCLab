@@ -1,5 +1,7 @@
 # DCLab agentic program documentation
 
+> **PAUSED (2026-10-01).** This document is design reference only. The active plan, order and status live in [`docs/mvp/`](../mvp/README.md). Do not execute prompts from this program unless a `docs/mvp` prompt cites them.
+
 This directory is the executable program of work for evolving DCLab from the
 verified deterministic platform at product commit `3d54994e83283d34665f9589687108627284ab3f`
 and verified truth/checkout baseline `91986b9b39bb54c907d50274e94de2febecffaa0`; see

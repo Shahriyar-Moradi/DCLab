@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence
+.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -85,3 +85,8 @@ up:
 
 down:
 	docker compose --profile docker down
+
+# Refresh the cross-platform dependency lock after editing pyproject.toml.
+lock:
+	uv pip compile pyproject.toml --extra boosting --extra dev --universal \
+		--python-version 3.12 --no-header -o requirements.lock

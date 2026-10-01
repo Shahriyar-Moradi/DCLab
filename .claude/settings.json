@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/alembic heads)",
+      "Bash(.venv/bin/alembic current)",
+      "Bash(PYTHONPATH=apps/api .venv/bin/python -m pytest *)",
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(.venv/bin/python -m scripts.generate_truth_artifacts *)",
+      "Bash(.venv/bin/python -m scripts.check_truth_drift *)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm run lint)",
+      "Bash(npm run test:components)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(rm -rf *)",
+      "Bash(*alembic downgrade base*)",
+      "Bash(dropdb *)",
+      "Read(.env)",
+      "Read(.env.*)"
+    ]
+  }
+}

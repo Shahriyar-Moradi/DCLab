@@ -13,6 +13,7 @@ FORBIDDEN_MODULES = (
     "sqlalchemy",
     "alembic",
     "psycopg2",
+    "psycopg",
     "adaptive_modeling",
     "app",
 )

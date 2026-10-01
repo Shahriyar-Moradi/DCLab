@@ -6,11 +6,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Build deps for psycopg2-binary are already bundled, but keep this minimal image lean.
-COPY pyproject.toml ./
+# Dependencies come from the locked set (psycopg wheels are bundled).
+COPY pyproject.toml requirements.lock ./
 COPY apps ./apps
 
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -r requirements.lock && \
+    pip install --no-cache-dir -e . --no-deps
 
 EXPOSE 8001
 

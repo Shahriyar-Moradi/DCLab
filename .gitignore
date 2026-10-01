@@ -41,3 +41,7 @@ apps/web/blob-report/
 
 # OS
 .DS_Store
+
+# Claude Code personal overrides
+.claude/settings.local.json
+CLAUDE.local.md

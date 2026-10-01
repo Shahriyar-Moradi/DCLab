@@ -1,5 +1,8 @@
 # Base44 Dev Environment — DCLab
 
+> Project direction and the active implementation plan: [`docs/mvp/README.md`](docs/mvp/README.md)
+> (the `docs/agentic-program/` Scope 0–10 program is paused design reference).
+
 ## Stack
 - **Backend**: FastAPI (`apps/api/app/main.py`), uvicorn on port 8001 (internal). Python 3.12.
 - **Frontend**: Next.js 15 (`apps/web`), dev server on port 3001, mapped to host port 3000.

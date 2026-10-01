@@ -1628,7 +1628,14 @@ class ExecutionRequest(Base):
     )
     pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("experiments.id", ondelete="SET NULL"),
+        # use_alter breaks the datasets/ingestion_runs/execution_requests/experiments
+        # metadata cycle; the name matches the Postgres default so DDL is unchanged.
+        ForeignKey(
+            "experiments.id",
+            ondelete="SET NULL",
+            name="execution_requests_pipeline_run_id_fkey",
+            use_alter=True,
+        ),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -2151,7 +2158,12 @@ class IngestionRun(Base):
     )
     execution_request_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("execution_requests.id", ondelete="SET NULL"),
+        ForeignKey(
+            "execution_requests.id",
+            ondelete="SET NULL",
+            name="ingestion_runs_execution_request_id_fkey",
+            use_alter=True,
+        ),
         nullable=True,
     )
     artifact_id: Mapped[uuid.UUID | None] = mapped_column(

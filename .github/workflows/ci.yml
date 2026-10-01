@@ -52,10 +52,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
 
       - name: Install backend
-        run: pip install -e ".[boosting]"
+        run: |
+          pip install -r requirements.lock
+          pip install -e . --no-deps
 
       - name: Create databases
         run: |
@@ -194,14 +196,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       # Scripts and Playwright webServer call `.venv/bin/python` / uvicorn.
       - name: Install backend into .venv
         run: |
           python -m venv .venv
           .venv/bin/pip install -U pip
-          .venv/bin/pip install -e ".[boosting]"
+          .venv/bin/pip install -r requirements.lock
+          .venv/bin/pip install -e . --no-deps
 
       - name: Install frontend
         working-directory: apps/web
