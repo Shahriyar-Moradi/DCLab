@@ -22,6 +22,8 @@ P1.4-A1 (2026-10-01): dummy baseline always evaluated (never the winner), balanc
 P1.4-A2 (2026-10-01): multiclass classification end to end (macro-F1 primary, stratified planners, verifier support).
 P1.4-B (2026-10-01): ProblemSpec objective (metric override, constraints, cost matrix) and an out-of-fold decision threshold locked before the holdout.
 P1.4-C (2026-10-01): CatBoost in the portfolio; one bounded, nested-CV Optuna-tuned candidate (optional `tuning` extra).
+P1.5-A (2026-10-01): `run_auto_train_job` split into typed stages (`app/services/auto_train/`); event sequence pinned by a golden snapshot.
+P1.6-A (2026-10-01): finish-line E2E suite `test_e2e_lab_run.py`; explicit two-label targets train as binary.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)
