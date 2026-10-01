@@ -4,8 +4,8 @@
   ],
   "alembic_revision_count": 62,
   "inventory": {
-    "backend_python_file_count": 439,
-    "backend_test_file_count": 122,
+    "backend_python_file_count": 452,
+    "backend_test_file_count": 123,
     "extension_counts": {
       ".api": 1,
       ".css": 1,
@@ -14,14 +14,14 @@
       ".example": 2,
       ".ico": 1,
       ".ini": 1,
-      ".json": 12,
+      ".json": 13,
       ".lock": 1,
       ".mako": 1,
       ".md": 146,
       ".mdc": 1,
       ".mjs": 3,
       ".pdf": 2,
-      ".py": 479,
+      ".py": 492,
       ".toml": 2,
       ".ts": 37,
       ".tsx": 129,
@@ -36,11 +36,11 @@
     "package_roots": [
       "dclab_client"
     ],
-    "python_file_count": 479,
-    "python_line_count": 111277,
-    "repository_file_count": 884,
+    "python_file_count": 492,
+    "python_line_count": 112227,
+    "repository_file_count": 898,
     "sdk_test_file_count": 2,
-    "test_file_count": 127,
+    "test_file_count": 128,
     "ts_tsx_file_count": 166,
     "ts_tsx_line_count": 16364,
     "web_e2e_file_count": 3
