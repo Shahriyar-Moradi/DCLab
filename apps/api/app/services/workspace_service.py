@@ -115,6 +115,9 @@ def _create_workspace(
         owner.workspace_id = workspace.id
     seed_default_entitlements(db, workspace)
     db.flush()
+    from app.services.workspace_capability_service import invalidate_capability_cache
+
+    invalidate_capability_cache(db, user_id=owner.id, workspace_id=workspace.id)
     return workspace
 
 
@@ -219,6 +222,11 @@ def add_workspace_member(
         )
         db.add(membership)
         db.flush()
+        from app.services.workspace_capability_service import invalidate_capability_cache
+
+        invalidate_capability_cache(
+            db, user_id=existing.id, workspace_id=workspace_id
+        )
         return membership
 
     user_role = _USER_ROLE_FOR_MEMBERSHIP[membership_role]
@@ -238,4 +246,7 @@ def add_workspace_member(
     )
     if membership is None:
         raise IdentityError("failed to create workspace membership")
+    from app.services.workspace_capability_service import invalidate_capability_cache
+
+    invalidate_capability_cache(db, user_id=user.id, workspace_id=workspace_id)
     return membership

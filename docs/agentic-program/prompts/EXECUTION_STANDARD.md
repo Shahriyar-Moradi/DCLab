@@ -3,6 +3,12 @@
 This standard applies to every prompt in the Scope 0–10 program. A scope file
 defines the plan-specific contract; this file defines how a coding agent must
 turn that contract into a small, predictable change.
+For **S0-P04D onward**, the numbered prompt also inherits the concrete
+plan-level outcome and mandatory ten-part execution card in
+[`REMAINING_SCOPE_EXECUTION_MAP.md`](REMAINING_SCOPE_EXECUTION_MAP.md). That map
+is binding for every remaining prompt and applicable `RT-*` package. If a
+future checkout differs from a planned path, inspect and document the actual
+owner; do not treat a stale path as permission to create a second subsystem.
 
 Every prompt also preserves
 [`AGENT_FIRST_MVP_ARCHITECTURE.md`](../AGENT_FIRST_MVP_ARCHITECTURE.md): DCLab
@@ -38,6 +44,8 @@ Inspect these existing surfaces before inventing a new path:
 | Authoritative lifecycle supervision (Scope 1+) | Not implemented until S1-P01A; planned owner is a pinned raw LangGraph `StateGraph` runtime invoked by `agent.turn.v1` | LangGraph is the sole DCLab supervisor graph and owns graph routing/private checkpoint execution only. DCLab owns product state, authorization, tools, budgets, events and recovery policy. Never nest another loop inside it; separately selected whole-run runtimes do not become supervisor graphs. |
 | Deep Investigation (S2-P12+) | Approved architecture is `docs/agentic-program/DEEP_AGENTS_INVESTIGATION_COPILOT.md`; no implementation exists before S2-P12 | Deep Agents runs only in a separate `worker-investigation` dependency/process/runtime namespace from an explicit DCLab job. Its dataset/scientific, experiment/model and operations/drift modes use versioned read-only DCLab SDK/API bundles and return validated proposals; it cannot call or be called by raw LangGraph, own product state/memory, or execute commands. |
 | OpenAI integration | `services/openai_provider.py`, `openai_smoke.py`, existing `LlmInvocation` model | Put the official OpenAI SDK/Responses API behind the DCLab gateway with explicit retention, structured output and tool policy. S2-P13 may add the hosted Agents API only as a whole-run adapter with isolated provider sessions and DCLab-mediated required actions; it never wraps/is wrapped by LangGraph or Deep Agents. Ordinary Pydantic is the default. PydanticAI requires an ADR and is limited to a no-tool, single-response typed leaf. |
+| Jev structured decisions (S1-P12+) | Approved architecture is `docs/agentic-program/JEV_NOOA_INTEGRATION_ARCHITECTURE.md`; planned owners are `domain/semantic_decisions.py`, `services/semantic_decision_service.py`, `services/semantic_decision_gateway.py` and a private TypeSafe adapter | Jev is a sibling typed-decision provider under DCLab policy/data/budget/evaluation ownership. It never authorizes, approves, calculates scientific facts, executes tools or owns an AgentRun. Pin evaluated model versions and retain probabilities/abstention lineage. |
+| NOOA runtime (S2-P14+) | Approved architecture is `docs/agentic-program/JEV_NOOA_INTEGRATION_ARCHITECTURE.md`; no implementation exists before S2-P14 | NOOA runs only in a separate `worker-nooa` dependency/process/runtime namespace as one whole-run proposal runtime. DCLab agent classes expose narrow typed API/SDK capabilities. It cannot call or be called by LangGraph, Deep Agents or OpenAI Agents, connect to Jupyter, own product memory or execute a DCLab command. |
 | Data integration (Scope 7, early MVP slice) | Existing DataSource/DataAccess/IngestionRun/Dataset/Artifact owners plus the planned ConnectorPort/Runner | Use pinned `dlt` OSS only as a bounded extraction/load engine. DCLab owns connection/config/secret/sync/cursor/schema/publication state. No Airbyte/Openflow control plane, provider SDK or `dlt` state becomes product authority. |
 | AWS/GCP deployment (all scopes; implemented in Scope 9) | Existing `apps/api/app/storage/` S3/GCS adapters plus planned `infra/tofu/`, `infra/kubernetes/` and private cloud adapter packages | Keep application/public contracts cloud-neutral. Use one OpenTofu/Kubernetes contract with AWS and GCP modules, short-lived workload identity, opaque resource references and equal conformance gates. Never import cloud SDKs into domain/application/public clients or treat Kubernetes/cloud state as product truth. |
 | Observability | `services/observability_service.py`, `domain/observability.py`, `api/observability.py` | Emit bounded structured events and metrics; never log prompts, secrets, raw rows, or tokens. |
@@ -69,6 +77,10 @@ working notes or PR description:
    input/output/memory/thread/temp/time bounds and pandas rollback path; for
    S2-P13, also the OpenAI Agents API/SDK maturity and retention contract,
    provider-session mapping, environment, required-action and webhook edges;
+   for S1-P12/S2-P14/S4-P08, also the current official TypeSafe/NOOA APIs,
+   exact package/model pins, question/agent releases, runtime and secret
+   locations, decision/tool/network edges, confidence/abstention policy,
+   isolation profile and clean-removal proof;
    for connector work, also the `dlt` pin/license/dependency location, source
    API/version/scopes, engine-state/cursor ownership, staging format, schema-
    drift rules and full resource/egress budgets; for every change, also record
@@ -94,6 +106,33 @@ working notes or PR description:
 No edit begins until this packet shows that the prompt can be completed without
 an unrelated refactor. If the packet exposes an unresolved architecture choice,
 finish only the ADR/design prompt and stop before implementation.
+
+### 2A. Prompt-ready review before code
+
+For every remaining prompt, complete the ten-part execution card in
+`REMAINING_SCOPE_EXECUTION_MAP.md` **before the first code edit**. The card is
+more specific than the summary packet above and must include exact live file,
+table, API, service, event/job, UI, test and operations facts or an explicit
+`N/A — reason`. The coding agent must be able to answer all of these questions:
+
+1. Which one accepted owner will change, and which existing caller/consumer
+   will prove it is the same path rather than a second implementation?
+2. What exact persistent/HTTP/event/state behavior changes, and what remains
+   byte-for-byte or semantically compatible? Show examples and a denial matrix.
+3. What happens on duplicate delivery, concurrent update, cancellation,
+   provider timeout, stale membership, missing/foreign ID and partial rollback?
+4. Which named PostgreSQL/SDK/component/browser/adapter tests will fail before
+   and pass after this change, and what observed command will establish that?
+5. How can the feature be disabled or repaired without restoring unsafe global
+   reads, raw output, unapproved side effects or a second product authority?
+
+If any answer needs an unmade product, provider, residency, scientific or
+security decision, stop after an ADR/decision proposal. Never label a guessed
+interface or a planned test as implemented evidence. For a plan with six or
+more concerns, keep its existing 4–8 lettered work packages separate; split a
+lettered package further if its concrete card exceeds the review budget. Do
+not combine migrations, provider effects, public API and UI merely to reach a
+plan outcome faster.
 
 ## 3. Default contract rules
 
@@ -146,8 +185,11 @@ finish only the ADR/design prompt and stop before implementation.
   loop inside a node. S2-P12's separate Deep Agents worker is not a node,
   specialist or tool of this graph and the graph is not one of its tools.
   S2-P13's OpenAI-hosted harness is also a separate whole-run adapter. Each
-  AgentRun records exactly one runtime kind/version; no runtime can invoke,
-  resume, checkpoint, tool-call or authorize another. PydanticAI, if separately
+  S2-P14 NOOA worker is another separately selected whole-run proposal runtime.
+  Each AgentRun records exactly one runtime kind/version; no runtime can invoke,
+  resume, checkpoint, tool-call or authorize another. Jev is not a runtime; it
+  is callable only through DCLab's governed semantic-decision service and cannot
+  authorize or invoke a runtime. PydanticAI, if separately
   approved, performs one no-tool structured response and has no loop authority.
 - LangGraph checkpoint rows are private runtime reconstruction data in a
   dedicated PostgreSQL schema. Public APIs, UI and SDK read DCLab-owned
@@ -173,6 +215,18 @@ finish only the ADR/design prompt and stop before implementation.
   decision, authorization or public API truth. The initial release has no Deep
   Agents subagent, persistent memory, host filesystem, shell, arbitrary HTTP or
   code execution.
+- Jev questions used by product paths are immutable code/release-owned contracts.
+  Callers cannot select provider/model/threshold or invent questions for an
+  automatic path. Choice/Score confidence and Noul probability are advisory and
+  purpose-calibrated; neither can authorize, approve, mutate, override a
+  deterministic fact or bypass scientific verification. Raw state is retained
+  only under explicit data policy as an encrypted, expiring artifact.
+- NOOA generated Python is untrusted code. CodeAct requires the reviewed OS
+  isolation profile, bounded resources and denied-by-default egress. The worker
+  receives no product database/object-store/cloud/provider credential and uses
+  only short-lived audience-bound DCLab inference/tool facades. Visibility or
+  `@hidden` annotations are not security boundaries. A NOOA result is a typed
+  proposal validated and persisted by DCLab before any review or later command.
 - OpenAI Responses requests explicitly set storage/retention behavior and expose
   only approved DCLab function schemas. Built-in web/computer/shell/MCP tools
   are disabled in authoritative workers. OpenAI Agents `required_actions` are
@@ -228,7 +282,8 @@ Each prompt should produce one reviewable pull request. Default limits are:
 - no additional agent/orchestration framework without an approved replacement
   ADR, dependency/supply-chain review and migration plan; the only existing
   exceptions are the separately isolated S2-P12 Deep Investigation contract and
-  the whole-run S2-P13 OpenAI Agents adapter; neither may enter worker-agent;
+  the whole-run S2-P13 OpenAI Agents adapter plus the separately isolated S2-P14
+  NOOA proposal runtime; none may enter worker-agent or invoke another runtime;
 - no second experiment tracker, model registry, monitoring store, feature
   contract or observability authority; a new external library requires the
   approved Plan 3.0 port, optional dependency/image boundary, contract tests and

@@ -122,7 +122,9 @@ def test_client_execution_request_returns_id_and_status(
         slug=f"client-{uuid4().hex[:8]}",
     )
     db_session.commit()
-    api = _client(auth_client, client_token, request_id="client-trace")
+    api = _client(
+        auth_client, client_token, workspace_id=DEFAULT_WORKSPACE_ID, request_id="client-trace"
+    )
     before_jobs = db_session.scalar(select(func.count(MlJob.id))) or 0
     created = api.execution_requests.create(
         project_id=project.id,
@@ -230,7 +232,7 @@ def test_client_model_build_events_visualizations_and_artifacts(
 
 def test_client_model_build_on_default_workspace(admin_client, admin_token, db_session):
     run = _stub_pipeline_run(db_session, DEFAULT_WORKSPACE_ID)
-    api = _client(admin_client, admin_token)
+    api = _client(admin_client, admin_token, workspace_id=DEFAULT_WORKSPACE_ID)
     body = api.model_builds.get(run.id)
     assert body.pipeline_run_id == run.id
     assert body.workspace_id == DEFAULT_WORKSPACE_ID

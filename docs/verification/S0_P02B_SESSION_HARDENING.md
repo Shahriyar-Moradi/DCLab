@@ -12,6 +12,21 @@ hashed password-reset / email-verification hooks without SMTP.
 
 ## Evidence
 
+### 2026-09-22 development CSP repair
+
+The Next development build uses React Refresh, whose runtime evaluates its
+development bundle. `next.config.mjs` now grants `'unsafe-eval'` and HMR
+WebSocket connections only when `NODE_ENV=development`; the production policy
+remains unchanged. The login page loads self-hosted Geist fonts. There is no
+Open Sans or Google Fonts request in the application source.
+
+Observed checks: development `/login` response contains the development CSP;
+the production CSP lacks `'unsafe-eval'`; a headless Chromium visit to the
+running development `/login` rendered the email field, removed “Checking
+session…”, and reported zero page errors. The focused browser login and logout
+tests pass. The browser extension `runtime.lastError` message and injected
+Open Sans stylesheet do not originate in DCLab source.
+
 ### 2026-09-11 local browser re-verification
 
 Cookie continuity, reload persistence, logout, logout-all, and CSRF rejection

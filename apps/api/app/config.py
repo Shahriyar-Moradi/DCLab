@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     object_storage_root: Path = REPO_ROOT / "data" / "object_store"
     object_storage_bucket: str = ""
     object_storage_region: str = "us-east-1"
+    # Development-only compatibility while legacy upload callers are migrated.
+    # Production always enforces the audited publication gate.
+    dataset_publication_enforced: bool | None = None
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
     # Durable ML jobs. Production default persists a row and returns; a worker
@@ -109,6 +112,12 @@ class Settings(BaseSettings):
 
 def is_production_env(settings: Settings) -> bool:
     return settings.dclab_env.strip().lower() in PRODUCTION_ENV_VALUES
+
+
+def publication_enforced(settings: Settings) -> bool:
+    if settings.dataset_publication_enforced is not None:
+        return settings.dataset_publication_enforced
+    return is_production_env(settings)
 
 
 def cookie_secure(settings: Settings) -> bool:
@@ -154,6 +163,8 @@ def validate_runtime_settings(settings: Settings) -> None:
                 "unsafe authentication configuration: " + "; ".join(problems)
             )
         return
+    if not publication_enforced(settings):
+        problems.append("DATASET_PUBLICATION_ENFORCED cannot be false in production")
     if _secret_is_unsafe(settings.jwt_secret):
         problems.append("JWT_SECRET is missing or the development default")
     if _secret_is_unsafe(settings.auth_token_hash_secret):

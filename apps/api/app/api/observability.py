@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, request_workspace_id
+from app.api.deps import get_current_user, request_workspace_id, require_workspace_read
 from app.db.models import User
 from app.db.session import get_db
 from app.domain.observability import (
@@ -15,7 +15,9 @@ from app.domain.observability import (
     WorkflowRunPipelineRead,
 )
 from app.services import observatory_query_service
+from app.services.audience_projection import event_read, invocation_read, public_diagnostic
 from app.services.authorization_service import AuthorizationError
+from app.services.observability_service import AUDIT_PURPOSES, SEMANTIC_PURPOSES
 from app.services.workspace_capability_service import (
     CV_FOLD_DETAILS,
     OPENAI_PIPELINE_AUDIT,
@@ -26,7 +28,11 @@ from app.services.workspace_capability_service import (
     require_modern_business_capability,
 )
 
-admin_router = APIRouter(prefix="/observatory", tags=["pipeline-observatory"])
+admin_router = APIRouter(
+    prefix="/observatory",
+    tags=["pipeline-observatory"],
+    dependencies=[Depends(require_workspace_read)],
+)
 business_router = APIRouter(prefix="/observatory", tags=["pipeline-observatory"])
 
 
@@ -34,19 +40,26 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail="pipeline observability record not found")
 
 
-def _summary(db: Session, experiment_id: UUID, workspace_id: UUID | None):
+def _admin_workspace_id(request: Request, query_workspace_id: UUID | None) -> UUID:
+    selected = request_workspace_id(request)
+    if query_workspace_id is not None and query_workspace_id != selected:
+        raise _not_found()
+    return selected
+
+
+def _summary(db: Session, experiment_id: UUID, workspace_id: UUID):
     row = observatory_query_service.get_pipeline_summary(
         db, experiment_id, workspace_id=workspace_id
     )
     if row is None:
         raise _not_found()
-    return row
+    return public_diagnostic(row)
 
 
 def _events(
     db: Session,
     experiment_id: UUID,
-    workspace_id: UUID | None,
+    workspace_id: UUID,
     after_sequence: int,
 ):
     rows = observatory_query_service.list_pipeline_events(
@@ -60,31 +73,48 @@ def _events(
     return rows
 
 
-def _llm_list(db: Session, experiment_id: UUID, workspace_id: UUID | None):
+def _llm_list(
+    db: Session,
+    experiment_id: UUID,
+    workspace_id: UUID,
+    *,
+    include_semantic: bool = True,
+    include_audit: bool = True,
+):
     rows = observatory_query_service.list_pipeline_llm_invocations(
-        db, experiment_id, workspace_id=workspace_id
+        db,
+        experiment_id,
+        workspace_id=workspace_id,
+        include_semantic=include_semantic,
+        include_audit=include_audit,
     )
     if rows is None:
         raise _not_found()
     return rows
 
 
-def _llm_detail(db: Session, invocation_id: UUID, workspace_id: UUID | None):
+def _llm_detail(
+    db: Session,
+    invocation_id: UUID,
+    workspace_id: UUID,
+    allowed_purposes: frozenset[str] | None = None,
+):
     row = observatory_query_service.get_llm_invocation(
-        db, invocation_id, workspace_id=workspace_id
+        db, invocation_id, workspace_id=workspace_id,
+        allowed_purposes=allowed_purposes,
     )
     if row is None:
         raise _not_found()
     return row
 
 
-def _pipelines(db: Session, workflow_run_id: UUID, workspace_id: UUID | None):
+def _pipelines(db: Session, workflow_run_id: UUID, workspace_id: UUID):
     rows = observatory_query_service.list_workflow_run_pipelines(
         db, workflow_run_id, workspace_id=workspace_id
     )
     if rows is None:
         raise _not_found()
-    return rows
+    return [public_diagnostic(WorkflowRunPipelineRead.model_validate(row).model_dump()) for row in rows]
 
 
 def _require_business_capability(
@@ -127,29 +157,32 @@ def _business_events(
         payload = dict(row.payload or {})
         if not capabilities[SEMANTIC_LLM_AUDIT]:
             payload = {key: value for key, value in payload.items() if key not in semantic_keys}
-        serialized = MlRunEventRead.model_validate(row).model_dump()
-        serialized["payload"] = payload
-        result.append(serialized)
+        result.append(event_read(row, payload=payload))
     return result
 
 
 @admin_router.get("/pipeline-runs/{experiment_id}/summary", response_model=PipelineSummaryRead)
 def admin_pipeline_summary(
     experiment_id: UUID,
+    request: Request,
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _summary(db, experiment_id, workspace_id)
+    return _summary(db, experiment_id, _admin_workspace_id(request, workspace_id))
 
 
 @admin_router.get("/pipeline-runs/{experiment_id}/events", response_model=list[MlRunEventRead])
 def admin_pipeline_events(
     experiment_id: UUID,
+    request: Request,
     after_sequence: int = Query(0, ge=0),
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _events(db, experiment_id, workspace_id, after_sequence)
+    return [
+        event_read(row)
+        for row in _events(db, experiment_id, _admin_workspace_id(request, workspace_id), after_sequence)
+    ]
 
 
 @admin_router.get(
@@ -158,11 +191,15 @@ def admin_pipeline_events(
 )
 def admin_incremental_pipeline_events(
     experiment_id: UUID,
+    request: Request,
     after_sequence: int = Query(..., ge=0),
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _events(db, experiment_id, workspace_id, after_sequence)
+    return [
+        event_read(row)
+        for row in _events(db, experiment_id, _admin_workspace_id(request, workspace_id), after_sequence)
+    ]
 
 
 @admin_router.get(
@@ -171,19 +208,26 @@ def admin_incremental_pipeline_events(
 )
 def admin_pipeline_llm_invocations(
     experiment_id: UUID,
+    request: Request,
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _llm_list(db, experiment_id, workspace_id)
+    return [
+        invocation_read(row)
+        for row in _llm_list(db, experiment_id, _admin_workspace_id(request, workspace_id))
+    ]
 
 
 @admin_router.get("/llm-invocations/{invocation_id}", response_model=LlmInvocationRead)
 def admin_llm_invocation(
     invocation_id: UUID,
+    request: Request,
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _llm_detail(db, invocation_id, workspace_id)
+    return invocation_read(
+        _llm_detail(db, invocation_id, _admin_workspace_id(request, workspace_id))
+    )
 
 
 @admin_router.get(
@@ -192,10 +236,11 @@ def admin_llm_invocation(
 )
 def admin_workflow_pipelines(
     workflow_run_id: UUID,
+    request: Request,
     workspace_id: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    return _pipelines(db, workflow_run_id, workspace_id)
+    return _pipelines(db, workflow_run_id, _admin_workspace_id(request, workspace_id))
 
 
 @business_router.get("/pipeline-runs/{experiment_id}/summary", response_model=PipelineSummaryRead)
@@ -205,11 +250,10 @@ def business_pipeline_summary(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    workspace_id = request_workspace_id(request)
-    row = _summary(db, experiment_id, workspace_id)
     workspace_id = _require_business_capability(
         request, db, user, PIPELINE_MONITOR
     )
+    row = _summary(db, experiment_id, workspace_id)
     capabilities = capability_matrix(db, user, workspace_id)
     if not capabilities[SEMANTIC_LLM_AUDIT]:
         row["semantic_llm_count"] = 0
@@ -226,16 +270,11 @@ def business_pipeline_events(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    workspace_id = request_workspace_id(request)
-    if observatory_query_service.get_pipeline(
-        db, experiment_id, workspace_id=workspace_id
-    ) is None:
-        raise _not_found()
     _require_business_capability(request, db, user, PIPELINE_MONITOR)
     workspace_id = _require_business_capability(
         request, db, user, RAW_PIPELINE_DEBUG
     )
-    return _events(db, experiment_id, workspace_id, after_sequence)
+    return _business_events(db, user, workspace_id, experiment_id, after_sequence)
 
 
 @business_router.get(
@@ -249,16 +288,11 @@ def business_incremental_pipeline_events(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    workspace_id = request_workspace_id(request)
-    if observatory_query_service.get_pipeline(
-        db, experiment_id, workspace_id=workspace_id
-    ) is None:
-        raise _not_found()
     _require_business_capability(request, db, user, PIPELINE_MONITOR)
     workspace_id = _require_business_capability(
         request, db, user, RAW_PIPELINE_DEBUG
     )
-    return _events(db, experiment_id, workspace_id, after_sequence)
+    return _business_events(db, user, workspace_id, experiment_id, after_sequence)
 
 
 @business_router.get(
@@ -271,28 +305,18 @@ def business_pipeline_llm_invocations(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    workspace_id = request_workspace_id(request)
-    if observatory_query_service.get_pipeline(
-        db, experiment_id, workspace_id=workspace_id
-    ) is None:
-        raise _not_found()
     workspace_id = _require_business_capability(
         request, db, user, PIPELINE_MONITOR
     )
-    rows = _llm_list(db, experiment_id, workspace_id)
     capabilities = capability_matrix(db, user, workspace_id)
-    return [
-        row
-        for row in rows
-        if not (
-            row.purpose.startswith("semantic_")
-            and not capabilities[SEMANTIC_LLM_AUDIT]
-        )
-        and not (
-            row.purpose.startswith("pipeline_audit_")
-            and not capabilities[OPENAI_PIPELINE_AUDIT]
-        )
-    ]
+    rows = _llm_list(
+        db,
+        experiment_id,
+        workspace_id,
+        include_semantic=capabilities[SEMANTIC_LLM_AUDIT],
+        include_audit=capabilities[OPENAI_PIPELINE_AUDIT],
+    )
+    return [invocation_read(row) for row in rows]
 
 
 @business_router.get("/llm-invocations/{invocation_id}", response_model=LlmInvocationRead)
@@ -302,16 +326,18 @@ def business_llm_invocation(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    workspace_id = request_workspace_id(request)
-    row = _llm_detail(db, invocation_id, workspace_id)
     workspace_id = _require_business_capability(
         request, db, user, PIPELINE_MONITOR
     )
-    if row.purpose.startswith("semantic_"):
-        _require_business_capability(request, db, user, SEMANTIC_LLM_AUDIT)
-    if row.purpose.startswith("pipeline_audit_"):
-        _require_business_capability(request, db, user, OPENAI_PIPELINE_AUDIT)
-    return row
+    capabilities = capability_matrix(db, user, workspace_id)
+    allowed = frozenset(
+        (SEMANTIC_PURPOSES if capabilities[SEMANTIC_LLM_AUDIT] else frozenset())
+        | (AUDIT_PURPOSES if capabilities[OPENAI_PIPELINE_AUDIT] else frozenset())
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="LLM audit access is not permitted")
+    row = _llm_detail(db, invocation_id, workspace_id, allowed)
+    return invocation_read(row)
 
 
 @business_router.get(
@@ -324,9 +350,7 @@ def business_workflow_pipelines(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    workspace_id = request_workspace_id(request)
-    rows = _pipelines(db, workflow_run_id, workspace_id)
     workspace_id = _require_business_capability(
         request, db, user, PIPELINE_MONITOR
     )
-    return rows
+    return _pipelines(db, workflow_run_id, workspace_id)

@@ -18,6 +18,10 @@ from app.services.authorization_service import (
     workspace_is_selectable,
 )
 from app.services.request_ids import request_id_of
+from app.services.workspace_capability_service import (
+    CAPABILITY_MATRIX_VERSION,
+    effective_capability_matrix,
+)
 
 
 def _membership_role_map(db: Session, user: User) -> dict[UUID, str]:
@@ -137,5 +141,7 @@ def principal_read(db: Session, user: User, request: Request) -> PrincipalRead:
         workspace_id=user.workspace_id,
         active_workspace_id=active,
         workspaces=list_selectable_workspaces(db, user),
+        capability_matrix_version=CAPABILITY_MATRIX_VERSION,
+        capabilities=effective_capability_matrix(db, user, active),
         request_id=request_id_of(request),
     )

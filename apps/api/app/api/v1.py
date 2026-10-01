@@ -52,6 +52,7 @@ from app.services.execution_request_service import (
 from app.services.model_build_reproduction_service import load_model_build_experiment
 from app.services.model_build_service import get_pipeline_model_build
 from app.services.observatory_query_service import list_run_events
+from app.services.audience_projection import artifact_read, event_read, public_diagnostic, public_failure
 from app.services.project_service import get_project, list_projects
 from app.services.technical_explorer_service import get_dataset, list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
@@ -70,6 +71,15 @@ def _identity_http(exc: IdentityError) -> HTTPException:
 
 def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail="not found")
+
+
+def _execution_request_read(row: object) -> ExecutionRequestRead:
+    result = ExecutionRequestRead.model_validate(row)
+    return result.model_copy(update={
+        "request_spec": public_diagnostic(result.request_spec),
+        "result_summary": public_diagnostic(result.result_summary),
+        "failure_summary": public_failure(result.failure_summary),
+    })
 
 
 def _cursor_sequence(cursor: str | None) -> int:
@@ -231,7 +241,7 @@ def submit_execution_request(
         raise _identity_http(exc) from exc
     db.commit()
     db.refresh(row)
-    return ExecutionRequestRead.model_validate(row)
+    return _execution_request_read(row)
 
 
 @router.post(
@@ -264,7 +274,7 @@ def confirm_execution_request_target(
         raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
     except ExecutionRequestSpecError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return ExecutionRequestRead.model_validate(row)
+    return _execution_request_read(row)
 
 
 @router.get("/execution-requests/{request_id}", response_model=ExecutionRequestRead)
@@ -281,7 +291,7 @@ def read_execution_request(
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    return ExecutionRequestRead.model_validate(row)
+    return _execution_request_read(row)
 
 
 def _require_model_build(
@@ -336,6 +346,7 @@ def read_model_build_events(
     rows = list_run_events(
         db,
         pipeline_run_id,
+        workspace_id=workspace_id,
         after_sequence=after_sequence,
         limit=limit + 1,
     )
@@ -344,7 +355,7 @@ def read_model_build_events(
     if len(rows) > limit:
         next_cursor = str(page[-1].sequence)
     return EventPage(
-        items=[MlRunEventRead.model_validate(row) for row in page],
+        items=[MlRunEventRead.model_validate(event_read(row)) for row in page],
         next_cursor=next_cursor,
     )
 
@@ -385,4 +396,4 @@ def read_model_build_artifacts(
     rows = list_artifacts(
         db, workspace_id=workspace_id, pipeline_run_id=pipeline_run_id
     )
-    return [ArtifactRead.model_validate(row) for row in rows]
+    return [artifact_read(row) for row in rows]

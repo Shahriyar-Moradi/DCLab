@@ -22,7 +22,7 @@ export function SiteHeader() {
   const { user, loaded } = useSession();
   const menuId = useId();
   const headerRef = useRef<HTMLElement>(null);
-  const sessionHref = loaded && user ? defaultProductRoute(user.role) : "/login";
+  const sessionHref = loaded && user ? defaultProductRoute(user) : "/login";
   const sessionLabel = loaded && user ? "Open workspace" : "Sign In";
   const close = useCallback(() => setOpen(false), []);
 

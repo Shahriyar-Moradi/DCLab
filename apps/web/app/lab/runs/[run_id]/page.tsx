@@ -26,7 +26,7 @@ import {
   type LabRunStep,
   type SignalTone,
 } from "@/lib/domain";
-import { isPlatformRole } from "@/lib/infrastructure/session";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
@@ -137,7 +137,7 @@ export default function LabRunPage() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState("");
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const isPlatformMember = user ? isPlatformRole(user.role) : false;
+  const isPlatformMember = hasCapability(user, CAPABILITIES.platformRead);
 
   async function onDownload(runId: string) {
     setDownloadError(null);

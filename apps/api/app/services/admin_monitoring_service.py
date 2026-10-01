@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ClientLabRunAudit, Dataset, DatasetProfile, Experiment, PredictionTask, SimulationRun
+from app.db.models import ClientLabRun, ClientLabRunAudit, Dataset, DatasetProfile, Experiment, PredictionTask, SimulationRun
 from app.domain.admin_monitoring import DatasetHealth, MetricDelta, MonitoringOverview, RetrainEvent
 
 METRIC_KEYS = ("roc_auc", "pr_auc")
@@ -47,10 +47,14 @@ def list_retrain_events(db: Session, workspace_id: UUID) -> list[RetrainEvent]:
 
     experiments = db.scalars(
         select(Experiment)
-        .where(Experiment.status == "COMPLETED")
+        .where(Experiment.workspace_id == workspace_id, Experiment.status == "COMPLETED")
         .order_by(Experiment.task_id, Experiment.created_at)
     ).all()
-    task_names = {task.id: task.name for task in db.scalars(select(PredictionTask)).all()}
+    task_ids = {exp.task_id for exp in experiments if exp.task_id is not None}
+    task_names = {
+        task.id: task.name
+        for task in db.scalars(select(PredictionTask).where(PredictionTask.id.in_(task_ids)))
+    }
     previous_by_task: dict = {}
     for exp in experiments:
         metrics = (exp.result or {}).get("test_metrics") or {}
@@ -90,7 +94,11 @@ def list_retrain_events(db: Session, workspace_id: UUID) -> list[RetrainEvent]:
                 ),
             )
         )
-    for audit in db.scalars(select(ClientLabRunAudit)).all():
+    for audit in db.scalars(
+        select(ClientLabRunAudit)
+        .join(ClientLabRun, ClientLabRunAudit.client_lab_run_id == ClientLabRun.id)
+        .where(ClientLabRun.workspace_id == workspace_id)
+    ).all():
         metrics = (audit.payload or {}).get("metrics") or {}
         use_case_events.append(
             (
@@ -118,8 +126,12 @@ def list_retrain_events(db: Session, workspace_id: UUID) -> list[RetrainEvent]:
     return events
 
 
-def list_dataset_health(db: Session) -> list[DatasetHealth]:
-    datasets = db.scalars(select(Dataset).order_by(Dataset.created_at.desc())).all()
+def list_dataset_health(db: Session, workspace_id: UUID) -> list[DatasetHealth]:
+    datasets = db.scalars(
+        select(Dataset)
+        .where(Dataset.workspace_id == workspace_id)
+        .order_by(Dataset.created_at.desc())
+    ).all()
     results: list[DatasetHealth] = []
     for dataset in datasets:
         latest_profile = db.scalars(
@@ -149,6 +161,6 @@ def list_dataset_health(db: Session) -> list[DatasetHealth]:
 def get_monitoring_overview(db: Session, workspace_id: UUID) -> MonitoringOverview:
     return MonitoringOverview(
         retrain_events=list_retrain_events(db, workspace_id),
-        dataset_health=list_dataset_health(db),
+        dataset_health=list_dataset_health(db, workspace_id),
         drift_detection_note=DRIFT_NOTE,
     )

@@ -1,6 +1,6 @@
 "use client";
 
-import { commandDestinationsForRole, type CommandDestination } from "@/app/components/layout/app-navigation";
+import { commandDestinationsForUser, type CommandDestination } from "@/app/components/layout/app-navigation";
 import { filterByText } from "@/app/components/ui/localCollection";
 import { useBodyScrollLock, useEscape, useFocusTrap } from "@/app/components/ui/overlay";
 import { useSession } from "@/lib/application";
@@ -22,7 +22,7 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const destinations = useMemo(() => commandDestinationsForRole(user), [user]);
+  const destinations = useMemo(() => commandDestinationsForUser(user), [user]);
   const matches = useMemo(
     () => filterByText(destinations, query, (item) => [item.label, item.group, item.href]),
     [destinations, query],

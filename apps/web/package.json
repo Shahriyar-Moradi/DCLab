@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
+    "test:components": "node --experimental-strip-types --test lib/infrastructure/*.test.ts next.config.test.mjs",
     "e2e:prepare": "cd ../.. && DATABASE_URL=${DCLAB_E2E_DATABASE_URL:-postgresql://localhost:55432/dclab_e2e_verify} .venv/bin/python scripts/seed_e2e_verification.py --recreate",
     "e2e": "npm run e2e:prepare && playwright test"
   },

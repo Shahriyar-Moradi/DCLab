@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install backend
         run: pip install -e ".[boosting]"
@@ -101,6 +101,10 @@ jobs:
       - name: Frontend typecheck
         working-directory: apps/web
         run: npx tsc --noEmit
+
+      - name: Frontend capability and CSP contracts
+        working-directory: apps/web
+        run: npm run test:components
 
       - name: Frontend lint
         working-directory: apps/web

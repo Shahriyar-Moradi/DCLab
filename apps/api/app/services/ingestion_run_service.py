@@ -2,16 +2,31 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import DataAccess, DataSource, ExecutionRequest, IngestionRun, Project
+from app.config import get_settings, is_production_env
+from app.db.models import (
+    Artifact, DataAccess, DataSource, Dataset, ExecutionRequest,
+    IngestionPublicationEvent, IngestionRun, Project, User,
+)
 from app.domain.data_plane import INGESTION_RUN_STATUSES
 from app.domain.errors import IdentityError, IngestionRunNotFoundError
 
 _TERMINAL = frozenset({"completed", "failed"})
+_PUBLICATION_NEXT = {
+    "received": "quarantined",
+    "quarantined": "scanned",
+    "scanned": "classified",
+    "classified": "publishable",
+    "publishable": "published",
+}
+_REASON = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _now() -> datetime:
@@ -69,6 +84,7 @@ def start_ingestion_run(
     status: str = "running",
     data_access_id: UUID | None = None,
     execution_request_id: UUID | None = None,
+    artifact_id: UUID | None = None,
 ) -> IngestionRun:
     if status not in INGESTION_RUN_STATUSES:
         raise IdentityError(f"unsupported ingestion status: {status}", status_code=400)
@@ -81,6 +97,10 @@ def start_ingestion_run(
         data_access_id=data_access_id,
     )
     _require_execution_request(db, workspace_id, execution_request_id)
+    if artifact_id is not None:
+        artifact = db.get(Artifact, artifact_id)
+        if artifact is None or artifact.workspace_id != workspace_id or artifact.artifact_type != "dataset":
+            raise IdentityError("dataset artifact not found", status_code=404)
     now = _now()
     row = IngestionRun(
         workspace_id=workspace_id,
@@ -88,6 +108,7 @@ def start_ingestion_run(
         data_source_id=data_source_id,
         data_access_id=data_access_id,
         execution_request_id=execution_request_id,
+        artifact_id=artifact_id,
         status=status,
         started_at=now,
         rows_read=0,
@@ -97,6 +118,132 @@ def start_ingestion_run(
     db.add(row)
     db.flush()
     return row
+
+
+def transition_publication(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    ingestion_run_id: UUID,
+    to_state: str,
+    content_digest: str,
+    reason_code: str,
+    actor_type: str,
+    actor_user_id: UUID | None = None,
+    policy_schema_version: int = 1,
+) -> IngestionRun:
+    """Advance exactly one audited state under a database row lock.
+
+    The caller owns commit. Repeating the immediately preceding transition with
+    identical evidence is idempotent; any other stale/invalid command is 409.
+    """
+    if not _DIGEST.fullmatch(content_digest) or not _REASON.fullmatch(reason_code):
+        raise IdentityError("invalid publication evidence", status_code=400)
+    if actor_type not in {"user", "system", "operator"} or (actor_type != "system") != (actor_user_id is not None):
+        raise IdentityError("invalid publication actor", status_code=400)
+    if policy_schema_version != 1:
+        raise IdentityError("unsupported publication policy version", status_code=400)
+    if to_state in {"scanned", "classified", "publishable", "published"} and is_production_env(get_settings()):
+        raise IdentityError("production scan attestation is unavailable", status_code=503)
+    run = db.scalar(
+        select(IngestionRun)
+        .where(IngestionRun.id == ingestion_run_id, IngestionRun.workspace_id == workspace_id)
+        .with_for_update()
+    )
+    if run is None:
+        raise IdentityError("ingestion run not found", status_code=404)
+    if actor_user_id is not None:
+        from app.services.authorization_service import can_write_workspace
+
+        actor = db.get(User, actor_user_id)
+        if actor is None or not can_write_workspace(db, actor, workspace_id):
+            raise IdentityError("workspace write denied", status_code=403)
+    previous = db.scalar(
+        select(IngestionPublicationEvent)
+        .where(IngestionPublicationEvent.ingestion_run_id == run.id)
+        .order_by(IngestionPublicationEvent.version.desc())
+        .limit(1)
+    )
+    if run.publication_state == to_state and previous is not None:
+        if (previous.content_digest, previous.reason_code, previous.actor_type, previous.actor_user_id) == (
+            content_digest, reason_code, actor_type, actor_user_id
+        ):
+            return run
+        raise IdentityError("publication replay conflict", status_code=409)
+    expected = _PUBLICATION_NEXT.get(run.publication_state)
+    if to_state not in {expected, "rejected", "expired"} or run.publication_state in {"published", "rejected", "expired"}:
+        raise IdentityError("invalid publication transition", status_code=409)
+    artifact = db.get(Artifact, run.artifact_id) if run.artifact_id else None
+    if artifact is None or artifact.workspace_id != workspace_id or artifact.content_digest != content_digest:
+        raise IdentityError("publication artifact digest mismatch", status_code=409)
+    if run.publication_digest is not None and run.publication_digest != content_digest:
+        raise IdentityError("publication object changed", status_code=409)
+    if to_state in {"publishable", "published"}:
+        dataset = db.scalar(select(Dataset).where(
+            Dataset.ingestion_run_id == run.id,
+            Dataset.workspace_id == workspace_id,
+            Dataset.artifact_id == artifact.id,
+        ))
+        if dataset is None or dataset.content_digest != content_digest:
+            raise IdentityError("publication dataset lineage incomplete", status_code=409)
+        if to_state == "publishable":
+            from app.services.dataset_column_service import resolve_dataset_policy
+
+            if actor_user_id is None:
+                raise IdentityError("classification review requires a user", status_code=403)
+            policy = resolve_dataset_policy(db, actor=actor, workspace_id=workspace_id, dataset_id=dataset.id)
+            if not policy.complete or policy.retention_class in {None, "unknown"} or policy.residency_class in {None, "unknown"}:
+                raise IdentityError("dataset classification incomplete", status_code=409)
+        if to_state == "published" and run.status != "completed":
+            raise IdentityError("ingestion is not complete", status_code=409)
+    next_version = run.publication_version + 1
+    db.add(IngestionPublicationEvent(
+        workspace_id=workspace_id,
+        ingestion_run_id=run.id,
+        version=next_version,
+        from_state=run.publication_state,
+        to_state=to_state,
+        actor_type=actor_type,
+        actor_user_id=actor_user_id,
+        reason_code=reason_code,
+        policy_schema_version=policy_schema_version,
+        content_digest=content_digest,
+    ))
+    run.publication_state = to_state
+    run.publication_version = next_version
+    run.publication_digest = content_digest
+    db.flush()
+    return run
+
+
+def require_published_artifact(db: Session, artifact: Artifact) -> IngestionRun | None:
+    """Dataset objects without a verified run are never downloadable."""
+    if artifact.artifact_type != "dataset":
+        return None
+    run = db.scalar(select(IngestionRun).where(
+        IngestionRun.workspace_id == artifact.workspace_id,
+        IngestionRun.artifact_id == artifact.id,
+    ))
+    event = db.scalar(select(IngestionPublicationEvent).where(
+        IngestionPublicationEvent.ingestion_run_id == run.id,
+        IngestionPublicationEvent.version == run.publication_version,
+        IngestionPublicationEvent.to_state == "published",
+        IngestionPublicationEvent.content_digest == artifact.content_digest,
+    )) if run is not None else None
+    dataset = db.scalar(select(Dataset.id).where(
+        Dataset.workspace_id == artifact.workspace_id,
+        Dataset.ingestion_run_id == run.id,
+        Dataset.artifact_id == artifact.id,
+        Dataset.content_digest == artifact.content_digest,
+    )) if run is not None else None
+    if (
+        run is None or run.status != "completed"
+        or run.publication_state != "published"
+        or run.publication_digest != artifact.content_digest
+        or event is None or dataset is None
+    ):
+        raise IdentityError("dataset is not published", status_code=409)
+    return run
 
 
 def complete_ingestion_run(

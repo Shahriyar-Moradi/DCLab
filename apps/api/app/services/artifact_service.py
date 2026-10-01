@@ -10,10 +10,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings, publication_enforced
 from app.db.models import Artifact, Experiment, Project, Workspace
 from app.domain.data_plane import ARTIFACT_TYPES
 from app.domain.errors import ArtifactNotFoundError, IdentityError
 from app.storage.base import ObjectPutResult, ObjectStorage
+from app.storage._hashing import sha256_bytes
 from app.storage.factory import get_object_storage, storage_for_artifact
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -150,7 +152,15 @@ def read_artifact_bytes(
 ) -> bytes:
     artifact = get_artifact(db, workspace_id=workspace_id, artifact_id=artifact_id)
     backend = storage_for_artifact(artifact, storage=storage)
-    return backend.get(artifact.object_key)
+    if publication_enforced(get_settings()):
+        from app.services.ingestion_run_service import require_published_artifact
+
+        require_published_artifact(db, artifact)
+    payload = backend.get(artifact.object_key)
+    if publication_enforced(get_settings()) and artifact.artifact_type == "dataset":
+        if sha256_bytes(payload) != artifact.content_digest:
+            raise IdentityError("dataset object changed", status_code=409)
+    return payload
 
 
 def list_artifacts(

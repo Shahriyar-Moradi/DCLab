@@ -1,5 +1,9 @@
 # Scope 8 execution prompts — recommendations, actions, outcomes and impact
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start after verified Scopes 3 and 7. Apply `README.md` and
 `EXECUTION_STANDARD.md`. Prediction, recommendation, approval, action, delivery,
 outcome and causal impact are separate resources and claims. Feedback never
@@ -17,6 +21,11 @@ agent delivers an external effect itself. No framework callback, PydanticAI
 leaf, OpenAI required action or graph node may bypass the transactional outbox.
 The S2-P12 Deep Investigation modes have no action/outbox tool and may only cite
 an existing outcome or draft a proposal for separate deterministic review.
+NOOA has the same proposal-only boundary and never receives an outbox/provider/
+approval tool. A Jev probability or confidence may be recorded as advisory
+recommendation evidence only after its exact release gate; it cannot approve,
+deny, dispatch, retry, compensate or classify an action as safe. An OpenAI
+required action remains a pending request mediated by DCLab, not an effect.
 Experiment tracking, package formats, feature validation and drift calculation
 remain behind the Plan 3.0 DCLab application ports. Action/outcome services do
 not call MLflow, Pandera or Evidently, accept their identifiers as authority, or

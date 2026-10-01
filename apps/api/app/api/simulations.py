@@ -5,7 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import request_workspace_id, require_workspace_read
+from app.api.deps import request_workspace_id, require_admin, require_workspace_read
+from app.db.models import User
 from app.db.session import get_db
 from app.domain.errors import IdentityError, SimulationRunNotFoundError
 from app.domain.simulation import (
@@ -20,6 +21,7 @@ from app.services.simulation_run_service import (
     list_workspace_simulation_runs,
     persist_simulation_run,
 )
+from app.services.legacy_admin_access_audit import record_legacy_admin_access
 from app.sim.runner import run_all, run_use_case
 
 router = APIRouter(
@@ -44,8 +46,12 @@ def run_simulation(
     request: Request,
     body: SimulationRunRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
 ):
     workspace_id = request_workspace_id(request)
+    record_legacy_admin_access(
+        request, action="simulation_create", actor_id=user.id, workspace_id=workspace_id
+    )
     name = body.use_case.strip().lower()
     if name == "all":
         rows = [
@@ -62,8 +68,15 @@ def run_simulation(
 
 
 @router.get("/runs", response_model=SimulationRunListResponse)
-def list_runs(request: Request, db: Session = Depends(get_db)):
+def list_runs(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
     workspace_id = request_workspace_id(request)
+    record_legacy_admin_access(
+        request, action="simulation_list", actor_id=user.id, workspace_id=workspace_id
+    )
     rows = list_workspace_simulation_runs(db, workspace_id=workspace_id)
     return SimulationRunListResponse(
         items=[SimulationRunRead.model_validate(row) for row in rows],
@@ -72,10 +85,19 @@ def list_runs(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/runs/{run_id}", response_model=SimulationRunRead)
-def get_run(request: Request, run_id: UUID, db: Session = Depends(get_db)):
+def get_run(
+    request: Request,
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    workspace_id = request_workspace_id(request)
+    record_legacy_admin_access(
+        request, action="simulation_detail", actor_id=user.id, workspace_id=workspace_id
+    )
     try:
         row = get_workspace_simulation_run(
-            db, workspace_id=request_workspace_id(request), run_id=run_id
+            db, workspace_id=workspace_id, run_id=run_id
         )
     except SimulationRunNotFoundError as exc:
         raise HTTPException(status_code=404, detail="simulation run not found") from exc
@@ -84,11 +106,19 @@ def get_run(request: Request, run_id: UUID, db: Session = Depends(get_db)):
 
 @router.get("/runs/{run_id}/decisions/{external_id}", response_model=SimulationDecisionResponse)
 def get_decision(
-    request: Request, run_id: UUID, external_id: str, db: Session = Depends(get_db)
+    request: Request,
+    run_id: UUID,
+    external_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
 ):
+    workspace_id = request_workspace_id(request)
+    record_legacy_admin_access(
+        request, action="simulation_decision", actor_id=user.id, workspace_id=workspace_id
+    )
     try:
         row = get_workspace_simulation_run(
-            db, workspace_id=request_workspace_id(request), run_id=run_id
+            db, workspace_id=workspace_id, run_id=run_id
         )
     except SimulationRunNotFoundError as exc:
         raise HTTPException(status_code=404, detail="simulation run not found") from exc

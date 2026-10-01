@@ -8,7 +8,7 @@ import { Skeleton } from "@/app/components/ui/Skeleton";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { useLabQuota, useLabRuns, useRunLabTrial, useSession } from "@/lib/application";
 import { formatTimestamp, type ClientLabProblem, type ClientLabRun } from "@/lib/domain";
-import { canWriteWorkspaceSession } from "@/lib/infrastructure/session";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { useRef, useState, type KeyboardEvent } from "react";
 
@@ -79,7 +79,7 @@ function SelectedProblem({ problem }: { problem: ClientLabProblem }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<ClientLabRun | null>(null);
   const { user, loaded } = useSession();
-  const canWrite = loaded && user != null && canWriteWorkspaceSession(user.role);
+  const canWrite = loaded && hasCapability(user, CAPABILITIES.workspaceExecuteMl);
   const remaining = quota.data?.runs_remaining;
   const exhausted = remaining !== undefined && remaining <= 0;
   const running = runTrial.isPending;

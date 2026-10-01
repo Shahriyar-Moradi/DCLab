@@ -365,6 +365,8 @@
     "PrincipalRead": {
       "properties": [
         "active_workspace_id",
+        "capabilities",
+        "capability_matrix_version",
         "email",
         "full_name",
         "id",
@@ -374,6 +376,7 @@
         "workspaces"
       ],
       "required": [
+        "capability_matrix_version",
         "email",
         "full_name",
         "id",

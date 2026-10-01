@@ -28,6 +28,37 @@ DATA_USE_POLICIES = (
     "metadata_only",
 )
 
+# Version 1 is deliberately small. A missing label is not equivalent to public,
+# and these residency/retention labels do not themselves authorize egress or
+# deletion; later gates must interpret the effective policy explicitly.
+DATA_POLICY_SCHEMA_VERSION = 1
+RETENTION_CLASSES = ("unknown", "short", "standard", "extended")
+RESIDENCY_CLASSES = ("unknown", "home_cloud_only", "home_region_only")
+
+CK_DATASET_POLICY_REVISION_POSITIVE = "revision > 0"
+CK_DATASET_POLICY_SCHEMA_VERSION = "policy_schema_version = 1"
+CK_DATASET_POLICY_CONFIDENCE = (
+    "classification_confidence >= 0 AND classification_confidence <= 1"
+)
+CK_DATASET_COLUMNS_POLICY_SCHEMA_VERSION = (
+    "policy_schema_version IS NULL OR policy_schema_version = 1"
+)
+CK_DATASET_COLUMNS_CLASSIFICATION_CONFIDENCE = (
+    "classification_confidence IS NULL OR "
+    "(classification_confidence >= 0 AND classification_confidence <= 1)"
+)
+CK_DATASET_COLUMNS_RETENTION_CLASS = (
+    "retention_class IS NULL OR " + sql_in_clause("retention_class", RETENTION_CLASSES)
+)
+CK_DATASET_COLUMNS_RESIDENCY_CLASS = (
+    "residency_class IS NULL OR " + sql_in_clause("residency_class", RESIDENCY_CLASSES)
+)
+CK_DATASET_POLICY_RETENTION_CLASS = sql_in_clause("retention_class", RETENTION_CLASSES)
+CK_DATASET_POLICY_RESIDENCY_CLASS = sql_in_clause("residency_class", RESIDENCY_CLASSES)
+CK_DATASET_POLICY_SENSITIVITY = sql_in_clause("sensitivity_class", SENSITIVITY_CLASSES)
+CK_DATASET_POLICY_LLM_EXPOSURE = sql_in_clause("llm_exposure_policy", DATA_USE_POLICIES)
+CK_DATASET_POLICY_CLASSIFICATION_SOURCE = sql_in_clause("classification_source", CLASSIFICATION_SOURCES)
+
 DATA_ACCESS_EVENT_ACTOR_TYPES = (
     "user",
     "system",

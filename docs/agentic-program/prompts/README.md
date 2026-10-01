@@ -7,6 +7,11 @@ Read [`EXECUTION_STANDARD.md`](EXECUTION_STANDARD.md) before every prompt. It
 contains the current repository routing map, default data/API/job rules, change
 budget, evidence format, and the required implementation packet. The scope file
 adds the exact plan contract and work-unit instructions.
+For S0-P04D onward, also read
+[`REMAINING_SCOPE_EXECUTION_MAP.md`](REMAINING_SCOPE_EXECUTION_MAP.md). Its
+plan outcome and ten-part live-checkout execution card bind every remaining
+numbered prompt, including applicable `RT-*` work packages. Verify future
+file/table/API names in the current tree instead of guessing from the roadmap.
 
 ## Required preamble for every prompt
 
@@ -18,13 +23,18 @@ docs/agentic-program/DCLAB_CORE_CONCEPT.md,
 docs/agentic-program/AGENT_FIRST_MVP_ARCHITECTURE.md,
 docs/agentic-program/AWS_GCP_DEPLOYMENT_ARCHITECTURE.md,
 docs/agentic-program/MASTER_SCOPE_0_TO_10_PLAN.md, this complete scope prompt
-file, docs/agentic-program/prompts/EXECUTION_STANDARD.md, AGENTS.md if present,
+file, docs/agentic-program/prompts/EXECUTION_STANDARD.md,
+docs/agentic-program/prompts/REMAINING_SCOPE_EXECUTION_MAP.md for S0-P04D
+onward, AGENTS.md if present,
 and every repository file named by the prompt. When the work touches dataset
 scans/profiling/slices, leakage/drift preparation, managed query cells,
 experiment tracking, feature contracts, model packages or platform telemetry, also
 read docs/agentic-program/ML_PLATFORM_INTEGRATION_ARCHITECTURE.md.
 When the work touches Deep Investigation, also read
 docs/agentic-program/DEEP_AGENTS_INVESTIGATION_COPILOT.md.
+When the work touches TypeSafe AI Jev, NVIDIA NOOA or a NOOA notebook
+collaborator, also read
+docs/agentic-program/JEV_NOOA_INTEGRATION_ARCHITECTURE.md.
 When the work touches notebook runtimes, training/serving compute, provider
 credentials, placement, transfer, metering or compute infrastructure, also read
 docs/agentic-program/EXTERNAL_COMPUTE_PROVIDER_ARCHITECTURE.md and the applicable
@@ -38,6 +48,12 @@ models/services/routes/clients/tests, and recent migrations. Preserve unrelated
 user changes. Reuse canonical Workspace -> Project -> ProblemSpec -> DataSource
 -> DataAccess -> IngestionRun -> Dataset -> WorkflowRun -> PipelineRun ->
 ModelVersion lineage. Do not create a parallel business-logic path.
+For this exact prompt, first write the ten-part execution card: resolve exact
+live files, table/constraint/index design, API request/response/status/permission
+matrix, service/state/transaction boundaries, event/job replay and cancellation,
+UI/audience states, named fixtures/commands, configuration/telemetry/rollback,
+non-goals and reviewable PR limit. Use N/A with a reason where a concern truly
+does not apply. Stop for an ADR if a required decision remains unresolved.
 
 Implement only this prompt. Use additive expand-and-contract migrations. Every
 tenant-owned relationship must enforce workspace lineage. Keep large bodies in
@@ -73,6 +89,10 @@ the user separately authorizes it.
   S2-P12 is required before the production-MVP go/no-go but not before safe
   deterministic Scope 3 development. S2-P13 is a separately removable beta
   adapter and cannot become a dependency of the core LangGraph path.
+- S1-P12 is an optional Jev structured-decision gate and does not block Scope 2.
+  S2-P14 is an optional, separately removable NOOA proposal runtime and does not
+  block Scope 3. S4-P08 runs only after an allowed S2-P14H notebook-purpose
+  decision and does not change the Scope 4 exit gate.
 - Generated SDK or schema outputs must be reproducible and checked for drift.
 - Feature flags limit rollout; they do not excuse broken authorization,
   tenancy, privacy, idempotency, or evidence integrity.
@@ -82,8 +102,10 @@ the user separately authorizes it.
   budgets and product state. Do not nest PydanticAI, `pydantic-graph`, LangChain
   `create_agent`, Deep Agents, OpenAI Agents or another loop inside it.
   S2-P12A–H defines the separate proposal-only Deep Investigation worker;
-  S2-P13A–F defines the optional whole-run OpenAI Agents adapter. Every AgentRun
-  selects exactly one runtime. PydanticAI is allowed only after an ADR as a
+  S2-P13A–F defines the optional whole-run OpenAI Agents adapter; S2-P14A–H
+  defines the optional whole-run NOOA proposal runtime. Every AgentRun selects
+  exactly one runtime. Jev is a governed decision provider rather than a runtime.
+  PydanticAI is allowed only after an ADR as a
   no-tool, single-response typed leaf with no runtime authority.
 - The primary product unit is the immutable ML lifecycle, not an agent run,
   notebook or source file. Reuse canonical project/dataset/feature/experiment/
@@ -119,7 +141,10 @@ the user separately authorizes it.
 2. Execute prompt letters in order. A design prompt may intentionally stop for
    an ADR or product/provider choice; that is a valid bounded outcome.
 3. Before edits, produce the implementation packet required by
-   `EXECUTION_STANDARD.md`, including exact current files and contracts.
+   `EXECUTION_STANDARD.md` and the ten-part card in
+   `REMAINING_SCOPE_EXECUTION_MAP.md`, including exact current files and
+   contracts. The plan row defines the outcome; the lettered prompt defines
+   the only slice to implement now.
 4. If current code already satisfies a prompt, run its verification and record
    `VERIFIED`; do not create duplicate services, routes, migrations, or tests.
 5. Stop when a prompt exceeds the change budget or exposes an unresolved
@@ -135,7 +160,7 @@ verification, and staged release. This keeps migrations and behavior reviewable.
 ```text
 Plan/prompt ID:
 Claim:
-Status: VERIFIED | IMPLEMENTED | PARTIAL | BLOCKED | NOT_TESTED
+Status: VERIFIED | IMPLEMENTED | PARTIAL | BLOCKED | NOT_TESTED | NOT_APPLICABLE
 Commit/image digest:
 Environment:
 Migration path tested:
@@ -152,24 +177,25 @@ Reviewer/date:
 ## Prompt files
 
 - [`EXECUTION_STANDARD.md`](EXECUTION_STANDARD.md)
+- [`REMAINING_SCOPE_EXECUTION_MAP.md`](REMAINING_SCOPE_EXECUTION_MAP.md)
 
 | Scope file | Plans | Prompts |
 | --- | ---: | ---: |
 | [`SCOPE_00_FOUNDATION.md`](SCOPE_00_FOUNDATION.md) | 10 | 50 |
-| [`SCOPE_01_READ_ONLY_AGENT.md`](SCOPE_01_READ_ONLY_AGENT.md) | 12 | 67 |
-| [`SCOPE_02_AGENTIC_OPERATING_SYSTEM.md`](SCOPE_02_AGENTIC_OPERATING_SYSTEM.md) | 13 | 72 |
+| [`SCOPE_01_READ_ONLY_AGENT.md`](SCOPE_01_READ_ONLY_AGENT.md) | 13 | 73 |
+| [`SCOPE_02_AGENTIC_OPERATING_SYSTEM.md`](SCOPE_02_AGENTIC_OPERATING_SYSTEM.md) | 14 | 80 |
 | [`SCOPE_03_CONTROLLED_COMMANDS.md`](SCOPE_03_CONTROLLED_COMMANDS.md) | 9 | 52 |
-| [`SCOPE_04_AGENTIC_NOTEBOOK.md`](SCOPE_04_AGENTIC_NOTEBOOK.md) | 7 | 37 |
+| [`SCOPE_04_AGENTIC_NOTEBOOK.md`](SCOPE_04_AGENTIC_NOTEBOOK.md) | 8 | 43 |
 | [`SCOPE_05_PUBLIC_API_SDK_CLI.md`](SCOPE_05_PUBLIC_API_SDK_CLI.md) | 6 | 30 |
 | [`SCOPE_06_MCP.md`](SCOPE_06_MCP.md) | 5 | 25 |
 | [`SCOPE_07_CONNECTORS.md`](SCOPE_07_CONNECTORS.md) | 6 | 34 |
 | [`SCOPE_08_ACTIONS_AND_OUTCOMES.md`](SCOPE_08_ACTIONS_AND_OUTCOMES.md) | 6 | 32 |
 | [`SCOPE_09_PRODUCTION_RELEASE.md`](SCOPE_09_PRODUCTION_RELEASE.md) | 8 | 43 |
 | [`SCOPE_10_SCALE_AND_AUTONOMY.md`](SCOPE_10_SCALE_AND_AUTONOMY.md) | 7 | 35 |
-| **Total** | **89** | **477** |
+| **Total** | **92** | **497** |
 
 The supplemental
 [`JUPYTER_RUNTIME_MVP_PROMPTS.md`](../JUPYTER_RUNTIME_MVP_PROMPTS.md) contains
 8 runtime plans and 44 bounded `RT-*` work packages, including 12 placement and
 external-provider packages. They refine applicable Scope 4/9 work and do not
-change the 89-plan/477-prompt `S*` inventory or existing evidence meanings.
+change the 92-plan/497-prompt `S*` inventory or existing evidence meanings.

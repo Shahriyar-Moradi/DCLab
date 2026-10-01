@@ -20,15 +20,23 @@ unit of work is the versioned machine-learning lifecycle.
    [`ML_PLATFORM_INTEGRATION_ARCHITECTURE.md`](ML_PLATFORM_INTEGRATION_ARCHITECTURE.md).
 6. Before S2-P12, read the
    [`Deep Investigation worker architecture`](DEEP_AGENTS_INVESTIGATION_COPILOT.md).
-7. Read the [`execution standard`](prompts/EXECUTION_STANDARD.md), then open the
+7. Before S1-P12, S2-P14 or S4-P08, read the
+   [`Jev and NOOA integration architecture`](JEV_NOOA_INTEGRATION_ARCHITECTURE.md).
+8. Read the [`execution standard`](prompts/EXECUTION_STANDARD.md), then open the
    active scope under the prompt index in [`prompts/README.md`](prompts/README.md).
-8. Execute dependency-required plan IDs in order. Plan 2.12 may progress in
+   For S0-P04D onward, use the
+   [`remaining-scope execution map`](prompts/REMAINING_SCOPE_EXECUTION_MAP.md)
+   to resolve the plan outcome and complete the live-checkout execution card
+   for each selected prompt before editing.
+9. Execute dependency-required plan IDs in order. Plan 2.12 may progress in
    parallel after S2-P11F and does not block Scope 3, but it is required before
    the production-MVP release gate. Plan 2.13 is a separately gated OpenAI
    Agents adapter and never becomes an inner or outer loop around another runtime.
-9. Use one coding-agent conversation and one pull request per prompt unless the
+   Plans 1.12 and 2.14 are optional Jev/NOOA gates; implementation never implies
+   activation. Plan 4.8 exists only when S2-P14H allows the notebook purpose.
+10. Use one coding-agent conversation and one pull request per prompt unless the
    prompt explicitly states otherwise.
-10. Record verification with the evidence template in the master plan.
+11. Record verification with the evidence template in the master plan.
 
 ## Document roles
 
@@ -48,6 +56,10 @@ unit of work is the versioned machine-learning lifecycle.
   their presence is not implementation or provider-readiness evidence.
 - `DEEP_AGENTS_INVESTIGATION_COPILOT.md` is the approved, non-conflicting
   architecture boundary for the proposal-only three-mode investigation worker.
+- [`JEV_NOOA_INTEGRATION_ARCHITECTURE.md`](JEV_NOOA_INTEGRATION_ARCHITECTURE.md)
+  defines Jev as a governed structured-decision provider and NOOA as a separate
+  proposal runtime, including their software, database, isolation, evaluation
+  and notebook-integration boundaries.
 - `ML_PLATFORM_INTEGRATION_ARCHITECTURE.md` is the approved one-owner-per-
   concern decision for the bounded DuckDB/Arrow `DataScanPort`, MLflow,
   Pandera, Evidently, safe model formats, OpenTelemetry and deferred
@@ -133,6 +145,13 @@ unblocks Scope 3; its own S2-P12H gate is required before production-MVP
 go/no-go. Plan 2.13 may add the OpenAI-hosted Agents API only as a third,
 explicit runtime choice for an entire AgentRun. It cannot wrap or be wrapped by
 LangGraph or Deep Agents, and every required action is mediated by DCLab.
+Plan 1.12 may add Jev as a sibling structured-decision provider behind DCLab
+policy, data, budget and evaluation services. It is not an agent runtime and its
+confidence never grants authority. Plan 2.14 may add NOOA only as a fourth,
+separately deployed whole-run proposal runtime after an explicit release gate.
+It cannot wrap or be wrapped by any other runtime. Plan 4.8 can use an allowed
+NOOA release to propose notebook revisions but DCLab alone applies and executes
+them through the existing Scope 4 services.
 All runtime checkpoints remain private execution state, never API authority or
 proof of access. S1-P01A and S2-P12A record exact package/checkpointer versions,
 isolation and compatibility policy before their respective dependencies land.

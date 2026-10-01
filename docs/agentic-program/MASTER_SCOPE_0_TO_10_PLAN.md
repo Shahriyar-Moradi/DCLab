@@ -19,6 +19,10 @@ and [`contracts/truth_manifest.json`](../../contracts/truth_manifest.json)
 and [RT7/RT8 work packages](JUPYTER_RUNTIME_MVP_PROMPTS.md#plan-rt7--external-compute-placement-foundation)
 **Canonical ML platform boundary:**
 [`ML_PLATFORM_INTEGRATION_ARCHITECTURE.md`](ML_PLATFORM_INTEGRATION_ARCHITECTURE.md)
+**Optional Jev/NOOA integration boundary (design, not implemented):**
+[`JEV_NOOA_INTEGRATION_ARCHITECTURE.md`](JEV_NOOA_INTEGRATION_ARCHITECTURE.md)
+**Remaining-plan prompt acceptance contract:**
+[`prompts/REMAINING_SCOPE_EXECUTION_MAP.md`](prompts/REMAINING_SCOPE_EXECUTION_MAP.md)
 **Authority:** this document orders future work; verified code and tests remain
 the authority for current behavior.
 
@@ -43,7 +47,8 @@ The decision is:
    state, authorization, tools, budgets, citations and audit. PydanticAI may be
    approved only as a no-tool, single-response typed leaf. Plan 2.12 separately
    deploys the proposal-only three-mode Deep Investigation worker, and Plan 2.13
-   evaluates the OpenAI Agents API as a whole-run adapter. Every AgentRun has
+   evaluates the OpenAI Agents API as a whole-run adapter. Plan 2.14 separately
+   evaluates NVIDIA NOOA as a whole-run proposal runtime. Every AgentRun has
    exactly one runtime; none embeds, invokes or authorizes another.
 4. Complete Scope 0 and the whole of Scope 1 before broadening autonomy.
 5. Insert a new, complete Scope 2 after the read-only agent: a durable
@@ -91,6 +96,14 @@ The decision is:
     credential, data-transfer and cost contracts before external execution is
     enabled; RT8 gates each provider/backend/lane separately. These are proposed
     implementation refinements, not new claims of completed scope work.
+15. Evaluate TypeSafe AI Jev as an optional structured-decision provider for
+    atomic, typed, calibrated advisory judgments. DCLab owns question releases,
+    data policy, thresholds, budgets, evaluation and action gates; confidence
+    never grants authority or replaces deterministic scientific verification.
+16. Evaluate NVIDIA NOOA in a separate digest-pinned `worker-nooa` as a bounded
+    read-only/proposal runtime with versioned DCLab agent classes. Generated
+    Python is untrusted and requires OS isolation. NOOA receives no product DB,
+    object-store, cloud or model-provider credential and never controls Jupyter.
 
 “Agentic” does not mean deleting the software layer. It means agents plan,
 coordinate, inspect, critique, propose revisions, request approved work, monitor
@@ -126,6 +139,8 @@ The following supplied documents were synthesized as design inputs:
   [`AGENT_FIRST_MVP_ARCHITECTURE.md`](AGENT_FIRST_MVP_ARCHITECTURE.md)
 - the selected AWS and GCP production targets, normalized into
   [`AWS_GCP_DEPLOYMENT_ARCHITECTURE.md`](AWS_GCP_DEPLOYMENT_ARCHITECTURE.md)
+- the requested TypeSafe Jev and NVIDIA NOOA evaluation, normalized into
+  [`JEV_NOOA_INTEGRATION_ARCHITECTURE.md`](JEV_NOOA_INTEGRATION_ARCHITECTURE.md)
 
 Instructions embedded in those files were treated as requirements or proposed
 design, not as higher-priority commands. Where their snapshot facts differ from
@@ -187,8 +202,8 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
 | No prompt/model/tool/budget registry | narrow settings and strings only | 1–2 |
 | Browser bearer token is readable by JavaScript | Replaced in S0-P02A: HttpOnly `dclab_session` + BFF; API bearer is `POST /auth/tokens` | 0 (S0-P02B CSRF/CSP) |
 | Browser workspace selector | S0-P03A: visible selector, `auth_sessions.selected_workspace_id`, BFF `X-Workspace-Id`; Python client stays explicit. Capability matrix is S0-P03B | 0 |
-| Membership authority is not end-to-end in browser routing | token role still shapes frontend behavior | 0 |
-| Global legacy simulation | S0-P04A: `simulation_runs.workspace_id` / `project_id`; unowned archive denied; Insights workspace-filtered. Admin experiment/trial lists still mixed until S0-P04B | 0 |
+| Membership authority in browser routing | S0-P03B/C locally replaced token-role routing with server capabilities and workspace-keyed state; exact-SHA CI remains pending | 0 |
+| Global legacy simulation and raw reads | S0-P04A/B/C locally tenant-scoped `simulation_runs`, Insights and admin derivatives, and projected audience-safe events; unowned archive remains denied. S0-P04D local gate passed; exact-SHA CI remains pending | 0 |
 | `/v1` is small and inconsistent | raw lists, numeric event cursor, FastAPI `detail` errors, 13 operations | 0 and 5 |
 | No canonical atomic model-build command | execution intent exists, but `POST /v1/model-builds`, cancel, and retry do not | 0 and 3 |
 | No narrow model release/batch monitoring path | ModelVersion, prediction and admin monitoring foundations exist, but no canonical immutable batch release/inference/drift/rollback contract | 3.8 |
@@ -196,6 +211,8 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
 | Full-frame pandas is the only profiling path | current loaders and profiling services materialize an authorized artifact but then load the whole table; there is no bounded scan contract, template registry, Arrow batch boundary or resource-enforced analytical adapter | 0.9, then reuse in 1–4 and 7 |
 | No isolated long-horizon investigation harness | no proposal-only three-mode Deep Investigation worker, versioned InvestigationProposal contract or read-only SDK tool boundary | 2.12; model/drift tools extend in 3.8; production gate in 9 |
 | No hosted-provider agent adapter boundary | current OpenAI use is narrow completion only; no one-runtime-per-run or Agents API session/required-action reconciliation contract | 2.13 beta evaluation; use only on recorded go decision |
+| No governed typed-decision provider boundary | current semantic decisions use narrow generative completion or deterministic rules; no immutable Jev question release, probability/abstention ledger or calibrated promotion gate exists | 1.12 optional shadow evaluation; later use only on recorded purpose/model/data-policy decision |
+| No object-oriented agent runtime boundary | no NOOA worker, agent-class release, DCLab model/tool facade, isolated CodeAct profile or comparative runtime evidence exists | 2.14 optional proposal-runtime gate; 4.8 optional notebook collaborator |
 | No agentic notebook | notebook/script artifacts exist, but no revision/cell/execution runtime | 4 |
 | No external CPU/GPU placement control | no provider-neutral account, target, grant, capability, quote, placement, transfer, usage or cleanup contract for Runpod/Railway/Lambda GPU Cloud/Vast/Nebius | RT7–RT8 supplement; integrate through Scopes 4 and 9 without renumbering S IDs |
 | No customer CLI or MCP | internal DB CLI exists; public client is read-heavy | 5–6 |
@@ -251,7 +268,9 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
     performs at most one provider or tool operation before checkpointing and
     yielding. Plan 2.12 is the sole exception for a high-level harness: its
     Deep Agent runs in a separate proposal-only worker from an explicit DCLab
-    job and neither runtime invokes, embeds, checkpoints or authorizes the other.
+    job. Plans 2.13 and 2.14 may add separately selected whole-run OpenAI Agents
+    and NOOA runtimes. No runtime invokes, embeds, checkpoints or authorizes
+    another, and every AgentRun records exactly one runtime kind/version.
 18. The ML lifecycle is a DCLab-owned domain projection over immutable
     Project/Dataset/FeatureSet/Experiment/Model/Release/Monitoring resources.
     It is distinct from LangGraph topology, supervisor task DAGs and notebooks.
@@ -303,9 +322,10 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
     users, notebooks, APIs, SDKs and MCP cannot submit arbitrary SQL. Do not add
     Polars beside DuckDB, Arrow and pandas in the MVP.
 30. Every AgentRun binds one runtime kind/version: authoritative raw LangGraph,
-    isolated Deep Investigation or the separately gated OpenAI Agents adapter.
-    No runtime can start, resume, checkpoint, call as a tool, wrap or authorize
-    another runtime. Cross-runtime work is a new DCLab request/run/budget.
+    isolated Deep Investigation, the separately gated OpenAI Agents adapter or
+    the separately gated NOOA proposal runtime. No runtime can start, resume,
+    checkpoint, call as a tool, wrap or authorize another runtime. Cross-runtime
+    work is a new DCLab request/run/budget.
 31. OpenAI Responses is inference behind the DCLab gateway with explicit
     retention/storage and tool policy. OpenAI Agents required actions are
     pending untrusted requests mediated by ToolRunner; provider sessions,
@@ -328,6 +348,18 @@ gate. Full ledgers: `docs/verification/S0_P01A_CURRENT_TRUTH.md` and
 36. One environment uses one cloud. No active-active cross-cloud PostgreSQL,
     dual object writes or automatic failover exists in the MVP. Portability is
     proven with bidirectional controlled restore and independent rollback.
+37. Jev is an optional implementation of DCLab's provider-neutral semantic-
+    decision port, not an agent runtime, authorization engine, scientific
+    verifier or action approver. Question/model/data-policy releases, bounded
+    input digests, probabilities, confidence/abstention, calibration evidence
+    and thresholds are immutable DCLab records. An answer may rank or recommend;
+    deterministic policy and human approval remain authoritative.
+38. NOOA agent classes, visible methods and strategy/limit manifests are
+    versioned releases. Generated Python and method selection are untrusted.
+    `worker-nooa` receives only an expiring DCLab run credential and private
+    model/tool facades, never provider, product-database, object-store, cloud,
+    Jupyter-control-plane or external MCP credentials. Outputs are validated
+    proposals and cannot directly apply a patch, execute a cell or command work.
 
 ## 5. Target product and platform topology
 
@@ -341,6 +373,8 @@ flowchart TD
     AUTH --> LIFE[DCLab ML lifecycle and decision memory]
     LIFE --> AOS[DCLab agent control plane]
     AOS --> GRAPH[LangGraph StateGraph runtime]
+    AOS --> SEM[DCLab semantic-decision service]
+    SEM --> JEV[Optional pinned Jev adapter]
     GRAPH --> LLM[Provider-neutral LLM gateway]
     GRAPH --> TOOLS[Versioned DCLab tool registry]
     TOOLS --> APP[Deterministic commands and queries]
@@ -360,6 +394,13 @@ flowchart TD
     READ --> APP
     INV --> PROP[Validated InvestigationProposal]
     PROP --> APP
+    QUEUE --> NLEASE[DCLab NOOA attempt lease]
+    NLEASE --> NOOA[Optional isolated worker-nooa]
+    NOOA --> FACADES[Private DCLab model and tool facades]
+    FACADES --> LLM
+    FACADES --> APP
+    NOOA --> NPROP[Validated NOOA proposal]
+    NPROP --> APP
     APP --> DB[(Managed PostgreSQL product truth)]
     LIFE --> DB
     ML --> OBJ[(Private object storage)]
@@ -375,7 +416,8 @@ flowchart TD
 Initial deployment units are `web`, `api`, `worker-ml`, `worker-agent`,
 `worker-investigation`, `worker-integration`, managed PostgreSQL, private object
 storage, managed secrets/KMS, and telemetry. An isolated notebook execution
-service is added only for code cells. Workers may initially share images except
+service is added only for code cells. `worker-nooa` and Jev egress are optional
+and exist only after their independent gates. Workers may initially share images except
 that `worker-investigation` has a separate Deep Agents dependency lock/image;
 all use disjoint handler allowlists and deployment identities. Raw LangGraph
 runs inside `worker-agent`; it is not a second API or authorization service. Its
@@ -386,6 +428,10 @@ has no product database or object-store credentials and calls DCLab through
 allowlisted SDK/API tools. The API-side lease service owns PostgreSQL job claim,
 heartbeat and terminal settlement; the worker uses a narrow non-public workload
 transport that is never visible to the model.
+The API-owned semantic-decision service is the only Jev caller and stores
+normalized immutable evidence. `worker-nooa` has a separate dependency image,
+identity, attempt lease, flags and kill switch; it receives an expiring DCLab
+run credential and cannot reach Jev or a model provider directly.
 
 Plan 3.0 adds the private MLflow service boundary and in-worker Pandera,
 Evidently and safe-package adapters. MLflow has a separate database/schema
@@ -409,10 +455,10 @@ S3/GCS and provider adapters. Cloud resources never change this product graph.
 | Scope | Outcome | Activation level | Depends on |
 | --- | --- | --- | --- |
 | 0 | Verified secure, tenant-safe, production-shaped foundation | deterministic only | current baseline |
-| 1 | Core ML lifecycle/decision memory plus durable read-only agent with citations and recovery | L0 explain, L1 propose | 0 release gate |
-| 2 | Full authoritative agentic operating system, supervised specialist coverage, required three-mode Deep Investigation, and a gated OpenAI Agents adapter decision | shadow/read/proposal | complete 1; S2-P11F unblocks 3 while 2.12/2.13 run in parallel |
+| 1 | Core ML lifecycle/decision memory plus durable read-only agent with citations and recovery; optional Jev shadow decision gate | L0 explain, L1 propose | 0 release gate |
+| 2 | Full authoritative agentic operating system, supervised specialist coverage, required three-mode Deep Investigation, plus separately gated OpenAI Agents and NOOA decisions | shadow/read/proposal | complete 1; S2-P11F unblocks 3 while 2.12–2.14 run in parallel |
 | 3 | ML platform reuse foundation, controlled agent commands, model builds/iteration and one batch model-release/monitoring path | L2; limited L3 | S2-P11F authoritative gate; S2-P12H required before production MVP |
-| 4 | Managed agentic notebook and required isolated Python release | governed compute | 2; writes require 3 |
+| 4 | Managed agentic notebook, required isolated Python release and optional NOOA proposal collaborator | governed compute | 2; writes require 3; NOOA requires S2-P14H `SHADOW_ALLOWED` |
 | 5 | Stable public API, machine identity, SDK, and customer CLI | external machine clients | 0–3 |
 | 6 | Local and production-MVP hosted MCP over the public SDK | read then controlled write | 5; write also 3 |
 | 7 | Production-grade upload and `dlt`-backed S3/GCS/SQL/CRM/Snowflake connector pack | durable integration | 7.1–7.4 may start after 0/S1-P00H; public/agent surfaces require 5/2 |
@@ -423,11 +469,14 @@ S3/GCS and provider adapters. Cloud resources never change this product graph.
 ```mermaid
 flowchart LR
     S0[Scope 0] --> S1[Scope 1]
+    S1 --> JEV[Plan 1.12 Jev shadow decision]
     S1 --> S2[Scope 2 through S2-P11F]
     S2 --> S3[Scope 3]
     S2 --> COP[Plan 2.12 Deep Investigation]
     S2 --> OAI[Plan 2.13 OpenAI adapter decision]
+    S2 --> NOOA[Plan 2.14 NOOA proposal-runtime decision]
     S2 --> S4[Scope 4]
+    NOOA --> NBOOK[Plan 4.8 optional notebook collaborator]
     S3 --> S4
     S3 --> S5[Scope 5]
     S5 --> S6[Scope 6]
@@ -461,6 +510,8 @@ reuse the named plan owner.
 | ML platform reuse | 0.9, 3.0, then 3.1–3.8 | DuckDB/Arrow, MLflow, Pandera, Evidently and safe model formats supply bounded mechanics behind DCLab-owned ports while DCLab remains product authority; Polars and W&B stay absent. |
 | Deep Investigation | 2.12; 3.8 model/drift extension | Dataset/scientific, experiment/model and operations/drift modes use only read-only DCLab tools and return validated cited proposals without entering the authoritative graph or executing commands. The worker is independently disableable but required for production-MVP go/no-go. |
 | OpenAI hosted-agent decision | 2.13 | Record a beta adapter go/no-go from comparative, retention, required-action, sandbox and clean-disable evidence. Activation is not forced and never changes LangGraph authority. |
+| Jev structured-decision decision | 1.12 | Record a purpose-specific shadow allow/disable/reject decision from calibration, abstention, cost, latency, privacy and deterministic-baseline evidence. Activation is optional and cannot grant authority. |
+| NOOA proposal-runtime decision | 2.14; optional notebook use in 4.8 | Record an allow/disable/reject decision for a separately isolated, provider-keyless whole-run runtime. If allowed, it emits validated proposals only and remains independent of the production-MVP golden path. |
 | Experiment proposal and execution | 2.5–2.7, 3.1–3.4 | A proposal becomes one canonical approved build without bypassing scientific services. |
 | Compare and improve | 2.7–2.10, 3.5–3.6 | Candidates, metrics, cost, rationale and one bounded improvement loop are visible and controllable. |
 | Three synchronized views | 1.0, 1.10, 2.10, 3.6, 4.5 | Conversation, workflow and implementation routes deep-link to the same versions and state. |
@@ -500,7 +551,7 @@ standard. Provider-independent work records that evidence; cloud-backed work
 implements and tests both adapters without putting provider branches in product
 logic.
 
-The execution-grade pack contains 89 plans and 477 prompts. Every scope file
+The execution-grade pack contains 92 plans and 497 prompts. Every scope file
 defines plan-specific code/data/API/job/UI/test/operations contracts; the shared
 [`prompts/EXECUTION_STANDARD.md`](prompts/EXECUTION_STANDARD.md) defines the
 repository routing map, implementation packet, change budget and completion
@@ -577,6 +628,7 @@ executes or edits an ML resource.
 | 1.9 | `/v1/agent` sessions/messages/runs/steps/events/citations/cancel/retry APIs and Python-client coverage | 1.7–1.8 | S1-P09A–E (5) |
 | 1.10 | Agent Studio UI: session list, objective/message flow, progress, citations, budgets, policy block, retry/cancel, explicit feedback | 1.9 | S1-P10A–E (5) |
 | 1.11 | Evaluation/adversarial program, dashboards, runbooks, feature flag, workspace allowlist, synthetic provider integration | 1.4–1.10 | S1-P11A–E (5) |
+| 1.12 | Optional provider-neutral typed semantic-decision gateway with TypeSafe Jev adapter, immutable release/invocation/answer evidence, fake/replay, calibration and purpose-specific shadow gate | 1.4–1.5 and 1.11 evaluation owners; optional and does not block Scope 2 | S1-P12A–F (6) |
 
 ### Scope 1 exit gate
 
@@ -596,6 +648,11 @@ executes or edits an ML resource.
 - two-workspace, injection, exfiltration, secret, budget-concurrency, and outage suites pass;
 - UI reload/reconnect/cancel and accessible failure states pass whole-system E2E;
 - internal allowlisted users complete the workflow without database intervention.
+
+Plan 1.12 has an independent release gate. Scope 1 may pass with Jev disabled or
+rejected. No Jev result becomes an authorization, approval, scientific truth or
+runtime-routing token, and later activation is limited to the exact recorded
+purpose/model/question/data-policy release that passed S1-P12F.
 
 Prompt file: [`prompts/SCOPE_01_READ_ONLY_AGENT.md`](prompts/SCOPE_01_READ_ONLY_AGENT.md).
 
@@ -643,17 +700,21 @@ and specialist subgraphs; they do not introduce another framework or allow a
 specialist to run a hidden nested tool loop. Plan 2.12 separately adds the
 bounded Deep Agents Investigation Copilot across an API/SDK and process
 boundary with three typed modes. Plan 2.13 separately evaluates the OpenAI
-Agents API as a whole-run adapter. Neither separate runtime is a supervisor
-specialist, and no runtime can invoke, embed, checkpoint or authorize another.
+Agents API as a whole-run adapter. Plan 2.14 separately evaluates NOOA as a
+whole-run, read-only/proposal runtime with DCLab-owned agent-class releases,
+model transport and tool facades. None of these separate runtimes is a
+supervisor specialist, and no runtime can invoke, embed, checkpoint or
+authorize another.
 Specialists read the Scope 1 ML
 lifecycle projection and emit findings/proposals linked to durable project
 decision records; their task DAG never becomes lifecycle product truth.
 
-S2-P11F is the authoritative Scope 2 gate and unblocks Scope 3. Plans 2.12 and
-2.13 may run in parallel after that gate. S2-P12H is required for production-MVP
-go/no-go; S2-P13F must record an explicit allow/disable/reject decision. Failure
-or disablement of either adapter cannot block deterministic ML, controlled
-commands or model operations while remediation continues.
+S2-P11F is the authoritative Scope 2 gate and unblocks Scope 3. Plans 2.12,
+2.13 and 2.14 may run in parallel after that gate. S2-P12H is required for
+production-MVP go/no-go; S2-P13F and S2-P14H each record an explicit
+allow/disable/reject decision. NOOA activation is optional. Failure or
+disablement of an optional adapter cannot block deterministic ML, controlled
+commands, model operations or the production-MVP golden path.
 
 Agents may inspect and propose:
 
@@ -689,6 +750,7 @@ Scope 3 activates selected proposals as approved commands.
 | 2.11 | Whole-pipeline raw-LangGraph shadow evaluations, counterfactual replay, failure injection, specialist ablation, quality/cost/latency dashboards and authoritative-graph promotion gate | 2.3–2.10 | S2-P11A–F (6) |
 | 2.12 | Required production-MVP three-mode Deep Investigation worker: non-conflicting ADR, immutable context bundle, claim-level citations, read-only SDK tools, separate worker/runtime state, bounds, shadow evaluation and independent release gate | S2-P11F; parallel with Scope 3; required before production go/no-go | S2-P12A–H (8) |
 | 2.13 | OpenAI Agents API whole-run adapter: beta/maturity ADR, provider-neutral session reference, dedicated adapter, DCLab-mediated required actions, isolated environment policy, comparative evaluation and explicit release decision | S2-P11F; S4 sandbox for code purposes; never wraps another runtime | S2-P13A–F (6) |
+| 2.14 | Optional NVIDIA NOOA whole-run proposal runtime: model-transport proof, generic attempt persistence, digest-pinned isolated worker, versioned DCLab agent classes, private capability facade, durable recovery, operator surface and comparative release gate | S2-P11F; exact Jev purpose also requires S1-P12F shadow allow; never wraps another runtime | S2-P14A–H (8) |
 
 ### Authoritative Scope 2 exit gate — unblocks Scope 3
 
@@ -707,7 +769,7 @@ Scope 3 activates selected proposals as approved commands.
   DCLab authority and checkpoint boundary proven in Scope 1;
 - no write tool is active yet except safe creation of agent-domain proposal records.
 
-### Plans 2.12–2.13 independent runtime gates
+### Plans 2.12–2.14 independent runtime gates
 
 - Deep Investigation runs only in its isolated process and never inside or
   as a tool/subagent of the supervisor; dependency locks, identities, handlers,
@@ -720,9 +782,16 @@ Scope 3 activates selected proposals as approved commands.
   code-owned, non-overlapping and release-gated against their source resources;
 - the OpenAI adapter records exactly one S2-P13F outcome, mediates every
   required action through DCLab and proves retention/environment/clean-disable;
+- the NOOA adapter records exactly one S2-P14H outcome, uses a separate image,
+  identity, queue/handler and runtime-attempt lease, reaches models only through
+  the DCLab gateway and reaches product capabilities only through a narrowed
+  expiring facade; CodeAct-generated Python is contained as hostile code;
+- NOOA agent-class methods expose reviewed typed capabilities only; class source,
+  framework/image/model/tool/data-policy/limit releases and every proposal are
+  immutable and reproducible, and neither NOOA nor Jev may approve or apply it;
 - failure or disablement leaves the S2-P11F raw-LangGraph path and every Scope 3
-  command healthy; S2-P12H is required only for production-MVP release, not for
-  deterministic Scope 3 development.
+  command healthy; S2-P12H is required only for production-MVP release, while
+  S2-P13F/S2-P14H record decisions without requiring provider activation.
 
 Prompt file: [`prompts/SCOPE_02_AGENTIC_OPERATING_SYSTEM.md`](prompts/SCOPE_02_AGENTIC_OPERATING_SYSTEM.md).
 
@@ -809,6 +878,7 @@ dataset, plan, feature set, model release or monitoring policy.
 | 4.5 | Studio notebook UI, collaboration boundary, provenance drawer and accessible output states | 4.3–4.4 | S4-P05A–E (5) |
 | 4.6 | Isolated Python MVP: disposable sandbox, immutable images, no product credentials/default network, quotas, manifests, publisher and cleanup | managed notebook gate | S4-P06A–F (6) |
 | 4.7 | Reproducibility, sandbox escape, egress, exhaustion, artifact-smuggling and production-MVP release verification | 4.6 | S4-P07A–E (5) |
+| 4.8 | Optional NOOA notebook collaborator: bounded immutable context, Jev advisory only when released, reviewable proposal persistence, controlled execution handoff, accessible UI and adversarial release gate | S2-P14H `SHADOW_ALLOWED` and S4-P07E; write/apply also requires Scope 3 | S4-P08A–F (6) |
 
 Execute RT1-A from
 [`JUPYTER_RUNTIME_MVP_PROMPTS.md`](JUPYTER_RUNTIME_MVP_PROMPTS.md) before Plan
@@ -831,6 +901,11 @@ installed as a user-code capability and neither a cell nor an agent supplies SQL
 Plan 4.7 must pass before production-MVP go/no-go. A failed sandbox gate keeps
 Python disabled and blocks that release claim without disabling managed cells
 or deterministic ML.
+Plan 4.8 is optional and may be `NOT_APPLICABLE` when S2-P14H disables or rejects
+NOOA. It never blocks Scope 4 or production-MVP release. If enabled, NOOA may
+propose a notebook revision or separately authorized execution request; it
+cannot control a kernel, apply a revision, execute a cell, publish an artifact
+or treat volatile notebook memory as product truth.
 
 Prompt file: [`prompts/SCOPE_04_AGENTIC_NOTEBOOK.md`](prompts/SCOPE_04_AGENTIC_NOTEBOOK.md).
 
@@ -948,7 +1023,7 @@ Prompt file: [`prompts/SCOPE_08_ACTIONS_AND_OUTCOMES.md`](prompts/SCOPE_08_ACTIO
 | --- | --- | --- | --- |
 | 9.1 | One pinned OpenTofu/Kubernetes contract with AWS/GCP account/project, state, EKS/GKE, network, edge, workload-identity and configuration modules | applicable product scopes | S9-P01A–E (5) |
 | 9.2 | RDS/Cloud SQL PostgreSQL, separate MLflow backend identity, S3/GCS, Secrets Manager/Secret Manager, KMS, migrations, PITR, lifecycle and reconciliation | 9.1 | S9-P02A–E (5) |
-| 9.3 | Identical OCI/Kubernetes web/API/ML/agent/investigation/integration/notebook/MCP deployments on EKS/GKE plus private MLflow and connector-worker `dlt`; disjoint identities, handler/runtime state, autoscaling and degradation | 9.1–9.2 | S9-P03A–E (5) |
+| 9.3 | Identical OCI/Kubernetes web/API/ML/agent/investigation/integration/notebook/MCP deployments on EKS/GKE plus private MLflow and connector-worker `dlt`; optionally deploy separately gated semantic-decision and NOOA workers with disjoint identities, handler/runtime state, autoscaling and degradation | 9.1–9.2 | S9-P03A–E (5) |
 | 9.4 | Provider-neutral OpenTelemetry schema with AWS/GCP exporters, traces/metrics/logs, SLO/error budgets, dashboards, alerts and runbooks for all MVP workstreams | 9.2–9.3 | S9-P04A–E (5) |
 | 9.5 | Dual-cloud CI/CD: tests/evals, both OpenTofu plans/Kubernetes overlays, migrations, images/SBOM/signing/provenance, independent canary and rollback | 9.1–9.4 | S9-P05A–F (6) |
 | 9.6 | AWS/GCP privacy/deletion, cloud/runtime threat models, same-cloud and cross-cloud recovery, incident response, penetration test and compliance evidence | 9.2–9.5 | S9-P06A–F (6) |
@@ -971,7 +1046,11 @@ applicable proposals from all three Deep Investigation modes with valid resource
 citations, bounded execution and proven raw-graph/process/state isolation. It
 also proves connector-pack lineage/drift, isolated-Python containment and hosted-
 MCP authority parity. S2-P13F records the OpenAI adapter allow/disable/reject
-decision; provider activation is not mandatory.
+decision. When Jev or NOOA is included in the pilot, S1-P12F or S2-P14H records
+the exact purpose/runtime decision; otherwise the pilot marks it not applicable
+and proves the integration absent. Provider activation is not mandatory, and
+disabled/rejected optional integrations leave the golden path healthy and
+credential-free.
 It also proves bounded-scan parity and resource enforcement on production-sized
 Parquet/Arrow fixtures without persistent DuckDB state, extension loading,
 unrestricted filesystem/network access, arbitrary SQL or a Polars dependency.
@@ -1028,23 +1107,29 @@ must inspect the real head and choose the next unique revision. Logical slices:
 4. Prompt/model/tool/budget/data-policy versions and budget ledger.
 5. `llm_invocations` agent/evaluation context and precise numeric cost.
 6. Dataset policy decision history and context envelopes.
-7. Multi-agent tasks, delegation, reviews, conflicts and proposals.
+7. Optional semantic-decision releases, invocations and normalized answers;
+   raw provider state is never a table body and approved retention uses an
+   encrypted artifact with digest/deletion deadline.
+8. Multi-agent tasks, delegation, reviews, conflicts and proposals.
    Investigation Copilot reuses these product owners; any short-lived Deep
    Agents runtime state lives in a different private schema/store and is not a
    new lifecycle, memory or public run authority.
-8. Exact approvals and model-build cancellation/retry additions.
-9. Provider-neutral MLflow external-run/model references and reconciliation
+9. A generic agent-runtime attempt/lease row only if existing run/job/lease
+   owners cannot safely represent NOOA; never add NOOA-specific session, memory,
+   checkpoint, message or tool tables.
+10. Exact approvals and model-build cancellation/retry additions.
+11. Provider-neutral MLflow external-run/model references and reconciliation
    state; MLflow owns its separate database/schema and DCLab migrations never
    reproduce its private tables.
-10. Model release, batch prediction and monitoring-window records only where
+12. Model release, batch prediction and monitoring-window records only where
    existing ModelVersion/Prediction/observability owners cannot express them.
-11. Notebooks, immutable revisions/cells and managed executions.
-12. Service accounts/tokens and OAuth metadata owned by the chosen identity design.
-13. Direct upload/quarantine and connector definitions/plans/runs/checkpoints/schema/webhooks.
-14. Outbox and delivery attempts.
-14. Decision cases, recommendations, action proposals/executions, outcomes,
+13. Notebooks, immutable revisions/cells and managed executions.
+14. Service accounts/tokens and OAuth metadata owned by the chosen identity design.
+15. Direct upload/quarantine and connector definitions/plans/runs/checkpoints/schema/webhooks.
+16. Outbox and delivery attempts.
+17. Decision cases, recommendations, action proposals/executions, outcomes,
     impact assessments and feedback.
-15. Optional isolated notebook environment/mount/execution usage records.
+18. Optional isolated notebook environment/mount/execution usage records.
 
 Every slice requires composite tenant foreign keys, state/size constraints,
 measured indexes, immutable/append-only enforcement where promised, empty and
@@ -1058,6 +1143,7 @@ and N-1 application compatibility where rolling deployment requires it.
 | State, IDs, policy, lineage, safe summaries | yes | no | no | unbounded JSON |
 | Datasets/models/reports/notebook exports/code/images | metadata/digest | private immutable body | no | public object |
 | Prompt/response bodies | digest/safe summary | encrypted only if explicitly retained | no | hidden reasoning |
+| Jev/NOOA inputs, generated code and restricted traces | release/digest/safe counters | encrypted, classified and expiring only when approved | provider keys/run-token signing keys only | raw state/code/trace in product rows |
 | User/agent messages | redacted bounded text | optional encrypted original | no | silent indefinite retention |
 | API/provider/connector credentials | prefix/hash/reference | no | secret value/key | plaintext after issue |
 | Tool/action arguments | redacted summary/digest | encrypted if retention requires | credentials only | secret headers/signed URL |
@@ -1072,6 +1158,8 @@ workspaces/{workspace_id}/projects/{project_id}/
   batch-predictions/{batch_prediction_run_id}/outputs/{artifact_id}/{digest}
   monitoring/{monitoring_window_id}/evidence/{artifact_id}/{digest}
   agent-runs/{agent_run_id}/artifacts/{artifact_id}/{digest}
+  agent-runs/{agent_run_id}/runtime-attempts/{attempt_id}/{artifact_id}/{digest}
+  semantic-decisions/{invocation_id}/{artifact_id}/{digest}
   notebooks/{notebook_id}/revisions/{revision_id}/{artifact_id}/{digest}
   connectors/{data_source_id}/ingestions/{ingestion_run_id}/{artifact_id}/{digest}
   decisions/{decision_case_id}/{artifact_id}/{digest}
@@ -1098,6 +1186,8 @@ dataset.inspect.v1          dataset.profile.v1
 agent.turn.v1               agent.supervise.v1
 investigation.copilot.v1
 agent.openai.session.v1
+semantic_decision.evaluate.v1 (only if asynchronous)
+nooa.run.v1
 model_build.run.v1          notebook.render.v1
 model_release.publish.v1    batch_prediction.run.v1
 model_monitor.evaluate.v1   model_release.rollback.v1
@@ -1116,6 +1206,7 @@ names supplied by an LLM/client.
 Every event uses a schema version and links as applicable:
 `request_id`, `trace_id`, `workspace_id`, `project_id`, actor type/ID,
 `agent_run_id`, `agent_step_id`, `agent_task_id`, `tool_call_id`,
+`agent_runtime_attempt_id`, `semantic_decision_invocation_id`,
 `execution_request_id`, `ml_job_id`, `workflow_run_id`, `pipeline_run_id`,
 `project_decision_id`, `model_release_id`, `batch_prediction_run_id`,
 `monitoring_window_id`, `connector_sync_id`, `outbox_id`, `action_id`,
@@ -1198,6 +1289,37 @@ Before the OpenAI Agents adapter receives an allowlisted request:
   externally brokered credentials; and
 - deterministic fake/replay, ambiguous-session/tool-result recovery, clean
   disable/removal and an explicit S2-P13F release decision.
+
+Before Jev receives an allowlisted semantic-decision request:
+
+- the purpose, immutable question-set release, exact model version, eligible
+  data classes/provider region, retention and no-training policy are approved;
+- the provider receives only a bounded normalized payload through the DCLab
+  semantic-decision service, never credentials, direct object/database access,
+  raw unrestricted rows, hidden authorization state or a tool interface;
+- request/input digests, per-answer probability, confidence/abstention,
+  latency/cost and policy decision are persisted without prohibited payloads;
+- deterministic rules and scientific validators keep precedence, low-confidence
+  or malformed results abstain, and no threshold can grant access or approval;
+  and
+- fake/replay, calibration/drift, timeout/rate-limit, clean-disable and the
+  purpose-specific S1-P12F decision pass before any non-shadow use.
+
+Before NOOA receives an allowlisted request:
+
+- S2-P14H allows the exact agent-class/runtime release and one AgentRun binds
+  only `nooa.proposal.v1`, with no edge to another agent runtime;
+- the digest-pinned `worker-nooa` has an expiring run credential, no provider,
+  product-database, object-store, cloud, Jupyter-control-plane or remote-MCP
+  credential, and can reach only private DCLab model/tool facades;
+- visible class methods are reviewed typed capabilities; generated Python is
+  contained by OS isolation, default-deny egress/filesystem, non-root identity,
+  resource/time/output limits and disposable state;
+- every tool/model operation is re-authorized, budgeted, idempotent where
+  applicable, cited and reconciled through durable DCLab attempts; and
+- output-schema, injection, escape, credential-leak, cancellation, crash,
+  duplicate-delivery, comparative-value and clean-disable gates pass. Output is
+  proposal-only and cannot approve, apply, execute or publish work.
 
 Before a connector publishes a DatasetVersion:
 
@@ -1309,6 +1431,10 @@ outcome when it has:
 - an isolated, explicitly requested three-mode Deep Investigation worker that
   produces useful cited proposals through read-only DCLab APIs without becoming
   an orchestration, scientific, execution or memory authority;
+- optional Jev and NOOA release decisions are recorded with evidence; if
+  enabled, Jev remains an advisory semantic-decision provider and NOOA remains
+  an isolated proposal-only runtime, while disabled/rejected outcomes leave all
+  required paths healthy;
 - immutable prompt/model/tool/data/budget policies with evaluation and promotion;
 - deterministic, reproducible ML commands and evidence that agents cannot bypass;
 - authorized dataset profiling, slices, leakage-candidate statistics and drift-
@@ -1331,7 +1457,7 @@ outcome when it has:
 - independently releasable AWS and GCP deployments of the same application
   digest, with EKS/GKE, RDS/Cloud SQL, S3/GCS, workload identity, secret/KMS,
   sandbox and controlled bidirectional restore conformance;
-- automated proof that tenant isolation and scientific invariants remain intact.
+- automated proof that tenant isolation and scientific invariants remain intact;
 - hosted MCP authority parity, isolated-Python containment and a recorded
   OpenAI Agents adapter go/disable/reject decision with clean removal; and
 - no production-MVP dependency, computation, job, artifact, API or UI for SHAP.
@@ -1348,7 +1474,7 @@ Use this record for each plan and scope gate:
 ```text
 Plan/scope:
 Claim:
-Status: VERIFIED | IMPLEMENTED | PARTIAL | PLANNED | BLOCKED | NOT_TESTED
+Status: VERIFIED | IMPLEMENTED | PARTIAL | PLANNED | BLOCKED | NOT_TESTED | NOT_APPLICABLE
 Repository commit/image digest:
 Environment:
 Command or automated check:

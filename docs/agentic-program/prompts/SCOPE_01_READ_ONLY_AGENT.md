@@ -1,5 +1,9 @@
 # Scope 1 execution prompts — complete durable read-only agent
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start only after the Scope 0 gate. Apply `README.md` and
 `EXECUTION_STANDARD.md` and preserve `DCLAB_CORE_CONCEPT.md`. The released
 catalog is metadata/evidence read-only:
@@ -21,6 +25,11 @@ product API, or another agent loop. Ordinary Pydantic is the default; PydanticAI
 may be used only after an ADR as a no-tool, single-response typed leaf and is
 not required by this scope. Exact names may change only when current conventions require it and
 the implementation packet records why.
+Plan 1.12 may add TypeSafe Jev only behind the provider-neutral semantic-
+decision service described in `../JEV_NOOA_INTEGRATION_ARCHITECTURE.md`. Jev is
+not a graph node, agent runtime, ToolRunner, capability authority, scientific
+verifier or approver. Scope 1 and Scope 2 remain releasable when its independent
+shadow gate disables or rejects it.
 
 The primary product unit is the project ML lifecycle, not the agent session.
 Agent/session/checkpoint/task graphs remain separate from the canonical lifecycle
@@ -978,4 +987,136 @@ Publish the Scope 1 evidence record with versions, quality/cost/latency, safety
 assertions and limitations, including exact LangGraph/checkpointer pins and proof
 that no nested agent runtime is installed or invoked. Do not start Scope 2 until
 every hard gate passes.
+```
+
+## Plan 1.12 — Jev structured-decision provider and shadow release
+
+**Contract.** Add TypeSafe AI Jev only behind a DCLab-owned
+`SemanticDecisionPort`. Jev is a typed inference provider, not an agent runtime,
+authorization service, scientific calculator or command approver. Reuse Scope 1
+data policy, model/prompt release, budget, invocation, evaluation and telemetry
+owners. The first release is shadow-only on synthetic or explicitly approved
+de-identified context. Read
+`docs/agentic-program/JEV_NOOA_INTEGRATION_ARCHITECTURE.md` before every prompt.
+
+Plan 1.12 does not change the Scope 1 exit gate or block Scope 2. No later scope
+may use Jev until S1-P12F records `SHADOW_ALLOWED` for the exact purpose, model
+version, data class and threshold policy. Use focused test homes
+`apps/api/tests/test_semantic_decision_contract.py`,
+`test_semantic_decision_persistence.py`, `test_semantic_decision_service.py`,
+`test_jev_adapter.py`, `test_semantic_decision_evaluation.py` and
+`test_jev_release_gate.py`; extend equivalent current owners if they exist.
+
+### S1-P12A — authority, provider and use-case ADR
+
+```text
+Inspect the completed S1-P03/S1-P04/S1-P05/S1-P11 policy, gateway, context,
+budget, invocation and evaluation owners plus current semantic decisions in
+engine/lab/llm_client.py and lab_decision_ledger.py. Review the current official
+TypeSafe API/SDK, model/version aliases, Choice/Score/Noul semantics, confidence,
+limits, retries, retention/privacy terms, regions, license and dependency tree.
+Write an ADR selecting a sibling SemanticDecisionPort under the DCLab AI gateway
+and exactly one shadow purpose. Define deterministic baseline, atomic questions,
+allowed state fields/data class, answer schema, abstain/review behavior, quality/
+calibration/latency/cost gates and prohibited decisions. Resolve why this purpose
+benefits from Jev rather than code or the existing structured LLM. Pin an exact
+model such as the evaluated versioned ID; aliases are evaluation inputs only.
+Define global/purpose flags, removal path and SHADOW_ALLOWED /
+DISABLED_PENDING_EVIDENCE / REJECTED outcomes. Add architecture-link and
+dependency-policy tests. Do not install the SDK, create tables or call a provider.
+Maximum change: ADR, matrix and tests under 500 hand-edited lines.
+```
+
+### S1-P12B — contracts, releases and invocation persistence
+
+```text
+Add domain/semantic_decisions.py with provider-neutral Choice, Score, Noul,
+question-release, request/result, probability, threshold and validation models.
+Reject arbitrary automatic-path questions, duplicate/unknown keys, non-finite or
+out-of-range values, invalid probability keys/sum tolerance and ambiguous
+question-type fields. Discover the live Alembic head and reconcile existing
+prompt/model/invocation registries. Add one additive migration for
+semantic_decision_releases, semantic_decision_invocations and
+semantic_decision_answers only if an equivalent normalized owner does not exist.
+Implement the exact fields, constraints, partial active-release uniqueness,
+composite tenant/project/run lineage, idempotency digest, terminal immutability,
+retention and indexes in JEV_NOOA_INTEGRATION_ARCHITECTURE.md. Store no raw state,
+secret or provider object; an approved retained body is an encrypted Artifact
+reference. Add real-PostgreSQL empty/live-head upgrade, downgrade/forward-repair,
+two-workspace, duplicate, active-release race, invalid-answer and retention tests.
+No provider dependency, network call or public route in this prompt. Maximum one
+migration and approximately 800 non-generated changed lines.
+```
+
+### S1-P12C — provider adapter and deterministic fake
+
+```text
+Create services/semantic_decision_gateway.py and a private provider adapter
+package. Define a scripted fake for valid multi-question results, uncertainty,
+unknown/missing answers, malformed probabilities, unexpected model version,
+timeouts, cancellation, 429/Retry-After, 5xx, HTML bodies and ambiguous network
+completion. Add typesafe-sdk only to the trusted API/gateway dependency image,
+pin it, record license/SBOM and keep its types/exceptions inside
+providers/typesafe_jev.py. Serialize bounded state/questions to the official
+system-one endpoint, use the exact server-resolved model, explicit connect/read/
+total deadlines, bounded retry/jitter and circuit breaker, and record the model
+version returned. Never send a request when purpose/data/release is denied.
+Validate into DCLab contracts before returning; redact provider bodies and keys.
+Test fake/adapter parity with mocked transport and no live credential/network in
+PR CI. Add typed config and .env.example entries with false/off defaults; the API
+key remains a secret-manager reference. Do not wire product behavior yet.
+```
+
+### S1-P12D — decision application service and governed dispatch
+
+```text
+Implement services/semantic_decision_service.py using current authorization,
+capability, data-policy/context, release registry, budget reservation/settlement,
+idempotency, artifact and audit owners. Resolve an active release server-side,
+canonicalize/digest bounded state, persist intent before dispatch, recheck policy
+and feature kill switch immediately before network I/O, call the gateway and
+atomically persist validated answers/terminal event/usage. Map low confidence or
+middle Noul probability to review/abstain exactly from the immutable release;
+never let a caller lower thresholds. Reconcile ambiguous outcomes by invocation
+identity without blind replay and settle budget once. Add one code-owned job
+handler only if measured provider latency requires async execution; its payload
+contains IDs only. Expose a private application interface for shadow evaluation,
+not a generic public question API. Test same-key replay/conflict, concurrent
+dispatch, policy/release/model change, cancellation, timeout, budget exhaustion,
+revoked membership, cross-workspace IDs and provider outage.
+```
+
+### S1-P12E — evaluation, calibration and operator evidence
+
+```text
+Extend the S1-P11 evaluation owner with a versioned, synthetic/de-identified
+purpose corpus and deterministic ground truth/reviewer labels. Run the identical
+cases through the deterministic/current baseline, the scripted fake and an
+explicitly invoked live Jev evaluation outside PR CI. Measure accuracy by class,
+probability calibration, abstention/review/overturn rates, subgroup/language
+behavior, latency, tokens/cost and baseline disagreement. Do not tune on the
+release test set. Persist result/evidence digests and resolved model version;
+never persist disallowed state. Add bounded metrics and operator projections for
+requests, errors, breaker, version mismatch, confidence/probability buckets,
+abstention, drift and cost. Add an admin-only comparison view or report using
+existing evaluation UI owners, with no raw provider body and no activation
+button. Document threshold-change review, model-upgrade replay, provider outage,
+key rotation, deletion and total-disable runbooks.
+```
+
+### S1-P12F — adversarial and shadow-release gate
+
+```text
+Run migration, adapter-contract, two-workspace, policy, budget, calibration and
+clean-disable tests. Attack question/state injection, oversize/Unicode inputs,
+unknown answer keys, NaN/out-of-range/skewed probabilities, missing confidence,
+unexpected alias movement, provider errors, replay/races, revoked access and
+sensitive-field inclusion. Prove Jev cannot authorize, approve, execute a tool,
+override deterministic facts/scientific tests, mutate lifecycle rows or create a
+NOOA/LangGraph turn. Exercise global and purpose kill switches and rollback to an
+image without typesafe-sdk while deterministic ML and the LangGraph gateway stay
+green. Record SHADOW_ALLOWED only for the evaluated purpose/model/data class and
+fixed threshold release; otherwise record DISABLED_PENDING_EVIDENCE or REJECTED.
+No automatic write or consequential route is eligible. Publish exact model/SDK
+pins, commands, metrics, owners, known limits and next reevaluation date.
 ```

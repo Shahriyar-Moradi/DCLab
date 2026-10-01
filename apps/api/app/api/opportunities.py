@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from sqlalchemy.orm import Session
 
 from app.api.deps import request_workspace_id
+from app.config import get_settings, is_production_env
 from app.db.session import get_db
 from app.domain.opportunity import (
     OpportunityListResponse,
@@ -25,6 +26,8 @@ async def upload_opportunities(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> OpportunityUploadResult:
+    if is_production_env(get_settings()):
+        raise HTTPException(503, "CSV import is unavailable pending safety review")
     content = await file.read()
     if not content:
         return OpportunityUploadResult(

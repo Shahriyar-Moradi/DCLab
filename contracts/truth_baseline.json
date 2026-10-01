@@ -1,11 +1,11 @@
 {
   "alembic_heads": [
-    "0059_auth_session_constraints"
+    "0061_ingestion_publication"
   ],
-  "alembic_revision_count": 59,
+  "alembic_revision_count": 61,
   "inventory": {
-    "backend_python_file_count": 421,
-    "backend_test_file_count": 113,
+    "backend_python_file_count": 432,
+    "backend_test_file_count": 118,
     "extension_counts": {
       ".css": 1,
       ".csv": 36,
@@ -15,13 +15,13 @@
       ".ini": 1,
       ".json": 11,
       ".mako": 1,
-      ".md": 101,
+      ".md": 115,
       ".mdc": 1,
-      ".mjs": 2,
+      ".mjs": 3,
       ".pdf": 2,
-      ".py": 461,
+      ".py": 472,
       ".toml": 2,
-      ".ts": 35,
+      ".ts": 37,
       ".tsx": 125,
       ".typed": 1,
       ".woff": 2,
@@ -29,22 +29,22 @@
       ".yml": 2,
       "<none>": 14
     },
-    "frontend_ts_tsx_file_count": 160,
+    "frontend_ts_tsx_file_count": 162,
     "package_file_count": 9,
     "package_roots": [
       "dclab_client"
     ],
-    "python_file_count": 461,
-    "python_line_count": 104523,
-    "repository_file_count": 840,
+    "python_file_count": 472,
+    "python_line_count": 108030,
+    "repository_file_count": 868,
     "sdk_test_file_count": 2,
-    "test_file_count": 118,
-    "ts_tsx_file_count": 160,
-    "ts_tsx_line_count": 15783,
+    "test_file_count": 123,
+    "ts_tsx_file_count": 162,
+    "ts_tsx_line_count": 16199,
     "web_e2e_file_count": 3
   },
   "openapi_operation_count": 167,
   "openapi_path_count": 160,
-  "sqlalchemy_table_count": 66,
+  "sqlalchemy_table_count": 68,
   "v1_operation_count": 13
 }

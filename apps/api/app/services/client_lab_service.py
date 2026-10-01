@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 from app.db.models import ClientLabRun, ClientLabRunAudit, User
 from app.domain.client_lab import ClientLabProblem, ClientLabQuotaRead
 from app.domain.errors import (
+    IdentityError,
     TrialDatasetColumnsError,
     TrialDatasetTooLargeError,
     TrialQuotaExceededError,
@@ -201,6 +202,10 @@ def run_trial(
     uploaded_bytes: bytes | None,
     workspace_id: UUID,
 ) -> ClientLabRun:
+    from app.config import get_settings, is_production_env
+
+    if uploaded_bytes is not None and is_production_env(get_settings()):
+        raise IdentityError("uploaded trial data is unavailable pending safety review", status_code=503)
     if use_case_name not in CATEGORY_BY_USE_CASE:
         raise UnknownLabProblemError(f"{use_case_name!r} is not one of the fixed Labs problems")
 

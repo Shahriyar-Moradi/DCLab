@@ -25,6 +25,8 @@ class Principal(BaseModel):
     workspace_id: UUID | None = None
     active_workspace_id: UUID | None = None
     workspaces: list[PrincipalWorkspace] = Field(default_factory=list)
+    capability_matrix_version: str = "unknown"
+    capabilities: dict[str, bool] = Field(default_factory=dict)
     request_id: str | None = None
 
 
@@ -126,6 +128,12 @@ class Visualization(BaseModel):
 
 
 class Artifact(BaseModel):
+    """Artifact metadata.
+
+    ``object_key`` is a legacy compatibility field and is blank in API
+    responses. Use the artifact ID for authorized downloads.
+    """
+
     id: UUID
     workspace_id: UUID
     project_id: UUID | None = None

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.config import REPO_ROOT
+from app.config import REPO_ROOT, get_settings, is_production_env
 from app.db.models import Dataset, DatasetProfile, Environment, Experiment, ExperimentCandidate, PredictionTask
 from app.db.session import get_db
 from app.domain.errors import ScientificEvidenceLockedError
@@ -75,7 +75,7 @@ class ExperimentRead(BaseModel):
     artifact_dir: str | None
     result: dict | None = None
     config: dict
-    task_id: UUID
+    task_id: UUID | None
     dataset_id: UUID
     task_slug: str | None = None
     task_name: str | None = None
@@ -150,6 +150,8 @@ async def upload_dataset(
     name: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> Dataset:
+    if is_production_env(get_settings()):
+        raise HTTPException(503, "dataset upload is unavailable pending safety review")
     env = seed_dogfood(db)
     dest_dir = REPO_ROOT / "data" / "uploads"
     dest_dir.mkdir(parents=True, exist_ok=True)

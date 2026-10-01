@@ -1,5 +1,10 @@
 # Scope 0 execution prompts — foundation closure
 
+For **S0-P04D onward**, apply the plan-level outcome and mandatory per-prompt
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Each lettered prompt is one reviewable work unit, not authorization to execute
+its whole plan.
+
 Use the common preamble in `README.md` and every rule in
 `EXECUTION_STANDARD.md`. Execute plans in order. For already-implemented work,
 inspect the current diff and evidence first; verify or repair it instead of
@@ -283,11 +288,39 @@ developer and client audiences. Preserve operator detail in protected telemetry.
 ### S0-P04D — retirement and isolation gate
 
 ```text
-Run migration, API inventory, two-workspace and browser tests against all legacy
-simulation/insight/event routes. Prove no global customer query remains and no
-SDK/UI path exposes a retired capability. Add deprecation/removal notes and a
-forward-repair runbook for quarantined rows. Remove feature flags only after the
-compatibility window; record evidence and known retained admin-only surfaces.
+This is a verification/repair gate, not a new feature. Inspect ADR 0004, the
+S0-P04A/B/C diffs and evidence, the live Alembic head, and all callers of
+SimulationRun, insight_query and legacy observability services. Start with
+api/simulations.py, api/insights.py, api/observability.py, the owning services,
+packages/dclab_client, apps/web/app/app/insights/page.tsx and its hooks. Record
+the actual route, method, capability, selected-workspace, resource-workspace,
+response-audience and SDK/UI consumer matrix; locate moved owners with rg.
+
+For every customer-visible read and mutation, prove authorization occurs before
+lookup, foreign or absent resource IDs follow the same 404 policy, and an
+authorized empty workspace returns only its own empty result. Verify current
+membership revocation, two simultaneous workspace selections, quarantined
+historical rows, concurrent creation, paginated/event polling and all retained
+admin-only routes. Use PostgreSQL migration upgrade tests from the supported
+previous head plus test_simulation_insights_tenancy.py,
+test_simulation_lineage_gate.py, test_legacy_audience_projection.py,
+test_pipeline_observability.py and test_workspace_isolation_gate.py; extend
+existing equivalents when filenames have changed. Exercise the browser insights
+view and any simulation/event consumer through the BFF with two workspaces;
+assert no old-workspace flash, global count, raw handler/path/storage key or
+operator-only field. Check the Python SDK contract and OpenAPI diff. A hidden
+navigation item alone is not proof of denial.
+
+Repair only Plan 0.4 defects in the existing route/service/projection owners.
+Do not guess workspace ownership, rewrite immutable evidence, remove historical
+rows, add a parallel canonical model, or relax capability checks for rollback.
+Write deprecation/removal notes with the compatibility deadline and a
+forward-repair runbook for quarantined rows, including operator identity,
+dry-run, backup, proof of ownership, repeatability and audit. Do not remove a
+feature flag before its compatibility window closes. Record exact commands,
+PostgreSQL/browser results, duration, same-SHA CI status, safe denial metrics,
+retained admin-only surfaces and unresolved exceptions. Mark Plan 0.4 VERIFIED
+only when the full matrix passes; otherwise report PARTIAL/BLOCKED with owners.
 ```
 
 ## Plan 0.5 — classification, quarantine and retention foundation

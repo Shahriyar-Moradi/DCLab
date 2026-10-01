@@ -215,7 +215,7 @@ def test_persisted_reproduction_artifacts_are_safe_idempotent_and_readable(
         f"{base}/reproduction/notebook/download",
         headers=_headers(foreign_owner, workspace.id),
     )
-    assert denied.status_code == 404
+    assert denied.status_code == 403
     other_workspace = create_business_workspace(
         db_session, owner=foreign_owner, name="Other Reproduction Co"
     )

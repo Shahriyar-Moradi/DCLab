@@ -260,6 +260,7 @@ def _authed_client(db_session: Session, token: str) -> Generator[TestClient, Non
     single test can hold an `auth_client` and an `admin_client` at the same time
     without one's Authorization header clobbering the other's — they used to
     share one TestClient and mutate the same headers dict in place."""
+    from app.db.models import DEFAULT_WORKSPACE_ID
     from app.db.session import get_db
     from app.main import app
 
@@ -268,7 +269,10 @@ def _authed_client(db_session: Session, token: str) -> Generator[TestClient, Non
 
     app.dependency_overrides[get_db] = _override
     with TestClient(app) as test_client:
-        test_client.headers.update({"Authorization": f"Bearer {token}"})
+        test_client.headers.update({
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-Id": str(DEFAULT_WORKSPACE_ID),
+        })
         yield test_client
     app.dependency_overrides.clear()
 

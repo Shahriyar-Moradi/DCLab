@@ -1,5 +1,9 @@
 # Scope 9 execution prompts — production platform and measured pilot
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start when the product scopes included in the pilot have passed their gates.
 Apply `README.md`, `EXECUTION_STANDARD.md` and
 `../AWS_GCP_DEPLOYMENT_ARCHITECTURE.md`. Read
@@ -13,6 +17,10 @@ three-mode Deep Investigation, isolated Python, hosted read MCP and the initial
 upload/S3/GCS/SQL/CRM/Snowflake connector pack. S2-P13F must record the OpenAI
 Agents adapter decision; the adapter may remain disabled without blocking the
 deterministic or LangGraph paths.
+When Jev or NOOA is evaluated for the release, S1-P12F/S2-P14H must record its
+purpose/runtime decision. They remain optional: an excluded integration is
+`NOT_APPLICABLE` to the pilot and deployment, secrets, routing and public
+capability claims must cleanly omit it.
 
 ## Scope implementation boundary
 
@@ -47,6 +55,11 @@ connector-worker images. Airbyte/Openflow remain external interoperability
 options, Snowflake remains a read-only source, and none receives DCLab product-
 database or lifecycle authority. Hosted MCP is a public-SDK facade with its own
 OAuth audience and read/write kill switches.
+When S1-P12F permits a Jev purpose, only the API-owned semantic-decision gateway
+holds its secret and outbound allowlist; workers never receive it. When S2-P14H
+allows NOOA, deploy `worker-nooa` separately with no provider/product DB/object/
+cloud/Jupyter-control-plane credentials and only expiring access to private
+DCLab model/tool facades. Otherwise deploy neither unit and prove clean disable.
 
 ## AWS/GCP portability requirements
 
@@ -244,7 +257,8 @@ substitute for the cross-cloud drill in S9-P08E.
 
 **Contract.** Deploy separate web/API/ML/agent/integration/notebook-control and
 private MLflow units with distinct identity, handler allowlist, resources,
-scaling and health. Deploy investigation after required S2-P12H. Deep Agents is
+scaling and health. Deploy investigation after required S2-P12H. Optionally
+deploy semantic-decision egress and `worker-nooa` only after their gates. Deep Agents is
 isolated in that image and cannot enter API or agent
 images; runtime authority is never shared. EKS and GKE use the same OCI digests,
 Kubernetes base and application configuration schema.
@@ -263,6 +277,13 @@ runtime. Build a separate non-root worker-investigation image containing the
 S2-P12 locked Deep Agents stack and `packages/dclab_client`, with only
 investigation.copilot.v1 enabled; it contains no API private modules, raw
 worker-agent graph, product DB/object/provider client or host shell tooling.
+If S2-P14H allows it, build a separate non-root digest-pinned `worker-nooa`
+image containing only the reviewed NOOA release and DCLab facade client. Prove
+the API, worker-agent, worker-investigation and notebook-control images do not
+import NOOA, and prove `worker-nooa` contains no provider/cloud/product-storage
+SDK, Kubernetes client, Jupyter control client, shell entrypoint or writable
+dependency cache. If S1-P12F allows Jev, keep `typesafe-sdk` and its secret only
+in the semantic-decision gateway dependency/configuration group.
 The ML worker allowlist includes only the reviewed model-build, batch-prediction
 and model-monitor handlers; release activation remains an API/service command,
 not a worker-selected action. Its dependency group pins MLflow client, Pandera,
@@ -294,6 +315,11 @@ DCLab intents pending/degraded for reconciliation. If included, roll out worker-
 investigation independently after its read API,
 runtime-store and dependency conformance checks; stopping it must leave raw
 LangGraph, deterministic ML and existing reads healthy.
+Roll out optional semantic-decision egress and `worker-nooa` independently with
+their own identity, NetworkPolicy, queue/handler allowlist, quotas, readiness,
+flags and kill switches. Rollback must preserve immutable invocation/attempt
+evidence while new Jev calls abstain/fall back to the deterministic path and new
+NOOA requests are rejected safely; neither outage may affect required paths.
 Map arbitrary-Python jobs only through the verified `SandboxRuntimePort`: the
 approved EKS Fargate/equivalent profile and GKE Sandbox/gVisor must satisfy the
 same no-token/no-host/no-egress/resource/quarantine tests.
@@ -321,7 +347,8 @@ capacity envelopes and normalized cost per workload on both providers.
 
 ```text
 Define behavior when provider, object store, secrets, telemetry, connector,
-MLflow tracking, DataScan adapter, agent, Deep Investigation worker or notebook
+MLflow tracking, DataScan adapter, agent, Deep Investigation worker, Jev
+semantic-decision provider, NOOA worker/private facade or notebook
 service is unavailable. An investigation
 failure returns a safe terminal/partial result and cannot impair worker-agent or
 core authorized reads. MLflow failure cannot erase or contradict DCLab state:
@@ -336,6 +363,10 @@ flag selects pandas for a whole operation, with identical authorization/limits.
 Run the dependency-loss matrix separately for AWS and GCP, including workload-
 identity, managed PostgreSQL, object-store, secret/KMS, regional edge and
 telemetry outages. Provider-native errors normalize to the same safe DCLab codes.
+Jev timeout/malformed/low-confidence/rate-limit conditions must abstain or use
+the documented deterministic alternative without converting uncertainty to an
+allow decision. NOOA crash/lease loss/duplicate delivery must reconcile one
+attempt and one proposal without replaying an uncertain tool operation.
 ```
 
 ### S9-P03E — deployment/capacity gate
@@ -475,7 +506,9 @@ gates, approval, canary and automated/manual rollback.
 Define required checks for formatting/lint/types, backend/SDK/CLI/MCP tests,
 frontend component/build/browser, PostgreSQL migrations/integrity, OpenAPI/parity,
 agent and Deep Investigation evals/isolation assertions plus the S2-P13F OpenAI
-runtime decision/clean-disable assertions; add
+runtime decision/clean-disable assertions; add S1-P12F Jev calibration/privacy/
+abstention/clean-disable and S2-P14H NOOA model-facade/isolation/recovery/clean-
+disable assertions; add
 Plan 3.0 ML-platform adapter/isolation/safe-package/feature/drift contract tests
 and S0-P09 DataScan parity/security/resource/cleanup tests,
 IaC validate/policy,
@@ -503,6 +536,12 @@ locked worker-investigation image. Treat their upgrades as separate harness
 migrations requiring replay/adversarial tests, compatibility proof, SBOM review
 and independent rollback; never synchronize upgrades by importing one worker
 into the other.
+NOOA and `typesafe-sdk` may exist only in their separately reviewed dependency
+groups/images. Pin exact package and model versions, verify official license and
+transitive dependencies, and require replay, adversarial isolation, public-
+contract compatibility, SBOM and clean-removal evidence for upgrades. Reject a
+change that imports either provider into domain contracts or spreads provider
+credentials into a general worker.
 Pin MLflow/Pandera/Evidently/skops/native-runtime upgrades only in the ML-worker
 or private tracking dependency groups. Require adapter/golden/serialization/
 reconciliation and SBOM review for each upgrade. Reject W&B, Optuna, OpenLineage
@@ -692,7 +731,10 @@ workspaces, use case, quotas, support and success/safety metrics. It exercises
 the Core ML lifecycle through connector ingest, specialist/Deep Investigation,
 isolated Python, hosted MCP, batch release/monitoring/rollback and SDK/CLI. The
 S2-P13 OpenAI adapter is exercised only if its recorded decision permits a
-canary; clean disable is always exercised. Business action and outcome are
+canary; clean disable is always exercised. Jev and NOOA are likewise exercised
+only for an exact S1-P12F/S2-P14H allow decision; when included, their recorded
+decision and clean-disable evidence are reviewed, otherwise absence is proven.
+Business action and outcome are
 optional and included only when the charter names them. The
 pilot is reversible and does not imply general availability or higher autonomy.
 The human pilot may use one approved primary cloud, but the identical release
@@ -716,6 +758,10 @@ Always include tracking-sync
 completeness/latency, safe-package rejection, feature-contract correctness and
 drift-alert usefulness without exposing provider internals.
 Configure server-side allowlists/flags/quotas; no marketing availability claim.
+Define separate optional success thresholds for Jev calibration/abstention/
+latency/cost and NOOA proposal quality/citation/isolation/recovery. Do not count
+either optional integration as required workflow success or permit a provider
+failure to be hidden by aggregate agent metrics.
 Define provider-neutral success thresholds plus separately reported AWS/GCP
 latency, capacity, egress and cost; do not average away a provider failure.
 ```
@@ -752,7 +798,13 @@ low-risk write when the MCP write manifest permits it. Exercise S3/GCS object, S
 selected CRM and Snowflake connector conformance with synthetic or approved
 pilot data. If S2-P13F permits a canary, run its named purpose and prove
 one-runtime ownership/required-action mediation; otherwise prove it is absent
-and core behavior is unchanged. Exercise all
+and core behavior is unchanged. If S1-P12F permits a pilot Jev purpose, run only
+its pinned question/model/data-policy release and compare the recorded
+probability/confidence/abstention with the deterministic baseline and eventual
+reviewed outcome. If S2-P14H permits a NOOA canary, run only the released agent
+class through `worker-nooa`, verify private DCLab model/tool facades and review
+the validated proposal without automatic apply or notebook execution. Otherwise
+prove both are absent and the same workflow remains healthy. Exercise all
 three synchronized views and reconstruct project decisions. Add recommendation
 -> approved business action -> outcome only when included by the charter. Capture
 telemetry/evaluation/support issues and user feedback under policy. Do not
@@ -779,6 +831,9 @@ and one restore/recovery drill. Include lifecycle reconstruction, decision-memor
 correctness, batch feature skew and drift-alert usefulness. Triage defects by
 severity and pause on stop
 criteria. Record denominator/context for metrics.
+When enabled, review Jev calibration drift, confidence/abstention, malformed/
+timeout fallback and data-policy compliance plus NOOA proposal value, generated-
+code isolation, model/tool budget, duplicate/crash recovery and clean disable.
 Review all three Deep Investigation modes, specialist ablations, connector-pack
 freshness/schema events, isolated-Python safety and hosted-MCP authority. Always review MLflow
 sync backlog/availability, package-verification failures, feature-contract
@@ -799,7 +854,11 @@ Require explicit sign-off from the Data Scientist and ML Engineer workflow owner
 neither infrastructure-only success nor optional business-side completion can
 hide a failure in the Core ML path.
 Require S2-P12H, S4-P07E, S6-P05E and S7-P06E evidence plus the recorded S2-P13F
-decision. Verify no initial feature depends on SHAP and no runtime nesting,
+decision. For each pilot-included Jev/NOOA purpose, require S1-P12F/S2-P14H;
+otherwise record it `NOT_APPLICABLE` and prove it is absent. Activation is
+optional, but any allowed purpose must have passed its exact gate and every
+disabled/rejected path must be cleanly absent. Verify no initial feature depends
+on SHAP and no runtime nesting,
 Airbyte/Openflow control plane or Snowflake product-state authority was added.
 Approve continue/expand/pause/rollback explicitly; expansion names a bounded new
 population, never automatic GA. Publish immutable release/evidence versions and

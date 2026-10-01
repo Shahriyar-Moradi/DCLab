@@ -758,8 +758,18 @@ def check_current_status_docs(
         opening = "\n".join(lines)
         if not CURRENT_STATUS.search(opening):
             continue
-        named = set(ALEMBIC_REV.findall(opening))
-        foreign = {item for item in named if item != head}
+        # CURRENT describes the status of this evidence record, not that every
+        # historical migration observation inside it is today's head. Reject
+        # stale unqualified head claims while preserving dated/parent evidence.
+        historical_context = (
+            "historical", "previous head", "parent revision", "revises",
+            "at this gate", "at execution", "observed then", "at the time",
+        )
+        foreign: set[str] = set()
+        for line in lines:
+            if any(marker in line.lower() for marker in historical_context):
+                continue
+            foreign.update(item for item in ALEMBIC_REV.findall(line) if item != head)
         if foreign:
             problems.append(
                 f"{rel} is marked CURRENT but names other Alembic ids {sorted(foreign)}; "

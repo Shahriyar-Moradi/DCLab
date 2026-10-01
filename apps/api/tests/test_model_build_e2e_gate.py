@@ -529,4 +529,6 @@ def test_model_build_gate_all_users_and_cross_workspace_hide(
             headers=_headers(owner, workspace.id),
         ).status_code,
     )
-    assert hidden == (404, 404, 404, 404, 404, 404)
+    # An unauthorized workspace selector is denied before resource lookup;
+    # an authorized selector with a foreign run remains hidden as 404.
+    assert hidden == (403, 403, 404, 404, 403, 404)

@@ -155,6 +155,10 @@ def test_business_plane_is_tenant_scoped_capability_filtered_and_readonly(
         f"/business/workspaces/{workspace_id}/pipeline-runs/{pipeline.id}/monitor"
     )
     assert auth_client.get(monitor_path, headers=admin_headers).status_code == 403
+    assert auth_client.get(
+        f"/business/workspaces/{workspace_id}/pipeline-runs/{uuid4()}/monitor",
+        headers=admin_headers,
+    ).status_code == 403  # capability denial precedes existence lookup
     # Platform roles are deliberately not constrained by business flags.
     assert admin_client.get(monitor_path).status_code == 200
 
@@ -235,14 +239,12 @@ def test_business_plane_is_tenant_scoped_capability_filtered_and_readonly(
     assert auth_client.get(
         f"/business/workspaces/{foreign.id}/pipeline-runs/{pipeline.id}/monitor",
         headers=_headers(business_admin, foreign.id),
-    ).status_code == 404
+    ).status_code == 403  # disabled capability is checked before record existence
     _set_capability(db_session, foreign.id, "pipeline_monitor")
     assert auth_client.get(
         f"/business/workspaces/{foreign.id}/pipeline-runs/{pipeline.id}/monitor",
         headers=_headers(business_admin, foreign.id),
-    ).status_code == 404
-
-
+    ).status_code == 404  # with capability, foreign record remains hidden
 def test_prediction_download_and_deep_audit_cannot_bypass_capabilities(
     auth_client, db_session, monkeypatch
 ):

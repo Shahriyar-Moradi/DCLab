@@ -1,5 +1,9 @@
 # Scope 6 execution prompts — Model Context Protocol adapter
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start after Scope 5; write tools also require Scope 3. Apply `README.md` and
 `EXECUTION_STANDARD.md`. At implementation time pin one published MCP protocol
 revision and SDK version. The current planning reference is the 2026-07-28 MCP
@@ -16,7 +20,7 @@ Create `packages/dclab_mcp` as a thin adapter over the public Python SDK. It has
 no database/API-internal/object-store imports and no authority beyond the caller.
 Expose bounded tools/resources/prompts mapped from the approved `/v1` inventory.
 Read and write releases and kill switches remain independent. The MCP package
-does not import LangGraph, Deep Agents, PydanticAI or agent-runtime/checkpointer
+does not import LangGraph, Deep Agents, NOOA, PydanticAI or agent-runtime/checkpointer
 internals; MCP requests use `/v1` and cannot create a parallel agent or tool
 authority. If Investigation Copilot is exposed, MCP sees only the same DCLab-
 owned run/proposal/citation resources and start/cancel operations as the public
@@ -26,6 +30,10 @@ public SDK contract directly and do not loop back through hosted MCP. An S2-P13
 OpenAI Agents session may connect only to this DCLab-hosted resource when its
 purpose/tool manifest explicitly permits it; arbitrary remote MCP discovery or
 connection is denied.
+An S2-P14 NOOA agent class receives narrower private DCLab model/tool facades,
+not hosted or arbitrary remote MCP. Jev has no MCP or tool surface; any released
+semantic decision is invoked by the DCLab application service and exposed only
+as a normalized, authorized DCLab result when the public contract requires it.
 ML-platform implementations are equally private: MCP exposes only the public
 DCLab tracking/package/feature-contract/monitoring projections and reason codes.
 It never connects to MLflow, returns an MLflow locator/type, serializes Pandera

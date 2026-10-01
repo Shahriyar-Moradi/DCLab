@@ -1,5 +1,9 @@
 # Scope 5 execution prompts — public API, SDK and customer CLI
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start after Scope 3 and applicable resource scopes. Apply `README.md` and
 `EXECUTION_STANDARD.md`. Public clients use `/v1` over HTTP; they never import
 API internals, open the database, read storage keys or inherit browser cookies.
@@ -15,9 +19,13 @@ safe retries and versioned OpenAPI compatibility. Agent resources expose only
 DCLab-owned sessions/runs/steps/events/tool calls/citations; LangGraph checkpoint
 rows, Deep Agents messages/todos/files/checkpoints, graph-private state and all
 framework types never enter OpenAPI, SDK or CLI. Deep Investigation and any
-OpenAI-hosted runtime expose only DCLab-owned run/proposal/citation projections
-and use the same HTTP client; framework/provider session IDs and `deepagents`/
-OpenAI Agents dependencies never enter public SDK or CLI contracts.
+OpenAI-hosted or NOOA runtime expose only DCLab-owned run/proposal/citation
+projections and use the same HTTP client; framework/provider session IDs and
+`deepagents`/OpenAI Agents/NOOA dependencies never enter public SDK or CLI
+contracts. A released Jev decision is exposed only as a normalized DCLab
+semantic-decision projection when a user job requires it; clients cannot supply
+automatic-path questions, models or thresholds, and provider SDK types never
+cross `/v1`.
 Lifecycle, decision, model-release, batch-prediction and monitoring resources
 remain DCLab product contracts and use the same IDs as the project UI.
 External ML-platform libraries are private implementation details. `/v1`, SDK

@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from app.db.models import SimulationRun, UserRole
+from app.db.models import DEFAULT_WORKSPACE_ID, SimulationRun, UserRole, WorkspaceMembership
 from app.services.auth_service import create_access_token, create_user
 from app.services.project_service import create_project
 from app.services.workspace_service import create_business_workspace
@@ -158,6 +158,12 @@ def test_cross_workspace_simulation_id_is_404(client, db_session, admin_user):
     )
     assert hidden.status_code == 404
     assert hidden.json()["detail"] == "simulation run not found"
+    absent = client.get(
+        f"/admin/simulations/runs/{uuid4()}",
+        headers=_headers(admin_user, workspace_b.id),
+    )
+    assert absent.status_code == hidden.status_code
+    assert absent.json() == hidden.json()
 
     decision = client.get(
         f"/admin/simulations/runs/{run_a.id}/decisions/C-ALPHA",
@@ -190,13 +196,49 @@ def test_unowned_archive_rows_never_reach_insights_or_derivatives(
     assert insights.status_code == 200
     assert "C-ORPHAN" not in _subject_ids(insights)
 
-    models = client.get("/admin/models", headers=_headers(admin_user))
+    models = client.get(
+        "/admin/models", headers=_headers(admin_user, DEFAULT_WORKSPACE_ID)
+    )
     assert models.status_code == 200
     assert str(orphan.id) not in {row["id"] for row in models.json()}
 
-    monitoring = client.get("/admin/monitoring", headers=_headers(admin_user))
+    monitoring = client.get(
+        "/admin/monitoring", headers=_headers(admin_user, DEFAULT_WORKSPACE_ID)
+    )
     assert monitoring.status_code == 200
     assert str(orphan.id) not in {row["id"] for row in monitoring.json()["retrain_events"]}
+    archived_detail = client.get(
+        f"/admin/simulations/runs/{orphan.id}",
+        headers=_headers(admin_user, DEFAULT_WORKSPACE_ID),
+    )
+    assert archived_detail.status_code == 404
+
+
+def test_suspended_membership_stops_insights_on_the_next_request(client, db_session):
+    owner = _owner(db_session, "revocation-owner")
+    workspace = create_business_workspace(db_session, owner=owner, name="Revocation")
+    user = _member_client(db_session, workspace, "revocation-client")
+    _insert_run(
+        db_session,
+        workspace_id=workspace.id,
+        use_case="churn",
+        external_id="S0P04D-REVOKED",
+    )
+    headers = _headers(user, workspace.id)
+    before = client.get("/app/insights", headers=headers)
+    assert before.status_code == 200
+    assert _subject_ids(before) == {"S0P04D-REVOKED"}
+
+    membership = db_session.query(WorkspaceMembership).filter_by(
+        user_id=user.id, workspace_id=workspace.id
+    ).one()
+    membership.suspended_at = datetime.now(UTC)
+    db_session.commit()
+    db_session.expire_all()
+
+    after = client.get("/app/insights", headers=headers)
+    assert after.status_code == 403
+    assert "S0P04D-REVOKED" not in after.text
 
 
 def test_project_lineage_rejects_cross_workspace_project(client, db_session, admin_user, monkeypatch):

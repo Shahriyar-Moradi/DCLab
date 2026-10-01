@@ -126,6 +126,8 @@ const SessionUserSchema = z.object({
       }),
     )
     .optional(),
+  capability_matrix_version: z.string(),
+  capabilities: z.record(z.string(), z.boolean()),
   request_id: z.string().nullable().optional(),
 });
 

@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_workspace_read
 from app.db.models import User
 from app.db.session import get_db
 from app.domain.errors import IdentityError, ProblemSpecNotFoundError, ProjectNotFoundError
@@ -24,6 +24,9 @@ from app.domain.workspace_identity import (
 from app.services import problem_spec_service, project_service, workspace_service
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
+scoped_router = APIRouter(
+    prefix="/workspaces", tags=["workspaces"], dependencies=[Depends(require_workspace_read)]
+)
 
 
 def _identity_http(exc: IdentityError) -> HTTPException:
@@ -64,7 +67,7 @@ def create_business_workspace_endpoint(
     return workspace_service.workspace_to_read(db, workspace)
 
 
-@router.post("/{workspace_id}/members", response_model=WorkspaceMembershipRead)
+@scoped_router.post("/{workspace_id}/members", response_model=WorkspaceMembershipRead)
 def add_workspace_member_endpoint(
     workspace_id: UUID,
     payload: WorkspaceMemberCreateRequest,
@@ -88,7 +91,7 @@ def add_workspace_member_endpoint(
     return WorkspaceMembershipRead.model_validate(membership)
 
 
-@router.get("/{workspace_id}/projects", response_model=list[ProjectRead])
+@scoped_router.get("/{workspace_id}/projects", response_model=list[ProjectRead])
 def list_projects_endpoint(
     workspace_id: UUID,
     user: User = Depends(get_current_user),
@@ -101,7 +104,7 @@ def list_projects_endpoint(
     return [ProjectRead.model_validate(row) for row in projects]
 
 
-@router.post("/{workspace_id}/projects", response_model=ProjectRead)
+@scoped_router.post("/{workspace_id}/projects", response_model=ProjectRead)
 def create_project_endpoint(
     workspace_id: UUID,
     payload: ProjectCreateRequest,
@@ -124,7 +127,7 @@ def create_project_endpoint(
     return ProjectRead.model_validate(project)
 
 
-@router.get("/{workspace_id}/projects/{project_id}", response_model=ProjectRead)
+@scoped_router.get("/{workspace_id}/projects/{project_id}", response_model=ProjectRead)
 def get_project_endpoint(
     workspace_id: UUID,
     project_id: UUID,
@@ -142,7 +145,7 @@ def get_project_endpoint(
     return ProjectRead.model_validate(project)
 
 
-@router.get(
+@scoped_router.get(
     "/{workspace_id}/projects/{project_id}/problem-specs",
     response_model=list[ProblemSpecRead],
 )
@@ -163,7 +166,7 @@ def list_problem_specs_endpoint(
     return [ProblemSpecRead.model_validate(row) for row in specs]
 
 
-@router.post(
+@scoped_router.post(
     "/{workspace_id}/projects/{project_id}/problem-specs",
     response_model=ProblemSpecRead,
 )
@@ -200,7 +203,7 @@ def create_problem_spec_endpoint(
     return ProblemSpecRead.model_validate(spec)
 
 
-@router.get(
+@scoped_router.get(
     "/{workspace_id}/projects/{project_id}/problem-specs/{spec_id}",
     response_model=ProblemSpecRead,
 )

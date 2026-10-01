@@ -1,5 +1,9 @@
 # Scope 7 execution prompts — data-integration plane and connector pack
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start Plan 7.1 after Scope 0. Plans 7.2–7.4 may join the early Core ML MVP slice
 after S1-P00H and the required machine-identity/secret foundations; public API
 packaging still requires Scope 5 and agent integration requires Scope 2. Apply
@@ -21,6 +25,11 @@ completion by itself.
 Agent access is only through versioned DCLab ToolRunner/application-service
 adapters. LangGraph never receives connector credentials or invokes provider
 SDKs directly, and connectors do not host their own agent loop.
+Deep Investigation/OpenAI Agents/NOOA likewise receive no connector SDK, engine
+checkpoint, source credential or arbitrary discovery/query surface. They may
+read only bounded DCLab connector/sync/dataset projections through an allowed
+tool. Jev cannot select credentials, source resources, schema policy or whether
+a quarantined dataset is published.
 Published source/dataset versions appear as canonical project lifecycle nodes;
 connector run graphs and cursors never become a competing lifecycle authority.
 MLflow is an internal Plan 3.0 tracking adapter, not a Scope 7 inbound data

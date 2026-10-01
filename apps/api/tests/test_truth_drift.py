@@ -47,10 +47,12 @@ def test_drift_checks_pass_on_current_tree():
     assert failed == []
 
 
-def test_alembic_parser_matches_one_head_0059():
+def test_alembic_parser_matches_canonical_generated_head():
     records = parse_alembic_revisions()
-    assert len(records) == 59
-    report = check_alembic_graph(records, expected_head="0059_auth_session_constraints")
+    baseline = json.loads(Path("contracts/truth_baseline.json").read_text(encoding="utf-8"))
+    assert len(records) == baseline["alembic_revision_count"]
+    assert len(baseline["alembic_heads"]) == 1
+    report = check_alembic_graph(records, expected_head=baseline["alembic_heads"][0])
     assert report.ok
 
 
@@ -325,6 +327,34 @@ def test_current_doc_with_wrong_head_is_contradiction(tmp_path: Path):
     )
     assert not report.ok
     assert any("0027_repair_legacy_tenant_lineage" in item for item in report.problems)
+
+
+def test_current_evidence_may_name_dated_previous_head(tmp_path: Path):
+    evidence = tmp_path / "evidence.md"
+    evidence.write_text(
+        "**Status:** CURRENT\n"
+        "**Database head at this gate:** `0059_auth_session_constraints`\n",
+        encoding="utf-8",
+    )
+    truth = tmp_path / "current.md"
+    truth.write_text("**Status:** CURRENT\n0060_dataset_policy_bootstrap\n", encoding="utf-8")
+    ledger = tmp_path / "ledger.md"
+    ledger.write_text(
+        "S0_P01A_CURRENT_TRUTH.md HISTORICAL truth_baseline.json\n",
+        encoding="utf-8",
+    )
+    hist = tmp_path / "old.md"
+    hist.write_text("> **Status: HISTORICAL.**\n", encoding="utf-8")
+    report = check_current_status_docs(
+        repo_root=tmp_path,
+        expected_head="0060_dataset_policy_bootstrap",
+        historical_files=["old.md"],
+        current_truth=truth,
+        ledger=ledger,
+        index=ledger,
+        current_scan_files=["evidence.md"],
+    )
+    assert report.ok
 
 
 def test_current_indexes_can_delegate_head_to_canonical_artifact(tmp_path: Path):

@@ -15,6 +15,10 @@ infrastructure/ML/agent plans. They do not rename or bypass existing scope gates
 `RT-*` IDs identify this proposed breakdown, not replacement S0–S10 evidence IDs.
 Execute one prompt at a time; inspect first, verify or repair existing work, and do
 not create duplicate owners. Each plan contains four to eight prompts.
+Each RT prompt also inherits the plan outcome and mandatory execution card in
+[the remaining-scope execution map](prompts/REMAINING_SCOPE_EXECUTION_MAP.md);
+resolve concrete files, migrations, APIs, tests, provider behavior and rollback
+against the live checkout before editing.
 
 ## Common preamble — prepend to every selected prompt
 

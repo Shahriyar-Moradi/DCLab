@@ -10,6 +10,7 @@ import { UploadZone } from "@/app/components/ui/UploadZone";
 import { filterByText } from "@/app/components/ui/localCollection";
 import { useCreateLabWorkbook, useLabDatasets, useSession, useUploadLabDataset } from "@/lib/application";
 import { ApiError } from "@/lib/infrastructure";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -22,7 +23,7 @@ export default function LabDatasetsPage() {
   const [progress, setProgress] = useState(0);
   const [queryText, setQueryText] = useState("");
   const { user } = useSession();
-  const canWrite = user?.role === "dclab_admin";
+  const canWrite = hasCapability(user, CAPABILITIES.platformWrite);
 
   function send(file: File) {
     if (!canWrite) return;

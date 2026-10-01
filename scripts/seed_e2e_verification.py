@@ -1,4 +1,4 @@
-"""Seed synthetic identities and tenants for the browser verification suite.
+"""Seed synthetic identities, tenants and isolated insights for browser verification.
 
 This script is intentionally limited to databases whose name contains
 ``verify`` or ``e2e``. It never reads or prints provider credentials.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from alembic import command
@@ -19,10 +20,13 @@ from app.config import get_settings
 from app.db.models import (
     BusinessDomain,
     BusinessProfile,
+    SimulationRun,
     User,
     UserRole,
     Workspace,
     WorkspaceCapability,
+    WorkspaceMembership,
+    WorkspaceRole,
 )
 from app.db.session import get_session_factory
 from app.services.auth_service import create_user
@@ -40,6 +44,7 @@ ACCOUNTS = (
         "business-a",
     ),
     ("client-user@verification.invalid", UserRole.CLIENT_USER, "business-a"),
+    ("multi-workspace@verification.invalid", UserRole.WORKSPACE_ADMIN, "business-a"),
 )
 
 
@@ -91,6 +96,57 @@ def _workspace(db, slug: str, name: str) -> Workspace:
         )
         db.flush()
     return row
+
+
+def _seed_isolated_insights(db, workspaces: dict[str, Workspace]) -> None:
+    """Use tiny synthetic rows so the browser proves real BFF tenant filtering."""
+    for slug, subject in (
+        ("business-a", "S0P04D-ALPHA"),
+        ("business-b", "S0P04D-BETA"),
+    ):
+        payload = {
+            "use_case": "churn",
+            "model_version": "e2e-synthetic-v1",
+            "policy_version": "e2e-synthetic-v1",
+            "fusion": "synthetic",
+            "heroes": [{
+                "external_id": subject,
+                "agreement": 0.8,
+                "action_key": "email",
+                "expected_value": 100.0,
+                "incremental_value": 10.0,
+                "features": {"email_engagement": 0.2},
+            }],
+            "sample_decisions": [],
+        }
+        db.add(SimulationRun(
+            workspace_id=workspaces[slug].id,
+            use_case="churn",
+            model_version=payload["model_version"],
+            policy_version=payload["policy_version"],
+            fusion=payload["fusion"],
+            payload=payload,
+            created_at=datetime(2026, 9, 1, tzinfo=UTC),
+        ))
+
+    # The same historical shape has no proven owner; it must never surface.
+    orphan_payload = {
+        "use_case": "churn",
+        "model_version": "e2e-archive-v1",
+        "policy_version": "e2e-archive-v1",
+        "fusion": "synthetic",
+        "heroes": [{"external_id": "S0P04D-ARCHIVED"}],
+        "sample_decisions": [],
+    }
+    db.add(SimulationRun(
+        workspace_id=None,
+        use_case="churn",
+        model_version=orphan_payload["model_version"],
+        policy_version=orphan_payload["policy_version"],
+        fusion=orphan_payload["fusion"],
+        payload=orphan_payload,
+        created_at=datetime(2026, 9, 2, tzinfo=UTC),
+    ))
 
 
 def main() -> int:
@@ -165,6 +221,15 @@ def main() -> int:
                     workspace_id=workspace_id,
                 )
             )
+            if email == "multi-workspace@verification.invalid":
+                db.add(
+                    WorkspaceMembership(
+                        workspace_id=workspaces["business-b"].id,
+                        user_id=users[-1].id,
+                        role=WorkspaceRole.WORKSPACE_ADMIN.value,
+                    )
+                )
+        _seed_isolated_insights(db, workspaces)
         db.commit()
         print(
             json.dumps(

@@ -12,6 +12,7 @@ import { apiGet } from "@/lib/infrastructure";
 import { LabDatasetSchema } from "@/lib/domain";
 import { useLabUseCasePlan, useSession, useTrainLabUseCase } from "@/lib/application";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -36,7 +37,7 @@ export default function DatasetDetailPage() {
   const plan = useLabUseCasePlan(datasetId);
   const train = useTrainLabUseCase(datasetId);
   const { user } = useSession();
-  const canWrite = user?.role === "dclab_admin";
+  const canWrite = hasCapability(user, CAPABILITIES.platformWrite);
 
   if (dataset.isPending) return <Skeleton className="h-64" />;
   if (dataset.isError || !dataset.data) {

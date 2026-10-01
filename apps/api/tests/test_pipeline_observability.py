@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -34,6 +35,8 @@ from app.services.observability_service import (
     sanitize_observability_payload,
 )
 from app.services.pipeline_audit_service import request_pipeline_verification
+from app.services.audience_projection import PUBLIC_FAILURE
+from dclab_client.types import EventPage as SdkEventPage
 
 
 def _classification_frame(n: int = 120) -> pd.DataFrame:
@@ -460,7 +463,21 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
             "X-Workspace-Id": str(other_workspace.id),
         },
     )
-    assert foreign.status_code == 404
+    assert foreign.status_code == 403  # capability denial does not reveal record existence
+    db_session.add(WorkspaceCapability(
+        workspace_id=other_workspace.id,
+        capability="pipeline_monitor",
+        enabled=True,
+        configuration={},
+    ))
+    db_session.commit()
+    assert auth_client.get(
+        f"/business/observatory/pipeline-runs/{pipeline.id}/summary",
+        headers={
+            "Authorization": f"Bearer {create_access_token(other_user)}",
+            "X-Workspace-Id": str(other_workspace.id),
+        },
+    ).status_code == 404
 
 
 def test_admin_pipeline_events_return_ordered_and_incremental_history(
@@ -496,6 +513,87 @@ def test_admin_pipeline_events_return_ordered_and_incremental_history(
     assert [row["sequence"] for row in incremental.json()] == [
         sequence for sequence in persisted_sequences if sequence > after_sequence
     ]
+
+
+def test_legacy_event_projection_and_audience_lookup_contract(
+    auth_client, admin_client, db_session, monkeypatch
+):
+    _upload, workflow_run, pipeline = _post_and_run(
+        auth_client, db_session, monkeypatch
+    )
+    last_sequence = db_session.scalar(
+        select(MlRunEvent.sequence)
+        .where(MlRunEvent.experiment_id == pipeline.id)
+        .order_by(MlRunEvent.sequence.desc())
+        .limit(1)
+    )
+    # Simulate a legacy persisted row: write-time sanitizers cannot repair it.
+    raw_payload = {
+        "metric": 0.43,
+        "handler_key": "internal.run",
+        "storage_key": "private/other-tenant/model.pkl",
+        "system_prompt": "secret prompt",
+        "provider_body": {"secret": "secret response"},
+        "message": "Traceback (most recent call last): /app/worker.py",
+        "reason": "forced candidate failure with provider internals",
+    }
+    legacy = MlRunEvent(
+        workspace_id=pipeline.workspace_id,
+        workflow_run_id=workflow_run.id,
+        experiment_id=pipeline.id,
+        sequence=last_sequence + 1,
+        stage="terminal",
+        event_type="legacy_diagnostic",
+        status="failed",
+        timestamp=datetime.now(UTC),
+        payload=raw_payload,
+    )
+    db_session.add(legacy)
+    db_session.commit()
+
+    admin_path = f"/admin/observatory/pipeline-runs/{pipeline.id}/events"
+    admin = admin_client.get(admin_path, params={"after_sequence": last_sequence})
+    assert admin.status_code == 200, admin.text
+    assert admin.json()[0]["payload"] == {
+        "metric": 0.43,
+        "message": "[REDACTED]",
+        "reason": PUBLIC_FAILURE,
+    }
+    assert admin_client.get(
+        admin_path,
+        params={"workspace_id": str(uuid4()), "after_sequence": last_sequence},
+    ).status_code == 404
+
+    developer = create_user(
+        db_session,
+        email=f"projection-developer-{uuid4().hex}@test.invalid",
+        password="test-password",
+        role=UserRole.DCLAB_DEVELOPER,
+    )
+    db_session.commit()
+    developer_response = auth_client.get(
+        admin_path,
+        params={"after_sequence": last_sequence},
+        headers={"Authorization": f"Bearer {create_access_token(developer)}"},
+    )
+    assert developer_response.status_code == 200, developer_response.text
+    assert developer_response.json()[0]["payload"] == admin.json()[0]["payload"]
+
+    client = auth_client.get(
+        f"/v1/model-builds/{pipeline.id}/events",
+        params={"cursor": str(last_sequence)},
+    )
+    assert client.status_code == 200, client.text
+    sdk_page = SdkEventPage.model_validate(client.json())
+    assert sdk_page.items[0].payload == admin.json()[0]["payload"]
+    artifact_metadata = auth_client.get(f"/v1/model-builds/{pipeline.id}/artifacts")
+    assert artifact_metadata.status_code == 200, artifact_metadata.text
+    assert all(item["object_key"] == "" for item in artifact_metadata.json())
+    assert auth_client.get(
+        f"/business/observatory/pipeline-runs/{pipeline.id}/events"
+    ).status_code == 403
+    db_session.refresh(legacy)
+    assert legacy.payload == raw_payload
 
 
 def test_failed_candidate_is_emitted_without_failing_pipeline(

@@ -10,6 +10,7 @@ import re
 
 import pytest
 
+from app.db.models import DEFAULT_WORKSPACE_ID
 from app.main import app
 
 METHODS_WITH_BODY = {"POST", "PUT", "PATCH"}
@@ -123,7 +124,11 @@ def test_admin_token_is_not_blocked_by_the_role_guard(client, admin_token):
 
 def test_client_token_reaches_the_client_tree(client, client_token):
     response = client.get(
-        "/app/opportunities", headers={"Authorization": f"Bearer {client_token}"}
+        "/app/opportunities",
+        headers={
+            "Authorization": f"Bearer {client_token}",
+            "X-Workspace-Id": str(DEFAULT_WORKSPACE_ID),
+        },
     )
     assert response.status_code == 200
 
@@ -182,7 +187,13 @@ def test_demo_staff_and_customer_have_separate_access(client, db_session):
         == 200
     )
     assert (
-        client.get("/app/opportunities", headers={"Authorization": f"Bearer {customer_token}"}).status_code
+        client.get(
+            "/app/opportunities",
+            headers={
+                "Authorization": f"Bearer {customer_token}",
+                "X-Workspace-Id": str(DEFAULT_WORKSPACE_ID),
+            },
+        ).status_code
         == 200
     )
 
@@ -219,9 +230,14 @@ def test_demo_seed_covers_platform_business_and_personal_roles(client, db_sessio
         assert response.status_code == 200, login["email"]
         assert response.json()["user"]["role"] == login["role"]
         token = response.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-Workspace-Id": response.json()["user"]["active_workspace_id"],
+        }
         admin_status = 200 if login["email"] in platform_emails else 403
-        business_status = 403 if login["email"] == client_email else 200
+        business_status = (
+            403 if login["email"] in {client_email, "personal@dclab.io"} else 200
+        )
         assert client.get("/admin/experiments", headers=headers).status_code == admin_status
         assert client.get("/app/opportunities", headers=headers).status_code == 200
         assert client.get("/business/workspaces", headers=headers).status_code == business_status

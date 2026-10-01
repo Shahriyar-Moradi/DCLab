@@ -71,6 +71,18 @@ from app.domain.execution_requests import (
 )
 from app.domain.lab_run_stages import CK_CLIENT_LAB_UPLOADS_CLIENT_STATUS, NEEDS_INPUT
 from app.domain.privacy_audit import (
+    CK_DATASET_COLUMNS_CLASSIFICATION_CONFIDENCE,
+    CK_DATASET_COLUMNS_POLICY_SCHEMA_VERSION,
+    CK_DATASET_COLUMNS_RESIDENCY_CLASS,
+    CK_DATASET_COLUMNS_RETENTION_CLASS,
+    CK_DATASET_POLICY_CLASSIFICATION_SOURCE,
+    CK_DATASET_POLICY_CONFIDENCE,
+    CK_DATASET_POLICY_LLM_EXPOSURE,
+    CK_DATASET_POLICY_RESIDENCY_CLASS,
+    CK_DATASET_POLICY_RETENTION_CLASS,
+    CK_DATASET_POLICY_REVISION_POSITIVE,
+    CK_DATASET_POLICY_SCHEMA_VERSION,
+    CK_DATASET_POLICY_SENSITIVITY,
     CK_DATA_ACCESS_EVENTS_ACTOR,
     CK_DATA_ACCESS_EVENTS_COLUMN_BOUNDED,
     CK_DATA_ACCESS_EVENTS_COLUMN_NO_ROWS,
@@ -2099,7 +2111,22 @@ class IngestionRun(Base):
             ondelete="SET NULL (data_access_id)",
             use_alter=True,
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "artifact_id"],
+            ["artifacts.workspace_id", "artifacts.id"],
+            name="fk_ingestion_runs_workspace_artifact",
+        ),
         CheckConstraint(CK_INGESTION_RUNS_STATUS, name="ck_ingestion_runs_status_valid"),
+        CheckConstraint(
+            "publication_state IN ('received', 'quarantined', 'scanned', 'classified', 'publishable', 'published', 'rejected', 'expired')",
+            name="ck_ingestion_runs_publication_state",
+        ),
+        CheckConstraint("publication_version >= 0", name="ck_ingestion_runs_publication_version"),
+        CheckConstraint(
+            "publication_digest IS NULL OR publication_digest ~ '^[0-9a-f]{64}$'",
+            name="ck_ingestion_runs_publication_digest",
+        ),
+        UniqueConstraint("artifact_id", name="uq_ingestion_runs_artifact_id"),
         Index("ix_ingestion_runs_workspace_id", "workspace_id"),
         Index("ix_ingestion_runs_project_id", "project_id"),
         Index("ix_ingestion_runs_data_source_id", "data_source_id"),
@@ -2127,6 +2154,16 @@ class IngestionRun(Base):
         ForeignKey("execution_requests.id", ondelete="SET NULL"),
         nullable=True,
     )
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("artifacts.id"), nullable=True
+    )
+    publication_state: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="received", server_default="received"
+    )
+    publication_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    publication_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="queued", server_default="queued"
     )
@@ -2172,6 +2209,42 @@ class IngestionRun(Base):
         back_populates="ingestion_run",
         foreign_keys="DataAccessEvent.ingestion_run_id",
     )
+
+
+class IngestionPublicationEvent(Base):
+    """Append-only evidence for a dataset object's publication state."""
+
+    __tablename__ = "ingestion_publication_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "ingestion_run_id"],
+            ["ingestion_runs.workspace_id", "ingestion_runs.id"],
+            name="fk_ingestion_publication_events_workspace_run",
+        ),
+        UniqueConstraint("ingestion_run_id", "version", name="uq_ingestion_publication_events_run_version"),
+        CheckConstraint("version > 0", name="ck_ingestion_publication_events_version"),
+        CheckConstraint("actor_type IN ('user', 'system', 'operator')", name="ck_ingestion_publication_events_actor"),
+        CheckConstraint(
+            "(actor_type = 'system' AND actor_user_id IS NULL) OR (actor_type IN ('user', 'operator') AND actor_user_id IS NOT NULL)",
+            name="ck_ingestion_publication_events_actor_identity",
+        ),
+        CheckConstraint("policy_schema_version > 0", name="ck_ingestion_publication_events_policy_version"),
+        CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_ingestion_publication_events_digest"),
+        Index("ix_ingestion_publication_events_workspace_run", "workspace_id", "ingestion_run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False)
+    ingestion_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ingestion_runs.id"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class DataAccessEvent(Base):
@@ -2535,6 +2608,22 @@ class DatasetColumn(Base):
             CK_DATASET_COLUMNS_LLM_EXPOSURE,
             name="ck_dataset_columns_llm_exposure_policy",
         ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_POLICY_SCHEMA_VERSION,
+            name="ck_dataset_columns_policy_schema_version",
+        ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_CLASSIFICATION_CONFIDENCE,
+            name="ck_dataset_columns_classification_confidence",
+        ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_RETENTION_CLASS,
+            name="ck_dataset_columns_retention_class",
+        ),
+        CheckConstraint(
+            CK_DATASET_COLUMNS_RESIDENCY_CLASS,
+            name="ck_dataset_columns_residency_class",
+        ),
         Index("ix_dataset_columns_dataset_id", "dataset_id"),
         Index(
             "ix_dataset_columns_workspace_sensitivity_class",
@@ -2578,6 +2667,10 @@ class DatasetColumn(Base):
     classification_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model_use_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
     llm_exposure_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    retention_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    residency_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    policy_schema_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -2601,6 +2694,51 @@ class DatasetColumn(Base):
     feature_lineage: Mapped[list["FeatureLineage"]] = relationship(
         back_populates="source_dataset_column",
         foreign_keys="FeatureLineage.source_dataset_column_id",
+    )
+
+
+class DatasetPolicyRevision(Base):
+    """Append-only policy default for an immutable physical DatasetVersion."""
+
+    __tablename__ = "dataset_policy_revisions"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_dataset_policy_revisions_workspace_id"),
+        UniqueConstraint("dataset_id", "revision", name="uq_dataset_policy_revisions_dataset_revision"),
+        ForeignKeyConstraint(
+            ["workspace_id", "dataset_id"],
+            ["datasets.workspace_id", "datasets.id"],
+            name="fk_dataset_policy_revisions_workspace_dataset",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(CK_DATASET_POLICY_REVISION_POSITIVE, name="ck_dataset_policy_revisions_revision"),
+        CheckConstraint(CK_DATASET_POLICY_SCHEMA_VERSION, name="ck_dataset_policy_revisions_schema_version"),
+        CheckConstraint(CK_DATASET_POLICY_CONFIDENCE, name="ck_dataset_policy_revisions_confidence"),
+        CheckConstraint(CK_DATASET_POLICY_SENSITIVITY, name="ck_dataset_policy_revisions_sensitivity"),
+        CheckConstraint(CK_DATASET_POLICY_LLM_EXPOSURE, name="ck_dataset_policy_revisions_llm_exposure"),
+        CheckConstraint(CK_DATASET_POLICY_RETENTION_CLASS, name="ck_dataset_policy_revisions_retention"),
+        CheckConstraint(CK_DATASET_POLICY_RESIDENCY_CLASS, name="ck_dataset_policy_revisions_residency"),
+        CheckConstraint(CK_DATASET_POLICY_CLASSIFICATION_SOURCE, name="ck_dataset_policy_revisions_source"),
+        Index("ix_dataset_policy_revisions_workspace_dataset_revision", "workspace_id", "dataset_id", desc("revision")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False
+    )
+    dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    policy_schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    sensitivity_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    llm_exposure_policy: Mapped[str] = mapped_column(String(32), nullable=False)
+    retention_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    residency_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    classification_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    classification_confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

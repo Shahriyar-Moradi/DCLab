@@ -13,8 +13,10 @@ from app.domain.admin_client_uploads import (
     AdminClientUploadDetail,
     AdminClientUploadSummary,
     AdminLabDecisionRecord,
+    AdminMlRun,
 )
 from app.services.admin_ml_run import build_ml_run, predictions_csv_text
+from app.services.audience_projection import public_diagnostic
 from app.services.ml_run_docx import render_ml_run_report_docx
 from app.services.pipeline_audit_service import (
     RunNotFoundError,
@@ -48,6 +50,8 @@ def get_client_upload(db: Session, upload_id: UUID) -> AdminClientUploadDetail |
         dataset = db.get(Dataset, experiment.dataset_id)
     elif row.dataset_id:
         dataset = db.get(Dataset, row.dataset_id)
+    ml_run = build_ml_run(row, experiment, dataset)
+    ml_run = AdminMlRun.model_validate(public_diagnostic(ml_run.model_dump()))
     return AdminClientUploadDetail(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -60,11 +64,17 @@ def get_client_upload(db: Session, upload_id: UUID) -> AdminClientUploadDetail |
         experiment_id=row.experiment_id,
         workflow_run_id=experiment.workflow_run_id if experiment is not None else None,
         created_at=row.created_at,
-        stored_path=row.stored_path,
+        stored_path="",
         fields_noticed=list(row.fields_noticed or []),
-        pipeline_log=row.pipeline_log,
-        decision_records=[AdminLabDecisionRecord.model_validate(item) for item in records],
-        ml_run=build_ml_run(row, experiment, dataset),
+        pipeline_log=public_diagnostic(row.pipeline_log),
+        decision_records=[
+            AdminLabDecisionRecord.model_validate(item).model_copy(update={
+                "evidence_snapshot": public_diagnostic(item.evidence_snapshot),
+                "raw_llm_output": None,
+            })
+            for item in records
+        ],
+        ml_run=ml_run,
     )
 
 

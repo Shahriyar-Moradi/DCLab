@@ -13,7 +13,9 @@ from typing import Iterator
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings, publication_enforced
 from app.db.models import Artifact, ClientLabUpload, Dataset
+from app.domain.errors import IdentityError
 from app.storage._hashing import sha256_file
 from app.storage.base import ObjectStorage
 from app.storage.exceptions import DigestMismatchError, ObjectNotFoundError, ObjectStorageError
@@ -43,6 +45,9 @@ def materialize_dataset(
 ) -> Iterator[Path]:
     """Yield a local path for `dataset` and delete any remote temp copy on exit."""
 
+    if publication_enforced(get_settings()) and dataset.artifact_id is None:
+        raise IdentityError("dataset is not published", status_code=409)
+
     row = artifact
     if row is None and dataset.artifact_id is not None:
         if db is None:
@@ -52,6 +57,12 @@ def materialize_dataset(
             raise ObjectNotFoundError(str(dataset.artifact_id))
 
     if row is not None:
+        if publication_enforced(get_settings()):
+            if db is None:
+                raise ObjectStorageError("publication check requires a database session")
+            from app.services.ingestion_run_service import require_published_artifact
+
+            require_published_artifact(db, row)
         backend = storage_for_artifact(row, storage=storage)
         expected = row.content_digest or dataset.content_digest
         filename = Path(row.object_key).name
@@ -114,6 +125,10 @@ def materialize_client_upload(
     if upload.artifact_id is not None:
         artifact = db.get(Artifact, upload.artifact_id)
         if artifact is not None:
+            if publication_enforced(get_settings()):
+                from app.services.ingestion_run_service import require_published_artifact
+
+                require_published_artifact(db, artifact)
             backend = storage_for_artifact(artifact, storage=storage)
             with materialize_object(
                 backend,
@@ -126,6 +141,8 @@ def materialize_client_upload(
             return
 
     legacy = Path(upload.stored_path)
+    if publication_enforced(get_settings()):
+        raise IdentityError("dataset is not published", status_code=409)
     if legacy.is_file():
         yield legacy
         return

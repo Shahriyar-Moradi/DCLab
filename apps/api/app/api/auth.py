@@ -55,6 +55,7 @@ from app.services.session_service import (
 )
 from app.services.authorization_service import AuthorizationError
 from app.services.workspace_selection_service import persist_session_workspace, principal_read
+from app.services.workspace_access_metrics import record_workspace_access_event
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -92,6 +93,8 @@ class UserRead(BaseModel):
     email_verified_at: datetime | None = None
     active_workspace_id: UUID | None = None
     workspaces: list[PrincipalWorkspaceRead] = Field(default_factory=list)
+    capability_matrix_version: str
+    capabilities: dict[str, bool] = Field(default_factory=dict)
     request_id: str | None = None
 
 
@@ -353,8 +356,18 @@ def select_workspace(
     try:
         persist_session_workspace(db, row, user, payload.workspace_id)
     except AuthorizationError as exc:
+        record_workspace_access_event(
+            request, "denial", "selection_denied", actor_id=user.id
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     db.commit()
+    record_workspace_access_event(
+        request,
+        "selection",
+        "selected" if payload.workspace_id is not None else "cleared",
+        actor_id=user.id,
+        workspace_id=payload.workspace_id,
+    )
     request.state.auth_session = row
     return _to_read(db, user, request)
 

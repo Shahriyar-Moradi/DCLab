@@ -19,6 +19,7 @@ from app.db.models import (
 from app.services.auth_service import create_access_token, create_user
 from app.services.project_service import create_project
 from app.services.workspace_service import add_workspace_member, create_business_workspace
+from app.services.workspace_capability_service import invalidate_capability_cache
 
 DETAIL_QUERY_BUDGET = 50
 LIST_QUERY_BUDGET = 20
@@ -54,6 +55,8 @@ class _QueryCounter:
 
 def _count_get(db_session, http, path, headers=None) -> tuple[int, object]:
     db_session.expire_all()
+    # Compare cold authority-resolution paths on both sides of the mutation.
+    invalidate_capability_cache(db_session)
     counter = _QueryCounter(db_session.get_bind())
     try:
         response = http.get(path, headers=headers) if headers else http.get(path)
@@ -127,7 +130,7 @@ def test_admin_sees_all_tenants_developer_is_read_only_and_lists_stay_bounded(
     assert dev_mutate_explorer.status_code == 405
     dev_mutate_project = client.post(
         f"/workspaces/{workspace_a.id}/projects",
-        headers=dev_headers,
+        headers=_headers(developer, workspace_a.id),
         json={"name": "Should Not Create"},
     )
     assert dev_mutate_project.status_code == 403
@@ -148,7 +151,7 @@ def test_admin_sees_all_tenants_developer_is_read_only_and_lists_stay_bounded(
         f"/workspaces/{workspace_b.id}/explorer/projects/{project_b.id}",
         headers=_headers(owner_a, workspace_b.id),
     )
-    assert foreign_workspace.status_code == 404
+    assert foreign_workspace.status_code == 403  # Unauthorized selector; resource ids remain 404.
 
     viewer_headers = _headers(viewer, workspace_a.id)
     viewer_read = client.get(
@@ -321,7 +324,7 @@ def test_pipeline_run_detail_roles_artifacts_and_detail_query_budget(
     assert developer_read.status_code == 200, developer_read.text
     developer_write = client.post(
         f"/workspaces/{workspace_id}/projects",
-        headers=_headers(developer),
+        headers=_headers(developer, workspace_id),
         json={"name": "Developer Write"},
     )
     assert developer_write.status_code == 403
@@ -335,7 +338,7 @@ def test_pipeline_run_detail_roles_artifacts_and_detail_query_budget(
         f"/workspaces/{workspace_id}/explorer/pipeline-runs/{experiment.id}",
         headers=_headers(other_owner, workspace_id),
     )
-    assert cross_workspace.status_code == 404
+    assert cross_workspace.status_code == 403  # Header names a workspace without membership.
 
     artifact_id = body["artifacts"][0]["id"]
     signed = auth_client.get(

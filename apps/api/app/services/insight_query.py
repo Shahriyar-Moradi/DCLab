@@ -22,19 +22,25 @@ MAX_INSIGHTS_PER_USE_CASE = 4
 
 
 def latest_runs_by_use_case(db: Session, workspace_id: UUID) -> dict[str, SimulationRun]:
-    latest = (
-        select(SimulationRun.use_case, func.max(SimulationRun.created_at).label("max_created_at"))
+    ranked = (
+        select(
+            SimulationRun.id.label("run_id"),
+            func.row_number()
+            .over(
+                partition_by=SimulationRun.use_case,
+                order_by=(SimulationRun.created_at.desc(), SimulationRun.id.desc()),
+            )
+            .label("position"),
+        )
         .where(SimulationRun.workspace_id == workspace_id)
-        .group_by(SimulationRun.use_case)
         .subquery()
     )
     rows = db.scalars(
         select(SimulationRun).join(
-            latest,
-            (SimulationRun.use_case == latest.c.use_case)
-            & (SimulationRun.created_at == latest.c.max_created_at)
-            & (SimulationRun.workspace_id == workspace_id),
+            ranked,
+            (SimulationRun.id == ranked.c.run_id) & (ranked.c.position == 1),
         )
+        .where(SimulationRun.workspace_id == workspace_id)
     ).all()
     return {row.use_case: row for row in rows}
 

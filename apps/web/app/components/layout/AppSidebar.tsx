@@ -4,7 +4,7 @@ import { BrandLogo } from "@/app/components/brand/BrandLogo";
 import {
   activeNavigationItem,
   defaultProductRoute,
-  navigationForRole,
+  navigationForUser,
   type AppNavigationSection,
 } from "@/app/components/layout/app-navigation";
 import { cn } from "@/lib/cn";
@@ -72,7 +72,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const router = useRouter();
   const { user, loaded, signOut } = useSession();
-  const sections = navigationForRole(user);
+  const sections = navigationForUser(user);
   const active = activeNavigationItem(pathname, user);
   const iconOnly = collapsed && !mobile;
 
@@ -93,7 +93,7 @@ export function AppSidebar({
         <BrandLogo
           product
           compact={iconOnly}
-          href={user ? defaultProductRoute(user.role) : "/app/dashboards"}
+          href={defaultProductRoute(user)}
         />
       </div>
 

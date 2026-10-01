@@ -317,7 +317,7 @@ export const LabExperimentSchema = z.object({
   artifact_dir: z.string().nullable().optional(),
   result: z.unknown().nullable().optional(),
   config: z.unknown(),
-  task_id: z.uuid(),
+  task_id: z.uuid().nullable(),
   dataset_id: z.uuid(),
   task_slug: z.string().nullable().optional(),
   task_name: z.string().nullable().optional(),

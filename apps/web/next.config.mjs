@@ -1,12 +1,16 @@
 /** @type {import('next').NextConfig} */
 
+const isDevelopment = process.env.NODE_ENV === "development";
+
+// React Refresh evaluates development bundles and connects to the HMR socket.
+// Production never receives either exception.
 const ContentSecurityPolicy = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self'",
+  `connect-src 'self'${isDevelopment ? " ws: wss:" : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
   "frame-ancestors 'none'",

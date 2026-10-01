@@ -55,6 +55,8 @@ clients.
 | Typed contracts | Ordinary Pydantic models | PydanticAI is optional only for a no-tool, single-response typed leaf after an ADR; it never owns tools, retries, sessions or checkpoints. |
 | Open-ended investigation | Isolated Deep Investigation worker | Deep Agents runs separately and returns cited proposals; it never nests in or calls the raw graph. |
 | Hosted provider agent runtime | Optional OpenAI Agents adapter | One `AgentRun` selects this runtime instead of LangGraph/Deep Agents; runtimes are never nested. |
+| Typed semantic judgment | Optional TypeSafe Jev adapter behind DCLab `SemanticDecisionPort` | Atomic typed probabilities/confidence are advisory evidence; DCLab owns releases, calibration, thresholds and all authority. |
+| Object-oriented proposal runtime | Optional isolated NVIDIA NOOA worker | One `AgentRun` selects a reviewed agent-class release; generated Python is hostile code and outputs are proposals only. |
 | Model access | DCLab `ModelPort`/LLM gateway | Provider SDK objects and session state remain private adapter details. |
 | Tool execution | DCLab `ToolRunner` and application services | Re-authorize, validate, budget, audit and reconcile every call. |
 | Project memory | Immutable `ProjectDecisionRecord` | Chat, model and framework memory are evidence sources, never canonical memory. |
@@ -74,11 +76,12 @@ Every durable agent run records one code-owned runtime kind and version:
 langgraph              predictable DCLab lifecycle supervision
 deep_investigation     long-horizon cited investigation in a separate worker
 openai_agents          explicitly allowlisted hosted/sandbox task
+nooa_proposal          separately isolated object-oriented proposal task
 ```
 
 One run has exactly one loop owner. A LangGraph node cannot start or resume a
-Deep Agents or OpenAI Agents loop. A Deep Agents tool cannot invoke LangGraph or
-OpenAI Agents. An OpenAI required action cannot invoke another agent runtime.
+Deep Agents, OpenAI Agents or NOOA loop. A Deep Agents/NOOA tool cannot invoke
+another runtime. An OpenAI required action cannot invoke another agent runtime.
 Cross-runtime work is a new, separately authorized DCLab request with its own
 run, budget, citations and terminal state.
 
@@ -165,6 +168,26 @@ The adapter is beta-gated with pinned SDK/API versions, deterministic fakes,
 record/replay tests, provider-session reconciliation, retention/deletion,
 independent feature flag and kill switch. Failure or removal must leave the
 authoritative LangGraph and deterministic ML paths healthy.
+
+### 6.1 Optional Jev and NOOA optimizations
+
+Jev is not an agent runtime. It may implement narrow `Choice`, `Score` or `Noul`
+questions through DCLab's semantic-decision service after a purpose-specific
+shadow gate. Store the immutable question/model/data-policy release, bounded
+input digest, answer probabilities, confidence/abstention, latency/cost and
+calibration evidence. Low-confidence, malformed or unavailable responses abstain
+or follow the documented deterministic alternative; they never grant access,
+approve work or replace scientific verification.
+
+NOOA is not installed inside LangGraph, API or notebook-control processes. A
+digest-pinned `worker-nooa` obtains an expiring DCLab run credential, reaches the
+model only through the DCLab gateway and reaches product capabilities only
+through reviewed typed facades. It has no provider/product-storage/cloud/Jupyter
+credential. Its visible agent-class methods and strategy/limit policy are
+versioned; CodeAct-generated Python is isolated as untrusted code. A successful
+run stores a validated cited proposal for human/policy review, not an applied
+change. The complete ownership, schema and release plan is
+[`JEV_NOOA_INTEGRATION_ARCHITECTURE.md`](JEV_NOOA_INTEGRATION_ARCHITECTURE.md).
 
 References reviewed for this decision:
 
@@ -269,8 +292,8 @@ Keep Scope 0–10 IDs and completed evidence. Use this cross-scope MVP order:
 4. complete the deterministic data-scientist golden path;
 5. add MLflow-backed tracking/package metadata and the canonical model build;
 6. release LangGraph specialists in read-only, proposal and audit modes;
-7. release all three Deep Investigation modes and evaluate the OpenAI Agents
-   adapter without nesting runtimes;
+7. release all three Deep Investigation modes and evaluate the OpenAI Agents,
+   Jev and NOOA adapters behind independent gates without nesting runtimes;
 8. add supervised reversible tools and one bounded improvement loop;
 9. release isolated Python and hosted MCP through their security gates;
 10. release model registration, batch prediction, drift investigation and
@@ -293,6 +316,9 @@ The release is not complete until evidence proves:
   overriding deterministic findings;
 - exactly one runtime owns each AgentRun and no cross-runtime invocation exists;
 - the OpenAI adapter can be disabled without affecting core behavior;
+- Jev and NOOA have recorded allow/disable/reject decisions; any enabled purpose
+  is advisory/proposal-only and both can be cleanly disabled without affecting
+  the deterministic or authoritative LangGraph paths;
 - the connector pack publishes immutable DatasetVersions without secrets,
   duplicate/lost rows within documented source semantics, or silent schema
   drift;

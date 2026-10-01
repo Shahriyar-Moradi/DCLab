@@ -1,5 +1,9 @@
 # Scope 10 execution prompts — measured scale and higher autonomy
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start only after production telemetry and outcome evidence. Apply `README.md`
 and `EXECUTION_STANDARD.md`. Scope 10 is conditional: each capability needs a
 measured trigger, ADR, cost/security model, compatibility/rollback and owner.
@@ -12,9 +16,11 @@ internals only behind those contracts. Enterprise and autonomy features use the
 same workspace, policy, approval, evidence and audit boundaries; no premium path
 may weaken tenancy or scientific correctness. Scale the same pinned LangGraph
 runtime and DCLab product/checkpoint boundary; preserve the separate S2-P12
-Deep Investigation and S2-P13 OpenAI Agents adapter boundaries. Measured load is
+Deep Investigation, S2-P13 OpenAI Agents and S2-P14 NOOA adapter boundaries.
+Preserve Jev as an advisory semantic-decision provider behind DCLab policy.
+Measured load is
 not permission to add a second graph engine, cross-runtime invocation or
-framework-owned authorization. The production-MVP specialist roster, three
+framework/provider-owned authorization. The production-MVP specialist roster, three
 investigation modes, isolated Python, hosted MCP and initial connector pack are
 already baseline capabilities; Scope 10 expands them only from measured demand.
 Preserve the Plan 3.0 ML-platform ownership boundary. MLflow remains the MVP

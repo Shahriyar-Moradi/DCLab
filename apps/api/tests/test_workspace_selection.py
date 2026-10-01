@@ -338,3 +338,71 @@ def test_web_client_propagates_workspace_header_and_sdk_does_not_use_sessions():
     assert "dclab_session" not in sdk_src
     assert "/auth/workspace" not in sdk_src
     assert "X-Workspace-Id" in sdk_src
+
+
+def test_bearer_tenant_requests_require_one_valid_explicit_workspace(client, db_session):
+    owner, first, second = _two_workspaces(db_session, home=False)
+    bearer = {"Authorization": f"Bearer {create_access_token(owner)}"}
+    missing = client.get("/v1/projects", headers=bearer)
+    assert missing.status_code == 400
+    assert "X-Workspace-Id" in missing.json()["detail"]
+    upload_missing = client.post(
+        "/app/opportunities/upload",
+        headers=bearer,
+        files={"file": ("empty.csv", b"a,b\n1,2\n", "text/csv")},
+    )
+    assert upload_missing.status_code == 400
+    for invalid in ("", "not-a-uuid"):
+        response = client.get(
+            "/v1/projects", headers={**bearer, "X-Workspace-Id": invalid}
+        )
+        assert response.status_code == 400
+    duplicate = client.get(
+        "/v1/projects",
+        headers=[
+            ("Authorization", bearer["Authorization"]),
+            ("X-Workspace-Id", str(first.id)),
+            ("X-Workspace-Id", str(second.id)),
+        ],
+    )
+    assert duplicate.status_code == 400
+    unauthorized = client.get(
+        "/v1/projects", headers={**bearer, "X-Workspace-Id": str(uuid4())}
+    )
+    assert unauthorized.status_code == 403
+    assert client.get(
+        "/v1/projects", headers={**bearer, "X-Workspace-Id": str(first.id)}
+    ).status_code == 200
+    assert client.get(
+        "/v1/projects", headers={**bearer, "X-Workspace-Id": str(second.id)}
+    ).status_code == 200
+
+
+def test_one_browser_session_supports_two_tab_headers_and_immediate_revocation(client, db_session):
+    owner, first, second = _two_workspaces(db_session, home=False)
+    alpha = create_project(db_session, actor=owner, workspace_id=first.id, name="Alpha only")
+    beta = create_project(db_session, actor=owner, workspace_id=second.id, name="Beta only")
+    db_session.commit()
+    assert browser_login(client, owner.email, "test-password").status_code == 200
+
+    first_header = {"X-Workspace-Id": str(first.id)}
+    second_header = {"X-Workspace-Id": str(second.id)}
+    first_tab = client.get("/v1/projects", headers=first_header)
+    second_tab = client.get("/v1/projects", headers=second_header)
+    assert {row["id"] for row in first_tab.json()} == {str(alpha.id)}
+    assert {row["id"] for row in second_tab.json()} == {str(beta.id)}
+    conflict = client.get(f"/workspaces/{second.id}/projects", headers=first_header)
+    assert conflict.status_code == 404
+    download_conflict = client.get(
+        f"/workspaces/{second.id}/artifacts/{uuid4()}/download", headers=first_header
+    )
+    assert download_conflict.status_code == 404
+
+    membership = db_session.query(WorkspaceMembership).filter_by(
+        user_id=owner.id, workspace_id=second.id
+    ).one()
+    membership.suspended_at = datetime.now(UTC)
+    db_session.commit()
+    db_session.expire_all()
+    assert client.get("/v1/projects", headers=second_header).status_code == 403
+    assert client.get("/v1/projects", headers=first_header).status_code == 200

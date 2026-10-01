@@ -25,7 +25,10 @@ def bound_timeout(timeout: float) -> float:
 
 
 def _as_id(value: UUID | str) -> str:
-    return str(value)
+    try:
+        return str(UUID(str(value)))
+    except (TypeError, ValueError) as exc:
+        raise DCLabClientError("workspace_id must be a UUID") from exc
 
 
 def _detail_from_response(response: httpx.Response) -> Any:
@@ -80,6 +83,8 @@ class V1Transport:
         idempotency_key: str | None = None,
     ) -> Any:
         url_path = self._v1_path(path)
+        if url_path not in {"/v1/me", "/v1/workspaces"} and self._workspace_id is None:
+            raise DCLabClientError("workspace_id is required for workspace resources")
         headers = self._headers(
             method=method,
             request_id=request_id,

@@ -169,3 +169,71 @@ def test_representative_old_revision_upgrade_to_head_matches_frozen_catalog(
             engine.dispose()
     finally:
         _drop_isolated(admin_engine, database_name)
+
+
+def test_previous_head_dataset_policy_upgrade_preserves_nullable_legacy_fields(
+    monkeypatch,
+):
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="from59"
+    )
+    try:
+        command.upgrade(alembic_config, "0059_auth_session_constraints")
+        command.upgrade(alembic_config, "head")
+        engine = create_engine(database_url)
+        try:
+            _assert_head_catalog(engine, alembic_config)
+            with engine.connect() as connection:
+                nullable = connection.execute(
+                    text(
+                        "SELECT column_name, is_nullable FROM information_schema.columns "
+                        "WHERE table_name = 'dataset_columns' AND column_name IN "
+                        "('sensitivity_class', 'llm_exposure_policy', 'retention_class', "
+                        "'residency_class', 'classification_confidence', 'policy_schema_version')"
+                    )
+                ).all()
+            assert len(nullable) == 6
+            assert all(value == "YES" for _, value in nullable)
+            command.downgrade(alembic_config, "0059_auth_session_constraints")
+            with engine.connect() as connection:
+                assert connection.execute(
+                    text("SELECT to_regclass('public.dataset_policy_revisions')")
+                ).scalar() is None
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)
+
+
+def test_previous_head_ingestion_publication_upgrade_is_additive(monkeypatch):
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="from60"
+    )
+    try:
+        command.upgrade(alembic_config, "0060_dataset_policy_bootstrap")
+        command.upgrade(alembic_config, "head")
+        engine = create_engine(database_url)
+        try:
+            _assert_head_catalog(engine, alembic_config)
+            with engine.connect() as connection:
+                columns = connection.execute(text(
+                    "SELECT column_name, column_default, is_nullable FROM information_schema.columns "
+                    "WHERE table_name='ingestion_runs' AND column_name IN "
+                    "('artifact_id','publication_state','publication_version','publication_digest')"
+                )).all()
+                assert len(columns) == 4
+                assert {name: nullable for name, _, nullable in columns}["artifact_id"] == "YES"
+                assert {name: default for name, default, _ in columns}["publication_state"] == "'received'::character varying"
+            command.downgrade(alembic_config, "0060_dataset_policy_bootstrap")
+            with engine.connect() as connection:
+                assert connection.execute(text(
+                    "SELECT to_regclass('public.ingestion_publication_events')"
+                )).scalar() is None
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)

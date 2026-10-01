@@ -14,12 +14,12 @@ import { useCallback, useState, type ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { user, activeWorkspace } = useSession();
+  const { user, activeWorkspace, activeWorkspaceId, workspaceSwitching } = useSession();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { collapsed, toggle } = useSidebarCollapsed();
   const active = activeNavigationItem(pathname, user);
-  const home = user ? defaultProductRoute(user.role) : "/app/dashboards";
+  const home = defaultProductRoute(user);
   const accountName = user ? displayName(user) : "Account";
   const togglePalette = useCallback(() => setPaletteOpen((open) => !open), []);
   useCommandPaletteShortcut(togglePalette);
@@ -73,8 +73,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </header>
 
-        <main id="main" className="min-w-0">
-          <div className="app-page">{children}</div>
+        <main
+          id="main"
+          key={activeWorkspaceId ?? "no-workspace"}
+          className="min-w-0"
+          aria-busy={workspaceSwitching}
+        >
+          <div className="app-page">
+            {workspaceSwitching ? (
+              <div className="surface-glass rounded-2xl p-8 text-body text-ink-muted" role="status">
+                Switching workspace…
+              </div>
+            ) : children}
+          </div>
         </main>
       </div>
       <AppMobileDrawer open={mobileNavigationOpen} onClose={() => setMobileNavigationOpen(false)} />

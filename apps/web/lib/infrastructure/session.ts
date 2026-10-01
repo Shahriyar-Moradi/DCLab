@@ -29,6 +29,8 @@ export type SessionUser = {
   workspace_id: string | null;
   active_workspace_id: string | null;
   workspaces: SessionWorkspace[];
+  capability_matrix_version: string;
+  capabilities: Record<string, boolean>;
   request_id?: string | null;
 };
 
@@ -66,43 +68,6 @@ export function roleLabel(role: SessionUser["role"]): string {
   return labels[role];
 }
 
-export function isPlatformRole(role: SessionUser["role"]): boolean {
-  return role === "dclab_admin" || role === "dclab_developer";
-}
-
-export function isDevelopmentRole(role: SessionUser["role"]): boolean {
-  return (
-    role === "personal_developer" ||
-    role === "business_admin" ||
-    role === "business_developer" ||
-    role === "workspace_owner" ||
-    role === "workspace_admin" ||
-    role === "ml_engineer" ||
-    role === "viewer" ||
-    role === "dclab_admin" ||
-    role === "dclab_developer"
-  );
-}
-
-export function isBusinessAdministrationRole(role: SessionUser["role"]): boolean {
-  return (
-    role === "business_admin" ||
-    role === "business_developer" ||
-    role === "workspace_owner" ||
-    role === "workspace_admin" ||
-    role === "ml_engineer" ||
-    role === "viewer"
-  );
-}
-
-export function canWriteWorkspaceSession(role: SessionUser["role"]): boolean {
-  return (
-    role !== "dclab_developer" &&
-    role !== "business_developer" &&
-    role !== "viewer"
-  );
-}
-
 export function displayName(user: SessionUser): string {
   return user.full_name?.trim() || user.email;
 }
@@ -123,8 +88,18 @@ export function parseSessionUser(value: unknown): SessionUser | null {
     workspace_id: typeof row.workspace_id === "string" ? row.workspace_id : null,
     active_workspace_id: typeof row.active_workspace_id === "string" ? row.active_workspace_id : null,
     workspaces: parseSessionWorkspaces(row.workspaces),
+    capability_matrix_version:
+      typeof row.capability_matrix_version === "string" ? row.capability_matrix_version : "unknown",
+    capabilities: parseCapabilities(row.capabilities),
     request_id: typeof row.request_id === "string" ? row.request_id : null,
   };
+}
+
+function parseCapabilities(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"),
+  );
 }
 
 function parseSessionWorkspaces(value: unknown): SessionWorkspace[] {

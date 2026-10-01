@@ -1,6 +1,10 @@
 # Scope 4 execution prompts — managed agentic notebook and isolated compute
 
-Start after the authoritative S2-P11F gate; S2-P12/S2-P13 may run in parallel
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
+Start after the authoritative S2-P11F gate; S2-P12/S2-P13/S2-P14 may run in parallel
 and do not block this scope. Any write/build cell also requires Scope 3. Apply
 `README.md` and `EXECUTION_STANDARD.md`. Managed cells call typed DCLab services.
 Python remains disabled until the real isolated runtime passes Plan 4.7.
@@ -21,7 +25,7 @@ large immutable outputs in object storage. Never execute code inside API/worker-
 ML processes. Agent-initiated notebook work enters through DCLab application
 services and the same LangGraph/ToolRunner boundary. The notebook scheduler and
 isolated code runtime are not agent graphs and must not embed PydanticAI or
-another orchestration loop. An OpenAI Agents or Deep Investigation runtime may
+another orchestration loop. An OpenAI Agents, Deep Investigation or allowed NOOA runtime may
 request a separately authorized sandbox task only through the same DCLab
 control-plane contract; no agent framework runs inside the sandbox. Notebook revisions bind canonical lifecycle node and
 ProjectDecisionRecord IDs/versions; they do not duplicate either state.
@@ -36,9 +40,10 @@ inside the ML/data worker; notebook/API/agent processes receive neither DuckDB,
 SQL, paths nor Arrow readers. Python sandboxes do not gain DuckDB or Polars as
 preinstalled capabilities in the MVP.
 The S2-P12 Deep Investigation worker has no model-visible shell. A separately
-approved code-assisted investigation or S2-P13 OpenAI Agents purpose may request
+approved code-assisted investigation, S2-P13 OpenAI Agents purpose or S2-P14
+NOOA proposal runtime may request
 this sandbox only through a versioned, read-input/write-quarantined-output DCLab
-tool with its own run, policy and budget. Deep Agents/OpenAI Agents never become
+tool with its own run, policy and budget. Deep Agents/OpenAI Agents/NOOA never become
 part of the sandbox control plane, and the sandbox never receives an agent
 runtime credential, connector secret or product-database access.
 An interactive Python session owns one isolated sandbox and kernel only for the
@@ -520,4 +525,136 @@ automatically give code execution to an agent runtime; each runtime/purpose/tool
 requires a separate policy release, smaller-or-equal budgets and an independent
 kill switch. Prove the deterministic ML path and managed notebook remain healthy
 when isolated Python is globally disabled.
+```
+
+## Plan 4.8 — NOOA notebook collaborator
+
+**Contract.** Add a NOOA-powered notebook collaborator only when S2-P14H records
+`SHADOW_ALLOWED` for this exact purpose and S4-P07E has released the required
+isolation profile. It reads bounded DCLab notebook/lifecycle/evidence views and
+returns a typed revision proposal. It never connects to Jupyter, executes a cell,
+applies a patch, approves a command or owns notebook state. DCLab review/apply and
+execution services remain authoritative. If NOOA is disabled/rejected, record
+this plan not applicable; Scope 4 remains releasable. Read
+`docs/agentic-program/JEV_NOOA_INTEGRATION_ARCHITECTURE.md` before every prompt.
+
+Use focused test homes `apps/api/tests/test_nooa_notebook_contract.py`,
+`test_nooa_notebook_context.py`, `test_nooa_notebook_proposal_service.py`,
+`test_nooa_notebook_execution_handoff.py`,
+`apps/web/e2e/nooa-notebook-collaboration.spec.ts` and
+`test_nooa_notebook_release_gate.py`; extend existing notebook proposal owners
+instead of duplicating routes, tables or UI.
+
+### S4-P08A — collaborator contract and agent-class release
+
+```text
+Inventory S4-P04 proposal/diff/review/apply contracts, S2-P14 agent release/tool
+facade and RT5 controlled execution work. Define NotebookReviewAgent as an
+immutable S2-P14 agent-class release with exact purpose, base notebook/revision/
+ETag, lifecycle bindings, objective, environment/input digests and typed
+NotebookRevisionProposal output. Allow only registry-valid cell insert/update/
+delete/move operations, bounded code/config/Markdown bodies, expected effect,
+risk and citations; prohibit binary output, SQL, credentials, paths, provider
+locators, execution claims and direct changes to canonical lifecycle state.
+Choose Predict or CodeAct from measured need and inherit smaller-or-equal NOOA
+limits. Add schema/golden-digest, stale-base and unsupported-operation tests plus
+an ADR addendum proving the collaborator is a whole-run worker purpose, not a
+notebook kernel agent. Do not create tables, routes or execute NOOA in this prompt.
+```
+
+### S4-P08B — bounded context and Jev advisory tools
+
+```text
+Implement notebook-specific read methods through the S2-P14 private DCLab facade:
+read_notebook_revision, read_bound_lifecycle, read_cell_result_summary and
+read_authorized_evidence. Return exact IDs/versions/digests, bounded output
+summaries and citation handles; never return Jupyter tokens, kernel messages,
+object paths, signed URLs, database clients, full unrestricted artifacts or
+another user's draft. If S1-P12F allowed a named notebook-review release, expose
+request_semantic_review only for its code-owned questions and treat abstention/
+confidence as advisory. The agent cannot choose question/model/threshold or send
+raw cell outputs outside their data policy. Re-authorize every call and record
+ToolCall/Citation/SemanticDecision lineage. Test output/prompt injection,
+malicious notebook content, oversize/truncation, stale/deleted outputs,
+cross-workspace/resource substitution, revoked membership and operation with Jev
+absent or disabled.
+```
+
+### S4-P08C — proposal persistence, review and apply integration
+
+```text
+Reuse S4-P04 NotebookRevisionProposal persistence and service; add only the
+runtime/agent/semantic-decision/citation references it cannot currently express.
+Do not create a NOOA proposal table. No migration is expected unless the current
+generic proposal lacks an immutable source-run reference; if required, discover
+the live head and add one nullable expand-phase composite tenant/run FK with
+index and compatibility tests. Validate the NOOA result into the same canonical
+patch format, persist it before presentation and mark it proposed/rejected/
+accepted/superseded through existing transitions. Apply rechecks current base
+ETag, membership/capability, policy, input/environment/cell registry releases,
+citations, budgets and exact approval, then creates a new immutable revision.
+Acceptance does not execute it. Test replay/conflict, concurrent human edit,
+stale evidence/policy, rejected/superseded proposal, forged source run,
+cross-tenant lineage and clean rollback with NOOA disabled.
+Reuse the generic notebook proposal transport; if S4-P04 did not already expose
+it, add `GET /v1/notebooks/{notebook_id}/proposals`, `GET .../proposals/{id}`,
+`POST .../proposals/{id}/reviews` and `POST .../proposals/{id}/apply` rather than
+NOOA-specific routes. Review binds decision/comment/proposal digest/base ETag;
+apply requires `If-Match` and idempotency and returns the new immutable revision,
+not an execution. Define 200/201 success and the common 401/403/404/409/413/422/
+429 errors: stale base/digest/idempotency conflict is 409, bounds are 413 and an
+invalid operation/state is 422. Add OpenAPI, HTTP-client and API/service parity
+tests. Keep execution on the existing notebook execution endpoint.
+```
+
+### S4-P08D — controlled execution handoff and recovery
+
+```text
+Connect an accepted NOOA-authored revision to the existing notebook execution
+command only through an explicit user action and current approval policy. The
+command creates the ordinary ExecutionRequest/MlJob/runtime session or attempt;
+the NOOA worker never receives sandbox/Jupyter credentials and never waits on or
+controls the kernel. Bind source agent run/proposal/revision, exact image/input/
+environment and approval/idempotency digests into lineage. Revalidate all
+authority at dispatch, and apply the existing serialize/cancel/reconcile rules;
+never automatically replay a cell after an ambiguous result. Execution failure
+may produce a new error-explanation proposal but cannot mutate/retry the accepted
+revision silently. Test duplicate execute clicks, approval revocation, policy/
+image retirement, cancel race, runtime outage, ambiguous completion, worker loss,
+Jev/NOOA kill during execution and evidence reconstruction from canonical rows.
+```
+
+### S4-P08E — collaborative notebook experience
+
+```text
+Extend existing notebook proposal/review UI and hooks rather than creating a
+second editor. Show the exact base/current revision, cell-level diff, source
+NOOA agent/runtime release, citations, advisory Jev result where authorized,
+expected effect, risk, validation/approval state and stale/conflict status.
+Provide accept, reject and request-revision actions; execution remains a separate
+clearly labeled action after acceptance. Hide internal prompts, Python locals,
+generated CodeAct transcript, provider data and credentials. Key query state by
+workspace/notebook/revision, cancel on workspace switch and prevent old-tenant
+proposal flashes. Add loading/empty/partial/denied/expired/cancelled/failure states,
+keyboard diff navigation, screen-reader announcements and component/Playwright
+tests for proposal review, concurrent edit, rejection, acceptance without run,
+explicit run, reconnect and workspace switch.
+```
+
+### S4-P08F — adversarial and release gate
+
+```text
+Run S2-P14H plus Scope 4 proposal, browser and real sandbox campaigns for the
+notebook purpose. Attack malicious notebook instructions/outputs, hidden cells,
+oversized patches, path/SQL/credential/provider injection, forged citations,
+stale revision/approval, cross-tenant IDs, direct Jupyter/control-channel access,
+automatic execution and result-based retry loops. Hard-fail if NOOA/Jev can
+approve, apply or execute, if the worker receives a kernel/provider/product
+credential, if deterministic validation is bypassed, or if disabling NOOA harms
+manual notebooks. Measure valid-proposal and reviewer-acceptance rates, citation
+precision, correction cycles, latency/cost and execution outcomes against the
+existing S4-P04 baseline. Exercise purpose/global kill switches, worker/image
+rollback, deletion and incident runbooks. Record SHADOW_ALLOWED for an allowlist,
+DISABLED_PENDING_EVIDENCE or REJECTED with exact releases/limits and known risks.
+No result changes S4-P07E or grants broader agent code-execution authority.
 ```

@@ -20,6 +20,7 @@ from app.domain.reproducibility import (
     SignedArtifactUrlRead,
 )
 from app.services import reproducibility_service
+from app.services.audience_projection import artifact_read, code_snapshot_read
 
 workspace_router = APIRouter(prefix="/workspaces", tags=["reproducibility"])
 admin_router = APIRouter(tags=["reproducibility"])
@@ -30,7 +31,7 @@ def _identity_http(exc: IdentityError) -> HTTPException:
 
 
 def _artifact_read(row) -> ArtifactRead:
-    return ArtifactRead.model_validate(row)
+    return artifact_read(row)
 
 
 def _reproducibility_read(db: Session, model_version) -> ReproducibilityRead:
@@ -48,7 +49,7 @@ def _reproducibility_read(db: Session, model_version) -> ReproducibilityRead:
         selected_candidate_id=model_version.selected_candidate_id,
         dataset_id=model_version.dataset_id,
         feature_set_version_id=model_version.feature_set_version_id,
-        artifact_uri=model_version.artifact_uri,
+        artifact_uri=None,
         model_artifact_id=model_version.model_artifact_id,
         preprocessor_artifact_id=model_version.preprocessor_artifact_id,
         feature_manifest_artifact_id=model_version.feature_manifest_artifact_id,
@@ -58,7 +59,7 @@ def _reproducibility_read(db: Session, model_version) -> ReproducibilityRead:
             else None
         ),
         code_snapshot=(
-            CodeSnapshotRead.model_validate(model_version.code_snapshot)
+            code_snapshot_read(model_version.code_snapshot)
             if model_version.code_snapshot is not None
             else None
         ),

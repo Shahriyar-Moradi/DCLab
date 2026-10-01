@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import User, UserRole, Workspace, WorkspaceMembership
 from app.services import platform_explorer_service
+from app.services.audience_projection import public_diagnostic
 from app.services.authorization_service import (
     can_read_workspace,
     can_write_workspace,
@@ -91,7 +92,7 @@ def list_workspaces(db: Session, user: User) -> list[dict[str, Any]]:
                 "capabilities": capability_matrix(db, user, workspace.id),
             }
         )
-    return result
+    return public_diagnostic(result)
 
 
 def get_business(db: Session, user: User, workspace_id: UUID) -> dict[str, Any] | None:
@@ -116,23 +117,25 @@ def get_business(db: Session, user: User, workspace_id: UUID) -> dict[str, Any] 
         can_write=can_write_workspace(db, user, workspace_id),
         capabilities=capabilities,
     )
-    return detail
+    return public_diagnostic(detail)
 
 
 def get_domain(db: Session, user: User, workspace_id: UUID, domain_id: UUID):
     if not can_read_workspace(db, user, workspace_id):
         return None
-    return platform_explorer_service.get_domain(
+    result = platform_explorer_service.get_domain(
         db, workspace_id, domain_id, require_enabled=True
     )
+    return public_diagnostic(result) if result is not None else None
 
 
 def get_workflow(db: Session, user: User, workspace_id: UUID, workflow_id: UUID):
     if not can_read_workspace(db, user, workspace_id):
         return None
-    return platform_explorer_service.get_workflow(
+    result = platform_explorer_service.get_workflow(
         db, workspace_id, workflow_id, require_enabled_domain=True
     )
+    return public_diagnostic(result) if result is not None else None
 
 
 def get_workflow_run(db: Session, user: User, workspace_id: UUID, run_id: UUID):
@@ -144,7 +147,7 @@ def get_workflow_run(db: Session, user: User, workspace_id: UUID, run_id: UUID):
     if result is not None:
         result["capabilities"] = capability_matrix(db, user, workspace_id)
         result["can_write"] = can_write_workspace(db, user, workspace_id)
-    return result
+    return public_diagnostic(result) if result is not None else None
 
 
 def get_model(db: Session, user: User, workspace_id: UUID, model_id: UUID):
@@ -158,7 +161,7 @@ def get_model(db: Session, user: User, workspace_id: UUID, model_id: UUID):
     if result is not None:
         result["capabilities"] = capability_matrix(db, user, workspace_id)
         result["can_write"] = can_write_workspace(db, user, workspace_id)
-    return result
+    return public_diagnostic(result) if result is not None else None
 
 
 def _without_keys(value: Any, blocked: set[str]) -> Any:
@@ -244,4 +247,4 @@ def get_pipeline_monitor(
         )
     if not capabilities[DECISION_LEDGER]:
         result["reports"] = _without_keys(result["reports"], {"decision_records"})
-    return result
+    return public_diagnostic(result)

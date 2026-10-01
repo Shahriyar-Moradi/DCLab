@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, request_workspace_access
 from app.db.models import User
 from app.db.session import get_db
-from app.services.authorization_service import can_execute_workspace_ml
+from app.services.workspace_capability_service import (
+    WORKSPACE_EXECUTE_ML,
+    effective_capability_matrix,
+)
 
 router = APIRouter(tags=["development"])
 
@@ -34,5 +37,7 @@ def development_context(
     return DevelopmentContextRead(
         workspace_id=access.workspace_id,
         role=role_value,
-        can_execute_ml=can_execute_workspace_ml(db, user, access.workspace_id),
+        can_execute_ml=effective_capability_matrix(db, user, access.workspace_id)[
+            WORKSPACE_EXECUTE_ML
+        ],
     )

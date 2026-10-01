@@ -73,7 +73,12 @@ def test_create_sends_idempotency_key_header_and_body():
         recorded.append(request)
         return httpx.Response(400, json={"detail": "unsupported operation"})
 
-    api = _client(handler, token="secret-token", idempotency_key="client-default")
+    api = _client(
+        handler,
+        token="secret-token",
+        workspace_id="11111111-1111-1111-1111-111111111111",
+        idempotency_key="client-default",
+    )
     with pytest.raises(DCLabAPIError) as caught:
         api.execution_requests.create(
             operation="model_build",
@@ -121,7 +126,9 @@ def test_confirm_target_posts_column_to_v1():
             },
         )
 
-    api = _client(handler, token="secret-token")
+    api = _client(
+        handler, token="secret-token", workspace_id="11111111-1111-1111-1111-111111111111"
+    )
     row = api.execution_requests.confirm_target(
         "11111111-1111-1111-1111-111111111111",
         target_column="Churn",
@@ -164,6 +171,21 @@ def test_omits_workspace_header_unless_constructed_with_one():
     assert "X-Workspace-Id" not in request.headers
     assert "cookie" not in request.headers
     assert "x-dclab-session" not in request.headers
+
+
+def test_workspace_resource_requires_explicit_sdk_scope():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=[])
+
+    api = _client(handler, token="secret-token")
+    with pytest.raises(DCLabClientError, match="workspace_id is required"):
+        api.projects.list()
+    assert requests == []
+    with pytest.raises(DCLabClientError, match="workspace_id must be a UUID"):
+        _client(handler, token="secret-token", workspace_id="not-a-uuid")
 
 
 def test_source_never_calls_browser_session_workspace_selection():

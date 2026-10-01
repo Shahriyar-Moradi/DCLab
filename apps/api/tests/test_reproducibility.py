@@ -99,10 +99,15 @@ def test_runtime_code_and_model_artifact_lineage_from_auto_train(
     body = meta.json()
     assert body["model_artifact_id"] == str(model_artifact.id)
     assert body["code_snapshot"]["artifact_id"] == str(snapshot.artifact_id)
+    assert body["artifact_uri"] is None
+    assert body["code_snapshot"]["entrypoint"] == ""
+    assert all(item["object_key"] == "" for item in body["artifacts"])
     artifacts = auth_client.get(
         f"/workspaces/{workspace_id}/model-versions/{model_version.id}/artifacts"
     )
     assert artifacts.status_code == 200
+    assert all(item["object_key"] == "" for item in artifacts.json())
+    assert model_artifact.object_key not in str(artifacts.json())
     types = {row["artifact_type"] for row in artifacts.json()}
     assert "model" in types
     assert "source_code" in types

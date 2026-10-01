@@ -12,7 +12,10 @@ from app.db import models  # noqa: F401  — register metadata for autogenerate
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # In-process migration checks must not disable the application's audit
+    # loggers for later requests/tests. The Alembic CLI still configures its
+    # own root/sqlalchemy/alembic handlers from this file.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 # ConfigParser treats percent signs in URL-encoded credentials as interpolation.

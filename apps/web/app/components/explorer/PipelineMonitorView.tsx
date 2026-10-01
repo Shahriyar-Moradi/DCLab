@@ -9,6 +9,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Table, Td, Th } from "@/app/components/ui/Table";
 import { formatElapsed, formatWhen } from "@/app/components/admin/format";
 import type { PipelineMonitor } from "@/lib/domain";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import type { SessionUser } from "@/lib/infrastructure/session";
 import type { ReactNode } from "react";
 import { CapabilityNotice } from "./CapabilityNotice";
@@ -100,10 +101,10 @@ export function PipelineMonitorView({
   const businessBase = explorerBase(workspaceId, Boolean(businessId));
   const sourceUpload = object(hierarchy.source_upload);
   const sourceRunId = text(sourceUpload.id, "");
-  const isPlatformAdmin = user?.role === "dclab_admin";
+  const isPlatformAdmin = hasCapability(user, CAPABILITIES.platformWrite);
   const canBusinessDeepAudit = Boolean(
     businessId &&
-      (user?.role === "business_admin" || isPlatformAdmin) &&
+      hasCapability(user, CAPABILITIES.workspaceWrite) &&
       capabilities.deep_audit &&
       capabilities.openai_pipeline_audit &&
       sourceRunId,

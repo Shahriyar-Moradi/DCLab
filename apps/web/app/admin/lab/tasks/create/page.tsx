@@ -5,13 +5,14 @@ import { Input } from "@/app/components/ui/Input";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { useState } from "react";
 import { useCreateLabTaskFromConfig, useSession } from "@/lib/application";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 
 export default function CreateTaskPage() {
   const [path, setPath] = useState("configs/tasks/purchase.yaml");
   const [message, setMessage] = useState("");
   const { user } = useSession();
   const createTask = useCreateLabTaskFromConfig();
-  const canWrite = user?.role === "dclab_admin";
+  const canWrite = hasCapability(user, CAPABILITIES.platformWrite);
   return (
     <div className="max-w-xl">
       <PageHeader

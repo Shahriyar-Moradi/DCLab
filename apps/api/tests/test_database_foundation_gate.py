@@ -1,4 +1,4 @@
-"""Physical database foundation gate for Alembic head 0059.
+"""Physical database foundation gate for the canonical Alembic head.
 
 Cross-tenant and delete assertions go through raw SQL. Alembic current/check
 and compare_metadata live in test_historical_alembic_revisions.py against
@@ -8,6 +8,8 @@ isolated databases (fresh head and 0028 → head).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -37,7 +39,7 @@ from app.services.lineage_service import (
 from app.storage.local import LocalStorage
 from test_data_model_lineage import make_lineage_setup
 
-CURRENT_HEAD = "0059_auth_session_constraints"
+TRUTH_BASELINE = Path(__file__).resolve().parents[3] / "contracts" / "truth_baseline.json"
 
 IMPORTANT_DELETE_ACTIONS = {
     "fk_ingestion_runs_workspace_data_source": "c",
@@ -300,7 +302,7 @@ def _reject(db_session, sql: str, **params) -> None:
 
 def test_alembic_script_head_is_current_freeze():
     head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
-    assert head == CURRENT_HEAD
+    assert [head] == json.loads(TRUTH_BASELINE.read_text(encoding="utf-8"))["alembic_heads"]
 
 
 def test_postgres_rejects_cross_tenant_canonical_corruption(db_session, foundation):

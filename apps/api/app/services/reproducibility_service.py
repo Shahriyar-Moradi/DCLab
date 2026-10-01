@@ -464,6 +464,16 @@ def signed_url_for_artifact(
     artifact = get_artifact_for_actor(
         db, actor, artifact_id=artifact_id, workspace_id=workspace_id
     )
+    from app.config import get_settings, publication_enforced
+    from app.services.ingestion_run_service import require_published_artifact
+
+    if publication_enforced(get_settings()):
+        require_published_artifact(db, artifact)
+        # A mutable object key can change after URL issuance. Until S0-P10
+        # provides immutable version/precondition references, dataset bytes
+        # must use the server download path, which verifies the returned bytes.
+        if artifact.artifact_type == "dataset":
+            raise IdentityError("dataset signed URLs are unavailable", status_code=409)
     url = storage_for_artifact(artifact).signed_url(artifact.object_key, expires_in=expires_in)
     return artifact, url, expires_in
 

@@ -1,11 +1,11 @@
 """Step 6/7 — Admin Model Registry.
 
-Every model this system has trained, from every place it trains one: Lab
+Workspace-owned models this system has trained, from every place it trains one: Lab
 experiments (created against client/uploaded data), the simulation pack (the
 eight bundled use cases), and client-triggered Labs trials (Step 7 — audited
 in full via `ClientLabRunAudit` even though the matching client-facing row
-only ever exposes translated insights). Full, unrestricted detail — this
-surface is admin-only and the translation layer never touches it.
+only ever exposes translated insights). Raw detail is restricted to platform
+members for the selected workspace; the translation layer never touches it.
 """
 
 from __future__ import annotations
@@ -15,18 +15,29 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import ClientLabRunAudit, Experiment, ExperimentCandidate, PredictionTask, SimulationRun
+from app.db.models import ClientLabRun, ClientLabRunAudit, Experiment, ExperimentCandidate, PredictionTask, SimulationRun
 from app.domain.admin_model_registry import ClientTrialAuditDetail, RegisteredModel
 
 
-def _experiment_models(db: Session) -> list[RegisteredModel]:
-    experiments = db.scalars(select(Experiment).order_by(Experiment.created_at.desc())).all()
-    task_names = {task.id: task.name for task in db.scalars(select(PredictionTask)).all()}
+def _experiment_models(db: Session, workspace_id: UUID) -> list[RegisteredModel]:
+    experiments = db.scalars(
+        select(Experiment)
+        .where(Experiment.workspace_id == workspace_id)
+        .order_by(Experiment.created_at.desc())
+    ).all()
+    if not experiments:
+        return []
+    experiment_ids = [exp.id for exp in experiments]
+    task_ids = {exp.task_id for exp in experiments if exp.task_id is not None}
+    task_names = {
+        task.id: task.name
+        for task in db.scalars(select(PredictionTask).where(PredictionTask.id.in_(task_ids)))
+    }
     counts = dict(
         db.execute(
-            select(ExperimentCandidate.experiment_id, func.count(ExperimentCandidate.id)).group_by(
-                ExperimentCandidate.experiment_id
-            )
+            select(ExperimentCandidate.experiment_id, func.count(ExperimentCandidate.id))
+            .where(ExperimentCandidate.experiment_id.in_(experiment_ids))
+            .group_by(ExperimentCandidate.experiment_id)
         ).all()
     )
     models = []
@@ -71,8 +82,13 @@ def _simulation_models(db: Session, workspace_id: UUID) -> list[RegisteredModel]
     ]
 
 
-def _client_trial_models(db: Session) -> list[RegisteredModel]:
-    audits = db.scalars(select(ClientLabRunAudit).order_by(ClientLabRunAudit.created_at.desc())).all()
+def _client_trial_models(db: Session, workspace_id: UUID) -> list[RegisteredModel]:
+    audits = db.scalars(
+        select(ClientLabRunAudit)
+        .join(ClientLabRun, ClientLabRunAudit.client_lab_run_id == ClientLabRun.id)
+        .where(ClientLabRun.workspace_id == workspace_id)
+        .order_by(ClientLabRunAudit.created_at.desc())
+    ).all()
     return [
         RegisteredModel(
             id=audit.id,
@@ -91,13 +107,23 @@ def _client_trial_models(db: Session) -> list[RegisteredModel]:
 
 
 def list_registered_models(db: Session, workspace_id: UUID) -> list[RegisteredModel]:
-    models = _experiment_models(db) + _simulation_models(db, workspace_id) + _client_trial_models(db)
+    models = (
+        _experiment_models(db, workspace_id)
+        + _simulation_models(db, workspace_id)
+        + _client_trial_models(db, workspace_id)
+    )
     models.sort(key=lambda model: model.created_at, reverse=True)
     return models
 
 
-def get_client_trial_audit(db: Session, audit_id) -> ClientTrialAuditDetail | None:
-    audit = db.get(ClientLabRunAudit, audit_id)
+def get_client_trial_audit(
+    db: Session, audit_id: UUID, workspace_id: UUID
+) -> ClientTrialAuditDetail | None:
+    audit = db.scalar(
+        select(ClientLabRunAudit)
+        .join(ClientLabRun, ClientLabRunAudit.client_lab_run_id == ClientLabRun.id)
+        .where(ClientLabRunAudit.id == audit_id, ClientLabRun.workspace_id == workspace_id)
+    )
     if audit is None:
         return None
     return ClientTrialAuditDetail(

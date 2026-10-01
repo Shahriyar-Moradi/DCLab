@@ -38,6 +38,7 @@ from app.db.models import (
 )
 from app.domain.errors import IdentityError
 from app.domain.observability import LlmInvocationRead
+from app.services.audience_projection import artifact_read, code_snapshot_read, invocation_read, public_failure
 from app.domain.reproducibility import (
     ArtifactRead,
     CodeSnapshotRead,
@@ -134,7 +135,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def _artifact_read(row: Artifact) -> ArtifactRead:
-    return ArtifactRead.model_validate(row)
+    return artifact_read(row)
 
 
 def _metric_reads(evaluation: ModelEvaluation) -> list[EvaluationMetricRead]:
@@ -296,7 +297,7 @@ def _visible_llm(
             continue
         if row.purpose.startswith("pipeline_audit_") and not capabilities[OPENAI_PIPELINE_AUDIT]:
             continue
-        visible.append(LlmInvocationRead.model_validate(row))
+        visible.append(LlmInvocationRead.model_validate(invocation_read(row)))
     return visible
 
 
@@ -464,7 +465,7 @@ def _code_runtime(
             RuntimeEnvironmentRead.model_validate(runtime) if runtime is not None else None
         ),
         code_snapshot=(
-            CodeSnapshotRead.model_validate(snapshot) if snapshot is not None else None
+            code_snapshot_read(snapshot) if snapshot is not None else None
         ),
     )
 
@@ -833,7 +834,7 @@ class PipelineRunDetailQuery:
                 pipeline_name=experiment.pipeline_name,
                 pipeline_index=experiment.pipeline_index,
                 pipeline_purpose=experiment.pipeline_purpose,
-                failure_reason=experiment.failure_reason,
+                failure_reason=public_failure(experiment.failure_reason),
                 seed=experiment.seed,
                 git_commit=experiment.git_commit,
                 started_at=experiment.started_at,
@@ -916,7 +917,7 @@ class PipelineRunDetailQuery:
                     feature_set_version_id=model_version.feature_set_version_id,
                     model_artifact_id=model_version.model_artifact_id,
                     preprocessor_artifact_id=model_version.preprocessor_artifact_id,
-                    artifact_uri=model_version.artifact_uri,
+                    artifact_uri=None,
                     content_digest=model_version.content_digest,
                     metrics=dict(model_version.metrics or {}),
                 )
@@ -1040,7 +1041,7 @@ class ModelVersionDetailQuery:
             selected_candidate_id=row.selected_candidate_id,
             dataset_id=row.dataset_id,
             feature_set_version_id=row.feature_set_version_id,
-            artifact_uri=row.artifact_uri,
+            artifact_uri=None,
             content_digest=row.content_digest,
             metrics=dict(row.metrics or {}),
             created_at=row.created_at,

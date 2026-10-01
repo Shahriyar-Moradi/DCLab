@@ -6,6 +6,7 @@ import { GetStartedCTA, ProductPathSection, WhyUsSection } from "@/app/component
 import { MetricCard } from "@/app/components/ui/MetricCard";
 import { useOverviewSnapshot, useSession } from "@/lib/application";
 import { formatMoney, formatPercent } from "@/lib/domain";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { ArrowRight, Sparkles } from "lucide-react";
 
 export default function HomePage() {
@@ -21,7 +22,7 @@ export default function HomePage() {
 
 function Hero() {
   const { user, loaded } = useSession();
-  const snapshot = useOverviewSnapshot(loaded && Boolean(user));
+  const snapshot = useOverviewSnapshot(loaded && hasCapability(user, CAPABILITIES.applicationAccess));
   const data = snapshot.data;
   const showWorkspace = Boolean(user && snapshot.isSuccess && data);
 

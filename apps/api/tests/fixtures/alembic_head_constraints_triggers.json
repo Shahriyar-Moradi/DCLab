@@ -202,6 +202,11 @@
     },
     {
       "table": "dataset_columns",
+      "name": "ck_dataset_columns_classification_confidence",
+      "definition": "CHECK (((classification_confidence IS NULL) OR ((classification_confidence >= (0)::double precision) AND (classification_confidence <= (1)::double precision))))"
+    },
+    {
+      "table": "dataset_columns",
       "name": "ck_dataset_columns_classification_source",
       "definition": "CHECK (((classification_source IS NULL) OR ((classification_source)::text = ANY ((ARRAY['manual'::character varying, 'system'::character varying, 'policy'::character varying, 'import'::character varying])::text[]))))"
     },
@@ -217,8 +222,63 @@
     },
     {
       "table": "dataset_columns",
+      "name": "ck_dataset_columns_policy_schema_version",
+      "definition": "CHECK (((policy_schema_version IS NULL) OR (policy_schema_version = 1)))"
+    },
+    {
+      "table": "dataset_columns",
+      "name": "ck_dataset_columns_residency_class",
+      "definition": "CHECK (((residency_class IS NULL) OR ((residency_class)::text = ANY ((ARRAY['unknown'::character varying, 'home_cloud_only'::character varying, 'home_region_only'::character varying])::text[]))))"
+    },
+    {
+      "table": "dataset_columns",
+      "name": "ck_dataset_columns_retention_class",
+      "definition": "CHECK (((retention_class IS NULL) OR ((retention_class)::text = ANY ((ARRAY['unknown'::character varying, 'short'::character varying, 'standard'::character varying, 'extended'::character varying])::text[]))))"
+    },
+    {
+      "table": "dataset_columns",
       "name": "ck_dataset_columns_sensitivity_class",
       "definition": "CHECK (((sensitivity_class IS NULL) OR ((sensitivity_class)::text = ANY ((ARRAY['public'::character varying, 'internal'::character varying, 'identifier'::character varying, 'pii'::character varying, 'sensitive'::character varying, 'restricted'::character varying])::text[]))))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_confidence",
+      "definition": "CHECK (((classification_confidence >= (0)::double precision) AND (classification_confidence <= (1)::double precision)))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_llm_exposure",
+      "definition": "CHECK (((llm_exposure_policy)::text = ANY ((ARRAY['allow'::character varying, 'deny'::character varying, 'aggregate_only'::character varying, 'metadata_only'::character varying])::text[])))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_residency",
+      "definition": "CHECK (((residency_class)::text = ANY ((ARRAY['unknown'::character varying, 'home_cloud_only'::character varying, 'home_region_only'::character varying])::text[])))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_retention",
+      "definition": "CHECK (((retention_class)::text = ANY ((ARRAY['unknown'::character varying, 'short'::character varying, 'standard'::character varying, 'extended'::character varying])::text[])))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_revision",
+      "definition": "CHECK ((revision > 0))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_schema_version",
+      "definition": "CHECK ((policy_schema_version = 1))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_sensitivity",
+      "definition": "CHECK (((sensitivity_class)::text = ANY ((ARRAY['public'::character varying, 'internal'::character varying, 'identifier'::character varying, 'pii'::character varying, 'sensitive'::character varying, 'restricted'::character varying])::text[])))"
+    },
+    {
+      "table": "dataset_policy_revisions",
+      "name": "ck_dataset_policy_revisions_source",
+      "definition": "CHECK (((classification_source)::text = ANY ((ARRAY['manual'::character varying, 'system'::character varying, 'policy'::character varying, 'import'::character varying])::text[])))"
     },
     {
       "table": "execution_requests",
@@ -304,6 +364,46 @@
       "table": "features",
       "name": "ck_features_status_valid",
       "definition": "CHECK (((status)::text = ANY ((ARRAY['modeled'::character varying, 'excluded'::character varying, 'dropped'::character varying])::text[])))"
+    },
+    {
+      "table": "ingestion_publication_events",
+      "name": "ck_ingestion_publication_events_actor",
+      "definition": "CHECK (((actor_type)::text = ANY ((ARRAY['user'::character varying, 'system'::character varying, 'operator'::character varying])::text[])))"
+    },
+    {
+      "table": "ingestion_publication_events",
+      "name": "ck_ingestion_publication_events_actor_identity",
+      "definition": "CHECK (((((actor_type)::text = 'system'::text) AND (actor_user_id IS NULL)) OR (((actor_type)::text = ANY ((ARRAY['user'::character varying, 'operator'::character varying])::text[])) AND (actor_user_id IS NOT NULL))))"
+    },
+    {
+      "table": "ingestion_publication_events",
+      "name": "ck_ingestion_publication_events_digest",
+      "definition": "CHECK (((content_digest)::text ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "ingestion_publication_events",
+      "name": "ck_ingestion_publication_events_policy_version",
+      "definition": "CHECK ((policy_schema_version > 0))"
+    },
+    {
+      "table": "ingestion_publication_events",
+      "name": "ck_ingestion_publication_events_version",
+      "definition": "CHECK ((version > 0))"
+    },
+    {
+      "table": "ingestion_runs",
+      "name": "ck_ingestion_runs_publication_digest",
+      "definition": "CHECK (((publication_digest IS NULL) OR ((publication_digest)::text ~ '^[0-9a-f]{64}$'::text)))"
+    },
+    {
+      "table": "ingestion_runs",
+      "name": "ck_ingestion_runs_publication_state",
+      "definition": "CHECK (((publication_state)::text = ANY ((ARRAY['received'::character varying, 'quarantined'::character varying, 'scanned'::character varying, 'classified'::character varying, 'publishable'::character varying, 'published'::character varying, 'rejected'::character varying, 'expired'::character varying])::text[])))"
+    },
+    {
+      "table": "ingestion_runs",
+      "name": "ck_ingestion_runs_publication_version",
+      "definition": "CHECK ((publication_version >= 0))"
     },
     {
       "table": "ingestion_runs",
@@ -558,6 +658,11 @@
       "definition": "CREATE TRIGGER data_quality_findings_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.data_quality_findings FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('pipeline_run_id')"
     },
     {
+      "table": "dataset_policy_revisions",
+      "name": "dataset_policy_revisions_immutable",
+      "definition": "CREATE TRIGGER dataset_policy_revisions_immutable BEFORE DELETE OR UPDATE ON public.dataset_policy_revisions FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "datasets",
       "name": "datasets_immutable",
       "definition": "CREATE TRIGGER datasets_immutable BEFORE DELETE OR UPDATE ON public.datasets FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
@@ -601,6 +706,11 @@
       "table": "features",
       "name": "features_evidence_locked",
       "definition": "CREATE TRIGGER features_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.features FOR EACH ROW EXECUTE FUNCTION prevent_locked_feature_evidence_mutation('feature_set_version_id')"
+    },
+    {
+      "table": "ingestion_publication_events",
+      "name": "ingestion_publication_events_immutable",
+      "definition": "CREATE TRIGGER ingestion_publication_events_immutable BEFORE DELETE OR UPDATE ON public.ingestion_publication_events FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "ml_run_events",

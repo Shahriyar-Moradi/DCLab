@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, request_workspace_id
+from app.config import get_settings, is_production_env
 from app.db.models import User
 from app.db.session import get_db
 from app.domain.client_lab import (
@@ -31,6 +32,7 @@ from app.domain.errors import (
     UnknownLabProblemError,
 )
 from app.services import client_lab_service, client_lab_upload_service
+from app.services.audience_projection import public_failure
 from app.services.authorization_service import AuthorizationError
 from app.services.workspace_capability_service import (
     PREDICTION_DOWNLOAD,
@@ -38,6 +40,11 @@ from app.services.workspace_capability_service import (
 )
 
 router = APIRouter(prefix="/labs", tags=["client-labs"])
+
+
+def _run_read(row: object) -> ClientLabRunRead:
+    result = ClientLabRunRead.model_validate(row)
+    return result.model_copy(update={"failure_reason": public_failure(result.failure_reason)})
 
 
 @router.get("/problems", response_model=list[ClientLabProblem])
@@ -71,6 +78,8 @@ async def create_run(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ClientLabRunRead:
+    if file is not None and is_production_env(get_settings()):
+        raise HTTPException(status_code=503, detail="uploaded trial data is unavailable pending safety review")
     uploaded_bytes = await file.read() if file is not None else None
     try:
         row = client_lab_service.run_trial(
@@ -84,9 +93,11 @@ async def create_run(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except TrialQuotaExceededError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except IdentityError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
     except (TrialDatasetTooLargeError, TrialDatasetColumnsError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ClientLabRunRead.model_validate(row)
+    return _run_read(row)
 
 
 def _optional_uuid(raw: str | None) -> UUID | None:
@@ -121,6 +132,7 @@ async def create_upload(
             category=category,
             filename=file.filename or "upload",
             upload_stream=file.file,
+            declared_mime=file.content_type,
             target_column=target_column,
             workspace_id=request_workspace_id(request),
             project_id=_optional_uuid(project_id),
@@ -249,7 +261,7 @@ def list_runs(
         use_case,
         workspace_id=request_workspace_id(request),
     )
-    return [ClientLabRunRead.model_validate(row) for row in rows]
+    return [_run_read(row) for row in rows]
 
 
 @router.get("/runs/{run_id}", response_model=ClientLabRunRead)
@@ -267,4 +279,4 @@ def get_run(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="trial run not found")
-    return ClientLabRunRead.model_validate(row)
+    return _run_read(row)

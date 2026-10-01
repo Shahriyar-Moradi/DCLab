@@ -3,7 +3,8 @@
 Generic 401/403 coverage for these routes already comes free from the
 route-table sweep in `test_access_control.py` (`test_every_admin_route_...`).
 These tests instead prove the surfaces show real, correct, and — for the
-Model Registry / Monitoring surfaces — genuinely *unrestricted* ML detail.
+Model Registry / Monitoring surfaces — detailed ML results within the selected
+workspace.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.db.models import DEFAULT_WORKSPACE_ID, SimulationRun
+from app.db.models import ClientLabRun, ClientLabRunAudit, DEFAULT_WORKSPACE_ID, SimulationRun, Workspace
 
 
 def _seed_completed_experiment(db_session, *, seed: int = 11):
@@ -104,7 +105,7 @@ class TestAdminOrganizations:
 
 
 class TestAdminModelRegistry:
-    def test_combines_experiments_and_simulation_runs_unrestricted(self, db_session, admin_client):
+    def test_combines_workspace_experiments_and_simulation_runs(self, db_session, admin_client):
         executed = _seed_completed_experiment(db_session)
         sim_row = _insert_simulation_run(db_session, use_case="churn", roc_auc=0.9)
 
@@ -121,6 +122,58 @@ class TestAdminModelRegistry:
         assert simulation_row["source"] == "simulation"
         assert simulation_row["name"] == "churn"
         assert simulation_row["metrics"]["roc_auc"] == 0.9
+
+    def test_registry_monitoring_and_trial_detail_do_not_cross_workspaces(
+        self, db_session, admin_client
+    ):
+        experiment = _seed_completed_experiment(db_session)
+        other = Workspace(slug=f"other-{uuid4().hex[:12]}", name="Other workspace")
+        trial = ClientLabRun(
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            use_case="churn",
+            category="Revenue",
+            data_source="sample",
+            row_count=10,
+            status="completed",
+            insights=[],
+        )
+        audit = ClientLabRunAudit(
+            client_lab_run=trial,
+            use_case="churn",
+            payload={"metrics": {"pr_auc": 0.51}, "private_marker": "default-only"},
+        )
+        db_session.add_all([other, trial, audit])
+        db_session.commit()
+
+        selected_other = {"X-Workspace-Id": str(other.id)}
+        own_models = admin_client.get("/admin/models")
+        other_models = admin_client.get("/admin/models", headers=selected_other)
+        assert own_models.status_code == other_models.status_code == 200
+        assert {str(experiment.id), str(audit.id)} <= {
+            row["id"] for row in own_models.json()
+        }
+        assert str(experiment.id) not in {row["id"] for row in other_models.json()}
+        assert str(audit.id) not in {row["id"] for row in other_models.json()}
+
+        own_monitoring = admin_client.get("/admin/monitoring")
+        other_monitoring = admin_client.get(
+            "/admin/monitoring", headers=selected_other
+        )
+        assert own_monitoring.status_code == other_monitoring.status_code == 200
+        assert own_monitoring.json()["dataset_health"]
+        assert other_monitoring.json()["dataset_health"] == []
+        assert {str(experiment.id), str(audit.id)} <= {
+            row["id"] for row in own_monitoring.json()["retrain_events"]
+        }
+        assert other_monitoring.json()["retrain_events"] == []
+
+        own_detail = admin_client.get(f"/admin/models/client-trials/{audit.id}")
+        foreign_detail = admin_client.get(
+            f"/admin/models/client-trials/{audit.id}", headers=selected_other
+        )
+        assert own_detail.status_code == 200
+        assert own_detail.json()["payload"]["private_marker"] == "default-only"
+        assert foreign_detail.status_code == 404
 
 
 class TestAdminClientUploads:
@@ -185,14 +238,14 @@ class TestAdminClientUploads:
         assert match["pipeline_status"] == "completed"
         assert match["experiment_id"] == str(row.experiment_id)
 
-    def test_detail_shows_full_unrestricted_pipeline_log_and_experiment_link(self, db_session, admin_client):
+    def test_detail_shows_safe_pipeline_log_and_experiment_link(self, db_session, admin_client):
         row = self._seed_upload_and_run(db_session)
 
         response = admin_client.get(f"/admin/client-uploads/{row.id}")
         assert response.status_code == 200
         body = response.json()
         assert body["pipeline_status"] == "completed"
-        assert body["stored_path"] == row.stored_path
+        assert body["stored_path"] == ""
         assert body["experiment_id"] == str(row.experiment_id)
 
         log = body["pipeline_log"]
@@ -215,6 +268,7 @@ class TestAdminClientUploads:
             assert "missing_fraction" in item["evidence_snapshot"]
             assert "missingness_cooccurrence" in item["evidence_snapshot"]
             assert "id" in item
+            assert item["raw_llm_output"] is None
             if item["source"] == "rule":
                 assert item["raw_llm_output"] is None
                 assert item["rule_decision"] == item["final_decision"]

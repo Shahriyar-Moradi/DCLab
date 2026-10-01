@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
@@ -34,7 +35,6 @@ from app.services.session_service import (
 from test_historical_alembic_revisions import _drop_isolated, _isolated_database
 
 PREVIOUS_HEAD = "0058_simulation_workspace"
-CURRENT_HEAD = "0059_auth_session_constraints"
 
 
 def _stale_session(db_session, user, *, moment: datetime, revoked: bool = True) -> AuthSession:
@@ -408,7 +408,7 @@ def test_empty_database_upgrades_to_session_constraint_head(monkeypatch):
                 version = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                assert version == CURRENT_HEAD
+                assert version == ScriptDirectory.from_config(alembic_config).get_current_head()
                 fk_names = {
                     row[0]
                     for row in connection.execute(
@@ -440,7 +440,7 @@ def test_previous_head_upgrade_repairs_cross_user_rotation(monkeypatch):
                 version = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                assert version == CURRENT_HEAD
+                assert version == ScriptDirectory.from_config(alembic_config).get_current_head()
                 rotated = connection.execute(
                     text(
                         "SELECT rotated_from_id FROM auth_sessions WHERE id = CAST(:id AS uuid)"

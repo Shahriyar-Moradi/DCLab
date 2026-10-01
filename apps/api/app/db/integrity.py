@@ -239,6 +239,21 @@ def install_immutability_triggers(connection) -> None:
 
     for statement in immutability_upgrade_statements():
         connection.execute(text(statement))
+    # 0060 adds this table after the 0035 immutable-table trigger migration.
+    connection.execute(
+        text(
+            "CREATE TRIGGER dataset_policy_revisions_immutable "
+            "BEFORE UPDATE OR DELETE ON dataset_policy_revisions "
+            "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE TRIGGER ingestion_publication_events_immutable "
+            "BEFORE UPDATE OR DELETE ON ingestion_publication_events "
+            "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+        )
+    )
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():

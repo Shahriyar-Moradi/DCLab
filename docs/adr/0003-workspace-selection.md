@@ -105,3 +105,25 @@ and never sets `Cookie` / `X-DCLab-Session`.
 `alembic downgrade 0056_auth_hardening`. Revert this tree. Browser clients
 that send `X-Workspace-Id` keep working against the previous resolver;
 the session column is simply dropped.
+
+## S0-P03D API-client amendment (2026-09-23)
+
+The S0-P03D explicit-scoping requirement supersedes the API/SDK fallback in
+Decision 2 above **for bearer tenant requests only**. `/v1/me` and
+`/v1/workspaces` remain identity/discovery calls without a required selector;
+platform-wide `/admin` inventories remain platform operations. Every bearer
+tenant call through the shared workspace dependency now requires exactly one
+nonempty UUID `X-Workspace-Id`, including legacy `/app` and `/business` calls.
+The Python SDK rejects unscoped resource calls before sending HTTP. An absent,
+blank, duplicate or malformed selector is 400; a selector without current
+membership is 403. A resource in a different selected workspace is 404.
+
+Browser session fallback remains for a missing header. A supplied browser
+header takes precedence over the session's remembered selection so two tabs
+can view different authorized workspaces without racing to rewrite the shared
+cookie session. Each request rechecks current membership; the BFF forwards
+the selector but never authorizes it. This amendment has no migration or cloud
+provider dependency. Older bearer clients that relied on implicit home or
+platform-default scoping must pass the workspace ID explicitly before rollout.
+Reverting this code restores the old fallback while retaining membership
+checks; it is not a fail-open tenant bypass.

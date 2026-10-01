@@ -12,7 +12,8 @@ import {
   Scale,
   Upload,
 } from "lucide-react";
-import { isBusinessAdministrationRole, isDevelopmentRole, isPlatformRole, type SessionUser } from "@/lib/infrastructure/session";
+import { CAPABILITIES, defaultProductRoute, hasCapability } from "@/lib/infrastructure/capabilities";
+import type { SessionUser } from "@/lib/infrastructure/session";
 
 type NavAudience = "all" | "platform" | "business" | "development";
 
@@ -31,8 +32,6 @@ export type AppNavigationSection = {
   audience: NavAudience;
   items: AppNavigationItem[];
 };
-
-const isBusinessRole = (role: SessionUser["role"]) => isBusinessAdministrationRole(role);
 
 const prefixMatch = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
@@ -136,22 +135,19 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
   },
 ];
 
-function isVisible(audience: NavAudience, role: SessionUser["role"]) {
-  if (role === "personal_developer") {
-    return audience === "development";
-  }
-  if (audience === "all") return true;
-  if (audience === "platform") return isPlatformRole(role);
-  if (audience === "development") return isDevelopmentRole(role);
-  return isBusinessRole(role);
+function isVisible(audience: NavAudience, user: SessionUser) {
+  if (audience === "all") return hasCapability(user, CAPABILITIES.applicationAccess);
+  if (audience === "platform") return hasCapability(user, CAPABILITIES.platformRead);
+  if (audience === "development") return hasCapability(user, CAPABILITIES.developmentAccess);
+  return hasCapability(user, CAPABILITIES.businessAccess);
 }
 
-export function navigationForRole(user: SessionUser | null) {
+export function navigationForUser(user: SessionUser | null) {
   if (!user) return [];
-  return APP_NAVIGATION.filter((section) => isVisible(section.audience, user.role))
+  return APP_NAVIGATION.filter((section) => isVisible(section.audience, user))
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => isVisible(item.audience, user.role)),
+      items: section.items.filter((item) => isVisible(item.audience, user)),
     }))
     .filter((section) => section.items.length > 0);
 }
@@ -162,14 +158,14 @@ export type CommandDestination = {
   group: string;
 };
 
-export function commandDestinationsForRole(user: SessionUser | null): CommandDestination[] {
-  const destinations: CommandDestination[] = navigationForRole(user).flatMap((section) =>
+export function commandDestinationsForUser(user: SessionUser | null): CommandDestination[] {
+  const destinations: CommandDestination[] = navigationForUser(user).flatMap((section) =>
     section.items.map((item) => ({ href: item.href, label: item.label, group: section.label })),
   );
-  if (user?.role !== "personal_developer") {
+  if (hasCapability(user, CAPABILITIES.accountAccess)) {
     destinations.push({ href: "/app/settings", label: "Account", group: "Workspace" });
   }
-  if (user && isPlatformRole(user.role)) {
+  if (hasCapability(user, CAPABILITIES.platformRead)) {
     destinations.push({ href: "/admin/organizations", label: "Organizations", group: "Platform" });
   }
   const seen = new Set<string>();
@@ -181,18 +177,13 @@ export function commandDestinationsForRole(user: SessionUser | null): CommandDes
 }
 
 export function activeNavigationItem(pathname: string, user: SessionUser | null) {
-  return navigationForRole(user)
+  return navigationForUser(user)
     .flatMap((section) => section.items)
     .filter((item) => item.isActive(pathname))
     .sort((left, right) => right.href.length - left.href.length)[0];
 }
 
-export function defaultProductRoute(role: SessionUser["role"]) {
-  if (isPlatformRole(role)) return "/admin/businesses";
-  if (role === "personal_developer") return "/development";
-  if (isBusinessRole(role)) return "/business";
-  return "/app/dashboards";
-}
+export { defaultProductRoute };
 
 export function isProductRoute(pathname: string) {
   return ["/app", "/lab", "/admin", "/business", "/development"].some(

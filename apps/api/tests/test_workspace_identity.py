@@ -688,28 +688,29 @@ def test_workspace_project_problem_spec_http_routes(client, db_session):
     assert body["max_members"] is None
     assert body["max_ml_engineer_seats"] == 5
     workspace_id = body["id"]
+    scoped_headers = _headers(owner, workspace_id)
 
     project_response = client.post(
         f"/workspaces/{workspace_id}/projects",
-        headers=_headers(owner),
+        headers=scoped_headers,
         json={"name": "Forecasting case", "description": "Monthly demand"},
     )
     assert project_response.status_code == 200, project_response.text
     project_id = project_response.json()["id"]
     listed = client.get(
         f"/workspaces/{workspace_id}/projects",
-        headers=_headers(owner),
+        headers=scoped_headers,
     )
     assert listed.status_code == 200
     assert [row["id"] for row in listed.json()] == [project_id]
     fetched = client.get(
         f"/workspaces/{workspace_id}/projects/{project_id}",
-        headers=_headers(owner),
+        headers=scoped_headers,
     )
     assert fetched.status_code == 200
     spec_response = client.post(
         f"/workspaces/{workspace_id}/projects/{project_id}/problem-specs",
-        headers=_headers(owner),
+        headers=scoped_headers,
         json={
             "task_type": "forecasting",
             "business_objective": "Forecast weekly demand",
@@ -720,7 +721,7 @@ def test_workspace_project_problem_spec_http_routes(client, db_session):
     spec_id = spec_response.json()["id"]
     read_spec = client.get(
         f"/workspaces/{workspace_id}/projects/{project_id}/problem-specs/{spec_id}",
-        headers=_headers(owner),
+        headers=scoped_headers,
     )
     assert read_spec.status_code == 200
     assert read_spec.json()["task_type"] == "forecasting"

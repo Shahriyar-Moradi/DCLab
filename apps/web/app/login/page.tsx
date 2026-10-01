@@ -1,13 +1,13 @@
 "use client";
 
-import { defaultProductRoute } from "@/app/components/layout/app-navigation";
 import { Button } from "@/app/components/ui/Button";
 import { Field } from "@/app/components/ui/Field";
 import { Spinner } from "@/app/components/ui/Spinner";
 import { controlErrorClass } from "@/app/components/ui/control";
 import { cn } from "@/lib/cn";
 import { useLogin, useSession } from "@/lib/application";
-import { displayName, isBusinessAdministrationRole, isPlatformRole, roleLabel } from "@/lib/infrastructure/session";
+import { canAccessProductRoute, defaultProductRoute } from "@/lib/infrastructure/capabilities";
+import { displayName, parseSessionUser, roleLabel } from "@/lib/infrastructure/session";
 import { Lock, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -45,24 +45,9 @@ function LoginForm() {
       {
         onSuccess: (data) => {
           const requested = params.get("next");
-          // Presentation default only. Middleware/API still authorize the destination.
-          const platformMember = isPlatformRole(data.user.role);
-          const businessMember = isBusinessAdministrationRole(data.user.role);
-          const personalDeveloper = data.user.role === "personal_developer";
-          const fallback = platformMember
-            ? "/admin/businesses"
-            : personalDeveloper
-              ? "/development"
-              : businessMember
-                ? "/business"
-                : "/app/dashboards";
-          const allowed = requested && (
-            platformMember ||
-            (personalDeveloper && requested.startsWith("/development")) ||
-            (!requested.startsWith("/admin") &&
-              !requested.startsWith("/development") &&
-              (businessMember || !requested.startsWith("/business")))
-          );
+          const nextUser = parseSessionUser(data.user);
+          const fallback = defaultProductRoute(nextUser);
+          const allowed = requested && canAccessProductRoute(nextUser, requested);
           router.push(allowed && requested ? requested : fallback);
           router.refresh();
         },
@@ -88,7 +73,7 @@ function LoginForm() {
   }
 
   if (user) {
-    const home = defaultProductRoute(user.role);
+    const home = defaultProductRoute(user);
     return (
       <div className="auth-panel">
         <h1 className="text-title text-ink">You are signed in</h1>

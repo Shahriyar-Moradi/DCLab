@@ -32,6 +32,8 @@ class PrincipalRead(BaseModel):
     workspace_id: UUID | None = None
     active_workspace_id: UUID | None = None
     workspaces: list[PrincipalWorkspaceRead] = Field(default_factory=list)
+    capability_matrix_version: str
+    capabilities: dict[str, bool] = Field(default_factory=dict)
     request_id: str | None = None
 
 

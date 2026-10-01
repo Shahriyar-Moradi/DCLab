@@ -1,6 +1,10 @@
 # Scope 3 execution prompts — controlled commands and agent-directed builds
 
-Start after the authoritative S2-P11F gate; S2-P12/S2-P13 may run in parallel
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
+Start after the authoritative S2-P11F gate; S2-P12/S2-P13/S2-P14 may run in parallel
 and do not block safe Scope 3 development. S2-P12H and the S2-P13F runtime
 decision must close before production-MVP go/no-go. Apply `README.md` and
 `EXECUTION_STANDARD.md`. Activate only
@@ -16,11 +20,16 @@ command/approval services and a router such as
 `api/v1_model_builds.py`; web, SDK and agent tools call the same services.
 LangGraph nodes may request only versioned ToolRunner operations; they never
 execute commands directly, hold approval authority or introduce a second tool/
-agent loop. The S2-P12 Deep Investigation worker and S2-P13 OpenAI Agents
-adapter remain separate whole-run runtimes and proposal-only by default; they
+agent loop. The S2-P12 Deep Investigation worker, S2-P13 OpenAI Agents adapter
+and S2-P14 NOOA worker remain separate whole-run runtimes and proposal-only by default; they
 receive no raw LangGraph or worker-dispatch tool. Any allowed command must still
 enter the same ToolRunner/ApprovalService boundary. PydanticAI cannot provide a
 framework-native command tool.
+Jev may rank or classify a proposal only through an S1-P12F-released purpose;
+its probabilities/confidence cannot satisfy authorization, approval, resource
+preconditions or deterministic scientific verification. NOOA cannot consume an
+approval or apply a proposal; a reviewed user/system action creates a new typed
+DCLab command under the same policies as every other client.
 
 Read `docs/agentic-program/ML_PLATFORM_INTEGRATION_ARCHITECTURE.md`. MLflow is
 the single production-MVP detailed experiment tracker/model-package metadata

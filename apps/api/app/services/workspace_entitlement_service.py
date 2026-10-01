@@ -100,6 +100,11 @@ def set_entitlement(
         row.source = source
         row.updated_at = datetime.now(UTC)
     db.flush()
+    # Local import avoids making entitlement storage depend on the resolver at
+    # module import time while still invalidating same-transaction reads.
+    from app.services.workspace_capability_service import invalidate_capability_cache
+
+    invalidate_capability_cache(db, workspace_id=workspace_id)
     return row
 
 

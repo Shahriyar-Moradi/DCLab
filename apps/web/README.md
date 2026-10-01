@@ -10,8 +10,9 @@ byte bounds, sets `Cache-Control: no-store`, and returns
 It does not parse bearer tokens, authorize roles, or log bodies.
 
 There is no frontend database, and browser JavaScript does not read or attach
-the opaque HttpOnly session cookie. Navigation may hide links using `/auth/me`
-role for presentation; the API remains the authorization authority.
+the opaque HttpOnly session cookie. Navigation uses versioned `/auth/me`
+capabilities for presentation; the API checks current membership and resources
+for every operation.
 
 Requires the FastAPI server on port **8001**. The browser origin is port **3001**.
 Full setup is in the repository root `README.md`.

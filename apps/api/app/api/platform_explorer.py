@@ -16,6 +16,7 @@ from app.domain.platform_explorer import (
     WorkflowRunDetailRead,
 )
 from app.services import platform_explorer_service as service
+from app.services.audience_projection import public_diagnostic
 
 router = APIRouter(tags=["platform-explorer"])
 
@@ -23,17 +24,22 @@ router = APIRouter(tags=["platform-explorer"])
 def _required(value):
     if value is None:
         raise HTTPException(status_code=404, detail="platform hierarchy record not found")
-    return value
+    return public_diagnostic(value)
 
 
 @router.get("/businesses", response_model=list[BusinessSummaryRead])
 def businesses(db: Session = Depends(get_db)):
-    return service.list_businesses(db)
+    return public_diagnostic(service.list_businesses(db))
 
 
 @router.get("/businesses/{workspace_id}", response_model=BusinessDetailRead)
 def business(workspace_id: UUID, db: Session = Depends(get_db)):
-    return _required(service.get_business(db, workspace_id))
+    raw = service.get_business(db, workspace_id)
+    detail = _required(raw)
+    # Membership email is a typed, authorized admin field, not diagnostic text.
+    for safe_member, member in zip(detail["memberships"], raw["memberships"]):
+        safe_member["email"] = member["email"]
+    return detail
 
 
 @router.get(

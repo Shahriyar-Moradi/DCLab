@@ -30,7 +30,7 @@ from app.api.observability import admin_router as admin_observability_router
 from app.api.observability import business_router as business_observability_router
 from app.api.platform_explorer import router as platform_explorer_router
 from app.api.simulations import router as simulations_router
-from app.api.workspaces import router as workspaces_router
+from app.api.workspaces import router as workspaces_router, scoped_router as scoped_workspaces_router
 from app.api.reproducibility import (
     admin_router as admin_reproducibility_router,
     workspace_router as reproducibility_workspace_router,
@@ -114,8 +114,9 @@ client_api.include_router(client_labs_router)
 app.include_router(v1_router)
 app.include_router(auth_router)
 app.include_router(workspaces_router)
-app.include_router(reproducibility_workspace_router)
-app.include_router(technical_explorer_workspace_router)
+app.include_router(scoped_workspaces_router)
+app.include_router(reproducibility_workspace_router, dependencies=[Depends(require_workspace_read)])
+app.include_router(technical_explorer_workspace_router, dependencies=[Depends(require_workspace_read)])
 app.include_router(business_explorer_router)
 app.include_router(admin_api)
 app.include_router(business_api)
@@ -123,6 +124,7 @@ app.include_router(development_api)
 app.include_router(client_api)
 
 
+@app.head("/health")
 @app.get("/health")
 def health():
     try:

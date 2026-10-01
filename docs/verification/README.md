@@ -31,7 +31,16 @@ Older reports below keep their original evidence. Their executive counts are
 | [S0_P02E_SESSION_OPERATIONS.md](S0_P02E_SESSION_OPERATIONS.md) | **CURRENT** | Typed auth settings, kill switch, metrics, incident runbooks | — |
 | [S0_P02F_ADVERSARIAL_GATE.md](S0_P02F_ADVERSARIAL_GATE.md) | **CURRENT** | Two-user session matrix, bearer without cookies, production-shaped kill switch | — |
 | [S0_P03A_WORKSPACE_SELECTION.md](S0_P03A_WORKSPACE_SELECTION.md) | **CURRENT** | Active workspace contract and ADR 0003; head is owned by canonical truth | — |
+| [S0_P03B_CAPABILITY_AUTHORITY.md](S0_P03B_CAPABILITY_AUTHORITY.md) | **CURRENT** | Versioned server capability matrix, bounded invalidation and direct API denial; local verification | Exact-SHA CI pending |
+| [S0_P03C_TENANT_FRONTEND_STATE.md](S0_P03C_TENANT_FRONTEND_STATE.md) | **CURRENT** | Tenant-keyed browser state and safe switch; local browser race test | Exact-SHA CI pending |
+| [S0_P03D_WORKSPACE_PROPAGATION.md](S0_P03D_WORKSPACE_PROPAGATION.md) | **CURRENT** | Explicit bearer scope, browser request snapshot, path/header agreement and BFF spoof test | Exact-SHA CI pending |
+| [S0_P03E_ISOLATION_GATE.md](S0_P03E_ISOLATION_GATE.md) | **CURRENT — locally verified** | Live tenant-route inventory, two-workspace PostgreSQL matrix, browser switch/spoof gate and invalidation runbook | Exact-SHA CI pending |
 | [S0_P04A_SIMULATION_INSIGHTS.md](S0_P04A_SIMULATION_INSIGHTS.md) | **CURRENT** | SimulationRun/Insights tenancy and ADR 0004; head is owned by canonical truth | — |
+| [S0_P04B_TENANT_LINEAGE.md](S0_P04B_TENANT_LINEAGE.md) | **CURRENT — locally verified** | Simulation/Insights and admin derivative workspace filtering, previous-head migration, audit and concurrency gate | Exact-SHA CI pending |
+| [S0_P04C_AUDIENCE_CLOSURE.md](S0_P04C_AUDIENCE_CLOSURE.md) | **CURRENT — locally verified** | Workspace/capability-first event reads, legacy diagnostic projections, SDK/artifact locator closure | Exact-SHA CI pending |
+| [S0_P04D_RETIREMENT_ISOLATION_GATE.md](S0_P04D_RETIREMENT_ISOLATION_GATE.md) | **CURRENT — locally verified** | 1,118 backend/SDK pass, 27 browser pass; two-workspace Insights BFF, archive quarantine and forward-repair runbook | Exact-SHA CI pending; Plan 0.4 not formally closed |
+| [S0_P05A_POLICY_BOOTSTRAP.md](S0_P05A_POLICY_BOOTSTRAP.md) | **HISTORICAL — locally verified at 0060** | Versioned tenant-bound dataset defaults; null column labels deny; 1,122 backend/SDK tests passed, migration rollback/reapply checked | Exact-SHA CI/review pending; Plan 0.5 not closed |
+| [S0_P05B_QUARANTINE_PUBLICATION.md](S0_P05B_QUARANTINE_PUBLICATION.md) | **PARTIAL** | Additive publication lineage and production fail-closed upload guard; classification/publish flow awaits a product decision | No full gate or exact-SHA CI |
 | [../../contracts/README.md](../../contracts/README.md) | **CURRENT** | How to refresh snapshots vs breaking API changes | — |
 | [BASELINE.md](BASELINE.md) | **HISTORICAL** | `de2af56`, 2026-09-04 pre-repair | SHA, Python 3.14 host note as “the” baseline |
 | [../DCLAB_SYSTEM_VERIFICATION_REPORT.md](../DCLAB_SYSTEM_VERIFICATION_REPORT.md) | **HISTORICAL** | Alembic **0027**, 498 pytest, 6 Playwright, 29 routes | Any executive count |

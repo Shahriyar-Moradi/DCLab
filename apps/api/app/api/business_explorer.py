@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_business_administration
+from app.api.deps import get_current_user, require_business_administration, require_workspace_read
 from app.db.models import ClientLabUpload, User
 from app.db.session import get_db
 from app.domain.ml_verification import VerificationAttemptResponse
@@ -45,7 +45,7 @@ from app.services.workspace_capability_service import (
 router = APIRouter(
     prefix="/business",
     tags=["business-administration"],
-    dependencies=[Depends(require_business_administration)],
+    dependencies=[Depends(require_business_administration), Depends(require_workspace_read)],
 )
 
 
@@ -170,12 +170,12 @@ def pipeline_monitor(
     user: User = Depends(get_current_user),
 ):
     _require_read(db, user, workspace_id)
+    _capability(db, user, workspace_id, PIPELINE_MONITOR)
     value = business_explorer_service.get_pipeline_monitor(
         db, user, workspace_id, experiment_id
     )
     if value is None:
         raise _not_found()
-    _capability(db, user, workspace_id, PIPELINE_MONITOR)
     return value
 
 
@@ -189,6 +189,7 @@ def download_predictions(
     user: User = Depends(get_current_user),
 ) -> Response:
     _require_read(db, user, workspace_id)
+    _capability(db, user, workspace_id, PREDICTION_DOWNLOAD)
     exists = db.scalar(
         select(ClientLabUpload.id).where(
             ClientLabUpload.workspace_id == workspace_id,
@@ -197,7 +198,6 @@ def download_predictions(
     )
     if exists is None:
         raise _not_found()
-    _capability(db, user, workspace_id, PREDICTION_DOWNLOAD)
     payload = client_lab_upload_service.predictions_download(
         db, user, upload_id, workspace_id=workspace_id
     )

@@ -237,7 +237,7 @@ def ingest_sample_workbook(db: Session, *, n: int = 240) -> Dataset:
 
 
 def experiment_payload(db: Session, experiment: Experiment) -> dict:
-    task = db.get(PredictionTask, experiment.task_id)
+    task = db.get(PredictionTask, experiment.task_id) if experiment.task_id is not None else None
     dataset = db.get(Dataset, experiment.dataset_id)
     slug = task.slug if task else None
     return {

@@ -1,5 +1,6 @@
 from io import BytesIO
 
+from app.db.models import Dataset, Experiment
 from app.engine.datasets.lab_workbook import make_lab_workbook
 
 
@@ -55,6 +56,32 @@ def test_train_conversion_fits_five_models(admin_client):
     listed = admin_client.get("/admin/experiments")
     assert listed.status_code == 200
     assert listed.json()[0]["use_case"] == "conversion"
+
+
+def test_experiments_include_pipeline_runs_without_prediction_tasks(admin_client, db_session):
+    created = admin_client.post("/admin/datasets/sample-workbook")
+    assert created.status_code == 200, created.text
+    dataset = db_session.get(Dataset, created.json()["id"])
+    assert dataset is not None
+    run = Experiment(
+        workspace_id=dataset.workspace_id,
+        environment_id=dataset.environment_id,
+        dataset_id=dataset.id,
+        task_id=None,
+        status="CREATED",
+        config={},
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    listed = admin_client.get("/admin/experiments")
+    assert listed.status_code == 200, listed.text
+    item = next(row for row in listed.json() if row["id"] == str(run.id))
+    assert item["task_id"] is None
+    assert item["dataset_id"] == str(dataset.id)
+    detail = admin_client.get(f"/admin/experiments/{run.id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["task_id"] is None
 
 
 def test_sample_workbook_endpoint_is_ready_to_train(admin_client):

@@ -80,10 +80,13 @@ def test_reproduction_hides_cross_workspace_runs(client, db_session):
         role=UserRole.WORKSPACE_OWNER,
         full_name="Hidden Reproduction Owner",
     )
+    workspace = create_business_workspace(
+        db_session, owner=owner, name="Hidden Reproduction Workspace"
+    )
     db_session.commit()
     response = client.get(
-        f"/workspaces/{uuid4()}/pipeline-runs/{uuid4()}/model-build/reproduction",
-        headers=_headers(owner, uuid4()),
+        f"/workspaces/{workspace.id}/pipeline-runs/{uuid4()}/model-build/reproduction",
+        headers=_headers(owner, workspace.id),
     )
     assert response.status_code == 404
 

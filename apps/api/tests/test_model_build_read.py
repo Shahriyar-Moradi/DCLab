@@ -399,7 +399,7 @@ def test_model_build_is_ordered_safe_canonical_and_workspace_readable(
         assert response.status_code == 200, response.text
 
     denied = client.get(path, headers=_headers(foreign_owner, workspace_id))
-    assert denied.status_code == 404
+    assert denied.status_code == 403
 
     missing_run = client.get(
         f"/workspaces/{workspace_id}/pipeline-runs/{uuid4()}/model-build",
@@ -443,11 +443,14 @@ def test_model_build_hides_cross_workspace_run_ids(
         role=UserRole.WORKSPACE_OWNER,
         full_name="Isolated Owner",
     )
+    workspace = create_business_workspace(
+        db_session, owner=foreign_owner, name="Isolated Model-Build Co"
+    )
     db_session.commit()
 
     response = client.get(
-        f"/workspaces/{uuid4()}/pipeline-runs/{uuid4()}/model-build",
-        headers=_headers(foreign_owner, uuid4()),
+        f"/workspaces/{workspace.id}/pipeline-runs/{uuid4()}/model-build",
+        headers=_headers(foreign_owner, workspace.id),
     )
     assert response.status_code == 404
 
@@ -504,13 +507,13 @@ def test_personal_and_workspace_owners_can_read_their_model_build(
         client.get(
             personal_path, headers=_headers(business_owner, personal_workspace.id)
         ).status_code
-        == 404
+        == 403
     )
     assert (
         client.get(
             business_path, headers=_headers(personal_owner, business_workspace.id)
         ).status_code
-        == 404
+        == 403
     )
 
 

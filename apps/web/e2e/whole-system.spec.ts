@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const API_URL = "http://127.0.0.1:8001";
+const API_URL = process.env.DCLAB_E2E_API_URL ?? "http://127.0.0.1:8001";
+const WEB_ORIGIN = process.env.DCLAB_E2E_WEB_URL ?? "http://127.0.0.1:3001";
 const PASSWORD = "VerificationOnly123!";
 const DATABASE_URL =
   process.env.DCLAB_E2E_DATABASE_URL ??
@@ -45,7 +46,7 @@ async function mutationHeaders(page: Page): Promise<Record<string, string>> {
   }
   return {
     "X-CSRF-Token": csrf ?? "",
-    Origin: "http://127.0.0.1:3001",
+    Origin: WEB_ORIGIN,
   };
 }
 
@@ -277,7 +278,9 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Model Registry" })).toBeVisible();
-    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
+    // The server grants platform admins business_access for a selected
+    // Business workspace; navigation follows that effective capability.
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Marketing" })).toHaveCount(0);
     await expect(page.getByRole("contentinfo")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open application navigation" })).toHaveCount(0);
@@ -395,7 +398,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(navigation.getByRole("link", { name: "Model Registry" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
-    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
     await page.getByRole("button", { name: "Sign out" }).click();
 
     await login(page, "business-admin-a@verification.invalid");
@@ -892,7 +895,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(navigation.getByRole("link", { name: "Registry" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
-    await expect(navigation.getByRole("link", { name: "Business Admin" })).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
     const main = page.locator("#main");
     await expect(main.getByRole("link", { name: "Business A", exact: true })).toBeVisible();
     await expect(main.getByRole("link", { name: "Business B", exact: true })).toBeVisible();

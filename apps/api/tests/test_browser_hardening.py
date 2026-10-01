@@ -245,7 +245,10 @@ def test_suspended_membership_does_not_fall_through(
     db_session.commit()
     response = client.get(
         "/app/opportunities",
-        headers={"Authorization": f"Bearer {client_token}"},
+        headers={
+            "Authorization": f"Bearer {client_token}",
+            "X-Workspace-Id": str(client_user.workspace_id),
+        },
     )
     assert response.status_code == 403
     me = client.get("/auth/me", headers={"Authorization": f"Bearer {client_token}"})

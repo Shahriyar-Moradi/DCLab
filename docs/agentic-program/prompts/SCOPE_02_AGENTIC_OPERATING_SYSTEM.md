@@ -1,5 +1,9 @@
 # Scope 2 execution prompts — complete agentic operating system
 
+Every prompt inherits the plan-level outcome and mandatory live-checkout
+execution card in [the remaining-scope map](REMAINING_SCOPE_EXECUTION_MAP.md).
+Complete one reviewable lettered work unit at a time.
+
 Start only after verified Scope 1. Apply `README.md` and
 `EXECUTION_STANDARD.md`. Agents supervise the whole deterministic pipeline in
 read, shadow, critique and proposal modes. Domain writes, builds, exports,
@@ -19,9 +23,12 @@ specialist subgraphs. Do not introduce PydanticAI, `pydantic-graph`, LangChain
 `create_agent`, OpenAI Agents, another checkpointer authority or a hidden
 specialist tool loop inside that runtime. Plan 2.12 is the approved separate
 Deep Investigation harness; Plan 2.13 is the approved whole-run OpenAI Agents
-adapter. Neither can embed, invoke or be invoked by the supervisor, a
-specialist, `agent.turn.v1` or the other runtime. Every AgentRun binds exactly
-one code-owned runtime kind/version.
+adapter; Plan 2.14 is the optional whole-run NOOA proposal runtime. None can
+embed, invoke or be invoked by the supervisor, a specialist, `agent.turn.v1` or
+another runtime. Every AgentRun binds exactly one code-owned runtime kind/version.
+NOOA agent classes expose only reviewed DCLab facades; generated Python is
+untrusted and runs only in `worker-nooa` OS isolation. A Jev call remains an
+advisory service call under its own released purpose and is never a runtime edge.
 All Scope 2 agents consume DCLab-owned lifecycle, decision, evidence and
 normalized monitoring/tracking projections only. They never connect to MLflow,
 load model packages, import Pandera/Evidently/skops, or receive provider IDs,
@@ -34,8 +41,8 @@ paths, Arrow streams or scan configuration, and Polars is not introduced.
 
 ## AWS/GCP portability requirements
 
-Supervisor, specialist, Deep Investigation and OpenAI-adapter product contracts
-are identical on AWS and GCP. Each worker is one digest-pinned OCI image with a
+Supervisor, specialist, Deep Investigation, OpenAI-adapter and optional NOOA
+product contracts are identical on AWS and GCP. Each worker is one digest-pinned OCI image with a
 provider-neutral workload/resource profile; EKS/GKE identity, network and
 runtime-state endpoints are injected only by deployment adapters. No agent may
 see cloud credentials, bucket URLs, cluster APIs or provider resource IDs.
@@ -1252,4 +1259,193 @@ provider activation. If allowed, enable only for allowlisted synthetic or
 de-identified projects first and publish pins, retention, limits, dashboard,
 alerts, owner and removal runbook. Prove disabling/removing the adapter leaves
 all LangGraph, Deep Investigation and deterministic ML tests healthy.
+```
+
+## Plan 2.14 — isolated NVIDIA NOOA proposal runtime
+
+**Contract.** Evaluate and, only if the gates pass, add NVIDIA Object-Oriented
+Agents (NOOA) as a separately deployed whole-run runtime selected by one DCLab
+`AgentRun`. The first runtime key is `nooa.proposal.v1`; it is read-only and
+proposal-only. It is not a LangGraph node, specialist, tool or child; it cannot
+invoke or be invoked by LangGraph, Deep Investigation or OpenAI Agents. DCLab
+owns identity, authorization, context, model routing, tools, budgets, citations,
+approval, product state and terminal status. Read
+`docs/agentic-program/JEV_NOOA_INTEGRATION_ARCHITECTURE.md` before every prompt.
+
+S2-P14A may start after S2-P11F and does not block Scope 3. A NOOA purpose that
+uses Jev also requires S1-P12F `SHADOW_ALLOWED` for its exact decision release.
+Use focused test homes `apps/api/tests/test_nooa_runtime_contract.py`,
+`test_nooa_runtime_persistence.py`, `test_nooa_run_service.py`,
+`services/nooa_runtime/tests/test_nooa_adapter.py`, `test_nooa_tool_facade.py`,
+`test_nooa_isolation.py` and `test_nooa_release_gate.py`. No live provider or
+TypeSafe credential belongs in PR CI.
+
+### S2-P14A — runtime authority, dependency and model-transport proof
+
+```text
+Review the current official NOOA repository, architecture, Predict/CodeAct
+strategies, LLM client extension points, tracing, visibility, MCP and safety
+guidance plus its Apache-2.0 license, dependency tree and release history.
+Inventory the completed DCLab AgentRun/Step/Event/ToolCall/Citation, runtime-kind,
+LLM gateway, ToolRunner, budget, context, job and S2-P12/S2-P13 boundaries. Write
+an ADR for one whole-run nooa.proposal.v1 purpose and agent class. Prove with a
+small contract spike that an official/supported NOOA client adapter can call a
+private DCLab model endpoint so worker-nooa receives no provider key; do not
+patch private framework internals. Compare NOOA value with raw LangGraph and Deep
+Investigation on the named task. Select Predict or bounded CodeAct, maximum
+iterations/model calls/generated-code cells, context/tool/output bounds,
+isolation profile, trace retention, package/image pins and no-go criteria.
+Diagram every process/network/token edge and prove runtime non-nesting. Add
+dependency/import tests and ADR links. Do not create tables, install NOOA in the
+API/worker-agent environment or run customer data. If supported transport or
+isolation cannot be proven, record REJECTED and stop Plan 2.14.
+```
+
+### S2-P14B — runtime contracts and attempt persistence
+
+```text
+Extend framework-neutral agent contracts with NooaRuntimeManifest,
+NooaAgentRelease, strategy/limit policy and typed proposal result while reusing
+the existing AgentRun state machine and one-runtime-per-run constraint. Inspect
+whether AgentRun/Step/MlJob/lease records can represent a separately leased
+runtime attempt. If not, discover the live Alembic head and add one generic
+agent_runtime_attempts table with the exact tenant/run, runtime/release/image,
+digest, lease/heartbeat/cancel, counter/result/error/retention fields and unique/
+partial/index constraints in JEV_NOOA_INTEGRATION_ARCHITECTURE.md. Do not add a
+NOOA session, memory, checkpoint, message or tool table. Store class/package
+manifests as immutable Artifact references; no raw context, generated-code
+transcript, hidden reasoning, SDK object or secret in rows. Add pure transition/
+digest tests and real-PostgreSQL empty/live-head migration, two-workspace,
+one-active-attempt, lease race, stale attempt, retry and retention tests. This
+prompt dispatches no worker and exposes no route. Maximum one migration and
+approximately 800 non-generated changed lines.
+```
+
+### S2-P14C — dedicated worker, adapter and isolation image
+
+```text
+Create services/nooa_runtime/ and a separately locked worker-nooa image/process
+that alone imports the pinned nooa package. Implement a provider-neutral worker
+protocol, deterministic fake model transcripts and the S2-P14A DCLab model-client
+adapter. The worker accepts an immutable ID/digest manifest plus a short-lived,
+run/audience/purpose-bound DCLab token and returns bounded normalized events and
+a typed proposal. Configure non-root, read-only root, bounded scratch, CPU,
+memory, PID, file/output and wall-time limits; CodeAct also requires the reviewed
+OS isolation/runtime class and denied-by-default egress. Permit only private
+DCLab inference/tool/telemetry endpoints. Remove cloud/product/provider secrets,
+database/object clients, host mounts, generic shell, package installation and
+arbitrary HTTP/MCP. Validate cancellation and kill child processes. Test package
+absence from API/worker-agent/worker-investigation, token audience/expiry,
+filesystem/env/private-name/import/network attempts, resource exhaustion,
+malformed transcripts, model timeout and deterministic cleanup. No product tool
+or public API yet.
+```
+
+### S2-P14D — versioned DCLab agent classes and capability facade
+
+```text
+Add one reviewed agent-class release following the interface in
+JEV_NOOA_INTEGRATION_ARCHITECTURE.md. Keep class role/docstrings, visible typed
+fields/methods, strategy and source/package digest immutable and versioned through
+the existing AgentDefinitionVersion/ToolRegistry owners. Expose only narrow
+read-only methods such as read_lifecycle, read_dataset_profile and
+read_experiment_evidence through a private DCLab HTTP/SDK facade. Every call
+validates run token, current membership/capability, workspace/project/resource,
+tool release, data policy, source version, budget, cancellation and argument/
+result bounds, then appends a normalized AgentToolCall/Event/Citation. Never
+expose SQL, paths, Arrow/DuckDB, database sessions, storage/provider clients,
+generic HTTP/filesystem/shell, worker dispatch, another agent runtime or raw
+notebook kernel. Treat NOOA @hidden/private visibility as documentation only;
+service credentials and isolation enforce authority. Test discovered visible
+surface exactly, forged/unknown/stale tools, recursive outer method, cross-tenant
+IDs, revoked membership, malicious result data and per-instance tool isolation.
+```
+
+### S2-P14E — Jev advisory capability and proposal validation
+
+```text
+If and only if S1-P12F allowed the selected purpose, expose one
+request_semantic_review method that calls DCLab SemanticDecisionService by an
+allowlisted immutable release ID. The NOOA worker receives no TypeSafe SDK/key,
+cannot provide arbitrary automatic-path questions, choose a model or lower a
+threshold, and sees only the validated answer/probability/abstention/citation
+contract. Treat the result as advisory evidence. Implement the final typed
+InvestigationProposal validator: exact project/source versions, allowed proposal
+operation vocabulary, bounded rationale, citations validated against current
+authorized evidence, no command/SQL/code blob/credential/provider locator and no
+claim that work executed. Low confidence, abstention, Jev outage or kill switch
+must remain reviewable and cannot trigger a fallback write. Test forged release,
+question injection, changed threshold/model, cross-workspace decision ID,
+probability edge cases, stale citations, deterministic-fact disagreement and
+clean operation with Jev entirely absent/disabled.
+```
+
+### S2-P14F — durable run service, jobs and recovery
+
+```text
+Implement NooaRunService and one code-owned nooa.run.v1 handler. Authorize and
+bind runtime/agent/tool/context/policy/budget/image releases, persist
+AgentRun/ExecutionRequest/MlJob/runtime attempt/event atomically, then dispatch
+IDs only. The worker leases one attempt, revalidates current policy before every
+external operation, heartbeats and cooperatively cancels. Persist normalized
+tool/model/event/proposal results before scheduling the next bounded operation;
+settle all model/Jev/tool budgets once. On worker loss or ambiguous response,
+reconcile the same run/attempt/idempotency digest; never create a second active
+agent instance or replay a possibly completed external call blindly. Map unknown
+NOOA exceptions/states to safe failed/review-required outcomes. Add service/job
+tests for replay/conflict, duplicate delivery, lease expiry/takeover, crash before/
+after provider/tool/result persistence, cancel race, timeout, quota/backpressure,
+policy/runtime disable, agent release retirement and terminal recovery. Do not
+expose command approval or notebook execution.
+```
+
+### S2-P14G — API, operations UI and observability
+
+```text
+Expose NOOA only through the existing /v1 agent run resources using an explicit
+eligible runtime_kind/purpose; do not add a parallel agent/session API. Extend the
+canonical `POST /v1/agent/runs` request with `runtime_kind=nooa.proposal.v1`,
+`purpose`, `agent_release_id`, `project_id`, bounded objective/resource bindings
+and idempotency; return the existing AgentRun resource with runtime/release/
+policy/budget links. Preserve the established create status (201), same-key
+replay semantics, 202 cancellation, opaque event cursor and common 400/401/403/
+404/409/413/422/429/503 error envelope. Use 403 for current capability denial,
+404 for an inaccessible resource, 409 for state/idempotency/release conflicts,
+413 for context/objective bounds, 422 for an ineligible purpose/runtime schema,
+429 for quota/rate denial and 503 with bounded Retry-After when the optional
+runtime is unavailable. Disabled NOOA is never silently routed to LangGraph.
+Extend get/list/steps/events/citations/cancel/retry rather than adding NOOA-only
+routes; never expose attempt lease controls publicly. Extend the
+HTTP client and Agent Studio runtime/evidence presentation to show runtime and
+agent release, bounded progress, citations, advisory Jev lineage, proposal,
+cancel/retry and safe failure. Never expose internal Python locals, hidden
+reasoning, provider keys, raw traces or model/tool credentials. Keep any
+restricted trace artifact operator-only and retention-bound. Add metrics for
+run/attempt state, queue/lease age, iterations, model/tool/Jev calls, generated
+code cells, denials, cancellations, proposal validation/acceptance, resource
+termination and cost with bounded labels. Add alerts and runbooks for stuck/
+runaway worker, tool denial spike, isolation or token failure, model outage,
+dependency/image rollback, data deletion and global disable. Add OpenAPI/SDK,
+component and browser tests for allowed/denied runtime, reload/reconnect, cancel,
+stale proposal and accessible failure states.
+```
+
+### S2-P14H — comparative, adversarial and release gate
+
+```text
+Run identical eligible synthetic/de-identified tasks through raw LangGraph,
+Deep Investigation and NOOA where purposes overlap. Measure task/proposal
+quality, citation validity, unsupported claims, model/tool operations, time,
+tokens/cost, reviewer acceptance, cancellation and operator effort. Attack prompt
+injection, arbitrary import/open/HTTP/MCP/shell, private-name discovery, secret/
+environment/metadata access, forged tools/events/citations, runtime nesting,
+cross-tenant IDs, resource exhaustion, worker death and output smuggling. Hard-
+fail on unauthorized data/action, direct DB/object/Jupyter access, provider key
+in worker, another runtime invocation, deterministic/scientific override,
+automatic command execution or isolation escape. Exercise agent/purpose/global
+kill switches and rollback to images without NOOA while deterministic ML and all
+other runtime paths remain green. Record SHADOW_ALLOWED for named purposes,
+DISABLED_PENDING_EVIDENCE or REJECTED with exact package/image/model/tool/policy
+pins, limits, dashboards, owners and reevaluation date. Activation is never
+implied by implementation and does not change the S2-P11F Scope 2 exit gate.
 ```

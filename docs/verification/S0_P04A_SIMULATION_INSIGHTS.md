@@ -12,6 +12,36 @@ does not grow an insights/simulations API.
 
 ## Evidence
 
+### 2026-09-23 ADR and source reconciliation
+
+The current checkout is based on `02d9f04bad25e5f03bda3ae761c9ec0e8cb3e2a4`
+with unrelated in-progress changes. At the time of this gate, the migration head was `0059_auth_session_constraints`, beyond the original additive simulation
+expand migration. The [ADR](../adr/0004-simulation-insights-tenancy.md) now
+separates the pre-0058 global inventory from the as-built route/service/UI/SDK
+inventory, records why historical ownership cannot be inferred, and defines
+logical quarantine plus a fail-closed compatibility and rollback procedure.
+This reconciliation changes documentation only. It does not claim a new
+PostgreSQL or browser run; the results below remain dated observations.
+
+Observed on this checkout:
+
+- Observed then: `.venv/bin/alembic heads` → `0059_auth_session_constraints (head)`.
+- Targeted `test_source_contract_keeps_workspace_filter_and_no_cli_or_sdk_surface`
+  → 1 passed, 1 dependency deprecation warning.
+- `python -m scripts.generate_truth_artifacts --verify-idempotent` → two
+  byte-identical generations; `python -m scripts.check_truth_drift` → all
+  detectors clean; `git diff --check` → clean.
+- No new migration, API/SDK change, fixture mutation, cloud resource, feature
+  flag, or product behavior change. S0-P04B/C still own broader raw-event and
+  global admin-derivative closure; this ADR is not their isolation evidence.
+
+The previous downgrade instruction in the historical block below is preserved
+as evidence of the original review, **not current operational guidance**.
+Dropping the workspace columns or serving a pre-tenant-aware binary could
+restore global reads. Keep the additive schema and restore a verified
+tenant-aware release, or disable affected routes while repairing forward.
+The ADR is the current rollback authority.
+
 ### 2026-09-11 local browser re-verification
 
 The complete browser acceptance suite passed 18/18 against a fresh database at
@@ -50,8 +80,13 @@ Reviewer/date: S0-P04A / 2026-09-10
 - Optional `project_id` on `POST /admin/simulations/run`
 - `GET /v1` unchanged
 
-Rollback: `alembic downgrade 0057_session_workspace`. Revert this tree.
+Current rollback: retain the additive workspace columns and use the
+[ADR's fail-closed procedure](../adr/0004-simulation-insights-tenancy.md#rollback-and-forward-repair).
+The original downgrade instruction above is historical and is unsafe for live
+customer traffic.
 
-## Next prompt
+## Follow-up
 
-**S0-P04B** — close capability and audience leakage.
+**S0-P04B** has a separate [local enforcement record](S0_P04B_TENANT_LINEAGE.md).
+The 2026-09-10 measurement above remains historical; raw-event audience
+closure remains S0-P04C.

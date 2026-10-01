@@ -14,7 +14,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ClientLabUpload, Dataset, DatasetAsset, User
+from app.config import get_settings, is_production_env, publication_enforced
+from app.db.models import Artifact, ClientLabUpload, Dataset, DatasetAsset, User
 from app.domain.client_lab import ClientLabUploadRead, TargetConfirmationRequired
 from app.domain.data_access import ACCESS_TYPE_UPLOAD, EXECUTION_MODE_COPY
 from app.domain.errors import (
@@ -53,8 +54,10 @@ from app.services.data_access_service import create_data_access
 from app.services.data_source_service import create_data_source
 from app.services.dataset_column_service import persist_dataset_columns, schema_digest_from_columns
 from app.services.ingestion_run_service import complete_ingestion_run, start_ingestion_run
+from app.services.ingestion_run_service import require_published_artifact
 from app.services.lab_service import seed_dogfood
 from app.services.project_service import get_or_create_labs_project, get_project
+from app.services.upload_structure_scan import inspect_upload_structure
 from app.storage.factory import get_object_storage
 from app.storage.materialize import materialize_object, object_location_uri
 from app.translation.models import InsightCategory
@@ -213,6 +216,18 @@ def _target_confirmation_read(
 def _to_read(
     db: Session, row: ClientLabUpload, *, include_predictions: bool = False
 ) -> ClientLabUploadRead:
+    if not _upload_is_published(db, row):
+        return ClientLabUploadRead(
+            id=row.id, run_id=row.run_id, workspace_id=row.workspace_id,
+            pipeline_run_id=None, dataset_id=None, status="queued", stage="saved",
+            headline="Awaiting safety review", milestone="Awaiting safety review",
+            steps=[], category=InsightCategory(row.category),
+            filename=row.original_filename, kind="unverified", record_count=0,
+            fields_noticed=[], has_named_fields=False, structured=False,
+            progress="saved", message="This file is awaiting safety review.",
+            pipeline_status="queued", insights=[], outcome=None,
+            target_confirmation=None, created_at=row.created_at,
+        )
     view = insights_for_upload(db, row)
     insights = list(view.insights)
     progress = _progress(row)
@@ -258,6 +273,19 @@ def _to_read(
     )
 
 
+def _upload_is_published(db: Session, row: ClientLabUpload) -> bool:
+    if not publication_enforced(get_settings()):
+        return True
+    artifact = db.get(Artifact, row.artifact_id) if row.artifact_id else None
+    if artifact is None or artifact.workspace_id != row.workspace_id:
+        return False
+    try:
+        require_published_artifact(db, artifact)
+    except IdentityError:
+        return False
+    return True
+
+
 def save_upload(
     db: Session,
     *,
@@ -266,11 +294,16 @@ def save_upload(
     filename: str,
     data: bytes | None = None,
     upload_stream: BinaryIO | None = None,
+    declared_mime: str | None = None,
     target_column: str | None = None,
     workspace_id: UUID,
     project_id: UUID | None = None,
     problem_spec_id: UUID | None = None,
 ) -> ClientLabUploadRead:
+    # Until a production scanner/classifier can publish through the audited
+    # ingestion state machine, never run the legacy preview-before-scan path.
+    if is_production_env(get_settings()):
+        raise IdentityError("dataset upload is unavailable pending safety review", status_code=503)
     parsed_category = _parse_category(category)
     if data is None and upload_stream is None:
         raise ValueError("data or upload_stream is required")
@@ -295,6 +328,7 @@ def save_upload(
             expected_digest=put.content_digest,
             filename=filename,
         ) as dest:
+            inspect_upload_structure(filename, dest, declared_mime=declared_mime)
             preview = preview_upload_path(filename, dest)
             if project_id is not None:
                 project = get_project(
@@ -605,6 +639,8 @@ def confirm_upload_target(
     row = _upload_for_workspace(db, user, upload_id, workspace_id=workspace_id)
     if row is None:
         raise IdentityError("not found", status_code=404)
+    if not _upload_is_published(db, row):
+        raise IdentityError("dataset is not published", status_code=409)
     confirm_row(
         db,
         actor=user,
@@ -630,6 +666,8 @@ def predictions_download(
         db, user, upload_id, workspace_id=workspace_id
     )
     if row is None:
+        return None
+    if not _upload_is_published(db, row):
         return None
     outcome = outcome_for_upload(db, row, include_predictions=True)
     if outcome is None or not outcome.predictions:
