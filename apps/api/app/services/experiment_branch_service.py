@@ -636,7 +636,11 @@ def _existing_branch(
     if request is None:
         return None
     spec = dict(request.request_spec or {})
-    if spec.get("parent_experiment_id") != str(parent_id) or spec.get("change_set_digest") != digest:
+    if (
+        request.pipeline_run_id is None
+        or spec.get("parent_experiment_id") != str(parent_id)
+        or spec.get("change_set_digest") != digest
+    ):
         raise ExperimentNotBranchableError(
             "idempotency_key_conflict", "idempotency key was used for another branch"
         )

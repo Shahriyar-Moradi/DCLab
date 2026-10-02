@@ -13,7 +13,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
       }
@@ -31,7 +36,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "DatasetListItem"
       }
@@ -39,11 +49,23 @@
     "/v1/execution-requests": {
       "POST": {
         "operationId": "submit_execution_request_v1_execution_requests_post",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
         "requestSchema": "ExecutionRequestCreate",
         "statusCodes": [
           "202",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
         ],
         "successSchema": "ExecutionRequestRead"
       }
@@ -61,7 +83,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ExecutionRequestRead"
       }
@@ -71,6 +98,16 @@
         "operationId": "confirm_execution_request_target_v1_execution_requests__request_id__target_confirmation_post",
         "parameters": [
           {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
             "in": "path",
             "name": "request_id",
             "required": true
@@ -79,7 +116,14 @@
         "requestSchema": "ExecutionTargetConfirmation",
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "500"
         ],
         "successSchema": "ExecutionRequestRead"
       }
@@ -97,7 +141,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ExperimentCodeRead"
       }
@@ -108,7 +157,13 @@
         "parameters": [],
         "requestSchema": null,
         "statusCodes": [
-          "200"
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "PrincipalRead"
       }
@@ -126,7 +181,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "PipelineModelBuildRead"
       }
@@ -144,7 +204,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
       }
@@ -172,7 +237,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "EventPage"
       }
@@ -190,7 +260,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
       }
@@ -213,7 +288,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "NodeImpactRead"
       }
@@ -224,7 +304,13 @@
         "parameters": [],
         "requestSchema": null,
         "statusCodes": [
-          "200"
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
       }
@@ -242,7 +328,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ProjectRead"
       }
@@ -310,7 +401,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "DecisionRecordPage"
       }
@@ -338,7 +434,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ProjectGraphRead"
       }
@@ -349,7 +450,13 @@
         "parameters": [],
         "requestSchema": null,
         "statusCodes": [
-          "200"
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
       }
@@ -671,6 +778,29 @@
         "status",
         "updated_at",
         "workspace_id"
+      ]
+    },
+    "V1Error": {
+      "properties": [
+        "code",
+        "details",
+        "message",
+        "request_id",
+        "retryable"
+      ],
+      "required": [
+        "code",
+        "message",
+        "request_id",
+        "retryable"
+      ]
+    },
+    "V1ErrorEnvelope": {
+      "properties": [
+        "error"
+      ],
+      "required": [
+        "error"
       ]
     },
     "VisualizationRead": {

@@ -3,6 +3,9 @@
 Transport-neutral HTTP resources over existing query and application services.
 Legacy /app, /admin, /business, and /workspaces routes remain adapters.
 This module does not add MCP, CLI, WebSocket, or SSE.
+
+Contract conventions (error envelope, request ids, opaque cursors, ETag /
+If-Match, Idempotency-Key) live in ``app.api.v1_conventions`` (P3.1-A).
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from uuid import UUID
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -41,17 +44,39 @@ from app.domain.decision_records import (
     DecisionSubjectKind,
     DecisionType,
 )
+from app.api.v1_conventions import (
+    COMMON_ERROR_STATUSES,
+    ETAG_HEADER_DOC,
+    REPLAY_HEADER_DOC,
+    V1APIError,
+    check_if_match,
+    domain_error,
+    error_responses,
+    idempotency_binding,
+    idempotency_key_header,
+    if_match_header,
+    mark_replayed,
+    representation_etag,
+    set_etag,
+)
 from app.domain.errors import (
     ExecutionNotWaitingError,
     GraphNodeNotFoundError,
+    IdempotencyKeyReusedError,
     IdentityError,
+    InvalidCursorError,
     InvalidDecisionQueryError,
-    InvalidGraphCursorError,
     ProjectNotFoundError,
     TargetIntentConflictError,
     TargetNotInDatasetError,
 )
-from app.domain.execution_requests import EXECUTION_OPERATIONS, SOURCE_API
+from app.domain.execution_requests import (
+    EXECUTION_OPERATIONS,
+    REQUEST_NEEDS_INPUT,
+    SERVER_OWNED_REQUEST_SPEC_KEYS,
+    SOURCE_API,
+)
+from app.domain.idempotency import REQUEST_DIGEST_SPEC_KEY
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.observability import MlRunEventRead
@@ -61,10 +86,11 @@ from app.domain.reproducibility import ArtifactRead
 from app.domain.technical_explorer import DatasetListItem
 from app.domain.workspace_identity import ProjectRead, WorkspaceRead
 from app.services.artifact_service import list_artifacts
+from app.services.cursor_codec import open_cursor, sign_cursor
 from app.services.execution_request_service import (
     ExecutionRequestSpecError,
     confirm_execution_target,
-    create_execution_request,
+    create_or_replay_execution_request,
     get_execution_request,
 )
 from app.services.decision_record_service import list_decisions
@@ -82,40 +108,54 @@ from app.services.visualization_service import list_visualizations_for_pipeline_
 from app.services.workspace_service import list_workspaces_for_actor
 from app.services.workspace_selection_service import principal_read
 
-router = APIRouter(prefix="/v1", tags=["v1"])
+router = APIRouter(
+    prefix="/v1", tags=["v1"], responses=error_responses(*COMMON_ERROR_STATUSES)
+)
 
 _EVENT_PAGE_MAX = 200
 _EVENT_PAGE_DEFAULT = 100
 
 
-def _identity_http(exc: IdentityError) -> HTTPException:
-    return HTTPException(status_code=exc.status_code, detail=str(exc))
+def _identity_http(exc: IdentityError) -> V1APIError:
+    return domain_error(exc)
 
 
-def _not_found() -> HTTPException:
-    return HTTPException(status_code=404, detail="not found")
+def _not_found(message: str = "not found") -> V1APIError:
+    return V1APIError(404, "not_found", message)
+
+
+def _bad_cursor(exc: Exception) -> V1APIError:
+    return V1APIError(400, "invalid_cursor", str(exc) or "cursor is invalid for this list")
 
 
 def _execution_request_read(row: object) -> ExecutionRequestRead:
     result = ExecutionRequestRead.model_validate(row)
+    spec = {
+        key: value
+        for key, value in (result.request_spec or {}).items()
+        if key != REQUEST_DIGEST_SPEC_KEY  # binding internals stay server-side
+    }
     return result.model_copy(update={
-        "request_spec": public_diagnostic(result.request_spec),
+        "request_spec": public_diagnostic(spec),
         "result_summary": public_diagnostic(result.result_summary),
         "failure_summary": public_failure(result.failure_summary),
     })
 
 
-def _cursor_sequence(cursor: str | None) -> int:
+def _events_scope(workspace_id: UUID, pipeline_run_id: UUID) -> str:
+    return f"events:{workspace_id}:{pipeline_run_id}"
+
+
+def _cursor_sequence(cursor: str | None, scope: str) -> int:
     if cursor is None or cursor.strip() == "":
         return 0
+    message = "cursor is not an event cursor of this model build"
     try:
-        value = int(cursor.strip())
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail="cursor must be a sequence integer"
-        ) from exc
-    if value < 0:
-        raise HTTPException(status_code=400, detail="cursor must be a sequence integer")
+        (value,) = open_cursor(cursor, scope, message=message)
+    except (InvalidCursorError, ValueError) as exc:
+        raise _bad_cursor(InvalidCursorError(message)) from exc
+    if type(value) is not int or value < 0:
+        raise _bad_cursor(InvalidCursorError(message))
     return value
 
 
@@ -155,10 +195,15 @@ def read_projects(
     return [ProjectRead.model_validate(row) for row in rows]
 
 
-@router.get("/projects/{project_id}", response_model=ProjectRead)
+@router.get(
+    "/projects/{project_id}",
+    response_model=ProjectRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
 def read_project(
     project_id: UUID,
     request: Request,
+    response: Response,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
 ) -> ProjectRead:
@@ -170,8 +215,10 @@ def read_project(
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return ProjectRead.model_validate(project)
+        raise _not_found(str(exc)) from exc
+    body = ProjectRead.model_validate(project)
+    set_etag(response, representation_etag(body))
+    return body
 
 
 @router.get("/projects/{project_id}/graph", response_model=ProjectGraphRead)
@@ -180,7 +227,7 @@ def read_project_graph(
     request: Request,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
-    cursor: str | None = Query(None, max_length=256),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
     limit: int = Query(GRAPH_EXPERIMENT_WINDOW, ge=1, le=GRAPH_EXPERIMENT_WINDOW),
 ) -> ProjectGraphRead:
     """ML state graph of one project: nodes, edges, refs and computed staleness."""
@@ -198,9 +245,9 @@ def read_project_graph(
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidGraphCursorError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise _not_found(str(exc)) from exc
+    except InvalidCursorError as exc:
+        raise _bad_cursor(exc) from exc
 
 
 @router.get("/projects/{project_id}/decisions", response_model=DecisionRecordPage)
@@ -219,7 +266,7 @@ def read_project_decisions(
     actor_kind: DecisionActorKind | None = Query(None),
     recorded_after: datetime | None = Query(None, description="Inclusive lower bound."),
     recorded_before: datetime | None = Query(None, description="Exclusive upper bound."),
-    cursor: str | None = Query(None, max_length=256),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
     limit: int = Query(DECISION_PAGE_DEFAULT, ge=1, le=DECISION_PAGE_MAX),
 ) -> DecisionRecordPage:
     """Append-only decision records of one project, newest first.
@@ -250,9 +297,11 @@ def read_project_decisions(
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except ProjectNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise _not_found(str(exc)) from exc
+    except InvalidCursorError as exc:
+        raise _bad_cursor(exc) from exc
     except InvalidDecisionQueryError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise V1APIError(400, "invalid_query", str(exc)) from exc
 
 
 @router.get("/nodes/{kind}/{node_id}/impact", response_model=NodeImpactRead)
@@ -305,20 +354,49 @@ def read_dataset(
     return row
 
 
+_SUBMIT_OPERATION = "POST /v1/execution-requests"
+
+
 @router.post(
     "/execution-requests",
     response_model=ExecutionRequestRead,
     status_code=202,
+    responses={
+        202: {"headers": {**ETAG_HEADER_DOC, **REPLAY_HEADER_DOC}},
+        **error_responses(409),
+    },
 )
 def submit_execution_request(
     payload: ExecutionRequestCreate,
     request: Request,
+    response: Response,
     user: User = Depends(require_workspace_ml_execution),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Depends(idempotency_key_header),
 ) -> ExecutionRequestRead:
+    """Record control-plane intent (no job is enqueued here).
+
+    ``Idempotency-Key`` (header; the body ``idempotency_key`` is the legacy
+    spelling and must match when both are sent) binds this request's digest:
+    a replay returns the stored request with ``Idempotent-Replayed: true``,
+    a different request under the same key is ``409 idempotency_key_conflict``.
+    """
+
     workspace_id = request_workspace_id(request)
+    binding = idempotency_binding(
+        operation=_SUBMIT_OPERATION,
+        principal_id=user.id,
+        header_key=idempotency_key,
+        body_key=payload.idempotency_key,
+        body=payload.model_dump(mode="json", exclude={"idempotency_key"}),
+    )
     if payload.operation not in EXECUTION_OPERATIONS:
-        raise HTTPException(status_code=400, detail="unsupported operation")
+        raise V1APIError(400, "unsupported_operation", "unsupported operation")
+    reserved = sorted(set(payload.request_spec or {}) & SERVER_OWNED_REQUEST_SPEC_KEYS)
+    if reserved:
+        raise V1APIError(
+            400, "invalid_request_spec", f"request_spec must not contain {', '.join(reserved)}"
+        )
     if payload.project_id is not None:
         try:
             get_project(
@@ -330,7 +408,7 @@ def submit_execution_request(
         except IdentityError as exc:
             raise _identity_http(exc) from exc
         except ProjectNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise _not_found(str(exc)) from exc
     if payload.parent_request_id is not None:
         try:
             get_execution_request(
@@ -342,44 +420,88 @@ def submit_execution_request(
         except IdentityError as exc:
             raise _identity_http(exc) from exc
     try:
-        row = create_execution_request(
+        row, replayed = create_or_replay_execution_request(
             db,
             workspace_id=workspace_id,
             operation=payload.operation,
             source_surface=SOURCE_API,
             project_id=payload.project_id,
             requested_by_user_id=user.id,
-            idempotency_key=payload.idempotency_key,
+            idempotency_key=binding.key,
             external_request_id=payload.external_request_id,
             parent_request_id=payload.parent_request_id,
             request_spec=payload.request_spec,
+            request_digest=binding.digest if binding.keyed else None,
         )
     except ExecutionRequestSpecError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except TargetNotInDatasetError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
-    except TargetIntentConflictError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+        raise V1APIError(400, "invalid_request_spec", str(exc)) from exc
+    except (TargetNotInDatasetError, TargetIntentConflictError, IdempotencyKeyReusedError) as exc:
+        raise domain_error(exc) from exc
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     db.commit()
     db.refresh(row)
-    return _execution_request_read(row)
+    body = _execution_request_read(row)
+    set_etag(response, representation_etag(body))
+    mark_replayed(response, replayed)
+    return body
+
+
+def _already_confirmed(row: object, target_column: str) -> bool:
+    """A retried confirmation that already applied (the service returns it unchanged)."""
+
+    from app.services.target_intent_service import (
+        confirmed_target_from_request,
+        normalize_target_name,
+    )
+
+    selected = normalize_target_name(target_column)
+    return (
+        getattr(row, "status", None) != REQUEST_NEEDS_INPUT
+        and selected is not None
+        and confirmed_target_from_request(row) == selected
+    )
 
 
 @router.post(
     "/execution-requests/{request_id}/target-confirmation",
     response_model=ExecutionRequestRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}, **error_responses(409, 412)},
 )
 def confirm_execution_request_target(
     request_id: UUID,
     payload: ExecutionTargetConfirmation,
     request: Request,
+    response: Response,
     user: User = Depends(require_workspace_ml_execution),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Depends(idempotency_key_header),
+    if_match: str | None = Depends(if_match_header),
 ) -> ExecutionRequestRead:
+    """Supply the missing target and resume the execution once.
+
+    Replay-safe by resource state: repeating the same confirmation (any or no
+    ``Idempotency-Key``) returns the request; a different target is ``409``.
+    ``If-Match`` (optional) must equal the request's current ``ETag`` unless
+    the identical confirmation already applied; otherwise ``412``.
+    """
+
+    del idempotency_key  # validated by the dependency; the state machine dedupes
     workspace_id = request_workspace_id(request)
     try:
+        if if_match is not None:
+            current = get_execution_request(
+                db,
+                actor=user,
+                workspace_id=workspace_id,
+                request_id=request_id,
+                for_update=True,
+            )
+            try:
+                check_if_match(if_match, representation_etag(_execution_request_read(current)))
+            except V1APIError:
+                if not _already_confirmed(current, payload.target_column):
+                    raise
         row = confirm_execution_target(
             db,
             actor=user,
@@ -389,21 +511,24 @@ def confirm_execution_request_target(
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    except ExecutionNotWaitingError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
-    except TargetNotInDatasetError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
-    except TargetIntentConflictError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.public_detail()) from exc
+    except (ExecutionNotWaitingError, TargetNotInDatasetError, TargetIntentConflictError) as exc:
+        raise domain_error(exc) from exc
     except ExecutionRequestSpecError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _execution_request_read(row)
+        raise V1APIError(400, "invalid_request_spec", str(exc)) from exc
+    body = _execution_request_read(row)
+    set_etag(response, representation_etag(body))
+    return body
 
 
-@router.get("/execution-requests/{request_id}", response_model=ExecutionRequestRead)
+@router.get(
+    "/execution-requests/{request_id}",
+    response_model=ExecutionRequestRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
 def read_execution_request(
     request_id: UUID,
     request: Request,
+    response: Response,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
 ) -> ExecutionRequestRead:
@@ -414,7 +539,9 @@ def read_execution_request(
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    return _execution_request_read(row)
+    body = _execution_request_read(row)
+    set_etag(response, representation_etag(body))
+    return body
 
 
 def _require_model_build(
@@ -434,10 +561,12 @@ def _require_model_build(
 @router.get(
     "/model-builds/{pipeline_run_id}",
     response_model=PipelineModelBuildRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
 )
 def read_model_build(
     pipeline_run_id: UUID,
     request: Request,
+    response: Response,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
 ) -> PipelineModelBuildRead:
@@ -448,6 +577,7 @@ def read_model_build(
         raise _identity_http(exc) from exc
     if body is None:
         raise _not_found()
+    set_etag(response, representation_etag(body))
     return body
 
 
@@ -460,12 +590,13 @@ def read_model_build_events(
     request: Request,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
-    cursor: str | None = Query(None),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
     limit: int = Query(_EVENT_PAGE_DEFAULT, ge=1, le=_EVENT_PAGE_MAX),
 ) -> EventPage:
     workspace_id = request_workspace_id(request)
     _require_model_build(db, user, workspace_id, pipeline_run_id)
-    after_sequence = _cursor_sequence(cursor)
+    scope = _events_scope(workspace_id, pipeline_run_id)
+    after_sequence = _cursor_sequence(cursor, scope)
     rows = list_run_events(
         db,
         pipeline_run_id,
@@ -476,7 +607,7 @@ def read_model_build_events(
     page = rows[:limit]
     next_cursor = None
     if len(rows) > limit:
-        next_cursor = str(page[-1].sequence)
+        next_cursor = sign_cursor(scope, [int(page[-1].sequence)])
     return EventPage(
         items=[MlRunEventRead.model_validate(event_read(row)) for row in page],
         next_cursor=next_cursor,

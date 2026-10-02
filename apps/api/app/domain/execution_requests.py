@@ -82,7 +82,16 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         # request is bound to (idempotent replay).
         "parent_experiment_id",
         "change_set_digest",
+        # /v1 Idempotency-Key binding (P3.1-A): server-owned digest of the
+        # request a key names; callers can never supply it.
+        "request_digest",
     }
+)
+
+# Keys only server code writes (branch replay binding, /v1 digest binding); a
+# /v1 caller's request_spec may never carry them.
+SERVER_OWNED_REQUEST_SPEC_KEYS = frozenset(
+    {"parent_experiment_id", "change_set_digest", "request_digest"}
 )
 
 CK_EXECUTION_REQUEST_OPERATION = sql_in_clause("operation", EXECUTION_OPERATIONS)

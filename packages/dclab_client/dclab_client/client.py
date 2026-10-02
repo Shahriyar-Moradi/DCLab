@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 from uuid import UUID
 
 import httpx
 
 from dclab_client._http import DEFAULT_TIMEOUT_SECONDS, V1Transport
+from dclab_client._version import __version__
 from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
     Artifact,
@@ -24,7 +25,10 @@ from dclab_client.types import (
     ProjectGraph,
     Visualization,
     Workspace,
+    _Versioned,
 )
+
+_V = TypeVar("_V", bound=_Versioned)
 
 
 # Kinds accepted by GET /v1/nodes/{kind}/{id}/impact (ADR 0006 §1).
@@ -40,6 +44,15 @@ def _id(value: UUID | str) -> str:
         return str(UUID(str(value)))
     except (TypeError, ValueError) as exc:
         raise DCLabClientError("resource ids must be UUIDs") from exc
+
+
+def _versioned(model: type[_V], payload: Any, headers: httpx.Headers) -> _V:
+    """Validate a mutable resource and keep its ETag (for If-Match) and replay flag."""
+
+    row = model.model_validate(payload)
+    row._etag = headers.get("etag")
+    row._replayed = (headers.get("idempotent-replayed") or "").lower() == "true"
+    return row
 
 
 def _node_kind(kind: str) -> str:
@@ -77,10 +90,10 @@ class ProjectsClient:
         return [Project.model_validate(row) for row in payload]
 
     def get(self, project_id: UUID | str, *, request_id: str | None = None) -> Project:
-        payload = self._transport.request(
+        payload, headers = self._transport.request_with_headers(
             "GET", f"/v1/projects/{_id(project_id)}", request_id=request_id
         )
-        return Project.model_validate(payload)
+        return _versioned(Project, payload, headers)
 
     def graph(
         self,
@@ -192,6 +205,10 @@ class ExecutionRequestsClient:
         external_request_id: str | None = None,
         request_id: str | None = None,
     ) -> ExecutionRequest:
+        """Record intent. Without ``idempotency_key`` a fresh key is generated and
+        sent as the ``Idempotency-Key`` header (exposed on errors for safe resend);
+        a reused key with a different request raises ``IdempotencyConflictError``."""
+
         body: dict[str, Any] = {
             "operation": operation,
             "request_spec": dict(request_spec or {}),
@@ -204,14 +221,14 @@ class ExecutionRequestsClient:
             body["idempotency_key"] = idempotency_key
         if external_request_id:
             body["external_request_id"] = external_request_id
-        payload = self._transport.request(
+        payload, headers = self._transport.request_with_headers(
             "POST",
             "/v1/execution-requests",
             json=body,
             request_id=request_id,
             idempotency_key=idempotency_key,
         )
-        return ExecutionRequest.model_validate(payload)
+        return _versioned(ExecutionRequest, payload, headers)
 
     def confirm_target(
         self,
@@ -219,24 +236,31 @@ class ExecutionRequestsClient:
         *,
         target_column: str,
         request_id: str | None = None,
+        if_match: str | None = None,
+        idempotency_key: str | None = None,
     ) -> ExecutionRequest:
-        payload = self._transport.request(
+        """``if_match``: the ``etag`` of a previous read; raises ``PreconditionFailedError``
+        when the request changed since (unless this exact confirmation already applied)."""
+
+        payload, headers = self._transport.request_with_headers(
             "POST",
             f"/v1/execution-requests/{_id(execution_request_id)}/target-confirmation",
             json={"target_column": target_column},
             request_id=request_id,
+            idempotency_key=idempotency_key,
+            if_match=if_match,
         )
-        return ExecutionRequest.model_validate(payload)
+        return _versioned(ExecutionRequest, payload, headers)
 
     def get(
         self, execution_request_id: UUID | str, *, request_id: str | None = None
     ) -> ExecutionRequest:
-        payload = self._transport.request(
+        payload, headers = self._transport.request_with_headers(
             "GET",
             f"/v1/execution-requests/{_id(execution_request_id)}",
             request_id=request_id,
         )
-        return ExecutionRequest.model_validate(payload)
+        return _versioned(ExecutionRequest, payload, headers)
 
 
 class ModelBuildsClient:
@@ -246,12 +270,12 @@ class ModelBuildsClient:
     def get(
         self, pipeline_run_id: UUID | str, *, request_id: str | None = None
     ) -> ModelBuild:
-        payload = self._transport.request(
+        payload, headers = self._transport.request_with_headers(
             "GET",
             f"/v1/model-builds/{_id(pipeline_run_id)}",
             request_id=request_id,
         )
-        return ModelBuild.model_validate(payload)
+        return _versioned(ModelBuild, payload, headers)
 
     def events(
         self,
@@ -323,6 +347,8 @@ class DCLabClient:
     Future MCP and CLI entrypoints should wrap this type. They are not
     implemented in this package.
     """
+
+    version = __version__
 
     def __init__(
         self,

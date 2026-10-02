@@ -134,6 +134,16 @@ def csrf_hmac_secret(settings: Settings) -> str:
     return settings.auth_csrf_secret.strip() or settings.jwt_secret
 
 
+def cursor_hmac_secret(settings: Settings) -> str:
+    """Key material for signed /v1 page cursors (domain-separated by the codec).
+
+    Reuses secrets production already requires (no new setting); rotating
+    them only invalidates in-flight cursors, which clients restart from page 1.
+    """
+
+    return settings.auth_token_hash_secret.strip() or settings.jwt_secret
+
+
 def _secret_is_unsafe(value: str) -> bool:
     return not value.strip() or value.strip() == INSECURE_JWT_SECRET
 

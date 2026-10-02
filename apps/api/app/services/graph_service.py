@@ -14,8 +14,6 @@ and never enters staleness or impact.
 
 from __future__ import annotations
 
-import base64
-import binascii
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -38,7 +36,12 @@ from app.db.models import (
     User,
     WorkflowRun,
 )
-from app.domain.errors import GraphNodeNotFoundError, IdentityError, InvalidGraphCursorError
+from app.domain.errors import (
+    GraphNodeNotFoundError,
+    IdentityError,
+    InvalidCursorError,
+    InvalidGraphCursorError,
+)
 from app.domain.project_graph import (
     GraphEdge,
     GraphNode,
@@ -67,6 +70,7 @@ from app.domain.state_graph import (
 from app.domain.workspace_identity import ProjectRead
 from app.services.audience_projection import public_diagnostic
 from app.services.authorization_service import can_read_workspace
+from app.services.cursor_codec import open_cursor, sign_cursor
 from app.services.project_service import get_project
 
 Key = tuple[str, UUID]
@@ -117,21 +121,26 @@ class _Graph:
 # --- cursor --------------------------------------------------------------------
 
 
-def encode_cursor(created_at: datetime, experiment_id: UUID) -> str:
-    raw = f"{created_at.isoformat()}|{experiment_id}".encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+def _cursor_scope(project: Project) -> str:
+    return f"graph:{project.workspace_id}:{project.id}"
 
 
-def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+def encode_cursor(project: Project, created_at: datetime, experiment_id: UUID) -> str:
+    """Signed, project-bound keyset position (shared /v1 cursor codec, P3.1-A)."""
+
+    return sign_cursor(_cursor_scope(project), [created_at.isoformat(), str(experiment_id)])
+
+
+def decode_cursor(project: Project, cursor: str) -> tuple[datetime, UUID]:
+    message = "cursor is not a cursor of this project graph"
     try:
-        padded = cursor.strip() + "=" * (-len(cursor.strip()) % 4)
-        created_raw, id_raw = base64.urlsafe_b64decode(padded).decode().split("|")
+        created_raw, id_raw = open_cursor(cursor, _cursor_scope(project), message=message)
         created_at = datetime.fromisoformat(created_raw)
         if created_at.tzinfo is None:
             raise ValueError("cursor timestamp must be timezone-aware")
         return created_at, UUID(id_raw)
-    except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
-        raise InvalidGraphCursorError("cursor is not a project graph cursor") from exc
+    except (InvalidCursorError, ValueError, TypeError) as exc:
+        raise InvalidGraphCursorError(message) from exc
 
 
 # --- loader (ADR §6 statement plan) ---------------------------------------------
@@ -179,7 +188,7 @@ def _load_graph(
     db: Session, project: Project, *, cursor: str | None, limit: int
 ) -> _Graph:
     ws, pid = project.workspace_id, project.id
-    after = decode_cursor(cursor) if cursor else None
+    after = decode_cursor(project, cursor) if cursor else None
     truncated: set[str] = set()
     nodes: dict[Key, _Node] = {}
     edges: list[tuple[Key, Key, str]] = []
@@ -231,7 +240,7 @@ def _load_graph(
     next_cursor = None
     if len(window) > limit:
         window = window[:limit]
-        next_cursor = encode_cursor(window[-1].created_at, window[-1].id)
+        next_cursor = encode_cursor(project, window[-1].created_at, window[-1].id)
     window_ids = [row.id for row in window]
     window_set = set(window_ids)
 

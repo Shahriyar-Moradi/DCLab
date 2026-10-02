@@ -53,7 +53,13 @@ class GraphNodeNotFoundError(LookupError):
     """No project-graph node of this kind matches the workspace-scoped id."""
 
 
-class InvalidGraphCursorError(ValueError):
+class InvalidCursorError(ValueError):
+    """A /v1 page cursor is malformed, tampered with, or minted for another route/scope. Maps to 400."""
+
+    code = "invalid_cursor"
+
+
+class InvalidGraphCursorError(InvalidCursorError):
     """A project-graph page cursor is malformed."""
 
 
@@ -323,3 +329,22 @@ class IdempotencyKeyConflictError(DecisionRecordError):
 
 class InvalidDecisionQueryError(ValueError):
     """Malformed decision list filter or cursor. Maps to 400."""
+
+
+class InvalidDecisionCursorError(InvalidDecisionQueryError, InvalidCursorError):
+    """The decision list cursor is invalid or bound to another project/filter set. Maps to 400."""
+
+
+class IdempotencyKeyReusedError(Exception):
+    """An Idempotency-Key was replayed with a different request digest (P3.1-A). Maps to 409.
+
+    Generic form of the per-resource digest binding: a key always names one
+    request (route, path, body, principal); a different request under the same
+    key is refused instead of returning or overwriting the earlier result.
+    """
+
+    status_code = 409
+    code = "idempotency_key_conflict"
+
+    def __init__(self, message: str = "this Idempotency-Key was used for a different request") -> None:
+        super().__init__(message)

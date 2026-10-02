@@ -19,8 +19,6 @@ write replay-safe.
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 import math
 import re
@@ -100,6 +98,8 @@ from app.domain.errors import (
     DecisionRecordNotFoundError,
     IdempotencyKeyConflictError,
     IdentityError,
+    InvalidCursorError,
+    InvalidDecisionCursorError,
     InvalidDecisionQueryError,
     InvalidDecisionRecordError,
     InvalidDecisionTransitionError,
@@ -109,6 +109,7 @@ from app.domain.execution_requests import FORBIDDEN_REQUEST_PAYLOAD_KEYS
 from app.domain.state_graph import STATE_GRAPH_JSON_MAX_BYTES, node_key
 from app.services.audience_projection import BLOCKED_KEY_PARTS, SECRET_TEXT, public_diagnostic
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
+from app.services.cursor_codec import open_cursor, scope_digest, sign_cursor
 from app.services.project_service import get_project
 
 _DIGEST = re.compile(r"^[0-9a-f]{1,64}$")
@@ -1066,22 +1067,26 @@ def supersede(
 # --- P2.5-A: read (GET /v1/projects/{id}/decisions) ----------------------------------
 
 
-def encode_decision_cursor(recorded_at: datetime, record_id: UUID) -> str:
-    raw = f"{recorded_at.isoformat()}|{record_id}".encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+def decision_cursor_scope(workspace_id: UUID, project_id: UUID, filters: dict[str, Any]) -> str:
+    """Cursors are bound to the project and the exact filter set they page (P3.1-A)."""
+
+    return f"decisions:{workspace_id}:{project_id}:{scope_digest(filters)}"
 
 
-def decode_decision_cursor(cursor: str) -> tuple[datetime, UUID]:
+def encode_decision_cursor(scope: str, recorded_at: datetime, record_id: UUID) -> str:
+    return sign_cursor(scope, [recorded_at.isoformat(), str(record_id)])
+
+
+def decode_decision_cursor(scope: str, cursor: str) -> tuple[datetime, UUID]:
+    message = "cursor is not a decision list cursor for this project and filter set"
     try:
-        text = cursor.strip()
-        raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)).decode()
-        stamp, record_id = raw.split("|")
+        stamp, record_id = open_cursor(cursor, scope, message=message)
         recorded_at = datetime.fromisoformat(stamp)
         if recorded_at.tzinfo is None:
             raise ValueError("cursor timestamp must be timezone-aware")
         return recorded_at, UUID(record_id)
-    except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
-        raise InvalidDecisionQueryError("cursor is not a decision list cursor") from exc
+    except (InvalidCursorError, ValueError, TypeError) as exc:
+        raise InvalidDecisionCursorError(message) from exc
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -1215,15 +1220,29 @@ def list_decisions(
         stmt = stmt.where(pdr.recorded_at >= after)
     if before is not None:
         stmt = stmt.where(pdr.recorded_at < before)
+    scope = decision_cursor_scope(
+        workspace_id,
+        project.id,
+        {
+            "state": state,
+            "effective_state": effective_state,
+            "decision_type": decision_type,
+            "subject_kind": subject_kind,
+            "subject_id": subject_id,
+            "actor_kind": actor_kind,
+            "recorded_after": after.isoformat() if after is not None else None,
+            "recorded_before": before.isoformat() if before is not None else None,
+        },
+    )
     if cursor is not None and cursor.strip():
-        recorded_at, record_id = decode_decision_cursor(cursor)
+        recorded_at, record_id = decode_decision_cursor(scope, cursor)
         stmt = stmt.where(tuple_(pdr.recorded_at, pdr.id) < tuple_(recorded_at, record_id))
     rows = db.execute(
         stmt.order_by(pdr.recorded_at.desc(), pdr.id.desc()).limit(limit + 1)
     ).all()
     page = rows[:limit]
     next_cursor = (
-        encode_decision_cursor(page[-1][0].recorded_at, page[-1][0].id) if len(rows) > limit else None
+        encode_decision_cursor(scope, page[-1][0].recorded_at, page[-1][0].id) if len(rows) > limit else None
     )
     return DecisionRecordPage(
         items=[decision_read(row, superseded_by) for row, superseded_by in page],

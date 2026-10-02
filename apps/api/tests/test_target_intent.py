@@ -573,7 +573,8 @@ def test_v1_execution_request_conflict_returns_409(
         },
     )
     assert response.status_code == 409, response.text
-    detail = response.json()["detail"]
-    assert detail["code"] == "TARGET_INTENT_CONFLICT"
+    error = response.json()["error"]  # /v1 envelope (P3.1-A)
+    assert error["code"] == "target_intent_conflict"
+    detail = error["details"]
     assert detail["problem_spec_target"] == "MonthlyCharges"
     assert detail["requested_target"] == "Churn"

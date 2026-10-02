@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -351,3 +352,158 @@ def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
         with pytest.raises(DCLabClientError, match="UUID"):
             api.projects.decisions(project, subject_id=bad_id)
     assert len(recorded) == 1
+
+
+# --- P3.1-A: versioned client, error envelope, Idempotency-Key, ETag ----------------------
+
+WS = "11111111-1111-1111-1111-111111111111"
+
+_EXECUTION_REQUEST = {
+    "id": WS,
+    "workspace_id": WS,
+    "project_id": None,
+    "operation": "model_build",
+    "source_surface": "api",
+    "requested_by_user_id": None,
+    "idempotency_key": None,
+    "external_request_id": None,
+    "parent_request_id": None,
+    "status": "accepted",
+    "request_spec": {},
+    "result_summary": None,
+    "workflow_run_id": None,
+    "pipeline_run_id": None,
+    "created_at": "2026-10-02T00:00:00Z",
+    "started_at": None,
+    "completed_at": None,
+    "failure_code": None,
+    "failure_summary": None,
+}
+
+
+def _envelope(status: int, code: str, *, retryable: bool = False, details=None) -> httpx.Response:
+    return httpx.Response(
+        status,
+        json={
+            "error": {
+                "code": code,
+                "message": f"{code} happened",
+                "retryable": retryable,
+                "request_id": "srv-rid-1",
+                "details": details or {},
+            }
+        },
+        headers={"X-Request-Id": "srv-rid-1"},
+    )
+
+
+def test_client_is_versioned_and_identifies_itself():
+    import dclab_client
+
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=[])
+
+    assert dclab_client.__version__ == "0.2.0"
+    assert DCLabClient.version == dclab_client.__version__
+    assert dclab_client.USER_AGENT == f"dclab-client/{dclab_client.__version__}"
+    _client(handler, token="t", workspace_id=WS).projects.list()
+    assert recorded[0].headers["User-Agent"] == dclab_client.USER_AGENT
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "error_type"),
+    [
+        (400, "invalid_cursor", "BadRequestError"),
+        (401, "unauthenticated", "AuthenticationError"),
+        (403, "forbidden", "PermissionDeniedError"),
+        (404, "not_found", "NotFoundError"),
+        (409, "execution_not_waiting", "ConflictError"),
+        (409, "idempotency_key_conflict", "IdempotencyConflictError"),
+        (412, "precondition_failed", "PreconditionFailedError"),
+        (422, "validation_failed", "UnprocessableEntityError"),
+        (428, "precondition_required", "PreconditionRequiredError"),
+        (429, "rate_limited", "RateLimitedError"),
+        (503, "unavailable", "ServerError"),
+    ],
+)
+def test_envelope_parses_into_typed_errors(status, code, error_type):
+    import dclab_client
+
+    api = _client(lambda request: _envelope(status, code, retryable=status >= 429, details={"k": "v"}),
+                  token="t", workspace_id=WS)
+    with pytest.raises(getattr(dclab_client, error_type)) as caught:
+        api.projects.list()
+    error = caught.value
+    assert isinstance(error, DCLabAPIError)
+    assert (error.status_code, error.code, error.message) == (status, code, f"{code} happened")
+    assert error.retryable is (status >= 429)
+    assert error.request_id == "srv-rid-1" and error.details == {"k": "v"}
+    assert error.detail["code"] == code
+    assert "srv-rid-1" in str(error)
+
+
+def test_legacy_detail_bodies_still_map_to_typed_errors():
+    import dclab_client
+
+    api = _client(lambda request: httpx.Response(404, json={"detail": "not found"}), token="t", workspace_id=WS)
+    with pytest.raises(dclab_client.NotFoundError) as caught:
+        api.projects.list()
+    assert caught.value.code == "not_found" and caught.value.detail == "not found"
+    assert caught.value.retryable is False
+
+
+def test_every_post_carries_an_idempotency_key_and_gets_never_do():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=_EXECUTION_REQUEST)
+        return _envelope(503, "unavailable", retryable=True)
+
+    api = _client(handler, token="t", workspace_id=WS)
+    with pytest.raises(DCLabAPIError) as first:
+        api.execution_requests.create(request_spec={"filename": "a.csv"})
+    with pytest.raises(DCLabAPIError):
+        api.execution_requests.confirm_target(WS, target_column="y")
+    api.execution_requests.get(WS)
+    create, confirm, get = recorded
+    generated = create.headers["Idempotency-Key"]
+    assert str(UUID(generated)) == generated
+    assert first.value.idempotency_key == generated and first.value.retryable is True
+    assert "idempotency_key" not in json.loads(create.content)  # header only unless given
+    assert confirm.headers["Idempotency-Key"] and confirm.headers["Idempotency-Key"] != generated
+    assert "Idempotency-Key" not in get.headers
+
+
+def test_etag_is_captured_and_if_match_is_sent():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=_EXECUTION_REQUEST, headers={"ETag": '"abc"'})
+        if request.headers.get("If-Match") != '"abc"':
+            return _envelope(412, "precondition_failed", details={"current_etag": '"abc"'})
+        return httpx.Response(
+            200, json=_EXECUTION_REQUEST, headers={"ETag": '"def"', "Idempotent-Replayed": "true"}
+        )
+
+    api = _client(handler, token="t", workspace_id=WS)
+    row = api.execution_requests.get(WS)
+    assert row.etag == '"abc"' and row.idempotent_replay is False
+    assert "etag" not in row.model_dump()
+    confirmed = api.execution_requests.confirm_target(
+        WS, target_column="y", if_match=row.etag, idempotency_key="confirm-1"
+    )
+    assert confirmed.etag == '"def"' and confirmed.idempotent_replay is True
+    assert recorded[1].headers["If-Match"] == '"abc"'
+    assert recorded[1].headers["Idempotency-Key"] == "confirm-1"
+    from dclab_client import PreconditionFailedError
+
+    with pytest.raises(PreconditionFailedError) as stale:
+        api.execution_requests.confirm_target(WS, target_column="y", if_match='"old"')
+    assert stale.value.details["current_etag"] == '"abc"'

@@ -55,6 +55,9 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     ("ExperimentCode", "ExperimentCodeRead"),
     ("DecisionRecordPage", "DecisionRecordPage"),
     ("DecisionRecord", "DecisionRecordRead"),
+    # P3.1-A: every /v1 error response is this envelope.
+    ("ErrorEnvelope", "V1ErrorEnvelope"),
+    ("ErrorDetail", "V1Error"),
 )
 
 HISTORICAL_BANNER_FILES: tuple[str, ...] = (

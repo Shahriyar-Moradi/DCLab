@@ -6,7 +6,40 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+
+class _Versioned(BaseModel):
+    """A mutable /v1 resource: carries the response ``ETag`` for ``If-Match``."""
+
+    _etag: str | None = PrivateAttr(default=None)
+    _replayed: bool = PrivateAttr(default=False)
+
+    @property
+    def etag(self) -> str | None:
+        """Strong ETag of the representation this object was read from."""
+
+        return self._etag
+
+    @property
+    def idempotent_replay(self) -> bool:
+        """True when the server replayed an earlier request with the same Idempotency-Key."""
+
+        return self._replayed
+
+
+class ErrorDetail(BaseModel):
+    """Body of the /v1 error envelope ``{"error": {...}}`` (P3.1-A)."""
+
+    code: str
+    message: str
+    retryable: bool
+    request_id: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ErrorEnvelope(BaseModel):
+    error: ErrorDetail
 
 
 class PrincipalWorkspace(BaseModel):
@@ -40,7 +73,7 @@ class Workspace(BaseModel):
     max_ml_engineer_seats: int
 
 
-class Project(BaseModel):
+class Project(_Versioned):
     id: UUID
     workspace_id: UUID
     name: str
@@ -67,7 +100,7 @@ class Dataset(BaseModel):
     created_at: datetime
 
 
-class ExecutionRequest(BaseModel):
+class ExecutionRequest(_Versioned):
     id: UUID
     workspace_id: UUID
     project_id: UUID | None = None
@@ -168,7 +201,7 @@ class ModelBuildStage(BaseModel):
     generated_code: dict[str, Any] | None = None
 
 
-class ModelBuild(BaseModel):
+class ModelBuild(_Versioned):
     model_config = ConfigDict(extra="allow")
 
     workspace_id: UUID
