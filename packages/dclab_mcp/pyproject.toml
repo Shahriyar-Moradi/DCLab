@@ -1,0 +1,24 @@
+[project]
+name = "dclab-mcp"
+dynamic = ["version"]
+description = "DCLab MCP server (stdio) over the /v1 SDK with a service token."
+requires-python = ">=3.12"
+dependencies = [
+  "dclab-client>=0.2",
+  # Official MCP Python SDK, pinned exactly (locked in the repo's requirements-mcp.lock,
+  # deliberately not in requirements.lock, which the API/worker images install).
+  "mcp==2.2.0",
+]
+
+[project.scripts]
+dclab-mcp = "dclab_mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["dclab_mcp*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "dclab_mcp._version.__version__"}

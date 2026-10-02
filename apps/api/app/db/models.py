@@ -890,6 +890,12 @@ class ProblemSpec(Base):
             name="fk_problem_specs_workspace_project",
             ondelete="CASCADE",
         ),
+        # P3.4-A: provenance of a spec written by a service token (an agent).
+        ForeignKeyConstraint(
+            ["workspace_id", "created_by_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_problem_specs_service_token",
+        ),
         CheckConstraint("version >= 1", name="ck_problem_specs_version_positive"),
         CheckConstraint(
             "status IN ('draft', 'locked')",
@@ -897,6 +903,12 @@ class ProblemSpec(Base):
         ),
         Index("ix_problem_specs_workspace_id", "workspace_id"),
         Index("ix_problem_specs_project_id", "project_id"),
+        Index(
+            "ix_problem_specs_service_token",
+            "workspace_id",
+            "created_by_service_token_id",
+            postgresql_where=text("created_by_service_token_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -926,6 +938,9 @@ class ProblemSpec(Base):
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -1626,6 +1641,13 @@ class ExecutionRequest(Base):
             ondelete="SET NULL (pipeline_run_id)",
             use_alter=True,
         ),
+        # P3.4-A: the service token (agent) that initiated the request, if any.
+        ForeignKeyConstraint(
+            ["workspace_id", "initiated_by_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_execution_requests_service_token",
+            use_alter=True,
+        ),
         CheckConstraint(CK_EXECUTION_REQUEST_OPERATION, name="ck_execution_requests_operation"),
         CheckConstraint(CK_EXECUTION_REQUEST_SOURCE, name="ck_execution_requests_source"),
         CheckConstraint(CK_EXECUTION_REQUEST_STATUS, name="ck_execution_requests_status"),
@@ -1667,6 +1689,19 @@ class ExecutionRequest(Base):
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
         ),
+        Index(
+            "ix_execution_requests_service_token",
+            "workspace_id",
+            "initiated_by_service_token_id",
+            postgresql_where=text("initiated_by_service_token_id IS NOT NULL"),
+        ),
+        # Ref bootstrap: was this run started by a service token? (P3.4-A)
+        Index(
+            "ix_execution_requests_token_pipeline_run",
+            "workspace_id",
+            "pipeline_run_id",
+            postgresql_where=text("initiated_by_service_token_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1681,6 +1716,9 @@ class ExecutionRequest(Base):
         UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    initiated_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
     )
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
     source_surface: Mapped[str] = mapped_column(String(32), nullable=False)

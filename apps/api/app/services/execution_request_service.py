@@ -167,6 +167,7 @@ def create_execution_request(
     source_surface: str,
     project_id: UUID | None = None,
     requested_by_user_id: UUID | None = None,
+    initiated_by_service_token_id: UUID | None = None,
     idempotency_key: str | None = None,
     external_request_id: str | None = None,
     parent_request_id: UUID | None = None,
@@ -185,6 +186,7 @@ def create_execution_request(
         source_surface=source_surface,
         project_id=project_id,
         requested_by_user_id=requested_by_user_id,
+        initiated_by_service_token_id=initiated_by_service_token_id,
         idempotency_key=idempotency_key,
         external_request_id=external_request_id,
         parent_request_id=parent_request_id,
@@ -218,6 +220,7 @@ def create_or_replay_execution_request(
     source_surface: str,
     project_id: UUID | None = None,
     requested_by_user_id: UUID | None = None,
+    initiated_by_service_token_id: UUID | None = None,
     idempotency_key: str | None = None,
     external_request_id: str | None = None,
     parent_request_id: UUID | None = None,
@@ -265,6 +268,7 @@ def create_or_replay_execution_request(
         operation=operation,
         source_surface=source_surface,
         requested_by_user_id=requested_by_user_id,
+        initiated_by_service_token_id=initiated_by_service_token_id,
         idempotency_key=key,
         external_request_id=(external_request_id or "").strip() or None,
         parent_request_id=parent_request_id,
@@ -519,11 +523,17 @@ def confirm_execution_target(
     workspace_id: UUID,
     request_id: UUID,
     target_column: str,
+    service_token_id: UUID | None = None,
 ) -> ExecutionRequest:
-    """Supply the missing target and resume the original execution once."""
+    """Supply the missing target and resume the original execution once.
+
+    ``service_token_id``: an agent confirmed it. The request then counts as
+    token-initiated (its ref bootstrap becomes a proposal) and the confirmation
+    is recorded as ``source: agent`` with the token id."""
 
     from app.services.problem_spec_service import populate_unlocked_problem_spec_target
     from app.services.target_intent_service import (
+        TARGET_SOURCE_AGENT,
         TARGET_SOURCE_USER,
         column_names_from_dataset_id,
         confirmed_target_from_request,
@@ -622,6 +632,13 @@ def confirm_execution_target(
         populate_unlocked_problem_spec_target(db, problem_spec, selected)
 
     now = datetime.now(UTC)
+    source = TARGET_SOURCE_USER
+    confirmer: dict[str, str] = {"confirmed_by": str(actor.id)}
+    if service_token_id is not None:
+        source = TARGET_SOURCE_AGENT
+        confirmer["confirmed_by_service_token_id"] = str(service_token_id)
+        if request.initiated_by_service_token_id is None:
+            request.initiated_by_service_token_id = service_token_id
     spec = dict(spec_payload)
     spec["target_column"] = selected
     request.request_spec = bound_request_spec(spec)
@@ -631,8 +648,8 @@ def confirm_execution_target(
             "code": TARGET_CONFIRMED,
             "target_column": selected,
             "confirmed_target": selected,
-            "source": TARGET_SOURCE_USER,
-            "confirmed_by": str(actor.id),
+            "source": source,
+            **confirmer,
             "confirmed_at": now.isoformat(),
         }
     )
@@ -659,8 +676,8 @@ def confirm_execution_target(
             **confirmation,
             "code": TARGET_CONFIRMED,
             "target_column": selected,
-            "source": TARGET_SOURCE_USER,
-            "confirmed_by": str(actor.id),
+            "source": source,
+            **confirmer,
         }
         if not job_was_running:
             _mark(db, upload, status=ANALYZING, log=log)
@@ -678,8 +695,8 @@ def confirm_execution_target(
         status="completed",
         payload={
             "target_column": selected,
-            "source": TARGET_SOURCE_USER,
-            "confirmed_by": str(actor.id),
+            "source": source,
+            **confirmer,
             "execution_request_id": str(request.id),
             "workflow_run_id": str(request.workflow_run_id)
             if request.workflow_run_id
@@ -699,7 +716,7 @@ def confirm_execution_target(
         event_type=EXECUTION_RESUMED,
         status=REQUEST_RUNNING,
         payload={
-            "source": TARGET_SOURCE_USER,
+            "source": source,
             "target_column": selected,
             "execution_request_id": str(request.id),
             "ml_job_id": str(resumed.id) if resumed is not None else None,

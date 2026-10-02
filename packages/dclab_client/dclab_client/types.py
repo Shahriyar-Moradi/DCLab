@@ -609,6 +609,7 @@ class ModelVersion(_Versioned):
     candidate_key: str | None = None
     lineage: ModelVersionLineage
     metrics: ModelVersionMetrics | None = None
+    holdout_report_only: dict[str, float] | None = None
     is_champion: bool
     ref_kinds: list[str] = Field(default_factory=list)
     artifacts: list[ModelVersionArtifact] = Field(default_factory=list)

@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock benchmark benchmark-quick test-db-clean
+.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock lock-mcp benchmark benchmark-quick test-db-clean
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -93,6 +93,12 @@ down:
 lock:
 	uv pip compile pyproject.toml --extra boosting --extra tuning --extra dev --universal \
 		--python-version 3.12 --no-header -o requirements.lock
+
+# MCP server deps (packages/dclab_mcp) stay out of requirements.lock, which the
+# API/worker images install whole; constrained by it so shared pins match.
+lock-mcp:
+	uv pip compile pyproject.toml --extra mcp -c requirements.lock --universal \
+		--python-version 3.12 --no-header -o requirements-mcp.lock
 
 # R1-A benchmark harness (engine only, no database). `benchmark` adds OpenML
 # tasks (downloaded once into SCIKIT_LEARN_DATA); `benchmark-quick` needs no network.

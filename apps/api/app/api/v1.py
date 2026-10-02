@@ -55,6 +55,7 @@ from app.domain.decision_records import (
     DecisionSubjectKind,
     DecisionType,
 )
+from app.api.v1_agent_views import code_view, event_view, model_build_view, visualization_rows_view
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -77,6 +78,7 @@ from app.domain.errors import (
     IdentityError,
     InvalidCursorError,
     InvalidDecisionQueryError,
+    InvalidDecisionRecordError,
     OpenLabFileError,
     ProblemSpecNotFoundError,
     ProjectNotFoundError,
@@ -281,6 +283,13 @@ def _key_scope(request: Request, user: User, operation: str) -> KeyScope:
     return KeyScope(request_workspace_id(request), kind, principal_id, operation)
 
 
+def _service_token_id(request: Request) -> UUID | None:
+    """The service token (agent) of this request, recorded as provenance (P3.4-A)."""
+
+    token = request_service_token(request)
+    return token.id if token is not None else None
+
+
 def _principal_id(request: Request, user: User) -> UUID:
     """Principal bound into idempotency digests (the token for token requests)."""
 
@@ -453,6 +462,7 @@ def create_problem_spec_v1(
             actor=user,
             workspace_id=workspace_id,
             project_id=project_id,
+            created_by_service_token_id=_service_token_id(request),
             **payload.model_dump(),
         )
         bind(spec.id)
@@ -464,6 +474,9 @@ def create_problem_spec_v1(
             db, _key_scope(request, user, _CREATE_PROBLEM_SPEC), binding,
             resource_kind=RESOURCE_PROBLEM_SPEC, load=load, execute=execute,
         )
+    except InvalidDecisionRecordError as exc:  # agent text refused (secret-like / control chars)
+        db.rollback()
+        raise domain_error(exc, status_code=422, code="invalid_problem_spec") from exc
     except IdentityError as exc:
         db.rollback()
         raise _identity_http(exc) from exc
@@ -832,6 +845,7 @@ def submit_execution_request(
             source_surface=SOURCE_API,
             project_id=payload.project_id,
             requested_by_user_id=user.id,
+            initiated_by_service_token_id=_service_token_id(request),
             idempotency_key=binding.key,
             external_request_id=payload.external_request_id,
             parent_request_id=payload.parent_request_id,
@@ -913,6 +927,7 @@ def confirm_execution_request_target(
             workspace_id=workspace_id,
             request_id=request_id,
             target_column=payload.target_column,
+            service_token_id=_service_token_id(request),
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
@@ -982,6 +997,7 @@ def read_model_build(
         raise _identity_http(exc) from exc
     if body is None:
         raise _not_found()
+    body = model_build_view(request, body)
     set_etag(response, representation_etag(body))
     return body
 
@@ -1014,7 +1030,7 @@ def read_model_build_events(
     if len(rows) > limit:
         next_cursor = sign_cursor(scope, [int(page[-1].sequence)])
     return EventPage(
-        items=[MlRunEventRead.model_validate(event_read(row)) for row in page],
+        items=[event_view(request, MlRunEventRead.model_validate(event_read(row))) for row in page],
         next_cursor=next_cursor,
     )
 
@@ -1037,6 +1053,7 @@ def read_model_build_visualizations(
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
+    rows = visualization_rows_view(request, db, rows)
     return [VisualizationRead.model_validate(row) for row in rows]
 
 
@@ -1068,7 +1085,8 @@ def read_experiment_code(
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
 ) -> ExperimentCodeRead:
-    """Standalone reproduction script + notebook for one experiment (root or branch)."""
+    """Standalone reproduction script + notebook for one experiment (root or branch).
+    For service-token (agent) callers the ``HOLDOUT_METRICS`` literal is emptied."""
 
     workspace_id = request_workspace_id(request)
     try:
@@ -1077,4 +1095,4 @@ def read_experiment_code(
         raise _identity_http(exc) from exc
     if body is None:
         raise _not_found()
-    return body
+    return code_view(request, body)

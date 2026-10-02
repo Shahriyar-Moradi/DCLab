@@ -1489,6 +1489,7 @@
         "content_digest",
         "created_at",
         "family",
+        "holdout_report_only",
         "id",
         "is_champion",
         "lineage",

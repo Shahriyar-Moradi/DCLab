@@ -363,6 +363,13 @@ def _check_text(value: str, *, label: str) -> None:
         raise InvalidDecisionRecordError("secret_like_text", f"{label} looks like it contains a credential")
 
 
+def check_agent_text(value: str, *, label: str) -> None:
+    """The record-text gate (control characters, secret-like text incl. ``dclab_st_``)
+    for other agent-authored text, e.g. problem specs written with a service token."""
+
+    _check_text(value, label=label)
+
+
 def clean_rationale(text: Any) -> str:
     value = str(text or "").strip()
     if not value:

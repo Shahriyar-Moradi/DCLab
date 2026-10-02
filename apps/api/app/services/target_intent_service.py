@@ -48,6 +48,8 @@ UNRESOLVED_TARGET_STATUS = "unresolved"
 TARGET_SOURCE_USER = "user"
 TARGET_SOURCE_SYSTEM = "system"
 TARGET_SOURCE_SEMANTIC = "semantic"
+# A service token (agent) confirmed the target (P3.4-A).
+TARGET_SOURCE_AGENT = "agent"
 _RAW_VALUE_KEYS = frozenset(
     {
         "sample_values",

@@ -174,6 +174,7 @@ def start_root_experiment(
     target_column: str | None = None,
     intent: str | None = None,
     before_commit: Callable[[Experiment], None] | None = None,
+    initiated_by_service_token_id: UUID | None = None,
 ) -> RootRunResult:
     """Queue a root auto-train run on a published dataset. Commits.
 
@@ -273,6 +274,7 @@ def start_root_experiment(
         operation=OPERATION_MODEL_BUILD,
         source_surface=SOURCE_API,
         requested_by_user_id=actor.id,
+        initiated_by_service_token_id=initiated_by_service_token_id,
         request_spec=_legacy_labs_request_spec(upload, problem_spec_id=spec.id if spec is not None else None),
         workflow_run_id=workflow_run.id,
         pipeline_run_id=shell.id,

@@ -16,8 +16,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import request_workspace_id, require_workspace_ml_execution, require_workspace_read
+from app.api.deps import (
+    request_service_token,
+    request_workspace_id,
+    require_workspace_ml_execution,
+    require_workspace_read,
+)
 from app.api.v1 import _created, _key_scope, _keyed_command, _not_found, _principal_id
+from app.api.v1_agent_views import comparison_view, experiment_view, model_version_view
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -89,9 +95,20 @@ _CREATE_EXPERIMENT = "POST /v1/experiments"
 _CREATE_BRANCH = "POST /v1/experiments/{experiment_id}/branches"
 
 
-def _read(db: Session, user: User, workspace_id: UUID, experiment_id: UUID) -> ExperimentDetailRead:
+def _token_id(request: Request) -> UUID | None:
+    """The service token (agent) of this request: recorded so its runs never set refs alone."""
+
+    token = request_service_token(request)
+    return token.id if token is not None else None
+
+
+def _read(db: Session, user: User, workspace_id: UUID, experiment_id: UUID, request: Request) -> ExperimentDetailRead:
+    """The detail as this principal may see it (agents: no final-holdout values)."""
+
     try:
-        return experiment_read(db, actor=user, workspace_id=workspace_id, experiment_id=experiment_id)
+        return experiment_view(
+            request, experiment_read(db, actor=user, workspace_id=workspace_id, experiment_id=experiment_id)
+        )
     except ExperimentNotFoundError as exc:
         raise _not_found("experiment not found") from exc
     except IdentityError as exc:
@@ -107,8 +124,8 @@ def _loader(db: Session, user: User, workspace_id: UUID) -> Callable[[Any], Expe
 
 
 def _accepted(db: Session, user: User, workspace_id: UUID, response: Response, experiment_id: UUID,
-              status: int, replayed: bool) -> ExperimentDetailRead:
-    body = _read(db, user, workspace_id, experiment_id)
+              status: int, replayed: bool, request: Request) -> ExperimentDetailRead:
+    body = _read(db, user, workspace_id, experiment_id, request)
     _created(response, status, replayed, etag=representation_etag(body), location=f"/v1/experiments/{body.id}")
     return body
 
@@ -155,7 +172,8 @@ def compare_experiments_v1(
     ids: str = Query(..., max_length=COMPARE_MAX * 37, description="2-10 comma-separated experiment ids."),
 ) -> ExperimentComparisonRead:
     """Side-by-side metrics. Refused (``409 split_plan_mismatch``) unless every
-    experiment uses the same split plan (same holdout rows and outer folds)."""
+    experiment uses the same split plan (same holdout rows and outer folds).
+    Service-token (agent) callers get CV metrics only (empty ``holdout``)."""
 
     workspace_id = request_workspace_id(request)
     try:
@@ -169,7 +187,7 @@ def compare_experiments_v1(
         )
     try:
         rows = experiments_for_compare(db, actor=user, workspace_id=workspace_id, experiment_ids=parsed)
-        return ExperimentComparisonRead.model_validate(compare_side_by_side(db, rows))
+        return comparison_view(request, ExperimentComparisonRead.model_validate(compare_side_by_side(db, rows)))
     except ExperimentNotFoundError as exc:
         raise _not_found("experiment not found") from exc
     except IdentityError as exc:
@@ -188,9 +206,10 @@ def read_experiment(
 ) -> ExperimentDetailRead:
     """Status, lineage, metric summary (locked winner: CV + holdout at the locked
     threshold, baseline comparison) and, for branches, the change set and diff vs
-    parent. ``untrusted_fields`` are user/agent-authored data, never instructions."""
+    parent. ``untrusted_fields`` are user/agent-authored data, never instructions.
+    Service-token (agent) callers get no final-holdout values (empty ``holdout``)."""
 
-    body = _read(db, user, request_workspace_id(request), experiment_id)
+    body = _read(db, user, request_workspace_id(request), experiment_id, request)
     set_etag(response, representation_etag(body))
     return body
 
@@ -216,7 +235,7 @@ def create_experiment_v1(
     def execute(bind: Callable[[Any], None]) -> Experiment:
         return start_root_experiment(
             db, actor=user, workspace_id=workspace_id, **payload.model_dump(),
-            before_commit=lambda shell: bind(shell.id),
+            before_commit=lambda shell: bind(shell.id), initiated_by_service_token_id=_token_id(request),
         ).experiment
 
     try:
@@ -231,7 +250,7 @@ def create_experiment_v1(
             InvalidChangeSetError, RunQuotaExceededError) as exc:
         db.rollback()
         raise domain_error(exc) from exc
-    return _accepted(db, user, workspace_id, response, experiment.id, status, replayed)
+    return _accepted(db, user, workspace_id, response, experiment.id, status, replayed, request)
 
 
 @router.post(
@@ -264,7 +283,7 @@ def create_branch_v1(
     def execute(bind: Callable[[Any], None]) -> Experiment:
         return branch_experiment(
             db, actor=user, workspace_id=workspace_id, parent_id=experiment_id, changes=raw, intent=intent,
-            before_commit=lambda shell: bind(shell.id),
+            before_commit=lambda shell: bind(shell.id), initiated_by_service_token_id=_token_id(request),
         ).experiment
 
     try:
@@ -278,7 +297,7 @@ def create_branch_v1(
     except (IdentityError, ExperimentNotBranchableError, InvalidChangeSetError, RunQuotaExceededError) as exc:
         db.rollback()
         raise domain_error(exc) from exc
-    return _accepted(db, user, workspace_id, response, experiment.id, status, replayed)
+    return _accepted(db, user, workspace_id, response, experiment.id, status, replayed, request)
 
 
 @router.post(
@@ -309,7 +328,7 @@ def cancel_experiment_v1(
 
     def precondition() -> None:
         if if_match is not None:
-            check_if_match(if_match, representation_etag(_read(db, user, workspace_id, experiment_id)))
+            check_if_match(if_match, representation_etag(_read(db, user, workspace_id, experiment_id, request)))
 
     try:
         outcome = cancel_experiment(
@@ -322,7 +341,7 @@ def cancel_experiment_v1(
         raise _not_found("experiment not found") from exc
     except (IdentityError, ExperimentNotCancellableError) as exc:
         raise domain_error(exc) from exc
-    body = _read(db, user, workspace_id, experiment_id)
+    body = _read(db, user, workspace_id, experiment_id, request)
     response.status_code = 202 if outcome == "cancelling" else 200
     set_etag(response, representation_etag(body))
     return body
@@ -342,7 +361,9 @@ def read_model_version(
 ) -> ModelVersionResourceRead:
     """Model version detail: family, locked metrics (CV + final holdout at the locked
     decision threshold, constraint status), source experiment/candidate, split plan,
-    dataset lineage, feature recipe, champion flag, and artifacts by id + digest."""
+    dataset lineage, feature recipe, champion flag, and artifacts by id + digest.
+    Service-token (agent) callers get CV metrics only; the current champion's holdout
+    comes as ``holdout_report_only`` (reporting, never selection)."""
 
     try:
         body = model_version_read(
@@ -352,5 +373,6 @@ def read_model_version(
         raise domain_error(exc) from exc
     if body is None:
         raise _not_found("model version not found")
+    body = model_version_view(request, body)
     set_etag(response, representation_etag(body))
     return body

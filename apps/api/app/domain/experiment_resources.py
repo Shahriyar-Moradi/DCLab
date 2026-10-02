@@ -209,6 +209,13 @@ class ModelVersionResourceRead(BaseModel):
         default=None,
         description="CV aggregate + single final-holdout evaluation at the locked decision threshold.",
     )
+    holdout_report_only: dict[str, float] | None = Field(
+        default=None,
+        description=(
+            "Service-token (agent) callers only: the current champion's final-holdout metrics, for "
+            "reporting, never for selection. Agents never get holdout values in `metrics`."
+        ),
+    )
     is_champion: bool = Field(description="The project's `champion_model` ref points at this model version.")
     ref_kinds: list[Literal["champion_model"]] = Field(default_factory=list)
     artifacts: list[ModelVersionArtifactRef] = Field(default_factory=list)
