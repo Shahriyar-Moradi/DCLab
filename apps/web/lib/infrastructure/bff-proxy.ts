@@ -1,5 +1,5 @@
 /** Browser BFF. Never a second authorization layer. Never log bodies or credentials. */
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server.js";
 
 /** Process-protection bounds, not a product ingest policy. */
 export const DEFAULT_MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
@@ -19,7 +19,13 @@ const FORWARD_REQUEST_HEADERS = [
   "origin",
   "referer",
   "user-agent",
+  // /v1 contract (P3.1-A): idempotent commands and optimistic preconditions.
+  "idempotency-key",
+  "if-match",
+  "if-none-match",
 ] as const;
+/** /v1 contract response headers Studio reads (ETag for If-Match, replay marker). */
+const FORWARD_RESPONSE_HEADERS = ["etag", "idempotent-replayed"] as const;
 
 function envInt(name: string, fallback: number): number {
   const raw = Number(process.env[name]);
@@ -133,6 +139,7 @@ export function forwardHeaders(req: NextRequest, requestId: string): Headers {
     else if (name === "x-csrf-token") headers.set("X-CSRF-Token", value);
     else headers.set(name, value);
   }
+  // Never forwarded: Authorization (service tokens are for SDK/MCP, not the browser).
   if (!headers.has("origin")) {
     headers.set("Origin", req.nextUrl.origin);
   }
@@ -153,22 +160,27 @@ export function forwardHeaders(req: NextRequest, requestId: string): Headers {
 async function readBoundedUpload(
   req: NextRequest,
   maxBytes: number,
-): Promise<{ body: BodyInit | undefined; tooLarge: boolean; duplex: boolean }> {
+): Promise<{ body: BodyInit | undefined; tooLarge: boolean; duplex: boolean; declaredLength: number }> {
   if (req.method === "GET" || req.method === "HEAD") {
-    return { body: undefined, tooLarge: false, duplex: false };
+    return { body: undefined, tooLarge: false, duplex: false, declaredLength: 0 };
   }
   const declared = parseContentLength(req.headers.get("content-length"));
   if (declared !== null && declared > maxBytes) {
-    return { body: undefined, tooLarge: true, duplex: false };
+    return { body: undefined, tooLarge: true, duplex: false, declaredLength: declared };
   }
   if (declared !== null && req.body) {
-    return { body: req.body, tooLarge: false, duplex: true };
+    return { body: req.body, tooLarge: false, duplex: true, declaredLength: declared };
   }
   const buffer = await req.arrayBuffer();
   if (buffer.byteLength > maxBytes) {
-    return { body: undefined, tooLarge: true, duplex: false };
+    return { body: undefined, tooLarge: true, duplex: false, declaredLength: buffer.byteLength };
   }
-  return { body: buffer.byteLength > 0 ? buffer : undefined, tooLarge: false, duplex: false };
+  return {
+    body: buffer.byteLength > 0 ? buffer : undefined,
+    tooLarge: false,
+    duplex: false,
+    declaredLength: buffer.byteLength,
+  };
 }
 
 function applyUpstreamCookies(apiResponse: Response, nextResponse: NextResponse): void {
@@ -189,14 +201,19 @@ export async function proxyBackend(
   const suffix = path.join("/");
   const incoming = new URL(req.url);
   const target = `${apiOrigin()}/${suffix}${incoming.search}`;
+  const upstreamHeaders = forwardHeaders(req, requestId);
   const init: RequestInit & { duplex?: "half" } = {
     method: req.method,
-    headers: forwardHeaders(req, requestId),
+    headers: upstreamHeaders,
     redirect: "manual",
   };
   if (upload.body !== undefined) {
     init.body = upload.body;
-    if (upload.duplex) init.duplex = "half";
+    if (upload.duplex) {
+      init.duplex = "half";
+      // A streamed body would go out chunked; /v1 uploads require Content-Length.
+      upstreamHeaders.set("content-length", String(upload.declaredLength));
+    }
   }
   let apiResponse: Response;
   try {
@@ -218,6 +235,10 @@ export async function proxyBackend(
   if (!bodyless && contentType) headers.set("content-type", contentType);
   const disposition = apiResponse.headers.get("content-disposition");
   if (disposition) headers.set("content-disposition", disposition);
+  for (const name of FORWARD_RESPONSE_HEADERS) {
+    const value = apiResponse.headers.get(name);
+    if (value) headers.set(name, value);
+  }
   const nextResponse = new NextResponse(bodyless ? null : apiResponse.body, {
     status: apiResponse.status,
     headers,

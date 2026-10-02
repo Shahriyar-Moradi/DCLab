@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.execution_requests import OPERATION_MODEL_BUILD
 from app.domain.observability import MlRunEventRead
+from app.domain.service_tokens import ServiceTokenPrincipalRead
 
 
 class PrincipalWorkspaceRead(BaseModel):
@@ -35,6 +36,9 @@ class PrincipalRead(BaseModel):
     capability_matrix_version: str
     capabilities: dict[str, bool] = Field(default_factory=dict)
     request_id: str | None = None
+    service_token: ServiceTokenPrincipalRead | None = Field(
+        None, description="Set when the caller is a service token (P3.2-A)."
+    )
 
 
 class ExecutionRequestCreate(BaseModel):

@@ -111,6 +111,7 @@ from app.services.audience_projection import BLOCKED_KEY_PARTS, SECRET_TEXT, pub
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
 from app.services.cursor_codec import open_cursor, scope_digest, sign_cursor
 from app.services.project_service import get_project
+from app.services.service_token_service import verify_agent_binding
 
 _DIGEST = re.compile(r"^[0-9a-f]{1,64}$")
 CV_AGGREGATE_SCOPE = "cv_aggregate"
@@ -294,10 +295,11 @@ def load_project(db: Session, *, workspace_id: UUID, project_id: UUID) -> Projec
 
 
 # Agent binding hook: confirms an agent run / service token belongs to the
-# workspace. None (the default until Phase 6 agent_runs / P3.2-A service_tokens
-# exist) fails closed: no agent write is accepted without a binding.
+# workspace. P3.2-A installs the service-token verifier (an active token of this
+# workspace with ``decisions:propose``); agent runs stay unbound until Phase 6
+# adds ``agent_runs``. None fails closed: no agent write without a binding.
 AgentBindingVerifier = Callable[[Session, DecisionActor, UUID], bool]
-agent_binding_verifier: AgentBindingVerifier | None = None
+agent_binding_verifier: AgentBindingVerifier | None = verify_agent_binding
 
 
 def _verify_agent(db: Session, actor: DecisionActor, workspace_id: UUID) -> None:

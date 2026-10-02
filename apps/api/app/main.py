@@ -42,6 +42,7 @@ from app.api.technical_explorer import (
 from app.api.v1 import router as v1_router
 from app.api.v1_decisions import router as v1_decisions_router
 from app.api.v1_experiments import router as v1_experiments_router
+from app.api.v1_service_tokens import router as v1_service_tokens_router
 from app.api.v1_conventions import install_v1_conventions
 from app.config import get_settings, validate_runtime_settings
 from app.db.session import get_engine
@@ -119,6 +120,7 @@ client_api.include_router(client_labs_router)
 app.include_router(v1_router)
 app.include_router(v1_experiments_router)
 app.include_router(v1_decisions_router)
+app.include_router(v1_service_tokens_router)
 app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(scoped_workspaces_router)

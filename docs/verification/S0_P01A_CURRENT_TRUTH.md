@@ -36,8 +36,9 @@ P2.4-B (2026-10-02): per-experiment reproducible code export (stored split map, 
 P2.5-A (2026-10-02): decision record service (append-only state machine, move_ref) and GET /v1/projects/{id}/decisions.
 P3.1-A (2026-10-02): /v1 conventions — error envelope with request_id, opaque cursors, ETag/If-Match, Idempotency-Key on POST; SDK client versioned.
 P3.1-B1 (2026-10-02): POST /v1/projects, /v1/projects/{id}/problem-specs, /v1/datasets with a generic idempotency_keys table; head at the time was 0065_idempotency_keys.
-P3.1-B2 (2026-10-02): /v1 experiments — list, get, root run, branch, compare (same split plan), cancel. Migration 0066_run_cancellation (ml_jobs cancelled status + cancel_requested_at); current Alembic head 0066_run_cancellation.
+P3.1-B2 (2026-10-02): /v1 experiments — list, get, root run, branch, compare (same split plan), cancel. Migration 0066_run_cancellation (ml_jobs cancelled status + cancel_requested_at); head at the time was 0066_run_cancellation.
 P3.1-B3 (2026-10-02): POST /v1 decisions (propose/accept/reject/supersede, If-Match ref moves) and GET /v1/model-versions/{id}.
+P3.2-A (2026-10-02): service tokens — hashed, scoped, expiring /v1 bearer credentials (`/v1/service-tokens` create/list/revoke from a session; tokens act as their creator within one workspace and their scopes, as propose-only agents for decisions). Migration 0067_service_tokens (service_tokens table + project_decision_records actor FK); current Alembic head 0067_service_tokens.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

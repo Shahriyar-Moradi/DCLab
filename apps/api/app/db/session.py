@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
@@ -35,3 +35,12 @@ def get_db() -> Generator[Session, None, None]:
 
 # Backwards-compatible names used by health checks.
 engine = None  # populated lazily via get_engine()
+
+
+@event.listens_for(Session, "before_flush")
+def _revoke_service_tokens_on_authority_change(session: Session, _context, _instances) -> None:
+    # P3.2-A. Membership/user changes must go through the ORM to revoke service tokens
+    # here; token auth's per-request explicit-membership re-check remains the backstop.
+    from app.services.service_token_service import revoke_on_authority_change
+
+    revoke_on_authority_change(session)

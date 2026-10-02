@@ -208,6 +208,24 @@ def workspace_role_for(db: Session, user: User, workspace_id: UUID) -> Workspace
     return None
 
 
+def explicit_workspace_role(db: Session, user: User, workspace_id: UUID) -> WorkspaceRole | None:
+    """Canonical role from an explicit, unsuspended membership only: no platform-role
+    or legacy ``client_user`` fallthrough. Service tokens (P3.2-A) borrow exactly this."""
+
+    row = db.scalar(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.user_id == user.id,
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.suspended_at.is_(None),
+        )
+    )
+    return canonical_workspace_role(WorkspaceRole(row.role)) if row is not None else None
+
+
+def is_ml_write_role(role: WorkspaceRole | None) -> bool:
+    return role in _ML_WRITE_ROLES
+
+
 def can_read_platform(db: Session, user: User) -> bool:
     return platform_role_for(db, user) is not None
 

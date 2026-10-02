@@ -8,7 +8,7 @@ from collections import defaultdict
 
 logger = logging.getLogger("dclab.auth")
 
-FAMILIES = frozenset({"login", "session", "csrf", "recovery"})
+FAMILIES = frozenset({"login", "session", "csrf", "recovery", "service_token"})
 REASONS = frozenset(
     {
         "success",

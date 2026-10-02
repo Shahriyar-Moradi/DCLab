@@ -22,10 +22,10 @@ Resource design (transport only; ``decision_record_service`` and
 
 Every POST requires ``Idempotency-Key`` (``idempotency_keys``, resource kind
 ``decision_record``; scope workspace + principal + operation). The actor is
-always the session principal as a human: bodies forbid extra keys, so an
-``actor_kind``/``agent_run_id``/rule id is ``422``. Service tokens (P3.2-A) and
-MCP (P3.4-A) will build their actor in ``_actor`` from the authenticated
-principal, never from the body.
+the authenticated principal, never the body (bodies forbid extra keys, so an
+``actor_kind``/``agent_run_id``/rule id is ``422``): a session or user bearer
+acts as the human; a service token (P3.2-A, also MCP) acts as an agent that may
+only propose (``decisions:propose``); transitions and ref moves refuse tokens.
 """
 
 from __future__ import annotations
@@ -37,8 +37,13 @@ from fastapi import APIRouter, Body, Depends, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import request_workspace_id, require_workspace_ml_execution, require_workspace_read
-from app.api.v1 import _created, _key_scope, _keyed_command, _not_found
+from app.api.deps import (
+    request_service_token,
+    request_workspace_id,
+    require_workspace_ml_execution,
+    require_workspace_read,
+)
+from app.api.v1 import _created, _key_scope, _keyed_command, _not_found, _principal_id
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -90,6 +95,7 @@ from app.services import idempotency_service
 from app.services import project_ref_service as prs
 from app.services.project_ref_service import RefMove
 from app.services.project_service import get_project
+from app.services.service_token_service import bind_request_token
 
 router = APIRouter(prefix="/v1", tags=["v1"], responses=error_responses(*COMMON_ERROR_STATUSES))
 
@@ -110,9 +116,16 @@ DecisionCommand = Annotated[
 ]
 
 
-def _actor(user: User) -> DecisionActor:
-    # Seam: P3.2-A service tokens / P3.4-A MCP map their authenticated principal
-    # to DecisionActor.agent(service_token_id=...) here. Never from a body.
+def _actor(request: Request, user: User) -> DecisionActor:
+    """The authenticated principal as a decision actor, never from a body: a service
+    token (SDK / MCP, P3.2-A) is an *agent* (propose / propose_ref_move only; the
+    service refuses agents everything else), a session or user bearer is the human."""
+
+    token = request_service_token(request)
+    # The agent binding verifier only accepts the token this request authenticated with.
+    bind_request_token(token.id if token is not None else None)
+    if token is not None:
+        return DecisionActor.agent(service_token_id=token.id)
     return DecisionActor.human(user)
 
 
@@ -195,7 +208,8 @@ def create_decision_v1(
     db: Session = Depends(get_db),
     idempotency_key: str | None = Depends(idempotency_key_header),
 ) -> DecisionRecordRead:
-    """Start a decision chain as the session user (ML-write role).
+    """Start a decision chain as the caller: a human (ML-write role), or a service token
+    with ``decisions:propose`` acting as an agent (``propose`` / ``propose_ref_move`` only).
 
     ``action=propose``: a proposal; ``record``: a decision made now (``accepted``);
     ``propose_ref_move``: a ref-move proposal (accept it with ``POST
@@ -205,10 +219,10 @@ def create_decision_v1(
 
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
-        operation=_CREATE, principal_id=user.id, header_key=idempotency_key,
+        operation=_CREATE, principal_id=_principal_id(request, user), header_key=idempotency_key,
         path_params={"project_id": project_id}, body=payload.model_dump(mode="json"), required=True,
     )
-    actor = _actor(user)
+    actor = _actor(request, user)
 
     def execute(bind: Callable[[Any], None]) -> ProjectDecisionRecord:
         common = dict(
@@ -273,7 +287,7 @@ def _transition(
 ) -> DecisionRecordRead:
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
-        operation=operation, principal_id=user.id, header_key=idempotency_key,
+        operation=operation, principal_id=_principal_id(request, user), header_key=idempotency_key,
         path_params={"decision_id": decision_id}, body=payload.model_dump(mode="json"), required=True,
     )
     try:
@@ -287,7 +301,7 @@ def _transition(
 
     def execute(bind: Callable[[Any], None]) -> ProjectDecisionRecord:
         row = apply(db, workspace_id=workspace_id, project_id=project_id, record_id=decision_id,
-                    actor=_actor(user), **kwargs)
+                    actor=_actor(request, user), **kwargs)
         bind(row.id)
         db.commit()
         return row
@@ -479,7 +493,7 @@ def move_ref_v1(
 
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
-        operation=_MOVE_REF, principal_id=user.id, header_key=idempotency_key,
+        operation=_MOVE_REF, principal_id=_principal_id(request, user), header_key=idempotency_key,
         path_params={"project_id": project_id, "ref_kind": ref_kind},
         body={**payload.model_dump(mode="json"), "if_match": if_match, "if_none_match": if_none_match},
         required=True,
@@ -491,7 +505,7 @@ def move_ref_v1(
         # The precondition is checked by move_ref under FOR UPDATE (check_ref_versions):
         # a stale path ref is RefVersionConflictError -> 412, after the replay lookup.
         result = prs.move_ref(
-            db, workspace_id=workspace_id, project_id=project_id, actor=_actor(user),
+            db, workspace_id=workspace_id, project_id=project_id, actor=_actor(request, user),
             moves=[
                 RefMove(ref_kind, payload.target_id, expected),
                 *(RefMove(item.ref_kind, item.target_id, item.expected_version) for item in payload.companion_moves),

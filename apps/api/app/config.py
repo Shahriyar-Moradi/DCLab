@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     auth_trust_forwarded: bool = False
     auth_email_delivery_enabled: bool = False
     auth_browser_sessions_enabled: bool = True
+    # Kill switch for /v1 service-token bearer auth (P3.2-A); off = every token is 401.
+    service_tokens_enabled: bool = True
     # Empty in CI/dev: unkeyed SHA-256 (existing rows). Production requires a
     # dedicated secret; lookups also accept unkeyed SHA-256 and the previous
     # HMAC during rotation. Never put production values in tests.

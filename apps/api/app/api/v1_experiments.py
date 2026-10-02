@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import request_workspace_id, require_workspace_ml_execution, require_workspace_read
-from app.api.v1 import _created, _key_scope, _keyed_command, _not_found
+from app.api.v1 import _created, _key_scope, _keyed_command, _not_found, _principal_id
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -209,7 +209,7 @@ def create_experiment_v1(
 
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
-        operation=_CREATE_EXPERIMENT, principal_id=user.id, header_key=idempotency_key,
+        operation=_CREATE_EXPERIMENT, principal_id=_principal_id(request, user), header_key=idempotency_key,
         body=payload.model_dump(mode="json"), required=True,
     )
 
@@ -256,7 +256,7 @@ def create_branch_v1(
     workspace_id = request_workspace_id(request)
     raw = payload.model_dump(mode="json")
     binding = idempotency_binding(
-        operation=_CREATE_BRANCH, principal_id=user.id, header_key=idempotency_key,
+        operation=_CREATE_BRANCH, principal_id=_principal_id(request, user), header_key=idempotency_key,
         path_params={"experiment_id": experiment_id}, body=raw, required=True,
     )
     intent = raw.pop("intent")

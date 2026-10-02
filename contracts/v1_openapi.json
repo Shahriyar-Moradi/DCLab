@@ -973,6 +973,75 @@
         "successSchema": "RefMoveRead"
       }
     },
+    "/v1/service-tokens": {
+      "GET": {
+        "operationId": "read_service_tokens_v1_service_tokens_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_service_token_v1_v1_service_tokens_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "ServiceTokenCreateRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "ServiceTokenCreatedRead"
+      }
+    },
+    "/v1/service-tokens/{token_id}/revoke": {
+      "POST": {
+        "operationId": "revoke_service_token_v1_v1_service_tokens__token_id__revoke_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ServiceTokenRead"
+      }
+    },
     "/v1/workspaces": {
       "GET": {
         "operationId": "read_workspaces_v1_workspaces_get",
@@ -1489,6 +1558,7 @@
         "id",
         "request_id",
         "role",
+        "service_token",
         "workspace_id",
         "workspaces"
       ],

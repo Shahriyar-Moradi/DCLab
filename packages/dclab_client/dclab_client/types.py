@@ -50,6 +50,16 @@ class PrincipalWorkspace(BaseModel):
     role: str | None = None
 
 
+class ServiceTokenPrincipal(BaseModel):
+    """The service token a client authenticates with (``DCLabClient(token="dclab_st_...")``)."""
+
+    id: UUID
+    name: str
+    workspace_id: UUID
+    scopes: list[str] = Field(default_factory=list)
+    expires_at: datetime
+
+
 class Principal(BaseModel):
     id: UUID
     email: str
@@ -61,6 +71,7 @@ class Principal(BaseModel):
     capability_matrix_version: str = "unknown"
     capabilities: dict[str, bool] = Field(default_factory=dict)
     request_id: str | None = None
+    service_token: ServiceTokenPrincipal | None = None
 
 
 class Workspace(BaseModel):

@@ -357,8 +357,30 @@ FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()
 """
 
 
+# P3.2-A / Alembic 0067 (identical literal SQL inlined there). Identity, scopes,
+# secret hash and expiry are frozen; revocation is final (never un-revoked; afterwards
+# revoked_by_user_id may only become NULL, by its ON DELETE SET NULL).
+SERVICE_TOKENS_FROZEN_TRIGGER_SQL = """
+CREATE TRIGGER service_tokens_columns_immutable
+BEFORE UPDATE ON service_tokens
+FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation(
+    'id,workspace_id,created_by_user_id,name,scopes,secret_hash,created_at,expires_at'
+)
+"""
+SERVICE_TOKENS_REVOCATION_FINAL_TRIGGER_SQL = """
+CREATE TRIGGER service_tokens_revocation_final
+BEFORE UPDATE OF revoked_at, revoked_by_user_id ON service_tokens
+FOR EACH ROW
+WHEN (OLD.revoked_at IS NOT NULL AND (
+    NEW.revoked_at IS DISTINCT FROM OLD.revoked_at
+    OR (NEW.revoked_by_user_id IS DISTINCT FROM OLD.revoked_by_user_id AND NEW.revoked_by_user_id IS NOT NULL)
+))
+EXECUTE FUNCTION prevent_canonical_row_mutation()
+"""
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063 and 0065 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065 and 0067 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -387,6 +409,12 @@ def install_immutability_triggers(connection) -> None:
         connection.execute(text(statement))
     connection.execute(text("DROP TRIGGER IF EXISTS idempotency_keys_no_update ON idempotency_keys"))
     connection.execute(text(IDEMPOTENCY_KEYS_NO_UPDATE_TRIGGER_SQL))
+    for name, sql in (
+        ("service_tokens_columns_immutable", SERVICE_TOKENS_FROZEN_TRIGGER_SQL),
+        ("service_tokens_revocation_final", SERVICE_TOKENS_REVOCATION_FINAL_TRIGGER_SQL),
+    ):
+        connection.execute(text(f"DROP TRIGGER IF EXISTS {name} ON service_tokens"))
+        connection.execute(text(sql))
 
 
 def _immutability_trigger_name(table: str) -> str | None:

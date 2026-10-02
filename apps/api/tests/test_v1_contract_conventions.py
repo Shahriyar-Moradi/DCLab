@@ -35,6 +35,8 @@ from test_data_model_lineage import make_lineage_setup
 ENVELOPE_KEYS = {"code", "message", "retryable", "request_id", "details"}
 UUID_ZERO = "00000000-0000-0000-0000-000000000000"
 WORKSPACE_FREE = {"/v1/me", "/v1/workspaces"}
+# P3.2-A: signed-in sessions only; any Authorization header is 403 session_required.
+SESSION_ONLY = {"/v1/service-tokens", "/v1/service-tokens/{token_id}/revoke"}
 
 
 def _operations() -> list[tuple[str, str]]:
@@ -140,6 +142,9 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/projects/{project_id}/refs/{ref_kind}",
         "POST /v1/projects/{project_id}/refs/{ref_kind}",
         "GET /v1/model-versions/{model_version_id}",
+        "GET /v1/service-tokens",
+        "POST /v1/service-tokens",
+        "POST /v1/service-tokens/{token_id}/revoke",
     }
 
 
@@ -175,6 +180,9 @@ def test_every_workspace_operation_400_without_selector_and_403_foreign(client, 
     for method, path in _operations():
         if path in WORKSPACE_FREE:
             continue
+        if path in SESSION_ONLY:
+            _assert_envelope(_call(client, method, _concrete(path), headers=bearer), 403, "session_required")
+            continue
         missing = _call(client, method, _concrete(path), headers=bearer)
         assert "X-Workspace-Id" in _assert_envelope(missing, 400, "bad_request")["message"]
         foreign = _call(
@@ -187,7 +195,7 @@ def test_every_resource_operation_404_and_422_use_envelope(client, db_session, t
     setup = make_lineage_setup(db_session, tmp_path)
     headers = _headers(setup["alpha_admin"], setup["alpha"].id)
     for method, path in _operations():
-        if "{" not in path:
+        if "{" not in path or path in SESSION_ONLY:  # sessions: test_v1_service_tokens.py
             continue
         missing = _call(client, method, _concrete(path, str(uuid4())), headers=headers)
         _assert_envelope(missing, 404, "not_found")

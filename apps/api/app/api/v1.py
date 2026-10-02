@@ -26,6 +26,8 @@ from starlette.datastructures import UploadFile
 from app.api.deps import (
     get_current_user,
     parse_requested_workspace_id,
+    principal_ref,
+    request_service_token,
     request_workspace_id,
     require_workspace_ml_execution,
     require_workspace_read,
@@ -88,7 +90,6 @@ from app.domain.execution_requests import (
     SOURCE_API,
 )
 from app.domain.idempotency import (
-    PRINCIPAL_USER,
     REQUEST_DIGEST_SPEC_KEY,
     RESOURCE_DATASET,
     RESOURCE_PROBLEM_SPEC,
@@ -133,7 +134,7 @@ from app.services.project_service import create_project, get_project, list_proje
 from app.services.technical_explorer_service import get_dataset, list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
 from app.services.workspace_service import list_workspaces_for_actor
-from app.services.workspace_selection_service import principal_read
+from app.services.workspace_selection_service import principal_read, service_token_principal_read
 
 router = APIRouter(
     prefix="/v1", tags=["v1"], responses=error_responses(*COMMON_ERROR_STATUSES)
@@ -188,6 +189,9 @@ def _cursor_sequence(cursor: str | None, scope: str) -> int:
 
 def _principal(db, user, request) -> PrincipalRead:
     parse_requested_workspace_id(request)
+    token = request_service_token(request)
+    if token is not None:
+        return service_token_principal_read(db, user, request, token)
     return principal_read(db, user, request)
 
 
@@ -197,15 +201,21 @@ def read_principal(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PrincipalRead:
+    """The caller. For a service token: its creator's identity with ``service_token``
+    set, only the token's workspace, and capabilities narrowed to its scopes."""
+
     return _principal(db, user, request)
 
 
 @router.get("/workspaces", response_model=list[WorkspaceRead])
 def read_workspaces(
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[WorkspaceRead]:
-    return list_workspaces_for_actor(db, user)
+    token = request_service_token(request)
+    rows = list_workspaces_for_actor(db, user)
+    return rows if token is None else [row for row in rows if row.id == token.workspace_id]
 
 
 @router.get("/projects", response_model=list[ProjectRead])
@@ -266,8 +276,15 @@ _CREATED_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 
 def _key_scope(request: Request, user: User, operation: str) -> KeyScope:
-    # Service tokens (P3.2-A) will bind as ``service_token``.
-    return KeyScope(request_workspace_id(request), PRINCIPAL_USER, user.id, operation)
+    # Keys are scoped to the acting principal: the user, or the service token (P3.2-A).
+    kind, principal_id = principal_ref(request, user)
+    return KeyScope(request_workspace_id(request), kind, principal_id, operation)
+
+
+def _principal_id(request: Request, user: User) -> UUID:
+    """Principal bound into idempotency digests (the token for token requests)."""
+
+    return principal_ref(request, user)[1]
 
 
 def _keyed_command(
@@ -354,7 +371,7 @@ def create_project_v1(
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
         operation=_CREATE_PROJECT,
-        principal_id=user.id,
+        principal_id=_principal_id(request, user),
         header_key=idempotency_key,
         body=payload.model_dump(mode="json"),
         required=True,
@@ -415,7 +432,7 @@ def create_problem_spec_v1(
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
         operation=_CREATE_PROBLEM_SPEC,
-        principal_id=user.id,
+        principal_id=_principal_id(request, user),
         header_key=idempotency_key,
         path_params={"project_id": project_id},
         body=payload.model_dump(mode="json"),
@@ -668,7 +685,8 @@ async def create_dataset_v1(
     workspace_id = request_workspace_id(request)
     if idempotency_key is None:  # fail before reading the body
         idempotency_binding(
-            operation=_CREATE_DATASET, principal_id=user.id, header_key=None, body=None, required=True
+            operation=_CREATE_DATASET, principal_id=_principal_id(request, user), header_key=None, body=None,
+            required=True,
         )
     limit = get_settings().v1_dataset_upload_max_bytes
     try:
@@ -694,7 +712,7 @@ async def create_dataset_v1(
         filename = upload.filename or "upload"
         binding = idempotency_binding(
             operation=_CREATE_DATASET,
-            principal_id=user.id,
+            principal_id=_principal_id(request, user),
             header_key=idempotency_key,
             body={
                 "project_id": str(project_id),
@@ -772,7 +790,7 @@ def submit_execution_request(
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
         operation=_SUBMIT_OPERATION,
-        principal_id=user.id,
+        principal_id=_principal_id(request, user),
         header_key=idempotency_key,
         body_key=payload.idempotency_key,
         body=payload.model_dump(mode="json", exclude={"idempotency_key"}),

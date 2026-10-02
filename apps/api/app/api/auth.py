@@ -54,6 +54,7 @@ from app.services.session_service import (
     user_from_session,
 )
 from app.services.authorization_service import AuthorizationError
+from app.services.service_token_service import revoke_tokens_created_by
 from app.services.workspace_selection_service import persist_session_workspace, principal_read
 from app.services.workspace_access_metrics import record_workspace_access_event
 
@@ -288,6 +289,7 @@ def logout_all(
     db: Session = Depends(get_db),
 ) -> Response:
     revoke_sessions_for_user(db, user.id)
+    revoke_tokens_created_by(db, user.id, reason="logout_all")
     db.commit()
     _clear_auth_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT

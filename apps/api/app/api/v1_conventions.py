@@ -190,13 +190,17 @@ def v1_error_response(
     )
     # Starlette re-raises unhandled errors (one traceback); this line correlates them.
     log = logger.error if error.status_code >= 500 else logger.info
+    token_id = getattr(getattr(request.state, "service_token", None), "id", None)
     log(
-        "v1_error status=%s code=%s request_id=%s method=%s route=%s exception=%s",
+        "v1_error status=%s code=%s request_id=%s method=%s route=%s principal_kind=%s "
+        "service_token_id=%s exception=%s",
         error.status_code,
         error.code,
         request_id,
         request.method,
         _route_template(request),
+        "service_token" if token_id is not None else "-",
+        token_id or "-",
         type(exc).__name__ if exc is not None else "-",
     )
     response_headers = dict(headers or {})

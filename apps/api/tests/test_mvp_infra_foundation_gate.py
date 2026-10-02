@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from dclab_client import DCLabAPIError, DCLabClient
+from dclab_client import DCLabAPIError, DCLabClient, IdempotencyConflictError
 from app.db.models import (
     ClientLabUpload,
     Dataset,
@@ -313,10 +313,17 @@ def test_greenfield_mvp_infrastructure_e2e(client, db_session, tmp_path):
     assert created.pipeline_run_id is None
     replay = api.execution_requests.create(
         project_id=project.id,
-        request_spec={"filename": "other.csv"},
+        request_spec={"filename": "leads.csv", "record_count": 2},
         idempotency_key="greenfield-once",
+        request_id="greenfield-trace",
     )
     assert replay.id == created.id
+    with pytest.raises(IdempotencyConflictError):
+        api.execution_requests.create(
+            project_id=project.id,
+            request_spec={"filename": "other.csv"},
+            idempotency_key="greenfield-once",
+        )
     request_row = db_session.get(ExecutionRequest, created.id)
     assert request_row is not None
     _assert_no_leaked_payload(request_row.request_spec)
@@ -582,7 +589,7 @@ def test_greenfield_mvp_infrastructure_e2e(client, db_session, tmp_path):
     assert build.workspace_id == workspace.id
     page = api.model_builds.events(pipeline.id, limit=2)
     assert [row.sequence for row in page.items] == [1, 2]
-    assert page.next_cursor == "2"
+    assert page.next_cursor and page.next_cursor.startswith("c1.")
     rest = api.model_builds.events(pipeline.id, cursor=page.next_cursor)
     assert [row.sequence for row in rest.items] == [3]
     charts = api.visualizations.list(pipeline.id)

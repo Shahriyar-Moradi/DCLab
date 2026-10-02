@@ -14,6 +14,7 @@ from app.services.auth_hashing import token_hash, token_hash_candidates
 from app.services.auth_metrics import record_auth_event
 from app.services.auth_service import AuthError, hash_password
 from app.services.session_service import revoke_sessions_for_user, utcnow
+from app.services.service_token_service import revoke_tokens_created_by
 
 PURPOSE_PASSWORD_RESET = "password_reset"
 PURPOSE_EMAIL_VERIFICATION = "email_verification"
@@ -115,6 +116,7 @@ def confirm_password_reset(
     )
     user.password_hash = hash_password(new_password)
     revoke_sessions_for_user(db, user.id, now=now)
+    revoke_tokens_created_by(db, user.id, reason="password_reset", now=now)
     return user
 
 
