@@ -9,15 +9,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.db.models import ClientLabUpload, MlJob
 from app.db.session import get_session_factory
-from app.domain.errors import MlJobSpecError, UnknownJobHandlerError
-from app.domain.lab_run_stages import COMPLETED, IN_PROGRESS_STAGES, NEEDS_INPUT, SKIPPED
+from app.domain.errors import MlJobSpecError, RunCancelledError, RunQuotaExceededError, UnknownJobHandlerError
+from app.domain.lab_run_stages import CANCELLED, COMPLETED, IN_PROGRESS_STAGES, NEEDS_INPUT, SKIPPED
 from app.services.target_intent_service import upload_has_unresolved_target
 from app.domain.ml_jobs import (
     DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
@@ -26,6 +26,7 @@ from app.domain.ml_jobs import (
     FORBIDDEN_JOB_PAYLOAD_KEYS,
     HANDLER_LABS_AUTO_TRAIN,
     HANDLER_VERSION_LABS_AUTO_TRAIN,
+    JOB_CANCELLED,
     JOB_COMPLETED,
     JOB_FAILED,
     JOB_QUEUED,
@@ -204,10 +205,11 @@ def commit_job_heartbeat(
     *,
     now: datetime | None = None,
     bind: Engine | Connection | None = None,
-) -> None:
+) -> bool:
     """Persist only lease/heartbeat on a short-lived session and commit it.
 
     Must not share the long-running training transaction or flush scientific rows.
+    Returns True when cancellation of this running job was requested (P3.1-B2).
     """
     moment = now or _now()
     engine = _heartbeat_engine(bind)
@@ -218,17 +220,77 @@ def commit_job_heartbeat(
     )
     session = factory()
     try:
-        session.execute(
+        requested = session.execute(
             update(MlJob)
             .where(MlJob.id == job_id, MlJob.status == JOB_RUNNING)
             .values(heartbeat_at=moment, lease_expires_at=_lease_expires(moment))
-        )
+            .returning(MlJob.cancel_requested_at)
+        ).first()
         session.commit()
     except Exception:
         session.rollback()
         raise
     finally:
         session.close()
+    return requested is not None and requested[0] is not None
+
+
+def ensure_run_capacity(db: Session, workspace_id: UUID) -> None:
+    """Refuse a new auto-train run when the workspace holds its maximum of queued +
+    running jobs (``RunQuotaExceededError``, 429). Serialized per workspace by a
+    transaction-scoped advisory lock, so concurrent creators cannot overshoot."""
+
+    limit = int(get_settings().ml_max_active_runs_per_workspace)
+    db.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(f"ml-runs:{workspace_id}", 0)))
+    )
+    active = db.scalar(
+        select(func.count())
+        .select_from(MlJob)
+        .where(
+            MlJob.workspace_id == workspace_id,
+            MlJob.job_type == JOB_TYPE_AUTO_TRAIN,
+            MlJob.status.in_((JOB_QUEUED, JOB_RUNNING)),
+        )
+    )
+    if int(active or 0) >= limit:
+        raise RunQuotaExceededError(limit)
+
+
+def _mark_job_cancelled(job: MlJob, *, now: datetime) -> None:
+    job.status = JOB_CANCELLED
+    job.completed_at = now
+    job.heartbeat_at = now
+    job.claimed_by = None
+    job.lease_expires_at = None
+    job.failure_reason = "cancelled by request"
+
+
+def request_job_cancellation(
+    db: Session, job: MlJob, *, now: datetime | None = None, actor_user_id: UUID | None = None
+) -> str:
+    """Cancel a queued job now, or ask its worker to stop (cooperative). Idempotent.
+
+    The caller holds ``job`` ``FOR UPDATE`` (a worker claims queued rows with
+    SKIP LOCKED, so it can never start a job being cancelled) and commits.
+    Returns ``"cancelled"`` / ``"cancelling"``; any other state is returned
+    unchanged (completed, failed, or a finished job waiting for input).
+    """
+
+    moment = now or _now()
+    if job.status in {JOB_QUEUED, JOB_RUNNING} and job.cancel_requested_at is None:
+        job.cancel_requested_by_user_id = actor_user_id  # audit: who cancelled
+    if job.status == JOB_QUEUED:
+        job.cancel_requested_at = job.cancel_requested_at or moment
+        _mark_job_cancelled(job, now=moment)
+        db.flush()
+        return JOB_CANCELLED
+    if job.status == JOB_RUNNING:
+        if job.cancel_requested_at is None:
+            job.cancel_requested_at = moment
+            db.flush()
+        return "cancelling"
+    return str(job.status)
 
 
 def recover_abandoned_jobs(
@@ -286,6 +348,9 @@ def recover_abandoned_jobs(
         recovered.append(job)
     if recovered:
         db.flush()
+    for job in recovered:
+        if job.status == JOB_CANCELLED:
+            _record_cancelled_run(db, job)  # commits, one job at a time
     return recovered
 
 
@@ -348,8 +413,13 @@ def complete_job(db: Session, job: MlJob, *, now: datetime | None = None) -> Non
 
 
 def requeue_job(db: Session, job: MlJob, *, now: datetime | None = None) -> MlJob:
-    """Return the same row to queued so resume does not insert a second job."""
+    """Return the same row to queued so resume does not insert a second job.
 
+    A cancelled job, or one with a pending cancel request, is never revived.
+    """
+
+    if job.status == JOB_CANCELLED or job.cancel_requested_at is not None:
+        raise MlJobSpecError("a cancelled job cannot be requeued")
     moment = now or _now()
     if job.status == JOB_QUEUED and job.completed_at is None:
         job.available_at = moment
@@ -375,9 +445,27 @@ def fail_or_retry_job(
 ) -> None:
     _apply_failure(job, reason=reason, now=now or _now())
     db.flush()
+    if job.status == JOB_CANCELLED:
+        _record_cancelled_run(db, job)
+
+
+def _record_cancelled_run(db: Session, job: MlJob) -> None:
+    """Keep the run envelope (upload, WorkflowRun, Experiment) in step with a
+    cancelled auto-train job. Commits."""
+
+    if job.upload_id is not None and (
+        job.job_type == JOB_TYPE_AUTO_TRAIN or job.handler_key == HANDLER_LABS_AUTO_TRAIN
+    ):
+        from app.services.auto_train_service import record_run_cancelled
+
+        record_run_cancelled(db, job.upload_id, cancelled_by=job.cancel_requested_by_user_id)
 
 
 def _apply_failure(job: MlJob, *, reason: str, now: datetime) -> None:
+    if job.cancel_requested_at is not None:
+        # Failed or abandoned after a cancel request: never retried.
+        _mark_job_cancelled(job, now=now)
+        return
     job.failure_reason = str(reason)[:2048]
     job.heartbeat_at = now
     job.claimed_by = None
@@ -407,13 +495,25 @@ def execute_job(
     heartbeat_bind = _heartbeat_engine(db.get_bind())
 
     def _heartbeat() -> None:
-        commit_job_heartbeat(job_id, bind=heartbeat_bind)
+        # Stage and candidate checkpoints (P3.1-B2 cooperative cancellation).
+        if commit_job_heartbeat(job_id, bind=heartbeat_bind):
+            raise RunCancelledError()
 
     try:
         if runner is not None:
             runner(db, target_id)
         else:
             get_handler(handler_key)(db, job, on_heartbeat=_heartbeat)
+    except RunCancelledError:
+        db.rollback()  # the interrupted stage's uncommitted work is discarded
+        current = db.get(MlJob, job_id)
+        if current is None:
+            raise RuntimeError("ml job disappeared during execution") from None
+        _mark_job_cancelled(current, now=_now())
+        _record_cancelled_run(db, current)
+        db.commit()
+        db.refresh(current)
+        return current
     except UnknownJobHandlerError as exc:
         db.rollback()
         current = db.get(MlJob, job_id)
@@ -448,7 +548,14 @@ def execute_job(
             if upload is not None
             else ""
         )
-        if status in {COMPLETED, SKIPPED} or waiting:
+        cancel_pending = current.cancel_requested_at is not None and status not in {COMPLETED, SKIPPED}
+        if status == CANCELLED or current.status == JOB_CANCELLED or cancel_pending:
+            # Also a run that stopped for input (or would resume) after a cancel
+            # request: it is cancelled, never completed/requeued.
+            _mark_job_cancelled(current, now=terminal_at)
+            if status != CANCELLED:
+                _record_cancelled_run(db, current)
+        elif status in {COMPLETED, SKIPPED} or waiting:
             complete_job(db, current, now=terminal_at)
             if waiting and explicit:
                 requeue_job(db, current, now=terminal_at)

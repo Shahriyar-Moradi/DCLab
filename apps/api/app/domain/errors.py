@@ -261,6 +261,58 @@ class ExperimentComparisonError(ValueError):
         self.code = code
 
 
+class ExperimentRequestError(Exception):
+    """A root run cannot start on this dataset (P3.1-B2): stable ``code``, 409/422."""
+
+    def __init__(self, code: str, message: str, *, status_code: int = 422) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.status_code = status_code
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message}
+
+
+class RunQuotaExceededError(Exception):
+    """The workspace already holds its maximum of queued/running runs (P3.1-B2). 429."""
+
+    status_code = 429
+    code = "run_quota_exceeded"
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"this workspace already has {limit} queued or running runs; retry later")
+        self.limit = limit
+
+    def public_detail(self) -> dict[str, object]:
+        return {"code": self.code, "message": str(self), "limit": self.limit}
+
+
+class ExperimentNotCancellableError(Exception):
+    """Only a queued or running run can be cancelled (P3.1-B2). Maps to 409."""
+
+    status_code = 409
+    code = "not_cancellable"
+
+    def __init__(self, status: str, message: str) -> None:
+        super().__init__(f"{self.code}: {message}")
+        self.status = status
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message, "status": self.status}
+
+
+class RunCancelledError(BaseException):
+    """The worker reached a checkpoint of a job whose cancellation was requested.
+
+    A ``BaseException`` (like ``asyncio.CancelledError``) on purpose: the engine
+    isolates per-candidate failures with ``except Exception``, which must never
+    turn a cancellation into a failed candidate and keep training. Only
+    ``ml_job_service.execute_job`` catches it.
+    """
+
+
 class DecisionRecordError(Exception):
     """Typed decision-record / ref-move failure with a stable ``code`` (ADR 0006 §2, §5)."""
 

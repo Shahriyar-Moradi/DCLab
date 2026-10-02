@@ -19,7 +19,10 @@ from dclab_client.types import (
     DecisionRecordPage,
     EventPage,
     ExecutionRequest,
+    Experiment,
     ExperimentCode,
+    ExperimentComparison,
+    ExperimentPage,
     ModelBuild,
     NodeImpact,
     Principal,
@@ -404,6 +407,126 @@ class ModelBuildsClient:
 class ExperimentsClient:
     def __init__(self, transport: V1Transport) -> None:
         self._transport = transport
+
+    def list(
+        self,
+        *,
+        project_id: UUID | str | None = None,
+        status: str | None = None,
+        parent_id: UUID | str | None = None,
+        split_plan_id: UUID | str | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+        has_change_set: bool | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ExperimentPage:
+        """Experiments of the workspace, newest first (``next_cursor`` pages)."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/experiments",
+            params={
+                "project_id": _id(project_id) if project_id is not None else None,
+                "status": status,
+                "parent_id": _id(parent_id) if parent_id is not None else None,
+                "split_plan_id": _id(split_plan_id) if split_plan_id is not None else None,
+                "created_after": created_after.isoformat() if created_after else None,
+                "created_before": created_before.isoformat() if created_before else None,
+                "has_change_set": None if has_change_set is None else str(has_change_set).lower(),
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return ExperimentPage.model_validate(payload)
+
+    def get(self, experiment_id: UUID | str, *, request_id: str | None = None) -> Experiment:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/experiments/{_id(experiment_id)}", request_id=request_id
+        )
+        return _versioned(Experiment, payload, headers)
+
+    def create(
+        self,
+        *,
+        project_id: UUID | str,
+        dataset_id: UUID | str,
+        problem_spec_id: UUID | str | None = None,
+        target_column: str | None = None,
+        intent: str | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> Experiment:
+        """Queue a root run on a published dataset (202; the worker trains).
+        Resend with the same ``idempotency_key`` to retry safely."""
+
+        body: dict[str, Any] = {"project_id": _id(project_id), "dataset_id": _id(dataset_id)}
+        if problem_spec_id is not None:
+            body["problem_spec_id"] = _id(problem_spec_id)
+        if target_column is not None:
+            body["target_column"] = target_column
+        if intent is not None:
+            body["intent"] = intent
+        payload, headers = self._transport.request_with_headers(
+            "POST", "/v1/experiments", json=body, request_id=request_id, idempotency_key=idempotency_key
+        )
+        return _versioned(Experiment, payload, headers)
+
+    def branch(
+        self,
+        experiment_id: UUID | str,
+        *,
+        changes: list[dict[str, Any]],
+        intent: str,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> Experiment:
+        """Branch a completed experiment with a typed change set (same split plan)."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/experiments/{_id(experiment_id)}/branches",
+            json={"intent": intent, "changes": list(changes)},
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(Experiment, payload, headers)
+
+    def compare(
+        self, experiment_ids: list[UUID | str], *, request_id: str | None = None
+    ) -> ExperimentComparison:
+        """Side-by-side metrics of 2-10 experiments; ``ConflictError`` (``split_plan_mismatch``)
+        unless they share one split plan."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/experiments/compare",
+            params={"ids": ",".join(_id(item) for item in experiment_ids)},
+            request_id=request_id,
+        )
+        return ExperimentComparison.model_validate(payload)
+
+    def cancel(
+        self,
+        experiment_id: UUID | str,
+        *,
+        if_match: str | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> Experiment:
+        """Cancel a queued run (``cancelled``) or ask a running one to stop
+        (``cancelling``). Repeating it returns the same result."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/experiments/{_id(experiment_id)}/cancel",
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            if_match=if_match,
+        )
+        return _versioned(Experiment, payload, headers)
 
     def code(
         self, experiment_id: UUID | str, *, request_id: str | None = None

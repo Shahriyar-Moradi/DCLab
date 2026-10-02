@@ -278,11 +278,13 @@ def _keyed_command(
     resource_kind: str,
     load: Callable[[Any], Any],
     execute: Callable[[Callable[[Any], None]], Any],
+    status: int = 201,
 ) -> tuple[Any, int, bool]:
     """Replay a bound key, or execute once and bind the key in the same transaction.
 
     ``execute(bind)`` creates the resource, calls ``bind(resource_id)`` before its
-    commit and returns the resource. Returns ``(resource, status, replayed)``.
+    commit and returns the resource. Returns ``(resource, status, replayed)``;
+    ``status`` is stored with the key (201 created, 202 accepted runs).
     """
 
     def replay() -> tuple[Any, int, bool] | None:
@@ -302,14 +304,14 @@ def _keyed_command(
 
     def bind(resource_id: Any) -> None:
         idempotency_service.bind(
-            db, scope, binding, resource_kind=resource_kind, resource_id=resource_id, response_status=201
+            db, scope, binding, resource_kind=resource_kind, resource_id=resource_id, response_status=status
         )
 
     found = replay()
     if found is not None:
         return found
     try:
-        return execute(bind), 201, False
+        return execute(bind), status, False
     except (IdempotencyKeyRaceError, IntegrityError) as exc:
         # A concurrent request committed first (same key, or a unique the resource
         # needs such as a slug or spec version): ours is rolled back.

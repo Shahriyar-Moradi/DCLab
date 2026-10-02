@@ -568,3 +568,67 @@ def test_upload_validates_ids_and_stream_filenames():
         api.datasets.upload("../x", io.BytesIO(b"x"), filename="a.csv")
     with pytest.raises(DCLabClientError, match="filename"):
         api.datasets.upload(WS, io.BytesIO(b"x"))
+
+
+# --- P3.1-B2 experiments -----------------------------------------------------------------------
+
+_EXPERIMENT = {
+    "id": WS, "workspace_id": WS, "project_id": WS, "status": "queued",
+    "created_at": "2026-10-02T00:00:00Z", "lineage": {"source_dataset_id": WS},
+    "intent": "why", "untrusted_fields": ["intent", "change_set", "target_column"],
+}
+_COMPARISON = {
+    "schema_version": 1, "source": "evaluation_metrics", "authoritative": False, "split_plan_id": WS,
+    "experiments": [{"experiment_id": WS, "cv": {"roc_auc": 0.8}, "holdout": {"roc_auc": 0.7}}],
+    "common": {"cv": ["roc_auc"], "holdout": ["roc_auc"]},
+}
+
+
+def test_experiment_routes_methods_keys_and_models():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path == "/v1/experiments" and request.method == "GET":
+            return httpx.Response(200, json={"items": [{**_EXPERIMENT, "has_change_set": False}],
+                                             "next_cursor": "c1.x.y", "limit": 1})
+        if path.endswith("/compare"):
+            return httpx.Response(200, json=_COMPARISON)
+        status = 202 if request.method == "POST" else 200
+        return httpx.Response(status, json=_EXPERIMENT, headers={"ETag": '"e2"'})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    page = api.experiments.list(project_id=WS, status="queued", has_change_set=False, limit=1)
+    assert page.next_cursor == "c1.x.y" and page.items[0].status == "queued"
+    created = api.experiments.create(project_id=WS, dataset_id=WS, target_column="y", idempotency_key="e-1")
+    assert created.etag == '"e2"' and created.lineage.source_dataset_id == UUID(WS)
+    branch = api.experiments.branch(WS, changes=[{"kind": "family_exclude", "family": "xgboost"}], intent="try")
+    assert branch.status == "queued"
+    assert api.experiments.get(WS).etag == '"e2"'
+    comparison = api.experiments.compare([WS, WS])
+    assert comparison.experiments[0].holdout == {"roc_auc": 0.7}
+    api.experiments.cancel(WS, if_match='"e2"')
+    listing, post, branch_post, get, compare, cancel = recorded
+    assert dict(listing.url.params) == {"project_id": WS, "status": "queued", "has_change_set": "false", "limit": "1"}
+    assert post.headers["Idempotency-Key"] == "e-1"
+    assert json.loads(post.content) == {"project_id": WS, "dataset_id": WS, "target_column": "y"}
+    assert branch_post.url.path == f"/v1/experiments/{WS}/branches" and UUID(branch_post.headers["Idempotency-Key"])
+    assert json.loads(branch_post.content)["changes"] == [{"kind": "family_exclude", "family": "xgboost"}]
+    assert get.url.path == f"/v1/experiments/{WS}"
+    assert compare.url.params["ids"] == f"{WS},{WS}"
+    assert cancel.url.path == f"/v1/experiments/{WS}/cancel" and cancel.headers["If-Match"] == '"e2"'
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.experiments.compare([WS, "../x"])
+
+
+def test_compare_refusal_is_a_typed_conflict():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"error": {
+            "code": "split_plan_mismatch", "message": "different holdouts", "retryable": False,
+            "request_id": "r-1", "details": {}}})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    with pytest.raises(DCLabAPIError) as caught:
+        api.experiments.compare([WS, WS])
+    assert caught.value.status_code == 409 and caught.value.code == "split_plan_mismatch"

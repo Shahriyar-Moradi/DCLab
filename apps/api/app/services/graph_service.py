@@ -558,7 +558,7 @@ def _counts(keys: Iterable[Key]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def _untrusted_text(value: str | None, max_chars: int) -> str | None:
+def untrusted_text(value: str | None, max_chars: int) -> str | None:
     """User/agent-authored text (intent, names, target columns) on the public read path.
 
     Same fail-closed projection as other /v1 diagnostics (paths, emails, bearer
@@ -581,7 +581,7 @@ def _read(graph: _Graph) -> ProjectGraphRead:
             kind=node.kind,
             id=node.id,
             key=node_key(node.kind, node.id),
-            label=_untrusted_text(node.label, GRAPH_LABEL_MAX_CHARS) or node.kind,
+            label=untrusted_text(node.label, GRAPH_LABEL_MAX_CHARS) or node.kind,
             status=node.status,
             created_at=node.created_at,
             version=node.version,
@@ -589,7 +589,7 @@ def _read(graph: _Graph) -> ProjectGraphRead:
             stale=key in reasons,
             stale_reasons=reasons.get(key, []),
             ref_kinds=sorted(ref_kinds_by_node.get(key, []), key=REF_KINDS.index),
-            intent=_untrusted_text(node.intent, GRAPH_INTENT_MAX_CHARS),
+            intent=untrusted_text(node.intent, GRAPH_INTENT_MAX_CHARS),
             outside_window=node.outside_window,
             lineage_incomplete=node.lineage_incomplete,
             derived=node.derived,

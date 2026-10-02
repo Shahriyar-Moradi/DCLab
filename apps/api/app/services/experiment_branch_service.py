@@ -23,6 +23,7 @@ import copy
 import hashlib
 import json
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID
@@ -660,11 +661,15 @@ def branch_experiment(
     intent: str | None,
     idempotency_key: str | None = None,
     source_surface: str = SOURCE_API,
+    before_commit: Callable[[Experiment], None] | None = None,
 ) -> BranchResult:
     """Validate, materialize and enqueue one branch of ``parent_id``. Commits.
 
     Raises ``ExperimentNotFoundError`` (404, also cross-tenant / no ML write),
     ``ExperimentNotBranchableError`` (409) or ``InvalidChangeSetError`` (422).
+    ``before_commit(shell)`` runs inside the transaction: ``POST
+    /v1/experiments/{id}/branches`` binds its ``idempotency_keys`` row there and
+    passes no ``idempotency_key`` (one binding per surface, never both).
     """
 
     ctx = load_parent_context(db, actor=actor, workspace_id=workspace_id, parent_id=parent_id)
@@ -685,8 +690,9 @@ def branch_experiment(
     )
     from app.services.lab_service import search_from_mapping
     from app.services.lineage_service import create_pipeline_run, create_workflow_run
-    from app.services.ml_job_service import create_auto_train_job
+    from app.services.ml_job_service import create_auto_train_job, ensure_run_capacity
 
+    ensure_run_capacity(db, workspace_id)
     parent = ctx.experiment
     parent_upload = ctx.upload
     source = db.get(Dataset, parent.source_dataset_id)
@@ -770,6 +776,8 @@ def branch_experiment(
         workflow_run_id=workflow_run.id,
         pipeline_run_id=shell.id,
     )
+    if before_commit is not None:
+        before_commit(shell)
     db.commit()
     enqueue_auto_train(upload.id)
     return BranchResult(shell, request, upload, job, created=True)
@@ -778,7 +786,9 @@ def branch_experiment(
 # --- comparison (read model) --------------------------------------------------
 
 
-def _winner_evidence(db: Session, experiment: Experiment) -> dict[str, Any]:
+def winner_evidence(db: Session, experiment: Experiment) -> dict[str, Any]:
+    """The locked winner's CV aggregate and final-holdout metrics (``evaluation_metrics``)."""
+
     decision = db.scalar(
         select(ModelSelectionDecision).where(ModelSelectionDecision.pipeline_run_id == experiment.id)
     )
@@ -827,18 +837,7 @@ def compare_experiments(db: Session, parent: Experiment, child: Experiment) -> d
     locked threshold.
     """
 
-    if parent.workspace_id != child.workspace_id:
-        raise ExperimentComparisonError("not_comparable", "experiments belong to different workspaces")
-    if parent.split_plan_id is None or parent.split_plan_id != child.split_plan_id:
-        raise ExperimentComparisonError(
-            "split_plan_mismatch", "experiments do not share a split plan; their holdouts differ"
-        )
-    before, after = _winner_evidence(db, parent), _winner_evidence(db, child)
-    for side in (before, after):
-        if not side["cv"] or not side["holdout"]:
-            raise ExperimentComparisonError(
-                "evidence_missing", "a locked winner has no CV aggregate or final-holdout metrics"
-            )
+    before, after = _comparable_evidence(db, [parent, child])
     return {
         "schema_version": COMPARISON_SCHEMA_VERSION,
         "status": "compared",
@@ -859,6 +858,51 @@ def compare_experiments(db: Session, parent: Experiment, child: Experiment) -> d
                 "parent_only": sorted(set(before[section]) - set(after[section])),
                 "child_only": sorted(set(after[section]) - set(before[section])),
             }
+            for section in ("cv", "holdout")
+        },
+    }
+
+
+def _comparable_evidence(db: Session, experiments: Sequence[Experiment]) -> list[dict[str, Any]]:
+    """The one comparability gate (ADR 0006 Rev 2): same workspace, same SplitPlan,
+    a locked winner with CV and final-holdout metrics on every side."""
+
+    if len({row.workspace_id for row in experiments}) != 1:
+        raise ExperimentComparisonError("not_comparable", "experiments belong to different workspaces")
+    plans = {row.split_plan_id for row in experiments}
+    if None in plans or len(plans) != 1:
+        raise ExperimentComparisonError(
+            "split_plan_mismatch", "experiments do not share a split plan; their holdouts differ"
+        )
+    evidence = [winner_evidence(db, row) for row in experiments]
+    for side in evidence:
+        if not side["cv"] or not side["holdout"]:
+            raise ExperimentComparisonError(
+                "evidence_missing", "a locked winner has no CV aggregate or final-holdout metrics"
+            )
+    return evidence
+
+
+def compare_side_by_side(db: Session, experiments: Sequence[Experiment]) -> dict[str, Any]:
+    """N-way read model of ``GET /v1/experiments/compare`` (same gate as the parent diff).
+
+    Each experiment keeps its own metrics; ``common`` lists the metric names every
+    side recorded. CV compares the locked winners' CV aggregates; holdout metrics
+    are each run's single evaluation at its own locked threshold.
+    """
+
+    evidence = _comparable_evidence(db, experiments)
+    return {
+        "schema_version": COMPARISON_SCHEMA_VERSION,
+        "source": "evaluation_metrics",
+        "authoritative": False,
+        "split_plan_id": experiments[0].split_plan_id,
+        "experiments": [
+            {"experiment_id": row.id, "parent_experiment_id": row.parent_pipeline_run_id, **side}
+            for row, side in zip(experiments, evidence)
+        ],
+        "common": {
+            section: sorted(set.intersection(*(set(side[section]) for side in evidence)))
             for section in ("cv", "holdout")
         },
     }

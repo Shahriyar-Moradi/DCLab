@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     # POST /v1/datasets limit for direct API callers (the BFF enforces its own
     # DCLAB_BFF_MAX_UPLOAD_BYTES, same 256 MiB default, for browser uploads).
     v1_dataset_upload_max_bytes: int = 256 * 1024 * 1024
+    # P3.1-B2: queued + running auto-train jobs one workspace may hold at once
+    # (root runs and branches); above it a new run is 429 run_quota_exceeded.
+    ml_max_active_runs_per_workspace: int = 20
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
     # Durable ML jobs. Production default persists a row and returns; a worker

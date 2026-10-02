@@ -35,7 +35,8 @@ P2.4-A (2026-10-02): branch experiments with typed change sets reuse the parent'
 P2.4-B (2026-10-02): per-experiment reproducible code export (stored split map, branch changes) and GET /v1/experiments/{id}/code.
 P2.5-A (2026-10-02): decision record service (append-only state machine, move_ref) and GET /v1/projects/{id}/decisions.
 P3.1-A (2026-10-02): /v1 conventions — error envelope with request_id, opaque cursors, ETag/If-Match, Idempotency-Key on POST; SDK client versioned.
-P3.1-B1 (2026-10-02): POST /v1/projects, /v1/projects/{id}/problem-specs, /v1/datasets with a generic idempotency_keys table; current Alembic head 0065_idempotency_keys.
+P3.1-B1 (2026-10-02): POST /v1/projects, /v1/projects/{id}/problem-specs, /v1/datasets with a generic idempotency_keys table; head at the time was 0065_idempotency_keys.
+P3.1-B2 (2026-10-02): /v1 experiments — list, get, root run, branch, compare (same split plan), cancel. Migration 0066_run_cancellation (ml_jobs cancelled status + cancel_requested_at); current Alembic head 0066_run_cancellation.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

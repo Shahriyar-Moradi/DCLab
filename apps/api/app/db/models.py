@@ -1273,7 +1273,13 @@ _PIPELINE_IN_PROGRESS = frozenset(
 
 
 def client_status_for(pipeline_status: str) -> str:
-    """Coarse client view stored on `ClientLabUpload.client_status`."""
+    """Coarse client view stored on `ClientLabUpload.client_status`.
+
+    A ``cancelled`` run (P3.1-B2) maps to ``failed`` on purpose: the stored
+    ``ck_client_lab_uploads_client_status`` vocabulary has no cancelled value and
+    widening it needs a migration. ``pipeline_status`` stays ``cancelled`` and the
+    experiment (``CANCELLED``), ml_job (``cancelled``) and ``/v1`` status say so.
+    """
     if pipeline_status == "queued":
         return "queued"
     if pipeline_status == "completed":
@@ -1559,6 +1565,14 @@ class MlJob(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # P3.1-B2: set once by POST /v1/experiments/{id}/cancel on a running job; the
+    # worker stops at its next stage/candidate checkpoint (status -> cancelled).
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancel_requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

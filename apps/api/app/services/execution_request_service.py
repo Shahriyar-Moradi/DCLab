@@ -47,7 +47,7 @@ from app.domain.idempotency import (
     REQUEST_DIGEST_SPEC_KEY,
 )
 from app.domain.lab_run_stages import ANALYZING
-from app.domain.ml_jobs import JOB_RUNNING
+from app.domain.ml_jobs import JOB_CANCELLED, JOB_RUNNING
 from app.services.authorization_service import can_execute_workspace_ml, can_read_workspace
 
 
@@ -399,15 +399,15 @@ def upload_for_execution_request(
 
 
 def _job_for_request(
-    db: Session, request: ExecutionRequest, upload: ClientLabUpload | None
+    db: Session, request: ExecutionRequest, upload: ClientLabUpload | None, *, for_update: bool = False
 ) -> MlJob | None:
-    job = db.scalar(
-        select(MlJob).where(MlJob.execution_request_id == request.id)
-    )
+    query = select(MlJob).where(MlJob.execution_request_id == request.id)
+    job = db.scalar(query.with_for_update() if for_update else query)
     if job is not None:
         return job
     if upload is not None:
-        return db.scalar(select(MlJob).where(MlJob.upload_id == upload.id))
+        query = select(MlJob).where(MlJob.upload_id == upload.id)
+        return db.scalar(query.with_for_update() if for_update else query)
     return None
 
 
@@ -565,6 +565,12 @@ def confirm_execution_target(
         raise ExecutionNotWaitingError(request.status)
 
     upload = upload_for_execution_request(db, request)
+    # Lock the job row before the upload/workflow rows (the cancel route's order).
+    locked_job = _job_for_request(db, request, upload, for_update=True)
+    if locked_job is not None and (
+        locked_job.status == JOB_CANCELLED or locked_job.cancel_requested_at is not None
+    ):
+        raise ExecutionNotWaitingError("cancelled")
     dataset_id = upload.dataset_id if upload is not None else None
     if dataset_id is None:
         spec = request.request_spec if isinstance(request.request_spec, dict) else {}
@@ -637,7 +643,7 @@ def confirm_execution_target(
     if workflow_run is not None:
         workflow_run.explicit_target = selected
         workflow_run.failure_reason = None
-        if workflow_run.status not in {"completed", "failed", "skipped"}:
+        if workflow_run.status not in {"completed", "failed", "skipped", "cancelled"}:
             workflow_run.status = "running"
 
     job = _job_for_request(db, request, upload)

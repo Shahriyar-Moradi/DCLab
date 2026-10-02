@@ -633,3 +633,74 @@ def test_previous_head_idempotency_keys_upgrade_is_additive_and_reversible(monke
             engine.dispose()
     finally:
         _drop_isolated(admin_engine, database_name)
+
+
+def test_previous_head_run_cancellation_widens_job_status_and_guards_downgrade(monkeypatch):
+    """0066 (P3.1-B2): additive column + superset status CHECK; downgrade refuses cancelled rows."""
+
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="from65"
+    )
+    try:
+        command.upgrade(alembic_config, "0065_idempotency_keys")
+        engine = create_engine(database_url)
+        try:
+            ws = uuid4()
+            insert = text(
+                "INSERT INTO ml_jobs (id, workspace_id, job_type, handler_key, target_id, status) "
+                "VALUES (gen_random_uuid(), :ws, 'auth_cleanup', 'auth.session_cleanup', "
+                "gen_random_uuid(), :status)"
+            )
+            with engine.begin() as connection:
+                connection.execute(
+                    text("INSERT INTO workspaces (id, slug, name) VALUES (:ws, :slug, 'Jobs')"),
+                    {"ws": ws, "slug": f"jobs-{ws.hex[:8]}"},
+                )
+                connection.execute(insert, {"ws": ws, "status": "running"})
+            with pytest.raises(Exception, match="ck_ml_jobs_status_valid"), engine.begin() as connection:
+                connection.execute(insert, {"ws": ws, "status": "cancelled"})
+
+            command.upgrade(alembic_config, "0066_run_cancellation")
+            with engine.begin() as connection:
+                assert connection.execute(
+                    text(
+                        "SELECT count(*) FROM ml_jobs WHERE cancel_requested_at IS NULL "
+                        "AND cancel_requested_by_user_id IS NULL"
+                    )
+                ).scalar() == 1  # existing rows: never requested
+                assert connection.execute(
+                    text(
+                        "SELECT confdeltype FROM pg_constraint "
+                        "WHERE conname = 'ml_jobs_cancel_requested_by_user_id_fkey'"
+                    )
+                ).scalar() == "n"  # ON DELETE SET NULL
+                connection.execute(text("UPDATE ml_jobs SET cancel_requested_at = now()"))
+                connection.execute(insert, {"ws": ws, "status": "cancelled"})
+                validated = connection.execute(
+                    text("SELECT convalidated FROM pg_constraint WHERE conname = 'ck_ml_jobs_status_valid'")
+                ).scalar()
+            assert validated is True
+            with pytest.raises(Exception, match="ck_ml_jobs_status_valid"), engine.begin() as connection:
+                connection.execute(insert, {"ws": ws, "status": "cancelling"})
+            with pytest.raises(Exception, match="0066 downgrade refused: 1 ml_jobs are cancelled"):
+                command.downgrade(alembic_config, "0065_idempotency_keys")
+            with engine.begin() as connection:
+                connection.execute(text("DELETE FROM ml_jobs WHERE status = 'cancelled'"))
+            command.downgrade(alembic_config, "0065_idempotency_keys")
+            with engine.connect() as connection:
+                column = connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'ml_jobs' AND column_name IN "
+                        "('cancel_requested_at', 'cancel_requested_by_user_id')"
+                    )
+                ).scalar()
+            assert column == 0
+            with pytest.raises(Exception, match="ck_ml_jobs_status_valid"), engine.begin() as connection:
+                connection.execute(insert, {"ws": ws, "status": "cancelled"})
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)

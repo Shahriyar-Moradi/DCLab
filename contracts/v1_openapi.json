@@ -152,6 +152,205 @@
         "successSchema": "ExecutionRequestRead"
       }
     },
+    "/v1/experiments": {
+      "GET": {
+        "operationId": "read_experiments_v1_experiments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "has_change_set",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "parent_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "split_plan_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentPage"
+      },
+      "POST": {
+        "operationId": "create_experiment_v1_v1_experiments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "ExperimentCreateRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
+      }
+    },
+    "/v1/experiments/compare": {
+      "GET": {
+        "operationId": "compare_experiments_v1_v1_experiments_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentComparisonRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}": {
+      "GET": {
+        "operationId": "read_experiment_v1_experiments__experiment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}/branches": {
+      "POST": {
+        "operationId": "create_branch_v1_v1_experiments__experiment_id__branches_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ExperimentBranchCreateRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}/cancel": {
+      "POST": {
+        "operationId": "cancel_experiment_v1_v1_experiments__experiment_id__cancel_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
+      }
+    },
     "/v1/experiments/{experiment_id}/code": {
       "GET": {
         "operationId": "read_experiment_code_v1_experiments__experiment_id__code_get",
@@ -760,6 +959,127 @@
         "spec_digest",
         "standalone_cv",
         "workspace_id"
+      ]
+    },
+    "ExperimentComparisonItem": {
+      "properties": [
+        "candidate_id",
+        "constraint_status",
+        "cv",
+        "decision_threshold",
+        "experiment_id",
+        "family",
+        "holdout",
+        "parent_experiment_id",
+        "selected_score",
+        "selection_metric"
+      ],
+      "required": [
+        "experiment_id"
+      ]
+    },
+    "ExperimentComparisonRead": {
+      "properties": [
+        "authoritative",
+        "common",
+        "experiments",
+        "schema_version",
+        "source",
+        "split_plan_id"
+      ],
+      "required": [
+        "authoritative",
+        "common",
+        "experiments",
+        "schema_version",
+        "source",
+        "split_plan_id"
+      ]
+    },
+    "ExperimentDetailRead": {
+      "properties": [
+        "cancel_requested_at",
+        "change_set",
+        "created_at",
+        "diff_vs_parent",
+        "ended_at",
+        "failure_reason",
+        "id",
+        "intent",
+        "lineage",
+        "metrics",
+        "project_id",
+        "started_at",
+        "status",
+        "target_column",
+        "task_type",
+        "untrusted_fields",
+        "workspace_id"
+      ],
+      "required": [
+        "created_at",
+        "id",
+        "lineage",
+        "status",
+        "workspace_id"
+      ]
+    },
+    "ExperimentLineage": {
+      "properties": [
+        "execution_request_id",
+        "parent_experiment_id",
+        "prepared_dataset_id",
+        "problem_spec_id",
+        "source_dataset_id",
+        "split_plan_id",
+        "workflow_run_id"
+      ],
+      "required": []
+    },
+    "ExperimentListItem": {
+      "properties": [
+        "created_at",
+        "ended_at",
+        "has_change_set",
+        "id",
+        "intent",
+        "parent_experiment_id",
+        "project_id",
+        "source_dataset_id",
+        "split_plan_id",
+        "started_at",
+        "status",
+        "untrusted_fields"
+      ],
+      "required": [
+        "created_at",
+        "id",
+        "status"
+      ]
+    },
+    "ExperimentMetrics": {
+      "properties": [
+        "baseline_comparison",
+        "candidate_id",
+        "constraint_status",
+        "cv",
+        "decision_threshold",
+        "family",
+        "holdout",
+        "selected_score",
+        "selection_metric"
+      ],
+      "required": []
+    },
+    "ExperimentPage": {
+      "properties": [
+        "items",
+        "limit",
+        "next_cursor"
+      ],
+      "required": [
+        "items",
+        "limit"
       ]
     },
     "MlRunEventRead": {

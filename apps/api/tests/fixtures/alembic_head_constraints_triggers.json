@@ -553,7 +553,7 @@
     {
       "table": "ml_jobs",
       "name": "ck_ml_jobs_status_valid",
-      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))"
     },
     {
       "table": "ml_jobs",

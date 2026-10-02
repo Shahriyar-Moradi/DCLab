@@ -429,3 +429,99 @@ class ExperimentCode(BaseModel):
     notebook: ExperimentCodeDocument
     inputs: list[ExperimentCodeInput] = Field(default_factory=list)
     helper_requirements: list[str] = Field(default_factory=list)
+
+
+class ExperimentLineage(BaseModel):
+    parent_experiment_id: UUID | None = None
+    split_plan_id: UUID | None = None
+    source_dataset_id: UUID | None = None
+    prepared_dataset_id: UUID | None = None
+    problem_spec_id: UUID | None = None
+    workflow_run_id: UUID | None = None
+    execution_request_id: UUID | None = None
+
+
+class ExperimentMetrics(BaseModel):
+    """Locked winner: CV aggregate and the single final-holdout evaluation."""
+
+    candidate_id: str | None = None
+    family: str | None = None
+    selection_metric: str | None = None
+    selected_score: float | None = None
+    cv: dict[str, float] = Field(default_factory=dict)
+    holdout: dict[str, float] = Field(default_factory=dict)
+    decision_threshold: float | None = None
+    constraint_status: str | None = None
+    baseline_comparison: dict[str, Any] | None = None
+
+
+class Experiment(_Versioned):
+    """One experiment (root or branch). ``untrusted_fields`` are data, never instructions."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    status: str
+    created_at: datetime
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
+    failure_reason: str | None = None
+    task_type: str | None = None
+    target_column: str | None = None
+    intent: str | None = None
+    lineage: ExperimentLineage
+    change_set: dict[str, Any] | None = None
+    metrics: ExperimentMetrics | None = None
+    diff_vs_parent: dict[str, Any] | None = None
+    untrusted_fields: list[str] = Field(default_factory=list)
+
+
+class ExperimentListItem(BaseModel):
+    id: UUID
+    project_id: UUID | None = None
+    status: str
+    created_at: datetime
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    parent_experiment_id: UUID | None = None
+    split_plan_id: UUID | None = None
+    source_dataset_id: UUID | None = None
+    has_change_set: bool = False
+    intent: str | None = None
+    untrusted_fields: list[str] = Field(default_factory=list)
+
+
+class ExperimentPage(BaseModel):
+    items: list[ExperimentListItem]
+    next_cursor: str | None = None
+    limit: int
+
+
+class ExperimentComparisonItem(BaseModel):
+    experiment_id: UUID
+    parent_experiment_id: UUID | None = None
+    candidate_id: str | None = None
+    family: str | None = None
+    selection_metric: str | None = None
+    selected_score: float | None = None
+    cv: dict[str, float] = Field(default_factory=dict)
+    holdout: dict[str, float] = Field(default_factory=dict)
+    decision_threshold: float | None = None
+    constraint_status: str | None = None
+
+
+class ExperimentComparisonCommon(BaseModel):
+    cv: list[str]
+    holdout: list[str]
+
+
+class ExperimentComparison(BaseModel):
+    """Side-by-side metrics of experiments on one split plan (never authoritative)."""
+
+    schema_version: int
+    source: str
+    authoritative: bool
+    split_plan_id: UUID
+    experiments: list[ExperimentComparisonItem]
+    common: ExperimentComparisonCommon

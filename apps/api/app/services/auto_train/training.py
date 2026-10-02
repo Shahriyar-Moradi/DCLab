@@ -53,7 +53,6 @@ def run_training(ctx: RunContext, inp: TrainingInput) -> TrainingOutput:
     cat_cols = inp.cat_cols
     locked_split = inp.locked_split
     observer = ctx.observer
-    on_heartbeat = ctx.on_heartbeat
 
     def _experiment_stage(stage: str) -> None:
         # The runner repeats the deterministic split from the persisted
@@ -62,10 +61,12 @@ def run_training(ctx: RunContext, inp: TrainingInput) -> TrainingOutput:
             ctx.stage(stage)
 
     def _on_model_event(event_type: str, payload: dict[str, Any]) -> None:
+        if event_type == "final_test_started":
+            ctx.cancellable = False  # the holdout is about to be scored once
         if observer is not None:
             observer.callback(event_type, payload)
-        if on_heartbeat is not None and event_type in svc.HEARTBEAT_PROGRESS_EVENTS:
-            on_heartbeat()
+        if event_type in svc.HEARTBEAT_PROGRESS_EVENTS:
+            ctx.heartbeat()
 
     reuse_locked_run = experiment.scientific_evidence_locked_at is not None
     if reuse_locked_run and str(experiment.status).upper() != "COMPLETED":

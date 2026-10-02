@@ -62,6 +62,8 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"target_column": "y"}
         elif path.endswith("/problem-specs"):
             body = {"task_type": "binary", "business_objective": "x"}
+        elif path.endswith("/branches"):
+            body = {"intent": "x", "changes": [{"kind": "family_exclude", "family": "xgboost"}]}
         kwargs.setdefault("json", body)
         # P3.1-B commands require a key; supply one so the resource checks answer.
         kwargs["headers"] = {"Idempotency-Key": f"conv-{uuid4().hex}", **(kwargs.get("headers") or {})}
@@ -116,6 +118,12 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/model-builds/{pipeline_run_id}/visualizations",
         "GET /v1/model-builds/{pipeline_run_id}/artifacts",
         "GET /v1/experiments/{experiment_id}/code",
+        "GET /v1/experiments",
+        "POST /v1/experiments",
+        "GET /v1/experiments/compare",
+        "GET /v1/experiments/{experiment_id}",
+        "POST /v1/experiments/{experiment_id}/branches",
+        "POST /v1/experiments/{experiment_id}/cancel",
     }
 
 

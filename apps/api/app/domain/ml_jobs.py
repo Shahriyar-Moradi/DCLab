@@ -25,12 +25,17 @@ ML_JOB_STATUSES = (
     "running",
     "completed",
     "failed",
+    # P3.1-B2 (Alembic 0066): terminal; a queued job is cancelled at once, a
+    # running one when the worker reaches its next checkpoint
+    # (``cancel_requested_at`` set, see ``ml_job_service``).
+    "cancelled",
 )
 
 JOB_QUEUED = "queued"
 JOB_RUNNING = "running"
 JOB_COMPLETED = "completed"
 JOB_FAILED = "failed"
+JOB_CANCELLED = "cancelled"
 
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 300.0
