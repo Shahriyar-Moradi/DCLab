@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
 from typing import Any, Iterable
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload, object_session, selectinload
 
 from app.db.models import (
     Artifact,
@@ -20,6 +22,7 @@ from app.db.models import (
     FeatureSetVersion,
     ModelEvaluation,
     ModelVersion,
+    SplitPlan,
     User,
     Workspace,
 )
@@ -29,8 +32,16 @@ from app.domain.model_build import (
     ModelBuildReproductionArtifactsRead,
 )
 from app.domain.model_build_reproduction import (
+    AUTHORIZED_DATASET_PATH_PLACEHOLDER,
+    AUTHORIZED_SPLIT_ASSIGNMENT_PATH_PLACEHOLDER,
+    DATASET_PATH_ENV,
     GENERATOR_VERSION,
+    SPLIT_ASSIGNMENT_PATH_ENV,
+    ExperimentCodeDocument,
+    ExperimentCodeInput,
+    ExperimentCodeRead,
     ModelBuildReproductionSpec,
+    ReproductionBranch,
     ReproductionCandidate,
     ReproductionColumn,
     ReproductionDataset,
@@ -42,6 +53,7 @@ from app.domain.model_build_reproduction import (
     ReproductionLeakageExclusion,
     ReproductionMetricPlan,
     ReproductionPreprocessingStep,
+    ReproductionSplitAssignment,
     ReproductionTask,
     ReproductionValidationPlan,
     ReproductionWinner,
@@ -54,9 +66,10 @@ from app.engine.modeling.validation_planner import (
     STRATIFIED_KFOLD,
     TIME_SERIES_SPLIT,
 )
+from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.artifact_service import read_artifact_bytes, store_artifact
 from app.services.authorization_service import can_read_workspace
-from app.services.model_build_codegen import render_stage_code
+from app.services.model_build_codegen import render_stage_code, standalone_cv_supported
 from app.services.model_build_notebook import (
     reproduction_filenames,
     reproduction_notebook_bytes,
@@ -161,10 +174,132 @@ def _named_hyperparameters(rows: Iterable[Any]) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for row in sorted(rows, key=lambda item: item.parameter_name):
         name = str(row.parameter_name)
-        if _secret_key(name):
+        if _secret_key(name) or name == "tuning_plan":
+            # The tuned candidate's search plan is evidence, not a constructor value.
             continue
         values[name] = _safe_value(row.value_json)
     return values
+
+
+def _safe_tree(value: Any, depth: int = 0) -> Any:
+    """JSON-safe copy of recorded run configuration; secret-like keys are dropped."""
+
+    if depth > 6:
+        return None
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, str):
+        return value[:512]
+    if isinstance(value, dict):
+        return {
+            str(key): _safe_tree(item, depth + 1)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            if not _secret_key(str(key))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_safe_tree(item, depth + 1) for item in list(value)[:200]]
+    return str(value)[:512]
+
+
+def _scalar_list(value: Any) -> list[Any] | None:
+    if not isinstance(value, list) or not value:
+        return None
+    if not all(isinstance(item, (str, int, float, bool)) for item in value):
+        return None
+    return [item[:512] if isinstance(item, str) else item for item in value]
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item)[:512] for item in value if isinstance(item, str)]
+
+
+def _fold_hyperparameters(payload: dict[str, Any], applied: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Per-fold constructor values of a nested-tuned candidate (the run's own record)."""
+
+    out: dict[str, dict[str, Any]] = {}
+    for fold in payload.get("folds") or []:
+        if not isinstance(fold, dict) or not isinstance(fold.get("tuning"), dict):
+            continue
+        params = fold["tuning"].get("params")
+        number = int(fold.get("fold_number") or fold.get("fold") or 0)
+        if number < 1 or not isinstance(params, dict) or not params:
+            continue
+        out[str(number)] = {**applied, **_safe_params(params)}
+    return out
+
+
+def _fold_scores(candidate: ExperimentCandidate, metric_name: str | None) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    for evaluation in candidate.evaluations:
+        if evaluation.evaluation_scope != "cv_fold" or not metric_name:
+            continue
+        number = (evaluation.summary or {}).get("fold_number")
+        metrics = _evaluation_metrics(evaluation)
+        if isinstance(number, int) and metric_name in metrics:
+            scores[str(number)] = metrics[metric_name]
+    return dict(sorted(scores.items(), key=lambda pair: int(pair[0])))
+
+
+def _split_assignment(experiment: Experiment, result: dict[str, Any]) -> ReproductionSplitAssignment | None:
+    db = object_session(experiment)
+    if experiment.split_plan_id is None or db is None:
+        return None
+    plan = db.get(SplitPlan, experiment.split_plan_id)
+    if plan is None or plan.workspace_id != experiment.workspace_id:
+        return None
+    split = result.get("split") if isinstance(result.get("split"), dict) else {}
+    mode = (
+        "split_plan_assignment"
+        if split.get("partitioned_by") == "split_plan_assignment"
+        else "holdout_plan_resplit"
+    )
+    return ReproductionSplitAssignment(
+        split_plan_id=plan.id,
+        version=plan.version,
+        assignment_digest=plan.assignment_digest,
+        row_count=plan.row_count,
+        train_row_count=plan.train_row_count,
+        holdout_row_count=plan.holdout_row_count,
+        source_row_column=SOURCE_ROW_COLUMN,
+        partitioned_by=mode,
+    )
+
+
+def _branch(experiment: Experiment, result: dict[str, Any]) -> ReproductionBranch | None:
+    if experiment.change_set is None:
+        return None
+    config = experiment.config if isinstance(experiment.config, dict) else {}
+    overrides = config.get("branch_overrides") if isinstance(config.get("branch_overrides"), dict) else {}
+    recorded = result.get("branch") if isinstance(result.get("branch"), dict) else {}
+    objective = config.get("objective")
+    return ReproductionBranch(
+        parent_pipeline_run_id=experiment.parent_pipeline_run_id,
+        change_set=_safe_tree(experiment.change_set),
+        change_set_digest=str(overrides.get("change_set_digest") or "")[:128] or None,
+        effective_overrides=_safe_tree(overrides),
+        objective=_safe_tree(objective) if isinstance(objective, dict) else None,
+        applied_changes=[
+            _safe_tree(row) for row in recorded.get("applied_changes") or [] if isinstance(row, dict)
+        ],
+    )
+
+
+def _holdout_random_state(result: dict[str, Any]) -> int | None:
+    plan = result.get("holdout_plan") if isinstance(result.get("holdout_plan"), dict) else {}
+    value = plan.get("random_state")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _decision_threshold(result: dict[str, Any]) -> float | None:
+    record = result.get("decision_threshold")
+    value = record.get("value") if isinstance(record, dict) else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
+    return None
 
 
 def _feature_versions(experiment: Experiment) -> list[FeatureSetVersion]:
@@ -255,8 +390,15 @@ def _holdout_evaluations(experiment: Experiment) -> list[ModelEvaluation]:
 
 
 def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildReproductionSpec:
-    """Assemble the IR. Does not read experiment.result or Dataset.location."""
+    """Assemble the IR. Never reads Dataset.location.
 
+    From ``experiment.result`` only typed, recorded facts are read: the holdout
+    partition mode, multiclass label coding, the locked decision threshold and a
+    branch's applied-change record. Candidate columns and per-fold tuned values
+    come from each candidate's persisted payload.
+    """
+
+    result = experiment.result if isinstance(experiment.result, dict) else {}
     dataset = experiment.dataset
     plan = experiment.scientific_plan
     columns = sorted(dataset.columns, key=lambda row: (row.ordinal_position, row.name))
@@ -266,7 +408,16 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
         for feature in version.features
     ]
     features = sorted(features, key=lambda item: (item.name, str(item.id)))
-    candidates = sorted(experiment.candidates, key=lambda row: (row.created_at, str(row.id)))
+    # The runner's record order (its CV tie-break), else creation order.
+    record_order = {
+        str(row.get("candidate_id")): index
+        for index, row in enumerate(result.get("candidates") or [])
+        if isinstance(row, dict)
+    }
+    candidates = sorted(
+        experiment.candidates,
+        key=lambda row: (record_order.get(row.candidate_key, len(record_order)), row.created_at, str(row.id)),
+    )
     selection = sorted(experiment.model_selection_decisions, key=lambda row: row.locked_at)
     winner_row = selection[-1] if selection else None
     winner_id = winner_row.selected_candidate_id if winner_row is not None else None
@@ -364,8 +515,11 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
         )
         for row in sorted(experiment.preprocessing_steps, key=lambda item: item.sequence)
     ]
-    candidate_reads = [
-        ReproductionCandidate(
+    candidate_reads = []
+    for row in candidates:
+        payload = row.payload if isinstance(row.payload, dict) else {}
+        applied = _named_hyperparameters(row.hyperparameters)
+        candidate_reads.append(ReproductionCandidate(
             id=row.id,
             fingerprint=row.fingerprint,
             model_family=row.model_family,
@@ -373,13 +527,16 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
             implementation_library=row.implementation_library,
             implementation_class=row.implementation_class,
             library_version=row.library_version,
-            hyperparameters=_named_hyperparameters(row.hyperparameters),
+            hyperparameters=applied,
             is_winner=winner_id is not None and row.id == winner_id,
             is_runner_up=runner_up_id is not None and row.id == runner_up_id,
             cv_score=_aggregate_score(aggregates, row.id, primary_metric),
-        )
-        for row in candidates
-    ]
+            status=str(row.status or "")[:32] or None,
+            numerical_columns=_string_list(payload.get("numerical_cols")),
+            categorical_columns=_string_list(payload.get("categorical_cols")),
+            fold_hyperparameters=_fold_hyperparameters(payload, applied),
+            cv_fold_scores=_fold_scores(row, primary_metric),
+        ))
     target = None
     task_type = None
     if experiment.task is not None:
@@ -395,6 +552,7 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
         group_column=plan.group_column if plan is not None else None,
         time_column=plan.time_column if plan is not None else None,
         plan_digest=plan.holdout_plan_digest if plan is not None else None,
+        random_state=_holdout_random_state(result),
     )
     validation_strategy = plan.validation_strategy if plan is not None else None
     seed = int(experiment.seed)
@@ -461,6 +619,7 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
             task_type=task_type,
             target_column=target,
             seed=seed,
+            class_labels=_scalar_list(result.get("class_labels")) if task_type == "multiclass" else None,
         ),
         holdout_plan=holdout,
         validation_plan=validation,
@@ -485,6 +644,9 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
             model_version_id=holdout_model_version_id,
             candidate_id=holdout_candidate_id,
         ),
+        split_assignment=_split_assignment(experiment, result),
+        branch=_branch(experiment, result),
+        decision_threshold=_decision_threshold(result),
     )
     spec.spec_digest = content_digest(
         spec.model_dump(mode="json", exclude={"spec_digest", "stage_code"})
@@ -699,3 +861,79 @@ def download_model_build_reproduction_artifact(
         db, workspace_id=experiment.workspace_id, artifact_id=artifact.id
     )
     return artifact, payload
+
+
+def get_experiment_code(
+    db: Session,
+    user: User,
+    workspace_id: UUID,
+    experiment_id: UUID,
+) -> ExperimentCodeRead | None:
+    """Standalone reproduction code for one experiment (root or branch), rendered now.
+
+    Same read rule as the model-build reproduction routes; another workspace's
+    experiment is indistinguishable from a missing one.
+    """
+
+    experiment = load_model_build_experiment(db, user, workspace_id, experiment_id)
+    if experiment is None:
+        return None
+    spec = build_model_build_reproduction(experiment)
+    notebook_name, script_name = reproduction_filenames(experiment.id)
+    script = reproduction_script_bytes(spec)
+    notebook = reproduction_notebook_bytes(spec)
+    inputs = [
+        ExperimentCodeInput(
+            name="dataset",
+            placeholder=AUTHORIZED_DATASET_PATH_PLACEHOLDER,
+            env_var=DATASET_PATH_ENV,
+            artifact_id=experiment.dataset.artifact_id,
+            content_digest=spec.dataset.content_digest,
+            description="Prepared dataset version this experiment trained on; sha256 must equal content_digest.",
+        )
+    ]
+    split = spec.split_assignment
+    if split is not None:
+        plan = db.get(SplitPlan, split.split_plan_id)
+        inputs.append(
+            ExperimentCodeInput(
+                name="split_assignment",
+                placeholder=AUTHORIZED_SPLIT_ASSIGNMENT_PATH_PLACEHOLDER,
+                env_var=SPLIT_ASSIGNMENT_PATH_ENV,
+                artifact_id=plan.assignment_artifact_id if plan is not None else None,
+                content_digest=split.assignment_digest,
+                description=(
+                    "Stored SplitPlan map (source_row,partition,fold); the script partitions "
+                    "the holdout and outer folds by it and fails closed on a digest mismatch."
+                ),
+            )
+        )
+    helpers: list[str] = []
+    for row in spec.stage_code:
+        for helper in row.helper_requirements:
+            if helper not in helpers:
+                helpers.append(helper)
+    return ExperimentCodeRead(
+        experiment_id=experiment.id,
+        workspace_id=experiment.workspace_id,
+        generator_version=spec.generator_version,
+        spec_digest=spec.spec_digest,
+        split_plan_id=split.split_plan_id if split is not None else None,
+        parent_experiment_id=experiment.parent_pipeline_run_id,
+        is_branch=spec.branch is not None,
+        standalone_cv=standalone_cv_supported(spec),
+        script=ExperimentCodeDocument(
+            filename=script_name,
+            media_type="text/x-python",
+            content_digest=hashlib.sha256(script).hexdigest(),
+            source=script.decode("utf-8"),
+        ),
+        notebook=ExperimentCodeDocument(
+            filename=notebook_name,
+            media_type="application/x-ipynb+json",
+            content_digest=hashlib.sha256(notebook).hexdigest(),
+            source=notebook.decode("utf-8"),
+        ),
+        inputs=inputs,
+        helper_requirements=helpers,
+    )

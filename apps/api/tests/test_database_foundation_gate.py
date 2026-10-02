@@ -79,6 +79,27 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_simulation_runs_workspace_id": "a",
     "fk_simulation_runs_workspace_project": "n",
     "fk_auth_sessions_rotated_from_user": "n",
+    # 0063 ML state graph (ADR 0006 §7): project CASCADE is declared but the
+    # immutability/no-delete triggers reject it; every graph pointer is NO ACTION.
+    "fk_split_plans_workspace_project": "c",
+    "fk_split_plans_workspace_project_dataset": "a",
+    "fk_split_plans_workspace_assignment_artifact": "a",
+    "fk_project_refs_workspace_project": "c",
+    "fk_project_refs_workspace_project_dataset": "a",
+    "fk_project_refs_workspace_project_decision_record": "a",
+    "fk_pdr_workspace_project": "c",
+    "fk_pdr_workspace_project_experiment": "a",
+    "fk_pdr_workspace_project_supersedes": "a",
+    "fk_experiments_workspace_source_dataset": "a",
+    "fk_experiments_workspace_project_split_plan": "a",
+    # 0064 tenant keys (ADR 0006 §7): actions match the pre-existing single FKs.
+    "fk_workflow_run_inputs_workspace_workflow_run": "c",
+    "fk_workflow_run_inputs_workspace_dataset": "a",
+    "fk_experiment_test_predictions_workspace_experiment": "c",
+    "fk_ml_run_verifications_workspace_run": "c",
+    "fk_ml_run_verifications_workspace_experiment": "n",
+    "fk_ml_run_verifications_workspace_llm_invocation": "n",
+    "fk_llm_invocations_workspace_project": "a",
 }
 
 
@@ -293,8 +314,8 @@ def foundation(db_session, tmp_path):
     )
 
 
-def _reject(db_session, sql: str, **params) -> None:
-    with pytest.raises((DBAPIError, IntegrityError), match="foreign key constraint"):
+def _reject(db_session, sql: str, *, _match: str = "foreign key constraint", **params) -> None:
+    with pytest.raises((DBAPIError, IntegrityError), match=_match):
         db_session.execute(text(sql), params)
         db_session.commit()
     db_session.rollback()
@@ -618,9 +639,20 @@ def test_postgres_rejects_cross_tenant_canonical_corruption(db_session, foundati
         artifact=a.beta_artifact.id,
         digest="b" * 64,
     )
+    # parent_pipeline_run_id is insert-only since 0063 (experiments_lineage_guard),
+    # so the cross-tenant parent is attempted on INSERT.
     _reject(
         db_session,
-        "UPDATE experiments SET parent_pipeline_run_id = :parent WHERE id = :id",
+        """
+        INSERT INTO experiments (
+            id, workspace_id, project_id, environment_id, dataset_id, status, config,
+            seed, parent_pipeline_run_id
+        )
+        SELECT gen_random_uuid(), workspace_id, project_id, environment_id, dataset_id,
+               'CREATED', '{}'::jsonb, 42, :parent
+        FROM experiments WHERE id = :id
+        """,
+        _match='foreign key constraint "fk_experiments_workspace_parent_pipeline_run"',
         parent=a.beta_pipeline.id,
         id=a.alpha_pipeline.id,
     )

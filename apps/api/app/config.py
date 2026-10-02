@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     object_storage_root: Path = REPO_ROOT / "data" / "object_store"
     object_storage_bucket: str = ""
     object_storage_region: str = "us-east-1"
+    # P1.3-A: per-run working directory for the engine (worker-local scratch).
+    # Durable outputs are published to object storage; nothing is written under
+    # the repository. Default: <system temp>/dclab-runs.
+    run_scratch_root: Path | None = None
     # Development-only compatibility while legacy upload callers are migrated.
     # Production always enforces the audited publication gate.
     dataset_publication_enforced: bool | None = None
@@ -165,6 +169,14 @@ def validate_runtime_settings(settings: Settings) -> None:
         return
     if not publication_enforced(settings):
         problems.append("DATASET_PUBLICATION_ENFORCED cannot be false in production")
+    # ADR 0005: published uploads carry llm_exposure_policy=deny, but the LLM
+    # paths do not consult dataset policy yet (Phase 6 gateway). Until they do,
+    # production must not send dataset-derived evidence to an LLM provider.
+    if settings.decision_agent_enabled or settings.pipeline_llm_verifier_enabled:
+        problems.append(
+            "DECISION_AGENT_ENABLED / PIPELINE_LLM_VERIFIER_ENABLED cannot be on in "
+            "production until LLM calls enforce dataset llm_exposure_policy"
+        )
     if _secret_is_unsafe(settings.jwt_secret):
         problems.append("JWT_SECRET is missing or the development default")
     if _secret_is_unsafe(settings.auth_token_hash_secret):

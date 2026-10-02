@@ -29,8 +29,9 @@ class LlmInvocationRead(BaseModel):
 
     id: UUID
     workspace_id: UUID
-    workflow_run_id: UUID
-    experiment_id: UUID
+    # Nullable since Alembic 0064: project- or agent-only invocations have no run.
+    workflow_run_id: UUID | None
+    experiment_id: UUID | None
     purpose: str
     provider: str | None
     model: str | None

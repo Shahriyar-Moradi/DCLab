@@ -294,8 +294,13 @@ def assert_verifier_acceptable(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_persisted_frame(experiment: Experiment) -> pd.DataFrame:
-    location = experiment.dataset.location
-    return pd.read_csv(location)
+    """Read the run's dataset through object storage (P1.3-A), never a local path."""
+    from sqlalchemy.orm import object_session
+
+    from app.services.dataset_materialization import materialize_dataset
+
+    with materialize_dataset(experiment.dataset, db=object_session(experiment)) as path:
+        return pd.read_csv(path)
 
 
 def partition_by_source_rows(frame: pd.DataFrame, split: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:

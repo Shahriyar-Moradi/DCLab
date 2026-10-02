@@ -62,8 +62,7 @@ Two logins, two URL trees:
 | `.env.example` | Template for `DATABASE_URL`, `JWT_SECRET`, CORS. Copy to `.env` for local overrides. Do not commit real secrets. |
 | `.gitignore` | Ignores venv, `.next`, `__pycache__`, `.env`, coverage, etc. |
 | `Dockerfile` / `docker-compose.yml` | Optional full-stack containers. Day-to-day local work uses Homebrew Postgres + `make run`. |
-| `Decision_AI_Agent_Coding_Context.docx` | External coding-context brief for agents (Word). Not used at runtime. |
-| `doc.py` | Ad-hoc helper script at root; not part of the API package. |
+| `docs/archive/` | Archived business documents (proposal `.docx`/`.pdf`, the old coding-context `.docx` and its generator `doc.py`). Not used at runtime. |
 
 ---
 

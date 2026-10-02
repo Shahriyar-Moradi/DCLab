@@ -195,3 +195,159 @@ def test_source_never_calls_browser_session_workspace_selection():
     assert "dclab_session" not in source
     assert "/auth/workspace" not in source
     assert "Cookie" not in source
+
+
+def test_project_graph_and_node_impact_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    node = {"kind": "split_plan", "id": "22222222-2222-2222-2222-222222222222",
+            "key": "split_plan:22222222-2222-2222-2222-222222222222"}
+    exp = {"kind": "experiment", "id": "33333333-3333-3333-3333-333333333333",
+           "key": "experiment:33333333-3333-3333-3333-333333333333"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path.endswith("/impact"):
+            return httpx.Response(200, json={
+                "node": node, "project_id": "11111111-1111-1111-1111-111111111111",
+                "items": [exp], "counts_by_kind": {"experiment": 1}, "total": 1,
+                "truncated": False, "graph_truncated": False,
+            })
+        return httpx.Response(200, json={
+            "project": {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "workspace_id": "44444444-4444-4444-4444-444444444444",
+                "name": "P", "slug": "p", "description": "", "status": "active",
+                "created_by": None, "provenance": "user",
+                "created_at": "2026-10-02T00:00:00Z", "updated_at": "2026-10-02T00:00:00Z",
+            },
+            "refs_initialized": False, "refs": [],
+            "nodes": [{**exp, "label": "run #1"}],
+            "edges": [{"from": exp, "to": node, "relation": "uses_split_plan", "attribute": False}],
+            "counts_by_kind": {"experiment": 1}, "stale_counts_by_kind": {},
+            "experiment_limit": 200, "truncated": True, "next_cursor": "abc",
+        })
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    graph = api.projects.graph("11111111-1111-1111-1111-111111111111", cursor="prev", limit=200)
+    assert graph.edges[0].from_.key == exp["key"] and graph.next_cursor == "abc"
+    impact = api.nodes.impact("split_plan", node["id"])
+    assert impact.items[0].key == exp["key"]
+    assert recorded[0].url.path == "/v1/projects/11111111-1111-1111-1111-111111111111/graph"
+    assert dict(recorded[0].url.params) == {"cursor": "prev", "limit": "200"}
+    assert recorded[1].url.path == f"/v1/nodes/split_plan/{node['id']}/impact"
+
+
+def test_path_ids_and_node_kinds_cannot_escape_v1():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={})
+
+    api = _client(handler, token="secret-token", workspace_id="44444444-4444-4444-4444-444444444444")
+    node_id = "22222222-2222-2222-2222-222222222222"
+    for kind in ("../../auth/me/x", "candidate", "split_plan/..", ""):
+        with pytest.raises(DCLabClientError, match="kind"):
+            api.nodes.impact(kind, node_id)
+    for bad_id in ("../../auth/me", "abc", "11111111-1111-1111-1111-111111111111/../x"):
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.projects.get(bad_id)
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.nodes.impact("experiment", bad_id)
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.model_builds.get(bad_id)
+    assert recorded == []
+
+
+def test_transport_rejects_dot_segments_and_escapes():
+    http = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
+        base_url="http://api.test",
+    )
+    transport = V1Transport(base_url="http://api.test", http=http, workspace_id="44444444-4444-4444-4444-444444444444")
+    for path in ("/v1/../auth/me", "/v1/projects/./x", "/v1/%2e%2e/auth/me", "/v1/projects\\..\\auth", "/v1/.."):
+        with pytest.raises(DCLabClientError, match="/v1"):
+            transport.request("GET", path)
+    assert transport.request("GET", "/v1/projects") == {}
+
+
+def test_experiment_code_uses_v1_path_and_validates_ids():
+    recorded: list[httpx.Request] = []
+    document = {"filename": "e.py", "media_type": "text/x-python", "content_digest": "a" * 64, "source": "x = 1\n"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={
+            "experiment_id": "33333333-3333-3333-3333-333333333333",
+            "workspace_id": "44444444-4444-4444-4444-444444444444",
+            "generator_version": "dclab.model_build_reproduction.v2",
+            "spec_digest": "b" * 64,
+            "split_plan_id": "22222222-2222-2222-2222-222222222222",
+            "parent_experiment_id": None,
+            "is_branch": False,
+            "standalone_cv": True,
+            "script": document,
+            "notebook": {**document, "filename": "e.ipynb", "media_type": "application/x-ipynb+json"},
+            "inputs": [{"name": "split_assignment", "placeholder": "<p>", "env_var": "DCLAB_SPLIT_ASSIGNMENT_PATH",
+                        "artifact_id": None, "content_digest": "c" * 64, "description": "map"}],
+            "helper_requirements": [],
+        })
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    code = api.experiments.code("33333333-3333-3333-3333-333333333333", request_id="trace-code")
+    assert code.standalone_cv is True and code.script.source == "x = 1\n"
+    assert code.inputs[0].env_var == "DCLAB_SPLIT_ASSIGNMENT_PATH"
+    assert recorded[0].method == "GET"
+    assert recorded[0].url.path == "/v1/experiments/33333333-3333-3333-3333-333333333333/code"
+    assert recorded[0].headers["X-Request-Id"] == "trace-code"
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.experiments.code("../../auth/me")
+    assert len(recorded) == 1
+
+
+def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
+    from datetime import UTC, datetime
+
+    recorded: list[httpx.Request] = []
+    project = "11111111-1111-1111-1111-111111111111"
+    record = {
+        "id": "55555555-5555-5555-5555-555555555555", "project_id": project,
+        "decision_type": "experiment_accepted", "state": "proposed", "effective_state": "superseded",
+        "supersedes_id": None, "superseded_by_id": "66666666-6666-6666-6666-666666666666",
+        "subject": {"kind": "experiment", "id": "33333333-3333-3333-3333-333333333333",
+                    "key": "experiment:33333333-3333-3333-3333-333333333333"},
+        "actor": {"kind": "agent", "agent_run_id": "77777777-7777-7777-7777-777777777777"},
+        "rationale": "[REDACTED]", "rationale_untrusted": True,
+        "rationale_label": "unverified agent rationale", "rationale_truncated": False,
+        "content_origin": "agent",
+        "facts": {}, "evidence_refs": [{"kind": "experiment", "id": "33333333-3333-3333-3333-333333333333",
+                                        "key": "experiment:33333333-3333-3333-3333-333333333333"}],
+        "details": {}, "schema_version": 1, "policy_version": "dclab.decisions.v1",
+        "event_at": "2026-10-02T00:00:00Z", "recorded_at": "2026-10-02T00:00:00Z",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"items": [record], "next_cursor": "c2", "limit": 10})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    page = api.projects.decisions(
+        project, effective_state="superseded", actor_kind="agent", subject_kind="experiment",
+        subject_id="33333333-3333-3333-3333-333333333333",
+        recorded_after=datetime(2026, 10, 1, tzinfo=UTC), cursor="c1", limit=10,
+    )
+    assert page.next_cursor == "c2" and page.items[0].rationale_untrusted is True
+    assert page.items[0].rationale_label == "unverified agent rationale"
+    assert page.items[0].content_origin == "agent" and page.items[0].details_truncated is False
+    assert recorded[0].method == "GET" and recorded[0].url.path == f"/v1/projects/{project}/decisions"
+    assert dict(recorded[0].url.params) == {
+        "effective_state": "superseded", "actor_kind": "agent", "subject_kind": "experiment",
+        "subject_id": "33333333-3333-3333-3333-333333333333",
+        "recorded_after": "2026-10-01T00:00:00+00:00", "cursor": "c1", "limit": "10",
+    }
+    for bad_id in ("../../auth/me", "abc"):
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.projects.decisions(bad_id)
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.projects.decisions(project, subject_id=bad_id)
+    assert len(recorded) == 1

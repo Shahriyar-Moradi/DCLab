@@ -264,7 +264,14 @@ def outcome_for_upload(
     slug = _slug_for_target(target_column)
     target_label = _OUTCOME_BY_SLUG.get(slug or "", _FALLBACK_OUTCOME)
     task_spec = result.get("task") if isinstance(result.get("task"), dict) else {}
-    task_kind = "classification" if task_spec.get("task_type", "binary") == "binary" else "regression"
+    task_type = task_spec.get("task_type", "binary")
+    task_kind = (
+        "classification"
+        if task_type == "binary"
+        else "multiclass"
+        if task_type == "multiclass"
+        else "regression"
+    )
     method_label = _METHOD_LABELS.get(str(best.get("model_family") or ""), _FALLBACK_METHOD)
     percent = _as_percent_tenths(score)
     record_count = _record_count(upload, result)
@@ -422,6 +429,16 @@ def _prediction_rows(
         if record_raw is None:
             record_raw = item.get("row_index", index)
         record_id = _clean_text(str(record_raw), str(index))
+        if task_kind == "multiclass":
+            # The predicted class label and its probability (no positive/negative framing).
+            rows.append(
+                ClientLabPredictionRow(
+                    record_id=record_id,
+                    prediction=_clean_text(str(y_pred), "—"),
+                    probability=float(score) if isinstance(score, (int, float)) else None,
+                )
+            )
+            continue
         if task_kind != "classification":
             label = _clean_text(str(y_pred), "—")
             probability = float(score) if isinstance(score, (int, float)) else (

@@ -213,11 +213,17 @@ def resolve_dataset_policy(
         effective.append(
             EffectiveColumnPolicy(column.id, sensitivity, exposure, retention, residency)
         )
-    complete = bool(default and columns and len(columns) == dataset.column_count and all(
-        item.sensitivity_class is not None
-        and item.retention_class is not None
-        and item.residency_class is not None
-        for item in effective
+    # A dataset with no tabular columns (e.g. an unstructured log) is governed by
+    # its dataset-level default alone; any dataset with columns needs every one.
+    no_columns = not columns and dataset.column_count == 0
+    complete = bool(default and default.classification_confidence > 0 and (
+        no_columns
+        or (columns and len(columns) == dataset.column_count and all(
+            item.sensitivity_class is not None
+            and item.retention_class is not None
+            and item.residency_class is not None
+            for item in effective
+        ))
     ))
     dataset_exposure = default.llm_exposure_policy if default and complete else "deny"
     for item in effective:
@@ -229,7 +235,7 @@ def resolve_dataset_policy(
         dataset_policy_revision=default.revision if default else None,
         sensitivity_class=(
             max((item.sensitivity_class for item in effective), key=_SENSITIVITY_RANK.__getitem__)
-            if complete else None
+            if complete and effective else (default.sensitivity_class if complete else None)
         ),
         llm_exposure_policy=dataset_exposure,
         retention_class=(
@@ -238,7 +244,7 @@ def resolve_dataset_policy(
         ),
         residency_class=(
             max((item.residency_class for item in effective), key=_RESIDENCY_RANK.__getitem__)
-            if complete else None
+            if complete and effective else (default.residency_class if complete else None)
         ),
         columns=tuple(effective),
         complete=complete,

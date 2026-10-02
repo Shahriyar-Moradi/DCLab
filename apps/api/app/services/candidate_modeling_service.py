@@ -167,13 +167,30 @@ def _delete_run_candidate_modeling(db: Session, pipeline_run_id: UUID) -> None:
     db.flush()
 
 
-def _add_metrics(db: Session, evaluation: ModelEvaluation, metrics: dict[str, float]) -> None:
+# Binary metrics that depend on the decision threshold; their rows record it.
+_THRESHOLD_DEPENDENT = frozenset(
+    {"accuracy", "precision", "recall", "f1", "balanced_accuracy", "specificity"}
+)
+
+
+# Evidence row holding a tuned candidate's search plan; never a constructor argument.
+TUNING_PLAN_PARAMETER = "tuning_plan"
+
+
+def _add_metrics(
+    db: Session,
+    evaluation: ModelEvaluation,
+    metrics: dict[str, float],
+    *,
+    threshold: float | None = None,
+) -> None:
     for name, value in metrics.items():
         db.add(
             EvaluationMetric(
                 model_evaluation_id=evaluation.id,
                 metric_name=name,
                 metric_value=value,
+                threshold=threshold if name in _THRESHOLD_DEPENDENT else None,
             )
         )
 
@@ -207,6 +224,9 @@ def persist_candidate_modeling(
     feature_set_version_id = feature_set_version.id if feature_set_version is not None else None
     search_stage = _search_stage(experiment)
     rows = [row for row in list(result.get("candidates") or []) if isinstance(row, dict)]
+    task_payload = result.get("task") if isinstance(result.get("task"), dict) else {}
+    # CV threshold metrics (precision, recall, …) are always computed at 0.5.
+    cv_threshold = 0.5 if task_payload.get("task_type") == "binary" else None
     by_key: dict[str, ExperimentCandidate] = {}
     used_fingerprints: set[str] = set()
 
@@ -223,6 +243,10 @@ def persist_candidate_modeling(
         family = str(row.get("model_family") or "")
         library, implementation_class, library_version = implementation_for_family(family)
         original_hp = dict(row.get("hyperparameters") or {})
+        tuning_plan = original_hp.pop("tuning", None)
+        tuned_params = dict(row.get("tuned_params") or {})
+        if tuned_params:
+            original_hp["tuned"] = tuned_params
         seed = int(row.get("random_seed") or experiment.seed or 42)
         applied = applied_hyperparameters(family, seed=seed, hyperparameters=original_hp)
         if not applied:
@@ -262,7 +286,23 @@ def persist_candidate_modeling(
                     candidate_id=candidate.id,
                     parameter_name=str(name),
                     value_json=_json_safe(value),
-                    source="planner" if name in original_hp else "default",
+                    source=(
+                        "optuna"
+                        if name in tuned_params
+                        else "planner"
+                        if name in original_hp
+                        else "default"
+                    ),
+                )
+            )
+        if tuning_plan:
+            # Evidence of the search, not a constructor argument (codegen skips it).
+            db.add(
+                ModelHyperparameter(
+                    candidate_id=candidate.id,
+                    parameter_name=TUNING_PLAN_PARAMETER,
+                    value_json=_json_safe(tuning_plan),
+                    source="planner",
                 )
             )
         if str(row.get("status") or "").lower() != "trained":
@@ -326,7 +366,7 @@ def persist_candidate_modeling(
                 )
                 db.add(evaluation)
                 db.flush()
-                _add_metrics(db, evaluation, fold_metrics)
+                _add_metrics(db, evaluation, fold_metrics, threshold=cv_threshold)
         cv_mean = _scalar_metrics(row.get("cv_mean") or row.get("metrics"))
         if cv_mean:
             aggregate = ModelEvaluation(
@@ -344,7 +384,7 @@ def persist_candidate_modeling(
             )
             db.add(aggregate)
             db.flush()
-            _add_metrics(db, aggregate, cv_mean)
+            _add_metrics(db, aggregate, cv_mean, threshold=cv_threshold)
         robustness = _scalar_metrics(row.get("robustness") or row.get("cv_score"))
         if robustness:
             robust_eval = ModelEvaluation(
@@ -394,29 +434,34 @@ def _persist_selection_and_holdout(
     selected_score = selection.get("cv_score")
     if selected_score is None:
         selected_score = (winner.payload or {}).get("score")
-    db.add(
-        ModelSelectionDecision(
-            workspace_id=experiment.workspace_id,
-            project_id=experiment.project_id,
-            pipeline_run_id=experiment.id,
-            selected_candidate_id=winner.id,
-            selection_metric=str(
-                selection.get("selection_metric") or "score"
-            ),
-            selected_score=float(selected_score or 0.0),
-            selection_policy=str(
-                selection.get("selection_policy") or "maximum eligible primary CV score"
-            ),
-            runner_up_candidate_id=runner_up.id if runner_up is not None else None,
-            reason="Winner locked from eligible CV scores before final holdout evaluation.",
-            evidence={
-                "selection_source": selection.get("selection_source") or "cross_validation",
-                "eligible_candidate_ids": list(selection.get("eligible_candidate_ids") or []),
-                "locked": bool(selection.get("locked")),
-            },
-            locked_at=locked_at,
-        )
+    selection_row = ModelSelectionDecision(
+        workspace_id=experiment.workspace_id,
+        project_id=experiment.project_id,
+        pipeline_run_id=experiment.id,
+        selected_candidate_id=winner.id,
+        selection_metric=str(
+            selection.get("selection_metric") or "score"
+        ),
+        selected_score=float(selected_score or 0.0),
+        selection_policy=str(
+            selection.get("selection_policy") or "maximum eligible primary CV score"
+        ),
+        runner_up_candidate_id=runner_up.id if runner_up is not None else None,
+        reason="Winner locked from eligible CV scores before final holdout evaluation.",
+        evidence={
+            "selection_source": selection.get("selection_source") or "cross_validation",
+            "eligible_candidate_ids": list(selection.get("eligible_candidate_ids") or []),
+            "locked": bool(selection.get("locked")),
+        },
+        locked_at=locked_at,
     )
+    db.add(selection_row)
+    db.flush()
+    # ADR 0006 §5: the winner lock is a project decision; same idempotency key
+    # as the operator backfill, so the two paths never duplicate.
+    from app.services.decision_record_service import record_winner_locked
+
+    record_winner_locked(db, selection_row, winner)
     holdout = (
         result.get("final_test_evaluation")
         if isinstance(result.get("final_test_evaluation"), dict)
@@ -448,7 +493,9 @@ def _persist_selection_and_holdout(
     )
     db.add(evaluation)
     db.flush()
-    _add_metrics(db, evaluation, holdout_metrics)
+    _add_metrics(
+        db, evaluation, holdout_metrics, threshold=holdout_metrics.get("decision_threshold")
+    )
 
 
 def link_candidates_to_feature_set_version(db: Session, experiment: Experiment) -> None:

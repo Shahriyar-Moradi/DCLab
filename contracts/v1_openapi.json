@@ -84,6 +84,24 @@
         "successSchema": "ExecutionRequestRead"
       }
     },
+    "/v1/experiments/{experiment_id}/code": {
+      "GET": {
+        "operationId": "read_experiment_code_v1_experiments__experiment_id__code_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "ExperimentCodeRead"
+      }
+    },
     "/v1/me": {
       "GET": {
         "operationId": "read_principal_v1_me_get",
@@ -177,6 +195,29 @@
         "successSchema": null
       }
     },
+    "/v1/nodes/{kind}/{node_id}/impact": {
+      "GET": {
+        "operationId": "read_node_impact_v1_nodes__kind___node_id__impact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "NodeImpactRead"
+      }
+    },
     "/v1/projects": {
       "GET": {
         "operationId": "read_projects_v1_projects_get",
@@ -204,6 +245,102 @@
           "422"
         ],
         "successSchema": "ProjectRead"
+      }
+    },
+    "/v1/projects/{project_id}/decisions": {
+      "GET": {
+        "operationId": "read_project_decisions_v1_projects__project_id__decisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "actor_kind",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "decision_type",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "effective_state",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "recorded_after",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "recorded_before",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "subject_kind",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "DecisionRecordPage"
+      }
+    },
+    "/v1/projects/{project_id}/graph": {
+      "GET": {
+        "operationId": "read_project_graph_v1_projects__project_id__graph_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "ProjectGraphRead"
       }
     },
     "/v1/workspaces": {
@@ -271,6 +408,60 @@
         "workspace_id"
       ]
     },
+    "DecisionRecordPage": {
+      "properties": [
+        "items",
+        "limit",
+        "next_cursor"
+      ],
+      "required": [
+        "items",
+        "limit"
+      ]
+    },
+    "DecisionRecordRead": {
+      "properties": [
+        "actor",
+        "content_origin",
+        "decision_type",
+        "details",
+        "details_truncated",
+        "effective_state",
+        "event_at",
+        "evidence_refs",
+        "facts",
+        "id",
+        "policy_version",
+        "project_id",
+        "rationale",
+        "rationale_label",
+        "rationale_truncated",
+        "rationale_untrusted",
+        "recorded_at",
+        "schema_version",
+        "state",
+        "subject",
+        "subject_digest",
+        "superseded_by_id",
+        "supersedes_id"
+      ],
+      "required": [
+        "actor",
+        "content_origin",
+        "decision_type",
+        "effective_state",
+        "event_at",
+        "id",
+        "policy_version",
+        "project_id",
+        "rationale",
+        "rationale_untrusted",
+        "recorded_at",
+        "schema_version",
+        "state",
+        "subject"
+      ]
+    },
     "EventPage": {
       "properties": [
         "items",
@@ -312,6 +503,31 @@
         "workspace_id"
       ]
     },
+    "ExperimentCodeRead": {
+      "properties": [
+        "experiment_id",
+        "generator_version",
+        "helper_requirements",
+        "inputs",
+        "is_branch",
+        "notebook",
+        "parent_experiment_id",
+        "script",
+        "spec_digest",
+        "split_plan_id",
+        "standalone_cv",
+        "workspace_id"
+      ],
+      "required": [
+        "experiment_id",
+        "generator_version",
+        "notebook",
+        "script",
+        "spec_digest",
+        "standalone_cv",
+        "workspace_id"
+      ]
+    },
     "MlRunEventRead": {
       "properties": [
         "created_at",
@@ -340,6 +556,26 @@
         "timestamp",
         "workflow_run_id",
         "workspace_id"
+      ]
+    },
+    "NodeImpactRead": {
+      "properties": [
+        "counts_by_kind",
+        "graph_truncated",
+        "items",
+        "node",
+        "project_id",
+        "total",
+        "truncated"
+      ],
+      "required": [
+        "counts_by_kind",
+        "graph_truncated",
+        "items",
+        "node",
+        "project_id",
+        "total",
+        "truncated"
       ]
     },
     "PipelineModelBuildRead": {
@@ -381,6 +617,32 @@
         "full_name",
         "id",
         "role"
+      ]
+    },
+    "ProjectGraphRead": {
+      "properties": [
+        "counts_by_kind",
+        "edges",
+        "experiment_limit",
+        "next_cursor",
+        "nodes",
+        "project",
+        "refs",
+        "refs_initialized",
+        "stale_counts_by_kind",
+        "truncated",
+        "truncated_kinds"
+      ],
+      "required": [
+        "counts_by_kind",
+        "edges",
+        "experiment_limit",
+        "nodes",
+        "project",
+        "refs",
+        "refs_initialized",
+        "stale_counts_by_kind",
+        "truncated"
       ]
     },
     "ProjectRead": {

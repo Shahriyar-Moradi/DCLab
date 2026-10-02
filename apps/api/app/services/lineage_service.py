@@ -24,6 +24,7 @@ from app.db.models import (
     PredictionTask,
     ProblemSpec,
     Project,
+    SplitPlan,
     User,
     WorkflowRun,
     WorkflowRunInput,
@@ -363,6 +364,7 @@ def add_workflow_run_input(
     if existing is not None:
         return existing
     row = WorkflowRunInput(
+        workspace_id=workflow_run.workspace_id,
         workflow_run_id=workflow_run.id,
         dataset_id=dataset.id,
         input_role=input_role,
@@ -476,7 +478,12 @@ def create_pipeline_run(
     parent_pipeline_run_id: UUID | None = None,
     branch_key: str | None = None,
     branch_reason: str | None = None,
+    source_dataset_id: UUID | None = None,
+    split_plan_id: UUID | None = None,
+    intent: str | None = None,
+    change_set: dict | None = None,
 ) -> Experiment:
+    """``split_plan_id``/``intent``/``change_set`` are insert-only (ADR 0006 §4 lineage guard)."""
     if dataset.workspace_id != workflow_run.workspace_id:
         raise LineageError("pipeline dataset belongs to another workspace")
     parent_id, key, reason = resolve_pipeline_run_branch(
@@ -552,7 +559,42 @@ def create_pipeline_run(
         parent_pipeline_run_id=parent_id,
         branch_key=key,
         branch_reason=reason,
+        source_dataset_id=source_dataset_id,
+        split_plan_id=split_plan_id,
+        intent=intent,
+        change_set=change_set,
     )
+
+
+def attach_split_plan(
+    db: Session,
+    *,
+    pipeline_run: Experiment,
+    split_plan: SplitPlan,
+    source_dataset_id: UUID | None,
+) -> Experiment:
+    """Set the run's write-once ``source_dataset_id``/``split_plan_id`` (ADR 0006 §3/§4).
+
+    Fails closed unless the plan partitions exactly the run's source dataset in
+    the run's workspace and project (root runs included).
+    """
+
+    from app.services.split_plan_service import assert_plan_partitions_run_source
+
+    from app.domain.errors import SplitPlanLineageError
+
+    if pipeline_run.source_dataset_id is None and source_dataset_id is not None:
+        pipeline_run.source_dataset_id = source_dataset_id
+    elif source_dataset_id is not None and pipeline_run.source_dataset_id != source_dataset_id:
+        raise SplitPlanLineageError("pipeline run already has another source dataset")
+    assert_plan_partitions_run_source(split_plan, pipeline_run)
+    if pipeline_run.split_plan_id is not None and pipeline_run.split_plan_id != split_plan.id:
+        raise SplitPlanLineageError(
+            "pipeline run already references another split plan", code="split_plan_conflict"
+        )
+    pipeline_run.split_plan_id = split_plan.id
+    db.flush()
+    return pipeline_run
 
 
 def bind_pipeline_run(

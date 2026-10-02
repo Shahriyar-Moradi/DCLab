@@ -10,8 +10,30 @@
 `91986b9b39bb54c907d50274e94de2febecffaa0`
 **2026-10-01 update (P0.1-A):** active plan moved to [`docs/mvp/`](../mvp/README.md);
 backend driver is now SQLAlchemy 2.1 + psycopg 3 (plain `postgresql://` URLs);
-Alembic head unchanged at `0061_ingestion_publication`; progress is recorded in
+Alembic head at the time was `0061_ingestion_publication`; progress is recorded in
 [`docs/mvp/STATUS.md`](../mvp/STATUS.md).
+P0.2-B (2026-10-01) re-enabled production Labs uploads under [ADR 0005](../adr/0005-upload-policy.md); head at the time was `0061_ingestion_publication`.
+P0.3-A (2026-10-01): dev topology runs training only in a `worker` service (Postgres queue).
+P0.4-A (2026-10-01): generated case-study CSVs untracked; business documents moved to `docs/archive/`.
+P1.1-A (2026-10-01): admin Lab training runs only through the open-ingest path (worker).
+P1.2-A (2026-10-01): legacy runner branch deleted; one engine path.
+P1.3-A (2026-10-01): run outputs published to object storage; Alembic head at the time was `0062_run_artifact_types`.
+P1.4-A1 (2026-10-01): dummy baseline always evaluated (never the winner), balanced class-weight variants, opt-in time budget, one-hot keeps all categories.
+P1.4-A2 (2026-10-01): multiclass classification end to end (macro-F1 primary, stratified planners, verifier support).
+P1.4-B (2026-10-01): ProblemSpec objective (metric override, constraints, cost matrix) and an out-of-fold decision threshold locked before the holdout.
+P1.4-C (2026-10-01): CatBoost in the portfolio; one bounded, nested-CV Optuna-tuned candidate (optional `tuning` extra).
+P1.5-A (2026-10-01): `run_auto_train_job` split into typed stages (`app/services/auto_train/`); event sequence pinned by a golden snapshot.
+P1.6-A (2026-10-01): finish-line E2E suite `test_e2e_lab_run.py`; explicit two-label targets train as binary. Latest product commit: `a9cded6f17d046f612c4e5b0a5b81c5bf8e7e768`.
+R1-A (2026-10-01): engine-only benchmark harness (`benchmarks/harness/`, 23 pinned tasks) with an accepted baseline and a weekly workflow.
+CI fix (2026-10-01): XGBoost library version resolves from the `xgboost-cpu` distribution used on Linux.
+P2.2-A1 (2026-10-01): migration 0063_state_graph_nodes (split_plans, project_refs, project_decision_records, experiment lineage columns); head at the time was 0063_state_graph_nodes.
+P2.2-A2 (2026-10-01): migration 0064 tenant backfill and LLM attribution (workspace_id + CFKs on workflow_run_inputs, experiment_test_predictions, ml_run_verifications; llm_invocations attribution); current Alembic head 0064_tenant_llm_attribution.
+P2.2-B (2026-10-01): auto-train persists and reuses split plans (object-storage assignment map), bootstraps project refs and writes winner/split/ref decision records.
+P2.3-A (2026-10-02): read-only graph service and /v1 graph + impact routes (refs-only staleness, bounded loader).
+Test infra (2026-10-02): backend suite runs in parallel with pytest-xdist, one Postgres database per worker (`make test`, CI `pytest -n auto`).
+P2.4-A (2026-10-02): branch experiments with typed change sets reuse the parent's split plan and dataset; results carry a diff vs the parent.
+P2.4-B (2026-10-02): per-experiment reproducible code export (stored split map, branch changes) and GET /v1/experiments/{id}/code.
+P2.5-A (2026-10-02): decision record service (append-only state machine, move_ref) and GET /v1/projects/{id}/decisions.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

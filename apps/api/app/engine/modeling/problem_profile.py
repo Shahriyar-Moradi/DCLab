@@ -219,7 +219,7 @@ def build_problem_profile(
     minority_fraction: float | None = None
     imbalance_ratio: float | None = None
     regression_target: dict[str, Any] | None = None
-    if task_type == "binary":
+    if task_type in {"binary", "multiclass"}:
         counts = y.value_counts(dropna=True)
         class_distribution = {str(_native(key)): int(value) for key, value in counts.items()}
         if len(counts):

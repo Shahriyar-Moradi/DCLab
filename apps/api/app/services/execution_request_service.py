@@ -124,7 +124,10 @@ def _is_idempotency_key_conflict(exc: IntegrityError) -> bool:
 
 
 def _legacy_labs_request_spec(
-    upload: ClientLabUpload, *, problem_spec_id: UUID | None = None
+    upload: ClientLabUpload,
+    *,
+    problem_spec_id: UUID | None = None,
+    origin: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     fields = [str(name)[:256] for name in list(upload.fields_noticed or [])[:64]]
     spec: dict[str, Any] = {
@@ -145,6 +148,9 @@ def _legacy_labs_request_spec(
         spec["target_column"] = target[:256]
     if problem_spec_id is not None:
         spec["problem_spec_id"] = str(problem_spec_id)
+    for key, value in (origin or {}).items():
+        # Code-owned provenance only (e.g. admin_lab_dataset_id, use_case_slug).
+        spec[str(key)[:64]] = str(value)[:256]
     return bound_request_spec(spec)
 
 
@@ -240,6 +246,7 @@ def attach_legacy_labs_model_build_request(
     workflow_run_id: UUID,
     pipeline_run_id: UUID,
     problem_spec_id: UUID | None = None,
+    origin: dict[str, str] | None = None,
 ) -> ExecutionRequest:
     """Link Labs auto-train intent without replacing ClientLabUpload routes."""
 
@@ -251,7 +258,9 @@ def attach_legacy_labs_model_build_request(
         source_surface=SOURCE_LEGACY_LABS,
         requested_by_user_id=actor.id,
         idempotency_key=_legacy_labs_idempotency_key(upload.id),
-        request_spec=_legacy_labs_request_spec(upload, problem_spec_id=problem_spec_id),
+        request_spec=_legacy_labs_request_spec(
+            upload, problem_spec_id=problem_spec_id, origin=origin
+        ),
         workflow_run_id=workflow_run_id,
         pipeline_run_id=pipeline_run_id,
         status=REQUEST_ACCEPTED,

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import csv
 import io
+from pathlib import Path
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from app.db.models import ClientLabUpload, Dataset, Experiment
@@ -250,12 +250,29 @@ def cleaning_steps(
     return rows
 
 
+def _stored_predictions_csv(experiment: Experiment) -> str | None:
+    """The run's published holdout predictions CSV (object storage; legacy local fallback)."""
+    from sqlalchemy.orm import object_session
+
+    from app.services.reproducibility_service import read_run_file
+
+    try:
+        db = object_session(experiment)
+    except Exception:  # noqa: BLE001 - non-ORM stand-ins (tests, previews)
+        db = None
+    if db is None:
+        # No session: only the legacy local file can be read.
+        legacy = Path(experiment.artifact_dir) / "test_predictions.csv" if experiment.artifact_dir else None
+        return legacy.read_text(encoding="utf-8") if legacy is not None and legacy.is_file() else None
+    data = read_run_file(db, experiment, "test_predictions.csv")
+    return data.decode("utf-8") if data else None
+
+
 def predictions_csv_text(experiment: Experiment) -> str | None:
     """The generated holdout prediction dataset (y_true, y_pred, score)."""
-    if experiment.artifact_dir:
-        path = Path(experiment.artifact_dir) / "test_predictions.csv"
-        if path.is_file():
-            return path.read_text(encoding="utf-8")
+    stored = _stored_predictions_csv(experiment)
+    if stored:
+        return stored
     result = experiment.result if isinstance(experiment.result, dict) else {}
     rows = result.get("test_predictions")
     if not isinstance(rows, list) or not rows:
@@ -408,7 +425,7 @@ def _build_validation(
     cv_strategy = validation.get("cv_strategy") or sample.get("cv_strategy")
     if not cv_strategy:
         task = result.get("task") if isinstance(result.get("task"), dict) else {}
-        cv_strategy = "StratifiedKFold" if task.get("task_type") == "binary" else "KFold"
+        cv_strategy = "StratifiedKFold" if task.get("task_type") in {"binary", "multiclass"} else "KFold"
     random_state = validation.get("random_state")
     if random_state is None:
         random_state = split.get("random_state")
@@ -475,12 +492,12 @@ def _build_predictions(predictions: list[Any], experiment: Experiment | None) ->
     if experiment is not None:
         if predictions:
             download_available = True
-        elif experiment.artifact_dir:
-            path = Path(experiment.artifact_dir) / "test_predictions.csv"
-            if path.is_file():
+        else:
+            stored = _stored_predictions_csv(experiment)
+            if stored:
                 download_available = True
                 if not labels:
-                    reader = csv.DictReader(io.StringIO(path.read_text(encoding="utf-8")))
+                    reader = csv.DictReader(io.StringIO(stored))
                     for item in reader:
                         if "y_pred" in item:
                             labels.append(str(item["y_pred"]))

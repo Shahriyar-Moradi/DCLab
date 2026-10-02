@@ -1,8 +1,9 @@
 # S0-P04D retirement and isolation gate
 
-**Status:** CURRENT — locally verified; exact-SHA CI pending, so Plan 0.4 is not formally closed  
+**Status:** CURRENT — re-verified locally on head 0061 (2026-10-01); exact-SHA CI pending, so Plan 0.4 is not formally closed  
 **Baseline:** `02d9f04bad25e5f03bda3ae761c9ec0e8cb3e2a4`, existing dirty Scope 0 checkout preserved  
 **Alembic head at this gate:** `0059_auth_session_constraints`  
+**Re-verification head:** `0061_ingestion_publication` (observed then, at P0.2-A)  
 **Decision:** [ADR 0004](../adr/0004-simulation-insights-tenancy.md)
 
 ## Pre-edit execution card
@@ -149,6 +150,24 @@ warning and the synthetic E2E JWT key-length warning. They are not converted
 to new S0-P04D product defects; owners remain with their respective platform
 and frontend follow-up plans.
 
+## Re-verification on head 0061 (2026-10-01)
+
+The checks above were observed on the `0059_auth_session_constraints` head
+(observed then). The live migration graph has since advanced to
+`0061_ingestion_publication`. P0.2-A re-runs the same gate on that head; a
+cell reads `PENDING` until its result is recorded here. No result in this
+table is inferred from the 2026-09-28 run.
+
+| Check | Observed result |
+| --- | --- |
+| `alembic heads` is exactly `0061_ingestion_publication` | **One head**, `0061_ingestion_publication` (migrations 0060 and 0061 applied cleanly to the guarded E2E database) |
+| PostgreSQL `test_simulation_insights_tenancy.py`, `test_simulation_lineage_gate.py`, `test_legacy_audience_projection.py`, `test_pipeline_observability.py`, `test_workspace_isolation_gate.py`, SDK `test_http_contract.py`, plus `test_legacy_tenant_lineage_migration.py` | **41 passed, 0 skipped** in 32.58 s on the disposable PostgreSQL 16.15 cluster (`127.0.0.1:55432`); on the main local cluster the same files gave 39 passed + 1 skipped (the isolated-cluster lineage test skips when 55432 is down) — no regression from 0060/0061 found, so no code repair was needed |
+| Full PostgreSQL backend + Python SDK suite | `pytest apps/api/tests packages/dclab_client/tests` against 55432: **1,140 passed, 1 skipped** (live-OpenAI smoke, needs `DECISION_AGENT_LIVE=1`), **1 failed** in 556.63 s — `test_truth_drift` reported a stale generated `contracts/truth_manifest.json` after these doc edits; regenerated (byte-identical twice), see the truth-drift row |
+| Playwright `session-security.spec.ts` + `whole-system.spec.ts` | **27 passed in 2.3 min** via the opt-in Chrome channel, real API :8001 + Next :3001 against `dclab_e2e_verify`; includes `S0-P04D legacy insights isolation gate › real BFF insights stay tenant-scoped across a slow workspace switch` |
+| Web `tsc --noEmit`, lint and component tests | `tsc --noEmit` exit 0; `next lint` exit 0 with 0 errors and 4 warnings (unused `max` in `ModelComparison.tsx:43`, three hook-dependency warnings; none in S0-P04D code); component tests **5 passed, 0 failed** |
+| Truth drift (`check_truth_drift --alembic-check`) | All detectors clean on the final tree against a freshly migrated 0061 database (generated artifacts regenerated, byte-identical twice); banned-terms scan not affected by this docs-only change |
+| Exact-SHA CI on a clean commit | PENDING |
+
 ## Gate result and retained boundaries
 
 No `SimulationRun` customer reader lacks a workspace predicate; registry and
@@ -171,11 +190,24 @@ evidence. Subsequent S0-P05A local work does not constitute Plan 0.4 production 
 ## Quarantined-row forward repair and compatibility
 
 An unowned `simulation_runs.workspace_id IS NULL` row is intentionally absent
-from all workspace reads. The retained legacy routes have no removal date:
-their accepted compatibility contract is stable URLs/shapes with mandatory
-tenant filtering. The global-read behavior ended with the tenant-aware 0058
-deployment and must never be restored. Do not remove a protective feature
-flag merely because this gate passes; there is no Plan 0.4 global-read flag.
+from all workspace reads. The retained legacy archive surfaces (the legacy
+`simulation_runs` table, `/admin/simulations/*`, `/app/insights` and the
+translated Decision.ai opportunities, decisions, insights and dashboards
+surfaces) follow the founder-decided compatibility window:
+
+- **Frozen now (2026-10-01):** no new features; tenant filtering stays
+  mandatory on every read.
+- **Removal-or-rework decision:** made at the Phase 9 business decision layer
+  rework ([roadmap Phase 9](../mvp/ROADMAP.md#phase-9--expansion-each-needs-a-trigger--adr)).
+- **Hard deadline:** removed or formally re-homed no later than
+  **2027-03-31**.
+
+Until then their accepted compatibility contract is stable URLs/shapes with
+mandatory tenant filtering. The global-read behavior ended with the
+tenant-aware 0058 deployment and must never be restored, including during
+removal or re-homing. Do not remove a protective feature flag merely because
+this gate passes, and do not remove any feature flag guarding these surfaces
+before the compatibility window closes; there is no Plan 0.4 global-read flag.
 
 If a future operator can prove a row's owner, they must first preserve a
 database backup and record the exact row IDs, source evidence and mapping

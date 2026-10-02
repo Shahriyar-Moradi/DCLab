@@ -9,13 +9,40 @@ _TRUE = {"1", "true", "yes", "y", "won", "converted", "churned", "purchased"}
 _FALSE = {"0", "false", "no", "n", "lost", "open"}
 
 
+def binary_positive_label(series: pd.Series) -> str | None:
+    """The positive label of a two-valued text target without yes/no-style tokens.
+
+    Labels are compared stripped; the later label in sorted order is positive.
+    The rule depends only on the label values (never on row counts), so every
+    consumer of the same column derives the same 0/1 mapping. ``None`` when the
+    series is not such a target.
+    """
+    if pd.api.types.is_bool_dtype(series) or pd.api.types.is_numeric_dtype(series):
+        return None
+    labels = {str(value).strip() for value in series.dropna()} - {""}
+    if len(labels) != 2 or {label.lower() for label in labels} <= (_TRUE | _FALSE):
+        return None
+    return sorted(labels)[-1]
+
+
 def coerce_binary_target(series: pd.Series) -> pd.Series:
-    """Map common label spellings to 0/1. Unrecognised values become NA."""
+    """Map common label spellings to 0/1. Unrecognised values become NA.
+
+    Two arbitrary text labels (an explicitly chosen target) map through
+    ``binary_positive_label``.
+    """
     if pd.api.types.is_bool_dtype(series):
         return series.astype(int)
     if pd.api.types.is_numeric_dtype(series):
         numeric = pd.to_numeric(series, errors="coerce")
         return numeric.where(numeric.isin({0, 1}), np.nan)
+    positive = binary_positive_label(series)
+    if positive is not None:
+        return series.map(
+            lambda value: np.nan
+            if value is None or (isinstance(value, float) and np.isnan(value)) or not str(value).strip()
+            else float(str(value).strip() == positive)
+        )
 
     def _one(value: object) -> float:
         if value is None or (isinstance(value, float) and np.isnan(value)):

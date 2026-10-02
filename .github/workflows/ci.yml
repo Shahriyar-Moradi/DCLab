@@ -81,7 +81,8 @@ jobs:
       # the translation-layer suite (every use case's real policy actions, banned
       # terms, dashboard/insight isolation from ML-ops events).
       - name: Backend test suite
-        run: pytest
+        # One database per xdist worker (see apps/api/tests/conftest.py).
+        run: pytest -n auto
 
       # --- Step 1 guardrail: static scan of schemas + frontend source ---------------
       - name: Banned-terms static scan

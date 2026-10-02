@@ -8,7 +8,7 @@
     {
       "table": "artifacts",
       "name": "ck_artifacts_type_valid",
-      "definition": "CHECK (((artifact_type)::text = ANY ((ARRAY['dataset'::character varying, 'source_code'::character varying, 'training_script'::character varying, 'model'::character varying, 'preprocessor'::character varying, 'report'::character varying, 'plot'::character varying, 'result_json'::character varying, 'feature_manifest'::character varying, 'dependency_lock'::character varying, 'reproduction_notebook'::character varying, 'reproduction_script'::character varying])::text[])))"
+      "definition": "CHECK (((artifact_type)::text = ANY ((ARRAY['dataset'::character varying, 'source_code'::character varying, 'training_script'::character varying, 'model'::character varying, 'preprocessor'::character varying, 'report'::character varying, 'plot'::character varying, 'result_json'::character varying, 'feature_manifest'::character varying, 'dependency_lock'::character varying, 'reproduction_notebook'::character varying, 'reproduction_script'::character varying, 'predictions'::character varying, 'derived_dataset'::character varying, 'split_assignment'::character varying])::text[])))"
     },
     {
       "table": "auth_recovery_tokens",
@@ -347,8 +347,48 @@
     },
     {
       "table": "experiments",
+      "name": "ck_experiments_change_set_bounded",
+      "definition": "CHECK (((change_set IS NULL) OR (octet_length((change_set)::text) <= 16384)))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_change_set_changes",
+      "definition": "CHECK (((change_set IS NULL) OR\nCASE\n    WHEN (jsonb_typeof((change_set -> 'changes'::text)) = 'array'::text) THEN ((jsonb_array_length((change_set -> 'changes'::text)) >= 1) AND (jsonb_array_length((change_set -> 'changes'::text)) <= 32))\n    ELSE false\nEND))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_change_set_no_secrets",
+      "definition": "CHECK (((change_set IS NULL) OR (NOT jsonb_exists_any(change_set, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text]))))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_change_set_object",
+      "definition": "CHECK (((change_set IS NULL) OR (jsonb_typeof(change_set) = 'object'::text)))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_change_set_requires_parent",
+      "definition": "CHECK (((change_set IS NULL) OR (parent_pipeline_run_id IS NOT NULL)))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_change_set_schema_version",
+      "definition": "CHECK (((change_set IS NULL) OR COALESCE(((change_set ->> 'schema_version'::text) ~ '^[0-9]+$'::text), false)))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_intent_not_blank",
+      "definition": "CHECK (((intent IS NULL) OR (char_length(btrim((intent)::text)) > 0)))"
+    },
+    {
+      "table": "experiments",
       "name": "ck_experiments_parent_not_self",
       "definition": "CHECK (((parent_pipeline_run_id IS NULL) OR (parent_pipeline_run_id <> id)))"
+    },
+    {
+      "table": "experiments",
+      "name": "ck_experiments_split_plan_requires_project",
+      "definition": "CHECK (((split_plan_id IS NULL) OR (project_id IS NOT NULL)))"
     },
     {
       "table": "feature_lineage",
@@ -414,6 +454,16 @@
       "table": "lab_decision_records",
       "name": "ck_lab_decision_records_source",
       "definition": "CHECK (((source)::text = ANY ((ARRAY['rule'::character varying, 'llm'::character varying, 'fallback'::character varying])::text[])))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_attributed",
+      "definition": "CHECK ((num_nonnulls(workflow_run_id, experiment_id, project_id, agent_run_id) >= 1))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_provider_kind",
+      "definition": "CHECK (((provider_kind IS NULL) OR ((provider_kind)::text = ANY ((ARRAY['llm_provider'::character varying, 'semantic_decision'::character varying, 'agent_runtime'::character varying, 'deterministic_fallback'::character varying])::text[]))))"
     },
     {
       "table": "llm_invocations",
@@ -541,6 +591,116 @@
       "definition": "CHECK ((version >= 1))"
     },
     {
+      "table": "project_decision_records",
+      "name": "ck_pdr_actor",
+      "definition": "CHECK (((((actor_kind)::text = 'human'::text) AND (actor_user_id IS NOT NULL) AND (actor_rule IS NULL) AND (actor_agent_run_id IS NULL) AND (actor_service_token_id IS NULL)) OR (((actor_kind)::text = 'rule'::text) AND (actor_rule IS NOT NULL) AND (actor_agent_run_id IS NULL) AND (actor_service_token_id IS NULL)) OR (((actor_kind)::text = 'agent'::text) AND ((actor_agent_run_id IS NOT NULL) OR (actor_service_token_id IS NOT NULL)))))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_actor_kind",
+      "definition": "CHECK (((actor_kind)::text = ANY ((ARRAY['human'::character varying, 'rule'::character varying, 'agent'::character varying])::text[])))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_decision_type",
+      "definition": "CHECK (((decision_type)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_details_bounded",
+      "definition": "CHECK ((octet_length((details)::text) <= 16384))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_details_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(details, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_details_object",
+      "definition": "CHECK ((jsonb_typeof(details) = 'object'::text))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_evidence_refs_array",
+      "definition": "CHECK (\nCASE\n    WHEN (jsonb_typeof(evidence_refs) = 'array'::text) THEN (jsonb_array_length(evidence_refs) <= 64)\n    ELSE false\nEND)"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_evidence_refs_bounded",
+      "definition": "CHECK ((octet_length((evidence_refs)::text) <= 16384))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_facts_bounded",
+      "definition": "CHECK ((octet_length((facts)::text) <= 16384))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_facts_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(facts, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_facts_object",
+      "definition": "CHECK ((jsonb_typeof(facts) = 'object'::text))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_rationale",
+      "definition": "CHECK ((char_length(btrim((rationale)::text)) > 0))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_rationale_untrusted",
+      "definition": "CHECK ((rationale_untrusted = ((actor_kind)::text = 'agent'::text)))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_schema_version",
+      "definition": "CHECK ((schema_version >= 1))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_state",
+      "definition": "CHECK (((state)::text = ANY ((ARRAY['proposed'::character varying, 'accepted'::character varying, 'rejected'::character varying])::text[])))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_subject_digest",
+      "definition": "CHECK (((subject_digest IS NULL) OR ((subject_digest)::text ~ '^[0-9a-f]{1,64}$'::text)))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_subject_kind",
+      "definition": "CHECK (((subject_kind)::text = ANY ((ARRAY['project'::character varying, 'problem_spec'::character varying, 'dataset_version'::character varying, 'split_plan'::character varying, 'feature_recipe'::character varying, 'experiment'::character varying, 'candidate'::character varying, 'model_version'::character varying])::text[])))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_subject_matches_kind",
+      "definition": "CHECK (((((subject_kind)::text = 'project'::text) AND (num_nonnulls(problem_spec_id, dataset_id, split_plan_id, feature_set_version_id, experiment_id, candidate_id, model_version_id) = 0)) OR ((num_nonnulls(problem_spec_id, dataset_id, split_plan_id, feature_set_version_id, experiment_id, candidate_id, model_version_id) = 1) AND ((((subject_kind)::text = 'problem_spec'::text) AND (problem_spec_id IS NOT NULL)) OR (((subject_kind)::text = 'dataset_version'::text) AND (dataset_id IS NOT NULL)) OR (((subject_kind)::text = 'split_plan'::text) AND (split_plan_id IS NOT NULL)) OR (((subject_kind)::text = 'feature_recipe'::text) AND (feature_set_version_id IS NOT NULL)) OR (((subject_kind)::text = 'experiment'::text) AND (experiment_id IS NOT NULL)) OR (((subject_kind)::text = 'candidate'::text) AND (candidate_id IS NOT NULL)) OR (((subject_kind)::text = 'model_version'::text) AND (model_version_id IS NOT NULL))))))"
+    },
+    {
+      "table": "project_decision_records",
+      "name": "ck_pdr_supersedes_not_self",
+      "definition": "CHECK (((supersedes_id IS NULL) OR (supersedes_id <> id)))"
+    },
+    {
+      "table": "project_refs",
+      "name": "ck_project_refs_ref_kind",
+      "definition": "CHECK (((ref_kind)::text = ANY ((ARRAY['problem_spec'::character varying, 'dataset'::character varying, 'split_plan'::character varying, 'feature_recipe'::character varying, 'champion_model'::character varying])::text[])))"
+    },
+    {
+      "table": "project_refs",
+      "name": "ck_project_refs_target_matches_kind",
+      "definition": "CHECK (((num_nonnulls(problem_spec_id, dataset_id, split_plan_id, feature_set_version_id, model_version_id) = 1) AND ((((ref_kind)::text = 'problem_spec'::text) AND (problem_spec_id IS NOT NULL)) OR (((ref_kind)::text = 'dataset'::text) AND (dataset_id IS NOT NULL)) OR (((ref_kind)::text = 'split_plan'::text) AND (split_plan_id IS NOT NULL)) OR (((ref_kind)::text = 'feature_recipe'::text) AND (feature_set_version_id IS NOT NULL)) OR (((ref_kind)::text = 'champion_model'::text) AND (model_version_id IS NOT NULL)))))"
+    },
+    {
+      "table": "project_refs",
+      "name": "ck_project_refs_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
       "table": "projects",
       "name": "ck_projects_provenance_valid",
       "definition": "CHECK (((provenance)::text = ANY ((ARRAY['user'::character varying, 'system_legacy_import'::character varying])::text[])))"
@@ -559,6 +719,61 @@
       "table": "simulation_runs",
       "name": "ck_simulation_runs_project_requires_workspace",
       "definition": "CHECK (((project_id IS NULL) OR (workspace_id IS NOT NULL)))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_assignment_digest",
+      "definition": "CHECK (((assignment_digest)::text ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_holdout_plan_digest",
+      "definition": "CHECK (((holdout_plan_digest)::text ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_holdout_strategy",
+      "definition": "CHECK (((holdout_strategy)::text = ANY ((ARRAY['stratified_random'::character varying, 'random'::character varying, 'group_disjoint'::character varying, 'temporal_future'::character varying])::text[])))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_holdout_test_size",
+      "definition": "CHECK (((holdout_test_size > (0)::double precision) AND (holdout_test_size < (1)::double precision)))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_plan_digest",
+      "definition": "CHECK (((plan_digest)::text ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_plan_evidence_bounded",
+      "definition": "CHECK ((octet_length((plan_evidence)::text) <= 32768))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_plan_evidence_no_secrets",
+      "definition": "CHECK ((NOT jsonb_exists_any(plan_evidence, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_plan_evidence_object",
+      "definition": "CHECK ((jsonb_typeof(plan_evidence) = 'object'::text))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_row_counts",
+      "definition": "CHECK (((train_row_count >= 0) AND (holdout_row_count >= 0) AND ((train_row_count + holdout_row_count) = row_count)))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_validation_folds",
+      "definition": "CHECK ((validation_folds >= 2))"
+    },
+    {
+      "table": "split_plans",
+      "name": "ck_split_plans_version",
+      "definition": "CHECK ((version >= 1))"
     },
     {
       "table": "users",
@@ -688,6 +903,11 @@
       "definition": "CREATE TRIGGER experiments_evidence_lock_stamp BEFORE INSERT OR UPDATE ON public.experiments FOR EACH ROW EXECUTE FUNCTION prevent_evidence_lock_reset()"
     },
     {
+      "table": "experiments",
+      "name": "experiments_lineage_guard",
+      "definition": "CREATE TRIGGER experiments_lineage_guard BEFORE INSERT OR UPDATE OF split_plan_id, parent_pipeline_run_id, change_set, intent, source_dataset_id, project_id, workspace_id ON public.experiments FOR EACH ROW EXECUTE FUNCTION prevent_experiment_lineage_violation()"
+    },
+    {
       "table": "feature_lineage",
       "name": "feature_lineage_evidence_locked",
       "definition": "CREATE TRIGGER feature_lineage_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.feature_lineage FOR EACH ROW EXECUTE FUNCTION prevent_locked_feature_child_mutation('feature_id')"
@@ -768,9 +988,29 @@
       "definition": "CREATE TRIGGER problem_specs_locked_immutable BEFORE DELETE OR UPDATE ON public.problem_specs FOR EACH ROW EXECUTE FUNCTION prevent_locked_row_mutation()"
     },
     {
+      "table": "project_decision_records",
+      "name": "project_decision_records_append_only",
+      "definition": "CREATE TRIGGER project_decision_records_append_only BEFORE DELETE OR UPDATE ON public.project_decision_records FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "project_refs",
+      "name": "project_refs_columns_immutable",
+      "definition": "CREATE TRIGGER project_refs_columns_immutable BEFORE UPDATE ON public.project_refs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('id,workspace_id,project_id,ref_kind,created_at')"
+    },
+    {
+      "table": "project_refs",
+      "name": "project_refs_no_delete",
+      "definition": "CREATE TRIGGER project_refs_no_delete BEFORE DELETE ON public.project_refs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "runtime_environments",
       "name": "runtime_environments_immutable",
       "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "split_plans",
+      "name": "split_plans_immutable",
+      "definition": "CREATE TRIGGER split_plans_immutable BEFORE DELETE OR UPDATE ON public.split_plans FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "visualizations",
@@ -831,6 +1071,10 @@
     {
       "name": "prevent_evidence_lock_reset",
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_evidence_lock_reset()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'INSERT' THEN\n        IF NEW.scientific_evidence_locked_at IS NOT NULL THEN\n            RAISE EXCEPTION\n                'experiments.scientific_evidence_locked_at cannot be set before scientific evidence is complete';\n        END IF;\n        RETURN NEW;\n    END IF;\n    IF OLD.scientific_evidence_locked_at IS NULL AND NEW.scientific_evidence_locked_at IS NOT NULL THEN\n        IF NOT pipeline_run_scientific_evidence_complete(OLD.id) THEN\n            RAISE EXCEPTION\n                'experiments.scientific_evidence_locked_at cannot be set before scientific evidence is complete';\n        END IF;\n        NEW.scientific_evidence_locked_at := statement_timestamp();\n    ELSIF OLD.scientific_evidence_locked_at IS NOT NULL\n        AND NEW.scientific_evidence_locked_at IS DISTINCT FROM OLD.scientific_evidence_locked_at THEN\n        RAISE EXCEPTION\n            'experiments.scientific_evidence_locked_at cannot be changed once the run is locked';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_experiment_lineage_violation",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_experiment_lineage_violation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    parent_row record;\nBEGIN\n    IF TG_OP = 'UPDATE' THEN\n        IF NEW.parent_pipeline_run_id IS DISTINCT FROM OLD.parent_pipeline_run_id\n            OR NEW.change_set IS DISTINCT FROM OLD.change_set\n            OR NEW.intent IS DISTINCT FROM OLD.intent THEN\n            RAISE EXCEPTION\n                'experiments.parent_pipeline_run_id, change_set and intent are insert-only';\n        END IF;\n        IF OLD.source_dataset_id IS NOT NULL\n            AND NEW.source_dataset_id IS DISTINCT FROM OLD.source_dataset_id THEN\n            RAISE EXCEPTION 'experiments.source_dataset_id is write-once';\n        END IF;\n        IF NEW.split_plan_id IS DISTINCT FROM OLD.split_plan_id THEN\n            IF OLD.split_plan_id IS NOT NULL THEN\n                RAISE EXCEPTION 'experiments.split_plan_id is write-once';\n            END IF;\n            IF OLD.scientific_evidence_locked_at IS NOT NULL THEN\n                RAISE EXCEPTION\n                    'experiments.split_plan_id cannot be set after the run is locked';\n            END IF;\n        END IF;\n    END IF;\n    IF NEW.change_set IS NOT NULL THEN\n        SELECT workspace_id, project_id, source_dataset_id, split_plan_id\n          INTO parent_row\n          FROM experiments\n         WHERE id = NEW.parent_pipeline_run_id;\n        IF NOT FOUND OR parent_row.workspace_id IS DISTINCT FROM NEW.workspace_id THEN\n            RAISE EXCEPTION 'branch parent must exist in the same workspace';\n        END IF;\n        IF NEW.project_id IS NULL\n            OR NEW.project_id IS DISTINCT FROM parent_row.project_id THEN\n            RAISE EXCEPTION 'branch must share project_id with its parent';\n        END IF;\n        IF NEW.source_dataset_id IS NULL\n            OR NEW.source_dataset_id IS DISTINCT FROM parent_row.source_dataset_id THEN\n            RAISE EXCEPTION 'branch must share source_dataset_id with its parent';\n        END IF;\n        IF parent_row.split_plan_id IS NULL\n            OR NEW.split_plan_id IS DISTINCT FROM parent_row.split_plan_id THEN\n            RAISE EXCEPTION 'branch must share split_plan_id with its parent';\n        END IF;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "prevent_locked_candidate_evidence_mutation",

@@ -98,6 +98,13 @@ def _labels_match(expected: Any, actual: Any, *, task_type: str = "") -> bool:
     return False
 
 
+def _multiclass_labels_match(expected: Any, actual: Any) -> bool:
+    if _labels_match(expected, actual):
+        return True
+    # Cleaning strips surrounding whitespace from multiclass labels.
+    return str(expected).strip() == str(actual).strip()
+
+
 def _artifact_target_values(frame: pd.DataFrame, column: str, task_type: str) -> pd.Series:
     series = frame[column]
     if task_type == "binary":
@@ -160,6 +167,15 @@ def _strategy_matches_task(task_type: str, validation: dict[str, Any]) -> bool:
         if time_column:
             return strategy == TIME_SERIES_SPLIT
         return strategy == KFOLD and validation.get("stratified") is not True
+    if task_type == "multiclass":
+        if group_column:
+            return strategy in GROUP_STRATEGIES
+        if time_column:
+            return strategy == TIME_SERIES_SPLIT
+        if strategy == STRATIFIED_KFOLD:
+            return validation.get("stratified") is True
+        # Shuffled KFold only when stratification was recorded as infeasible.
+        return strategy == KFOLD and bool(validation.get("fallback_reason"))
     return strategy in {STRATIFIED_KFOLD, KFOLD, STRATIFIED_GROUP_KFOLD, GROUP_KFOLD, TIME_SERIES_SPLIT}
 
 
@@ -195,8 +211,18 @@ def _verify_holdout_plan(
 
     cv_strategy = str(validation.get("strategy") or "")
     expected = _CV_TO_HOLDOUT.get(cv_strategy)
+    allowed = {expected}
     plan_strategy = str(holdout.get("strategy") or "")
     split_strategy = str(split.get("strategy") or "")
+    if (
+        _as_dict(report.get("task")).get("task_type") == "multiclass"
+        and cv_strategy in {STRATIFIED_KFOLD, KFOLD}
+        and plan_strategy == RANDOM
+    ):
+        # The planner recorded that a class is too rare (or too many classes) to
+        # stratify the holdout, while the training rows can still stratify CV.
+        # A plan that says stratified must still be executed stratified.
+        allowed = {RANDOM}
     if not plan_strategy or not cv_strategy or expected is None:
         add(
             "holdout_strategy_matches_problem_structure",
@@ -206,7 +232,7 @@ def _verify_holdout_plan(
             "holdout_plan",
             "validation_plan",
         )
-    elif plan_strategy != expected or (split_strategy and split_strategy != expected):
+    elif plan_strategy not in allowed or (split_strategy and split_strategy not in allowed):
         add(
             "holdout_strategy_matches_problem_structure",
             "holdout_plan",
@@ -941,6 +967,52 @@ def _verify_scientific_plan(
         )
 
 
+def _verify_split_plan_lineage(add, report: dict[str, Any], db: Session) -> None:
+    """ADR 0006 §3: a run on a SplitPlan matches it. Runs without a plan are unaffected."""
+
+    from uuid import UUID
+
+    from app.db.models import Experiment, PipelineScientificPlan, SplitPlan
+
+    try:
+        experiment_id = UUID(str(_as_dict(report.get("run")).get("experiment_id")))
+    except ValueError:
+        return
+    experiment = db.get(Experiment, experiment_id)
+    if experiment is None or experiment.split_plan_id is None:
+        return
+    check, stage = "split_plan_consistent", "splitting"
+    plan = db.get(SplitPlan, experiment.split_plan_id)
+    if plan is None or plan.workspace_id != experiment.workspace_id:
+        add(check, stage, CHECK_NOT_VERIFIABLE, "The run's split plan row is missing.", "experiments.split_plan_id")
+        return
+    scientific = db.query(PipelineScientificPlan).filter(
+        PipelineScientificPlan.pipeline_run_id == experiment.id
+    ).one_or_none()
+    if scientific is None:
+        add(check, stage, CHECK_NOT_VERIFIABLE, "The run's scientific plan is missing.", "pipeline_scientific_plans")
+        return
+    split = _as_dict(report.get("split"))
+    recorded = _as_dict(_as_dict(scientific.full_plan).get("split")).get("assignment_digest")
+    mismatches = [
+        name
+        for name, ok in (
+            ("holdout_plan_digest", scientific.holdout_plan_digest == plan.holdout_plan_digest),
+            ("n_train", split.get("n_train") == plan.train_row_count),
+            ("n_test", split.get("n_test") == plan.holdout_row_count),
+            # A run with a plan must record the plan's map digest; absence means
+            # the scientific plan was written without the split plan.
+            ("assignment_digest", recorded == plan.assignment_digest),
+            ("source_dataset_id", experiment.source_dataset_id == plan.dataset_id),
+        )
+        if not ok
+    ]
+    if mismatches:
+        add(check, stage, CHECK_FAIL, f"The run differs from its split plan: {mismatches}.", "split", "split_plans")
+    else:
+        add(check, stage, CHECK_PASS, "Holdout plan, counts and assignment match the run's split plan.", "split", "split_plans")
+
+
 def _verify_reproducibility_lineage(add, report: dict[str, Any], db: Session) -> None:
     """DB-backed lineage checks. Skipped when verify() is called without a session."""
 
@@ -1257,13 +1329,18 @@ class PipelineVerifier:
         target_column = target.get("target_column", target.get("column"))
         target_task = target.get("task_type")
         task_type = task.get("task_type")
-        supported_task = target_task in {"binary", "regression"}
+        supported_task = target_task in {"binary", "multiclass", "regression"}
         target_profile = next((row for row in profile_columns if row.get("name") == target_column), {})
         compatible = (
             target_task == task_type
             and task.get("target") == target_column
             and (
                 (target_task == "binary" and target_profile.get("unique_count") == 2)
+                or (
+                    target_task == "multiclass"
+                    and isinstance(target_profile.get("unique_count"), int)
+                    and target_profile["unique_count"] >= 3
+                )
                 or (
                     target_task == "regression"
                     and input_frame is not None
@@ -1445,7 +1522,7 @@ class PipelineVerifier:
         }
         expected_cv_strategy = str(plan.get("strategy") or "")
         if expected_cv_strategy not in allowed_cv:
-            expected_cv_strategy = "StratifiedKFold" if task_type == "binary" else "KFold"
+            expected_cv_strategy = "StratifiedKFold" if task_type in {"binary", "multiclass"} else "KFold"
         kfold_covers_train = expected_cv_strategy != "TimeSeriesSplit"
         for candidate in trained_candidates:
             folds = [row for row in _as_list(candidate.get("folds")) if isinstance(row, dict)]
@@ -1525,13 +1602,13 @@ class PipelineVerifier:
                     or row.get("cv_std") is None
                 )
             )
-            or (row.get("status") in {"FAILED", "failed"} and not row.get("failure_reason"))
+            or (row.get("status") in {"FAILED", "failed", "SKIPPED"} and not row.get("failure_reason"))
         ]
         if not expected_candidates:
             add("candidate_audit_complete", "candidate_training", CHECK_NOT_VERIFIABLE, "Expected candidate portfolio is missing.", "expected_candidate_ids")
         elif expected_candidates != recorded_candidates:
             add("candidate_audit_complete", "candidate_training", CHECK_FAIL, "Expected and recorded candidate portfolios differ.", "expected_candidate_ids", "candidate_models")
-        elif incomplete_candidates or any(row.get("status") not in {"trained", "FAILED", "failed"} for row in candidates):
+        elif incomplete_candidates or any(row.get("status") not in {"trained", "FAILED", "failed", "SKIPPED"} for row in candidates):
             add("candidate_audit_complete", "candidate_training", CHECK_FAIL, f"Candidate audit records are incomplete: {incomplete_candidates}.", "candidate_models")
         else:
             add("candidate_audit_complete", "candidate_training", CHECK_PASS, "Every expected candidate has a trained or failed audit record.", "candidate_models")
@@ -1556,6 +1633,43 @@ class PipelineVerifier:
             add("winner_selected_from_cv", "model_selection", CHECK_FAIL, "The locked winner is not the best eligible CV result.", "selection", "candidate_models")
         else:
             add("winner_selected_from_cv", "model_selection", CHECK_PASS, "The winner is the best eligible CV candidate and was locked from CV evidence.", "selection")
+
+        # P1.4-A1: the winner must beat the chance-level baseline on CV.
+        baseline = report.get("baseline_comparison")
+        if isinstance(baseline, dict) and baseline.get("beats_baseline") is not None:
+            if baseline.get("beats_baseline"):
+                add("winner_beats_baseline", "model_selection", CHECK_PASS, "The winner's CV score beats the chance-level baseline.", "baseline_comparison")
+            else:
+                add("winner_beats_baseline", "model_selection", CHECK_WARN, "The winner does not beat the chance-level baseline on CV; the model may carry no signal.", "baseline_comparison")
+
+        decision_threshold = report.get("decision_threshold")
+        if isinstance(decision_threshold, dict):
+            oof_rows = {str(value) for value in _as_list(decision_threshold.get("oof_source_rows"))}
+            test_rows = {str(value) for value in _as_list(split.get("test_source_rows"))}
+            locked = decision_threshold.get("value")
+            reported = _as_dict(final_test.get("metrics")).get("decision_threshold")
+            if decision_threshold.get("selected_on") != "out_of_fold_cv" or oof_rows & test_rows:
+                add("decision_threshold_from_cv", "model_selection", CHECK_FAIL, "The decision threshold was not chosen on out-of-fold training predictions only.", "decision_threshold", "split.test_source_rows")
+            elif locked is not None and reported is not None and float(reported) != float(locked):
+                add("decision_threshold_from_cv", "model_selection", CHECK_FAIL, "The holdout was scored at a threshold other than the locked one.", "decision_threshold", "final_test_evaluation.metrics")
+            else:
+                add("decision_threshold_from_cv", "model_selection", CHECK_PASS, "The decision threshold was locked from out-of-fold CV predictions before the holdout.", "decision_threshold")
+            statuses = {decision_threshold.get("status"), decision_threshold.get("holdout_status")}
+            if not decision_threshold.get("constraints"):
+                pass
+            elif statuses & {"unsatisfiable", "not_satisfied"}:
+                add("objective_constraints_met", "model_selection", CHECK_WARN, "The declared metric constraints are not met; see decision_threshold.constraints.", "decision_threshold.constraints")
+            elif "not_verifiable" in statuses:
+                add("objective_constraints_met", "model_selection", CHECK_NOT_VERIFIABLE, "A declared constraint metric was not measured.", "decision_threshold.constraints")
+            else:
+                add("objective_constraints_met", "model_selection", CHECK_PASS, "Declared metric constraints hold on out-of-fold predictions and the holdout.", "decision_threshold.constraints")
+            selection_metric = str(selection.get("selection_metric") or "")
+            if (
+                selection_metric in {"f1", "accuracy", "balanced_accuracy"}
+                and locked is not None
+                and float(locked) != 0.5
+            ):
+                add("threshold_dependent_selection", "model_selection", CHECK_WARN, f"Candidates were ranked by {selection_metric} at 0.5 but the winner ships at threshold {float(locked):.4g}.", "selection.selection_metric", "decision_threshold.value")
 
         locked_at = _timestamp(selection.get("locked_at"))
         fit_started = _timestamp(final_fit.get("started_at"))
@@ -1613,7 +1727,12 @@ class PipelineVerifier:
                 if isinstance(source_row, int) and 0 <= source_row < len(artifact_targets):
                     expected = artifact_targets.iloc[source_row]
                     actual = row.get("y_true")
-                    if not _labels_match(expected, actual, task_type=label_task_type):
+                    matched = (
+                        _multiclass_labels_match(expected, actual)
+                        if label_task_type == "multiclass"
+                        else _labels_match(expected, actual, task_type=label_task_type)
+                    )
+                    if not matched:
                         prediction_truth_mismatches.append(source_row)
         if (
             not predictions
@@ -1681,6 +1800,7 @@ class PipelineVerifier:
             add("model_artifacts_persisted", "artifact_persistence", CHECK_PASS, "Model, result, and prediction artifacts exist.", "artifacts")
 
         if db is not None:
+            _verify_split_plan_lineage(add, report, db)
             _verify_reproducibility_lineage(add, report, db)
 
         failures = [row for row in checks if row["status"] == CHECK_FAIL]

@@ -49,6 +49,14 @@ class ProjectNotFoundError(LookupError):
     """No project matches the given workspace-scoped id."""
 
 
+class GraphNodeNotFoundError(LookupError):
+    """No project-graph node of this kind matches the workspace-scoped id."""
+
+
+class InvalidGraphCursorError(ValueError):
+    """A project-graph page cursor is malformed."""
+
+
 class SimulationRunNotFoundError(LookupError):
     """No simulation run matches the given workspace-scoped id."""
 
@@ -186,3 +194,132 @@ class ScientificEvidenceLockedError(Exception):
         )
         self.pipeline_run_id = pipeline_run_id
         self.status_code = 409
+
+
+class SplitPlanLineageError(ValueError):
+    """A run references a SplitPlan of another source dataset, project or tenant (ADR 0006 §3)."""
+
+    def __init__(self, message: str, *, code: str = "split_plan_dataset_mismatch") -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+
+
+class ExperimentNotFoundError(LookupError):
+    """No experiment matches the workspace-scoped id (also: no ML-write access). Maps to 404."""
+
+
+class InvalidChangeSetError(ValueError):
+    """A branch change set is rejected (ADR 0006 §4). Stable code ``invalid_change_set``.
+
+    ``reason`` is a stable sub-code (e.g. ``unknown_family``) and ``path`` points at
+    the offending change (``changes[0].family``).
+    """
+
+    code = "invalid_change_set"
+    status_code = 422
+
+    def __init__(self, reason: str, message: str, *, path: str = "changes") -> None:
+        super().__init__(f"{self.code}: {reason}: {message}")
+        self.reason = reason
+        self.path = path
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "reason": self.reason,
+            "path": self.path,
+            "message": self.detail_message,
+        }
+
+
+class ExperimentNotBranchableError(Exception):
+    """The parent cannot be branched (not completed/locked, no split plan, ...). Maps to 409."""
+
+    status_code = 409
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message}
+
+
+class ExperimentComparisonError(ValueError):
+    """Two experiments are not comparable (different SplitPlan or missing evidence)."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+
+
+class DecisionRecordError(Exception):
+    """Typed decision-record / ref-move failure with a stable ``code`` (ADR 0006 §2, §5)."""
+
+    status_code = 422
+    code = "invalid_decision_record"
+
+    def __init__(self, reason: str, message: str, **extra: object) -> None:
+        super().__init__(f"{self.code}: {reason}: {message}")
+        self.reason = reason
+        self.detail_message = message
+        self.extra = extra
+
+    def public_detail(self) -> dict[str, object]:
+        return {"code": self.code, "reason": self.reason, "message": self.detail_message, **self.extra}
+
+
+class DecisionRecordNotFoundError(LookupError):
+    """No decision record in this project/workspace (also: another tenant's). Maps to 404."""
+
+
+class InvalidDecisionRecordError(DecisionRecordError):
+    """Bad subject, evidence ref, rationale, payload or ref target semantics. Maps to 422."""
+
+
+class RefTargetNotFoundError(DecisionRecordError):
+    """A ref target is unknown, in another project or another tenant. Maps to 404."""
+
+    status_code = 404
+    code = "ref_target_not_found"
+
+
+class InvalidDecisionTransitionError(DecisionRecordError):
+    """The state machine forbids this transition (double accept, accept of rejected...)."""
+
+    status_code = 409
+    code = "invalid_decision_transition"
+
+
+class DecisionActorNotPermittedError(DecisionRecordError):
+    """This actor kind may not perform the write (agents only propose). Maps to 403."""
+
+    status_code = 403
+    code = "decision_actor_not_permitted"
+
+
+class RefVersionConflictError(DecisionRecordError):
+    """Optimistic ref version mismatch (``expected_version`` is stale). Maps to 409."""
+
+    status_code = 409
+    code = "ref_version_conflict"
+
+
+class ChampionSplitPlanMismatchError(DecisionRecordError):
+    """A champion must share the current champion's ``split_plan_id`` (Rev 2). Maps to 409."""
+
+    status_code = 409
+    code = "champion_split_plan_mismatch"
+
+
+class IdempotencyKeyConflictError(DecisionRecordError):
+    """The idempotency key was already used for a different decision. Maps to 409."""
+
+    status_code = 409
+    code = "idempotency_key_conflict"
+
+
+class InvalidDecisionQueryError(ValueError):
+    """Malformed decision list filter or cursor. Maps to 400."""

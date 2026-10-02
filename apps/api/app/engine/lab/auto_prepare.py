@@ -234,7 +234,9 @@ def plan_missing_values(frame: pd.DataFrame, columns: list[str]) -> MissingValue
 
 
 def _one_hot_encoder() -> OneHotEncoder:
-    kwargs: dict[str, Any] = {"drop": "first", "handle_unknown": "ignore"}
+    # Keep every category (P1.4-A1): with drop="first" an unseen category encoded
+    # exactly like the dropped reference category. Now unseen -> all zeros.
+    kwargs: dict[str, Any] = {"drop": None, "handle_unknown": "ignore"}
     try:
         return OneHotEncoder(**kwargs, sparse_output=False)
     except TypeError:

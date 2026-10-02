@@ -11,13 +11,9 @@ from sqlalchemy.orm import Session
 from app.config import REPO_ROOT, get_settings, is_production_env
 from app.db.models import Dataset, DatasetProfile, Environment, Experiment, ExperimentCandidate, PredictionTask
 from app.db.session import get_db
-from app.domain.errors import ScientificEvidenceLockedError
 from app.services.lab_service import (
-    create_experiment,
-    execute_experiment,
     ingest_dataset,
     profile_dataset,
-    search_from_mapping,
     seed_dogfood,
     task_from_yaml,
     upsert_task,
@@ -26,15 +22,28 @@ from app.services.lab_training_service import (
     experiment_payload,
     ingest_sample_workbook,
     plan_dataset_use_cases,
+    train_dataset_target,
     train_dataset_use_case,
     train_dataset_use_cases,
 )
+from app.api.deps import require_platform_admin
+from app.db.models import User
+from app.domain.errors import IdentityError, OpenLabFileError
 
 # Mounted under the admin tree in app.main, giving /admin/experiments,
 # /admin/datasets, /admin/tasks and /admin/environments. No prefix here so the
 # admin router owns the full path.
 router = APIRouter(tags=["lab"])
 logger = logging.getLogger(__name__)
+
+
+def _build_http_error(exc: Exception) -> HTTPException:
+    """Map open-ingest build errors (same path as Labs uploads) to HTTP."""
+    if isinstance(exc, IdentityError):
+        return HTTPException(exc.status_code, str(exc))
+    if isinstance(exc, OpenLabFileError):
+        return HTTPException(422, str(exc))
+    return HTTPException(400, str(exc))
 
 
 class EnvironmentRead(BaseModel):
@@ -179,41 +188,48 @@ def dataset_use_cases(dataset_id: UUID, db: Session = Depends(get_db)) -> dict:
     return plan_dataset_use_cases(db, dataset)
 
 
-@router.post("/datasets/{dataset_id}/use-cases/{slug}/train", response_model=ExperimentRead)
+@router.post(
+    "/datasets/{dataset_id}/use-cases/{slug}/train",
+    response_model=ExperimentRead,
+    status_code=202,
+)
 def train_one_use_case(
     dataset_id: UUID,
     slug: str,
     payload: TrainRequest = TrainRequest(),
     db: Session = Depends(get_db),
+    user: User = Depends(require_platform_admin),
 ) -> dict:
+    """Queue one open-ingest build (202); the worker trains it. ``max_models``
+    is accepted for compatibility; the engine owns its candidate portfolio."""
     dataset = db.get(Dataset, dataset_id)
     if dataset is None:
         raise HTTPException(404, "dataset not found")
     try:
-        experiment = train_dataset_use_case(db, dataset, slug, max_models=payload.max_models or 5)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        experiment = train_dataset_use_case(db, dataset, slug, actor=user)
+    except (ValueError, IdentityError) as exc:
+        raise _build_http_error(exc) from exc
     return experiment_payload(db, experiment)
 
 
-@router.post("/datasets/{dataset_id}/train", response_model=list[ExperimentRead])
+@router.post(
+    "/datasets/{dataset_id}/train",
+    response_model=list[ExperimentRead],
+    status_code=202,
+)
 def train_all_use_cases(
     dataset_id: UUID,
     payload: TrainRequest = TrainRequest(),
     db: Session = Depends(get_db),
+    user: User = Depends(require_platform_admin),
 ) -> list[dict]:
     dataset = db.get(Dataset, dataset_id)
     if dataset is None:
         raise HTTPException(404, "dataset not found")
     try:
-        runs = train_dataset_use_cases(
-            db,
-            dataset,
-            slugs=payload.use_cases,
-            max_models=payload.max_models or 5,
-        )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        runs = train_dataset_use_cases(db, dataset, actor=user, slugs=payload.use_cases)
+    except (ValueError, IdentityError) as exc:
+        raise _build_http_error(exc) from exc
     return [experiment_payload(db, row) for row in runs]
 
 
@@ -317,11 +333,10 @@ def get_report(experiment_id: UUID, db: Session = Depends(get_db)) -> dict:
     row = db.get(Experiment, experiment_id)
     if row is None:
         raise HTTPException(404, "experiment not found")
-    report = None
-    if row.artifact_dir:
-        path = Path(row.artifact_dir) / "report.md"
-        if path.exists():
-            report = path.read_text()
+    from app.services.reproducibility_service import read_run_file
+
+    data = read_run_file(db, row, "report.md")
+    report = data.decode("utf-8") if data else None
     return {"markdown": report, "result": row.result}
 
 
@@ -376,12 +391,13 @@ def get_comparison(experiment_id: UUID, db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.post("/experiments", response_model=ExperimentRead)
+@router.post("/experiments", response_model=ExperimentRead, status_code=202)
 def create_and_optionally_run(
     payload: RunRequest,
     db: Session = Depends(get_db),
-) -> Experiment:
-    env = seed_dogfood(db)
+    user: User = Depends(require_platform_admin),
+) -> dict:
+    """Queue an open-ingest build for a dataset using the task config's target."""
     dataset = None
     task = None
     if payload.dataset_id:
@@ -394,26 +410,43 @@ def create_and_optionally_run(
         task = db.query(PredictionTask).filter(PredictionTask.slug == payload.task_slug).first()
     if dataset is None or task is None:
         raise HTTPException(400, "dataset and task are required")
-    yaml_search = {}
-    if task.config_path and Path(task.config_path).exists():
-        import yaml
-
-        yaml_search = (yaml.safe_load(Path(task.config_path).read_text()) or {}).get("search") or {}
-    cfg = search_from_mapping(
-        yaml_search,
-        overrides={"max_candidates": payload.max_candidates} if payload.max_candidates else None,
-    )
-    created = create_experiment(db, environment=env, dataset=dataset, task=task, config=cfg)
-    return experiment_payload(db, created)
+    target = str((task.spec or {}).get("target") or "").strip()
+    if not target:
+        raise HTTPException(400, "task has no target column")
+    try:
+        experiment = train_dataset_target(
+            db, dataset, actor=user, target=target,
+            origin={"admin_lab_dataset_id": str(dataset.id), "task_slug": task.slug},
+        )
+    except (ValueError, IdentityError) as exc:
+        raise _build_http_error(exc) from exc
+    return experiment_payload(db, experiment)
 
 
 @router.post("/experiments/{experiment_id}/run", response_model=ExperimentRead)
 def run_existing(experiment_id: UUID, db: Session = Depends(get_db)) -> dict:
+    """Builds are queued at creation and run by the worker. Re-running a legacy
+    (pre-open-ingest) experiment is no longer supported."""
     row = db.get(Experiment, experiment_id)
     if row is None:
         raise HTTPException(404, "experiment not found")
-    try:
-        executed = execute_experiment(db, row)
-    except ScientificEvidenceLockedError as exc:
-        raise HTTPException(exc.status_code, str(exc)) from exc
-    return experiment_payload(db, executed)
+    # A build queued through the single open-ingest path is linked to an
+    # ExecutionRequest (its config says "progressive" until the worker runs it).
+    from sqlalchemy import select
+
+    from app.db.models import ExecutionRequest
+
+    if row.scientific_evidence_locked_at is not None:
+        # Locked evidence is immutable; a change is a new build, never a re-run.
+        raise HTTPException(
+            409,
+            "scientific evidence is locked for this run; queue a new build instead",
+        )
+    linked = db.scalar(select(ExecutionRequest.id).where(ExecutionRequest.pipeline_run_id == row.id))
+    if linked is None and (row.config or {}).get("strategy") != "open_ingest":
+        raise HTTPException(
+            410,
+            "the legacy experiment runner was removed; queue a new build with "
+            "POST /admin/datasets/{dataset_id}/use-cases/{slug}/train",
+        )
+    return experiment_payload(db, row)

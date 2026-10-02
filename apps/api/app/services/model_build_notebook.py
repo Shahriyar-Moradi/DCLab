@@ -13,7 +13,7 @@ from app.domain.model_build_reproduction import (
     AUTHORIZED_DATASET_PATH_PLACEHOLDER,
     ModelBuildReproductionSpec,
 )
-from app.services.model_build_codegen import _py_literal, strip_stage_header
+from app.services.model_build_codegen import _py_literal, run_identity_lines, strip_stage_header
 
 NOTEBOOK_SECTIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("run_identity", "Run identity / reproducibility metadata", ()),
@@ -97,6 +97,7 @@ def _identity_source(spec: ModelBuildReproductionSpec) -> str:
         "# This document is generated from canonical persisted evidence.",
         "# It does not embed raw rows, credentials, Dataset.location, or object-store keys.",
         f"# Authorized dataset path placeholder: {AUTHORIZED_DATASET_PATH_PLACEHOLDER}",
+        *run_identity_lines(spec),
     ]
     if helpers:
         lines.append("")

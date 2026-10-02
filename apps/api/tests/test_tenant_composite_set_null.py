@@ -54,6 +54,9 @@ EXPECTED_ACTION_COLUMNS = {
     "fk_visualizations_workspace_evaluation": ["model_evaluation_id"],
     "fk_simulation_runs_workspace_project": ["project_id"],
     "fk_auth_sessions_rotated_from_user": ["rotated_from_id"],
+    # 0064 (ADR 0006 §7): workspace_id is NOT NULL, so SET NULL names the column.
+    "fk_ml_run_verifications_workspace_experiment": ["experiment_id"],
+    "fk_ml_run_verifications_workspace_llm_invocation": ["llm_invocation_id"],
 }
 
 

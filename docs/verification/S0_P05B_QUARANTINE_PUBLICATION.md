@@ -1,6 +1,6 @@
 # S0-P05B — quarantine and publication state
 
-Status: PARTIAL — fail-closed foundation only. This is a working-tree implementation, not a release or a claim of same-SHA CI.
+Status: CLOSED by P0.2-B (2026-10-01) — the blocking product decision is resolved by [ADR 0005](../adr/0005-upload-policy.md) (`internal_training` publication after structural validation). Results are recorded in [`docs/mvp/STATUS.md`](../mvp/STATUS.md); exact-SHA CI runs at the next batched push. The text below is the original S0-P05B record, kept as observed then.
 
 ## Pre-edit execution card (2026-09-28)
 

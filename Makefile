@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock
+.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock benchmark benchmark-quick
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -8,7 +8,8 @@ endif
 UVICORN := $(dir $(PYTHON))uvicorn
 ALEMBIC := $(dir $(PYTHON))alembic
 PYTEST := $(dir $(PYTHON))pytest
-PG_BIN := /opt/homebrew/opt/postgresql@16/bin
+# Override on Linux, e.g. `make db PG_BIN=/usr/lib/postgresql/16/bin`.
+PG_BIN ?= /opt/homebrew/opt/postgresql@16/bin
 export PATH := $(PG_BIN):$(PATH)
 
 ifneq (,$(wildcard .env))
@@ -55,8 +56,10 @@ users:
 seed:
 	curl -s -F "file=@data/sample/opportunities.csv" $(API_URL)/app/opportunities/upload
 
+# Parallel by default (one Postgres database per xdist worker); PYTEST_WORKERS=0 runs serially.
+PYTEST_WORKERS ?= auto
 test:
-	$(PYTEST) --cov=app --cov-report=term-missing
+	$(PYTEST) -n $(PYTEST_WORKERS) --cov=app --cov-report=term-missing
 
 truth-check:
 	$(PYTHON) -m scripts.check_truth_drift
@@ -73,7 +76,7 @@ truth-idempotence:
 # CSV uploads on Queued unless a worker claims them — so `make run` uses the
 # in-process thread adapter unless ML_JOB_DISPATCHER is already set.
 run:
-	ML_JOB_DISPATCHER=$(or $(ML_JOB_DISPATCHER),thread) $(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
+	ML_JOB_DISPATCHER=$(or $(ML_JOB_DISPATCHER),postgres) $(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
 
 worker:
 	$(dir $(PYTHON))dclab worker run
@@ -88,5 +91,15 @@ down:
 
 # Refresh the cross-platform dependency lock after editing pyproject.toml.
 lock:
-	uv pip compile pyproject.toml --extra boosting --extra dev --universal \
+	uv pip compile pyproject.toml --extra boosting --extra tuning --extra dev --universal \
 		--python-version 3.12 --no-header -o requirements.lock
+
+# R1-A benchmark harness (engine only, no database). `benchmark` adds OpenML
+# tasks (downloaded once into SCIKIT_LEARN_DATA); `benchmark-quick` needs no network.
+benchmark:
+	$(PYTHON) -m benchmarks.harness.run --suite full --out benchmarks/results/latest-full.json
+	$(PYTHON) -m benchmarks.harness.compare benchmarks/results/latest-full.json
+
+benchmark-quick:
+	$(PYTHON) -m benchmarks.harness.run --suite quick --out benchmarks/results/latest-quick.json
+	$(PYTHON) -m benchmarks.harness.compare benchmarks/results/latest-quick.json

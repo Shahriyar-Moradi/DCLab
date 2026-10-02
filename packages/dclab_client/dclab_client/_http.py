@@ -125,6 +125,14 @@ class V1Transport:
 
     def _v1_path(self, path: str) -> str:
         cleaned = "/" + path.lstrip("/")
+        # Defense in depth: no dot segments, escapes or separators that an HTTP
+        # client could normalise into a path outside /v1.
+        if (
+            "%" in cleaned
+            or "\\" in cleaned
+            or any(segment in {".", ".."} for segment in cleaned.split("/"))
+        ):
+            raise DCLabClientError("dclab_client only calls /v1 paths")
         if cleaned == V1_PREFIX or cleaned.startswith(V1_PREFIX + "/"):
             return cleaned
         raise DCLabClientError("dclab_client only calls /v1 paths")

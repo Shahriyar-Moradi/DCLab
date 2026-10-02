@@ -73,6 +73,15 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         "problem_spec_id",
         "fields_noticed",
         "column_count",
+        # Code-owned provenance for admin Lab builds (P1.1-A).
+        "admin_lab_dataset_id",
+        "use_case_slug",
+        "task_slug",
+        "excluded_columns",
+        # Branch experiments (P2.4-A): the parent and the change-set digest the
+        # request is bound to (idempotent replay).
+        "parent_experiment_id",
+        "change_set_digest",
     }
 )
 

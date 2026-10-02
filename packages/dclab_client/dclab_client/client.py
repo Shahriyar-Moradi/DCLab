@@ -2,27 +2,52 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 import httpx
 
 from dclab_client._http import DEFAULT_TIMEOUT_SECONDS, V1Transport
+from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
     Artifact,
     Dataset,
+    DecisionRecordPage,
     EventPage,
     ExecutionRequest,
+    ExperimentCode,
     ModelBuild,
+    NodeImpact,
     Principal,
     Project,
+    ProjectGraph,
     Visualization,
     Workspace,
 )
 
 
+# Kinds accepted by GET /v1/nodes/{kind}/{id}/impact (ADR 0006 §1).
+GRAPH_NODE_KINDS = frozenset(
+    {"problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"}
+)
+
+
 def _id(value: UUID | str) -> str:
-    return str(value)
+    """Path ids are always UUIDs; anything else never reaches a URL."""
+
+    try:
+        return str(UUID(str(value)))
+    except (TypeError, ValueError) as exc:
+        raise DCLabClientError("resource ids must be UUIDs") from exc
+
+
+def _node_kind(kind: str) -> str:
+    if kind not in GRAPH_NODE_KINDS:
+        raise DCLabClientError(
+            "kind must be one of: " + ", ".join(sorted(GRAPH_NODE_KINDS))
+        )
+    return kind
 
 
 class IdentityClient:
@@ -56,6 +81,78 @@ class ProjectsClient:
             "GET", f"/v1/projects/{_id(project_id)}", request_id=request_id
         )
         return Project.model_validate(payload)
+
+    def graph(
+        self,
+        project_id: UUID | str,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ProjectGraph:
+        """ML state graph: nodes, edges, refs and computed staleness (newest experiments first)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/projects/{_id(project_id)}/graph",
+            params={"cursor": cursor, "limit": limit},
+            request_id=request_id,
+        )
+        return ProjectGraph.model_validate(payload)
+
+    def decisions(
+        self,
+        project_id: UUID | str,
+        *,
+        state: str | None = None,
+        effective_state: str | None = None,
+        decision_type: str | None = None,
+        subject_kind: str | None = None,
+        subject_id: UUID | str | None = None,
+        actor_kind: str | None = None,
+        recorded_after: datetime | None = None,
+        recorded_before: datetime | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> DecisionRecordPage:
+        """Append-only decision records, newest first (rationale is untrusted data)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/projects/{_id(project_id)}/decisions",
+            params={
+                "state": state,
+                "effective_state": effective_state,
+                "decision_type": decision_type,
+                "subject_kind": subject_kind,
+                "subject_id": _id(subject_id) if subject_id is not None else None,
+                "actor_kind": actor_kind,
+                "recorded_after": recorded_after.isoformat() if recorded_after else None,
+                "recorded_before": recorded_before.isoformat() if recorded_before else None,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return DecisionRecordPage.model_validate(payload)
+
+
+class NodesClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def impact(
+        self, kind: str, node_id: UUID | str, *, request_id: str | None = None
+    ) -> NodeImpact:
+        """Downstream closure of one graph node (``kind`` is a graph node kind)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/nodes/{_node_kind(kind)}/{_id(node_id)}/impact",
+            request_id=request_id,
+        )
+        return NodeImpact.model_validate(payload)
 
 
 class DatasetsClient:
@@ -173,6 +270,23 @@ class ModelBuildsClient:
         return EventPage.model_validate(payload)
 
 
+class ExperimentsClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def code(
+        self, experiment_id: UUID | str, *, request_id: str | None = None
+    ) -> ExperimentCode:
+        """Standalone reproduction script/notebook (stored split map, branch changes)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/code",
+            request_id=request_id,
+        )
+        return ExperimentCode.model_validate(payload)
+
+
 class VisualizationsClient:
     def __init__(self, transport: V1Transport) -> None:
         self._transport = transport
@@ -233,9 +347,11 @@ class DCLabClient:
         self.identity = IdentityClient(self._transport)
         self.workspaces = WorkspacesClient(self._transport)
         self.projects = ProjectsClient(self._transport)
+        self.nodes = NodesClient(self._transport)
         self.datasets = DatasetsClient(self._transport)
         self.execution_requests = ExecutionRequestsClient(self._transport)
         self.model_builds = ModelBuildsClient(self._transport)
+        self.experiments = ExperimentsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)
 

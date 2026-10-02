@@ -5,9 +5,22 @@ from __future__ import annotations
 from app.engine.features.combinations import features_for_groups, generate_group_combinations
 from app.engine.models.registry import available_families, baseline_families, cheap_families, strong_families
 from app.engine.search.fingerprint import scientific_candidate_fingerprint
+from app.engine.search.tuning import tuning_plan
 from app.engine.types import Candidate, SearchConfig, TaskSpec
 
-DUMMY_FAMILIES = {"majority", "mean"}
+DUMMY_FAMILIES = {"majority", "mean", "median"}
+
+# Every open-ingest portfolio is scored against a chance-level baseline
+# (CV only; never selected while any learned model trains).
+BASELINE_FAMILY = {"binary": "majority", "multiclass": "majority", "regression": "median"}
+
+# Families that accept imbalance weighting, and the hyperparameters to use.
+_BALANCED_HYPERPARAMETERS = {
+    "logistic_regression": {"class_weight": "balanced"},
+    "random_forest": {"class_weight": "balanced"},
+    "lightgbm": {"class_weight": "balanced"},
+    "catboost": {"auto_class_weights": "Balanced"},
+}
 
 OPEN_INGEST_PREPROCESS = {
     "kind": "column_transformer",
@@ -15,7 +28,59 @@ OPEN_INGEST_PREPROCESS = {
     "numeric_scaler": "standard",
     "categorical_imputer": "most_frequent",
     "categorical_encoder": "onehot",
+    # P1.4-A1: keep every category; unseen categories encode as all zeros and
+    # can no longer collide with a dropped reference category.
+    "categorical_drop": "none",
 }
+
+
+def _plan_problem_profile(development_plan) -> dict | None:
+    if development_plan is None:
+        return None
+    profile = getattr(development_plan, "problem_profile", None)
+    if profile is None and isinstance(development_plan, dict):
+        profile = development_plan.get("problem_profile")
+    return profile if isinstance(profile, dict) else None
+
+
+def balanced_variants(
+    task_type: str, families: list[str], development_plan, *, force: bool = False
+) -> list[tuple[str, dict]]:
+    """Imbalance-weighted variants when the TRAIN-partition profile is imbalanced.
+
+    ``force`` (branch ``class_weighting: balanced``) skips the imbalance gate.
+    """
+    if task_type not in {"binary", "multiclass"}:
+        return []
+    profile = _plan_problem_profile(development_plan)
+    if not profile:
+        return []
+    from app.engine.modeling.metric_planner import MEANINGFUL_IMBALANCE_RATIO, _meaningful_imbalance
+    from app.engine.modeling.problem_profile import ProblemProfile
+
+    if not force and task_type == "multiclass":
+        # The minority-fraction rule is meaningless with 3+ classes (a balanced
+        # 3-class table has 33% per class); use the majority/minority ratio only.
+        ratio = profile.get("imbalance_ratio")
+        if not isinstance(ratio, (int, float)) or ratio < MEANINGFUL_IMBALANCE_RATIO:
+            return []
+    elif not force and not _meaningful_imbalance(ProblemProfile.from_dict(profile)):
+        return []
+    variants: list[tuple[str, dict]] = []
+    for family in families:
+        if family in _BALANCED_HYPERPARAMETERS:
+            variants.append((family, dict(_BALANCED_HYPERPARAMETERS[family])))
+    distribution = profile.get("class_distribution") or {}
+    if (
+        task_type == "binary"
+        and "xgboost" in families
+        and set(distribution) == {"0", "1"}
+        and distribution["1"]
+    ):
+        # Labels are 0/1, so the positive class is 1: weight = negatives / positives.
+        weight = round(distribution["0"] / distribution["1"], 6)
+        variants.append(("xgboost", {"scale_pos_weight": weight}))
+    return variants
 
 
 def _as_plan_dict(value) -> dict:
@@ -56,16 +121,65 @@ def open_ingest_families(task_type: str) -> list[str]:
     Regression: Linear, RF, XGB/LGBM regressors if installed.
     """
     avail = set(available_families(task_type))
-    if task_type == "binary":
-        wanted = ["logistic_regression", "random_forest", "xgboost", "lightgbm"]
+    if task_type in {"binary", "multiclass"}:
+        wanted = ["logistic_regression", "random_forest", "xgboost", "lightgbm", "catboost"]
     else:
         wanted = [
             "linear_regression",
             "random_forest_regressor",
             "xgboost_regressor",
             "lightgbm_regressor",
+            "catboost_regressor",
         ]
     return [name for name in wanted if name in avail]
+
+
+# Families whose estimator takes a per-class ``class_weight`` mapping.
+CUSTOM_CLASS_WEIGHT_FAMILIES = ("logistic_regression", "random_forest", "extra_trees", "lightgbm")
+
+
+def open_ingest_portfolio(task_type: str, overrides: dict | None = None) -> list[str]:
+    """Learned families of a run: defaults − branch exclusions + branch inclusions (installed)."""
+    overrides = overrides or {}
+    excluded = set(overrides.get("families_exclude") or [])
+    avail = set(available_families(task_type))
+    families = [name for name in open_ingest_families(task_type) if name not in excluded]
+    for name in overrides.get("families_include") or []:
+        if name in avail and name not in excluded and name not in families and name not in DUMMY_FAMILIES:
+            families.append(name)
+    return families
+
+
+def class_weight_variants(
+    task_type: str, families: list[str], development_plan, class_weighting: dict | None = None
+) -> list[tuple[str, str, dict]]:
+    """(candidate-id suffix, family, hyperparameters) of the class-weighted variants.
+
+    Default: balanced variants only under a meaningful train-partition imbalance.
+    A branch ``class_weighting`` overrides that: ``none`` adds no variant,
+    ``balanced`` always adds them, ``custom`` adds ``__weighted`` variants with the
+    per-class weights (label codes) for the families that accept them.
+    """
+    mode = (class_weighting or {}).get("mode")
+    if mode is None or mode == "balanced":
+        return [
+            ("balanced", family, hp)
+            for family, hp in balanced_variants(
+                task_type, families, development_plan, force=mode == "balanced"
+            )
+        ]
+    if mode != "custom" or task_type not in {"binary", "multiclass"}:
+        return []
+    weights = {str(key): float(value) for key, value in dict(class_weighting.get("weights") or {}).items()}
+    variants = [
+        ("weighted", family, {"class_weight": dict(weights)})
+        for family in families
+        if family in CUSTOM_CLASS_WEIGHT_FAMILIES
+    ]
+    if task_type == "binary" and "xgboost" in families:
+        ratio = weights.get("1", 1.0) / weights.get("0", 1.0)
+        variants.append(("weighted", "xgboost", {"scale_pos_weight": round(ratio, 6)}))
+    return variants
 
 
 def _candidate_fingerprint(
@@ -189,37 +303,66 @@ def _open_ingest_candidates(
         development_plan=development_plan,
         task=task,
     )
-    families = open_ingest_families(task.task_type)
-    candidates: list[Candidate] = []
-    for family in families:
-        if len(candidates) >= config.max_candidates:
-            return candidates
-        candidates.append(
-            Candidate(
-                candidate_id=family,
-                task_id=task.id,
-                feature_groups=combo,
+    overrides = dict(config.branch_overrides or {})
+    families = open_ingest_portfolio(task.task_type, overrides)
+    # Branch hyperparameter overrides apply to every untuned candidate of a family.
+    hp_overrides = {
+        str(family): dict(values)
+        for family, values in dict(overrides.get("hyperparameters") or {}).items()
+    }
+
+    def _candidate(candidate_id: str, family: str, hyperparameters: dict) -> Candidate:
+        return Candidate(
+            candidate_id=candidate_id,
+            task_id=task.id,
+            feature_groups=combo,
+            features=feats,
+            model_family=family,
+            hyperparameters=dict(hyperparameters),
+            random_seed=config.seed,
+            validation_strategy=str(identity.get("validation_strategy") or task.validation_strategy),
+            preprocessing=dict(OPEN_INGEST_PREPROCESS),
+            fingerprint=_candidate_fingerprint(
+                task,
                 features=feats,
-                model_family=family,
-                random_seed=config.seed,
-                validation_strategy=str(identity.get("validation_strategy") or task.validation_strategy),
+                family=family,
+                seed=config.seed,
+                dataset_version=dataset_version,
+                dataset_content_digest=dataset_content_digest,
+                hyperparameters=dict(hyperparameters),
                 preprocessing=dict(OPEN_INGEST_PREPROCESS),
-                fingerprint=_candidate_fingerprint(
-                    task,
-                    features=feats,
-                    family=family,
-                    seed=config.seed,
-                    dataset_version=dataset_version,
-                    dataset_content_digest=dataset_content_digest,
-                    hyperparameters={},
-                    preprocessing=dict(OPEN_INGEST_PREPROCESS),
-                    holdout_plan=holdout_plan,
-                    development_plan=development_plan,
-                    feature_set_version_digest=feature_set_version_digest,
-                ),
-                metadata=dict(identity),
-            )
+                holdout_plan=holdout_plan,
+                development_plan=development_plan,
+                feature_set_version_digest=feature_set_version_digest,
+            ),
+            metadata=dict(identity),
         )
+
+    planned: list[tuple[str, str, dict]] = [(family, family, {}) for family in families]
+    planned += [
+        (f"{family}__{suffix}", family, hp)
+        for suffix, family, hp in class_weight_variants(
+            task.task_type, families, development_plan, overrides.get("class_weighting")
+        )
+    ]
+    # A branch evaluates every candidate its change set implies: the count cap
+    # never silently drops a requested family or class-weighted variant (the
+    # wall-clock budget still applies, and skipped candidates are reported).
+    cap = max(0, config.max_candidates)
+    if overrides:
+        cap = max(cap, len(planned))
+    candidates = [
+        _candidate(cid, family, {**hp, **hp_overrides.get(family, {})})
+        for cid, family, hp in planned[:cap]
+    ]
+    tuned = tuning_plan(task.task_type, families, n_trials=config.max_hyperparameter_trials, seed=config.seed)
+    if tuned is not None and candidates:
+        # One bounded, nested-CV-tuned variant of the strongest available family.
+        candidates.append(_candidate(f"{tuned['family']}__tuned", tuned["family"], {"tuning": tuned}))
+    baseline = BASELINE_FAMILY.get(task.task_type)
+    if baseline and candidates:
+        # Outside the candidate cap: "beats chance" is never optional.
+        candidates.append(_candidate(baseline, baseline, {}))
     return candidates
 
 
@@ -274,11 +417,11 @@ def assemble_candidates(
         return True
 
     if config.strategy == "use_case":
-        dummy = "majority" if task.task_type == "binary" else "mean"
-        linear = "logistic_regression" if task.task_type == "binary" else "linear_regression"
-        forest = "random_forest" if task.task_type == "binary" else "random_forest_regressor"
-        boost = "gradient_boosting" if task.task_type == "binary" else "gradient_boosting_regressor"
-        extra = "extra_trees" if task.task_type == "binary" else "extra_trees_regressor"
+        dummy = "majority" if task.task_type in {"binary", "multiclass"} else "mean"
+        linear = "logistic_regression" if task.task_type in {"binary", "multiclass"} else "linear_regression"
+        forest = "random_forest" if task.task_type in {"binary", "multiclass"} else "random_forest_regressor"
+        boost = "gradient_boosting" if task.task_type in {"binary", "multiclass"} else "gradient_boosting_regressor"
+        extra = "extra_trees" if task.task_type in {"binary", "multiclass"} else "extra_trees_regressor"
         pairs = [combo for combo in combos if len(combo) == 2]
         primary = pairs[0] if pairs else (singles[0] if singles else full)
         secondary = pairs[1] if len(pairs) > 1 else (singles[-1] if singles else full)
@@ -294,7 +437,7 @@ def assemble_candidates(
         return candidates
 
     if config.strategy == "progressive":
-        dummy = "majority" if task.task_type == "binary" else "mean"
+        dummy = "majority" if task.task_type in {"binary", "multiclass"} else "mean"
         add(dummy, singles[0])
         cheap = [name for name in cheap_families(task.task_type) if name not in DUMMY_FAMILIES]
         for combo in singles:

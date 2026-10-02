@@ -10,6 +10,13 @@ Verify: `test_lab_training.py`, `engine/test_lab_api.py`, `test_auto_train_servi
 Done when: `grep -n 'strategy="use_case"'` has no production callers; admin Lab runs appear as normal open-ingest runs.
 
 ### P1.2-A — Move ensemble/selection into engine; delete legacy training
+> **Executed scope (2026-10-01):** `app/ml/*` and the factory power the frozen Decision.ai
+> vertical (`/app/decisions/generate`, simulations, CI `seed_conversion_model.py`), whose
+> URLs are kept until 2027-03-31 (P0.2-A). So `app/ml` is **frozen, not deleted**:
+> `factory.py` moved from `engine/experiments/` into `app/ml/`, `engine/` owns ensemble and
+> selection (`app/ml` re-exports them), and `engine/` has no `app.ml` imports. The legacy
+> runner branch is deleted; legacy strategies are normalized onto open-ingest using the
+> task's declared feature groups. Deleting `app/ml` moves to the Phase 9 decision-layer rework.
 Model: Opus 5.5 (high) · Size: L · Depends on: P1.1-A · Review: ml-correctness-reviewer
 Do: move `app/ml/ensemble.py`, `app/ml/selection.py` into `engine/ensemble/`, `engine/selection/` (real modules, not re-exports); delete runner legacy branch (`runner.py:1258-1703`) and its dead open-ingest arms; delete `engine/experiments/factory.py`, `app/ml/train.py`; replace `ml/predict.py` usage in `generate_service.py` and `sim/*` with a frozen stub that returns a clear "legacy simulation disabled" error behind flag `legacy_decision_layer_enabled` (default true only for existing tests that need fixtures — otherwise convert those tests to assert the disabled response). Update string references in `model_build_codegen.py:773` and `domain/reproducibility.py:21`.
 Verify: full backend suite; `grep -rn "app.ml\b\|factory" apps/api/app` clean.

@@ -217,7 +217,7 @@ class Test1ClassificationCsv:
         assert log["cleaning"]
         assert log["feature_engineering"]
         assert log["preprocessing"]["numerical"][0] == "imputer:median"
-        assert log["preprocessing"]["categorical"][1] == "onehot:drop_first"
+        assert log["preprocessing"]["categorical"][1] == "onehot:all_categories"
 
         experiment = db_session.get(Experiment, upload.experiment_id)
         result = experiment.result
@@ -229,7 +229,13 @@ class Test1ClassificationCsv:
         families = {row["model_family"] for row in trained}
         assert "logistic_regression" in families
         assert "random_forest" in families
-        assert len(trained) == len(open_ingest_families("binary"))
+        # Every registry family, its class-weighted variant when the train
+        # partition is imbalanced (Telco churn ~26% positive), plus the baseline.
+        learned = [row for row in trained if row["model_family"] != "majority"]
+        assert {row["model_family"] for row in learned} == set(open_ingest_families("binary"))
+        assert any(row["candidate_id"].endswith("__balanced") for row in learned)
+        assert sum(row["model_family"] == "majority" for row in trained) == 1
+        assert result["baseline_comparison"]["beats_baseline"] is True
         winner = result["best_single"]
         assert winner["locked"] is True
         assert winner["model_family"] in families
@@ -356,6 +362,178 @@ class Test4Regression:
         assert outcome["task_kind"] == "regression"
         assert outcome["prediction_count"] > 0
         assert find_banned_terms(detail.text) == []
+
+
+class TestMulticlass:
+    """P1.4-A2: a 3-class string label trains end to end through the real upload path."""
+
+    def test_multiclass_csv_trains_with_macro_f1_and_verifies(self, auth_client, db_session, monkeypatch):
+        _disable_background_job(monkeypatch)
+        rng = np.random.default_rng(21)
+        n = 240
+        label = rng.integers(0, 3, n)
+        centers = np.array([[1.0, 0.5], [3.0, 1.5], [5.0, 2.5]])
+        xy = centers[label] + rng.normal(0, 0.5, size=(n, 2))
+        frame = pd.DataFrame(
+            {
+                "petal_len": xy[:, 0],
+                "petal_wid": xy[:, 1],
+                "soil": rng.choice(["sand", "loam", "clay"], n),
+                "label": np.array(["bristle", "fern", "moss"])[label],
+            }
+        )
+        # Surrounding whitespace never defines a class; a blank label is unusable.
+        frame.loc[0, "label"] = f" {frame.loc[0, 'label']} "
+        frame.loc[1, "label"] = "  "
+        created = _post_csv(auth_client, "flowers.csv", frame)
+        assert created.status_code == 200, created.text
+        run_id = created.json()["run_id"]
+        upload = db_session.get(ClientLabUpload, run_id)
+        fit_sizes = _track_preprocessor_fit_sizes(monkeypatch)
+        run_auto_train_job(db_session, upload.id)
+        db_session.expire_all()
+        db_session.refresh(upload)
+        assert upload.pipeline_status == "completed", upload.pipeline_log
+        experiment = db_session.get(Experiment, upload.experiment_id)
+        result = experiment.result
+        assert result["task"]["task_type"] == "multiclass"
+        assert result["class_labels"] == ["bristle", "fern", "moss"]
+        assert result["metric_plan"]["primary_metric"] == "macro_f1"
+        assert result["validation"]["cv_strategy"] == "StratifiedKFold"
+        assert result["baseline_comparison"]["beats_baseline"] is True
+        assert result["test_metrics"]["macro_f1"] > 0.8
+        n_train, n_test = result["split"]["n_train"], result["split"]["n_test"]
+        # Holdout isolation: no preprocessor is ever fit on test rows.
+        assert fit_sizes and max(fit_sizes) <= n_train
+        predictions = result["test_predictions"]
+        assert len(predictions) == n_test
+        assert {row["y_pred"] for row in predictions} <= {"bristle", "fern", "moss"}
+        verification = result["deterministic_verification"]
+        failed = [check for check in verification["checks"] if check["status"] == "FAIL"]
+        assert not failed, failed
+        detail = auth_client.get(f"/app/labs/uploads/{run_id}")
+        assert detail.status_code == 200
+        outcome = detail.json()["outcome"]
+        assert outcome["task_kind"] == "multiclass"
+        assert outcome["prediction_count"] == n_test
+        assert find_banned_terms(detail.text) == []
+
+
+class TestObjective:
+    """P1.4-B: a ProblemSpec objective drives the metric and the locked threshold."""
+
+    def test_spec_objective_sets_metric_and_cv_threshold(
+        self, auth_client, db_session, client_user, monkeypatch
+    ):
+        from app.db.models import DEFAULT_WORKSPACE_ID, EvaluationMetric, ModelEvaluation
+        from app.services.lineage_service import seed_business_domains
+        from app.services.problem_spec_service import create_problem_spec
+        from app.services.project_service import get_or_create_labs_project
+
+        _disable_background_job(monkeypatch)
+        seed_business_domains(db_session)
+        project = get_or_create_labs_project(
+            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+        )
+        spec = create_problem_spec(
+            db_session,
+            actor=client_user,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            project_id=project.id,
+            task_type="binary",
+            business_objective="Catch most churners; review capacity is not the bottleneck.",
+            target_column="churn",
+            primary_metric="roc_auc",
+            constraints={
+                "primary_metric_reason": "ranking customers for outreach",
+                "metric_constraints": [{"metric": "recall", "op": ">=", "value": 0.75}],
+            },
+            status="locked",
+        )
+        db_session.commit()
+        frame = _classification_frame_with_missing(n=400)
+        created = auth_client.post(
+            "/app/labs/uploads",
+            data={"category": "Revenue", "problem_spec_id": str(spec.id)},
+            files={"file": ("churn.csv", frame.to_csv(index=False).encode(), "text/csv")},
+        )
+        assert created.status_code == 200, created.text
+        upload = db_session.get(ClientLabUpload, created.json()["run_id"])
+        run_auto_train_job(db_session, upload.id)
+        db_session.expire_all()
+        db_session.refresh(upload)
+        assert upload.pipeline_status == "completed", upload.pipeline_log
+        result = db_session.get(Experiment, upload.experiment_id).result
+        assert result["metric_plan"]["primary_metric"] == "roc_auc"
+        assert result["selection"]["selection_metric"] == "roc_auc"
+        decision = result["decision_threshold"]
+        assert decision["source"] == "constraints"
+        assert decision["status"] == "satisfied"
+        assert not set(decision["oof_source_rows"]) & set(result["split"]["test_source_rows"])
+        threshold = decision["value"]
+        assert result["test_metrics"]["decision_threshold"] == threshold
+        checks = {
+            check["check_id"]: check["status"]
+            for check in result["deterministic_verification"]["checks"]
+        }
+        assert checks["decision_threshold_from_cv"] == "PASS"
+        expected = "PASS" if decision["holdout_status"] == "satisfied" else "WARN"
+        assert checks["objective_constraints_met"] == expected
+        assert "FAIL" not in checks.values(), [k for k, v in checks.items() if v == "FAIL"]
+        holdout_recall = db_session.scalar(
+            select(EvaluationMetric)
+            .join(ModelEvaluation, ModelEvaluation.id == EvaluationMetric.model_evaluation_id)
+            .where(
+                ModelEvaluation.evaluation_type == "final_holdout",
+                EvaluationMetric.metric_name == "recall",
+            )
+        )
+        assert holdout_recall is not None and holdout_recall.threshold == threshold
+
+    def test_invalid_spec_objective_fails_the_run_clearly(
+        self, auth_client, db_session, client_user, monkeypatch
+    ):
+        from app.db.models import DEFAULT_WORKSPACE_ID
+        from app.services.lineage_service import seed_business_domains
+        from app.services.problem_spec_service import create_problem_spec
+        from app.services.project_service import get_or_create_labs_project
+
+        _disable_background_job(monkeypatch)
+        seed_business_domains(db_session)
+        project = get_or_create_labs_project(
+            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+        )
+        # The spec says regression metrics, but the target is binary.
+        spec = create_problem_spec(
+            db_session,
+            actor=client_user,
+            workspace_id=DEFAULT_WORKSPACE_ID,
+            project_id=project.id,
+            task_type="regression",
+            business_objective="Mislabelled task.",
+            target_column="churn",
+            primary_metric="mae",
+            status="locked",
+        )
+        db_session.commit()
+        created = auth_client.post(
+            "/app/labs/uploads",
+            data={"category": "Revenue", "problem_spec_id": str(spec.id)},
+            files={
+                "file": (
+                    "churn.csv",
+                    _classification_frame_with_missing().to_csv(index=False).encode(),
+                    "text/csv",
+                )
+            },
+        )
+        assert created.status_code == 200, created.text
+        upload = db_session.get(ClientLabUpload, created.json()["run_id"])
+        run_auto_train_job(db_session, upload.id)
+        db_session.expire_all()
+        db_session.refresh(upload)
+        assert upload.pipeline_status == "failed"
+        assert "objective is invalid" in str(upload.pipeline_log)
 
 
 class Test5Failure:

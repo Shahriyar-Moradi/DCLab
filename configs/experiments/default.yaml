@@ -5,6 +5,6 @@ search:
   max_feature_group_combinations: 16
   max_hyperparameter_trials: 0
   max_ensemble_size: 7
-  max_training_seconds: 60
+  max_training_seconds: null
   seed: 42
   exclude_high_leakage: true

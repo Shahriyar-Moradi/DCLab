@@ -181,3 +181,169 @@ class ModelBuild(BaseModel):
     reproduction_notebook: dict[str, Any] | None = None
     reproduction_script: dict[str, Any] | None = None
     stages: list[ModelBuildStage]
+
+
+class GraphNodeRef(BaseModel):
+    """A project-graph node reference; ``key`` is the textual ``kind:uuid`` id."""
+
+    kind: str
+    id: UUID
+    key: str
+
+
+class StaleReason(BaseModel):
+    ref_kind: str
+    expected: GraphNodeRef
+    actual: GraphNodeRef
+
+
+class GraphNode(GraphNodeRef):
+    label: str
+    status: str | None = None
+    created_at: datetime | None = None
+    version: str | None = None
+    digest: str | None = None
+    stale: bool = False
+    stale_reasons: list[StaleReason] = Field(default_factory=list)
+    ref_kinds: list[str] = Field(default_factory=list)
+    intent: str | None = None
+    outside_window: bool = False
+    lineage_incomplete: bool = False
+    derived: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+class GraphEdge(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_: GraphNodeRef = Field(alias="from")
+    to: GraphNodeRef
+    relation: str
+    attribute: bool = False
+
+
+class GraphRef(BaseModel):
+    ref_kind: str
+    target: GraphNodeRef
+    version: int
+    moved_at: datetime
+    decision_record_id: UUID
+    target_in_graph: bool
+    staleness_bearing: bool
+    stale: bool = False
+    stale_reasons: list[StaleReason] = Field(default_factory=list)
+
+
+class ProjectGraph(BaseModel):
+    project: Project
+    refs_initialized: bool
+    refs: list[GraphRef]
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    counts_by_kind: dict[str, int]
+    stale_counts_by_kind: dict[str, int]
+    experiment_limit: int
+    truncated: bool
+    truncated_kinds: list[str] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class NodeImpact(BaseModel):
+    node: GraphNodeRef
+    project_id: UUID
+    items: list[GraphNodeRef]
+    counts_by_kind: dict[str, int]
+    total: int
+    truncated: bool
+    graph_truncated: bool
+
+
+class DecisionSubject(BaseModel):
+    kind: str
+    id: UUID
+    key: str
+
+
+class DecisionActor(BaseModel):
+    kind: str
+    user_id: UUID | None = None
+    rule: str | None = None
+    agent_run_id: UUID | None = None
+    service_token_id: UUID | None = None
+
+
+class EvidenceRef(BaseModel):
+    kind: str
+    id: str
+    key: str | None = None
+    metric: str | None = None
+    scope: str | None = None
+
+
+class DecisionRecord(BaseModel):
+    """One append-only decision record. ``rationale``/``facts``/``details`` are untrusted data."""
+
+    id: UUID
+    project_id: UUID
+    decision_type: str
+    state: str
+    effective_state: str
+    supersedes_id: UUID | None = None
+    superseded_by_id: UUID | None = None
+    subject: DecisionSubject
+    subject_digest: str | None = None
+    actor: DecisionActor
+    rationale: str
+    rationale_untrusted: bool
+    rationale_label: str | None = None
+    rationale_truncated: bool = False
+    content_origin: str
+    facts: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+    details_truncated: bool = False
+    schema_version: int
+    policy_version: str
+    event_at: datetime
+    recorded_at: datetime
+
+
+class DecisionRecordPage(BaseModel):
+    items: list[DecisionRecord]
+    next_cursor: str | None = None
+    limit: int
+
+
+class ExperimentCodeInput(BaseModel):
+    """A local file the generated code reads (by placeholder or environment variable)."""
+
+    name: str
+    placeholder: str
+    env_var: str
+    artifact_id: UUID | None = None
+    content_digest: str | None = None
+    description: str
+
+
+class ExperimentCodeDocument(BaseModel):
+    filename: str
+    media_type: str
+    content_digest: str
+    source: str
+
+
+class ExperimentCode(BaseModel):
+    """Standalone reproduction script and notebook for one experiment."""
+
+    experiment_id: UUID
+    workspace_id: UUID
+    generator_version: str
+    spec_digest: str
+    split_plan_id: UUID | None = None
+    parent_experiment_id: UUID | None = None
+    is_branch: bool = False
+    standalone_cv: bool
+    script: ExperimentCodeDocument
+    notebook: ExperimentCodeDocument
+    inputs: list[ExperimentCodeInput] = Field(default_factory=list)
+    helper_requirements: list[str] = Field(default_factory=list)

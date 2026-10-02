@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,7 +49,12 @@ def _git_hash() -> str | None:
         return None
 
 
-def seed_dogfood(db: Session) -> Environment:
+def seed_dogfood(db: Session, *, commit: bool = True) -> Environment:
+    """Get or create the shared dogfood Environment.
+
+    Callers inside a larger transaction pass ``commit=False`` so a later failure
+    can still roll back everything (the upload path must never commit midway).
+    """
     existing = db.scalars(
         select(Environment).where(Environment.org_id == DOGFOOD_ORG, Environment.name == DOGFOOD_NAME)
     ).first()
@@ -57,8 +62,11 @@ def seed_dogfood(db: Session) -> Environment:
         return existing
     env = Environment(org_id=DOGFOOD_ORG, name=DOGFOOD_NAME)
     db.add(env)
-    db.commit()
-    db.refresh(env)
+    if commit:
+        db.commit()
+        db.refresh(env)
+    else:
+        db.flush()
     return env
 
 
@@ -222,6 +230,10 @@ def create_experiment(
     parent_pipeline_run_id: UUID | None = None,
     branch_key: str | None = None,
     branch_reason: str | None = None,
+    source_dataset_id: UUID | None = None,
+    split_plan_id: UUID | None = None,
+    intent: str | None = None,
+    change_set: dict | None = None,
 ) -> Experiment:
     if workflow_run is not None and workflow_run.workspace_id != dataset.workspace_id:
         raise ValueError("workflow run and dataset belong to different workspaces")
@@ -256,11 +268,17 @@ def create_experiment(
         parent_pipeline_run_id=parent_id,
         branch_key=key,
         branch_reason=reason,
+        source_dataset_id=source_dataset_id,
+        split_plan_id=split_plan_id,
+        intent=intent,
         status="CREATED",
         config=cfg.to_dict(),
         seed=cfg.seed,
         git_commit=_git_hash(),
     )
+    if change_set is not None:
+        # Only when present: a JSONB None would be stored as JSON null, not SQL NULL.
+        row.change_set = change_set
     db.add(row)
     if commit:
         db.commit()
@@ -279,13 +297,13 @@ def _persist_pipeline_stage_runs(db: Session, experiment: Experiment, result: di
     reconcile_pipeline_stage_runs(db, experiment, timings)
 
 
-def _persist_experiment_test_predictions(db: Session, experiment_id, result: dict) -> None:
+def _persist_experiment_test_predictions(db: Session, experiment: Experiment, result: dict) -> None:
     """Replace holdout rows for this experiment. Opportunity `predictions` are untouched."""
     db.query(ExperimentTestPrediction).filter(
-        ExperimentTestPrediction.experiment_id == experiment_id
+        ExperimentTestPrediction.experiment_id == experiment.id
     ).delete(synchronize_session=False)
     task = result.get("task") if isinstance(result.get("task"), dict) else {}
-    classifier = str(task.get("task_type") or "") == "binary"
+    classifier = str(task.get("task_type") or "") in {"binary", "multiclass"}
     for row in result.get("test_predictions") or []:
         if not isinstance(row, dict):
             continue
@@ -300,7 +318,8 @@ def _persist_experiment_test_predictions(db: Session, experiment_id, result: dic
             record_id = row_index
         db.add(
             ExperimentTestPrediction(
-                experiment_id=experiment_id,
+                workspace_id=experiment.workspace_id,
+                experiment_id=experiment.id,
                 row_index=row_index,
                 source_row_index=(
                     int(row["source_row_index"])
@@ -322,6 +341,8 @@ def execute_experiment(
     on_stage: Callable[[str], None] | None = None,
     on_event: Callable[[str, dict], None] | None = None,
     persist_scientific: bool = True,
+    outer_fold_assignment: Mapping[int, int] | None = None,
+    holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
 ) -> Experiment:
     if experiment.scientific_evidence_locked_at is not None:
         # Re-running replaces preprocessing, findings, and stage facts. PostgreSQL
@@ -371,6 +392,8 @@ def execute_experiment(
             on_stage=on_stage,
             on_checkpoint=_persist_checkpoint,
             on_event=on_event,
+            outer_fold_assignment=outer_fold_assignment,
+            holdout_partition=holdout_partition,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)
@@ -398,7 +421,7 @@ def execute_experiment(
         experiment.status,
         (result.get("funnel") or {}).get("trained"),
     )
-    _persist_experiment_test_predictions(db, experiment.id, result)
+    _persist_experiment_test_predictions(db, experiment, result)
     _persist_pipeline_stage_runs(db, experiment, result)
     if persist_scientific:
         from app.services.scientific_lineage_service import persist_scientific_lineage_from_result

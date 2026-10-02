@@ -7,6 +7,7 @@ module never returns storage credentials.
 from __future__ import annotations
 
 import hashlib
+import logging
 import io
 import json
 import os
@@ -42,6 +43,9 @@ from app.services.artifact_service import (
 from app.services.authorization_service import can_read_workspace
 from app.services.scientific_lineage_service import latest_pipeline_run_feature_set_version
 from app.storage.factory import storage_for_artifact
+from app.storage.exceptions import ObjectStorageError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -366,6 +370,48 @@ def store_report_artifacts(db: Session, experiment: Experiment) -> None:
         role="result_json",
         mime_type="application/json",
     )
+    _store_path_if_exists(
+        db,
+        experiment,
+        artifact_dir / "test_predictions.csv",
+        artifact_type="predictions",
+        role="test_predictions",
+        mime_type="text/csv",
+    )
+
+
+# P1.3-A: run files readers need after the job (the worker scratch dir may be on
+# another machine or gone). Maps the legacy file name to its stored type.
+RUN_FILE_TYPES = {
+    "report.md": "report",
+    "result.json": "result_json",
+    "test_predictions.csv": "predictions",
+}
+
+
+def read_run_file(db: Session, experiment: Experiment, name: str) -> bytes | None:
+    """Return a published run output, or the legacy local file for old runs."""
+    artifact_type = RUN_FILE_TYPES[name]
+    row = db.scalar(
+        select(Artifact)
+        .where(
+            Artifact.workspace_id == experiment.workspace_id,
+            Artifact.pipeline_run_id == experiment.id,
+            Artifact.artifact_type == artifact_type,
+        )
+        .order_by(Artifact.created_at.desc(), Artifact.id.desc())
+        .limit(1)
+    )
+    if row is not None:
+        try:
+            return read_artifact_bytes(db, workspace_id=row.workspace_id, artifact_id=row.id)
+        except (ObjectStorageError, OSError):
+            logger.warning("run file %s for run %s is missing from storage", name, experiment.id)
+    if experiment.artifact_dir:
+        legacy = Path(experiment.artifact_dir) / name
+        if legacy.is_file():
+            return legacy.read_bytes()
+    return None
 
 
 def artifacts_for_pipeline_run(db: Session, experiment: Experiment) -> list[Artifact]:
@@ -472,7 +518,7 @@ def signed_url_for_artifact(
         # A mutable object key can change after URL issuance. Until S0-P10
         # provides immutable version/precondition references, dataset bytes
         # must use the server download path, which verifies the returned bytes.
-        if artifact.artifact_type == "dataset":
+        if artifact.artifact_type in {"dataset", "derived_dataset"}:
             raise IdentityError("dataset signed URLs are unavailable", status_code=409)
     url = storage_for_artifact(artifact).signed_url(artifact.object_key, expires_in=expires_in)
     return artifact, url, expires_in

@@ -1,23 +1,20 @@
-"""Internal DCLab CLI: dclab dataset|task|experiment ..."""
+"""Internal DCLab CLI: dclab dataset|task|experiment|graph ..."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from app.config import REPO_ROOT
 from app.db.session import get_session_factory
 from app.engine.datasets.olist import marketing_frame, raw_available, write_analytical
-from app.engine.types import SearchConfig
 from app.services.lab_service import (
-    create_experiment,
-    execute_experiment,
     ingest_dataset,
     ingest_synthetic,
     profile_dataset,
-    search_from_yaml,
     seed_dogfood,
     task_from_yaml,
     upsert_task,
@@ -182,21 +179,28 @@ def cmd_experiment_run(args: argparse.Namespace) -> int:
     if task is None:
         print(f"task not found: {task_slug}", file=sys.stderr)
         return 1
-    overrides = {"max_candidates": args.max_candidates, "seed": args.seed}
-    cfg = search_from_yaml(config_path, overrides=overrides) if config_path.exists() else SearchConfig(
-        max_candidates=int(args.max_candidates or 24), seed=int(args.seed or 42)
+    from app.db.models import User
+    from app.services.lab_training_service import train_dataset_target
+
+    actor = db.query(User).filter(User.email == args.actor).first()
+    if actor is None:
+        print(f"actor not found: {args.actor} (pass --actor <admin email>)", file=sys.stderr)
+        return 1
+    target = str((task.spec or {}).get("target") or "").strip()
+    if not target:
+        print(f"task {task.slug} has no target column", file=sys.stderr)
+        return 1
+    # One training path: queue an open-ingest build; the worker trains it.
+    experiment = train_dataset_target(
+        db, dataset, actor=actor, target=target,
+        origin={"admin_lab_dataset_id": str(dataset.id), "task_slug": task.slug},
     )
-    experiment = create_experiment(db, environment=env, dataset=dataset, task=task, config=cfg)
-    experiment = execute_experiment(db, experiment)
     print(
         json.dumps(
             {
                 "id": str(experiment.id),
                 "status": experiment.status,
-                "funnel": (experiment.result or {}).get("funnel"),
-                "fusion": (experiment.result or {}).get("fusion"),
-                "test_metrics": (experiment.result or {}).get("test_metrics"),
-                "report": experiment.artifact_dir,
+                "next": "run `dclab worker run --once` (or a running worker) to train it",
             },
             default=str,
         )
@@ -222,12 +226,14 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     db = _session()
     from app.db.models import Experiment
 
+    from app.services.reproducibility_service import read_run_file
+
     row = db.get(Experiment, args.id)
-    if row is None or not row.artifact_dir:
+    if row is None:
         print("not found", file=sys.stderr)
         return 1
-    path = Path(row.artifact_dir) / "report.md"
-    print(path.read_text() if path.exists() else json.dumps(row.result, default=str, indent=2))
+    report = read_run_file(db, row, "report.md")
+    print(report.decode("utf-8") if report else json.dumps(row.result, default=str, indent=2))
     db.close()
     return 0
 
@@ -288,6 +294,19 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
             time.sleep(max(0.1, float(poll)))
 
 
+def cmd_graph_backfill_winner_records(_args: argparse.Namespace) -> int:
+    """Materialize winner_locked decision records from model_selection_decisions (ADR 0006 Q7)."""
+    from app.services.winner_record_backfill import backfill_winner_records
+
+    db = _session()
+    try:
+        result = backfill_winner_records(db)
+    finally:
+        db.close()
+    print(json.dumps(result.as_dict()))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     from app.db.models import UserRole
 
@@ -336,8 +355,11 @@ def build_parser() -> argparse.ArgumentParser:
     run = exp_sub.add_parser("run")
     run.add_argument("--dataset", required=True)
     run.add_argument("--task", required=True)
-    run.add_argument("--max-candidates", dest="max_candidates", type=int, default=24)
-    run.add_argument("--seed", type=int, default=42)
+    run.add_argument(
+        "--actor",
+        default=os.environ.get("DCLAB_ADMIN_EMAIL", "admin@dclab.io"),
+        help="email of the platform admin the build is queued as",
+    )
     run.set_defaults(func=cmd_experiment_run)
     status = exp_sub.add_parser("status")
     status.add_argument("--id", required=True)
@@ -370,6 +392,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="sleep between empty polls (default: settings.ml_job_poll_seconds)",
     )
     worker_run.set_defaults(func=cmd_worker_run)
+
+    graph = sub.add_parser("graph", help="ML state graph operator commands (ADR 0006)")
+    graph_sub = graph.add_subparsers(dest="graph_cmd", required=True)
+    backfill = graph_sub.add_parser(
+        "backfill-winner-records",
+        help="idempotently write winner_locked decision records for existing winner locks",
+    )
+    backfill.set_defaults(func=cmd_graph_backfill_winner_records)
     return parser
 
 

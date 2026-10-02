@@ -13,11 +13,12 @@
 ```bash
 docker compose -f docker-compose.base44.yml up -d --build
 ```
-Services: `postgres`, `migrate` (one-shot alembic), `seed` (one-shot demo users), `api`, `web`.
+Services: `postgres`, `init` (one-shot alembic + demo users), `api`, `worker`, `web`.
 
 ## Key setup details
 - The API image (`Dockerfile.base44.api`) installs deps including `[boosting]` extras (xgboost, lightgbm, catboost) and `psycopg[binary]` (psycopg3 — SQLAlchemy 2.1 defaults to it).
-- `ML_JOB_DISPATCHER=thread` so CSV uploads train in-process (no separate worker needed).
+- Training runs only in the `worker` service (`dclab worker run`), which claims durable `ml_jobs` rows; the API uses `ML_JOB_DISPATCHER=postgres`. Restart `worker` after engine/service code changes (it has no live reload). Natively: `make run` + `make worker` in two terminals. `ML_JOB_DISPATCHER=thread` (in-process, non-durable) is an explicit single-process debugging opt-in only.
+- Run outputs (reports, predictions, prepared tables) are published to object storage (`OBJECT_STORAGE_*`); the engine's per-run working files go to `RUN_SCRATCH_ROOT` (default `<system temp>/dclab-runs`), never under the repository.
 - `DCLAB_API_URL=http://api:8001` tells the Next.js BFF/middleware how to reach FastAPI internally.
 - `allowedDevOrigins` in `next.config.mjs` uses `BASE44_PUBLIC_HOST_SUFFIX` so the preview origin can load dev assets/HMR.
 - Source is bind-mounted into both `api` and `web` services for live reload.

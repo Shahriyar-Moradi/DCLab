@@ -1,6 +1,6 @@
 """Train the conversion-probability layer factory and persist the fused artifact.
 
-This module is a facade over ``app.engine.experiments.factory`` so existing
+This module is a facade over ``app.ml.factory`` so existing
 imports (API tests, simulation runner) keep working.
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.engine.experiments.factory import (
+from app.ml.factory import (
     SAMPLE_CSV,
     evaluate_binary,
     feature_table,

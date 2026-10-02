@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.engine.features.encode import binary_positive_label
+
 TARGET_CONFIDENCE_THRESHOLD = 0.65
 TARGET_MARGIN_THRESHOLD = 0.08
 MAX_MULTICLASS_CARDINALITY = 20
@@ -338,6 +340,26 @@ def choose_target_deterministically(
                 candidates=candidates,
             )
         candidate = by_column.get(explicit_target)
+        positive = binary_positive_label(frame[explicit_target]) if candidate is None else None
+        if candidate is None and positive is not None:
+            # The user named a two-valued column: it is a label even though its
+            # values are not yes/no-style (inference alone would not pick it).
+            return TargetChoice(
+                column=explicit_target,
+                reason="explicit target supplied by user/admin",
+                task_type="binary",
+                evaluation_metric=metric_for_task("binary"),
+                confidence=1.0,
+                source="explicit",
+                intent_source="request",
+                evidence={
+                    "positive_label": positive,
+                    "positive_label_reason": (
+                        "labels are not yes/no-style; the later label in sorted order is the positive class (1)"
+                    ),
+                },
+                candidates=candidates,
+            )
         if candidate is None:
             return TargetChoice(
                 column=None,

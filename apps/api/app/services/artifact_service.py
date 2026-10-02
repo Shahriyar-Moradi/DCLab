@@ -16,7 +16,8 @@ from app.domain.data_plane import ARTIFACT_TYPES
 from app.domain.errors import ArtifactNotFoundError, IdentityError
 from app.storage.base import ObjectPutResult, ObjectStorage
 from app.storage._hashing import sha256_bytes
-from app.storage.factory import get_object_storage, storage_for_artifact
+from app.storage import factory as storage_factory
+from app.storage.factory import storage_for_artifact
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -78,7 +79,7 @@ def store_artifact(
     _require_workspace(db, workspace_id)
     _require_project(db, workspace_id, project_id)
     _require_pipeline_run(db, workspace_id, pipeline_run_id)
-    backend = storage or get_object_storage()
+    backend = storage or storage_factory.get_object_storage()
     row_id = artifact_id or uuid4()
     key = artifact_object_key(workspace_id, row_id, filename)
     guessed = mime_type or mimetypes.guess_type(filename)[0]
@@ -157,7 +158,7 @@ def read_artifact_bytes(
 
         require_published_artifact(db, artifact)
     payload = backend.get(artifact.object_key)
-    if publication_enforced(get_settings()) and artifact.artifact_type == "dataset":
+    if publication_enforced(get_settings()) and artifact.artifact_type in {"dataset", "derived_dataset"}:
         if sha256_bytes(payload) != artifact.content_digest:
             raise IdentityError("dataset object changed", status_code=409)
     return payload

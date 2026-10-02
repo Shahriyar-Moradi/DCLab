@@ -28,7 +28,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/decisionai
       - CORS_ORIGINS=https://3000-${BASE44_PUBLIC_HOST_SUFFIX},http://localhost:3000
-      - ML_JOB_DISPATCHER=thread
+      # Training never runs in the API: jobs are durable ml_jobs rows claimed by
+      # the worker service (FOR UPDATE SKIP LOCKED), as in production.
+      - ML_JOB_DISPATCHER=postgres
       - DCLAB_ENV=development
     command: ["uvicorn", "app.main:app", "--reload", "--app-dir", "apps/api", "--host", "0.0.0.0", "--port", "8001"]
     depends_on:
@@ -42,6 +44,27 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+    restart: on-failure
+
+  worker:
+    # Claims and runs ML jobs (training, scoring). No --reload: restart this
+    # service after changing engine/service code (`docker compose restart worker`).
+    build:
+      context: .
+      dockerfile: Dockerfile.base44.api
+    working_dir: /app
+    volumes:
+      - .:/app   # shares the local object store (data/object_store) with the API
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/decisionai
+      - ML_JOB_DISPATCHER=postgres
+      - DCLAB_ENV=development
+    command: ["dclab", "worker", "run"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
     restart: on-failure
 
   web:
