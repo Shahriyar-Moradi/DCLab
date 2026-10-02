@@ -39,6 +39,7 @@ P3.1-B1 (2026-10-02): POST /v1/projects, /v1/projects/{id}/problem-specs, /v1/da
 P3.1-B2 (2026-10-02): /v1 experiments — list, get, root run, branch, compare (same split plan), cancel. Migration 0066_run_cancellation (ml_jobs cancelled status + cancel_requested_at); head at the time was 0066_run_cancellation.
 P3.1-B3 (2026-10-02): POST /v1 decisions (propose/accept/reject/supersede, If-Match ref moves) and GET /v1/model-versions/{id}.
 P3.2-A (2026-10-02): service tokens — hashed, scoped, expiring /v1 bearer credentials (`/v1/service-tokens` create/list/revoke from a session; tokens act as their creator within one workspace and their scopes, as propose-only agents for decisions). Migration 0067_service_tokens (service_tokens table + project_decision_records actor FK); current Alembic head 0067_service_tokens.
+P3.3-A (2026-10-02): customer CLI `dclab-cli` / `python -m dclab_client` (login, projects, data upload, experiments run/branch/compare/code/cancel, decisions; `--json`; documented exit codes) in packages/dclab_client; SDK already covered every token-callable /v1 operation. No migration.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)
