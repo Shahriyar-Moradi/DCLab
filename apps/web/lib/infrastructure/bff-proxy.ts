@@ -139,7 +139,7 @@ export function forwardHeaders(req: NextRequest, requestId: string): Headers {
     else if (name === "x-csrf-token") headers.set("X-CSRF-Token", value);
     else headers.set(name, value);
   }
-  // Never forwarded: Authorization (service tokens are for SDK/MCP, not the browser).
+  // Bearer credentials are never forwarded: service tokens are for SDK/MCP, not the browser.
   if (!headers.has("origin")) {
     headers.set("Origin", req.nextUrl.origin);
   }
