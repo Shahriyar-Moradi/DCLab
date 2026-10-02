@@ -406,6 +406,41 @@
       "definition": "CHECK (((status)::text = ANY ((ARRAY['modeled'::character varying, 'excluded'::character varying, 'dropped'::character varying])::text[])))"
     },
     {
+      "table": "idempotency_keys",
+      "name": "ck_idempotency_keys_digest",
+      "definition": "CHECK (((request_digest)::text ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "idempotency_keys",
+      "name": "ck_idempotency_keys_expiry",
+      "definition": "CHECK (((expires_at IS NULL) OR (expires_at > created_at)))"
+    },
+    {
+      "table": "idempotency_keys",
+      "name": "ck_idempotency_keys_key",
+      "definition": "CHECK (((idempotency_key)::text ~ '^[A-Za-z0-9._:-]{1,128}$'::text))"
+    },
+    {
+      "table": "idempotency_keys",
+      "name": "ck_idempotency_keys_operation",
+      "definition": "CHECK (((operation)::text ~ '^(POST|PUT|PATCH|DELETE) /v1/[A-Za-z0-9_{}/.-]{1,52}$'::text))"
+    },
+    {
+      "table": "idempotency_keys",
+      "name": "ck_idempotency_keys_principal_kind",
+      "definition": "CHECK (((principal_kind)::text = ANY ((ARRAY['user'::character varying, 'service_token'::character varying])::text[])))"
+    },
+    {
+      "table": "idempotency_keys",
+      "name": "ck_idempotency_keys_resource_kind",
+      "definition": "CHECK (((resource_kind)::text ~ '^[a-z][a-z0-9_]{0,31}$'::text))"
+    },
+    {
+      "table": "idempotency_keys",
+      "name": "ck_idempotency_keys_status",
+      "definition": "CHECK (((response_status >= 200) AND (response_status <= 299)))"
+    },
+    {
       "table": "ingestion_publication_events",
       "name": "ck_ingestion_publication_events_actor",
       "definition": "CHECK (((actor_type)::text = ANY ((ARRAY['user'::character varying, 'system'::character varying, 'operator'::character varying])::text[])))"
@@ -518,7 +553,7 @@
     {
       "table": "ml_jobs",
       "name": "ck_ml_jobs_status_valid",
-      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))"
     },
     {
       "table": "ml_jobs",
@@ -926,6 +961,11 @@
       "table": "features",
       "name": "features_evidence_locked",
       "definition": "CREATE TRIGGER features_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.features FOR EACH ROW EXECUTE FUNCTION prevent_locked_feature_evidence_mutation('feature_set_version_id')"
+    },
+    {
+      "table": "idempotency_keys",
+      "name": "idempotency_keys_no_update",
+      "definition": "CREATE TRIGGER idempotency_keys_no_update BEFORE UPDATE ON public.idempotency_keys FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "ingestion_publication_events",

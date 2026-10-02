@@ -473,7 +473,8 @@ def test_cross_tenant_ids_are_not_found(client, db_session, tmp_path, setup, sma
     for path in (f"/v1/nodes/split_plan/{beta.plan.id}/impact", f"/v1/nodes/experiment/{beta.exp[0]}/impact",
                  f"/v1/nodes/model_version/{uuid4()}/impact"):
         response = client.get(path, headers=headers)
-        assert response.status_code == 404 and response.json()["detail"] == "not found"
+        assert response.status_code == 404 and response.json()["error"]["code"] == "not_found"
+        assert response.json()["error"]["message"] == "not found"
     # Selecting the other tenant's workspace is refused before any lookup.
     assert client.get(f"/v1/projects/{beta.project.id}/graph", headers=_headers(alpha.actor, beta.ws)).status_code == 403
     # Unauthenticated, unknown kind, malformed cursor.

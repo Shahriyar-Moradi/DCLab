@@ -484,7 +484,7 @@ def test_previous_head_tenant_backfill_and_llm_attribution(monkeypatch):
                 assert unprojected is None
 
             # Nothing project-only yet: downgrade and upgrade are repeatable.
-            command.downgrade(alembic_config, "-1")
+            command.downgrade(alembic_config, "0063_state_graph_nodes")
             command.upgrade(alembic_config, "head")
             _assert_head_catalog(engine, alembic_config)
 
@@ -501,10 +501,11 @@ def test_previous_head_tenant_backfill_and_llm_attribution(monkeypatch):
                     {"ws": ids["ws"], "p1": ids["p1"]},
                 )
             with pytest.raises(Exception, match="0064 downgrade refused"):
-                command.downgrade(alembic_config, "-1")
+                command.downgrade(alembic_config, "0063_state_graph_nodes")
             with engine.connect() as connection:
                 head = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            assert head == "0064_tenant_llm_attribution"
+            # One transaction: the refused downgrade leaves the database at head.
+            assert head == ScriptDirectory.from_config(alembic_config).get_current_head()
         finally:
             engine.dispose()
     finally:
@@ -547,6 +548,158 @@ def test_previous_head_tenant_backfill_refuses_cross_workspace_input(monkeypatch
                 ).scalar()
             assert head == "0063_state_graph_nodes"
             assert columns == 0
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)
+
+
+def test_previous_head_idempotency_keys_upgrade_is_additive_and_reversible(monkeypatch):
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="from64"
+    )
+    try:
+        command.upgrade(alembic_config, "0064_tenant_llm_attribution")
+        engine = create_engine(database_url)
+        try:
+            ids = _seed_state_graph_links(engine)
+            command.upgrade(alembic_config, "0065_idempotency_keys")
+            insert = text(
+                "INSERT INTO idempotency_keys (id, workspace_id, principal_kind, principal_id, "
+                "operation, idempotency_key, request_digest, resource_kind, resource_id, "
+                "response_status) VALUES (gen_random_uuid(), :ws, :kind, gen_random_uuid(), "
+                "'POST /v1/projects', :key, repeat('a', 64), 'project', :p1, 201)"
+            )
+            with engine.begin() as connection:
+                connection.execute(insert, {"ws": ids["ws"], "kind": "user", "key": "k-1", "p1": ids["p1"]})
+            for kind, key, match in (
+                ("robot", "k-2", "ck_idempotency_keys_principal_kind"),
+                ("user", "bad key", "ck_idempotency_keys_key"),
+            ):
+                with pytest.raises(Exception, match=match), engine.begin() as connection:
+                    connection.execute(insert, {"ws": ids["ws"], "kind": kind, "key": key, "p1": ids["p1"]})
+            columns = {
+                "request_digest": "repeat('a', 64)", "response_status": "201",
+                "operation": "'POST /v1/projects'", "resource_kind": "'project'", "expires_at": "NULL",
+            }
+            for column, value, match in (
+                ("request_digest", "'ABC'", "ck_idempotency_keys_digest"),
+                ("response_status", "500", "ck_idempotency_keys_status"),
+                ("operation", "'GET /v1/projects'", "ck_idempotency_keys_operation"),
+                ("resource_kind", "'Project'", "ck_idempotency_keys_resource_kind"),
+                ("expires_at", "now() - interval '1 day'", "ck_idempotency_keys_expiry"),
+            ):
+                values = {**columns, column: value}
+                with pytest.raises(Exception, match=match), engine.begin() as connection:
+                    connection.execute(
+                        text(
+                            "INSERT INTO idempotency_keys (id, workspace_id, principal_kind, "
+                            "principal_id, operation, idempotency_key, request_digest, resource_kind, "
+                            "resource_id, response_status, expires_at) VALUES (gen_random_uuid(), "
+                            f":ws, 'user', gen_random_uuid(), {values['operation']}, 'k-3', "
+                            f"{values['request_digest']}, {values['resource_kind']}, :p1, "
+                            f"{values['response_status']}, {values['expires_at']})"
+                        ),
+                        {"ws": ids["ws"], "p1": ids["p1"]},
+                    )
+            with pytest.raises(Exception, match="uq_idempotency_keys_scope"), engine.begin() as connection:
+                connection.execute(text(
+                    "INSERT INTO idempotency_keys (id, workspace_id, principal_kind, principal_id, "
+                    "operation, idempotency_key, request_digest, resource_kind, resource_id, "
+                    "response_status) SELECT gen_random_uuid(), workspace_id, principal_kind, "
+                    "principal_id, operation, idempotency_key, request_digest, resource_kind, "
+                    "resource_id, response_status FROM idempotency_keys"
+                ))
+            with pytest.raises(Exception, match="immutable"), engine.begin() as connection:
+                connection.execute(text("UPDATE idempotency_keys SET response_status = 200"))
+            # DELETE stays available for the ops expiry job and the workspace cascade.
+            with engine.begin() as connection:
+                connection.execute(text("DELETE FROM idempotency_keys WHERE idempotency_key = 'k-1'"))
+                connection.execute(insert, {"ws": ids["ws"], "kind": "user", "key": "k-4", "p1": ids["p1"]})
+                cascade = connection.execute(
+                    text(
+                        "SELECT confdeltype FROM pg_constraint "
+                        "WHERE conname = 'idempotency_keys_workspace_id_fkey'"
+                    )
+                ).scalar()
+            assert cascade == "c"
+
+            command.downgrade(alembic_config, "0064_tenant_llm_attribution")
+            with engine.connect() as connection:
+                assert connection.execute(text("SELECT to_regclass('idempotency_keys')")).scalar() is None
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
+        finally:
+            engine.dispose()
+    finally:
+        _drop_isolated(admin_engine, database_name)
+
+
+def test_previous_head_run_cancellation_widens_job_status_and_guards_downgrade(monkeypatch):
+    """0066 (P3.1-B2): additive column + superset status CHECK; downgrade refuses cancelled rows."""
+
+    admin_engine, database_name, database_url, alembic_config = _isolated_database(
+        monkeypatch, suffix="from65"
+    )
+    try:
+        command.upgrade(alembic_config, "0065_idempotency_keys")
+        engine = create_engine(database_url)
+        try:
+            ws = uuid4()
+            insert = text(
+                "INSERT INTO ml_jobs (id, workspace_id, job_type, handler_key, target_id, status) "
+                "VALUES (gen_random_uuid(), :ws, 'auth_cleanup', 'auth.session_cleanup', "
+                "gen_random_uuid(), :status)"
+            )
+            with engine.begin() as connection:
+                connection.execute(
+                    text("INSERT INTO workspaces (id, slug, name) VALUES (:ws, :slug, 'Jobs')"),
+                    {"ws": ws, "slug": f"jobs-{ws.hex[:8]}"},
+                )
+                connection.execute(insert, {"ws": ws, "status": "running"})
+            with pytest.raises(Exception, match="ck_ml_jobs_status_valid"), engine.begin() as connection:
+                connection.execute(insert, {"ws": ws, "status": "cancelled"})
+
+            command.upgrade(alembic_config, "0066_run_cancellation")
+            with engine.begin() as connection:
+                assert connection.execute(
+                    text(
+                        "SELECT count(*) FROM ml_jobs WHERE cancel_requested_at IS NULL "
+                        "AND cancel_requested_by_user_id IS NULL"
+                    )
+                ).scalar() == 1  # existing rows: never requested
+                assert connection.execute(
+                    text(
+                        "SELECT confdeltype FROM pg_constraint "
+                        "WHERE conname = 'ml_jobs_cancel_requested_by_user_id_fkey'"
+                    )
+                ).scalar() == "n"  # ON DELETE SET NULL
+                connection.execute(text("UPDATE ml_jobs SET cancel_requested_at = now()"))
+                connection.execute(insert, {"ws": ws, "status": "cancelled"})
+                validated = connection.execute(
+                    text("SELECT convalidated FROM pg_constraint WHERE conname = 'ck_ml_jobs_status_valid'")
+                ).scalar()
+            assert validated is True
+            with pytest.raises(Exception, match="ck_ml_jobs_status_valid"), engine.begin() as connection:
+                connection.execute(insert, {"ws": ws, "status": "cancelling"})
+            with pytest.raises(Exception, match="0066 downgrade refused: 1 ml_jobs are cancelled"):
+                command.downgrade(alembic_config, "0065_idempotency_keys")
+            with engine.begin() as connection:
+                connection.execute(text("DELETE FROM ml_jobs WHERE status = 'cancelled'"))
+            command.downgrade(alembic_config, "0065_idempotency_keys")
+            with engine.connect() as connection:
+                column = connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'ml_jobs' AND column_name IN "
+                        "('cancel_requested_at', 'cancel_requested_by_user_id')"
+                    )
+                ).scalar()
+            assert column == 0
+            with pytest.raises(Exception, match="ck_ml_jobs_status_valid"), engine.begin() as connection:
+                connection.execute(insert, {"ws": ws, "status": "cancelled"})
+            command.upgrade(alembic_config, "head")
+            _assert_head_catalog(engine, alembic_config)
         finally:
             engine.dispose()
     finally:

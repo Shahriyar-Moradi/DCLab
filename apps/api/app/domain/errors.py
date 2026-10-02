@@ -53,7 +53,13 @@ class GraphNodeNotFoundError(LookupError):
     """No project-graph node of this kind matches the workspace-scoped id."""
 
 
-class InvalidGraphCursorError(ValueError):
+class InvalidCursorError(ValueError):
+    """A /v1 page cursor is malformed, tampered with, or minted for another route/scope. Maps to 400."""
+
+    code = "invalid_cursor"
+
+
+class InvalidGraphCursorError(InvalidCursorError):
     """A project-graph page cursor is malformed."""
 
 
@@ -255,6 +261,58 @@ class ExperimentComparisonError(ValueError):
         self.code = code
 
 
+class ExperimentRequestError(Exception):
+    """A root run cannot start on this dataset (P3.1-B2): stable ``code``, 409/422."""
+
+    def __init__(self, code: str, message: str, *, status_code: int = 422) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.status_code = status_code
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message}
+
+
+class RunQuotaExceededError(Exception):
+    """The workspace already holds its maximum of queued/running runs (P3.1-B2). 429."""
+
+    status_code = 429
+    code = "run_quota_exceeded"
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"this workspace already has {limit} queued or running runs; retry later")
+        self.limit = limit
+
+    def public_detail(self) -> dict[str, object]:
+        return {"code": self.code, "message": str(self), "limit": self.limit}
+
+
+class ExperimentNotCancellableError(Exception):
+    """Only a queued or running run can be cancelled (P3.1-B2). Maps to 409."""
+
+    status_code = 409
+    code = "not_cancellable"
+
+    def __init__(self, status: str, message: str) -> None:
+        super().__init__(f"{self.code}: {message}")
+        self.status = status
+        self.detail_message = message
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message, "status": self.status}
+
+
+class RunCancelledError(BaseException):
+    """The worker reached a checkpoint of a job whose cancellation was requested.
+
+    A ``BaseException`` (like ``asyncio.CancelledError``) on purpose: the engine
+    isolates per-candidate failures with ``except Exception``, which must never
+    turn a cancellation into a failed candidate and keep training. Only
+    ``ml_job_service.execute_job`` catches it.
+    """
+
+
 class DecisionRecordError(Exception):
     """Typed decision-record / ref-move failure with a stable ``code`` (ADR 0006 §2, §5)."""
 
@@ -323,3 +381,22 @@ class IdempotencyKeyConflictError(DecisionRecordError):
 
 class InvalidDecisionQueryError(ValueError):
     """Malformed decision list filter or cursor. Maps to 400."""
+
+
+class InvalidDecisionCursorError(InvalidDecisionQueryError, InvalidCursorError):
+    """The decision list cursor is invalid or bound to another project/filter set. Maps to 400."""
+
+
+class IdempotencyKeyReusedError(Exception):
+    """An Idempotency-Key was replayed with a different request digest (P3.1-A). Maps to 409.
+
+    Generic form of the per-resource digest binding: a key always names one
+    request (route, path, body, principal); a different request under the same
+    key is refused instead of returning or overwriting the earlier result.
+    """
+
+    status_code = 409
+    code = "idempotency_key_conflict"
+
+    def __init__(self, message: str = "this Idempotency-Key was used for a different request") -> None:
+        super().__init__(message)

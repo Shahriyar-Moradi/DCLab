@@ -857,6 +857,15 @@ Verify (each revision): `upgrade head`, `downgrade -1`, `upgrade head`;
   `record_decision`, `branch_experiment`.
   Prerequisite (P2.3-A review): MCP projections wrap graph `intent` and
   `label` as untrusted user/agent-authored data, never as instructions.
+  *As built (P3.1-B3):* `POST /v1/projects/{id}/decisions` takes a union on
+  `action` (`propose` | `record` | `propose_ref_move`); transitions are
+  `POST /v1/decisions/{id}/accept|reject|supersede` (new rows, `201`); refs are
+  `GET /v1/projects/{id}/refs[/{kind}]` and `POST /v1/projects/{id}/refs/{kind}`
+  with body `{target_id, rationale, evidence_refs, proposal_id?,
+  companion_moves[{ref_kind, target_id, expected_version}]}`: the path ref's
+  `expected_version` travels as `If-Match: "<n>"` (`428` absent, `412` stale)
+  or `If-None-Match: *` (create a missing kind). The actor is always the
+  session principal (human); bodies cannot name one.
 - **P4.2-A–P4.4-A**: stale markers and ref badges come from the graph
   response; the decision timeline reads `effective_state`; Accept/Reject write
   `experiment_accepted/rejected` records.

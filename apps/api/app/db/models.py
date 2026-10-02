@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     UniqueConstraint,
     desc,
@@ -68,6 +69,16 @@ from app.domain.execution_requests import (
     CK_EXECUTION_REQUEST_SPEC_NO_SECRETS,
     CK_EXECUTION_REQUEST_SPEC_OBJECT,
     CK_EXECUTION_REQUEST_STATUS,
+)
+from app.domain.idempotency import (
+    CK_IDEMPOTENCY_KEYS_DIGEST,
+    CK_IDEMPOTENCY_KEYS_EXPIRY,
+    CK_IDEMPOTENCY_KEYS_KEY,
+    CK_IDEMPOTENCY_KEYS_OPERATION,
+    CK_IDEMPOTENCY_KEYS_PRINCIPAL_KIND,
+    CK_IDEMPOTENCY_KEYS_RESOURCE_KIND,
+    CK_IDEMPOTENCY_KEYS_STATUS,
+    UQ_IDEMPOTENCY_KEYS_SCOPE,
 )
 from app.domain.lab_run_stages import CK_CLIENT_LAB_UPLOADS_CLIENT_STATUS, NEEDS_INPUT
 from app.domain.privacy_audit import (
@@ -1262,7 +1273,13 @@ _PIPELINE_IN_PROGRESS = frozenset(
 
 
 def client_status_for(pipeline_status: str) -> str:
-    """Coarse client view stored on `ClientLabUpload.client_status`."""
+    """Coarse client view stored on `ClientLabUpload.client_status`.
+
+    A ``cancelled`` run (P3.1-B2) maps to ``failed`` on purpose: the stored
+    ``ck_client_lab_uploads_client_status`` vocabulary has no cancelled value and
+    widening it needs a migration. ``pipeline_status`` stays ``cancelled`` and the
+    experiment (``CANCELLED``), ml_job (``cancelled``) and ``/v1`` status say so.
+    """
     if pipeline_status == "queued":
         return "queued"
     if pipeline_status == "completed":
@@ -1548,6 +1565,14 @@ class MlJob(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # P3.1-B2: set once by POST /v1/experiments/{id}/cancel on a running job; the
+    # worker stops at its next stage/candidate checkpoint (status -> cancelled).
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancel_requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -6024,6 +6049,59 @@ class ProjectRef(Base):
     )
 
 
+class IdempotencyKey(Base):
+    """Generic /v1 Idempotency-Key binding (P3.1-B1) for resources without a key column.
+
+    One row per (workspace, principal, operation, key), inserted in the same
+    transaction as the resource it names. Rows never change (UPDATE trigger);
+    ``expires_at`` is reserved for a later ops cleanup job (DELETE stays allowed
+    for it and for workspace cascades; its partial index serves that job). ``principal_id`` has no FK: it names a
+    user today and a service token from P3.2-A. ``resource_id`` is polymorphic
+    (``resource_kind``); readers always re-load it workspace-scoped.
+    """
+
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "principal_kind",
+            "principal_id",
+            "operation",
+            "idempotency_key",
+            name=UQ_IDEMPOTENCY_KEYS_SCOPE,
+        ),
+        CheckConstraint(CK_IDEMPOTENCY_KEYS_PRINCIPAL_KIND, name="ck_idempotency_keys_principal_kind"),
+        CheckConstraint(CK_IDEMPOTENCY_KEYS_OPERATION, name="ck_idempotency_keys_operation"),
+        CheckConstraint(CK_IDEMPOTENCY_KEYS_KEY, name="ck_idempotency_keys_key"),
+        CheckConstraint(CK_IDEMPOTENCY_KEYS_DIGEST, name="ck_idempotency_keys_digest"),
+        CheckConstraint(CK_IDEMPOTENCY_KEYS_RESOURCE_KIND, name="ck_idempotency_keys_resource_kind"),
+        CheckConstraint(CK_IDEMPOTENCY_KEYS_STATUS, name="ck_idempotency_keys_status"),
+        CheckConstraint(CK_IDEMPOTENCY_KEYS_EXPIRY, name="ck_idempotency_keys_expiry"),
+        Index(
+            "ix_idempotency_keys_expires_at",
+            "expires_at",
+            postgresql_where=text("expires_at IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    principal_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    principal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    response_status: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 @event.listens_for(Dataset, "before_update")
 @event.listens_for(Dataset, "before_delete")
 def _protect_immutable_dataset(_mapper, _connection, _target: Dataset) -> None:
@@ -6120,3 +6198,8 @@ def _protect_append_only_decision_record(
     _mapper, _connection, _target: ProjectDecisionRecord
 ) -> None:
     raise ValueError("ProjectDecisionRecord rows are append-only")
+
+
+@event.listens_for(IdempotencyKey, "before_update")
+def _protect_immutable_idempotency_key(_mapper, _connection, _target: IdempotencyKey) -> None:
+    raise ValueError("IdempotencyKey rows are immutable")

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models import ClientLabUpload, Experiment
+from app.domain.errors import RunCancelledError
 from app.domain.lab_run_stages import FAILED, QUEUED
 from app.services.observability_service import PipelineRunObserver
 from app.services.pipeline_audit_service import request_pipeline_verification
@@ -88,6 +89,21 @@ class RunContext:
         # A branch run (ADR 0006 §4): its parent's split plan and materialized
         # change set (``app.services.auto_train.branch.BranchRun``); None = root.
         self.branch: Any = None
+        # P3.1-B2: cleared once the final holdout is touched. A cancel that
+        # arrives later is not honoured: the holdout was scored, so the run must
+        # finish and lock (record) that single evaluation.
+        self.cancellable = True
+
+    def heartbeat(self) -> None:
+        """Renew the job lease; stop here if cancellation was requested (checkpoint)."""
+
+        if self.on_heartbeat is None:
+            return
+        try:
+            self.on_heartbeat()
+        except RunCancelledError:
+            if self.cancellable:
+                raise
 
     def emit_event(
         self,
@@ -180,8 +196,7 @@ class RunContext:
         row = self.db.get(ClientLabUpload, self.upload_id)
         if row is not None:
             service_module()._mark(self.db, row, status=stage)
-        if self.on_heartbeat is not None:
-            self.on_heartbeat()
+        self.heartbeat()
 
     def trace(self, step: str, fn: str, **payload: Any) -> None:
         entry = {"step": step, "fn": fn, **payload}

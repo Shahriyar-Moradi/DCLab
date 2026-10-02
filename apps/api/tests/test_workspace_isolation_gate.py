@@ -62,7 +62,10 @@ def test_route_inventory_bearer_gets_never_infer_a_workspace(client, db_session)
         concrete = re.sub(r"\{[^}]+\}", "00000000-0000-0000-0000-000000000000", path)
         response = client.get(concrete, headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 400, (path, response.status_code, response.text)
-        assert "X-Workspace-Id" in response.json()["detail"]
+        body = response.json()
+        # /v1 answers with the P3.1-A error envelope; legacy surfaces keep `detail`.
+        message = body["error"]["message"] if path.startswith("/v1/") else body["detail"]
+        assert "X-Workspace-Id" in message
 
 
 def test_two_workspace_read_mutation_file_event_and_revocation_matrix(

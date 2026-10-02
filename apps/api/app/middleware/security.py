@@ -6,6 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.api.v1_conventions import is_v1_path, v1_error_response
 from app.config import get_settings, is_production_env
 from app.services.csrf_service import validate_csrf
 from app.services.request_ids import REQUEST_ID_HEADER, bind_request_id
@@ -18,6 +19,8 @@ class CsrfOriginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         detail = validate_csrf(request)
         if detail is not None:
+            if is_v1_path(request.url.path):
+                return v1_error_response(request, 403, "csrf_failed", detail)
             return JSONResponse({"detail": detail}, status_code=403)
         return await call_next(request)
 

@@ -184,8 +184,7 @@ def test_invalid_target_rejected(auth_client, db_session, monkeypatch):
         json={"target_column": "NotAColumn"},
     )
     assert response.status_code == 422, response.text
-    detail = response.json()["detail"]
-    assert detail["code"] == "TARGET_NOT_IN_DATASET"
+    assert response.json()["error"]["code"] == "target_not_in_dataset"  # /v1 envelope
     db_session.expire_all()
     request = db_session.get(ExecutionRequest, request_id)
     assert request.status == REQUEST_NEEDS_INPUT
@@ -253,8 +252,7 @@ def test_conflicting_second_confirmation_rejected(auth_client, db_session, monke
         json={"target_column": "Partner"},
     )
     assert second.status_code == 409, second.text
-    detail = second.json()["detail"]
-    assert detail["code"] == "TARGET_INTENT_CONFLICT"
+    assert second.json()["error"]["code"] == "target_intent_conflict"  # /v1 envelope
     request = db_session.get(ExecutionRequest, request_id)
     assert request.request_spec["target_column"] == "Churn"
 

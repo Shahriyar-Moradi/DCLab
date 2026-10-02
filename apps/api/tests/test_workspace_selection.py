@@ -63,7 +63,7 @@ def test_zero_memberships_have_no_active_workspace(client, db_session):
     assert me.headers.get("x-request-id")
     denied = client.get("/v1/projects")
     assert denied.status_code == 403
-    assert "not authorized for a workspace" in denied.json()["detail"]
+    assert "not authorized for a workspace" in denied.json()["error"]["message"]
 
 
 def test_single_membership_session_selects_home_without_header(client, client_user):
@@ -92,7 +92,7 @@ def test_multiple_memberships_require_selection_when_home_is_unset(
     }
     missing = client.get("/v1/projects")
     assert missing.status_code == 400
-    assert "X-Workspace-Id" in missing.json()["detail"]
+    assert "X-Workspace-Id" in missing.json()["error"]["message"]
 
     chosen = client.put(
         "/auth/workspace",
@@ -115,7 +115,7 @@ def test_header_cannot_grant_a_workspace_the_user_does_not_have(
         "/v1/projects", headers={"X-Workspace-Id": str(first.id)}
     )
     assert denied.status_code == 403
-    assert denied.json()["detail"] == "not authorized for this workspace"
+    assert denied.json()["error"]["message"] == "not authorized for this workspace"
     unknown = client.put(
         "/auth/workspace",
         json={"workspace_id": str(uuid4())},
@@ -255,7 +255,7 @@ def test_removed_membership_is_ignored_and_does_not_prove_access(client, db_sess
     assert listed.status_code == 200, listed.text
     stolen = client.get("/v1/projects", headers={"X-Workspace-Id": str(second.id)})
     assert stolen.status_code == 403
-    assert stolen.json()["detail"] == "not authorized for this workspace"
+    assert stolen.json()["error"]["message"] == "not authorized for this workspace"
     denied = client.put(
         "/auth/workspace",
         json={"workspace_id": str(second.id)},
@@ -345,7 +345,7 @@ def test_bearer_tenant_requests_require_one_valid_explicit_workspace(client, db_
     bearer = {"Authorization": f"Bearer {create_access_token(owner)}"}
     missing = client.get("/v1/projects", headers=bearer)
     assert missing.status_code == 400
-    assert "X-Workspace-Id" in missing.json()["detail"]
+    assert "X-Workspace-Id" in missing.json()["error"]["message"]
     upload_missing = client.post(
         "/app/opportunities/upload",
         headers=bearer,

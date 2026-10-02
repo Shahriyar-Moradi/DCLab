@@ -31,6 +31,7 @@
   "feature_sets",
   "feature_transformations",
   "features",
+  "idempotency_keys",
   "ingestion_publication_events",
   "ingestion_runs",
   "lab_decision_records",

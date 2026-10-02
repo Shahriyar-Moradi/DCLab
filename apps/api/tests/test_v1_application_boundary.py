@@ -165,12 +165,26 @@ def test_v1_execution_request_returns_id_and_status_without_enqueueing(
         "/v1/execution-requests",
         json={
             "operation": OPERATION_MODEL_BUILD,
+            "project_id": str(project.id),
+            "request_spec": {"filename": "customers.csv", "record_count": 2},
             "idempotency_key": "v1-once",
-            "request_spec": {"filename": "other.csv"},
         },
     )
     assert replay.status_code == 202
     assert replay.json()["id"] == body["id"]
+    assert replay.headers["Idempotent-Replayed"] == "true"
+
+    # P3.1-A digest binding: the same key with a different request is refused.
+    conflict = auth_client.post(
+        "/v1/execution-requests",
+        json={
+            "operation": OPERATION_MODEL_BUILD,
+            "idempotency_key": "v1-once",
+            "request_spec": {"filename": "other.csv"},
+        },
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "idempotency_key_conflict"
 
     fetched = auth_client.get(f"/v1/execution-requests/{body['id']}")
     assert fetched.status_code == 200
@@ -238,7 +252,8 @@ def test_v1_model_build_events_paginate_by_sequence(client, db_session, tmp_path
     assert len(page["items"]) == 2
     assert page["items"][0]["sequence"] == 1
     assert page["items"][1]["sequence"] == 2
-    assert page["next_cursor"] == "2"
+    # Opaque signed cursor (P3.1-A), not the bare sequence.
+    assert page["next_cursor"] and page["next_cursor"] != "2"
 
     second = client.get(
         f"/v1/model-builds/{pipeline.id}/events",
@@ -256,6 +271,13 @@ def test_v1_model_build_events_paginate_by_sequence(client, db_session, tmp_path
         params={"cursor": "not-a-sequence"},
     )
     assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "invalid_cursor"
+    legacy_sequence = client.get(
+        f"/v1/model-builds/{pipeline.id}/events",
+        headers=headers,
+        params={"cursor": "2"},
+    )
+    assert legacy_sequence.status_code == 400
 
     charts = client.get(
         f"/v1/model-builds/{pipeline.id}/visualizations",

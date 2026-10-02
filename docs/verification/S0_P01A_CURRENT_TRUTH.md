@@ -27,13 +27,17 @@ P1.6-A (2026-10-01): finish-line E2E suite `test_e2e_lab_run.py`; explicit two-l
 R1-A (2026-10-01): engine-only benchmark harness (`benchmarks/harness/`, 23 pinned tasks) with an accepted baseline and a weekly workflow.
 CI fix (2026-10-01): XGBoost library version resolves from the `xgboost-cpu` distribution used on Linux.
 P2.2-A1 (2026-10-01): migration 0063_state_graph_nodes (split_plans, project_refs, project_decision_records, experiment lineage columns); head at the time was 0063_state_graph_nodes.
-P2.2-A2 (2026-10-01): migration 0064 tenant backfill and LLM attribution (workspace_id + CFKs on workflow_run_inputs, experiment_test_predictions, ml_run_verifications; llm_invocations attribution); current Alembic head 0064_tenant_llm_attribution.
+P2.2-A2 (2026-10-01): migration 0064 tenant backfill and LLM attribution (workspace_id + CFKs on workflow_run_inputs, experiment_test_predictions, ml_run_verifications; llm_invocations attribution); head at the time was 0064_tenant_llm_attribution.
 P2.2-B (2026-10-01): auto-train persists and reuses split plans (object-storage assignment map), bootstraps project refs and writes winner/split/ref decision records.
 P2.3-A (2026-10-02): read-only graph service and /v1 graph + impact routes (refs-only staleness, bounded loader).
 Test infra (2026-10-02): backend suite runs in parallel with pytest-xdist, one Postgres database per worker (`make test`, CI `pytest -n auto`).
 P2.4-A (2026-10-02): branch experiments with typed change sets reuse the parent's split plan and dataset; results carry a diff vs the parent.
 P2.4-B (2026-10-02): per-experiment reproducible code export (stored split map, branch changes) and GET /v1/experiments/{id}/code.
 P2.5-A (2026-10-02): decision record service (append-only state machine, move_ref) and GET /v1/projects/{id}/decisions.
+P3.1-A (2026-10-02): /v1 conventions — error envelope with request_id, opaque cursors, ETag/If-Match, Idempotency-Key on POST; SDK client versioned.
+P3.1-B1 (2026-10-02): POST /v1/projects, /v1/projects/{id}/problem-specs, /v1/datasets with a generic idempotency_keys table; head at the time was 0065_idempotency_keys.
+P3.1-B2 (2026-10-02): /v1 experiments — list, get, root run, branch, compare (same split plan), cancel. Migration 0066_run_cancellation (ml_jobs cancelled status + cancel_requested_at); current Alembic head 0066_run_cancellation.
+P3.1-B3 (2026-10-02): POST /v1 decisions (propose/accept/reject/supersede, If-Match ref moves) and GET /v1/model-versions/{id}.
 **Canonical generated facts:** [truth baseline](../../contracts/truth_baseline.json),
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)

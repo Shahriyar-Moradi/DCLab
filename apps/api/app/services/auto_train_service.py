@@ -35,6 +35,7 @@ from app.domain.errors import (
     SplitPlanLineageError,
 )
 from app.domain.lab_run_stages import (
+    CANCELLED,
     COMPLETED,
     FAILED,
     INGESTING,
@@ -187,12 +188,12 @@ def _mark(
         select(WorkflowRun).where(WorkflowRun.source_upload_id == upload.id)
     )
     if workflow_run is not None:
-        if status in {COMPLETED, FAILED, SKIPPED}:
+        if status in _TERMINAL:
             workflow_run.status = status
             workflow_run.completed_at = datetime.now(UTC)
             workflow_run.failure_reason = (
                 str(merged.get("reason"))[:2048]
-                if status in {FAILED, SKIPPED} and merged.get("reason")
+                if status != COMPLETED and merged.get("reason")
                 else None
             )
         elif status != QUEUED:
@@ -206,16 +207,61 @@ def _mark(
         if effective_experiment_id is not None
         else None
     )
-    if experiment is not None and status in {COMPLETED, FAILED, SKIPPED}:
+    if experiment is not None and status in _TERMINAL:
         experiment.status = status.upper()
         if experiment.ended_at is None:
             experiment.ended_at = datetime.now(UTC)
         experiment.failure_reason = (
             str(merged.get("reason"))[:2048]
-            if status in {FAILED, SKIPPED} and merged.get("reason")
+            if status != COMPLETED and merged.get("reason")
             else None
         )
     db.commit()
+
+
+_TERMINAL = frozenset({COMPLETED, FAILED, SKIPPED, CANCELLED})
+RUN_CANCELLED_REASON = "cancelled by request"
+
+
+def record_run_cancelled(db: Session, upload_id: UUID, *, cancelled_by: UUID | None = None) -> None:
+    """Terminal state of a cancelled run (P3.1-B2). Commits.
+
+    The upload, its WorkflowRun and shell Experiment become ``cancelled``; open
+    stage runs are closed by the terminal event. Called before the persistence
+    stage only (no checkpoint follows it), so a cancelled run never has locked
+    evidence, a selection decision or a ModelVersion.
+    """
+
+    upload = db.get(ClientLabUpload, upload_id)
+    if upload is None:
+        return
+    experiment = db.get(Experiment, upload.experiment_id) if upload.experiment_id is not None else None
+    if experiment is not None and experiment.scientific_evidence_locked_at is not None:
+        return  # locked evidence is never relabelled
+    if experiment is not None and isinstance(experiment.result, dict):
+        # A selection checkpoint of an interrupted run is not evidence.
+        experiment.result = {**experiment.result, "status": "CANCELLED"}
+    stage = str(upload.pipeline_status or QUEUED)
+    actor = str(cancelled_by) if cancelled_by is not None else None
+    _mark(
+        db,
+        upload,
+        status=CANCELLED,
+        log={"reason": RUN_CANCELLED_REASON, "cancelled_at_stage": stage, "cancelled_by_user_id": actor},
+    )
+    observer = PipelineRunObserver.for_upload(db, upload_id)
+    if observer is not None:
+        observer.emit(
+            "terminal",
+            "pipeline_terminal",
+            "failed",  # closes the open stage runs; failure_code says why
+            {
+                "reason": RUN_CANCELLED_REASON,
+                "failure_code": "cancelled",
+                "failed_at": stage,
+                "cancelled_by_user_id": actor,
+            },
+        )
 
 
 def run_auto_train_job(

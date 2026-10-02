@@ -36,6 +36,7 @@ PREDICTING = "predicting"
 COMPLETED = "completed"
 FAILED = "failed"
 SKIPPED = "skipped"
+CANCELLED = "cancelled"  # P3.1-B2: cancelled by request (client view: failed)
 NEEDS_INPUT = "needs_input"
 RUNNING = "running"  # legacy coarse in-progress value
 NOT_APPLICABLE = "not_applicable"

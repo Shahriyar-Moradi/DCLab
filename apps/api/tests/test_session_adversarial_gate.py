@@ -172,7 +172,7 @@ def test_two_user_fixation_theft_rotation_and_tenant_isolation(client, db_sessio
         },
     )
     assert foreign.status_code == 403
-    assert "not authorized" in foreign.json()["detail"]
+    assert "not authorized" in foreign.json()["error"]["message"]
     own = client.get(
         "/v1/projects",
         headers={

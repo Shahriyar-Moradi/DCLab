@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -351,3 +353,360 @@ def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
         with pytest.raises(DCLabClientError, match="UUID"):
             api.projects.decisions(project, subject_id=bad_id)
     assert len(recorded) == 1
+
+
+# --- P3.1-A: versioned client, error envelope, Idempotency-Key, ETag ----------------------
+
+WS = "11111111-1111-1111-1111-111111111111"
+
+_EXECUTION_REQUEST = {
+    "id": WS,
+    "workspace_id": WS,
+    "project_id": None,
+    "operation": "model_build",
+    "source_surface": "api",
+    "requested_by_user_id": None,
+    "idempotency_key": None,
+    "external_request_id": None,
+    "parent_request_id": None,
+    "status": "accepted",
+    "request_spec": {},
+    "result_summary": None,
+    "workflow_run_id": None,
+    "pipeline_run_id": None,
+    "created_at": "2026-10-02T00:00:00Z",
+    "started_at": None,
+    "completed_at": None,
+    "failure_code": None,
+    "failure_summary": None,
+}
+
+
+def _envelope(status: int, code: str, *, retryable: bool = False, details=None) -> httpx.Response:
+    return httpx.Response(
+        status,
+        json={
+            "error": {
+                "code": code,
+                "message": f"{code} happened",
+                "retryable": retryable,
+                "request_id": "srv-rid-1",
+                "details": details or {},
+            }
+        },
+        headers={"X-Request-Id": "srv-rid-1"},
+    )
+
+
+def test_client_is_versioned_and_identifies_itself():
+    import dclab_client
+
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=[])
+
+    assert dclab_client.__version__ == "0.2.0"
+    assert DCLabClient.version == dclab_client.__version__
+    assert dclab_client.USER_AGENT == f"dclab-client/{dclab_client.__version__}"
+    _client(handler, token="t", workspace_id=WS).projects.list()
+    assert recorded[0].headers["User-Agent"] == dclab_client.USER_AGENT
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "error_type"),
+    [
+        (400, "invalid_cursor", "BadRequestError"),
+        (401, "unauthenticated", "AuthenticationError"),
+        (403, "forbidden", "PermissionDeniedError"),
+        (404, "not_found", "NotFoundError"),
+        (409, "execution_not_waiting", "ConflictError"),
+        (409, "idempotency_key_conflict", "IdempotencyConflictError"),
+        (412, "precondition_failed", "PreconditionFailedError"),
+        (422, "validation_failed", "UnprocessableEntityError"),
+        (428, "precondition_required", "PreconditionRequiredError"),
+        (429, "rate_limited", "RateLimitedError"),
+        (503, "unavailable", "ServerError"),
+    ],
+)
+def test_envelope_parses_into_typed_errors(status, code, error_type):
+    import dclab_client
+
+    api = _client(lambda request: _envelope(status, code, retryable=status >= 429, details={"k": "v"}),
+                  token="t", workspace_id=WS)
+    with pytest.raises(getattr(dclab_client, error_type)) as caught:
+        api.projects.list()
+    error = caught.value
+    assert isinstance(error, DCLabAPIError)
+    assert (error.status_code, error.code, error.message) == (status, code, f"{code} happened")
+    assert error.retryable is (status >= 429)
+    assert error.request_id == "srv-rid-1" and error.details == {"k": "v"}
+    assert error.detail["code"] == code
+    assert "srv-rid-1" in str(error)
+
+
+def test_legacy_detail_bodies_still_map_to_typed_errors():
+    import dclab_client
+
+    api = _client(lambda request: httpx.Response(404, json={"detail": "not found"}), token="t", workspace_id=WS)
+    with pytest.raises(dclab_client.NotFoundError) as caught:
+        api.projects.list()
+    assert caught.value.code == "not_found" and caught.value.detail == "not found"
+    assert caught.value.retryable is False
+
+
+def test_every_post_carries_an_idempotency_key_and_gets_never_do():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=_EXECUTION_REQUEST)
+        return _envelope(503, "unavailable", retryable=True)
+
+    api = _client(handler, token="t", workspace_id=WS)
+    with pytest.raises(DCLabAPIError) as first:
+        api.execution_requests.create(request_spec={"filename": "a.csv"})
+    with pytest.raises(DCLabAPIError):
+        api.execution_requests.confirm_target(WS, target_column="y")
+    api.execution_requests.get(WS)
+    create, confirm, get = recorded
+    generated = create.headers["Idempotency-Key"]
+    assert str(UUID(generated)) == generated
+    assert first.value.idempotency_key == generated and first.value.retryable is True
+    assert "idempotency_key" not in json.loads(create.content)  # header only unless given
+    assert confirm.headers["Idempotency-Key"] and confirm.headers["Idempotency-Key"] != generated
+    assert "Idempotency-Key" not in get.headers
+
+
+def test_etag_is_captured_and_if_match_is_sent():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=_EXECUTION_REQUEST, headers={"ETag": '"abc"'})
+        if request.headers.get("If-Match") != '"abc"':
+            return _envelope(412, "precondition_failed", details={"current_etag": '"abc"'})
+        return httpx.Response(
+            200, json=_EXECUTION_REQUEST, headers={"ETag": '"def"', "Idempotent-Replayed": "true"}
+        )
+
+    api = _client(handler, token="t", workspace_id=WS)
+    row = api.execution_requests.get(WS)
+    assert row.etag == '"abc"' and row.idempotent_replay is False
+    assert "etag" not in row.model_dump()
+    confirmed = api.execution_requests.confirm_target(
+        WS, target_column="y", if_match=row.etag, idempotency_key="confirm-1"
+    )
+    assert confirmed.etag == '"def"' and confirmed.idempotent_replay is True
+    assert recorded[1].headers["If-Match"] == '"abc"'
+    assert recorded[1].headers["Idempotency-Key"] == "confirm-1"
+    from dclab_client import PreconditionFailedError
+
+    with pytest.raises(PreconditionFailedError) as stale:
+        api.execution_requests.confirm_target(WS, target_column="y", if_match='"old"')
+    assert stale.value.details["current_etag"] == '"abc"'
+
+
+# --- P3.1-B1 resource commands ----------------------------------------------------------------
+
+_PROJECT = {
+    "id": WS, "workspace_id": WS, "name": "Churn", "slug": "churn", "description": "",
+    "status": "active", "created_by": None, "provenance": "user",
+    "created_at": "2026-10-02T00:00:00Z", "updated_at": "2026-10-02T00:00:00Z", "archived_at": None,
+}
+_SPEC = {
+    "id": WS, "workspace_id": WS, "project_id": WS, "version": 1, "task_type": "binary",
+    "target_column": "churn", "prediction_unit": None, "prediction_time_column": None,
+    "prediction_horizon": None, "primary_metric": None, "business_objective": "Reduce churn",
+    "constraints": {}, "success_criteria": {}, "status": "draft", "content_digest": "a" * 64,
+    "created_by": WS, "created_at": "2026-10-02T00:00:00Z", "locked_at": None,
+}
+_UPLOAD = {
+    "id": WS, "workspace_id": WS, "project_id": WS, "dataset_asset_id": WS, "name": "churn",
+    "version": "v1", "source_type": "csv", "content_digest": "b" * 64, "schema_digest": None,
+    "size_bytes": 12, "row_count": 2, "column_count": 2, "created_at": "2026-10-02T00:00:00Z",
+    "ingestion": {"id": WS, "status": "completed", "publication_state": "published",
+                  "rows_read": 2, "bytes_read": 12, "completed_at": None},
+}
+
+
+def test_create_project_spec_and_upload_post_to_v1_with_keys(tmp_path):
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        body = {"/v1/projects": _PROJECT, "/v1/datasets": _UPLOAD}.get(request.url.path, _SPEC)
+        return httpx.Response(201, json=body, headers={"ETag": '"e1"', "Idempotent-Replayed": "true"})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    project = api.projects.create(name="Churn", slug="churn", idempotency_key="p-1")
+    assert project.etag == '"e1"' and project.idempotent_replay is True
+    spec = api.projects.create_problem_spec(WS, task_type="binary", business_objective="Reduce churn")
+    assert spec.version == 1
+    data = tmp_path / "churn.csv"
+    data.write_bytes(b"a,b\n1,2\n3,4\n")
+    upload = api.datasets.upload(WS, data, content_type="text/csv", idempotency_key="d-1")
+    assert upload.ingestion.publication_state == "published"
+    create, spec_post, upload_post = recorded
+    assert (create.url.path, create.headers["Idempotency-Key"]) == ("/v1/projects", "p-1")
+    assert json.loads(create.content) == {"name": "Churn", "description": "", "slug": "churn"}
+    assert spec_post.url.path == f"/v1/projects/{WS}/problem-specs"
+    assert UUID(spec_post.headers["Idempotency-Key"])  # generated when not given
+    assert upload_post.url.path == "/v1/datasets" and upload_post.headers["Idempotency-Key"] == "d-1"
+    assert upload_post.headers["Content-Type"].startswith("multipart/form-data")
+    content = upload_post.content
+    assert b'name="project_id"' in content and WS.encode() in content
+    assert b'filename="churn.csv"' in content and b"a,b\n1,2\n3,4\n" in content
+
+
+def test_upload_validates_ids_and_stream_filenames():
+    api = _client(lambda request: httpx.Response(500), token="t", workspace_id=WS)
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.datasets.upload("../x", io.BytesIO(b"x"), filename="a.csv")
+    with pytest.raises(DCLabClientError, match="filename"):
+        api.datasets.upload(WS, io.BytesIO(b"x"))
+
+
+# --- P3.1-B2 experiments -----------------------------------------------------------------------
+
+_EXPERIMENT = {
+    "id": WS, "workspace_id": WS, "project_id": WS, "status": "queued",
+    "created_at": "2026-10-02T00:00:00Z", "lineage": {"source_dataset_id": WS},
+    "intent": "why", "untrusted_fields": ["intent", "change_set", "target_column"],
+}
+_COMPARISON = {
+    "schema_version": 1, "source": "evaluation_metrics", "authoritative": False, "split_plan_id": WS,
+    "experiments": [{"experiment_id": WS, "cv": {"roc_auc": 0.8}, "holdout": {"roc_auc": 0.7}}],
+    "common": {"cv": ["roc_auc"], "holdout": ["roc_auc"]},
+}
+
+
+def test_experiment_routes_methods_keys_and_models():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path == "/v1/experiments" and request.method == "GET":
+            return httpx.Response(200, json={"items": [{**_EXPERIMENT, "has_change_set": False}],
+                                             "next_cursor": "c1.x.y", "limit": 1})
+        if path.endswith("/compare"):
+            return httpx.Response(200, json=_COMPARISON)
+        status = 202 if request.method == "POST" else 200
+        return httpx.Response(status, json=_EXPERIMENT, headers={"ETag": '"e2"'})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    page = api.experiments.list(project_id=WS, status="queued", has_change_set=False, limit=1)
+    assert page.next_cursor == "c1.x.y" and page.items[0].status == "queued"
+    created = api.experiments.create(project_id=WS, dataset_id=WS, target_column="y", idempotency_key="e-1")
+    assert created.etag == '"e2"' and created.lineage.source_dataset_id == UUID(WS)
+    branch = api.experiments.branch(WS, changes=[{"kind": "family_exclude", "family": "xgboost"}], intent="try")
+    assert branch.status == "queued"
+    assert api.experiments.get(WS).etag == '"e2"'
+    comparison = api.experiments.compare([WS, WS])
+    assert comparison.experiments[0].holdout == {"roc_auc": 0.7}
+    api.experiments.cancel(WS, if_match='"e2"')
+    listing, post, branch_post, get, compare, cancel = recorded
+    assert dict(listing.url.params) == {"project_id": WS, "status": "queued", "has_change_set": "false", "limit": "1"}
+    assert post.headers["Idempotency-Key"] == "e-1"
+    assert json.loads(post.content) == {"project_id": WS, "dataset_id": WS, "target_column": "y"}
+    assert branch_post.url.path == f"/v1/experiments/{WS}/branches" and UUID(branch_post.headers["Idempotency-Key"])
+    assert json.loads(branch_post.content)["changes"] == [{"kind": "family_exclude", "family": "xgboost"}]
+    assert get.url.path == f"/v1/experiments/{WS}"
+    assert compare.url.params["ids"] == f"{WS},{WS}"
+    assert cancel.url.path == f"/v1/experiments/{WS}/cancel" and cancel.headers["If-Match"] == '"e2"'
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.experiments.compare([WS, "../x"])
+
+
+def test_compare_refusal_is_a_typed_conflict():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"error": {
+            "code": "split_plan_mismatch", "message": "different holdouts", "retryable": False,
+            "request_id": "r-1", "details": {}}})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    with pytest.raises(DCLabAPIError) as caught:
+        api.experiments.compare([WS, WS])
+    assert caught.value.status_code == 409 and caught.value.code == "split_plan_mismatch"
+
+
+_RECORD = {
+    "id": WS, "project_id": WS, "decision_type": "champion_promoted", "state": "accepted",
+    "effective_state": "accepted", "subject": {"kind": "model_version", "id": WS, "key": f"model_version:{WS}"},
+    "actor": {"kind": "human", "user_id": WS}, "rationale": "r", "rationale_untrusted": False,
+    "content_origin": "human", "schema_version": 1, "policy_version": "dclab.decisions.v1",
+    "event_at": "2026-10-02T00:00:00Z", "recorded_at": "2026-10-02T00:00:00Z",
+}
+_REF = {"ref_kind": "champion_model", "target": {"kind": "model_version", "id": WS, "key": f"model_version:{WS}"},
+        "version": 2, "etag": '"2"', "decision_record_id": WS, "moved_at": "2026-10-02T00:00:00Z"}
+_MODEL_VERSION = {
+    "id": WS, "workspace_id": WS, "version": "v1", "created_at": "2026-10-02T00:00:00Z", "content_digest": "ab",
+    "lineage": {"experiment_id": WS, "candidate_id": WS}, "is_champion": True, "ref_kinds": ["champion_model"],
+    "metrics": {"holdout": {"roc_auc": 0.7}, "decision_threshold": 0.4},
+    "artifacts": [{"role": "model", "id": WS, "artifact_type": "model", "content_digest": "cd", "size_bytes": 3}],
+}
+
+
+def test_decision_ref_and_model_version_routes():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path.endswith("/refs") and request.method == "GET":
+            return httpx.Response(200, json={"project_id": WS, "refs_initialized": True, "items": [_REF],
+                                             "missing_kinds": []})
+        if "/refs/" in path and request.method == "GET":
+            return httpx.Response(200, json=_REF, headers={"ETag": '"2"'})
+        if "/refs/" in path:
+            return httpx.Response(200, json={"decision": _RECORD, "refs": [_REF]}, headers={"ETag": '"2"'})
+        if path.startswith("/v1/model-versions/"):
+            return httpx.Response(200, json=_MODEL_VERSION, headers={"ETag": '"mv"'})
+        status = 201 if request.method == "POST" else 200
+        return httpx.Response(status, json=_RECORD, headers={"ETag": '"d"', "Idempotent-Replayed": "true"})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    proposed = api.projects.create_decision(WS, decision_type="experiment_accepted", subject_kind="experiment",
+                                            subject_id=WS, rationale="why", idempotency_key="d-1",
+                                            evidence_refs=[{"kind": "experiment", "id": WS}])
+    assert proposed.etag == '"d"' and proposed.idempotent_replay is True
+    api.projects.propose_ref_move(WS, moves={"champion_model": WS}, rationale="r",
+                                  evidence_refs=[{"kind": "model_version", "id": WS, "scope": "final_holdout"}])
+    assert api.projects.refs(WS).items[0].etag == '"2"'
+    assert api.projects.ref(WS, "champion_model").version == 2
+    moved = api.projects.move_ref(WS, "champion_model", target_id=WS, rationale="r", if_match='"1"',
+                                  evidence_refs=[{"kind": "model_version", "id": WS}],
+                                  companion_moves=[{"ref_kind": "feature_recipe", "target_id": WS,
+                                                    "expected_version": 1}])
+    assert moved.etag == '"2"' and moved.decision.decision_type == "champion_promoted"
+    api.projects.move_ref(WS, "dataset", target_id=WS, rationale="r", create=True,
+                          evidence_refs=[{"kind": "dataset_version", "id": WS}])
+    assert api.decisions.get(WS).etag == '"d"'
+    api.decisions.accept(WS, rationale="ok")
+    api.decisions.reject(WS, rationale="no", evidence_refs=[{"kind": "experiment", "id": WS}])
+    api.decisions.supersede(WS, rationale="fix", facts={"x": 1})
+    model = api.model_versions.get(WS)
+    assert model.etag == '"mv"' and model.is_champion and model.metrics.decision_threshold == 0.4
+    (create, propose, refs, ref, move, insert, get, accept, reject, supersede, mv) = recorded
+    assert create.url.path == f"/v1/projects/{WS}/decisions" and create.headers["Idempotency-Key"] == "d-1"
+    body = json.loads(create.content)
+    assert body["action"] == "propose" and body["subject"] == {"kind": "experiment", "id": WS}
+    assert not {"actor", "actor_kind", "agent_run_id"} & set(body)
+    assert json.loads(propose.content)["ref_moves"] == [{"ref_kind": "champion_model", "target_id": WS}]
+    assert refs.url.path == f"/v1/projects/{WS}/refs" and ref.url.path == f"/v1/projects/{WS}/refs/champion_model"
+    assert move.headers["If-Match"] == '"1"' and "If-None-Match" not in move.headers
+    assert json.loads(move.content)["companion_moves"][0]["expected_version"] == 1
+    assert insert.headers["If-None-Match"] == "*" and "If-Match" not in insert.headers
+    assert UUID(insert.headers["Idempotency-Key"]) and "Idempotency-Key" not in get.headers
+    assert [r.url.path for r in (accept, reject, supersede)] == [
+        f"/v1/decisions/{WS}/accept", f"/v1/decisions/{WS}/reject", f"/v1/decisions/{WS}/supersede"]
+    assert json.loads(supersede.content) == {"rationale": "fix", "facts": {"x": 1}}
+    assert mv.url.path == f"/v1/model-versions/{WS}"
+    with pytest.raises(DCLabClientError, match="ref_kind"):
+        api.projects.ref(WS, "../x")
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.decisions.accept("../x", rationale="x")

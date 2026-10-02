@@ -40,6 +40,9 @@ from app.api.technical_explorer import (
     workspace_router as technical_explorer_workspace_router,
 )
 from app.api.v1 import router as v1_router
+from app.api.v1_decisions import router as v1_decisions_router
+from app.api.v1_experiments import router as v1_experiments_router
+from app.api.v1_conventions import install_v1_conventions
 from app.config import get_settings, validate_runtime_settings
 from app.db.session import get_engine
 from app.services.job_dispatcher import start_local_ml_worker
@@ -59,6 +62,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Decision.ai", version="0.1.0", lifespan=lifespan)
+# /v1 error envelope + request ids (P3.1-A); other surfaces keep FastAPI defaults.
+install_v1_conventions(app)
 app.add_middleware(CsrfOriginMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
@@ -67,7 +72,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Request-Id"],
+    expose_headers=["Content-Disposition", "X-Request-Id", "ETag", "Idempotent-Replayed"],
 )
 
 admin_api = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -112,6 +117,8 @@ client_api.include_router(insights_router)
 client_api.include_router(client_labs_router)
 
 app.include_router(v1_router)
+app.include_router(v1_experiments_router)
+app.include_router(v1_decisions_router)
 app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(scoped_workspaces_router)

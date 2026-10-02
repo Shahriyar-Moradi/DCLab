@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     # Development-only compatibility while legacy upload callers are migrated.
     # Production always enforces the audited publication gate.
     dataset_publication_enforced: bool | None = None
+    # POST /v1/datasets limit for direct API callers (the BFF enforces its own
+    # DCLAB_BFF_MAX_UPLOAD_BYTES, same 256 MiB default, for browser uploads).
+    v1_dataset_upload_max_bytes: int = 256 * 1024 * 1024
+    # P3.1-B2: queued + running auto-train jobs one workspace may hold at once
+    # (root runs and branches); above it a new run is 429 run_quota_exceeded.
+    ml_max_active_runs_per_workspace: int = 20
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
     # Durable ML jobs. Production default persists a row and returns; a worker
@@ -132,6 +138,16 @@ def cookie_secure(settings: Settings) -> bool:
 
 def csrf_hmac_secret(settings: Settings) -> str:
     return settings.auth_csrf_secret.strip() or settings.jwt_secret
+
+
+def cursor_hmac_secret(settings: Settings) -> str:
+    """Key material for signed /v1 page cursors (domain-separated by the codec).
+
+    Reuses secrets production already requires (no new setting); rotating
+    them only invalidates in-flight cursors, which clients restart from page 1.
+    """
+
+    return settings.auth_token_hash_secret.strip() or settings.jwt_secret
 
 
 def _secret_is_unsafe(value: str) -> bool:

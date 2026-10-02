@@ -97,3 +97,33 @@ class VisualizationRead(BaseModel):
 class EventPage(BaseModel):
     items: list[MlRunEventRead]
     next_cursor: str | None = None
+
+
+class DatasetIngestionRead(BaseModel):
+    """The ingestion run that produced a dataset and its ADR 0005 publication state."""
+
+    id: UUID
+    status: str
+    publication_state: str
+    rows_read: int
+    bytes_read: int
+    completed_at: datetime | None
+
+
+class DatasetUploadRead(BaseModel):
+    """``POST /v1/datasets`` result: the published DatasetVersion plus its ingestion."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None
+    dataset_asset_id: UUID
+    name: str
+    version: str
+    source_type: str
+    content_digest: str | None
+    schema_digest: str | None
+    size_bytes: int | None
+    row_count: int
+    column_count: int
+    created_at: datetime
+    ingestion: DatasetIngestionRead

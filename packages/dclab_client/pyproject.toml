@@ -1,6 +1,6 @@
 [project]
 name = "dclab-client"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Transport-neutral DCLab HTTP client for the stable /v1 API."
 requires-python = ">=3.12"
 dependencies = [
@@ -14,3 +14,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["dclab_client*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "dclab_client._version.__version__"}

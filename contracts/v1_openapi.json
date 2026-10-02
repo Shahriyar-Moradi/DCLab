@@ -13,9 +13,38 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_dataset_v1_v1_datasets_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "411",
+          "413",
+          "422",
+          "500"
+        ],
+        "successSchema": "DatasetUploadRead"
       }
     },
     "/v1/datasets/{dataset_id}": {
@@ -31,19 +60,146 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "DatasetListItem"
+      }
+    },
+    "/v1/decisions/{decision_id}": {
+      "GET": {
+        "operationId": "read_decision_v1_decisions__decision_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
+      }
+    },
+    "/v1/decisions/{decision_id}/accept": {
+      "POST": {
+        "operationId": "accept_decision_v1_v1_decisions__decision_id__accept_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "DecisionResolveRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
+      }
+    },
+    "/v1/decisions/{decision_id}/reject": {
+      "POST": {
+        "operationId": "reject_decision_v1_v1_decisions__decision_id__reject_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "DecisionResolveRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
+      }
+    },
+    "/v1/decisions/{decision_id}/supersede": {
+      "POST": {
+        "operationId": "supersede_decision_v1_v1_decisions__decision_id__supersede_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "DecisionSupersedeRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
       }
     },
     "/v1/execution-requests": {
       "POST": {
         "operationId": "submit_execution_request_v1_execution_requests_post",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
         "requestSchema": "ExecutionRequestCreate",
         "statusCodes": [
           "202",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
         ],
         "successSchema": "ExecutionRequestRead"
       }
@@ -61,7 +217,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ExecutionRequestRead"
       }
@@ -71,6 +232,16 @@
         "operationId": "confirm_execution_request_target_v1_execution_requests__request_id__target_confirmation_post",
         "parameters": [
           {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
             "in": "path",
             "name": "request_id",
             "required": true
@@ -79,9 +250,215 @@
         "requestSchema": "ExecutionTargetConfirmation",
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "500"
         ],
         "successSchema": "ExecutionRequestRead"
+      }
+    },
+    "/v1/experiments": {
+      "GET": {
+        "operationId": "read_experiments_v1_experiments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "has_change_set",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "parent_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "split_plan_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentPage"
+      },
+      "POST": {
+        "operationId": "create_experiment_v1_v1_experiments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "ExperimentCreateRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
+      }
+    },
+    "/v1/experiments/compare": {
+      "GET": {
+        "operationId": "compare_experiments_v1_v1_experiments_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentComparisonRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}": {
+      "GET": {
+        "operationId": "read_experiment_v1_experiments__experiment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}/branches": {
+      "POST": {
+        "operationId": "create_branch_v1_v1_experiments__experiment_id__branches_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ExperimentBranchCreateRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}/cancel": {
+      "POST": {
+        "operationId": "cancel_experiment_v1_v1_experiments__experiment_id__cancel_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentDetailRead"
       }
     },
     "/v1/experiments/{experiment_id}/code": {
@@ -97,7 +474,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ExperimentCodeRead"
       }
@@ -108,7 +490,13 @@
         "parameters": [],
         "requestSchema": null,
         "statusCodes": [
-          "200"
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "PrincipalRead"
       }
@@ -126,7 +514,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "PipelineModelBuildRead"
       }
@@ -144,7 +537,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
       }
@@ -172,7 +570,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "EventPage"
       }
@@ -190,9 +593,37 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
+      }
+    },
+    "/v1/model-versions/{model_version_id}": {
+      "GET": {
+        "operationId": "read_model_version_v1_model_versions__model_version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ModelVersionResourceRead"
       }
     },
     "/v1/nodes/{kind}/{node_id}/impact": {
@@ -213,7 +644,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "NodeImpactRead"
       }
@@ -224,9 +660,37 @@
         "parameters": [],
         "requestSchema": null,
         "statusCodes": [
-          "200"
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_project_v1_v1_projects_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "ProjectCreateRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectRead"
       }
     },
     "/v1/projects/{project_id}": {
@@ -242,7 +706,12 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ProjectRead"
       }
@@ -310,9 +779,41 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "DecisionRecordPage"
+      },
+      "POST": {
+        "operationId": "create_decision_v1_v1_projects__project_id__decisions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
       }
     },
     "/v1/projects/{project_id}/graph": {
@@ -338,9 +839,138 @@
         "requestSchema": null,
         "statusCodes": [
           "200",
-          "422"
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": "ProjectGraphRead"
+      }
+    },
+    "/v1/projects/{project_id}/problem-specs": {
+      "POST": {
+        "operationId": "create_problem_spec_v1_v1_projects__project_id__problem_specs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ProblemSpecCreateRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProblemSpecRead"
+      }
+    },
+    "/v1/projects/{project_id}/refs": {
+      "GET": {
+        "operationId": "read_project_refs_v1_projects__project_id__refs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectRefList"
+      }
+    },
+    "/v1/projects/{project_id}/refs/{ref_kind}": {
+      "GET": {
+        "operationId": "read_project_ref_v1_projects__project_id__refs__ref_kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "ref_kind",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectRefRead"
+      },
+      "POST": {
+        "operationId": "move_ref_v1_v1_projects__project_id__refs__ref_kind__post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "ref_kind",
+            "required": true
+          }
+        ],
+        "requestSchema": "RefMoveRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "RefMoveRead"
       }
     },
     "/v1/workspaces": {
@@ -349,7 +979,13 @@
         "parameters": [],
         "requestSchema": null,
         "statusCodes": [
-          "200"
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
         ],
         "successSchema": null
       }
@@ -382,6 +1018,24 @@
         "workspace_id"
       ]
     },
+    "DatasetIngestionRead": {
+      "properties": [
+        "bytes_read",
+        "completed_at",
+        "id",
+        "publication_state",
+        "rows_read",
+        "status"
+      ],
+      "required": [
+        "bytes_read",
+        "completed_at",
+        "id",
+        "publication_state",
+        "rows_read",
+        "status"
+      ]
+    },
     "DatasetListItem": {
       "properties": [
         "column_count",
@@ -404,6 +1058,40 @@
         "name",
         "project_id",
         "row_count",
+        "version",
+        "workspace_id"
+      ]
+    },
+    "DatasetUploadRead": {
+      "properties": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "ingestion",
+        "name",
+        "project_id",
+        "row_count",
+        "schema_digest",
+        "size_bytes",
+        "source_type",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "ingestion",
+        "name",
+        "project_id",
+        "row_count",
+        "schema_digest",
+        "size_bytes",
+        "source_type",
         "version",
         "workspace_id"
       ]
@@ -528,6 +1216,140 @@
         "workspace_id"
       ]
     },
+    "ExperimentComparisonItem": {
+      "properties": [
+        "candidate_id",
+        "constraint_status",
+        "cv",
+        "decision_threshold",
+        "experiment_id",
+        "family",
+        "holdout",
+        "parent_experiment_id",
+        "selected_score",
+        "selection_metric"
+      ],
+      "required": [
+        "experiment_id"
+      ]
+    },
+    "ExperimentComparisonRead": {
+      "properties": [
+        "authoritative",
+        "common",
+        "experiments",
+        "schema_version",
+        "source",
+        "split_plan_id"
+      ],
+      "required": [
+        "authoritative",
+        "common",
+        "experiments",
+        "schema_version",
+        "source",
+        "split_plan_id"
+      ]
+    },
+    "ExperimentDetailRead": {
+      "properties": [
+        "cancel_requested_at",
+        "change_set",
+        "created_at",
+        "diff_vs_parent",
+        "ended_at",
+        "failure_reason",
+        "id",
+        "intent",
+        "lineage",
+        "metrics",
+        "project_id",
+        "started_at",
+        "status",
+        "target_column",
+        "task_type",
+        "untrusted_fields",
+        "workspace_id"
+      ],
+      "required": [
+        "created_at",
+        "id",
+        "lineage",
+        "status",
+        "workspace_id"
+      ]
+    },
+    "ExperimentLineage": {
+      "properties": [
+        "execution_request_id",
+        "parent_experiment_id",
+        "prepared_dataset_id",
+        "problem_spec_id",
+        "source_dataset_id",
+        "split_plan_id",
+        "workflow_run_id"
+      ],
+      "required": []
+    },
+    "ExperimentListItem": {
+      "properties": [
+        "created_at",
+        "ended_at",
+        "has_change_set",
+        "id",
+        "intent",
+        "parent_experiment_id",
+        "project_id",
+        "source_dataset_id",
+        "split_plan_id",
+        "started_at",
+        "status",
+        "untrusted_fields"
+      ],
+      "required": [
+        "created_at",
+        "id",
+        "status"
+      ]
+    },
+    "ExperimentMetrics": {
+      "properties": [
+        "baseline_comparison",
+        "candidate_id",
+        "constraint_status",
+        "cv",
+        "decision_threshold",
+        "family",
+        "holdout",
+        "selected_score",
+        "selection_metric"
+      ],
+      "required": []
+    },
+    "ExperimentPage": {
+      "properties": [
+        "items",
+        "limit",
+        "next_cursor"
+      ],
+      "required": [
+        "items",
+        "limit"
+      ]
+    },
+    "ExperimentWinner": {
+      "properties": [
+        "candidate_id",
+        "constraint_status",
+        "cv",
+        "decision_threshold",
+        "family",
+        "holdout",
+        "selected_score",
+        "selection_metric"
+      ],
+      "required": []
+    },
     "MlRunEventRead": {
       "properties": [
         "created_at",
@@ -555,6 +1377,65 @@
         "status",
         "timestamp",
         "workflow_run_id",
+        "workspace_id"
+      ]
+    },
+    "ModelVersionArtifactRef": {
+      "properties": [
+        "artifact_type",
+        "content_digest",
+        "id",
+        "mime_type",
+        "role",
+        "size_bytes"
+      ],
+      "required": [
+        "artifact_type",
+        "content_digest",
+        "id",
+        "role",
+        "size_bytes"
+      ]
+    },
+    "ModelVersionLineage": {
+      "properties": [
+        "candidate_id",
+        "experiment_id",
+        "feature_recipe_id",
+        "prepared_dataset_id",
+        "problem_spec_id",
+        "source_dataset_id",
+        "split_plan_id"
+      ],
+      "required": [
+        "candidate_id",
+        "experiment_id"
+      ]
+    },
+    "ModelVersionResourceRead": {
+      "properties": [
+        "algorithm",
+        "artifacts",
+        "candidate_key",
+        "content_digest",
+        "created_at",
+        "family",
+        "id",
+        "is_champion",
+        "lineage",
+        "metrics",
+        "project_id",
+        "ref_kinds",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "content_digest",
+        "created_at",
+        "id",
+        "is_champion",
+        "lineage",
+        "version",
         "workspace_id"
       ]
     },
@@ -619,6 +1500,48 @@
         "role"
       ]
     },
+    "ProblemSpecRead": {
+      "properties": [
+        "business_objective",
+        "constraints",
+        "content_digest",
+        "created_at",
+        "created_by",
+        "id",
+        "locked_at",
+        "prediction_horizon",
+        "prediction_time_column",
+        "prediction_unit",
+        "primary_metric",
+        "project_id",
+        "status",
+        "success_criteria",
+        "target_column",
+        "task_type",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "business_objective",
+        "constraints",
+        "content_digest",
+        "created_at",
+        "created_by",
+        "id",
+        "locked_at",
+        "prediction_horizon",
+        "prediction_time_column",
+        "prediction_unit",
+        "primary_metric",
+        "project_id",
+        "status",
+        "success_criteria",
+        "target_column",
+        "task_type",
+        "version",
+        "workspace_id"
+      ]
+    },
     "ProjectGraphRead": {
       "properties": [
         "counts_by_kind",
@@ -671,6 +1594,70 @@
         "status",
         "updated_at",
         "workspace_id"
+      ]
+    },
+    "ProjectRefList": {
+      "properties": [
+        "items",
+        "missing_kinds",
+        "project_id",
+        "refs_initialized"
+      ],
+      "required": [
+        "items",
+        "project_id",
+        "refs_initialized"
+      ]
+    },
+    "ProjectRefRead": {
+      "properties": [
+        "decision_record_id",
+        "etag",
+        "moved_at",
+        "ref_kind",
+        "target",
+        "version"
+      ],
+      "required": [
+        "decision_record_id",
+        "etag",
+        "moved_at",
+        "ref_kind",
+        "target",
+        "version"
+      ]
+    },
+    "RefMoveRead": {
+      "properties": [
+        "decision",
+        "refs"
+      ],
+      "required": [
+        "decision",
+        "refs"
+      ]
+    },
+    "V1Error": {
+      "properties": [
+        "code",
+        "details",
+        "message",
+        "request_id",
+        "retryable"
+      ],
+      "required": [
+        "code",
+        "message",
+        "request_id",
+        "retryable"
+      ]
+    },
+    "V1ErrorEnvelope": {
+      "properties": [
+        "error"
+      ],
+      "required": [
+        "error"
       ]
     },
     "VisualizationRead": {

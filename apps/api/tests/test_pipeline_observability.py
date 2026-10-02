@@ -579,9 +579,13 @@ def test_legacy_event_projection_and_audience_lookup_contract(
     assert developer_response.status_code == 200, developer_response.text
     assert developer_response.json()[0]["payload"] == admin.json()[0]["payload"]
 
+    # /v1 cursors are opaque and server-signed (P3.1-A); mint the "after
+    # last_sequence" position the way the route does.
+    from app.services.cursor_codec import sign_cursor
+
     client = auth_client.get(
         f"/v1/model-builds/{pipeline.id}/events",
-        params={"cursor": str(last_sequence)},
+        params={"cursor": sign_cursor(f"events:{pipeline.workspace_id}:{pipeline.id}", [last_sequence])},
     )
     assert client.status_code == 200, client.text
     sdk_page = SdkEventPage.model_validate(client.json())

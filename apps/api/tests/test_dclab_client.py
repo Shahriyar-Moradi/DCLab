@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from dclab_client import DCLabAPIError, DCLabClient
+from dclab_client import DCLabAPIError, DCLabClient, IdempotencyConflictError
 from app.db.models import DEFAULT_WORKSPACE_ID, Dataset, DatasetAsset, Experiment, MlJob
 from app.services.artifact_service import store_artifact
 from app.services.auth_service import create_access_token
@@ -139,10 +139,20 @@ def test_client_execution_request_returns_id_and_status(
     assert after_jobs == before_jobs
 
     replay = api.execution_requests.create(
+        project_id=project.id,
+        request_spec={"filename": "customers.csv", "record_count": 2},
         idempotency_key="client-once",
-        request_spec={"filename": "other.csv"},
     )
     assert replay.id == created.id
+    with pytest.raises(IdempotencyConflictError) as conflict:
+        api.execution_requests.create(
+            idempotency_key="client-once",
+            request_spec={"filename": "other.csv"},
+        )
+    assert conflict.value.status_code == 409
+    assert conflict.value.code == "idempotency_key_conflict"
+    assert conflict.value.retryable is False
+    assert conflict.value.request_id
     fetched = api.execution_requests.get(created.id)
     assert fetched.id == created.id
     assert fetched.status == "accepted"
@@ -209,7 +219,7 @@ def test_client_model_build_events_visualizations_and_artifacts(
 
     page = api.model_builds.events(pipeline.id, limit=2)
     assert [row.sequence for row in page.items] == [1, 2]
-    assert page.next_cursor == "2"
+    assert page.next_cursor and page.next_cursor != "2"
     rest = api.model_builds.events(pipeline.id, cursor=page.next_cursor, limit=2)
     assert [row.sequence for row in rest.items] == [3]
     assert rest.next_cursor is None

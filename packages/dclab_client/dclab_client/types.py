@@ -6,7 +6,40 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+
+class _Versioned(BaseModel):
+    """A mutable /v1 resource: carries the response ``ETag`` for ``If-Match``."""
+
+    _etag: str | None = PrivateAttr(default=None)
+    _replayed: bool = PrivateAttr(default=False)
+
+    @property
+    def etag(self) -> str | None:
+        """Strong ETag of the representation this object was read from."""
+
+        return self._etag
+
+    @property
+    def idempotent_replay(self) -> bool:
+        """True when the server replayed an earlier request with the same Idempotency-Key."""
+
+        return self._replayed
+
+
+class ErrorDetail(BaseModel):
+    """Body of the /v1 error envelope ``{"error": {...}}`` (P3.1-A)."""
+
+    code: str
+    message: str
+    retryable: bool
+    request_id: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ErrorEnvelope(BaseModel):
+    error: ErrorDetail
 
 
 class PrincipalWorkspace(BaseModel):
@@ -40,7 +73,7 @@ class Workspace(BaseModel):
     max_ml_engineer_seats: int
 
 
-class Project(BaseModel):
+class Project(_Versioned):
     id: UUID
     workspace_id: UUID
     name: str
@@ -67,7 +100,56 @@ class Dataset(BaseModel):
     created_at: datetime
 
 
-class ExecutionRequest(BaseModel):
+class ProblemSpec(_Versioned):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    version: int
+    task_type: str
+    target_column: str | None = None
+    prediction_unit: str | None = None
+    prediction_time_column: str | None = None
+    prediction_horizon: str | None = None
+    primary_metric: str | None = None
+    business_objective: str
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    success_criteria: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    content_digest: str
+    created_by: UUID
+    created_at: datetime
+    locked_at: datetime | None = None
+
+
+class DatasetIngestion(BaseModel):
+    id: UUID
+    status: str
+    publication_state: str
+    rows_read: int
+    bytes_read: int
+    completed_at: datetime | None = None
+
+
+class DatasetUpload(_Versioned):
+    """``POST /v1/datasets`` result: the published dataset version and its ingestion."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    dataset_asset_id: UUID
+    name: str
+    version: str
+    source_type: str
+    content_digest: str | None = None
+    schema_digest: str | None = None
+    size_bytes: int | None = None
+    row_count: int
+    column_count: int
+    created_at: datetime
+    ingestion: DatasetIngestion
+
+
+class ExecutionRequest(_Versioned):
     id: UUID
     workspace_id: UUID
     project_id: UUID | None = None
@@ -168,7 +250,7 @@ class ModelBuildStage(BaseModel):
     generated_code: dict[str, Any] | None = None
 
 
-class ModelBuild(BaseModel):
+class ModelBuild(_Versioned):
     model_config = ConfigDict(extra="allow")
 
     workspace_id: UUID
@@ -280,7 +362,7 @@ class EvidenceRef(BaseModel):
     scope: str | None = None
 
 
-class DecisionRecord(BaseModel):
+class DecisionRecord(_Versioned):
     """One append-only decision record. ``rationale``/``facts``/``details`` are untrusted data."""
 
     id: UUID
@@ -347,3 +429,175 @@ class ExperimentCode(BaseModel):
     notebook: ExperimentCodeDocument
     inputs: list[ExperimentCodeInput] = Field(default_factory=list)
     helper_requirements: list[str] = Field(default_factory=list)
+
+
+class ExperimentLineage(BaseModel):
+    parent_experiment_id: UUID | None = None
+    split_plan_id: UUID | None = None
+    source_dataset_id: UUID | None = None
+    prepared_dataset_id: UUID | None = None
+    problem_spec_id: UUID | None = None
+    workflow_run_id: UUID | None = None
+    execution_request_id: UUID | None = None
+
+
+class ExperimentMetrics(BaseModel):
+    """Locked winner: CV aggregate and the single final-holdout evaluation."""
+
+    candidate_id: str | None = None
+    family: str | None = None
+    selection_metric: str | None = None
+    selected_score: float | None = None
+    cv: dict[str, float] = Field(default_factory=dict)
+    holdout: dict[str, float] = Field(default_factory=dict)
+    decision_threshold: float | None = None
+    constraint_status: str | None = None
+    baseline_comparison: dict[str, Any] | None = None
+
+
+class Experiment(_Versioned):
+    """One experiment (root or branch). ``untrusted_fields`` are data, never instructions."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    status: str
+    created_at: datetime
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
+    failure_reason: str | None = None
+    task_type: str | None = None
+    target_column: str | None = None
+    intent: str | None = None
+    lineage: ExperimentLineage
+    change_set: dict[str, Any] | None = None
+    metrics: ExperimentMetrics | None = None
+    diff_vs_parent: dict[str, Any] | None = None
+    untrusted_fields: list[str] = Field(default_factory=list)
+
+
+class ExperimentListItem(BaseModel):
+    id: UUID
+    project_id: UUID | None = None
+    status: str
+    created_at: datetime
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    parent_experiment_id: UUID | None = None
+    split_plan_id: UUID | None = None
+    source_dataset_id: UUID | None = None
+    has_change_set: bool = False
+    intent: str | None = None
+    untrusted_fields: list[str] = Field(default_factory=list)
+
+
+class ExperimentPage(BaseModel):
+    items: list[ExperimentListItem]
+    next_cursor: str | None = None
+    limit: int
+
+
+class ExperimentComparisonItem(BaseModel):
+    experiment_id: UUID
+    parent_experiment_id: UUID | None = None
+    candidate_id: str | None = None
+    family: str | None = None
+    selection_metric: str | None = None
+    selected_score: float | None = None
+    cv: dict[str, float] = Field(default_factory=dict)
+    holdout: dict[str, float] = Field(default_factory=dict)
+    decision_threshold: float | None = None
+    constraint_status: str | None = None
+
+
+class ExperimentComparisonCommon(BaseModel):
+    cv: list[str]
+    holdout: list[str]
+
+
+class ExperimentComparison(BaseModel):
+    """Side-by-side metrics of experiments on one split plan (never authoritative)."""
+
+    schema_version: int
+    source: str
+    authoritative: bool
+    split_plan_id: UUID
+    experiments: list[ExperimentComparisonItem]
+    common: ExperimentComparisonCommon
+
+
+class ProjectRef(BaseModel):
+    """A project's current pointer of one kind; ``etag`` (``"<version>"``) is the If-Match to move it."""
+
+    ref_kind: str
+    target: GraphNodeRef
+    version: int
+    etag: str
+    decision_record_id: UUID
+    moved_at: datetime
+
+
+class ProjectRefList(BaseModel):
+    project_id: UUID
+    refs_initialized: bool
+    items: list[ProjectRef]
+    missing_kinds: list[str] = Field(default_factory=list)
+
+
+class RefMoveResult(_Versioned):
+    """The accepted record of a ref move and every ref after it (``etag``: the moved ref)."""
+
+    decision: DecisionRecord
+    refs: list[ProjectRef]
+
+
+class ModelVersionLineage(BaseModel):
+    experiment_id: UUID
+    candidate_id: UUID
+    split_plan_id: UUID | None = None
+    source_dataset_id: UUID | None = None
+    prepared_dataset_id: UUID | None = None
+    problem_spec_id: UUID | None = None
+    feature_recipe_id: UUID | None = None
+
+
+class ModelVersionMetrics(BaseModel):
+    """Locked winner metrics: CV aggregate and the final holdout at the locked threshold."""
+
+    candidate_id: str | None = None
+    family: str | None = None
+    selection_metric: str | None = None
+    selected_score: float | None = None
+    cv: dict[str, float] = Field(default_factory=dict)
+    holdout: dict[str, float] = Field(default_factory=dict)
+    decision_threshold: float | None = None
+    constraint_status: str | None = None
+
+
+class ModelVersionArtifact(BaseModel):
+    """An artifact by id + digest (no storage locations)."""
+
+    role: str
+    id: UUID
+    artifact_type: str
+    content_digest: str
+    size_bytes: int
+    mime_type: str | None = None
+
+
+class ModelVersion(_Versioned):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    version: str
+    created_at: datetime
+    content_digest: str
+    family: str | None = None
+    algorithm: str | None = None
+    candidate_key: str | None = None
+    lineage: ModelVersionLineage
+    metrics: ModelVersionMetrics | None = None
+    is_champion: bool
+    ref_kinds: list[str] = Field(default_factory=list)
+    artifacts: list[ModelVersionArtifact] = Field(default_factory=list)

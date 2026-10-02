@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -21,6 +22,7 @@ from app.db.models import (
 )
 from app.domain.errors import (
     ExecutionNotWaitingError,
+    IdempotencyKeyReusedError,
     IdentityError,
     TargetIntentConflictError,
     TargetNotInDatasetError,
@@ -40,11 +42,14 @@ from app.domain.execution_requests import (
     TARGET_CONFIRMED,
     UQ_EXECUTION_REQUESTS_WORKSPACE_IDEMPOTENCY_KEY,
 )
+from app.domain.idempotency import (
+    LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX,
+    REQUEST_DIGEST_SPEC_KEY,
+)
 from app.domain.lab_run_stages import ANALYZING
-from app.domain.ml_jobs import JOB_RUNNING
+from app.domain.ml_jobs import JOB_CANCELLED, JOB_RUNNING
 from app.services.authorization_service import can_execute_workspace_ml, can_read_workspace
 
-LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX = "legacy_labs_upload:"
 
 
 class ExecutionRequestSpecError(ValueError):
@@ -169,11 +174,76 @@ def create_execution_request(
     workflow_run_id: UUID | None = None,
     pipeline_run_id: UUID | None = None,
     status: str = REQUEST_ACCEPTED,
+    request_digest: str | None = None,
 ) -> ExecutionRequest:
     """Insert a control-plane request. Duplicate idempotency keys return the row."""
 
+    row, _replayed = create_or_replay_execution_request(
+        db,
+        workspace_id=workspace_id,
+        operation=operation,
+        source_surface=source_surface,
+        project_id=project_id,
+        requested_by_user_id=requested_by_user_id,
+        idempotency_key=idempotency_key,
+        external_request_id=external_request_id,
+        parent_request_id=parent_request_id,
+        request_spec=request_spec,
+        workflow_run_id=workflow_run_id,
+        pipeline_run_id=pipeline_run_id,
+        status=status,
+        request_digest=request_digest,
+    )
+    return row
+
+
+def _replay(existing: ExecutionRequest, request_digest: str | None) -> ExecutionRequest:
+    """Digest binding: without a digest (internal callers) the key alone replays;
+    with one, only the identical request replays and any other reuse is a 409."""
+
+    if request_digest is None:
+        return existing
+    spec = existing.request_spec if isinstance(existing.request_spec, dict) else {}
+    stored = spec.get(REQUEST_DIGEST_SPEC_KEY)
+    if not isinstance(stored, str) or not hmac.compare_digest(stored, request_digest):
+        raise IdempotencyKeyReusedError()
+    return existing
+
+
+def create_or_replay_execution_request(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    operation: str,
+    source_surface: str,
+    project_id: UUID | None = None,
+    requested_by_user_id: UUID | None = None,
+    idempotency_key: str | None = None,
+    external_request_id: str | None = None,
+    parent_request_id: UUID | None = None,
+    request_spec: dict[str, Any] | None = None,
+    workflow_run_id: UUID | None = None,
+    pipeline_run_id: UUID | None = None,
+    status: str = REQUEST_ACCEPTED,
+    request_digest: str | None = None,
+) -> tuple[ExecutionRequest, bool]:
+    """``(row, replayed)``. ``request_digest`` binds the key to one request (P3.1-A):
+    a replay of the same request returns the stored row before re-validation; a
+    different request under the same key raises ``IdempotencyKeyReusedError``."""
+
     from app.services.target_intent_service import validate_request_spec_target_intent
 
+    if isinstance(request_spec, dict) and REQUEST_DIGEST_SPEC_KEY in request_spec:
+        raise ExecutionRequestSpecError(
+            f"request_spec must not contain {REQUEST_DIGEST_SPEC_KEY}"
+        )
+    key = (idempotency_key or "").strip() or None
+    if key is not None and request_digest is not None:
+        existing = _execution_request_by_idempotency(
+            db, workspace_id=workspace_id, key=key
+        )
+        if existing is not None:
+            return _replay(existing, request_digest), True
     bound = bound_request_spec(request_spec)
     validate_request_spec_target_intent(
         db,
@@ -181,13 +251,14 @@ def create_execution_request(
         request_spec=bound,
         project_id=project_id,
     )
-    key = (idempotency_key or "").strip() or None
     if key is not None:
         existing = _execution_request_by_idempotency(
             db, workspace_id=workspace_id, key=key
         )
         if existing is not None:
-            return existing
+            return _replay(existing, request_digest), True
+    if request_digest is not None:
+        bound = bound_request_spec({**bound, REQUEST_DIGEST_SPEC_KEY: request_digest})
     row = ExecutionRequest(
         workspace_id=workspace_id,
         project_id=project_id,
@@ -205,12 +276,12 @@ def create_execution_request(
     if key is None:
         db.add(row)
         db.flush()
-        return row
+        return row, False
     try:
         with db.begin_nested():
             db.add(row)
             db.flush()
-            return row
+            return row, False
     except IntegrityError as exc:
         if not _is_idempotency_key_conflict(exc):
             raise
@@ -219,7 +290,7 @@ def create_execution_request(
         )
         if existing is None:
             raise
-        return existing
+        return _replay(existing, request_digest), True
 
 
 def get_execution_request(
@@ -228,10 +299,22 @@ def get_execution_request(
     actor: User,
     workspace_id: UUID,
     request_id: UUID,
+    for_update: bool = False,
 ) -> ExecutionRequest:
     if not can_read_workspace(db, actor, workspace_id):
         raise IdentityError("not found", status_code=404)
-    row = db.get(ExecutionRequest, request_id)
+    if for_update:
+        # Precondition checks (If-Match) hold the row lock until the command commits.
+        row = db.scalar(
+            select(ExecutionRequest)
+            .where(
+                ExecutionRequest.workspace_id == workspace_id,
+                ExecutionRequest.id == request_id,
+            )
+            .with_for_update()
+        )
+    else:
+        row = db.get(ExecutionRequest, request_id)
     if row is None or row.workspace_id != workspace_id:
         raise IdentityError("not found", status_code=404)
     return row
@@ -316,15 +399,15 @@ def upload_for_execution_request(
 
 
 def _job_for_request(
-    db: Session, request: ExecutionRequest, upload: ClientLabUpload | None
+    db: Session, request: ExecutionRequest, upload: ClientLabUpload | None, *, for_update: bool = False
 ) -> MlJob | None:
-    job = db.scalar(
-        select(MlJob).where(MlJob.execution_request_id == request.id)
-    )
+    query = select(MlJob).where(MlJob.execution_request_id == request.id)
+    job = db.scalar(query.with_for_update() if for_update else query)
     if job is not None:
         return job
     if upload is not None:
-        return db.scalar(select(MlJob).where(MlJob.upload_id == upload.id))
+        query = select(MlJob).where(MlJob.upload_id == upload.id)
+        return db.scalar(query.with_for_update() if for_update else query)
     return None
 
 
@@ -461,7 +544,10 @@ def confirm_execution_target(
 
     request = db.scalar(
         select(ExecutionRequest)
-        .where(ExecutionRequest.id == request_id)
+        .where(
+            ExecutionRequest.workspace_id == workspace_id,
+            ExecutionRequest.id == request_id,
+        )
         .with_for_update()
     )
     if request is None or request.workspace_id != workspace_id:
@@ -479,6 +565,12 @@ def confirm_execution_target(
         raise ExecutionNotWaitingError(request.status)
 
     upload = upload_for_execution_request(db, request)
+    # Lock the job row before the upload/workflow rows (the cancel route's order).
+    locked_job = _job_for_request(db, request, upload, for_update=True)
+    if locked_job is not None and (
+        locked_job.status == JOB_CANCELLED or locked_job.cancel_requested_at is not None
+    ):
+        raise ExecutionNotWaitingError("cancelled")
     dataset_id = upload.dataset_id if upload is not None else None
     if dataset_id is None:
         spec = request.request_spec if isinstance(request.request_spec, dict) else {}
@@ -551,7 +643,7 @@ def confirm_execution_target(
     if workflow_run is not None:
         workflow_run.explicit_target = selected
         workflow_run.failure_reason = None
-        if workflow_run.status not in {"completed", "failed", "skipped"}:
+        if workflow_run.status not in {"completed", "failed", "skipped", "cancelled"}:
             workflow_run.status = "running"
 
     job = _job_for_request(db, request, upload)

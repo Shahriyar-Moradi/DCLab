@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 
-from dclab_client.errors import DCLabAPIError, DCLabClientError
+from dclab_client._version import USER_AGENT
+from dclab_client.errors import DCLabAPIError, DCLabClientError, error_class_for
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
 V1_PREFIX = "/v1"
+IDEMPOTENT_METHODS_NEEDING_KEY = frozenset({"POST", "PUT", "PATCH"})
 
 
 def bound_timeout(timeout: float) -> float:
@@ -31,14 +33,51 @@ def _as_id(value: UUID | str) -> str:
         raise DCLabClientError("workspace_id must be a UUID") from exc
 
 
-def _detail_from_response(response: httpx.Response) -> Any:
+def _api_error(
+    response: httpx.Response,
+    *,
+    method: str,
+    path: str,
+    request_id: str | None,
+    idempotency_key: str | None,
+) -> DCLabAPIError:
+    """Typed error from the /v1 envelope; legacy ``{"detail": ...}`` bodies still map."""
+
     try:
         payload = response.json()
     except ValueError:
-        return response.text
+        payload = None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict) and isinstance(error.get("code"), str):
+        code = error["code"]
+        details = error.get("details")
+        retryable = error.get("retryable")
+        return error_class_for(response.status_code, code)(
+            response.status_code,
+            error,
+            method=method,
+            path=path,
+            request_id=str(error.get("request_id") or "") or request_id,
+            code=code,
+            message=str(error.get("message") or ""),
+            retryable=retryable if isinstance(retryable, bool) else None,
+            details=details if isinstance(details, dict) else None,
+            idempotency_key=idempotency_key,
+        )
     if isinstance(payload, dict) and "detail" in payload:
-        return payload["detail"]
-    return payload
+        detail: Any = payload["detail"]
+    elif payload is not None:
+        detail = payload
+    else:
+        detail = response.text
+    return error_class_for(response.status_code, None)(
+        response.status_code,
+        detail,
+        method=method,
+        path=path,
+        request_id=request_id,
+        idempotency_key=idempotency_key,
+    )
 
 
 class V1Transport:
@@ -55,6 +94,10 @@ class V1Transport:
         idempotency_key: str | None = None,
         http: httpx.Client | None = None,
     ) -> None:
+        """``idempotency_key`` (deprecated): one fixed key for every POST of this
+        client. Each command then needs a distinct body or the server answers 409;
+        prefer per-call keys, or none (a fresh key is generated per POST)."""
+
         if not (base_url or "").strip():
             raise DCLabClientError("base_url is required")
         self._timeout = bound_timeout(timeout)
@@ -81,7 +124,37 @@ class V1Transport:
         params: dict[str, Any] | None = None,
         request_id: str | None = None,
         idempotency_key: str | None = None,
+        if_match: str | None = None,
     ) -> Any:
+        payload, _headers = self.request_with_headers(
+            method,
+            path,
+            json=json,
+            params=params,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            if_match=if_match,
+        )
+        return payload
+
+    def request_with_headers(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        request_id: str | None = None,
+        idempotency_key: str | None = None,
+        if_match: str | None = None,
+        data: dict[str, str] | None = None,
+        files: dict[str, Any] | None = None,
+        if_none_match: str | None = None,
+    ) -> tuple[Any, httpx.Headers]:
+        """Payload plus response headers (``ETag``, ``Idempotent-Replayed``, ``X-Request-Id``).
+
+        ``data`` + ``files`` send ``multipart/form-data`` instead of ``json``."""
+
         url_path = self._v1_path(path)
         if url_path not in {"/v1/me", "/v1/workspaces"} and self._workspace_id is None:
             raise DCLabClientError("workspace_id is required for workspace resources")
@@ -89,31 +162,37 @@ class V1Transport:
             method=method,
             request_id=request_id,
             idempotency_key=idempotency_key,
+            if_match=if_match,
+            if_none_match=if_none_match,
         )
         query = None
         if params:
             query = {key: value for key, value in params.items() if value is not None}
         request_kwargs: dict[str, Any] = {
-            "json": json,
             "params": query or None,
             "headers": headers,
         }
+        if files is not None:
+            request_kwargs.update(data=data, files=files)
+        else:
+            request_kwargs["json"] = json
         if not type(self._http).__module__.startswith("starlette."):
             request_kwargs["timeout"] = self._timeout
         response = self._http.request(method, url_path, **request_kwargs)
-        rid = request_id or self._request_id or response.headers.get("x-request-id")
+        rid = response.headers.get("x-request-id") or headers.get("X-Request-Id")
+        sent_key = headers.get("Idempotency-Key")
         if response.status_code >= 400:
-            raise DCLabAPIError(
-                response.status_code,
-                _detail_from_response(response),
+            raise _api_error(
+                response,
                 method=method.upper(),
                 path=url_path,
                 request_id=rid,
+                idempotency_key=sent_key,
             )
         if not response.content:
-            return None
+            return None, response.headers
         try:
-            return response.json()
+            return response.json(), response.headers
         except ValueError as exc:
             raise DCLabAPIError(
                 response.status_code,
@@ -121,6 +200,7 @@ class V1Transport:
                 method=method.upper(),
                 path=url_path,
                 request_id=rid,
+                idempotency_key=sent_key,
             ) from exc
 
     def _v1_path(self, path: str) -> str:
@@ -143,8 +223,10 @@ class V1Transport:
         method: str,
         request_id: str | None,
         idempotency_key: str | None,
+        if_match: str | None = None,
+        if_none_match: str | None = None,
     ) -> dict[str, str]:
-        headers: dict[str, str] = {"Accept": "application/json"}
+        headers: dict[str, str] = {"Accept": "application/json", "User-Agent": USER_AGENT}
         if self._token is not None:
             headers["Authorization"] = f"Bearer {self._token}"
         if self._workspace_id is not None:
@@ -152,7 +234,14 @@ class V1Transport:
         rid = (request_id or "").strip() or self._request_id
         if rid:
             headers["X-Request-Id"] = rid
-        key = (idempotency_key or "").strip() or self._idempotency_key
-        if key and method.upper() in {"POST", "PUT", "PATCH"}:
+        if method.upper() in IDEMPOTENT_METHODS_NEEDING_KEY:
+            # Every command carries a key (P3.1-A). A generated key is exposed as
+            # ``DCLabAPIError.idempotency_key``: resend with it to retry safely
+            # (httpx does not retry on its own).
+            key = (idempotency_key or "").strip() or self._idempotency_key or str(uuid4())
             headers["Idempotency-Key"] = key
+        if if_match is not None and if_match.strip():
+            headers["If-Match"] = if_match.strip()
+        if if_none_match is not None and if_none_match.strip():
+            headers["If-None-Match"] = if_none_match.strip()
         return headers
