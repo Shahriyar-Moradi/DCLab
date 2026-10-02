@@ -349,8 +349,16 @@ def state_graph_immutability_upgrade_statements() -> list[str]:
     return statements
 
 
+# P3.1-B1 / Alembic 0065 (identical literal SQL inlined there).
+IDEMPOTENCY_KEYS_NO_UPDATE_TRIGGER_SQL = """
+CREATE TRIGGER idempotency_keys_no_update
+BEFORE UPDATE ON idempotency_keys
+FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()
+"""
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043 and 0063 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063 and 0065 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -377,6 +385,8 @@ def install_immutability_triggers(connection) -> None:
         connection.execute(text(statement))
     for statement in state_graph_immutability_upgrade_statements():
         connection.execute(text(statement))
+    connection.execute(text("DROP TRIGGER IF EXISTS idempotency_keys_no_update ON idempotency_keys"))
+    connection.execute(text(IDEMPOTENCY_KEYS_NO_UPDATE_TRIGGER_SQL))
 
 
 def _immutability_trigger_name(table: str) -> str | None:

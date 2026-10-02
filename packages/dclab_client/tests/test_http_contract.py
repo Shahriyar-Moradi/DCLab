@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from uuid import UUID
@@ -507,3 +508,63 @@ def test_etag_is_captured_and_if_match_is_sent():
     with pytest.raises(PreconditionFailedError) as stale:
         api.execution_requests.confirm_target(WS, target_column="y", if_match='"old"')
     assert stale.value.details["current_etag"] == '"abc"'
+
+
+# --- P3.1-B1 resource commands ----------------------------------------------------------------
+
+_PROJECT = {
+    "id": WS, "workspace_id": WS, "name": "Churn", "slug": "churn", "description": "",
+    "status": "active", "created_by": None, "provenance": "user",
+    "created_at": "2026-10-02T00:00:00Z", "updated_at": "2026-10-02T00:00:00Z", "archived_at": None,
+}
+_SPEC = {
+    "id": WS, "workspace_id": WS, "project_id": WS, "version": 1, "task_type": "binary",
+    "target_column": "churn", "prediction_unit": None, "prediction_time_column": None,
+    "prediction_horizon": None, "primary_metric": None, "business_objective": "Reduce churn",
+    "constraints": {}, "success_criteria": {}, "status": "draft", "content_digest": "a" * 64,
+    "created_by": WS, "created_at": "2026-10-02T00:00:00Z", "locked_at": None,
+}
+_UPLOAD = {
+    "id": WS, "workspace_id": WS, "project_id": WS, "dataset_asset_id": WS, "name": "churn",
+    "version": "v1", "source_type": "csv", "content_digest": "b" * 64, "schema_digest": None,
+    "size_bytes": 12, "row_count": 2, "column_count": 2, "created_at": "2026-10-02T00:00:00Z",
+    "ingestion": {"id": WS, "status": "completed", "publication_state": "published",
+                  "rows_read": 2, "bytes_read": 12, "completed_at": None},
+}
+
+
+def test_create_project_spec_and_upload_post_to_v1_with_keys(tmp_path):
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        body = {"/v1/projects": _PROJECT, "/v1/datasets": _UPLOAD}.get(request.url.path, _SPEC)
+        return httpx.Response(201, json=body, headers={"ETag": '"e1"', "Idempotent-Replayed": "true"})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    project = api.projects.create(name="Churn", slug="churn", idempotency_key="p-1")
+    assert project.etag == '"e1"' and project.idempotent_replay is True
+    spec = api.projects.create_problem_spec(WS, task_type="binary", business_objective="Reduce churn")
+    assert spec.version == 1
+    data = tmp_path / "churn.csv"
+    data.write_bytes(b"a,b\n1,2\n3,4\n")
+    upload = api.datasets.upload(WS, data, content_type="text/csv", idempotency_key="d-1")
+    assert upload.ingestion.publication_state == "published"
+    create, spec_post, upload_post = recorded
+    assert (create.url.path, create.headers["Idempotency-Key"]) == ("/v1/projects", "p-1")
+    assert json.loads(create.content) == {"name": "Churn", "description": "", "slug": "churn"}
+    assert spec_post.url.path == f"/v1/projects/{WS}/problem-specs"
+    assert UUID(spec_post.headers["Idempotency-Key"])  # generated when not given
+    assert upload_post.url.path == "/v1/datasets" and upload_post.headers["Idempotency-Key"] == "d-1"
+    assert upload_post.headers["Content-Type"].startswith("multipart/form-data")
+    content = upload_post.content
+    assert b'name="project_id"' in content and WS.encode() in content
+    assert b'filename="churn.csv"' in content and b"a,b\n1,2\n3,4\n" in content
+
+
+def test_upload_validates_ids_and_stream_filenames():
+    api = _client(lambda request: httpx.Response(500), token="t", workspace_id=WS)
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.datasets.upload("../x", io.BytesIO(b"x"), filename="a.csv")
+    with pytest.raises(DCLabClientError, match="filename"):
+        api.datasets.upload(WS, io.BytesIO(b"x"))

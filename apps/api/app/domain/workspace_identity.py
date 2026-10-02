@@ -74,6 +74,9 @@ class ProjectRead(BaseModel):
     archived_at: datetime | None
 
 
+PROBLEM_SPEC_JSON_MAX_BYTES = 16384
+
+
 class ProblemSpecCreateRequest(BaseModel):
     task_type: str = Field(min_length=1, max_length=64)
     business_objective: str = Field(min_length=1, max_length=4000)
@@ -90,8 +93,13 @@ class ProblemSpecCreateRequest(BaseModel):
     def _objective_is_valid(self) -> ProblemSpecCreateRequest:
         # Structured objective keys (primary_metric, metric_constraints,
         # cost_matrix) must be valid for the task before the spec is stored.
+        import json
+
         from app.engine.modeling.objective import parse_objective
 
+        for name in ("constraints", "success_criteria"):
+            if len(json.dumps(getattr(self, name), default=str).encode("utf-8")) > PROBLEM_SPEC_JSON_MAX_BYTES:
+                raise ValueError(f"{name} exceeds {PROBLEM_SPEC_JSON_MAX_BYTES} bytes")
         parse_objective(self.task_type, primary_metric=self.primary_metric, constraints=self.constraints)
         return self
 

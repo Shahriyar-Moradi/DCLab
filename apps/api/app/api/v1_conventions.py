@@ -24,6 +24,11 @@
   different request under the same key is ``409 idempotency_key_conflict``.
   POST without a key executes once per call (not replay-protected); commands
   may declare the key ``required`` (``400 idempotency_key_required``).
+  Resource-creating commands from P3.1-B on (``POST /v1/projects``,
+  ``/v1/projects/{id}/problem-specs``, ``/v1/datasets``) require it and bind it
+  in the generic ``idempotency_keys`` table, committed with the resource; there
+  a key is scoped to (workspace, principal, operation), so another principal's
+  identical key is an independent key rather than a 409.
 """
 
 from __future__ import annotations

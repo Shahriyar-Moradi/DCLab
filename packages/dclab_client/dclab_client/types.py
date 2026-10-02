@@ -100,6 +100,55 @@ class Dataset(BaseModel):
     created_at: datetime
 
 
+class ProblemSpec(_Versioned):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    version: int
+    task_type: str
+    target_column: str | None = None
+    prediction_unit: str | None = None
+    prediction_time_column: str | None = None
+    prediction_horizon: str | None = None
+    primary_metric: str | None = None
+    business_objective: str
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    success_criteria: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    content_digest: str
+    created_by: UUID
+    created_at: datetime
+    locked_at: datetime | None = None
+
+
+class DatasetIngestion(BaseModel):
+    id: UUID
+    status: str
+    publication_state: str
+    rows_read: int
+    bytes_read: int
+    completed_at: datetime | None = None
+
+
+class DatasetUpload(_Versioned):
+    """``POST /v1/datasets`` result: the published dataset version and its ingestion."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    dataset_asset_id: UUID
+    name: str
+    version: str
+    source_type: str
+    content_digest: str | None = None
+    schema_digest: str | None = None
+    size_bytes: int | None = None
+    row_count: int
+    column_count: int
+    created_at: datetime
+    ingestion: DatasetIngestion
+
+
 class ExecutionRequest(_Versioned):
     id: UUID
     workspace_id: UUID

@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     # Development-only compatibility while legacy upload callers are migrated.
     # Production always enforces the audited publication gate.
     dataset_publication_enforced: bool | None = None
+    # POST /v1/datasets limit for direct API callers (the BFF enforces its own
+    # DCLAB_BFF_MAX_UPLOAD_BYTES, same 256 MiB default, for browser uploads).
+    v1_dataset_upload_max_bytes: int = 256 * 1024 * 1024
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
     # Durable ML jobs. Production default persists a row and returns; a worker

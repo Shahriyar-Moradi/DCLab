@@ -71,3 +71,30 @@ class IdempotencyBinding:
     @property
     def keyed(self) -> bool:
         return self.key is not None
+
+
+# --- generic key store (P3.1-B1, ``idempotency_keys``) ---------------------------------
+# Commands whose resource has no idempotency column bind ``(key, digest)`` here,
+# inserted in the same transaction as the resource. A key is scoped to
+# (workspace, principal, operation): another principal's or operation's
+# identical key is a distinct key (no cross-principal oracle); the same key on
+# another path or body of the same operation is a digest mismatch, i.e. 409.
+
+PRINCIPAL_USER = "user"
+PRINCIPAL_SERVICE_TOKEN = "service_token"  # P3.2-A
+PRINCIPAL_KINDS = (PRINCIPAL_USER, PRINCIPAL_SERVICE_TOKEN)
+
+RESOURCE_PROJECT = "project"
+RESOURCE_PROBLEM_SPEC = "problem_spec"
+RESOURCE_DATASET = "dataset"
+
+CK_IDEMPOTENCY_KEYS_PRINCIPAL_KIND = "principal_kind IN ('user', 'service_token')"
+CK_IDEMPOTENCY_KEYS_OPERATION = (
+    "operation ~ '^(POST|PUT|PATCH|DELETE) /v1/[A-Za-z0-9_{}/.-]{1,52}$'"
+)
+CK_IDEMPOTENCY_KEYS_KEY = "idempotency_key ~ '^[A-Za-z0-9._:-]{1,128}$'"
+CK_IDEMPOTENCY_KEYS_DIGEST = "request_digest ~ '^[0-9a-f]{64}$'"
+CK_IDEMPOTENCY_KEYS_RESOURCE_KIND = "resource_kind ~ '^[a-z][a-z0-9_]{0,31}$'"
+CK_IDEMPOTENCY_KEYS_STATUS = "response_status BETWEEN 200 AND 299"
+CK_IDEMPOTENCY_KEYS_EXPIRY = "expires_at IS NULL OR expires_at > created_at"
+UQ_IDEMPOTENCY_KEYS_SCOPE = "uq_idempotency_keys_scope"

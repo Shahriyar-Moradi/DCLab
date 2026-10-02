@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, TypeVar
+from pathlib import Path
+from typing import Any, BinaryIO, TypeVar
 from uuid import UUID
 
 import httpx
@@ -14,6 +15,7 @@ from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
     Artifact,
     Dataset,
+    DatasetUpload,
     DecisionRecordPage,
     EventPage,
     ExecutionRequest,
@@ -21,6 +23,7 @@ from dclab_client.types import (
     ModelBuild,
     NodeImpact,
     Principal,
+    ProblemSpec,
     Project,
     ProjectGraph,
     Visualization,
@@ -94,6 +97,66 @@ class ProjectsClient:
             "GET", f"/v1/projects/{_id(project_id)}", request_id=request_id
         )
         return _versioned(Project, payload, headers)
+
+    def create(
+        self,
+        *,
+        name: str,
+        slug: str | None = None,
+        description: str = "",
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> Project:
+        """Create a project (ML-write role). Resend with the same ``idempotency_key``
+        to retry safely; a generated key is exposed on errors."""
+
+        body: dict[str, Any] = {"name": name, "description": description}
+        if slug is not None:
+            body["slug"] = slug
+        payload, headers = self._transport.request_with_headers(
+            "POST", "/v1/projects", json=body, request_id=request_id, idempotency_key=idempotency_key
+        )
+        return _versioned(Project, payload, headers)
+
+    def create_problem_spec(
+        self,
+        project_id: UUID | str,
+        *,
+        task_type: str,
+        business_objective: str,
+        target_column: str | None = None,
+        prediction_unit: str | None = None,
+        prediction_time_column: str | None = None,
+        prediction_horizon: str | None = None,
+        primary_metric: str | None = None,
+        constraints: dict[str, Any] | None = None,
+        success_criteria: dict[str, Any] | None = None,
+        status: str = "draft",
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> ProblemSpec:
+        """Append the next ProblemSpec version (``draft`` or ``locked``)."""
+
+        body = {
+            "task_type": task_type,
+            "business_objective": business_objective,
+            "target_column": target_column,
+            "prediction_unit": prediction_unit,
+            "prediction_time_column": prediction_time_column,
+            "prediction_horizon": prediction_horizon,
+            "primary_metric": primary_metric,
+            "constraints": dict(constraints or {}),
+            "success_criteria": dict(success_criteria or {}),
+            "status": status,
+        }
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/projects/{_id(project_id)}/problem-specs",
+            json=body,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(ProblemSpec, payload, headers)
 
     def graph(
         self,
@@ -188,6 +251,50 @@ class DatasetsClient:
             "GET", f"/v1/datasets/{_id(dataset_id)}", request_id=request_id
         )
         return Dataset.model_validate(payload)
+
+    def upload(
+        self,
+        project_id: UUID | str,
+        file: str | Path | BinaryIO,
+        *,
+        filename: str | None = None,
+        content_type: str | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> DatasetUpload:
+        """Upload a file into a project; it is ingested and published (no training).
+
+        ``file`` is a path or a binary stream (``filename`` required for streams).
+        Pass a stable ``idempotency_key`` to make a resend of the same bytes safe."""
+
+        if isinstance(file, (str, Path)):
+            path = Path(file)
+            with path.open("rb") as handle:
+                return self._upload(project_id, handle, filename or path.name, content_type,
+                                    idempotency_key, request_id)
+        if not filename:
+            raise DCLabClientError("filename is required when uploading a stream")
+        return self._upload(project_id, file, filename, content_type, idempotency_key, request_id)
+
+    def _upload(
+        self,
+        project_id: UUID | str,
+        stream: BinaryIO,
+        filename: str,
+        content_type: str | None,
+        idempotency_key: str | None,
+        request_id: str | None,
+    ) -> DatasetUpload:
+        part = (filename, stream, content_type) if content_type else (filename, stream)
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            "/v1/datasets",
+            data={"project_id": _id(project_id)},
+            files={"file": part},
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(DatasetUpload, payload, headers)
 
 
 class ExecutionRequestsClient:

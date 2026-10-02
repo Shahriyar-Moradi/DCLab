@@ -57,7 +57,14 @@ def _concrete(path: str, fill: str = UUID_ZERO) -> str:
 
 def _call(client, method: str, path: str, **kwargs):
     if method == "POST":
-        kwargs.setdefault("json", {"target_column": "y"} if "confirmation" in path else {})
+        body = {}
+        if "confirmation" in path:
+            body = {"target_column": "y"}
+        elif path.endswith("/problem-specs"):
+            body = {"task_type": "binary", "business_objective": "x"}
+        kwargs.setdefault("json", body)
+        # P3.1-B commands require a key; supply one so the resource checks answer.
+        kwargs["headers"] = {"Idempotency-Key": f"conv-{uuid4().hex}", **(kwargs.get("headers") or {})}
     return client.request(method, path, **kwargs)
 
 
@@ -92,11 +99,14 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/me",
         "GET /v1/workspaces",
         "GET /v1/projects",
+        "POST /v1/projects",
         "GET /v1/projects/{project_id}",
+        "POST /v1/projects/{project_id}/problem-specs",
         "GET /v1/projects/{project_id}/graph",
         "GET /v1/projects/{project_id}/decisions",
         "GET /v1/nodes/{kind}/{node_id}/impact",
         "GET /v1/datasets",
+        "POST /v1/datasets",
         "GET /v1/datasets/{dataset_id}",
         "POST /v1/execution-requests",
         "POST /v1/execution-requests/{request_id}/target-confirmation",

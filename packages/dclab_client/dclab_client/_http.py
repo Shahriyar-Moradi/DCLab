@@ -147,8 +147,12 @@ class V1Transport:
         request_id: str | None = None,
         idempotency_key: str | None = None,
         if_match: str | None = None,
+        data: dict[str, str] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> tuple[Any, httpx.Headers]:
-        """Payload plus response headers (``ETag``, ``Idempotent-Replayed``, ``X-Request-Id``)."""
+        """Payload plus response headers (``ETag``, ``Idempotent-Replayed``, ``X-Request-Id``).
+
+        ``data`` + ``files`` send ``multipart/form-data`` instead of ``json``."""
 
         url_path = self._v1_path(path)
         if url_path not in {"/v1/me", "/v1/workspaces"} and self._workspace_id is None:
@@ -163,10 +167,13 @@ class V1Transport:
         if params:
             query = {key: value for key, value in params.items() if value is not None}
         request_kwargs: dict[str, Any] = {
-            "json": json,
             "params": query or None,
             "headers": headers,
         }
+        if files is not None:
+            request_kwargs.update(data=data, files=files)
+        else:
+            request_kwargs["json"] = json
         if not type(self._http).__module__.startswith("starlette."):
             request_kwargs["timeout"] = self._timeout
         response = self._http.request(method, url_path, **request_kwargs)

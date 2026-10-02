@@ -21,6 +21,30 @@
           "500"
         ],
         "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_dataset_v1_v1_datasets_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "411",
+          "413",
+          "422",
+          "500"
+        ],
+        "successSchema": "DatasetUploadRead"
       }
     },
     "/v1/datasets/{dataset_id}": {
@@ -313,6 +337,28 @@
           "500"
         ],
         "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_project_v1_v1_projects_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "ProjectCreateRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectRead"
       }
     },
     "/v1/projects/{project_id}": {
@@ -444,6 +490,35 @@
         "successSchema": "ProjectGraphRead"
       }
     },
+    "/v1/projects/{project_id}/problem-specs": {
+      "POST": {
+        "operationId": "create_problem_spec_v1_v1_projects__project_id__problem_specs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ProblemSpecCreateRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProblemSpecRead"
+      }
+    },
     "/v1/workspaces": {
       "GET": {
         "operationId": "read_workspaces_v1_workspaces_get",
@@ -489,6 +564,24 @@
         "workspace_id"
       ]
     },
+    "DatasetIngestionRead": {
+      "properties": [
+        "bytes_read",
+        "completed_at",
+        "id",
+        "publication_state",
+        "rows_read",
+        "status"
+      ],
+      "required": [
+        "bytes_read",
+        "completed_at",
+        "id",
+        "publication_state",
+        "rows_read",
+        "status"
+      ]
+    },
     "DatasetListItem": {
       "properties": [
         "column_count",
@@ -511,6 +604,40 @@
         "name",
         "project_id",
         "row_count",
+        "version",
+        "workspace_id"
+      ]
+    },
+    "DatasetUploadRead": {
+      "properties": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "ingestion",
+        "name",
+        "project_id",
+        "row_count",
+        "schema_digest",
+        "size_bytes",
+        "source_type",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "ingestion",
+        "name",
+        "project_id",
+        "row_count",
+        "schema_digest",
+        "size_bytes",
+        "source_type",
         "version",
         "workspace_id"
       ]
@@ -724,6 +851,48 @@
         "full_name",
         "id",
         "role"
+      ]
+    },
+    "ProblemSpecRead": {
+      "properties": [
+        "business_objective",
+        "constraints",
+        "content_digest",
+        "created_at",
+        "created_by",
+        "id",
+        "locked_at",
+        "prediction_horizon",
+        "prediction_time_column",
+        "prediction_unit",
+        "primary_metric",
+        "project_id",
+        "status",
+        "success_criteria",
+        "target_column",
+        "task_type",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "business_objective",
+        "constraints",
+        "content_digest",
+        "created_at",
+        "created_by",
+        "id",
+        "locked_at",
+        "prediction_horizon",
+        "prediction_time_column",
+        "prediction_unit",
+        "primary_metric",
+        "project_id",
+        "status",
+        "success_criteria",
+        "target_column",
+        "task_type",
+        "version",
+        "workspace_id"
       ]
     },
     "ProjectGraphRead": {

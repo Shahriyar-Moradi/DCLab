@@ -165,7 +165,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 "ml_workflows, workspace_domains, business_domains, "
                 "dataset_columns, visualizations, artifacts, ingestion_runs, data_access_events, data_accesses, data_sources, dataset_assets, "
                 "workspace_capabilities, workspace_entitlements, workspace_memberships, platform_memberships, "
-                "project_refs, project_decision_records, split_plans, "
+                "idempotency_keys, project_refs, project_decision_records, split_plans, "
                 "problem_specs, projects, "
                 "ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
                 "prediction_tasks, datasets, environments, simulation_runs, "
