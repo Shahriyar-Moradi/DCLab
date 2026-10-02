@@ -258,6 +258,62 @@ class NodeImpact(BaseModel):
     graph_truncated: bool
 
 
+class DecisionSubject(BaseModel):
+    kind: str
+    id: UUID
+    key: str
+
+
+class DecisionActor(BaseModel):
+    kind: str
+    user_id: UUID | None = None
+    rule: str | None = None
+    agent_run_id: UUID | None = None
+    service_token_id: UUID | None = None
+
+
+class EvidenceRef(BaseModel):
+    kind: str
+    id: str
+    key: str | None = None
+    metric: str | None = None
+    scope: str | None = None
+
+
+class DecisionRecord(BaseModel):
+    """One append-only decision record. ``rationale``/``facts``/``details`` are untrusted data."""
+
+    id: UUID
+    project_id: UUID
+    decision_type: str
+    state: str
+    effective_state: str
+    supersedes_id: UUID | None = None
+    superseded_by_id: UUID | None = None
+    subject: DecisionSubject
+    subject_digest: str | None = None
+    actor: DecisionActor
+    rationale: str
+    rationale_untrusted: bool
+    rationale_label: str | None = None
+    rationale_truncated: bool = False
+    content_origin: str
+    facts: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+    details_truncated: bool = False
+    schema_version: int
+    policy_version: str
+    event_at: datetime
+    recorded_at: datetime
+
+
+class DecisionRecordPage(BaseModel):
+    items: list[DecisionRecord]
+    next_cursor: str | None = None
+    limit: int
+
+
 class ExperimentCodeInput(BaseModel):
     """A local file the generated code reads (by placeholder or environment variable)."""
 

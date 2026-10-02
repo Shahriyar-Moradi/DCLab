@@ -247,6 +247,74 @@
         "successSchema": "ProjectRead"
       }
     },
+    "/v1/projects/{project_id}/decisions": {
+      "GET": {
+        "operationId": "read_project_decisions_v1_projects__project_id__decisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "actor_kind",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "decision_type",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "effective_state",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "recorded_after",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "recorded_before",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "subject_kind",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "DecisionRecordPage"
+      }
+    },
     "/v1/projects/{project_id}/graph": {
       "GET": {
         "operationId": "read_project_graph_v1_projects__project_id__graph_get",
@@ -338,6 +406,60 @@
         "row_count",
         "version",
         "workspace_id"
+      ]
+    },
+    "DecisionRecordPage": {
+      "properties": [
+        "items",
+        "limit",
+        "next_cursor"
+      ],
+      "required": [
+        "items",
+        "limit"
+      ]
+    },
+    "DecisionRecordRead": {
+      "properties": [
+        "actor",
+        "content_origin",
+        "decision_type",
+        "details",
+        "details_truncated",
+        "effective_state",
+        "event_at",
+        "evidence_refs",
+        "facts",
+        "id",
+        "policy_version",
+        "project_id",
+        "rationale",
+        "rationale_label",
+        "rationale_truncated",
+        "rationale_untrusted",
+        "recorded_at",
+        "schema_version",
+        "state",
+        "subject",
+        "subject_digest",
+        "superseded_by_id",
+        "supersedes_id"
+      ],
+      "required": [
+        "actor",
+        "content_origin",
+        "decision_type",
+        "effective_state",
+        "event_at",
+        "id",
+        "policy_version",
+        "project_id",
+        "rationale",
+        "rationale_untrusted",
+        "recorded_at",
+        "schema_version",
+        "state",
+        "subject"
       ]
     },
     "EventPage": {

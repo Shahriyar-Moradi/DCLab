@@ -6,6 +6,8 @@ from dclab_client.errors import DCLabAPIError, DCLabClientError
 from dclab_client.types import (
     Artifact,
     Dataset,
+    DecisionRecord,
+    DecisionRecordPage,
     EventPage,
     ExecutionRequest,
     ExperimentCode,
@@ -28,6 +30,8 @@ __all__ = [
     "DCLabClient",
     "DCLabClientError",
     "Dataset",
+    "DecisionRecord",
+    "DecisionRecordPage",
     "EventPage",
     "ExecutionRequest",
     "ExperimentCode",

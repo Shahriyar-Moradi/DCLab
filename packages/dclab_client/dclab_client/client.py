@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -12,6 +13,7 @@ from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
     Artifact,
     Dataset,
+    DecisionRecordPage,
     EventPage,
     ExecutionRequest,
     ExperimentCode,
@@ -97,6 +99,43 @@ class ProjectsClient:
             request_id=request_id,
         )
         return ProjectGraph.model_validate(payload)
+
+    def decisions(
+        self,
+        project_id: UUID | str,
+        *,
+        state: str | None = None,
+        effective_state: str | None = None,
+        decision_type: str | None = None,
+        subject_kind: str | None = None,
+        subject_id: UUID | str | None = None,
+        actor_kind: str | None = None,
+        recorded_after: datetime | None = None,
+        recorded_before: datetime | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> DecisionRecordPage:
+        """Append-only decision records, newest first (rationale is untrusted data)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/projects/{_id(project_id)}/decisions",
+            params={
+                "state": state,
+                "effective_state": effective_state,
+                "decision_type": decision_type,
+                "subject_kind": subject_kind,
+                "subject_id": _id(subject_id) if subject_id is not None else None,
+                "actor_kind": actor_kind,
+                "recorded_after": recorded_after.isoformat() if recorded_after else None,
+                "recorded_before": recorded_before.isoformat() if recorded_before else None,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return DecisionRecordPage.model_validate(payload)
 
 
 class NodesClient:

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import event, func, insert, select, update
+from sqlalchemy import event, insert, select
 
 from app.db.models import (
     Environment,
@@ -24,7 +24,7 @@ from app.db.models import (
     ProjectRef,
     SplitPlan,
 )
-from app.domain.decision_records import SUBJECT_COLUMNS
+from app.domain.decision_records import SUBJECT_COLUMNS, DecisionActor
 from app.domain.errors import GraphNodeNotFoundError, IdentityError, InvalidGraphCursorError, ProjectNotFoundError
 from app.domain.state_graph import (
     GRAPH_IMPACT_CAP,
@@ -34,12 +34,13 @@ from app.domain.state_graph import (
     REF_TARGET_COLUMNS,
     REF_TARGET_NODE_KINDS,
 )
-from app.services import graph_service
+from app.services import graph_service, project_ref_service
 from app.services.artifact_service import store_artifact
 from app.services.auth_service import create_access_token
 from app.services.lab_service import ingest_dataset
 from app.services.lineage_service import create_workflow_run
 from app.services.problem_spec_service import create_problem_spec
+from app.services.project_ref_service import RefMove
 from app.storage.local import LocalStorage
 from test_data_model_lineage import make_lineage_setup
 from test_split_plan_write_paths import _upload_and_train
@@ -232,27 +233,15 @@ def _bootstrap_refs(db, g, targets: dict[str, UUID]) -> None:
 
 
 def _move_refs(db, g, moves: dict[str, UUID]) -> None:
-    """What P2.5-A move_ref will do: accepted record + versioned UPDATE, one transaction."""
+    """P2.5-A move_ref: accepted record + versioned UPDATE(s), one transaction."""
 
     refs = {r.ref_kind: r for r in db.scalars(select(ProjectRef).where(ProjectRef.project_id == g.project.id))}
-    first_kind, first_target = next(iter(moves.items()))
-    record = _record(
-        db, g, decision_type="ref_moved", subject_kind=REF_TARGET_NODE_KINDS[first_kind],
-        subject_id=first_target,
-        ref_moves=[
-            {"ref_kind": k, "from": {"kind": REF_TARGET_NODE_KINDS[k], "id": str(getattr(refs[k], REF_TARGET_COLUMNS[k]))},
-             "to": {"kind": REF_TARGET_NODE_KINDS[k], "id": str(v)}}
-            for k, v in moves.items()
-        ],
+    project_ref_service.move_ref(
+        db, workspace_id=g.ws, project_id=g.project.id, actor=DecisionActor.human(g.actor),
+        moves=[RefMove(kind, target, refs[kind].version) for kind, target in moves.items()],
+        rationale="graph test",
+        evidence_refs=[{"kind": REF_TARGET_NODE_KINDS[kind], "id": str(target)} for kind, target in moves.items()],
     )
-    for kind, target in moves.items():
-        moved = db.execute(
-            update(ProjectRef)
-            .where(ProjectRef.id == refs[kind].id, ProjectRef.version == refs[kind].version)
-            .values({REF_TARGET_COLUMNS[kind]: target, "version": ProjectRef.version + 1,
-                     "moved_at": func.now(), "decision_record_id": record.id})
-        )
-        assert moved.rowcount == 1
     db.commit()
     db.expire_all()
 

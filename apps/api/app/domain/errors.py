@@ -253,3 +253,73 @@ class ExperimentComparisonError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+class DecisionRecordError(Exception):
+    """Typed decision-record / ref-move failure with a stable ``code`` (ADR 0006 §2, §5)."""
+
+    status_code = 422
+    code = "invalid_decision_record"
+
+    def __init__(self, reason: str, message: str, **extra: object) -> None:
+        super().__init__(f"{self.code}: {reason}: {message}")
+        self.reason = reason
+        self.detail_message = message
+        self.extra = extra
+
+    def public_detail(self) -> dict[str, object]:
+        return {"code": self.code, "reason": self.reason, "message": self.detail_message, **self.extra}
+
+
+class DecisionRecordNotFoundError(LookupError):
+    """No decision record in this project/workspace (also: another tenant's). Maps to 404."""
+
+
+class InvalidDecisionRecordError(DecisionRecordError):
+    """Bad subject, evidence ref, rationale, payload or ref target semantics. Maps to 422."""
+
+
+class RefTargetNotFoundError(DecisionRecordError):
+    """A ref target is unknown, in another project or another tenant. Maps to 404."""
+
+    status_code = 404
+    code = "ref_target_not_found"
+
+
+class InvalidDecisionTransitionError(DecisionRecordError):
+    """The state machine forbids this transition (double accept, accept of rejected...)."""
+
+    status_code = 409
+    code = "invalid_decision_transition"
+
+
+class DecisionActorNotPermittedError(DecisionRecordError):
+    """This actor kind may not perform the write (agents only propose). Maps to 403."""
+
+    status_code = 403
+    code = "decision_actor_not_permitted"
+
+
+class RefVersionConflictError(DecisionRecordError):
+    """Optimistic ref version mismatch (``expected_version`` is stale). Maps to 409."""
+
+    status_code = 409
+    code = "ref_version_conflict"
+
+
+class ChampionSplitPlanMismatchError(DecisionRecordError):
+    """A champion must share the current champion's ``split_plan_id`` (Rev 2). Maps to 409."""
+
+    status_code = 409
+    code = "champion_split_plan_mismatch"
+
+
+class IdempotencyKeyConflictError(DecisionRecordError):
+    """The idempotency key was already used for a different decision. Maps to 409."""
+
+    status_code = 409
+    code = "idempotency_key_conflict"
+
+
+class InvalidDecisionQueryError(ValueError):
+    """Malformed decision list filter or cursor. Maps to 400."""

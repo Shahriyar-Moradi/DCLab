@@ -47,7 +47,7 @@ from app.engine.validation.split_assignment import (
     parse_split_assignment,
 )
 from app.services.artifact_service import record_artifact
-from app.services.decision_record_service import evidence_ref, rule_record
+from app.services.decision_record_service import evidence_ref, rule_record, unique_violation
 from app.services.scientific_lineage_service import holdout_plan_digest
 from app.storage import factory as storage_factory
 from app.storage.base import ObjectStorage
@@ -58,7 +58,6 @@ logger = logging.getLogger(__name__)
 
 SPLIT_PLAN_IDENTITY_VERSION = 1
 _CREATE_ATTEMPTS = 3
-_UNIQUE_VIOLATION = "23505"
 # Only these unique constraints mean "a concurrent run created the plan first".
 SPLIT_PLAN_RACE_CONSTRAINTS = frozenset(
     {
@@ -102,13 +101,12 @@ class ResolvedSplitPlan:
 
 
 def is_unique_race(exc: IntegrityError, constraints: Collection[str]) -> bool:
-    """True only for SQLSTATE 23505 on one of ``constraints``; anything else is a bug."""
+    """True only for SQLSTATE 23505 on one of ``constraints``; anything else is a bug.
 
-    orig = getattr(exc, "orig", None)
-    if getattr(orig, "sqlstate", None) != _UNIQUE_VIOLATION:
-        return False
-    diag = getattr(orig, "diag", None)
-    return getattr(diag, "constraint_name", None) in constraints
+    Driver-agnostic (psycopg 3 ``sqlstate`` / psycopg2 ``pgcode``).
+    """
+
+    return unique_violation(exc) in constraints
 
 
 def _canonical_json(payload: Any) -> bytes:

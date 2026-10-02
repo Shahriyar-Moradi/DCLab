@@ -303,3 +303,51 @@ def test_experiment_code_uses_v1_path_and_validates_ids():
     with pytest.raises(DCLabClientError, match="UUID"):
         api.experiments.code("../../auth/me")
     assert len(recorded) == 1
+
+
+def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
+    from datetime import UTC, datetime
+
+    recorded: list[httpx.Request] = []
+    project = "11111111-1111-1111-1111-111111111111"
+    record = {
+        "id": "55555555-5555-5555-5555-555555555555", "project_id": project,
+        "decision_type": "experiment_accepted", "state": "proposed", "effective_state": "superseded",
+        "supersedes_id": None, "superseded_by_id": "66666666-6666-6666-6666-666666666666",
+        "subject": {"kind": "experiment", "id": "33333333-3333-3333-3333-333333333333",
+                    "key": "experiment:33333333-3333-3333-3333-333333333333"},
+        "actor": {"kind": "agent", "agent_run_id": "77777777-7777-7777-7777-777777777777"},
+        "rationale": "[REDACTED]", "rationale_untrusted": True,
+        "rationale_label": "unverified agent rationale", "rationale_truncated": False,
+        "content_origin": "agent",
+        "facts": {}, "evidence_refs": [{"kind": "experiment", "id": "33333333-3333-3333-3333-333333333333",
+                                        "key": "experiment:33333333-3333-3333-3333-333333333333"}],
+        "details": {}, "schema_version": 1, "policy_version": "dclab.decisions.v1",
+        "event_at": "2026-10-02T00:00:00Z", "recorded_at": "2026-10-02T00:00:00Z",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"items": [record], "next_cursor": "c2", "limit": 10})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    page = api.projects.decisions(
+        project, effective_state="superseded", actor_kind="agent", subject_kind="experiment",
+        subject_id="33333333-3333-3333-3333-333333333333",
+        recorded_after=datetime(2026, 10, 1, tzinfo=UTC), cursor="c1", limit=10,
+    )
+    assert page.next_cursor == "c2" and page.items[0].rationale_untrusted is True
+    assert page.items[0].rationale_label == "unverified agent rationale"
+    assert page.items[0].content_origin == "agent" and page.items[0].details_truncated is False
+    assert recorded[0].method == "GET" and recorded[0].url.path == f"/v1/projects/{project}/decisions"
+    assert dict(recorded[0].url.params) == {
+        "effective_state": "superseded", "actor_kind": "agent", "subject_kind": "experiment",
+        "subject_id": "33333333-3333-3333-3333-333333333333",
+        "recorded_after": "2026-10-01T00:00:00+00:00", "cursor": "c1", "limit": "10",
+    }
+    for bad_id in ("../../auth/me", "abc"):
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.projects.decisions(bad_id)
+        with pytest.raises(DCLabClientError, match="UUID"):
+            api.projects.decisions(project, subject_id=bad_id)
+    assert len(recorded) == 1

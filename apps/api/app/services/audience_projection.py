@@ -29,6 +29,12 @@ _UNSAFE_TEXT = re.compile(
     r"\bbearer\s+\S+|\bsk-[a-z0-9_-]{8,}|"
     r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})"
 )
+# Credential-shaped text (the secret subset of _UNSAFE_TEXT). Append-only
+# writers reject it outright instead of redacting it on read.
+SECRET_TEXT = re.compile(
+    r"(?i)(\bbearer\s+\S+|\bsk-[a-z0-9_-]{8,}|-----begin [a-z ]*private key-----|\bakia[0-9a-z]{16}\b)"
+)
+BLOCKED_KEY_PARTS = _BLOCKED_KEY_PARTS
 _MAX_DEPTH = 6
 _MAX_ITEMS = 200
 _MAX_STRING = 1000
