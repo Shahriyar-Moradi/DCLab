@@ -11,6 +11,7 @@ from fastapi import Request, Response
 from starlette.datastructures import Headers
 
 from app.config import Settings, cookie_secure, csrf_hmac_secret, get_settings
+from app.domain.service_tokens import is_service_token
 from app.services.auth_metrics import record_auth_event
 
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -91,10 +92,16 @@ def clear_csrf_cookie(response: Response, settings: Settings | None = None) -> N
     )
 
 
-def _bearer_present(headers: Headers) -> bool:
+def _bearer_present(headers: Headers, path: str = "/") -> bool:
     header = headers.get("authorization") or ""
     scheme, _, token = header.partition(" ")
-    return scheme.lower() == "bearer" and bool(token.strip())
+    if scheme.lower() != "bearer" or not token.strip():
+        return False
+    if is_service_token(token.strip()):
+        # P3.2-A: a service token is a credential only on /v1; elsewhere it never
+        # exempts a cookie request from CSRF (it is refused there anyway).
+        return path == "/v1" or path.startswith("/v1/")
+    return True
 
 
 def _session_raw(request: Request, settings: Settings) -> str | None:
@@ -113,7 +120,7 @@ def csrf_required(request: Request, settings: Settings | None = None) -> bool:
     path = request.url.path
     if path in BEARER_EXEMPT_PATHS:
         return False
-    if _bearer_present(request.headers):
+    if _bearer_present(request.headers, path):
         return False
     cfg = settings or get_settings()
     if any(path == prefix or path.startswith(prefix + "/") for prefix in ANONYMOUS_CSRF_PATH_PREFIXES):

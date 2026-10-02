@@ -662,6 +662,7 @@ def branch_experiment(
     idempotency_key: str | None = None,
     source_surface: str = SOURCE_API,
     before_commit: Callable[[Experiment], None] | None = None,
+    initiated_by_service_token_id: UUID | None = None,
 ) -> BranchResult:
     """Validate, materialize and enqueue one branch of ``parent_id``. Commits.
 
@@ -758,6 +759,7 @@ def branch_experiment(
         operation=OPERATION_MODEL_BUILD,
         source_surface=source_surface,
         requested_by_user_id=actor.id,
+        initiated_by_service_token_id=initiated_by_service_token_id,
         idempotency_key=key,
         request_spec=_legacy_labs_request_spec(
             upload,

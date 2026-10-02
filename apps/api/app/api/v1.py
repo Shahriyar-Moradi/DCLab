@@ -26,6 +26,8 @@ from starlette.datastructures import UploadFile
 from app.api.deps import (
     get_current_user,
     parse_requested_workspace_id,
+    principal_ref,
+    request_service_token,
     request_workspace_id,
     require_workspace_ml_execution,
     require_workspace_read,
@@ -53,6 +55,7 @@ from app.domain.decision_records import (
     DecisionSubjectKind,
     DecisionType,
 )
+from app.api.v1_agent_views import code_view, event_view, model_build_view, visualization_rows_view
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -75,6 +78,7 @@ from app.domain.errors import (
     IdentityError,
     InvalidCursorError,
     InvalidDecisionQueryError,
+    InvalidDecisionRecordError,
     OpenLabFileError,
     ProblemSpecNotFoundError,
     ProjectNotFoundError,
@@ -88,7 +92,6 @@ from app.domain.execution_requests import (
     SOURCE_API,
 )
 from app.domain.idempotency import (
-    PRINCIPAL_USER,
     REQUEST_DIGEST_SPEC_KEY,
     RESOURCE_DATASET,
     RESOURCE_PROBLEM_SPEC,
@@ -133,7 +136,7 @@ from app.services.project_service import create_project, get_project, list_proje
 from app.services.technical_explorer_service import get_dataset, list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
 from app.services.workspace_service import list_workspaces_for_actor
-from app.services.workspace_selection_service import principal_read
+from app.services.workspace_selection_service import principal_read, service_token_principal_read
 
 router = APIRouter(
     prefix="/v1", tags=["v1"], responses=error_responses(*COMMON_ERROR_STATUSES)
@@ -188,6 +191,9 @@ def _cursor_sequence(cursor: str | None, scope: str) -> int:
 
 def _principal(db, user, request) -> PrincipalRead:
     parse_requested_workspace_id(request)
+    token = request_service_token(request)
+    if token is not None:
+        return service_token_principal_read(db, user, request, token)
     return principal_read(db, user, request)
 
 
@@ -197,15 +203,21 @@ def read_principal(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PrincipalRead:
+    """The caller. For a service token: its creator's identity with ``service_token``
+    set, only the token's workspace, and capabilities narrowed to its scopes."""
+
     return _principal(db, user, request)
 
 
 @router.get("/workspaces", response_model=list[WorkspaceRead])
 def read_workspaces(
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[WorkspaceRead]:
-    return list_workspaces_for_actor(db, user)
+    token = request_service_token(request)
+    rows = list_workspaces_for_actor(db, user)
+    return rows if token is None else [row for row in rows if row.id == token.workspace_id]
 
 
 @router.get("/projects", response_model=list[ProjectRead])
@@ -266,8 +278,22 @@ _CREATED_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 
 def _key_scope(request: Request, user: User, operation: str) -> KeyScope:
-    # Service tokens (P3.2-A) will bind as ``service_token``.
-    return KeyScope(request_workspace_id(request), PRINCIPAL_USER, user.id, operation)
+    # Keys are scoped to the acting principal: the user, or the service token (P3.2-A).
+    kind, principal_id = principal_ref(request, user)
+    return KeyScope(request_workspace_id(request), kind, principal_id, operation)
+
+
+def _service_token_id(request: Request) -> UUID | None:
+    """The service token (agent) of this request, recorded as provenance (P3.4-A)."""
+
+    token = request_service_token(request)
+    return token.id if token is not None else None
+
+
+def _principal_id(request: Request, user: User) -> UUID:
+    """Principal bound into idempotency digests (the token for token requests)."""
+
+    return principal_ref(request, user)[1]
 
 
 def _keyed_command(
@@ -354,7 +380,7 @@ def create_project_v1(
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
         operation=_CREATE_PROJECT,
-        principal_id=user.id,
+        principal_id=_principal_id(request, user),
         header_key=idempotency_key,
         body=payload.model_dump(mode="json"),
         required=True,
@@ -415,7 +441,7 @@ def create_problem_spec_v1(
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
         operation=_CREATE_PROBLEM_SPEC,
-        principal_id=user.id,
+        principal_id=_principal_id(request, user),
         header_key=idempotency_key,
         path_params={"project_id": project_id},
         body=payload.model_dump(mode="json"),
@@ -436,6 +462,7 @@ def create_problem_spec_v1(
             actor=user,
             workspace_id=workspace_id,
             project_id=project_id,
+            created_by_service_token_id=_service_token_id(request),
             **payload.model_dump(),
         )
         bind(spec.id)
@@ -447,6 +474,9 @@ def create_problem_spec_v1(
             db, _key_scope(request, user, _CREATE_PROBLEM_SPEC), binding,
             resource_kind=RESOURCE_PROBLEM_SPEC, load=load, execute=execute,
         )
+    except InvalidDecisionRecordError as exc:  # agent text refused (secret-like / control chars)
+        db.rollback()
+        raise domain_error(exc, status_code=422, code="invalid_problem_spec") from exc
     except IdentityError as exc:
         db.rollback()
         raise _identity_http(exc) from exc
@@ -668,7 +698,8 @@ async def create_dataset_v1(
     workspace_id = request_workspace_id(request)
     if idempotency_key is None:  # fail before reading the body
         idempotency_binding(
-            operation=_CREATE_DATASET, principal_id=user.id, header_key=None, body=None, required=True
+            operation=_CREATE_DATASET, principal_id=_principal_id(request, user), header_key=None, body=None,
+            required=True,
         )
     limit = get_settings().v1_dataset_upload_max_bytes
     try:
@@ -694,7 +725,7 @@ async def create_dataset_v1(
         filename = upload.filename or "upload"
         binding = idempotency_binding(
             operation=_CREATE_DATASET,
-            principal_id=user.id,
+            principal_id=_principal_id(request, user),
             header_key=idempotency_key,
             body={
                 "project_id": str(project_id),
@@ -772,7 +803,7 @@ def submit_execution_request(
     workspace_id = request_workspace_id(request)
     binding = idempotency_binding(
         operation=_SUBMIT_OPERATION,
-        principal_id=user.id,
+        principal_id=_principal_id(request, user),
         header_key=idempotency_key,
         body_key=payload.idempotency_key,
         body=payload.model_dump(mode="json", exclude={"idempotency_key"}),
@@ -814,6 +845,7 @@ def submit_execution_request(
             source_surface=SOURCE_API,
             project_id=payload.project_id,
             requested_by_user_id=user.id,
+            initiated_by_service_token_id=_service_token_id(request),
             idempotency_key=binding.key,
             external_request_id=payload.external_request_id,
             parent_request_id=payload.parent_request_id,
@@ -895,6 +927,7 @@ def confirm_execution_request_target(
             workspace_id=workspace_id,
             request_id=request_id,
             target_column=payload.target_column,
+            service_token_id=_service_token_id(request),
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
@@ -964,6 +997,7 @@ def read_model_build(
         raise _identity_http(exc) from exc
     if body is None:
         raise _not_found()
+    body = model_build_view(request, body)
     set_etag(response, representation_etag(body))
     return body
 
@@ -996,7 +1030,7 @@ def read_model_build_events(
     if len(rows) > limit:
         next_cursor = sign_cursor(scope, [int(page[-1].sequence)])
     return EventPage(
-        items=[MlRunEventRead.model_validate(event_read(row)) for row in page],
+        items=[event_view(request, MlRunEventRead.model_validate(event_read(row))) for row in page],
         next_cursor=next_cursor,
     )
 
@@ -1019,6 +1053,7 @@ def read_model_build_visualizations(
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
+    rows = visualization_rows_view(request, db, rows)
     return [VisualizationRead.model_validate(row) for row in rows]
 
 
@@ -1050,7 +1085,8 @@ def read_experiment_code(
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
 ) -> ExperimentCodeRead:
-    """Standalone reproduction script + notebook for one experiment (root or branch)."""
+    """Standalone reproduction script + notebook for one experiment (root or branch).
+    For service-token (agent) callers the ``HOLDOUT_METRICS`` literal is emptied."""
 
     workspace_id = request_workspace_id(request)
     try:
@@ -1059,4 +1095,4 @@ def read_experiment_code(
         raise _identity_http(exc) from exc
     if body is None:
         raise _not_found()
-    return body
+    return code_view(request, body)

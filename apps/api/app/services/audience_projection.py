@@ -23,16 +23,22 @@ _BLOCKED_KEY_PARTS = (
     "raw_response", "raw_request", "raw_provider", "raw_output", "raw_prompt",
     "raw_trace", "output_text", "choices", "sample_rows",
 )
+# DCLab service-token bearer strings (P3.2-A). The one shared pattern: embedded in
+# SECRET_TEXT / _UNSAFE_TEXT here and used by observability_service and
+# verification_evidence. A lookbehind instead of ``\b`` so ``x_dclab_st_...`` matches too.
+SERVICE_TOKEN_TEXT = r"(?<![A-Za-z0-9])dclab_st_[A-Za-z0-9_-]{8,}"
+SERVICE_TOKEN_PATTERN = re.compile(SERVICE_TOKEN_TEXT)
 _UNSAFE_TEXT = re.compile(
     r"(?i)(traceback \(most recent call last\)|(?:^|\s)(?:/users/|/private/|/tmp/|/var/|/home/|/app/)|"
     r"[a-z]:\\|(?:s3|gs|object|file)://|\b(?:workspaces|private|artifacts)/[a-z0-9._/-]+|"
-    r"\bbearer\s+\S+|\bsk-[a-z0-9_-]{8,}|"
+    r"\bbearer\s+\S+|\bsk-[a-z0-9_-]{8,}|" + SERVICE_TOKEN_TEXT + "|"
     r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})"
 )
 # Credential-shaped text (the secret subset of _UNSAFE_TEXT). Append-only
 # writers reject it outright instead of redacting it on read.
 SECRET_TEXT = re.compile(
-    r"(?i)(\bbearer\s+\S+|\bsk-[a-z0-9_-]{8,}|-----begin [a-z ]*private key-----|\bakia[0-9a-z]{16}\b)"
+    r"(?i)(\bbearer\s+\S+|\bsk-[a-z0-9_-]{8,}|" + SERVICE_TOKEN_TEXT + "|"
+    r"-----begin [a-z ]*private key-----|\bakia[0-9a-z]{16}\b)"
 )
 BLOCKED_KEY_PARTS = _BLOCKED_KEY_PARTS
 _MAX_DEPTH = 6

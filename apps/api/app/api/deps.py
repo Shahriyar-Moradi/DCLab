@@ -5,14 +5,19 @@ import uuid
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.api.v1_conventions import is_v1_path
 from app.config import get_settings
 from app.db.models import AuthSession, User
 from app.db.session import get_db
+from app.domain.idempotency import PRINCIPAL_SERVICE_TOKEN, PRINCIPAL_USER
+from app.domain.service_tokens import WRITE_SCOPES, ServiceTokenPrincipalRead, is_service_token, token_route_scope
 from app.services.auth_service import AuthError, user_from_token
+from app.services.service_token_service import authenticate_service_token
 from app.services.session_service import SESSION_HEADER, user_from_session
 from app.services.authorization_service import (
     AuthorizationError,
     WorkspaceAccess,
+    is_ml_write_role,
     resolve_workspace_access,
     workspace_is_selectable,
 )
@@ -33,7 +38,7 @@ from app.services.workspace_access_metrics import record_workspace_access_event
 def _deny_workspace(
     request: Request,
     status_code: int,
-    detail: str,
+    detail: str | dict[str, object],
     reason: str,
     *,
     user: User | None = None,
@@ -67,8 +72,80 @@ def session_credential(request: Request) -> str | None:
     return None
 
 
+def request_service_token(request: Request) -> ServiceTokenPrincipalRead | None:
+    """The authenticated service token of this request, if the principal is one."""
+
+    value = getattr(request.state, "service_token", None)
+    return value if isinstance(value, ServiceTokenPrincipalRead) else None
+
+
+def principal_ref(request: Request, user: User) -> tuple[str, uuid.UUID]:
+    """(kind, id) of the acting principal: idempotency keys are scoped to it."""
+
+    token = request_service_token(request)
+    return (PRINCIPAL_SERVICE_TOKEN, token.id) if token is not None else (PRINCIPAL_USER, user.id)
+
+
+def _service_token_user(request: Request, db: Session, raw: str) -> User:
+    """P3.2-A: a service token authenticates /v1 only, never alongside a session, and
+    only for operations its scopes cover. It acts as its creator (re-authorized per
+    request by the workspace dependencies), pinned to the token's workspace."""
+
+    if not is_v1_path(request.url.path):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="service tokens authenticate /v1 only",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if session_credential(request):
+        # Fail closed before resolving either credential: no mixing, no fallback.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "ambiguous_credentials", "message": "send a service token or a session, not both"},
+        )
+    try:
+        row, creator, member_role = authenticate_service_token(db, raw)
+    except AuthError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    principal = ServiceTokenPrincipalRead(
+        id=row.id, name=row.name, workspace_id=row.workspace_id, scopes=list(row.scopes), expires_at=row.expires_at
+    )
+    db.commit()  # throttled last_used_at
+    request.state.service_token = principal
+    route = request.scope.get("route")
+    required = token_route_scope(request.method, getattr(route, "path", None))
+    if required is None:
+        _deny_workspace(
+            request, status.HTTP_403_FORBIDDEN,
+            {"code": "service_token_not_permitted", "message": "service tokens cannot call this operation"},
+            "capability_denied", user=creator, workspace_id=principal.workspace_id,
+        )
+    if required not in principal.scopes:
+        _deny_workspace(
+            request, status.HTTP_403_FORBIDDEN,
+            {"code": "insufficient_scope", "message": f"this operation needs the {required} scope",
+             "required_scope": required},
+            "capability_denied", user=creator, workspace_id=principal.workspace_id,
+        )
+    if required in WRITE_SCOPES and not is_ml_write_role(member_role):
+        # Writes need the creator's explicit ML-write membership (never a platform role).
+        _deny_workspace(
+            request, status.HTTP_403_FORBIDDEN,
+            "workspace ML execution access is not permitted", "capability_denied",
+            user=creator, workspace_id=principal.workspace_id,
+        )
+    return creator
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     bearer = _bearer_token(request)
+    if bearer and is_service_token(bearer):
+        return _service_token_user(request, db, bearer)
     if bearer:
         try:
             return user_from_token(db, bearer)
@@ -202,15 +279,27 @@ def _session_selected_workspace_id(
 
 def _workspace_access(request: Request, db: Session, user: User) -> WorkspaceAccess:
     header = _requested_workspace_id(request)
-    if _bearer_token(request) and header is None:
+    token = request_service_token(request)
+    if token is not None:
+        # A token acts only inside its own workspace; a selector may only repeat it.
+        if header is not None and header != token.workspace_id:
+            _deny_workspace(
+                request, status.HTTP_403_FORBIDDEN,
+                "not authorized for this workspace", "unauthorized_selector",
+                user=user, workspace_id=header,
+            )
+    elif _bearer_token(request) and header is None:
         _deny_workspace(
             request, status.HTTP_400_BAD_REQUEST,
             "bearer workspace requests require X-Workspace-Id",
             "missing_selector", user=user,
         )
-    requested = header if header is not None else _session_selected_workspace_id(
-        request, db, user
-    )
+    if token is not None:
+        requested: uuid.UUID | None = token.workspace_id
+    else:
+        requested = header if header is not None else _session_selected_workspace_id(
+            request, db, user
+        )
     try:
         access = resolve_workspace_access(db, user, requested)
     except AuthorizationError as exc:
@@ -284,6 +373,20 @@ def require_workspace_ml_execution(
             user=user, workspace_id=access.workspace_id,
         )
     return user
+
+
+def require_session_workspace_member(
+    request: Request, db: Session = Depends(get_db)
+) -> User:
+    """Workspace member on a signed-in session only: no Authorization header of any
+    kind (service tokens and API bearers can never manage service tokens)."""
+
+    if (request.headers.get("Authorization") or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "session_required", "message": "service tokens are managed from a signed-in session"},
+        )
+    return require_workspace_read(request, get_current_user(request, db), db)
 
 
 def request_workspace_id(request: Request) -> uuid.UUID:

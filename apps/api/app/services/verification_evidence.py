@@ -8,6 +8,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.audience_projection import SERVICE_TOKEN_TEXT
+
 MAX_LIST_ITEMS = 25
 MAX_MAPPING_ITEMS = 50
 MAX_STRING_CHARS = 320
@@ -16,7 +18,8 @@ MAX_DEPTH = 7
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d .()\-]{7,}\d)(?!\w)")
 _SECRET = re.compile(
-    r"(?i)(?:sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._-]{12,}|(?:api[_ -]?key|password|secret|token)\s*[:=]\s*\S+)"
+    r"(?i)(?:" + SERVICE_TOKEN_TEXT + r"|sk-[a-z0-9_-]{12,}|bearer\s+[a-z0-9._-]{12,}|"
+    r"(?:api[_ -]?key|password|secret|token)\s*[:=]\s*\S+)"
 )
 _INJECTION = re.compile(
     r"(?i)(ignore (?:all |any )?(?:previous|prior|system) instructions|system prompt|developer message|you are (?:chatgpt|an? ai)|do not follow|reveal (?:the )?(?:prompt|secret))"

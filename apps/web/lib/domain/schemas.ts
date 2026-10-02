@@ -864,3 +864,28 @@ export const VerificationAttemptSchema = z.object({
   created_at: z.string(),
 });
 export type VerificationAttempt = z.infer<typeof VerificationAttemptSchema>;
+
+/** /v1 service tokens (P3.2-A). Metadata only; `secret` appears once, on create. */
+export const SERVICE_TOKEN_SCOPES = [
+  "read",
+  "projects:write",
+  "datasets:write",
+  "experiments:write",
+  "decisions:propose",
+] as const;
+export const ServiceTokenSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  name: z.string(),
+  prefix: z.string(),
+  scopes: z.array(z.string()),
+  status: z.enum(["active", "expired", "revoked"]),
+  created_by_user_id: z.string(),
+  created_at: z.string(),
+  expires_at: z.string(),
+  last_used_at: z.string().nullable().optional(),
+  revoked_at: z.string().nullable().optional(),
+});
+export type ServiceToken = z.infer<typeof ServiceTokenSchema>;
+export const ServiceTokenCreatedSchema = ServiceTokenSchema.extend({ secret: z.string().nullable() });
+export type ServiceTokenCreated = z.infer<typeof ServiceTokenCreatedSchema>;

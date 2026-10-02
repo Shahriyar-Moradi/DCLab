@@ -175,6 +175,29 @@ def test_omits_workspace_header_unless_constructed_with_one():
     assert "x-dclab-session" not in request.headers
 
 
+def test_service_token_needs_no_workspace_and_parses_its_principal():
+    recorded: list[httpx.Request] = []
+    token = "dclab_st_" + "a" * 32 + "_" + "b" * 43
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path == "/v1/me":
+            return httpx.Response(200, json={
+                "id": "11111111-1111-1111-1111-111111111111", "email": "a@b.test", "role": "ml_engineer",
+                "full_name": "A", "capability_matrix_version": "v1",
+                "service_token": {"id": "22222222-2222-2222-2222-222222222222", "name": "ci",
+                                  "workspace_id": "33333333-3333-3333-3333-333333333333",
+                                  "scopes": ["read"], "expires_at": "2026-12-01T00:00:00Z"},
+            })
+        return httpx.Response(200, json=[])
+
+    api = _client(handler, token=token)
+    assert api.identity.me().service_token.scopes == ["read"]
+    assert api.projects.list() == []
+    assert all(r.headers["Authorization"] == f"Bearer {token}" for r in recorded)
+    assert all("X-Workspace-Id" not in r.headers for r in recorded)
+
+
 def test_workspace_resource_requires_explicit_sdk_scope():
     requests: list[httpx.Request] = []
 

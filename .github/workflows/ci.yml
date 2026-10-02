@@ -57,6 +57,8 @@ jobs:
       - name: Install backend
         run: |
           pip install -r requirements.lock
+          # MCP server tests (packages/dclab_mcp); kept out of the API/worker images.
+          pip install -r requirements-mcp.lock
           pip install -e . --no-deps
 
       - name: Create databases

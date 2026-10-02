@@ -364,9 +364,11 @@ def ensure_demo_users(db: Session) -> list[User]:
             _sync_platform_membership(db, user, role)
             _sync_workspace_membership(db, user, role, workspace_id)
             if previous_role != user.role:
+                from app.services.service_token_service import revoke_tokens_created_by
                 from app.services.session_service import revoke_sessions_for_user
 
                 revoke_sessions_for_user(db, user.id)
+                revoke_tokens_created_by(db, user.id, reason="role_change")
         if home == "personal":
             user.role = UserRole.WORKSPACE_OWNER.value
             personal_id = _ensure_personal_workspace(db, user)

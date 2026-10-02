@@ -524,6 +524,11 @@ def extract_sdk_v1_paths(source: str) -> list[str]:
     return sorted(set(found))
 
 
+# /v1 paths the bearer-authenticated SDK can never call: service-token management
+# is session-only (any Authorization header is 403 session_required, P3.2-A).
+SDK_EXEMPT_V1_PATHS = frozenset({"/v1/service-tokens", "/v1/service-tokens/{}/revoke"})
+
+
 def check_sdk_routes(
     sdk_paths: Sequence[str] | None = None,
     openapi_paths: Sequence[str] | None = None,
@@ -540,7 +545,7 @@ def check_sdk_routes(
     api_norm = {normalize_path_template(path) for path in openapi_paths}
     problems: list[str] = []
     missing_from_api = sorted(sdk_norm - api_norm)
-    missing_from_sdk = sorted(api_norm - sdk_norm)
+    missing_from_sdk = sorted(api_norm - sdk_norm - SDK_EXEMPT_V1_PATHS)
     if missing_from_api:
         problems.append(
             "SDK /v1 paths are not in runtime OpenAPI: " + ", ".join(missing_from_api)

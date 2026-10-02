@@ -400,3 +400,20 @@ class IdempotencyKeyReusedError(Exception):
 
     def __init__(self, message: str = "this Idempotency-Key was used for a different request") -> None:
         super().__init__(message)
+
+
+class ServiceTokenError(Exception):
+    """A service-token lifecycle rule was violated (P3.2-A); ``code`` is stable."""
+
+    def __init__(self, code: str, message: str, status_code: int = 400, **extra: object) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status_code = status_code
+        self.extra = extra
+
+    def public_detail(self) -> dict[str, object]:
+        return {"code": self.code, "message": str(self), **self.extra}
+
+
+class ServiceTokenNotFoundError(LookupError):
+    """No visible service token with this id in the workspace (also: another tenant's). 404."""

@@ -751,6 +751,36 @@
       "definition": "CHECK ((((provenance)::text <> 'user'::text) OR (created_by IS NOT NULL)))"
     },
     {
+      "table": "service_tokens",
+      "name": "ck_service_tokens_expiry",
+      "definition": "CHECK (((expires_at > created_at) AND (expires_at <= (created_at + '2160:00:00'::interval))))"
+    },
+    {
+      "table": "service_tokens",
+      "name": "ck_service_tokens_name",
+      "definition": "CHECK (((char_length(btrim((name)::text)) >= 1) AND (char_length(btrim((name)::text)) <= 80)))"
+    },
+    {
+      "table": "service_tokens",
+      "name": "ck_service_tokens_revoked",
+      "definition": "CHECK (((revoked_at IS NULL) OR (revoked_at >= created_at)))"
+    },
+    {
+      "table": "service_tokens",
+      "name": "ck_service_tokens_revoked_by",
+      "definition": "CHECK (((revoked_by_user_id IS NULL) OR (revoked_at IS NOT NULL)))"
+    },
+    {
+      "table": "service_tokens",
+      "name": "ck_service_tokens_scopes",
+      "definition": "CHECK (\nCASE\n    WHEN (jsonb_typeof(scopes) = 'array'::text) THEN (((jsonb_array_length(scopes) >= 1) AND (jsonb_array_length(scopes) <= 5)) AND (scopes <@ '[\"read\", \"projects:write\", \"datasets:write\", \"experiments:write\", \"decisions:propose\"]'::jsonb) AND (jsonb_array_length(scopes) = (((((jsonb_exists(scopes, 'read'::text))::integer + (jsonb_exists(scopes, 'projects:write'::text))::integer) + (jsonb_exists(scopes, 'datasets:write'::text))::integer) + (jsonb_exists(scopes, 'experiments:write'::text))::integer) + (jsonb_exists(scopes, 'decisions:propose'::text))::integer)))\n    ELSE false\nEND)"
+    },
+    {
+      "table": "service_tokens",
+      "name": "ck_service_tokens_secret_hash",
+      "definition": "CHECK (((secret_hash)::text ~ '^[a-f0-9]{64}$'::text))"
+    },
+    {
       "table": "simulation_runs",
       "name": "ck_simulation_runs_project_requires_workspace",
       "definition": "CHECK (((project_id IS NULL) OR (workspace_id IS NOT NULL)))"
@@ -1046,6 +1076,16 @@
       "table": "runtime_environments",
       "name": "runtime_environments_immutable",
       "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "service_tokens",
+      "name": "service_tokens_columns_immutable",
+      "definition": "CREATE TRIGGER service_tokens_columns_immutable BEFORE UPDATE ON public.service_tokens FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('id,workspace_id,created_by_user_id,name,scopes,secret_hash,created_at,expires_at')"
+    },
+    {
+      "table": "service_tokens",
+      "name": "service_tokens_revocation_final",
+      "definition": "CREATE TRIGGER service_tokens_revocation_final BEFORE UPDATE OF revoked_at, revoked_by_user_id ON public.service_tokens FOR EACH ROW WHEN (((old.revoked_at IS NOT NULL) AND ((new.revoked_at IS DISTINCT FROM old.revoked_at) OR ((new.revoked_by_user_id IS DISTINCT FROM old.revoked_by_user_id) AND (new.revoked_by_user_id IS NOT NULL))))) EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "split_plans",

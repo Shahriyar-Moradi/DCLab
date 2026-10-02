@@ -66,12 +66,16 @@ def record_workspace_access_event(
     bounded_reason = reason if reason in REASONS else "other"
     with _lock:
         _counts[(bounded_family, bounded_reason)] += 1
+    token = getattr(request.state, "service_token", None)  # set by /v1 bearer resolution
+    token_id = getattr(token, "id", None)
     event = {
         "event": "workspace_access",
         "family": bounded_family,
         "reason": bounded_reason,
         "request_id": request_id_of(request),
         "actor_id": str(actor_id) if actor_id is not None else None,
+        "principal_kind": "service_token" if token_id is not None else ("user" if actor_id is not None else None),
+        "service_token_id": str(token_id) if token_id is not None else None,
         "workspace_id": str(workspace_id) if workspace_id is not None else None,
     }
     logger.info("workspace_audit %s", json.dumps(event, sort_keys=True))

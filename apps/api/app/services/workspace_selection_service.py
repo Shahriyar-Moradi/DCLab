@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import AuthSession, User, UserRole, Workspace
 from app.domain.application_api import PrincipalRead, PrincipalWorkspaceRead
+from app.domain.service_tokens import WRITE_SCOPES, SCOPE_READ, ServiceTokenPrincipalRead
 from app.services.authorization_service import (
     AuthorizationError,
     active_workspace_memberships,
@@ -20,6 +21,8 @@ from app.services.authorization_service import (
 from app.services.request_ids import request_id_of
 from app.services.workspace_capability_service import (
     CAPABILITY_MATRIX_VERSION,
+    WORKSPACE_EXECUTE_ML,
+    WORKSPACE_READ,
     effective_capability_matrix,
 )
 
@@ -144,4 +147,29 @@ def principal_read(db: Session, user: User, request: Request) -> PrincipalRead:
         capability_matrix_version=CAPABILITY_MATRIX_VERSION,
         capabilities=effective_capability_matrix(db, user, active),
         request_id=request_id_of(request),
+    )
+
+
+def service_token_principal_read(
+    db: Session, user: User, request: Request, token: ServiceTokenPrincipalRead
+) -> PrincipalRead:
+    """``/v1/me`` for a service token: the creator whose authority it borrows, pinned
+    to the token's workspace, capabilities narrowed to what its scopes allow."""
+
+    allowed = {WORKSPACE_READ} if SCOPE_READ in token.scopes else set()
+    if WRITE_SCOPES.intersection(token.scopes):
+        allowed.add(WORKSPACE_EXECUTE_ML)
+    matrix = effective_capability_matrix(db, user, token.workspace_id)
+    return PrincipalRead(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        full_name=user.full_name,
+        workspace_id=token.workspace_id,
+        active_workspace_id=token.workspace_id,
+        workspaces=[row for row in list_selectable_workspaces(db, user) if row.id == token.workspace_id],
+        capability_matrix_version=CAPABILITY_MATRIX_VERSION,
+        capabilities={key: bool(value) and key in allowed for key, value in matrix.items()},
+        request_id=request_id_of(request),
+        service_token=token,
     )

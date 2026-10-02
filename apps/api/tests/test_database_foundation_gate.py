@@ -100,6 +100,9 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_ml_run_verifications_workspace_experiment": "n",
     "fk_ml_run_verifications_workspace_llm_invocation": "n",
     "fk_llm_invocations_workspace_project": "a",
+    # P3.4-A (0068): agent provenance is kept, never erased by a delete.
+    "fk_execution_requests_service_token": "a",
+    "fk_problem_specs_service_token": "a",
 }
 
 

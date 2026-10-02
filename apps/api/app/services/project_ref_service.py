@@ -1,14 +1,17 @@
 """Project refs: the only mutable graph pointers (ADR 0006 §2).
 
 P2.2-B ships the bootstrap rule only (``refs.bootstrap.v1``): the first run in
-a project that reaches a locked ModelVersion *with* a project source dataset and
-a SplitPlan initializes the refs from its own lineage with one accepted
-``ref_initialized`` record, in the same transaction. A run that cannot satisfy
+a project without a champion that reaches a locked ModelVersion *with* a project
+source dataset and a SplitPlan initializes the missing refs from its own lineage
+(refs a human already set are kept) with one accepted ``ref_initialized`` record,
+in the same transaction. A run that cannot satisfy
 ``dataset``, ``split_plan`` and ``champion_model`` defers bootstrap to a later
 run. ``problem_spec`` / ``feature_recipe`` may still be unsatisfiable; they are
 listed in ``details.skipped_refs`` and P2.5-A ``move_ref`` may insert them later
 (``from: null``) under an accepted record (ADR 0006 Revision 2). Later runs
-never move refs automatically.
+never move refs automatically. A run started by a service token (an agent)
+never initializes refs either: its bootstrap is recorded as that agent's proposal
+(P3.4-A), which a human accepts with ``move_ref(proposal_id=...)``.
 
 P2.5-A ``move_ref`` is the only other writer: one transaction (savepoint) that
 INSERTs the accepted ``ref_moved``/``champion_promoted`` record first, then a
@@ -32,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     Dataset,
+    ExecutionRequest,
     Experiment,
     FeatureSetVersion,
     ModelEvaluation,
@@ -86,23 +90,16 @@ from app.services.split_plan_service import is_unique_race
 
 logger = logging.getLogger(__name__)
 
+REFS_BOOTSTRAP_PROPOSAL_RATIONALE = (
+    "first locked model of a run started by a service token; refs initialize only when a human accepts"
+)
+
 # Bootstrap waits for a run whose lineage satisfies these kinds.
 BOOTSTRAP_REQUIRED_REF_KINDS = ("dataset", "split_plan", "champion_model")
 # A concurrent bootstrap of the same project collides on one of these.
 BOOTSTRAP_RACE_CONSTRAINTS = frozenset(
     {"uq_pdr_workspace_idempotency_key", "uq_project_refs_project_ref_kind"}
 )
-
-
-def project_has_refs(db: Session, *, workspace_id: UUID, project_id: UUID) -> bool:
-    return (
-        db.scalar(
-            select(ProjectRef.id)
-            .where(ProjectRef.workspace_id == workspace_id, ProjectRef.project_id == project_id)
-            .limit(1)
-        )
-        is not None
-    )
 
 
 def _bootstrap_targets(
@@ -168,11 +165,17 @@ def _bootstrap_targets(
 def initialize_refs_on_first_model(
     db: Session, *, experiment: Experiment, model_version: ModelVersion
 ) -> ProjectDecisionRecord | None:
-    """``refs.bootstrap.v1``: initialize refs once per project; never moves existing refs.
+    """``refs.bootstrap.v1``: initialize the missing refs while the project has no
+    champion; never moves an existing ref.
 
     Called after the run's evidence lock, before its commit. Returns the
-    ``ref_initialized`` record, or None when the project already has refs, the
-    run has no project, or the champion rule cannot be met (no final holdout).
+    ``ref_initialized`` record, or None when the project already has a champion,
+    the run has no project, its lineage differs from an existing dataset /
+    split_plan / feature_recipe ref, or the champion rule cannot be met (no final
+    holdout). Refs a human already set (e.g. an accepted problem_spec) are kept
+    and listed in ``details.skipped_refs``. A run a service token started (P3.4-A)
+    writes no refs: it returns that agent's proposed ``champion_promoted`` record
+    instead (one open proposal per project; a new one after a rejection).
     """
 
     project_id = experiment.project_id
@@ -182,7 +185,8 @@ def initialize_refs_on_first_model(
         return None
     if model_version.pipeline_run_id != experiment.id or model_version.workspace_id != experiment.workspace_id:
         return None
-    if project_has_refs(db, workspace_id=experiment.workspace_id, project_id=project_id):
+    current = current_refs(db, workspace_id=experiment.workspace_id, project_id=project_id)
+    if "champion_model" in current:
         return None
     holdout = db.scalar(
         select(ModelEvaluation)
@@ -200,9 +204,26 @@ def initialize_refs_on_first_model(
         # Defer: a one-shot bootstrap without dataset/split plan would leave
         # the project's refs permanently incomplete.
         return None
+    if not _keep_existing_refs(targets, skipped, current):
+        return None
     selection_metric = None
     if isinstance(experiment.result, dict):
         selection_metric = (experiment.result.get("selection") or {}).get("selection_metric")
+    token_id = _initiating_service_token(db, experiment)
+    if token_id is not None:
+        # P3.4-A: a run an agent (service token) started never sets refs on its
+        # own; the bootstrap becomes that agent's proposal, which only a human
+        # accepting it (the ref-move path with this proposal) applies.
+        return _propose_bootstrap(
+            db, experiment=experiment, model_version=model_version, targets=targets, current=current,
+            skipped=skipped, token_id=token_id, holdout_id=holdout.id, selection_metric=selection_metric,
+        )
+    if "problem_spec" in targets:
+        spec = db.get(ProblemSpec, targets["problem_spec"])
+        if spec is not None and spec.created_by_service_token_id is not None:
+            # A rule never adopts an agent-authored spec; a human accepts its proposal.
+            del targets["problem_spec"]
+            skipped.append({"ref_kind": "problem_spec", "reason": "agent-authored spec; accept its proposal"})
     ref_moves = [
         {
             "ref_kind": kind,
@@ -262,6 +283,117 @@ def initialize_refs_on_first_model(
         if not is_unique_race(exc, BOOTSTRAP_RACE_CONSTRAINTS):
             raise
         logger.info("project %s refs were bootstrapped concurrently; keeping them", project_id)
+        return None
+    return record
+
+
+def _keep_existing_refs(
+    targets: dict[str, UUID], skipped: list[dict[str, str]], current: dict[str, ProjectRef]
+) -> bool:
+    """Drop kinds a ref already covers (never moved by a bootstrap). False when the run's
+    dataset / split plan / feature recipe differs from an existing ref: the run is not
+    on the project's current lineage, so it defers."""
+
+    for kind, ref in current.items():
+        if kind not in targets:
+            continue
+        if _ref_target_id(ref) == targets[kind]:
+            reason = "ref already set"
+        elif kind == "problem_spec":
+            reason = "ref already points at another problem spec"
+        else:
+            return False
+        del targets[kind]
+        skipped.append({"ref_kind": kind, "reason": reason})
+    return True
+
+
+def _initiating_service_token(db: Session, experiment: Experiment) -> UUID | None:
+    """The service token whose /v1 call queued this run (``execution_requests``), if any."""
+
+    return db.scalar(
+        select(ExecutionRequest.initiated_by_service_token_id)
+        .where(
+            ExecutionRequest.workspace_id == experiment.workspace_id,
+            ExecutionRequest.pipeline_run_id == experiment.id,
+            ExecutionRequest.initiated_by_service_token_id.is_not(None),
+        )
+        .limit(1)
+    )
+
+
+BOOTSTRAP_PROPOSAL_KEY_PREFIX = "ref_bootstrap_proposal"
+
+
+def bootstrap_proposal_idempotency_key(project_id: UUID | str, generation: int) -> str:
+    """One open agent bootstrap proposal per project; a rejected one is followed by
+    the next generation (a concurrent duplicate collides on the key)."""
+
+    return f"{BOOTSTRAP_PROPOSAL_KEY_PREFIX}:{project_id}:{generation}"
+
+
+def _propose_bootstrap(
+    db: Session,
+    *,
+    experiment: Experiment,
+    model_version: ModelVersion,
+    targets: dict[str, UUID],
+    current: dict[str, ProjectRef],
+    skipped: list[dict[str, str]],
+    token_id: UUID,
+    holdout_id: UUID,
+    selection_metric: str | None,
+) -> ProjectDecisionRecord | None:
+    """The bootstrap's ref moves (missing kinds only, ``from: null``) as a proposed
+    ``champion_promoted`` record of the initiating agent; no ref is written. Skipped
+    while an earlier bootstrap proposal of the project is still open."""
+
+    ws, project_id = experiment.workspace_id, experiment.project_id
+    earlier = list(db.scalars(
+        select(ProjectDecisionRecord).where(
+            ProjectDecisionRecord.workspace_id == ws,
+            ProjectDecisionRecord.project_id == project_id,
+            ProjectDecisionRecord.idempotency_key.like(f"{BOOTSTRAP_PROPOSAL_KEY_PREFIX}:{project_id}:%"),
+        )
+    ))
+    if earlier:
+        resolved = set(db.scalars(
+            select(ProjectDecisionRecord.supersedes_id).where(
+                ProjectDecisionRecord.workspace_id == ws,
+                ProjectDecisionRecord.supersedes_id.in_([row.id for row in earlier]),
+            )
+        ))
+        if any(row.id not in resolved for row in earlier):
+            return None  # still open: a human has not accepted or rejected it yet
+    key = bootstrap_proposal_idempotency_key(project_id, len(earlier) + 1)
+    moves = [RefMove(kind, targets[kind], None) for kind in REF_KINDS if kind in targets]
+    evidence = [
+        evidence_ref("candidate", model_version.selected_candidate_id, metric=selection_metric,
+                     scope=FINAL_HOLDOUT_SCOPE)
+    ]
+    try:
+        rows = _load_targets(db, workspace_id=ws, project_id=project_id, moves=moves)
+        _check_targets(db, moves=moves, targets=rows, current=current, evidence=evidence)
+    except (InvalidDecisionRecordError, RefTargetNotFoundError, ChampionSplitPlanMismatchError) as exc:
+        logger.info("project %s: no bootstrap proposal (%s)", project_id, getattr(exc, "code", exc))
+        return None
+    record = _ref_move_record(
+        workspace_id=ws, project_id=project_id, actor=DecisionActor.agent(service_token_id=token_id),
+        decision_type=DECISION_CHAMPION_PROMOTED, state=STATE_PROPOSED, moves=moves, targets=rows,
+        current=current, rationale=REFS_BOOTSTRAP_PROPOSAL_RATIONALE,
+        evidence=evidence,
+        facts={"experiment_id": str(experiment.id), "model_version": model_version.version,
+               "final_holdout_evaluation_id": str(holdout_id)},
+        supersedes_id=None, key=key,
+    )
+    record.details = {**record.details, "skipped_refs": skipped}
+    try:
+        with db.begin_nested():
+            db.add(record)
+            db.flush()
+    except IntegrityError as exc:
+        if not is_unique_race(exc, BOOTSTRAP_RACE_CONSTRAINTS):
+            raise
         return None
     return record
 

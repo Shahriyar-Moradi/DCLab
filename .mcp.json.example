@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "dclab": {
+      "command": "python",
+      "args": ["-m", "dclab_mcp"],
+      "env": {
+        "DCLAB_API_URL": "http://localhost:8001",
+        "DCLAB_WORKSPACE": "<your-workspace-id>",
+        "DCLAB_TOKEN": "${DCLAB_TOKEN}",
+        "DCLAB_MCP_WRITE_ENABLED": "0"
+      }
+    }
+  }
+}

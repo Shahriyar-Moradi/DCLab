@@ -11,6 +11,8 @@ htmlcov/
 # Environment
 .env
 .env.local
+# Local MCP config (may hold a service token); copy from .mcp.json.example
+.mcp.json
 
 # Experiment artifacts and large datasets
 artifacts/**

@@ -81,6 +81,14 @@ from app.domain.idempotency import (
     UQ_IDEMPOTENCY_KEYS_SCOPE,
 )
 from app.domain.lab_run_stages import CK_CLIENT_LAB_UPLOADS_CLIENT_STATUS, NEEDS_INPUT
+from app.domain.service_tokens import (
+    CK_SERVICE_TOKENS_EXPIRY,
+    CK_SERVICE_TOKENS_NAME,
+    CK_SERVICE_TOKENS_REVOKED,
+    CK_SERVICE_TOKENS_REVOKED_BY,
+    CK_SERVICE_TOKENS_SCOPES,
+    CK_SERVICE_TOKENS_SECRET_HASH,
+)
 from app.domain.privacy_audit import (
     CK_DATASET_COLUMNS_CLASSIFICATION_CONFIDENCE,
     CK_DATASET_COLUMNS_POLICY_SCHEMA_VERSION,
@@ -882,6 +890,12 @@ class ProblemSpec(Base):
             name="fk_problem_specs_workspace_project",
             ondelete="CASCADE",
         ),
+        # P3.4-A: provenance of a spec written by a service token (an agent).
+        ForeignKeyConstraint(
+            ["workspace_id", "created_by_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_problem_specs_service_token",
+        ),
         CheckConstraint("version >= 1", name="ck_problem_specs_version_positive"),
         CheckConstraint(
             "status IN ('draft', 'locked')",
@@ -889,6 +903,12 @@ class ProblemSpec(Base):
         ),
         Index("ix_problem_specs_workspace_id", "workspace_id"),
         Index("ix_problem_specs_project_id", "project_id"),
+        Index(
+            "ix_problem_specs_service_token",
+            "workspace_id",
+            "created_by_service_token_id",
+            postgresql_where=text("created_by_service_token_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -918,6 +938,9 @@ class ProblemSpec(Base):
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -1618,6 +1641,13 @@ class ExecutionRequest(Base):
             ondelete="SET NULL (pipeline_run_id)",
             use_alter=True,
         ),
+        # P3.4-A: the service token (agent) that initiated the request, if any.
+        ForeignKeyConstraint(
+            ["workspace_id", "initiated_by_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_execution_requests_service_token",
+            use_alter=True,
+        ),
         CheckConstraint(CK_EXECUTION_REQUEST_OPERATION, name="ck_execution_requests_operation"),
         CheckConstraint(CK_EXECUTION_REQUEST_SOURCE, name="ck_execution_requests_source"),
         CheckConstraint(CK_EXECUTION_REQUEST_STATUS, name="ck_execution_requests_status"),
@@ -1659,6 +1689,19 @@ class ExecutionRequest(Base):
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
         ),
+        Index(
+            "ix_execution_requests_service_token",
+            "workspace_id",
+            "initiated_by_service_token_id",
+            postgresql_where=text("initiated_by_service_token_id IS NOT NULL"),
+        ),
+        # Ref bootstrap: was this run started by a service token? (P3.4-A)
+        Index(
+            "ix_execution_requests_token_pipeline_run",
+            "workspace_id",
+            "pipeline_run_id",
+            postgresql_where=text("initiated_by_service_token_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1673,6 +1716,9 @@ class ExecutionRequest(Base):
         UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    initiated_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
     )
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
     source_surface: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -5838,6 +5884,12 @@ class ProjectDecisionRecord(Base):
         _pdr_subject_fk("candidate_id", "experiment_candidates"),
         _pdr_subject_fk("model_version_id", "model_versions"),
         _pdr_subject_fk("supersedes_id", "project_decision_records"),
+        # P3.2-A: an agent acting through a service token of the same workspace.
+        ForeignKeyConstraint(
+            ["workspace_id", "actor_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_pdr_actor_service_token",
+        ),
         CheckConstraint(CK_PDR_DECISION_TYPE, name="ck_pdr_decision_type"),
         CheckConstraint(CK_PDR_STATE, name="ck_pdr_state"),
         CheckConstraint(CK_PDR_SUBJECT_KIND, name="ck_pdr_subject_kind"),
@@ -5919,7 +5971,7 @@ class ProjectDecisionRecord(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     actor_rule: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # No FK until Phase 6 (agent_runs) / P3.2-A (service_tokens) add it additively.
+    # No FK until Phase 6 adds agent_runs; actor_service_token_id: composite FK (P3.2-A).
     actor_agent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     actor_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
@@ -6100,6 +6152,57 @@ class IdempotencyKey(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ServiceToken(Base):
+    """Hashed, scoped, expiring /v1 machine credential (P3.2-A). Workspace-scoped.
+
+    Only ``last_used_at`` and the one-way ``revoked_at``/``revoked_by_user_id``
+    change (DB triggers freeze the rest and make revocation final; after it only
+    ``revoked_by_user_id`` may become NULL, by its FK). ``revoked_by_user_id``
+    NULL on a revoked token means a system revocation (password reset, logout-all,
+    authority change). The token acts with its creator's current authority,
+    narrowed to ``scopes``.
+    """
+
+    __tablename__ = "service_tokens"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_service_tokens_workspace_id"),
+        UniqueConstraint("secret_hash", name="uq_service_tokens_secret_hash"),
+        CheckConstraint(CK_SERVICE_TOKENS_NAME, name="ck_service_tokens_name"),
+        CheckConstraint(CK_SERVICE_TOKENS_SCOPES, name="ck_service_tokens_scopes"),
+        CheckConstraint(CK_SERVICE_TOKENS_SECRET_HASH, name="ck_service_tokens_secret_hash"),
+        CheckConstraint(CK_SERVICE_TOKENS_EXPIRY, name="ck_service_tokens_expiry"),
+        CheckConstraint(CK_SERVICE_TOKENS_REVOKED, name="ck_service_tokens_revoked"),
+        CheckConstraint(CK_SERVICE_TOKENS_REVOKED_BY, name="ck_service_tokens_revoked_by"),
+        Index("ix_service_tokens_workspace_created_at", "workspace_id", desc("created_at")),
+        Index("ix_service_tokens_created_by_user_id", "created_by_user_id"),
+        Index(
+            "ix_service_tokens_revoked_by_user_id",
+            "revoked_by_user_id",
+            postgresql_where=text("revoked_by_user_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    scopes: Mapped[list] = mapped_column(JSONB, nullable=False)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 @event.listens_for(Dataset, "before_update")

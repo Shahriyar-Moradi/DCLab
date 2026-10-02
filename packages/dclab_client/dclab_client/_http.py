@@ -80,6 +80,9 @@ def _api_error(
     )
 
 
+SERVICE_TOKEN_PREFIX = "dclab_st_"
+
+
 class V1Transport:
     """httpx wrapper that only issues /v1 paths."""
 
@@ -156,7 +159,9 @@ class V1Transport:
         ``data`` + ``files`` send ``multipart/form-data`` instead of ``json``."""
 
         url_path = self._v1_path(path)
-        if url_path not in {"/v1/me", "/v1/workspaces"} and self._workspace_id is None:
+        # A service token (``dclab_st_``) is pinned to its workspace server-side.
+        service_token = (self._token or "").startswith(SERVICE_TOKEN_PREFIX)
+        if url_path not in {"/v1/me", "/v1/workspaces"} and self._workspace_id is None and not service_token:
             raise DCLabClientError("workspace_id is required for workspace resources")
         headers = self._headers(
             method=method,

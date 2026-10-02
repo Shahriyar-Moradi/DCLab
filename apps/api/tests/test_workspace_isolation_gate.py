@@ -22,6 +22,9 @@ from app.services.workspace_service import create_business_workspace
 from conftest import browser_login, csrf_headers
 
 
+SESSION_ONLY_GETS = {"/v1/service-tokens"}
+
+
 def _owner_and_workspaces(db_session):
     owner = create_user(
         db_session,
@@ -37,6 +40,7 @@ def _owner_and_workspaces(db_session):
 
 def _tenant_get_routes() -> list[str]:
     excluded = {"/v1/me", "/v1/workspaces", "/workspaces/personal", "/workspaces/business"}
+    excluded |= SESSION_ONLY_GETS
     paths = app.openapi()["paths"]
     selected = [
         path
@@ -66,6 +70,9 @@ def test_route_inventory_bearer_gets_never_infer_a_workspace(client, db_session)
         # /v1 answers with the P3.1-A error envelope; legacy surfaces keep `detail`.
         message = body["error"]["message"] if path.startswith("/v1/") else body["detail"]
         assert "X-Workspace-Id" in message
+    for path in SESSION_ONLY_GETS:  # refuse every bearer outright (P3.2-A)
+        response = client.get(path, headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 403 and response.json()["error"]["code"] == "session_required"
 
 
 def test_two_workspace_read_mutation_file_event_and_revocation_matrix(

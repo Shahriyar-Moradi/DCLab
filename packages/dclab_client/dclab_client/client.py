@@ -802,6 +802,10 @@ class ArtifactsClient:
 class DCLabClient:
     """Synchronous HTTP client for the stable /v1 application boundary.
 
+    ``token`` is a bearer credential: a service token (``dclab_st_...``, created in
+    Studio settings; acts only in its workspace and scopes, so ``workspace_id`` may
+    be omitted) or a user access token (``workspace_id`` required).
+
     Future MCP and CLI entrypoints should wrap this type. They are not
     implemented in this package.
     """

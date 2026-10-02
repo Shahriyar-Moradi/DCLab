@@ -69,6 +69,7 @@ def create_problem_spec(
     constraints: dict[str, Any] | None = None,
     success_criteria: dict[str, Any] | None = None,
     status: str = "draft",
+    created_by_service_token_id: UUID | None = None,
 ) -> ProblemSpec:
     if not can_perform_ml_write(db, actor, workspace_id):
         raise IdentityError(
@@ -82,6 +83,13 @@ def create_problem_spec(
         raise IdentityError("problem spec status must be draft or locked")
     constraints = constraints or {}
     success_criteria = success_criteria or {}
+    if created_by_service_token_id is not None:
+        _check_agent_spec_text(
+            task_type=task_type, business_objective=business_objective, target_column=target_column,
+            prediction_unit=prediction_unit, prediction_time_column=prediction_time_column,
+            prediction_horizon=prediction_horizon, primary_metric=primary_metric,
+            constraints=constraints, success_criteria=success_criteria,
+        )
     locked_at = datetime.now(UTC) if status == "locked" else None
     spec = ProblemSpec(
         workspace_id=project.workspace_id,
@@ -111,11 +119,26 @@ def create_problem_spec(
             )
         ),
         created_by=actor.id,
+        created_by_service_token_id=created_by_service_token_id,
         locked_at=locked_at,
     )
     db.add(spec)
     db.flush()
     return spec
+
+
+def _check_agent_spec_text(**fields: Any) -> None:
+    """Agent-written specs get the decision-record text gate: no control characters,
+    no secret-like text (``dclab_st_...``, bearer tokens, keys) in any field.
+    Raises ``InvalidDecisionRecordError`` (422)."""
+
+    from app.services.decision_record_service import check_agent_text, clean_json_object
+
+    for name, value in fields.items():
+        if isinstance(value, dict):
+            clean_json_object(value, label=name)
+        elif value is not None:
+            check_agent_text(str(value), label=name)
 
 
 def populate_unlocked_problem_spec_target(

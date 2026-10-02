@@ -118,6 +118,14 @@ function mergeRequestHeaders(path: string, method: string, context: RequestWorks
   return csrfHeaders(path, context, base);
 }
 
+/** Legacy ``{detail}`` bodies and the /v1 ``{error: {message}}`` envelope. */
+function errorMessage(body: unknown): string | null {
+  if (typeof body !== "object" || !body) return null;
+  if ("detail" in body) return String((body as { detail: unknown }).detail);
+  const error = (body as { error?: { message?: unknown } }).error;
+  return error && typeof error.message === "string" ? error.message : null;
+}
+
 async function request<T>(
   path: string,
   schema: ZodType<T>,
@@ -138,9 +146,7 @@ async function request<T>(
   const body = await parseJson(response);
   if (!response.ok) {
     dropSessionOnUnauthorized(path, response.status);
-    const detail =
-      typeof body === "object" && body && "detail" in body ? String((body as { detail: unknown }).detail) : response.statusText;
-    throw new ApiError(response.status, body, detail || `Request failed (${response.status})`);
+    throw new ApiError(response.status, body, errorMessage(body) || response.statusText || `Request failed (${response.status})`);
   }
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -184,8 +190,18 @@ export async function apiDownload(
   };
 }
 
-export function apiPost<T>(path: string, schema: ZodType<T>, json: unknown): Promise<T> {
-  return request(path, schema, { method: "POST", body: JSON.stringify(json) });
+export function apiPost<T>(
+  path: string,
+  schema: ZodType<T>,
+  json: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  return request(path, schema, { method: "POST", body: JSON.stringify(json), headers });
+}
+
+/** A fresh /v1 Idempotency-Key for one user action (retries of that action reuse it). */
+export function newIdempotencyKey(): string {
+  return `studio-${newRequestId()}`;
 }
 
 export function apiPut<T>(path: string, schema: ZodType<T>, json: unknown): Promise<T> {

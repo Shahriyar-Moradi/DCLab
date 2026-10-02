@@ -59,6 +59,7 @@
   "project_refs",
   "projects",
   "runtime_environments",
+  "service_tokens",
   "simulation_runs",
   "split_plans",
   "users",

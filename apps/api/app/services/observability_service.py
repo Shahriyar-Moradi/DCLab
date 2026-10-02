@@ -22,6 +22,7 @@ from app.db.models import (
     WorkflowRun,
 )
 from app.db.session import get_session_factory
+from app.services.audience_projection import SERVICE_TOKEN_PATTERN
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ _BLOCKED_KEY_PARTS = (
     "stored_path",
 )
 _SECRET_PATTERNS = (
+    SERVICE_TOKEN_PATTERN,  # first: before the phone pattern can eat its digits
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
     re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
