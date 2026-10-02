@@ -40,6 +40,7 @@ from app.domain.errors import (
 )
 from app.domain.execution_requests import EXECUTION_OPERATIONS, SOURCE_API
 from app.domain.model_build import PipelineModelBuildRead
+from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.observability import MlRunEventRead
 from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead
 from app.domain.state_graph import GRAPH_EXPERIMENT_WINDOW
@@ -54,7 +55,10 @@ from app.services.execution_request_service import (
     get_execution_request,
 )
 from app.services.graph_service import impact, project_graph
-from app.services.model_build_reproduction_service import load_model_build_experiment
+from app.services.model_build_reproduction_service import (
+    get_experiment_code,
+    load_model_build_experiment,
+)
 from app.services.model_build_service import get_pipeline_model_build
 from app.services.observatory_query_service import list_run_events
 from app.services.audience_projection import artifact_read, event_read, public_diagnostic, public_failure
@@ -450,3 +454,25 @@ def read_model_build_artifacts(
         db, workspace_id=workspace_id, pipeline_run_id=pipeline_run_id
     )
     return [artifact_read(row) for row in rows]
+
+
+@router.get(
+    "/experiments/{experiment_id}/code",
+    response_model=ExperimentCodeRead,
+)
+def read_experiment_code(
+    experiment_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ExperimentCodeRead:
+    """Standalone reproduction script + notebook for one experiment (root or branch)."""
+
+    workspace_id = request_workspace_id(request)
+    try:
+        body = get_experiment_code(db, user, workspace_id, experiment_id)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    if body is None:
+        raise _not_found()
+    return body

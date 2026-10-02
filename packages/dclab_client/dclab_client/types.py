@@ -256,3 +256,38 @@ class NodeImpact(BaseModel):
     total: int
     truncated: bool
     graph_truncated: bool
+
+
+class ExperimentCodeInput(BaseModel):
+    """A local file the generated code reads (by placeholder or environment variable)."""
+
+    name: str
+    placeholder: str
+    env_var: str
+    artifact_id: UUID | None = None
+    content_digest: str | None = None
+    description: str
+
+
+class ExperimentCodeDocument(BaseModel):
+    filename: str
+    media_type: str
+    content_digest: str
+    source: str
+
+
+class ExperimentCode(BaseModel):
+    """Standalone reproduction script and notebook for one experiment."""
+
+    experiment_id: UUID
+    workspace_id: UUID
+    generator_version: str
+    spec_digest: str
+    split_plan_id: UUID | None = None
+    parent_experiment_id: UUID | None = None
+    is_branch: bool = False
+    standalone_cv: bool
+    script: ExperimentCodeDocument
+    notebook: ExperimentCodeDocument
+    inputs: list[ExperimentCodeInput] = Field(default_factory=list)
+    helper_requirements: list[str] = Field(default_factory=list)

@@ -257,7 +257,7 @@ def test_model_build_is_ordered_safe_canonical_and_workspace_readable(
     assert stages["ingestion"]["code_generation_support_status"] == "supported"
     assert stages["preprocessing"]["code_generation_support_status"] == "supported"
     assert stages["cv_training"]["code_generation_support_status"] == "supported"
-    assert body["generator_version"] == "dclab.model_build_reproduction.v1"
+    assert body["generator_version"] == "dclab.model_build_reproduction.v2"
     assert body["reproduction_spec_digest"]
     assert all(stage.get("generated_code") for stage in body["stages"])
     assert all(

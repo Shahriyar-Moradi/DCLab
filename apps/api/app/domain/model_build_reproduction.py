@@ -11,8 +11,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-GENERATOR_VERSION = "dclab.model_build_reproduction.v1"
+GENERATOR_VERSION = "dclab.model_build_reproduction.v2"
 AUTHORIZED_DATASET_PATH_PLACEHOLDER = "<authorized-local-dataset-path>"
+AUTHORIZED_SPLIT_ASSIGNMENT_PATH_PLACEHOLDER = "<authorized-local-split-assignment-path>"
+# Generated code reads local copies from these variables, else the placeholders.
+DATASET_PATH_ENV = "DCLAB_DATASET_PATH"
+SPLIT_ASSIGNMENT_PATH_ENV = "DCLAB_SPLIT_ASSIGNMENT_PATH"
 
 
 class ModelBuildGeneratedCode(BaseModel):
@@ -53,6 +57,8 @@ class ReproductionTask(BaseModel):
     task_type: str | None = None
     target_column: str | None = None
     seed: int
+    # Multiclass label code i is class_labels[i] (the runner's coding).
+    class_labels: list[Any] | None = None
 
 
 class ReproductionHoldoutPlan(BaseModel):
@@ -61,6 +67,8 @@ class ReproductionHoldoutPlan(BaseModel):
     group_column: str | None = None
     time_column: str | None = None
     plan_digest: str | None = None
+    # The HoldoutPlan's own seed (splits use ``random_state or 42``).
+    random_state: int | None = None
 
 
 class ReproductionValidationPlan(BaseModel):
@@ -120,6 +128,13 @@ class ReproductionCandidate(BaseModel):
     is_winner: bool = False
     is_runner_up: bool = False
     cv_score: float | None = None
+    status: str | None = None
+    numerical_columns: list[str] = Field(default_factory=list)
+    categorical_columns: list[str] = Field(default_factory=list)
+    # Nested-tuned candidates: constructor values each outer fold trained with.
+    fold_hyperparameters: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    # Persisted primary-metric value per outer fold (cv_fold evaluations).
+    cv_fold_scores: dict[str, float] = Field(default_factory=dict)
 
 
 class ReproductionWinner(BaseModel):
@@ -153,6 +168,33 @@ class ReproductionFinalHoldout(BaseModel):
     candidate_id: UUID | None = None
 
 
+class ReproductionSplitAssignment(BaseModel):
+    """The stored SplitPlan map this run was partitioned by (ADR 0006 §3)."""
+
+    split_plan_id: UUID
+    version: int | None = None
+    assignment_digest: str
+    row_count: int
+    train_row_count: int
+    holdout_row_count: int
+    source_row_column: str
+    # split_plan_assignment: holdout taken from the map, pool in dataset order;
+    # holdout_plan_resplit: the run re-split with its HoldoutPlan (verified equal
+    # to the map) and the pool keeps that split's row order.
+    partitioned_by: Literal["split_plan_assignment", "holdout_plan_resplit"]
+
+
+class ReproductionBranch(BaseModel):
+    """What a branch run recorded about its change set; never re-derived from ancestors."""
+
+    parent_pipeline_run_id: UUID | None = None
+    change_set: dict[str, Any] = Field(default_factory=dict)
+    change_set_digest: str | None = None
+    effective_overrides: dict[str, Any] = Field(default_factory=dict)
+    objective: dict[str, Any] | None = None
+    applied_changes: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class ModelBuildReproductionSpec(BaseModel):
     """Canonical scientific recipe for one pipeline run, plus generated stage code."""
 
@@ -175,4 +217,42 @@ class ModelBuildReproductionSpec(BaseModel):
     winner: ReproductionWinner
     final_refit: ReproductionFinalRefit
     final_holdout: ReproductionFinalHoldout
+    split_assignment: ReproductionSplitAssignment | None = None
+    branch: ReproductionBranch | None = None
+    decision_threshold: float | None = None
     stage_code: list[ModelBuildStageCode] = Field(default_factory=list)
+
+
+class ExperimentCodeInput(BaseModel):
+    """A local file the generated code needs; fetched by artifact id, never by storage key."""
+
+    name: Literal["dataset", "split_assignment"]
+    placeholder: str
+    env_var: str
+    artifact_id: UUID | None = None
+    content_digest: str | None = None
+    description: str
+
+
+class ExperimentCodeDocument(BaseModel):
+    filename: str
+    media_type: str
+    content_digest: str
+    source: str
+
+
+class ExperimentCodeRead(BaseModel):
+    """GET /v1/experiments/{id}/code: standalone reproduction script and notebook."""
+
+    experiment_id: UUID
+    workspace_id: UUID
+    generator_version: str
+    spec_digest: str
+    split_plan_id: UUID | None = None
+    parent_experiment_id: UUID | None = None
+    is_branch: bool = False
+    standalone_cv: bool
+    script: ExperimentCodeDocument
+    notebook: ExperimentCodeDocument
+    inputs: list[ExperimentCodeInput] = Field(default_factory=list)
+    helper_requirements: list[str] = Field(default_factory=list)

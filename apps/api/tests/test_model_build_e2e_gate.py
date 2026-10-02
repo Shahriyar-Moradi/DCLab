@@ -20,6 +20,7 @@ from adaptive_modeling.production import labs_upload_and_train
 from app.db.models import User, UserRole, WorkspaceRole
 from app.domain.model_build_reproduction import (
     AUTHORIZED_DATASET_PATH_PLACEHOLDER,
+    AUTHORIZED_SPLIT_ASSIGNMENT_PATH_PLACEHOLDER,
     GENERATOR_VERSION,
 )
 from app.engine.evaluation.metrics import classification_metrics, regression_metrics
@@ -209,10 +210,14 @@ def _assert_api_safe(body: dict, serialized: str, dataset_location: str | None) 
     assert [stage["key"] for stage in body["stages"]] == EXPECTED_STAGE_KEYS
 
 
-def _try_execute_script(script: str, dataset_path: str, spec: dict) -> dict[str, float] | None:
+def _try_execute_script(
+    script: str, dataset_path: str, spec: dict, assignment_path: str | None = None
+) -> dict[str, float] | None:
     if "ColumnTransformer" not in script:
         return None
     source = script.replace(AUTHORIZED_DATASET_PATH_PLACEHOLDER, dataset_path)
+    if assignment_path is not None:
+        source = source.replace(AUTHORIZED_SPLIT_ASSIGNMENT_PATH_PLACEHOLDER, assignment_path)
     namespace: dict = {}
     exec(compile(source, "<reproduction.py>", "exec"), namespace, namespace)  # noqa: S102
     pipeline = namespace.get("pipeline")
@@ -270,6 +275,7 @@ def _gate_one_run(
     experiment,
     model_version,
     expected_task: str,
+    tmp_path,
 ) -> None:
     db_session.refresh(experiment)
     location = experiment.dataset.location if experiment.dataset is not None else None
@@ -318,10 +324,21 @@ def _gate_one_run(
     # storage (the worker's scratch copy is not durable).
     from sqlalchemy.orm import object_session
 
+    from app.db.models import SplitPlan
     from app.services.dataset_materialization import materialize_dataset
+    from app.services.split_plan_service import load_assignment
 
-    with materialize_dataset(experiment.dataset, db=object_session(experiment)) as materialized:
-        executed = _try_execute_script(script, str(materialized), spec)
+    session = object_session(experiment)
+    assignment_path = None
+    if spec.get("split_assignment"):
+        # P2.4-B: plan runs partition by the stored map, materialized from object storage.
+        plan = session.get(SplitPlan, experiment.split_plan_id)
+        assignment_path = tmp_path / f"{experiment.id}-assignment.csv"
+        assignment_path.write_bytes(load_assignment(session, plan).to_csv_bytes())
+    with materialize_dataset(experiment.dataset, db=session) as materialized:
+        executed = _try_execute_script(
+            script, str(materialized), spec, None if assignment_path is None else str(assignment_path)
+        )
     assert executed is not None, "standalone execution should be supported for this fixture"
     primary = spec["metric_plan"]["primary_metric"]
     _assert_metrics_within_tolerance(executed, spec["final_holdout"]["metrics"], primary)
@@ -335,6 +352,7 @@ def test_model_build_gate_binary_and_regression_production_path(
     db_session,
     monkeypatch,
     _rule_engine_only,
+    tmp_path,
 ):
     owner = create_user(
         db_session,
@@ -374,6 +392,7 @@ def test_model_build_gate_binary_and_regression_production_path(
         experiment=binary_run,
         model_version=binary_version,
         expected_task="binary",
+        tmp_path=tmp_path,
     )
     _gate_one_run(
         client,
@@ -382,6 +401,7 @@ def test_model_build_gate_binary_and_regression_production_path(
         experiment=regression_run,
         model_version=regression_version,
         expected_task="regression",
+        tmp_path=tmp_path,
     )
 
 

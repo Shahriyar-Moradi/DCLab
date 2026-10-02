@@ -14,6 +14,7 @@ from dclab_client.types import (
     Dataset,
     EventPage,
     ExecutionRequest,
+    ExperimentCode,
     ModelBuild,
     NodeImpact,
     Principal,
@@ -230,6 +231,23 @@ class ModelBuildsClient:
         return EventPage.model_validate(payload)
 
 
+class ExperimentsClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def code(
+        self, experiment_id: UUID | str, *, request_id: str | None = None
+    ) -> ExperimentCode:
+        """Standalone reproduction script/notebook (stored split map, branch changes)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/code",
+            request_id=request_id,
+        )
+        return ExperimentCode.model_validate(payload)
+
+
 class VisualizationsClient:
     def __init__(self, transport: V1Transport) -> None:
         self._transport = transport
@@ -294,6 +312,7 @@ class DCLabClient:
         self.datasets = DatasetsClient(self._transport)
         self.execution_requests = ExecutionRequestsClient(self._transport)
         self.model_builds = ModelBuildsClient(self._transport)
+        self.experiments = ExperimentsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)
 

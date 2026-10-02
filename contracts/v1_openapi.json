@@ -84,6 +84,24 @@
         "successSchema": "ExecutionRequestRead"
       }
     },
+    "/v1/experiments/{experiment_id}/code": {
+      "GET": {
+        "operationId": "read_experiment_code_v1_experiments__experiment_id__code_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "422"
+        ],
+        "successSchema": "ExperimentCodeRead"
+      }
+    },
     "/v1/me": {
       "GET": {
         "operationId": "read_principal_v1_me_get",
@@ -360,6 +378,31 @@
         "request_spec",
         "source_surface",
         "status",
+        "workspace_id"
+      ]
+    },
+    "ExperimentCodeRead": {
+      "properties": [
+        "experiment_id",
+        "generator_version",
+        "helper_requirements",
+        "inputs",
+        "is_branch",
+        "notebook",
+        "parent_experiment_id",
+        "script",
+        "spec_digest",
+        "split_plan_id",
+        "standalone_cv",
+        "workspace_id"
+      ],
+      "required": [
+        "experiment_id",
+        "generator_version",
+        "notebook",
+        "script",
+        "spec_digest",
+        "standalone_cv",
         "workspace_id"
       ]
     },

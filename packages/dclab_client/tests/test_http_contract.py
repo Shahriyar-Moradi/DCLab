@@ -269,3 +269,37 @@ def test_transport_rejects_dot_segments_and_escapes():
         with pytest.raises(DCLabClientError, match="/v1"):
             transport.request("GET", path)
     assert transport.request("GET", "/v1/projects") == {}
+
+
+def test_experiment_code_uses_v1_path_and_validates_ids():
+    recorded: list[httpx.Request] = []
+    document = {"filename": "e.py", "media_type": "text/x-python", "content_digest": "a" * 64, "source": "x = 1\n"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={
+            "experiment_id": "33333333-3333-3333-3333-333333333333",
+            "workspace_id": "44444444-4444-4444-4444-444444444444",
+            "generator_version": "dclab.model_build_reproduction.v2",
+            "spec_digest": "b" * 64,
+            "split_plan_id": "22222222-2222-2222-2222-222222222222",
+            "parent_experiment_id": None,
+            "is_branch": False,
+            "standalone_cv": True,
+            "script": document,
+            "notebook": {**document, "filename": "e.ipynb", "media_type": "application/x-ipynb+json"},
+            "inputs": [{"name": "split_assignment", "placeholder": "<p>", "env_var": "DCLAB_SPLIT_ASSIGNMENT_PATH",
+                        "artifact_id": None, "content_digest": "c" * 64, "description": "map"}],
+            "helper_requirements": [],
+        })
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    code = api.experiments.code("33333333-3333-3333-3333-333333333333", request_id="trace-code")
+    assert code.standalone_cv is True and code.script.source == "x = 1\n"
+    assert code.inputs[0].env_var == "DCLAB_SPLIT_ASSIGNMENT_PATH"
+    assert recorded[0].method == "GET"
+    assert recorded[0].url.path == "/v1/experiments/33333333-3333-3333-3333-333333333333/code"
+    assert recorded[0].headers["X-Request-Id"] == "trace-code"
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.experiments.code("../../auth/me")
+    assert len(recorded) == 1
