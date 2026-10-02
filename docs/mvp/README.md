@@ -11,6 +11,7 @@ ADRs and designs are carried forward here and cited where they are reused.
 | [ROADMAP.md](ROADMAP.md) | Phases 0–9, plans, exit gates, parallel R&D track, timeline |
 | [EXECUTION_GUIDE.md](EXECUTION_GUIDE.md) | How to run a prompt with Claude Code, model selection rubric, definition of done |
 | [prompts/](prompts/) | One file per phase; each prompt is one PR |
+| [../QUICKSTART_MCP.md](../QUICKSTART_MCP.md) | Connect Claude Code to DCLab over MCP (service token, `.mcp.json`, Phase 3 walk-through) |
 | [STATUS.md](STATUS.md) | The only progress ledger (prompt → done/date/SHA/evidence) |
 
 Precedence when documents disagree: current founder instruction → live code and
