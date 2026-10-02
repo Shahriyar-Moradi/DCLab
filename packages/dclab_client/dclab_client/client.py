@@ -16,6 +16,7 @@ from dclab_client.types import (
     Artifact,
     Dataset,
     DatasetUpload,
+    DecisionRecord,
     DecisionRecordPage,
     EventPage,
     ExecutionRequest,
@@ -24,11 +25,15 @@ from dclab_client.types import (
     ExperimentComparison,
     ExperimentPage,
     ModelBuild,
+    ModelVersion,
     NodeImpact,
     Principal,
     ProblemSpec,
     Project,
     ProjectGraph,
+    ProjectRef,
+    ProjectRefList,
+    RefMoveResult,
     Visualization,
     Workspace,
     _Versioned,
@@ -59,6 +64,20 @@ def _versioned(model: type[_V], payload: Any, headers: httpx.Headers) -> _V:
     row._etag = headers.get("etag")
     row._replayed = (headers.get("idempotent-replayed") or "").lower() == "true"
     return row
+
+
+# Kinds of project refs (ADR 0006 §2).
+REF_KINDS = frozenset({"problem_spec", "dataset", "split_plan", "feature_recipe", "champion_model"})
+
+
+def _ref_kind(kind: str) -> str:
+    if kind not in REF_KINDS:
+        raise DCLabClientError("ref_kind must be one of: " + ", ".join(sorted(REF_KINDS)))
+    return kind
+
+
+def _evidence(refs: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    return [{**ref, "id": _id(ref["id"])} if "id" in ref else dict(ref) for ref in (refs or [])]
 
 
 def _node_kind(kind: str) -> str:
@@ -215,6 +234,215 @@ class ProjectsClient:
             request_id=request_id,
         )
         return DecisionRecordPage.model_validate(payload)
+
+    def _start_decision(
+        self, project_id: UUID | str, body: dict[str, Any], idempotency_key: str | None, request_id: str | None
+    ) -> DecisionRecord:
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/projects/{_id(project_id)}/decisions",
+            json=body,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(DecisionRecord, payload, headers)
+
+    def create_decision(
+        self,
+        project_id: UUID | str,
+        *,
+        decision_type: str,
+        subject_kind: str,
+        rationale: str,
+        subject_id: UUID | str | None = None,
+        accepted: bool = False,
+        evidence_refs: list[dict[str, Any]] | None = None,
+        facts: dict[str, Any] | None = None,
+        details: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> DecisionRecord:
+        """Propose a decision (default) or, with ``accepted=True``, record one made now.
+        The actor is always the authenticated principal."""
+
+        body: dict[str, Any] = {
+            "action": "record" if accepted else "propose",
+            "decision_type": decision_type,
+            "subject": {"kind": subject_kind, "id": _id(subject_id) if subject_id is not None else None},
+            "rationale": rationale,
+            "facts": dict(facts or {}),
+            "evidence_refs": _evidence(evidence_refs),
+            "details": dict(details or {}),
+        }
+        return self._start_decision(project_id, body, idempotency_key, request_id)
+
+    def propose_ref_move(
+        self,
+        project_id: UUID | str,
+        *,
+        moves: dict[str, UUID | str],
+        rationale: str,
+        evidence_refs: list[dict[str, Any]],
+        facts: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> DecisionRecord:
+        """Propose moving refs (``{ref_kind: target_id}``); nothing moves until ``move_ref``
+        with ``proposal_id``."""
+
+        body = {
+            "action": "propose_ref_move",
+            "ref_moves": [{"ref_kind": _ref_kind(kind), "target_id": _id(target)} for kind, target in moves.items()],
+            "rationale": rationale,
+            "facts": dict(facts or {}),
+            "evidence_refs": _evidence(evidence_refs),
+        }
+        return self._start_decision(project_id, body, idempotency_key, request_id)
+
+    def refs(self, project_id: UUID | str, *, request_id: str | None = None) -> ProjectRefList:
+        """Current refs; each item's ``etag`` is the ``if_match`` for ``move_ref``."""
+
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/refs", request_id=request_id)
+        return ProjectRefList.model_validate(payload)
+
+    def ref(self, project_id: UUID | str, ref_kind: str, *, request_id: str | None = None) -> ProjectRef:
+        """One ref; its ``etag`` is the ``if_match`` for ``move_ref`` (``NotFoundError`` when missing)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/refs/{_ref_kind(ref_kind)}", request_id=request_id
+        )
+        return ProjectRef.model_validate(payload)
+
+    def move_ref(
+        self,
+        project_id: UUID | str,
+        ref_kind: str,
+        *,
+        target_id: UUID | str,
+        rationale: str,
+        evidence_refs: list[dict[str, Any]],
+        if_match: str | None = None,
+        create: bool = False,
+        companion_moves: list[dict[str, Any]] | None = None,
+        proposal_id: UUID | str | None = None,
+        facts: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> RefMoveResult:
+        """Move a ref under one accepted decision. ``if_match``: the ref's ``etag``
+        (required; ``PreconditionFailedError`` when stale); ``create=True`` instead
+        creates a missing kind (``If-None-Match: *``). ``companion_moves`` items are
+        ``{ref_kind, target_id, expected_version}``."""
+
+        body: dict[str, Any] = {
+            "target_id": _id(target_id),
+            "rationale": rationale,
+            "evidence_refs": _evidence(evidence_refs),
+            "facts": dict(facts or {}),
+            "companion_moves": [
+                {
+                    "ref_kind": _ref_kind(item["ref_kind"]),
+                    "target_id": _id(item["target_id"]),
+                    "expected_version": item.get("expected_version"),
+                }
+                for item in (companion_moves or [])
+            ],
+        }
+        if proposal_id is not None:
+            body["proposal_id"] = _id(proposal_id)
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/projects/{_id(project_id)}/refs/{_ref_kind(ref_kind)}",
+            json=body,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            if_match=if_match,
+            if_none_match="*" if create else None,
+        )
+        return _versioned(RefMoveResult, payload, headers)
+
+
+class DecisionsClient:
+    """Transitions of an existing decision record; each writes a new record."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def get(self, decision_id: UUID | str, *, request_id: str | None = None) -> DecisionRecord:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/decisions/{_id(decision_id)}", request_id=request_id
+        )
+        return _versioned(DecisionRecord, payload, headers)
+
+    def _transition(
+        self, path: str, body: dict[str, Any], idempotency_key: str | None, request_id: str | None
+    ) -> DecisionRecord:
+        payload, headers = self._transport.request_with_headers(
+            "POST", path, json=body, request_id=request_id, idempotency_key=idempotency_key
+        )
+        return _versioned(DecisionRecord, payload, headers)
+
+    def accept(
+        self,
+        decision_id: UUID | str,
+        *,
+        rationale: str,
+        evidence_refs: list[dict[str, Any]] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> DecisionRecord:
+        """proposed -> accepted. Ref-move proposals are accepted with ``projects.move_ref``."""
+
+        body: dict[str, Any] = {"rationale": rationale}
+        if evidence_refs is not None:
+            body["evidence_refs"] = _evidence(evidence_refs)
+        return self._transition(f"/v1/decisions/{_id(decision_id)}/accept", body, idempotency_key, request_id)
+
+    def reject(
+        self,
+        decision_id: UUID | str,
+        *,
+        rationale: str,
+        evidence_refs: list[dict[str, Any]] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> DecisionRecord:
+        body: dict[str, Any] = {"rationale": rationale}
+        if evidence_refs is not None:
+            body["evidence_refs"] = _evidence(evidence_refs)
+        return self._transition(f"/v1/decisions/{_id(decision_id)}/reject", body, idempotency_key, request_id)
+
+    def supersede(
+        self,
+        decision_id: UUID | str,
+        *,
+        rationale: str,
+        facts: dict[str, Any] | None = None,
+        evidence_refs: list[dict[str, Any]] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> DecisionRecord:
+        """Correct an accepted record (same type and subject)."""
+
+        body: dict[str, Any] = {"rationale": rationale}
+        if facts is not None:
+            body["facts"] = dict(facts)
+        if evidence_refs is not None:
+            body["evidence_refs"] = _evidence(evidence_refs)
+        return self._transition(f"/v1/decisions/{_id(decision_id)}/supersede", body, idempotency_key, request_id)
+
+
+class ModelVersionsClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def get(self, model_version_id: UUID | str, *, request_id: str | None = None) -> ModelVersion:
+        """Detail: locked metrics, lineage, champion flag, artifacts by id + digest."""
+
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/model-versions/{_id(model_version_id)}", request_id=request_id
+        )
+        return _versioned(ModelVersion, payload, headers)
 
 
 class NodesClient:
@@ -608,6 +836,8 @@ class DCLabClient:
         self.execution_requests = ExecutionRequestsClient(self._transport)
         self.model_builds = ModelBuildsClient(self._transport)
         self.experiments = ExperimentsClient(self._transport)
+        self.decisions = DecisionsClient(self._transport)
+        self.model_versions = ModelVersionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)
 

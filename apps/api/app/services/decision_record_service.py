@@ -759,6 +759,25 @@ def get_record(
     return row
 
 
+def find_record(db: Session, *, workspace_id: UUID, record_id: UUID) -> ProjectDecisionRecord:
+    """A record of this workspace by id alone (``/v1/decisions/{id}``); foreign is not found."""
+
+    row = db.scalar(
+        select(ProjectDecisionRecord).where(
+            ProjectDecisionRecord.id == record_id, ProjectDecisionRecord.workspace_id == workspace_id
+        )
+    )
+    if row is None:
+        raise DecisionRecordNotFoundError("decision record not found")
+    return row
+
+
+def record_read(db: Session, row: ProjectDecisionRecord) -> DecisionRecordRead:
+    """The bounded /v1 projection of one record with its derived ``effective_state``."""
+
+    return decision_read(row, successor_id(db, row))
+
+
 def successor_id(db: Session, row: ProjectDecisionRecord) -> UUID | None:
     return db.scalar(
         select(ProjectDecisionRecord.id).where(
@@ -1058,6 +1077,12 @@ def supersede(
         )
     if prior.decision_type in RULE_ONLY_DECISION_TYPES and actor.kind != ACTOR_RULE:
         raise DecisionActorNotPermittedError("rule_only_decision_type", "only engine rules write this type")
+    if prior.decision_type in SERVICE_ONLY_DECISION_TYPES and actor.kind != ACTOR_RULE:
+        # Service-owned records (e.g. problem_spec_locked) are corrected only by
+        # their owning service, never through the generic supersede path.
+        raise DecisionActorNotPermittedError(
+            "service_only_decision_type", "only the owning service writes this type"
+        )
     return _successor(
         db, workspace_id=workspace_id, project_id=project_id, prior=prior, actor=actor,
         state=STATE_ACCEPTED, rationale=rationale, facts=facts, evidence_refs=evidence_refs, key=key,

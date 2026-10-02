@@ -1,16 +1,16 @@
 {
   "artifacts": {
     "contracts/openapi_operations.json": {
-      "sha256": "a3ac962209aae63ce0bc79135477fa67fe70d1858c3f82451526cb5da0a99a66"
+      "sha256": "2d4ff5ecd7d9bb05717b7743d083979b1bbf68936a60306387de040e3e5ab8f9"
     },
     "contracts/sqlalchemy_tables.json": {
       "sha256": "f4054521968fca83dac9292a1a7de0ebf125d86e66f1ad23fe0a4cf20fcf96e1"
     },
     "contracts/truth_baseline.json": {
-      "sha256": "e5f4ca1bcf348118556b3a4c7ac75d0b5a485c3d40e583f165649766117734e9"
+      "sha256": "e2faeefbcff07f4dccc9f660a19383bf3dd89e4e711dce2a7aef3d41e28f13b1"
     },
     "contracts/v1_openapi.json": {
-      "sha256": "ec5f77dd7eb04c97037676671e5d0ef4ec61f81daefd44efdb8461663d1f4d7a"
+      "sha256": "db162fa8154ad3d0eb09396dba2ef9498f227593cd58358b07ecb76f7bf807d9"
     }
   },
   "generator": {
@@ -18,6 +18,6 @@
     "version": "1.0.0"
   },
   "schema_version": 1,
-  "source_sha": "79d7407d37e8fd685dfe984bfed8e82d2cef982b8f12dec5732c052a7cf9908e",
+  "source_sha": "b7b5998acac5764e02edf130c467a71c8d5c9ca88505576e2d88467e4f7e249d",
   "source_sha_algorithm": "sha256"
 }

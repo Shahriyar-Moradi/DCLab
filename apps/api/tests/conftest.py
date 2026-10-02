@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 import threading
+import uuid
 from collections.abc import Generator
 from pathlib import Path
 
@@ -12,10 +13,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-# pytest-xdist workers (gw0, gw1, ...) each get their own database so tests
-# never share rows or TRUNCATEs across processes; serial runs keep the old name.
+# Every pytest run gets its own databases, so concurrent runs (several agents or
+# terminals at once) never share rows or TRUNCATEs. xdist workers (gw0, gw1, ...)
+# share the run id via PYTEST_XDIST_TESTRUNUID; each worker still gets its own
+# database. Databases are dropped at session end (`make test-db-clean` removes
+# leftovers from killed runs).
 _XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
-TEST_DB_NAME = "decisionai_test" + (f"_{_XDIST_WORKER}" if _XDIST_WORKER else "")
+_RUN_ID = (
+    os.environ.get("PYTEST_XDIST_TESTRUNUID")
+    or os.environ.setdefault("DCLAB_TEST_RUN_ID", uuid.uuid4().hex)
+)[:10]
+TEST_DB_NAME = f"decisionai_test_{_RUN_ID}" + (f"_{_XDIST_WORKER}" if _XDIST_WORKER else "")
 ADMIN_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/decisionai"
 )
@@ -134,6 +142,20 @@ def test_engine():
         )
     yield engine
     engine.dispose()
+    _drop_test_database()
+
+
+def _drop_test_database() -> None:
+    from sqlalchemy.engine.url import make_url
+
+    admin_engine = create_engine(
+        make_url(ADMIN_URL).set(database="postgres"), isolation_level="AUTOCOMMIT"
+    )
+    try:
+        with admin_engine.connect() as conn:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}" WITH (FORCE)'))
+    finally:
+        admin_engine.dispose()
 
 
 @pytest.fixture()

@@ -31,8 +31,12 @@ from app.db.models import (
     Dataset,
     ExecutionRequest,
     Experiment,
+    ExperimentCandidate,
     IngestionRun,
     MlJob,
+    ModelSelectionDecision,
+    ModelVersion,
+    ProjectRef,
     User,
     WorkflowRun,
 )
@@ -53,6 +57,10 @@ from app.domain.experiment_resources import (
     ExperimentMetrics,
     ExperimentPage,
     ExperimentDetailRead,
+    ExperimentWinner,
+    ModelVersionArtifactRef,
+    ModelVersionLineage,
+    ModelVersionResourceRead,
 )
 from app.domain.ml_jobs import JOB_CANCELLED, JOB_COMPLETED, JOB_FAILED, JOB_QUEUED, JOB_RUNNING
 from app.engine.lab.open_ingest import _from_columns as preview_from_columns
@@ -461,6 +469,105 @@ def experiments_for_compare(
     if len(rows) != len(experiment_ids):
         raise ExperimentNotFoundError("experiment not found")
     return [rows[item] for item in experiment_ids]
+
+
+# --- model versions (GET /v1/model-versions/{id}, P3.1-B3) ----------------------------------
+
+_MODEL_ARTIFACT_ROLES = (
+    ("model", "model_artifact_id"),
+    ("preprocessor", "preprocessor_artifact_id"),
+    ("feature_manifest", "feature_manifest_artifact_id"),
+)
+
+
+def model_version_read(
+    db: Session, *, actor: User, workspace_id: UUID, model_version_id: UUID
+) -> ModelVersionResourceRead | None:
+    """One model version of this workspace (None when unknown or another tenant's).
+
+    Metrics are the locked winner's ``evaluation_metrics`` (CV aggregate and the
+    single final-holdout evaluation at the locked threshold); artifacts are ids +
+    digests only — never ``artifact_uri``, buckets or object keys.
+    """
+
+    _require_read(db, actor, workspace_id)
+    row = db.scalar(
+        select(ModelVersion).where(ModelVersion.id == model_version_id, ModelVersion.workspace_id == workspace_id)
+    )
+    if row is None:
+        return None
+    experiment = db.scalar(
+        select(Experiment).where(Experiment.id == row.pipeline_run_id, Experiment.workspace_id == workspace_id)
+    )
+    candidate = db.scalar(
+        select(ExperimentCandidate).where(
+            ExperimentCandidate.id == row.selected_candidate_id, ExperimentCandidate.workspace_id == workspace_id
+        )
+    )
+    workflow_run = db.scalar(
+        select(WorkflowRun).where(WorkflowRun.id == row.workflow_run_id, WorkflowRun.workspace_id == workspace_id)
+    )
+    metrics = None
+    if experiment is not None:
+        selected = db.scalar(
+            select(ModelSelectionDecision.selected_candidate_id).where(
+                ModelSelectionDecision.pipeline_run_id == experiment.id,
+                ModelSelectionDecision.workspace_id == workspace_id,
+            )
+        )
+        # Same gate as the experiment read: metrics only once evidence is locked.
+        if selected == row.selected_candidate_id and experiment.scientific_evidence_locked_at is not None:
+            metrics = ExperimentWinner(**winner_evidence(db, experiment))
+    ref_kinds = sorted(
+        db.scalars(
+            select(ProjectRef.ref_kind).where(
+                ProjectRef.workspace_id == workspace_id, ProjectRef.model_version_id == row.id
+            )
+        )
+    )
+    artifact_ids = {getattr(row, column): role for role, column in _MODEL_ARTIFACT_ROLES if getattr(row, column)}
+    artifacts = (
+        db.scalars(select(Artifact).where(Artifact.workspace_id == workspace_id, Artifact.id.in_(artifact_ids)))
+        if artifact_ids
+        else []
+    )
+    return ModelVersionResourceRead(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        version=row.version,
+        created_at=row.created_at,
+        content_digest=row.content_digest,
+        family=candidate.model_family or None if candidate is not None else None,
+        algorithm=candidate.algorithm or None if candidate is not None else None,
+        candidate_key=candidate.candidate_key if candidate is not None else None,
+        lineage=ModelVersionLineage(
+            experiment_id=row.pipeline_run_id,
+            candidate_id=row.selected_candidate_id,
+            split_plan_id=experiment.split_plan_id if experiment is not None else None,
+            source_dataset_id=experiment.source_dataset_id if experiment is not None else None,
+            prepared_dataset_id=row.dataset_id,
+            problem_spec_id=workflow_run.problem_spec_id if workflow_run is not None else None,
+            feature_recipe_id=row.feature_set_version_id,
+        ),
+        metrics=metrics,
+        is_champion="champion_model" in ref_kinds,
+        ref_kinds=[kind for kind in ref_kinds if kind == "champion_model"],
+        artifacts=sorted(
+            (
+                ModelVersionArtifactRef(
+                    role=artifact_ids[item.id],
+                    id=item.id,
+                    artifact_type=item.artifact_type,
+                    content_digest=item.content_digest,
+                    size_bytes=item.size_bytes,
+                    mime_type=item.mime_type,
+                )
+                for item in artifacts
+            ),
+            key=lambda ref: ref.role,
+        ),
+    )
 
 
 # --- cancellation ----------------------------------------------------------------------

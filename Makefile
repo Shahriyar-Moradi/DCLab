@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock benchmark benchmark-quick
+.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock benchmark benchmark-quick test-db-clean
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -103,3 +103,7 @@ benchmark:
 benchmark-quick:
 	$(PYTHON) -m benchmarks.harness.run --suite quick --out benchmarks/results/latest-quick.json
 	$(PYTHON) -m benchmarks.harness.compare benchmarks/results/latest-quick.json
+
+# Drop test databases left behind by killed pytest runs (no other run active).
+test-db-clean:
+	$(PYTHON) -c "import os;from sqlalchemy import create_engine,text;u=os.environ.get('DATABASE_URL','postgresql://postgres:postgres@localhost:5432/decisionai').rsplit('/',1)[0]+'/postgres';e=create_engine(u,isolation_level='AUTOCOMMIT');c=e.connect();[c.execute(text(f'DROP DATABASE IF EXISTS \"{n}\" WITH (FORCE)')) for (n,) in c.execute(text(\"SELECT datname FROM pg_database WHERE datname LIKE 'decisionai\\_test%'\")).all()];print('dropped stale test databases')"

@@ -710,7 +710,8 @@ def move_ref(
     except IntegrityError as exc:
         if unique_violation(exc) == _REF_KIND_UNIQUE:
             raise RefVersionConflictError(
-                "ref_created_concurrently", "the ref kind was created concurrently", current_version=1
+                "ref_created_concurrently", "the ref kind was created concurrently",
+                ref_kind=move.ref_kind, current_version=1,
             ) from exc
         raise_for_record_race(exc)
         raise

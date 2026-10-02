@@ -70,6 +70,116 @@
         "successSchema": "DatasetListItem"
       }
     },
+    "/v1/decisions/{decision_id}": {
+      "GET": {
+        "operationId": "read_decision_v1_decisions__decision_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
+      }
+    },
+    "/v1/decisions/{decision_id}/accept": {
+      "POST": {
+        "operationId": "accept_decision_v1_v1_decisions__decision_id__accept_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "DecisionResolveRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
+      }
+    },
+    "/v1/decisions/{decision_id}/reject": {
+      "POST": {
+        "operationId": "reject_decision_v1_v1_decisions__decision_id__reject_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "DecisionResolveRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
+      }
+    },
+    "/v1/decisions/{decision_id}/supersede": {
+      "POST": {
+        "operationId": "supersede_decision_v1_v1_decisions__decision_id__supersede_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "DecisionSupersedeRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
+      }
+    },
     "/v1/execution-requests": {
       "POST": {
         "operationId": "submit_execution_request_v1_execution_requests_post",
@@ -493,6 +603,29 @@
         "successSchema": null
       }
     },
+    "/v1/model-versions/{model_version_id}": {
+      "GET": {
+        "operationId": "read_model_version_v1_model_versions__model_version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ModelVersionResourceRead"
+      }
+    },
     "/v1/nodes/{kind}/{node_id}/impact": {
       "GET": {
         "operationId": "read_node_impact_v1_nodes__kind___node_id__impact_get",
@@ -654,6 +787,33 @@
           "500"
         ],
         "successSchema": "DecisionRecordPage"
+      },
+      "POST": {
+        "operationId": "create_decision_v1_v1_projects__project_id__decisions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "DecisionRecordRead"
       }
     },
     "/v1/projects/{project_id}/graph": {
@@ -716,6 +876,101 @@
           "500"
         ],
         "successSchema": "ProblemSpecRead"
+      }
+    },
+    "/v1/projects/{project_id}/refs": {
+      "GET": {
+        "operationId": "read_project_refs_v1_projects__project_id__refs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectRefList"
+      }
+    },
+    "/v1/projects/{project_id}/refs/{ref_kind}": {
+      "GET": {
+        "operationId": "read_project_ref_v1_projects__project_id__refs__ref_kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "ref_kind",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectRefRead"
+      },
+      "POST": {
+        "operationId": "move_ref_v1_v1_projects__project_id__refs__ref_kind__post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "ref_kind",
+            "required": true
+          }
+        ],
+        "requestSchema": "RefMoveRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "RefMoveRead"
       }
     },
     "/v1/workspaces": {
@@ -1082,6 +1337,19 @@
         "limit"
       ]
     },
+    "ExperimentWinner": {
+      "properties": [
+        "candidate_id",
+        "constraint_status",
+        "cv",
+        "decision_threshold",
+        "family",
+        "holdout",
+        "selected_score",
+        "selection_metric"
+      ],
+      "required": []
+    },
     "MlRunEventRead": {
       "properties": [
         "created_at",
@@ -1109,6 +1377,65 @@
         "status",
         "timestamp",
         "workflow_run_id",
+        "workspace_id"
+      ]
+    },
+    "ModelVersionArtifactRef": {
+      "properties": [
+        "artifact_type",
+        "content_digest",
+        "id",
+        "mime_type",
+        "role",
+        "size_bytes"
+      ],
+      "required": [
+        "artifact_type",
+        "content_digest",
+        "id",
+        "role",
+        "size_bytes"
+      ]
+    },
+    "ModelVersionLineage": {
+      "properties": [
+        "candidate_id",
+        "experiment_id",
+        "feature_recipe_id",
+        "prepared_dataset_id",
+        "problem_spec_id",
+        "source_dataset_id",
+        "split_plan_id"
+      ],
+      "required": [
+        "candidate_id",
+        "experiment_id"
+      ]
+    },
+    "ModelVersionResourceRead": {
+      "properties": [
+        "algorithm",
+        "artifacts",
+        "candidate_key",
+        "content_digest",
+        "created_at",
+        "family",
+        "id",
+        "is_champion",
+        "lineage",
+        "metrics",
+        "project_id",
+        "ref_kinds",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "content_digest",
+        "created_at",
+        "id",
+        "is_champion",
+        "lineage",
+        "version",
         "workspace_id"
       ]
     },
@@ -1267,6 +1594,47 @@
         "status",
         "updated_at",
         "workspace_id"
+      ]
+    },
+    "ProjectRefList": {
+      "properties": [
+        "items",
+        "missing_kinds",
+        "project_id",
+        "refs_initialized"
+      ],
+      "required": [
+        "items",
+        "project_id",
+        "refs_initialized"
+      ]
+    },
+    "ProjectRefRead": {
+      "properties": [
+        "decision_record_id",
+        "etag",
+        "moved_at",
+        "ref_kind",
+        "target",
+        "version"
+      ],
+      "required": [
+        "decision_record_id",
+        "etag",
+        "moved_at",
+        "ref_kind",
+        "target",
+        "version"
+      ]
+    },
+    "RefMoveRead": {
+      "properties": [
+        "decision",
+        "refs"
+      ],
+      "required": [
+        "decision",
+        "refs"
       ]
     },
     "V1Error": {

@@ -742,6 +742,17 @@ def test_provenance_reserved_keys_service_only_types_and_secret_text(db_session,
     with pytest.raises(DecisionActorNotPermittedError, match="service_only_decision_type"):
         drs.record(db, workspace_id=g.ws, project_id=g.project.id, actor=g.human, decision_type="problem_spec_locked",
                    subject_kind="problem_spec", subject_id=g.spec.id, rationale="x", state="accepted")
+    # A service-written lock record can't be rewritten through the generic supersede path.
+    locked = drs.rule_record(
+        workspace_id=g.ws, project_id=g.project.id, decision_type="problem_spec_locked",
+        subject_kind="problem_spec", subject_id=g.spec.id, actor_rule="holdout.planner.v1",
+        rationale="spec locked by its service", schema_version=1, idempotency_key=f"problem_spec_locked:{g.spec.id}",
+    )
+    db.add(locked)
+    db.flush()
+    with pytest.raises(DecisionActorNotPermittedError, match="service_only_decision_type"):
+        drs.supersede(db, workspace_id=g.ws, project_id=g.project.id, record_id=locked.id, actor=g.human,
+                      rationale="rewrite the lock")
 
     for kwargs, reason in (
         ({"facts": {"customer_api_key_hint": "x"}}, "forbidden_key"),

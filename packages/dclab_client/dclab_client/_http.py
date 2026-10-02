@@ -149,6 +149,7 @@ class V1Transport:
         if_match: str | None = None,
         data: dict[str, str] | None = None,
         files: dict[str, Any] | None = None,
+        if_none_match: str | None = None,
     ) -> tuple[Any, httpx.Headers]:
         """Payload plus response headers (``ETag``, ``Idempotent-Replayed``, ``X-Request-Id``).
 
@@ -162,6 +163,7 @@ class V1Transport:
             request_id=request_id,
             idempotency_key=idempotency_key,
             if_match=if_match,
+            if_none_match=if_none_match,
         )
         query = None
         if params:
@@ -222,6 +224,7 @@ class V1Transport:
         request_id: str | None,
         idempotency_key: str | None,
         if_match: str | None = None,
+        if_none_match: str | None = None,
     ) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json", "User-Agent": USER_AGENT}
         if self._token is not None:
@@ -239,4 +242,6 @@ class V1Transport:
             headers["Idempotency-Key"] = key
         if if_match is not None and if_match.strip():
             headers["If-Match"] = if_match.strip()
+        if if_none_match is not None and if_none_match.strip():
+            headers["If-None-Match"] = if_none_match.strip()
         return headers

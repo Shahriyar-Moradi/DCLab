@@ -362,7 +362,7 @@ class EvidenceRef(BaseModel):
     scope: str | None = None
 
 
-class DecisionRecord(BaseModel):
+class DecisionRecord(_Versioned):
     """One append-only decision record. ``rationale``/``facts``/``details`` are untrusted data."""
 
     id: UUID
@@ -525,3 +525,79 @@ class ExperimentComparison(BaseModel):
     split_plan_id: UUID
     experiments: list[ExperimentComparisonItem]
     common: ExperimentComparisonCommon
+
+
+class ProjectRef(BaseModel):
+    """A project's current pointer of one kind; ``etag`` (``"<version>"``) is the If-Match to move it."""
+
+    ref_kind: str
+    target: GraphNodeRef
+    version: int
+    etag: str
+    decision_record_id: UUID
+    moved_at: datetime
+
+
+class ProjectRefList(BaseModel):
+    project_id: UUID
+    refs_initialized: bool
+    items: list[ProjectRef]
+    missing_kinds: list[str] = Field(default_factory=list)
+
+
+class RefMoveResult(_Versioned):
+    """The accepted record of a ref move and every ref after it (``etag``: the moved ref)."""
+
+    decision: DecisionRecord
+    refs: list[ProjectRef]
+
+
+class ModelVersionLineage(BaseModel):
+    experiment_id: UUID
+    candidate_id: UUID
+    split_plan_id: UUID | None = None
+    source_dataset_id: UUID | None = None
+    prepared_dataset_id: UUID | None = None
+    problem_spec_id: UUID | None = None
+    feature_recipe_id: UUID | None = None
+
+
+class ModelVersionMetrics(BaseModel):
+    """Locked winner metrics: CV aggregate and the final holdout at the locked threshold."""
+
+    candidate_id: str | None = None
+    family: str | None = None
+    selection_metric: str | None = None
+    selected_score: float | None = None
+    cv: dict[str, float] = Field(default_factory=dict)
+    holdout: dict[str, float] = Field(default_factory=dict)
+    decision_threshold: float | None = None
+    constraint_status: str | None = None
+
+
+class ModelVersionArtifact(BaseModel):
+    """An artifact by id + digest (no storage locations)."""
+
+    role: str
+    id: UUID
+    artifact_type: str
+    content_digest: str
+    size_bytes: int
+    mime_type: str | None = None
+
+
+class ModelVersion(_Versioned):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    version: str
+    created_at: datetime
+    content_digest: str
+    family: str | None = None
+    algorithm: str | None = None
+    candidate_key: str | None = None
+    lineage: ModelVersionLineage
+    metrics: ModelVersionMetrics | None = None
+    is_champion: bool
+    ref_kinds: list[str] = Field(default_factory=list)
+    artifacts: list[ModelVersionArtifact] = Field(default_factory=list)

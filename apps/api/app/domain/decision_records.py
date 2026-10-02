@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.data_plane import sql_in_clause
 from app.domain.state_graph import (
@@ -371,3 +371,175 @@ class DecisionRecordPage(BaseModel):
     items: list[DecisionRecordRead]
     next_cursor: str | None = None
     limit: int
+
+
+# --- /v1 write models (P3.1-B3: POST decisions, accept/reject/supersede, ref moves) ----------
+# Bodies never carry an actor: routes build ``DecisionActor.human(<session user>)``
+# (service tokens / MCP bind their principal in P3.2-A / P3.4-A, never from a body).
+# ``extra="forbid"`` makes any actor_kind / agent_run_id / rule key a 422.
+
+# The types a human may write through the generic record path; the rest are
+# rule-owned, service-owned, reserved, or ref moves (``RefMoveProposalRequest``
+# and ``POST /v1/projects/{id}/refs/{kind}``).
+HUMAN_RECORDABLE_DECISION_TYPES = tuple(
+    t
+    for t in DECISION_TYPES
+    if t not in SERVICE_ONLY_DECISION_TYPES
+    and t not in RESERVED_DECISION_TYPES
+    and t not in REF_MOVE_DECISION_TYPES
+)
+HumanDecisionType = Literal["experiment_accepted", "experiment_rejected"]
+EvidenceRefKind = Literal[
+    "problem_spec",
+    "dataset_version",
+    "split_plan",
+    "feature_recipe",
+    "experiment",
+    "candidate",
+    "model_selection",
+    "model_version",
+    "decision_record",
+]
+EvidenceScope = Literal[
+    "cv_fold", "cv_aggregate", "final_holdout", "slice", "robustness", "calibration", "latency"
+]
+RefKind = Literal["problem_spec", "dataset", "split_plan", "feature_recipe", "champion_model"]
+REF_COMPANION_MAX = 4
+
+
+class EvidenceRefInput(BaseModel):
+    """A node of this project; ``metric``/``scope`` name an evaluation of a candidate/model version."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: EvidenceRefKind
+    id: UUID
+    metric: str | None = Field(default=None, pattern=EVIDENCE_METRIC_PATTERN)
+    scope: EvidenceScope | None = None
+
+
+class DecisionSubjectInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: DecisionSubjectKind
+    id: UUID | None = Field(default=None, description="Required unless `kind` is `project`.")
+
+
+class DecisionCreateRequest(BaseModel):
+    """``propose``: a proposal a human later accepts or rejects. ``record``: a decision
+    the caller makes now (stored ``accepted``). Starts a new chain."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["propose", "record"]
+    decision_type: HumanDecisionType
+    subject: DecisionSubjectInput
+    rationale: str = Field(min_length=1, max_length=RATIONALE_MAX_CHARS)
+    facts: dict[str, Any] = Field(default_factory=dict, description="Observed values (bounded, no secrets).")
+    evidence_refs: list[EvidenceRefInput] = Field(default_factory=list, max_length=EVIDENCE_REFS_MAX)
+    details: dict[str, Any] = Field(
+        default_factory=dict, description="Per-type payload; service-owned keys (`ref_moves`, ...) are refused."
+    )
+
+
+class RefMoveTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ref_kind: RefKind
+    target_id: UUID
+
+
+class RefMoveProposalRequest(BaseModel):
+    """Propose moving refs (``ref_moved``/``champion_promoted``); nothing moves until a
+    human calls ``POST /v1/projects/{id}/refs/{kind}`` with ``proposal_id``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["propose_ref_move"]
+    ref_moves: list[RefMoveTarget] = Field(min_length=1, max_length=5)
+    rationale: str = Field(min_length=1, max_length=RATIONALE_MAX_CHARS)
+    facts: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[EvidenceRefInput] = Field(min_length=1, max_length=EVIDENCE_REFS_MAX)
+
+
+class DecisionResolveRequest(BaseModel):
+    """Accept or reject an open proposal (a new row superseding it)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rationale: str = Field(min_length=1, max_length=RATIONALE_MAX_CHARS)
+    evidence_refs: list[EvidenceRefInput] | None = Field(
+        default=None, max_length=EVIDENCE_REFS_MAX, description="Omit to carry the proposal's evidence."
+    )
+
+
+class DecisionSupersedeRequest(BaseModel):
+    """Correct an accepted record (same type and subject); the old row becomes superseded."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rationale: str = Field(min_length=1, max_length=RATIONALE_MAX_CHARS)
+    facts: dict[str, Any] | None = Field(default=None, description="Omit to carry the prior facts.")
+    evidence_refs: list[EvidenceRefInput] | None = Field(
+        default=None, max_length=EVIDENCE_REFS_MAX, description="Omit to carry the prior evidence."
+    )
+
+
+class RefCompanionMove(BaseModel):
+    """Another ref moved by the same decision (e.g. ``feature_recipe`` with ``champion_model``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ref_kind: RefKind
+    target_id: UUID
+    expected_version: int | None = Field(
+        ge=1, description="That ref's current `version` (its ETag); null asserts the kind does not exist yet."
+    )
+
+
+class RefMoveRequest(BaseModel):
+    """Move ``{ref_kind}`` (and companions) under one accepted decision record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_id: UUID = Field(description="New target node of this ref kind, in this project.")
+    rationale: str = Field(min_length=1, max_length=RATIONALE_MAX_CHARS)
+    evidence_refs: list[EvidenceRefInput] = Field(
+        min_length=1,
+        max_length=EVIDENCE_REFS_MAX,
+        description="At least one; a champion move cites the model's `final_holdout` evaluation.",
+    )
+    facts: dict[str, Any] = Field(default_factory=dict)
+    proposal_id: UUID | None = Field(
+        default=None, description="Accept this open ref-move proposal (its moves must match)."
+    )
+    companion_moves: list[RefCompanionMove] = Field(default_factory=list, max_length=REF_COMPANION_MAX)
+
+
+class ProjectRefTarget(BaseModel):
+    kind: Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "model_version"]
+    id: UUID
+    key: str = Field(description="Textual node id `kind:uuid`.")
+
+
+class ProjectRefRead(BaseModel):
+    ref_kind: RefKind
+    target: ProjectRefTarget
+    version: int = Field(description="Optimistic concurrency token; `etag` is its strong ETag.")
+    etag: str = Field(description='Send as `If-Match` to move this ref, e.g. `"3"`.')
+    decision_record_id: UUID = Field(description="The accepted record of the last move.")
+    moved_at: datetime
+
+
+class ProjectRefList(BaseModel):
+    project_id: UUID
+    refs_initialized: bool
+    items: list[ProjectRefRead]
+    missing_kinds: list[RefKind] = Field(
+        default_factory=list, description="Kinds without a ref; create one with `If-None-Match: *`."
+    )
+
+
+class RefMoveRead(BaseModel):
+    decision: DecisionRecordRead
+    refs: list[ProjectRefRead] = Field(description="Every current ref of the project after the move.")

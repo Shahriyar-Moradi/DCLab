@@ -1,4 +1,5 @@
-"""/v1 experiment resources (P3.1-B2): list, read, root run, branch, compare, cancel.
+"""/v1 experiment resources (P3.1-B2): list, read, root run, branch, compare, cancel;
+and the model versions they produce (P3.1-B3: ``GET /v1/model-versions/{id}``).
 
 Transport only; the services own every state change. Commands require
 ``Idempotency-Key`` (bound in ``idempotency_keys`` with the experiment, scope
@@ -59,6 +60,7 @@ from app.domain.experiment_resources import (
     ExperimentPage,
     ExperimentDetailRead,
     ExperimentStatus,
+    ModelVersionResourceRead,
 )
 from app.domain.idempotency import RESOURCE_EXPERIMENT
 from app.services.experiment_branch_service import branch_experiment, compare_side_by_side
@@ -67,6 +69,7 @@ from app.services.experiment_service import (
     experiment_read,
     experiments_for_compare,
     list_experiments,
+    model_version_read,
     start_root_experiment,
 )
 
@@ -321,5 +324,33 @@ def cancel_experiment_v1(
         raise domain_error(exc) from exc
     body = _read(db, user, workspace_id, experiment_id)
     response.status_code = 202 if outcome == "cancelling" else 200
+    set_etag(response, representation_etag(body))
+    return body
+
+
+@router.get(
+    "/model-versions/{model_version_id}",
+    response_model=ModelVersionResourceRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
+def read_model_version(
+    model_version_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ModelVersionResourceRead:
+    """Model version detail: family, locked metrics (CV + final holdout at the locked
+    decision threshold, constraint status), source experiment/candidate, split plan,
+    dataset lineage, feature recipe, champion flag, and artifacts by id + digest."""
+
+    try:
+        body = model_version_read(
+            db, actor=user, workspace_id=request_workspace_id(request), model_version_id=model_version_id
+        )
+    except IdentityError as exc:
+        raise domain_error(exc) from exc
+    if body is None:
+        raise _not_found("model version not found")
     set_etag(response, representation_etag(body))
     return body

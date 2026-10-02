@@ -51,7 +51,7 @@ def _operations() -> list[tuple[str, str]]:
 
 
 def _concrete(path: str, fill: str = UUID_ZERO) -> str:
-    path = path.replace("{kind}", "experiment")
+    path = path.replace("{kind}", "experiment").replace("{ref_kind}", "champion_model")
     return re.sub(r"\{[^}]+\}", fill, path)
 
 
@@ -64,6 +64,13 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"task_type": "binary", "business_objective": "x"}
         elif path.endswith("/branches"):
             body = {"intent": "x", "changes": [{"kind": "family_exclude", "family": "xgboost"}]}
+        elif path.endswith("/decisions"):
+            body = {"action": "propose", "decision_type": "experiment_accepted",
+                    "subject": {"kind": "project"}, "rationale": "x"}
+        elif path.endswith(("/accept", "/reject", "/supersede")):
+            body = {"rationale": "x"}
+        elif "/refs/" in path:
+            body = {"target_id": UUID_ZERO, "rationale": "x", "evidence_refs": [{"kind": "experiment", "id": UUID_ZERO}]}
         kwargs.setdefault("json", body)
         # P3.1-B commands require a key; supply one so the resource checks answer.
         kwargs["headers"] = {"Idempotency-Key": f"conv-{uuid4().hex}", **(kwargs.get("headers") or {})}
@@ -124,6 +131,15 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/experiments/{experiment_id}",
         "POST /v1/experiments/{experiment_id}/branches",
         "POST /v1/experiments/{experiment_id}/cancel",
+        "POST /v1/projects/{project_id}/decisions",
+        "GET /v1/decisions/{decision_id}",
+        "POST /v1/decisions/{decision_id}/accept",
+        "POST /v1/decisions/{decision_id}/reject",
+        "POST /v1/decisions/{decision_id}/supersede",
+        "GET /v1/projects/{project_id}/refs",
+        "GET /v1/projects/{project_id}/refs/{ref_kind}",
+        "POST /v1/projects/{project_id}/refs/{ref_kind}",
+        "GET /v1/model-versions/{model_version_id}",
     }
 
 

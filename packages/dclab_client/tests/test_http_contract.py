@@ -632,3 +632,81 @@ def test_compare_refusal_is_a_typed_conflict():
     with pytest.raises(DCLabAPIError) as caught:
         api.experiments.compare([WS, WS])
     assert caught.value.status_code == 409 and caught.value.code == "split_plan_mismatch"
+
+
+_RECORD = {
+    "id": WS, "project_id": WS, "decision_type": "champion_promoted", "state": "accepted",
+    "effective_state": "accepted", "subject": {"kind": "model_version", "id": WS, "key": f"model_version:{WS}"},
+    "actor": {"kind": "human", "user_id": WS}, "rationale": "r", "rationale_untrusted": False,
+    "content_origin": "human", "schema_version": 1, "policy_version": "dclab.decisions.v1",
+    "event_at": "2026-10-02T00:00:00Z", "recorded_at": "2026-10-02T00:00:00Z",
+}
+_REF = {"ref_kind": "champion_model", "target": {"kind": "model_version", "id": WS, "key": f"model_version:{WS}"},
+        "version": 2, "etag": '"2"', "decision_record_id": WS, "moved_at": "2026-10-02T00:00:00Z"}
+_MODEL_VERSION = {
+    "id": WS, "workspace_id": WS, "version": "v1", "created_at": "2026-10-02T00:00:00Z", "content_digest": "ab",
+    "lineage": {"experiment_id": WS, "candidate_id": WS}, "is_champion": True, "ref_kinds": ["champion_model"],
+    "metrics": {"holdout": {"roc_auc": 0.7}, "decision_threshold": 0.4},
+    "artifacts": [{"role": "model", "id": WS, "artifact_type": "model", "content_digest": "cd", "size_bytes": 3}],
+}
+
+
+def test_decision_ref_and_model_version_routes():
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path.endswith("/refs") and request.method == "GET":
+            return httpx.Response(200, json={"project_id": WS, "refs_initialized": True, "items": [_REF],
+                                             "missing_kinds": []})
+        if "/refs/" in path and request.method == "GET":
+            return httpx.Response(200, json=_REF, headers={"ETag": '"2"'})
+        if "/refs/" in path:
+            return httpx.Response(200, json={"decision": _RECORD, "refs": [_REF]}, headers={"ETag": '"2"'})
+        if path.startswith("/v1/model-versions/"):
+            return httpx.Response(200, json=_MODEL_VERSION, headers={"ETag": '"mv"'})
+        status = 201 if request.method == "POST" else 200
+        return httpx.Response(status, json=_RECORD, headers={"ETag": '"d"', "Idempotent-Replayed": "true"})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    proposed = api.projects.create_decision(WS, decision_type="experiment_accepted", subject_kind="experiment",
+                                            subject_id=WS, rationale="why", idempotency_key="d-1",
+                                            evidence_refs=[{"kind": "experiment", "id": WS}])
+    assert proposed.etag == '"d"' and proposed.idempotent_replay is True
+    api.projects.propose_ref_move(WS, moves={"champion_model": WS}, rationale="r",
+                                  evidence_refs=[{"kind": "model_version", "id": WS, "scope": "final_holdout"}])
+    assert api.projects.refs(WS).items[0].etag == '"2"'
+    assert api.projects.ref(WS, "champion_model").version == 2
+    moved = api.projects.move_ref(WS, "champion_model", target_id=WS, rationale="r", if_match='"1"',
+                                  evidence_refs=[{"kind": "model_version", "id": WS}],
+                                  companion_moves=[{"ref_kind": "feature_recipe", "target_id": WS,
+                                                    "expected_version": 1}])
+    assert moved.etag == '"2"' and moved.decision.decision_type == "champion_promoted"
+    api.projects.move_ref(WS, "dataset", target_id=WS, rationale="r", create=True,
+                          evidence_refs=[{"kind": "dataset_version", "id": WS}])
+    assert api.decisions.get(WS).etag == '"d"'
+    api.decisions.accept(WS, rationale="ok")
+    api.decisions.reject(WS, rationale="no", evidence_refs=[{"kind": "experiment", "id": WS}])
+    api.decisions.supersede(WS, rationale="fix", facts={"x": 1})
+    model = api.model_versions.get(WS)
+    assert model.etag == '"mv"' and model.is_champion and model.metrics.decision_threshold == 0.4
+    (create, propose, refs, ref, move, insert, get, accept, reject, supersede, mv) = recorded
+    assert create.url.path == f"/v1/projects/{WS}/decisions" and create.headers["Idempotency-Key"] == "d-1"
+    body = json.loads(create.content)
+    assert body["action"] == "propose" and body["subject"] == {"kind": "experiment", "id": WS}
+    assert not {"actor", "actor_kind", "agent_run_id"} & set(body)
+    assert json.loads(propose.content)["ref_moves"] == [{"ref_kind": "champion_model", "target_id": WS}]
+    assert refs.url.path == f"/v1/projects/{WS}/refs" and ref.url.path == f"/v1/projects/{WS}/refs/champion_model"
+    assert move.headers["If-Match"] == '"1"' and "If-None-Match" not in move.headers
+    assert json.loads(move.content)["companion_moves"][0]["expected_version"] == 1
+    assert insert.headers["If-None-Match"] == "*" and "If-Match" not in insert.headers
+    assert UUID(insert.headers["Idempotency-Key"]) and "Idempotency-Key" not in get.headers
+    assert [r.url.path for r in (accept, reject, supersede)] == [
+        f"/v1/decisions/{WS}/accept", f"/v1/decisions/{WS}/reject", f"/v1/decisions/{WS}/supersede"]
+    assert json.loads(supersede.content) == {"rationale": "fix", "facts": {"x": 1}}
+    assert mv.url.path == f"/v1/model-versions/{WS}"
+    with pytest.raises(DCLabClientError, match="ref_kind"):
+        api.projects.ref(WS, "../x")
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.decisions.accept("../x", rationale="x")

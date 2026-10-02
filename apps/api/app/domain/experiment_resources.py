@@ -164,3 +164,51 @@ class ExperimentComparisonRead(BaseModel):
     split_plan_id: UUID
     experiments: list[ExperimentComparisonItem]
     common: ExperimentComparisonCommon
+
+
+# --- GET /v1/model-versions/{id} (P3.1-B3) ------------------------------------------------
+
+ModelArtifactRole = Literal["model", "preprocessor", "feature_manifest"]
+
+
+class ModelVersionArtifactRef(BaseModel):
+    """An artifact by id + digest; storage keys and paths are never exposed."""
+
+    role: ModelArtifactRole
+    id: UUID
+    artifact_type: str
+    content_digest: str
+    size_bytes: int
+    mime_type: str | None = None
+
+
+class ModelVersionLineage(BaseModel):
+    experiment_id: UUID = Field(description="The run that produced this model version.")
+    candidate_id: UUID = Field(description="The locked winner candidate.")
+    split_plan_id: UUID | None = None
+    source_dataset_id: UUID | None = Field(default=None, description="The DatasetVersion node (published upload).")
+    prepared_dataset_id: UUID | None = Field(default=None, description="The run's prepared table.")
+    problem_spec_id: UUID | None = None
+    feature_recipe_id: UUID | None = Field(default=None, description="FeatureSetVersion of the model.")
+
+
+class ModelVersionResourceRead(BaseModel):
+    """An immutable model version; ``is_champion``/``ref_kinds`` reflect the project refs now."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    version: str
+    created_at: datetime
+    content_digest: str
+    family: str | None = None
+    algorithm: str | None = None
+    candidate_key: str | None = None
+    lineage: ModelVersionLineage
+    metrics: ExperimentWinner | None = Field(
+        default=None,
+        description="CV aggregate + single final-holdout evaluation at the locked decision threshold.",
+    )
+    is_champion: bool = Field(description="The project's `champion_model` ref points at this model version.")
+    ref_kinds: list[Literal["champion_model"]] = Field(default_factory=list)
+    artifacts: list[ModelVersionArtifactRef] = Field(default_factory=list)

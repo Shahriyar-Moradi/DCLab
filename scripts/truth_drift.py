@@ -66,6 +66,14 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     ("ExperimentListItem", "ExperimentListItem"),
     ("ExperimentComparison", "ExperimentComparisonRead"),
     ("ExperimentComparisonItem", "ExperimentComparisonItem"),
+    # P3.1-B3 decisions, refs and model versions.
+    ("ProjectRef", "ProjectRefRead"),
+    ("ProjectRefList", "ProjectRefList"),
+    ("RefMoveResult", "RefMoveRead"),
+    ("ModelVersion", "ModelVersionResourceRead"),
+    ("ModelVersionLineage", "ModelVersionLineage"),
+    ("ModelVersionMetrics", "ExperimentWinner"),
+    ("ModelVersionArtifact", "ModelVersionArtifactRef"),
     # P3.1-A: every /v1 error response is this envelope.
     ("ErrorEnvelope", "V1ErrorEnvelope"),
     ("ErrorDetail", "V1Error"),

@@ -17,6 +17,8 @@
   current state): a mismatch is ``412 precondition_failed``. ``If-Match`` is
   optional on existing commands (back-compat); a command declared
   ``required`` answers ``428 precondition_required`` when it is missing.
+  Ref moves (P3.1-B3) require ``If-Match: "<version>"`` of the ref (``*`` is
+  refused) or ``If-None-Match: *`` to create a missing ref kind.
 * **Idempotency-Key.** Every /v1 POST command accepts ``Idempotency-Key``
   (``[A-Za-z0-9._:-]{1,128}``). The key is bound to a request digest
   (``app.domain.idempotency``) stored on the resource the command creates; a
@@ -372,6 +374,17 @@ def if_match_header(
     ),
 ) -> str | None:
     return if_match
+
+
+def if_none_match_header(
+    if_none_match: str | None = Header(
+        None,
+        alias="If-None-Match",
+        max_length=64,
+        description="`*` on a create-if-absent command: 412 precondition_failed when the resource exists.",
+    ),
+) -> str | None:
+    return if_none_match
 
 
 # --- Idempotency-Key ----------------------------------------------------------------------------
