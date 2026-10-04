@@ -1,6 +1,6 @@
 # ADR 0008 — The hybrid AI decision model
 
-**Status:** Proposed (awaiting founder acceptance; questions in the last section)  
+**Status:** Accepted (founder, 2026-10-04; decisions recorded in § Founder decisions)  
 **Date:** 2026-10-04  
 **Prompt:** P6.1-A (design only; P6.2-A … P6.11-A implement)  
 **Depends on:** [0005-upload-policy.md](0005-upload-policy.md) (`llm_exposure_policy`),
@@ -495,6 +495,12 @@ unless stated; each writes an `ai_incidents` row and a
 | ≥ 5 `rejected_by_validator` proposals for one point in 24 h, or ≥ 2 % over 7 days (≥ 50 proposals) | demote one level |
 | R3 run, point at **L1**: 95 % **upper** bound of (AI − rule) < −5 pts, or weighted precision upper bound < 0.90 (yes/no points), on either source | L1 → L0 |
 | R3 run, point at **L2**: 95 % **upper** bound of (AI − rule) < −1 pt, or Wilson upper bound of the deployed-policy precision < 0.98 | L2 → L1 |
+| Revert rate of L2 decisions > 10 % over 30 days (≥ 30 applied), or ≥ 3 reverts in 7 days | L2 → L1 |
+| Label-free drift: AI–rule disagreement rate or abstain rate departs from the R3 baseline (two-proportion test, ≥ 200 decisions, or CUSUM alarm) | demote one level; blind audit of the period |
+| Jev repeat-stability check fails: an **uncached** repeat of ≥ 200 recent in-band questions with the same model id has a Wilson 95 % **lower** bound of the in-band flip rate above 1 % (evidence of instability, not a raw count) | L0 for the purpose until R3 re-runs |
+| Any data-exposure property-test failure or redaction incident involving the point | L0 + agent/purpose switch off until an approver resolves |
+| Provider breaker open > 1 h | no level change; fallback keeps running; incident `provider_failure` |
+| Approver decision | any time, any direction down |
 
 Demotion bars equal the promotion bars of the same level (−5 / 0.90 at L1,
 −1 / 0.98 at L2), so a result that would not have blocked promotion can never
@@ -502,12 +508,6 @@ demote, and a point cannot stay at a level whose own bar it demonstrably
 fails (−2 pt at L2 would allow exactly that). No point-estimate clause: at a
 true gap of 0 with 10 % disagreement a "point < −2 with n ≥ 200" rule fires in
 about 19 % of runs on noise alone.
-| Revert rate of L2 decisions > 10 % over 30 days (≥ 30 applied), or ≥ 3 reverts in 7 days | L2 → L1 |
-| Label-free drift: AI–rule disagreement rate or abstain rate departs from the R3 baseline (two-proportion test, ≥ 200 decisions, or CUSUM alarm) | demote one level; blind audit of the period |
-| Jev repeat-stability check fails: an **uncached** repeat of ≥ 200 recent in-band questions with the same model id has a Wilson 95 % **lower** bound of the in-band flip rate above 1 % (evidence of instability, not a raw count) | L0 for the purpose until R3 re-runs |
-| Any data-exposure property-test failure or redaction incident involving the point | L0 + agent/purpose switch off until an approver resolves |
-| Provider breaker open > 1 h | no level change; fallback keeps running; incident `provider_failure` |
-| Approver decision | any time, any direction down |
 
 Continuous blind audit: ~5 % of L2 decisions are sampled for blind labeling
 every week. Re-promotion after an automatic demotion requires a new R3 run
@@ -600,9 +600,15 @@ CV metrics, findings, model-card summary without the final evaluation) and
 (b) the bounded transcript of the thread's events — the graph is the memory;
 chat history alone is never the source of truth.
 
-**Model.** Provider and model are policy data per agent role (ADR 0009 §3);
-founder question Q1 picks the default lead model. No model id is hard-coded
-outside the platform default policy file.
+**Model.** Provider and model are policy data per agent role (ADR 0009 §3).
+Founder decision Q1: OpenAI for every LLM role — **`gpt-6.1-sol` for complex
+work** (the lead agent / assistant, `experiment_planner`, `experiment_critic`,
+`improvement_hypothesis`, the Phase 7 ops agent) and **`gpt-6-luna` for simple,
+high-volume work** (`dataset_investigator`'s batched per-column judgments, the
+migrated legacy decision purposes, the routine pipeline-audit verifier). A
+workspace may move a complex role down to `gpt-6-luna` to save cost, never to a
+model outside the platform allowlist. No model id is hard-coded outside the
+platform default policy file.
 
 **Ops agent** (Phase 7) is a second instance of the same bounded loop with the
 `ops.*` points and the workspace autonomy policy; it is not a new runtime.
@@ -751,7 +757,36 @@ no retrieval over past decisions for prompting (the envelope is built from the
 graph); no change to the ADR 0006 record state machine or change-kind
 vocabulary; no AI decision on branch runs.
 
-## Open questions for the founder
+## Founder decisions (2026-10-04)
+
+All recommendations below were accepted except Q1, which the founder changed:
+
+1. **Models (changed).** OpenAI is the only LLM provider for the MVP:
+   `gpt-6.1-sol` for complex roles (lead agent / assistant, Planner, Critic,
+   Improvement hypothesis, ops agent) and `gpt-6-luna` for simple, high-volume
+   roles (Dataset Investigator, migrated legacy decision purposes, routine
+   verifier). The allowlist is exactly these two ids plus Jev for semantic
+   decisions (ADR 0009 §3, §9). OpenAI publishes no dated snapshot for either
+   id (models page, 2026-10-04), so the bare ids are pinned; the gateway
+   records the provider-reported resolved model on every ledger row, and a
+   change of that value counts as a model change (levels for the affected
+   (prompt release, model) pair fall to L0 until R3 re-runs, §3/§4). If OpenAI
+   publishes dated snapshots, P6.2-B pins them instead.
+2. **L2 in the MVP:** yes, only for `column.semantic_role` (numeric ↔
+   categorical among modeled columns), `column.missing_value_action`
+   (`impute_median` ↔ `impute_most_frequent`) and `training.families_budget`
+   (family subset and time budget), each gated by §4 and first set at G6.
+3. **Promotion statistics:** §4 as written.
+4. **Leakage:** AI only flags; exclusion always waits for a person.
+5. **Planner answers before the job,** superseded once results exist; never
+   block a worker stage.
+6. **One decision record per point per run.**
+7. **Ops defaults:** auto-retrain ≤ 2 per week at L2 as new roots;
+   auto-release off; automatic rollback is the rule action
+   `ops.rollback_threshold.v1` with the AI capped at L1; `ops.diagnose` may
+   reach L3.
+
+## Open questions for the founder (answered above)
 
 1. **Default lead-agent model and provider.** Recommended: Sonnet 5.5 as the
    lead and specialist default, Haiku 4.5 as the fallback for the Investigator

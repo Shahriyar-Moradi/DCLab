@@ -1,6 +1,6 @@
 # ADR 0009 — AI governance, gateway, harness and the in-app assistant
 
-**Status:** Proposed (awaiting founder acceptance; questions in the last section)  
+**Status:** Accepted (founder, 2026-10-04; decisions recorded in § Founder decisions)  
 **Date:** 2026-10-04  
 **Prompt:** P6.1-A (design only; absorbs Track A's A1-A)  
 **Depends on:** [0008-hybrid-ai-decision-model.md](0008-hybrid-ai-decision-model.md),
@@ -200,7 +200,8 @@ apps/api/app/agents/
     console.py            read model for GET /v1/governance (P6.11-A)
   gateway/                the only door to any model
     contract.py router.py redaction.py budget.py cache.py limits.py ledger.py service.py
-    providers/            openai.py litellm.py typesafe_jev.py fake.py  (ONLY SDK imports; ONLY readers of DCLAB_*_API_KEY)
+    providers/            openai.py typesafe_jev.py fake.py  (ONLY SDK imports; ONLY readers of DCLAB_*_API_KEY;
+                          litellm.py only if a non-OpenAI provider is ever allowlisted — none in the MVP)
   harness/
     service.py context.py hooks.py validation.py recorder.py replay.py
   tools/                  catalog.py + definitions/<tool>.py + shaping.py (strip_holdout, cv_only, cv_record,
@@ -570,8 +571,11 @@ change cannot re-enable anything.
 ```json
 {
   "schema_version": 1,
-  "models": {"roles": {"lead": {"default": "<dated model id>", "allowed": ["…"], "fallback": "rule_path"},
-                       "specialist": {"default": "…", "allowed": ["…"], "fallback": "rule_answer"},
+  "models": {"roles": {"lead": {"default": "gpt-6.1-sol", "allowed": ["gpt-6.1-sol", "gpt-6-luna"], "fallback": "rule_path"},
+                       "specialist": {"default": "gpt-6.1-sol", "allowed": ["gpt-6.1-sol", "gpt-6-luna"], "fallback": "rule_answer",
+                                      "per_agent": {"dataset_investigator": "gpt-6-luna"}},
+                       "legacy_decision": {"default": "gpt-6-luna", "allowed": ["gpt-6-luna"], "fallback": "rule_answer"},
+                       "verifier": {"default": "gpt-6-luna", "allowed": ["gpt-6-luna", "gpt-6.1-sol"], "fallback": "rule_answer"},
                        "jev": {"default": "jev-1.13.0", "allowed": ["jev-1.13.0"], "fallback": "rule_answer"}}},
   "data": {"max_class": "aggregates", "sample_values_per_column": 0, "user_text_to_jev": false},
   "autonomy": {"ops": {"auto_retrain_per_week": 2, "auto_release": false,
@@ -996,6 +1000,7 @@ retention GUC (§2.2).
 | NOOA | `nooa==0.0.10` (PyPI 2026-09-04; requires Python ≥ 3.12, < 3.14; depends on `litellm>=1.97.0`) | https://pypi.org/project/nooa/ ; repo https://github.com/NVIDIA-NeMo/labs-OO-Agents (main `564a3401`, 2026-10-02, Apache-2.0, "research software") | `docs/concepts/strategies.md`: `CodeActStrategy` default, `PredictStrategy` = single structured call, no code execution; `src/nooa/config/strategy_config.py`: `CodeActConfig.max_iterations: int | None = None`, `execution_backend = "inprocess"` default; `docs/concepts/safety.md`: "The containment boundary is outside the Python process" — DCLab bans CodeAct in API/worker (import-linter + runtime assertion + CI test, P6.3-A) |
 | LiteLLM | `litellm==1.104.0` (GitHub release 2026-10-03; `v1.105.0-rc.1` is pre-release) | https://github.com/BerriAI/litellm/releases ; https://pypi.org/project/litellm/ | review the advisory list before P6.3-A; the gateway may use LiteLLM only inside `providers/litellm.py` |
 | TypeSafe Jev | model `jev-1.13.0`; `typesafe-sdk==0.7.2` (PyPI 2026-09-26; 0.5.7 → 0.7.2 in 15 days) | https://docs.typesafe.ai/models ; https://pypi.org/project/typesafe-sdk/ | aliases `jev-latest`, `jev-preview` → 1.13.0 (never used); $0.042 / 1M input tokens, output free; 100K tokens/s and 80 req/s "can change without notice"; 64k context, 32k for `state`; "not fine-tuned or LoRA-adapted with customer data", "not trained on customer requests"; ZDR enterprise only; timeout and region **not stated** on the page fetched → metadata by default |
+| OpenAI models | `gpt-6.1-sol` (complex roles; $2 / 1M input, $10 / 1M output) and `gpt-6-luna` (simple roles; $0.10 / $0.50); founder decision Q1 | https://developers.openai.com/api/docs/models ; https://developers.openai.com/api/docs/models/gpt-6-luna ; https://openai.com/index/introducing-gpt-6-sol-and-luna/ | both 1.05M context, 128K max output, function calling and structured outputs; the models page lists **no dated snapshots**, so the bare ids are pinned and the ledger records the provider-reported resolved model per call (a change = model change, ADR 0008 § Founder decisions); structured output goes through the **Responses API** (Chat Completions supports function calling for `gpt-6-luna` only with `reasoning_effort = none`) |
 | MCP SDK | `mcp==2.2.0` (existing) | — | unchanged |
 
 Pins live in the `agents` optional extra of `pyproject.toml` (locked in
@@ -1061,7 +1066,34 @@ back to the rule path); no `job` effect for assistant tools; no CodeAct lane
 (Phase 9); no retention job before P8.7 (the columns and trigger exist); no
 notifications channel before P8.8 (Inbox items only).
 
-## Open questions for the founder
+## Founder decisions (2026-10-04)
+
+All recommendations below were accepted; ADR 0008 Q1 (models) was changed by
+the founder, which narrows Q6 here.
+
+1. **Assistant turns run in the API process** (SSE, 120 s cap; the API holds
+   the OpenAI key through its own gateway instance).
+2. **Budget defaults:** $25 / workspace / month, $12 / project / month, $1.00
+   per assistant thread, $0.25 per turn, $0.10 per specialist run, alert at
+   80 %, hard stop on; per user 60 turns / hour, 2 concurrent. (At
+   `gpt-6.1-sol` prices a full 60k-token turn costs at most about $0.20, inside
+   the turn cap.)
+3. **No sample values in the MVP;** `data.max_class` capped at `aggregates`;
+   new uploads default to `llm_exposure_policy = aggregate_only`; existing rows
+   stay `deny` until their owner raises them.
+4. **Retention 12 months** for redacted prompts and answers.
+5. **Self-approval allowed** when a workspace has one approver, recorded and
+   flagged in the console.
+6. **Providers:** the gateway ships **one LLM provider adapter, OpenAI**
+   (`gpt-6.1-sol`, `gpt-6-luna`), plus TypeSafe for Jev and the fake provider
+   for tests. LiteLLM stays installed only because `nooa` depends on it; DCLab
+   code never calls it (NOOA's LLM object is the gateway adapter). Adding a
+   provider is an ADR note plus an allowlist entry, never a workspace setting.
+7. **Kill switches:** off immediately by owners/admins; on needs an approver;
+   an incident's switch-off holds until the incident is resolved.
+8. **`data.user_text_to_jev = false`** by default.
+
+## Open questions for the founder (answered above)
 
 1. **Assistant turn location.** Run the turn in the API process (SSE streams
    directly, 120 s cap, the API holds provider secrets through its own gateway

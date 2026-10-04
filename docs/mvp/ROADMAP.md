@@ -244,9 +244,9 @@ enforced; CI proves no model call bypasses the gateway and no agent run bypasses
 the harness; any recorded agent run can be replayed without a live model.
 
 **Checkpoint G6 (about 4 weeks of R3 data after the gate, during Phase 4 Stages
-2–3):** confirm or lower the default trust levels, choose the lead agent's default
-model (cost vs quality), and set budget defaults before Phase 4 Stage 4 exposes AI
-to users.
+2–3):** confirm or lower the default trust levels, confirm the models chosen in
+ADR 0008 (`gpt-6.1-sol` complex, `gpt-6-luna` simple) against R3 cost and quality,
+and confirm the ADR 0009 budget defaults before Phase 4 Stage 4 exposes AI to users.
 
 ## Phase 4, Stages 2–5 — Agent-first Studio (after the Phase 6 gate)
 

@@ -17,7 +17,8 @@ decision-record shape, cleaning ownership, AI-off semantics) and
 [ADR 0009](../adr/0009-ai-governance-gateway-harness-assistant.md) (tables and
 columns, governance policy schema, gateway contract, harness lifecycle and
 hooks, tool catalog, threads API and `AssistantStep`, data exposure, pins). Both
-are *Proposed* until the founder accepts them; where this overview and an ADR
+were accepted by the founder on 2026-10-04 (models: OpenAI `gpt-6.1-sol` for
+complex roles, `gpt-6-luna` for simple roles); where this overview and an ADR
 differ, the ADR wins.
 
 ## 1. Where agents sit
