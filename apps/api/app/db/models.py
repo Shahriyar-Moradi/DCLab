@@ -43,11 +43,23 @@ from app.domain.data_access import (
     CK_DATA_ACCESSES_TYPE,
     CK_DATA_ACCESSES_UPLOAD_IS_COPY,
 )
+from app.domain.batch_predictions import (
+    CK_BATCH_PREDICTIONS_COMPLETED,
+    CK_BATCH_PREDICTIONS_CONTRACT_BOUNDED,
+    CK_BATCH_PREDICTIONS_CONTRACT_OBJECT,
+    CK_BATCH_PREDICTIONS_ERROR_CODE,
+    CK_BATCH_PREDICTIONS_FAILED,
+    CK_BATCH_PREDICTIONS_OUTPUT_FORMAT,
+    CK_BATCH_PREDICTIONS_ROWS,
+    CK_BATCH_PREDICTIONS_STATUS,
+    CK_BATCH_PREDICTIONS_THRESHOLD,
+)
 from app.domain.data_plane import (
     CK_ARTIFACTS_PROVIDER,
     CK_ARTIFACTS_TYPE,
     CK_DATA_SOURCES_STATUS,
     CK_DATA_SOURCES_TYPE,
+    CK_DATASETS_PURPOSE,
     CK_INGESTION_RUNS_STATUS,
 )
 from app.domain.execution_plane import (
@@ -2641,6 +2653,7 @@ class Dataset(Base):
             ["ingestion_runs.workspace_id", "ingestion_runs.id"],
             name="fk_datasets_workspace_ingestion_run",
         ),
+        CheckConstraint(CK_DATASETS_PURPOSE, name="ck_datasets_purpose"),
         Index("ix_datasets_workspace_created_at", "workspace_id", desc("created_at")),
         Index("ix_datasets_project_created_at", "project_id", desc("created_at")),
         Index("ix_datasets_ingestion_run_id", "ingestion_run_id"),
@@ -2684,6 +2697,10 @@ class Dataset(Base):
     schema_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # P4.9-A: ``scoring`` uploads (no target) are refused as training sources.
+    purpose: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="training", server_default="training"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -6203,6 +6220,104 @@ class ServiceToken(Base):
     revoked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+
+class BatchPrediction(Base):
+    """One scoring of a dataset by a model version (P4.9-A). Workspace-scoped.
+
+    The API inserts it ``queued`` with its ExecutionRequest and ``models.batch_predict``
+    job; only the worker loads the model and moves it to ``running`` and then
+    ``completed`` (output artifact, ``rows_out = rows_in``) or ``failed``
+    (``error_code``). Terminal rows are frozen by a DB trigger (only
+    ``requested_by_user_id`` may still become NULL, by its FK). ``model_release_id``
+    has no FK until Phase 7 adds releases.
+    """
+
+    __tablename__ = "batch_predictions"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_batch_predictions_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_batch_predictions_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.id"],
+            name="fk_batch_predictions_workspace_model_version",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "input_dataset_id"],
+            ["datasets.workspace_id", "datasets.id"],
+            name="fk_batch_predictions_workspace_input_dataset",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "execution_request_id"],
+            ["execution_requests.workspace_id", "execution_requests.id"],
+            name="fk_batch_predictions_workspace_execution_request",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "ml_job_id"],
+            ["ml_jobs.workspace_id", "ml_jobs.id"],
+            name="fk_batch_predictions_workspace_ml_job",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "output_artifact_id"],
+            ["artifacts.workspace_id", "artifacts.id"],
+            name="fk_batch_predictions_workspace_output_artifact",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "initiated_by_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_batch_predictions_service_token",
+        ),
+        CheckConstraint(CK_BATCH_PREDICTIONS_STATUS, name="ck_batch_predictions_status"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_OUTPUT_FORMAT, name="ck_batch_predictions_output_format"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_ROWS, name="ck_batch_predictions_rows"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_COMPLETED, name="ck_batch_predictions_completed"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_FAILED, name="ck_batch_predictions_failed"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_THRESHOLD, name="ck_batch_predictions_threshold"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_CONTRACT_OBJECT, name="ck_batch_predictions_contract_object"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_CONTRACT_BOUNDED, name="ck_batch_predictions_contract_bounded"),
+        CheckConstraint(CK_BATCH_PREDICTIONS_ERROR_CODE, name="ck_batch_predictions_error_code"),
+        Index(
+            "ix_batch_predictions_workspace_model_version_created_at",
+            "workspace_id",
+            "model_version_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    input_dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    execution_request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    ml_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    initiated_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    output_format: Mapped[str] = mapped_column(String(16), nullable=False)
+    rows_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    contract_check: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    decision_threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+    output_artifact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 @event.listens_for(Dataset, "before_update")

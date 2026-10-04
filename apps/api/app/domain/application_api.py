@@ -129,5 +129,6 @@ class DatasetUploadRead(BaseModel):
     size_bytes: int | None
     row_count: int
     column_count: int
+    purpose: str = "training"
     created_at: datetime
     ingestion: DatasetIngestionRead

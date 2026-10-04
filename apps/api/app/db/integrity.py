@@ -379,8 +379,21 @@ EXECUTE FUNCTION prevent_canonical_row_mutation()
 """
 
 
+# P4.9-A / Alembic 0069 (identical literal SQL inlined there). A finished scoring run
+# is frozen; only requested_by_user_id may still change (to NULL, by its FK).
+BATCH_PREDICTIONS_TERMINAL_TRIGGER_SQL = """
+CREATE TRIGGER batch_predictions_terminal_immutable
+BEFORE UPDATE ON batch_predictions
+FOR EACH ROW
+WHEN (OLD.status IN ('completed', 'failed'))
+EXECUTE FUNCTION prevent_canonical_column_mutation(
+    'id,workspace_id,project_id,model_version_id,model_release_id,input_dataset_id,execution_request_id,ml_job_id,initiated_by_service_token_id,status,output_format,rows_in,rows_out,contract_check,decision_threshold,output_artifact_id,error_code,error_message,created_at,started_at,completed_at'
+)
+"""
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065 and 0067 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067 and 0069 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -415,6 +428,10 @@ def install_immutability_triggers(connection) -> None:
     ):
         connection.execute(text(f"DROP TRIGGER IF EXISTS {name} ON service_tokens"))
         connection.execute(text(sql))
+    connection.execute(
+        text("DROP TRIGGER IF EXISTS batch_predictions_terminal_immutable ON batch_predictions")
+    )
+    connection.execute(text(BATCH_PREDICTIONS_TERMINAL_TRIGGER_SQL))
 
 
 def _immutability_trigger_name(table: str) -> str | None:

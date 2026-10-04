@@ -30,6 +30,7 @@ from app.db.models import (
 )
 from app.domain.client_lab import ClientLabUploadRead, TargetConfirmationRequired
 from app.domain.data_access import ACCESS_TYPE_UPLOAD, EXECUTION_MODE_COPY
+from app.domain.data_plane import DATASET_PURPOSE_TRAINING
 from app.domain.errors import (
     IdentityError,
     OpenLabFileError,
@@ -125,6 +126,7 @@ def _persist_upload_dataset(
     artifact_id: UUID,
     size_bytes: int,
     location: str,
+    purpose: str = DATASET_PURPOSE_TRAINING,
 ) -> Dataset:
     """Persist the physical upload even when it is not yet training-ready."""
 
@@ -169,6 +171,7 @@ def _persist_upload_dataset(
         schema_json=schema,
         row_count=preview.record_count,
         column_count=len(schema.get("columns") or fields),
+        purpose=purpose,
     )
     db.add(dataset)
     db.flush()
@@ -373,6 +376,7 @@ def _ingest_and_publish(
     workspace_id: UUID,
     project_id: UUID,
     filename: str,
+    purpose: str = DATASET_PURPOSE_TRAINING,
 ) -> IngestedUpload:
     """The one upload ingestion path: artifact → source → access → ingestion run →
     dataset → ADR 0005 publication. The caller owns commit."""
@@ -439,6 +443,7 @@ def _ingest_and_publish(
         artifact_id=artifact.id,
         size_bytes=put.size_bytes,
         location=staged.location,
+        purpose=purpose,
     )
     complete_ingestion_run(
         db,
@@ -515,6 +520,7 @@ def ingest_dataset(
     upload_stream: BinaryIO,
     declared_mime: str | None = None,
     before_commit: Callable[[Dataset], None] | None = None,
+    purpose: str = DATASET_PURPOSE_TRAINING,
 ) -> IngestedUpload:
     """``POST /v1/datasets``: the Labs ingestion path without the Labs run.
 
@@ -538,7 +544,8 @@ def ingest_dataset(
         declared_mime=declared_mime,
     ) as staged:
         ingested = _ingest_and_publish(
-            db, staged, user=user, workspace_id=workspace_id, project_id=project.id, filename=filename
+            db, staged, user=user, workspace_id=workspace_id, project_id=project.id, filename=filename,
+            purpose=purpose,
         )
         _append_ingest_event(
             db, staged, ingested, user=user, workspace_id=workspace_id, filename=filename

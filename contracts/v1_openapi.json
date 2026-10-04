@@ -626,6 +626,36 @@
         "successSchema": "ModelVersionResourceRead"
       }
     },
+    "/v1/model-versions/{model_version_id}/predictions": {
+      "POST": {
+        "operationId": "create_prediction_v1_v1_model_versions__model_version_id__predictions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "BatchPredictionCreateRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "BatchPredictionRead"
+      }
+    },
     "/v1/nodes/{kind}/{node_id}/impact": {
       "GET": {
         "operationId": "read_node_impact_v1_nodes__kind___node_id__impact_get",
@@ -652,6 +682,53 @@
           "500"
         ],
         "successSchema": "NodeImpactRead"
+      }
+    },
+    "/v1/predictions/{prediction_id}": {
+      "GET": {
+        "operationId": "read_prediction_v1_predictions__prediction_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "BatchPredictionRead"
+      }
+    },
+    "/v1/predictions/{prediction_id}/download": {
+      "GET": {
+        "operationId": "download_prediction_v1_predictions__prediction_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": null
       }
     },
     "/v1/projects": {
@@ -1114,6 +1191,7 @@
         "id",
         "name",
         "project_id",
+        "purpose",
         "row_count",
         "version",
         "workspace_id"
@@ -1141,6 +1219,7 @@
         "ingestion",
         "name",
         "project_id",
+        "purpose",
         "row_count",
         "schema_digest",
         "size_bytes",

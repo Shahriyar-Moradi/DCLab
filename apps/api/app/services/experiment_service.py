@@ -48,6 +48,7 @@ from app.domain.errors import (
     IdentityError,
     InvalidCursorError,
 )
+from app.domain.data_plane import DATASET_PURPOSE_SCORING
 from app.domain.execution_requests import OPERATION_MODEL_BUILD, SOURCE_API
 from app.domain.experiment_resources import (
     EXPERIMENT_INTENT_READ_MAX_CHARS,
@@ -137,7 +138,10 @@ class RootRunResult:
     ml_job: MlJob
 
 
-def _trainable_source(db: Session, workspace_id: UUID, project_id: UUID, dataset_id: UUID) -> Dataset:
+def uploaded_dataset(db: Session, workspace_id: UUID, project_id: UUID | None, dataset_id: UUID) -> Dataset:
+    """A published dataset uploaded with ``POST /v1/datasets`` into this project: the
+    only input a run (or, P4.9-A, a batch prediction) accepts."""
+
     dataset = db.scalar(
         select(Dataset).where(Dataset.id == dataset_id, Dataset.workspace_id == workspace_id)
     )
@@ -149,7 +153,7 @@ def _trainable_source(db: Session, workspace_id: UUID, project_id: UUID, dataset
     if artifact is None or artifact.workspace_id != workspace_id or artifact.artifact_type != "dataset":
         # Prepared (derived) tables and legacy rows are never a run's source.
         raise ExperimentRequestError(
-            "dataset_not_uploaded", "only a dataset uploaded with POST /v1/datasets can start a run", status_code=409
+            "dataset_not_uploaded", "only a dataset uploaded with POST /v1/datasets can be used", status_code=409
         )
     if publication_enforced(get_settings()):
         from app.services.ingestion_run_service import require_published_artifact
@@ -158,8 +162,19 @@ def _trainable_source(db: Session, workspace_id: UUID, project_id: UUID, dataset
             require_published_artifact(db, artifact)
         except IdentityError as exc:
             raise ExperimentRequestError(
-                "dataset_not_published", "the dataset is not published for training", status_code=409
+                "dataset_not_published", "the dataset is not published", status_code=409
             ) from exc
+    return dataset
+
+
+def _trainable_source(db: Session, workspace_id: UUID, project_id: UUID, dataset_id: UUID) -> Dataset:
+    dataset = uploaded_dataset(db, workspace_id, project_id, dataset_id)
+    if dataset.purpose == DATASET_PURPOSE_SCORING:
+        raise ExperimentRequestError(
+            "dataset_purpose_scoring",
+            "a scoring dataset (purpose=scoring) has no target and cannot start a run",
+            status_code=409,
+        )
     return dataset
 
 

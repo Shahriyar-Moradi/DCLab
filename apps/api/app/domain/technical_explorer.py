@@ -52,6 +52,7 @@ class DatasetListItem(BaseModel):
     content_digest: str | None
     row_count: int
     column_count: int
+    purpose: str = "training"
     created_at: datetime
 
 

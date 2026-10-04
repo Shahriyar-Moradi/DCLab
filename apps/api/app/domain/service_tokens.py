@@ -76,6 +76,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/experiments/{experiment_id}/code",
             "/v1/decisions/{decision_id}",
             "/v1/model-versions/{model_version_id}",
+            "/v1/predictions/{prediction_id}",
+            "/v1/predictions/{prediction_id}/download",
         )
     },
     ("POST", "/v1/projects"): SCOPE_PROJECTS_WRITE,
@@ -86,6 +88,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/v1/experiments"): SCOPE_EXPERIMENTS_WRITE,
     ("POST", "/v1/experiments/{experiment_id}/branches"): SCOPE_EXPERIMENTS_WRITE,
     ("POST", "/v1/experiments/{experiment_id}/cancel"): SCOPE_EXPERIMENTS_WRITE,
+    # Scoring runs a worker job like a run; it never changes the model or a ref.
+    ("POST", "/v1/model-versions/{model_version_id}/predictions"): SCOPE_EXPERIMENTS_WRITE,
     # The token acts as an agent: the decision service lets agents only propose.
     ("POST", "/v1/projects/{project_id}/decisions"): SCOPE_DECISIONS_PROPOSE,
 }

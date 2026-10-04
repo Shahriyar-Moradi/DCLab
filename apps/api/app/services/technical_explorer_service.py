@@ -283,6 +283,7 @@ def _dataset_list_item(row: Dataset) -> DatasetListItem:
         content_digest=row.content_digest,
         row_count=row.row_count,
         column_count=row.column_count,
+        purpose=row.purpose,
         created_at=row.created_at,
     )
 

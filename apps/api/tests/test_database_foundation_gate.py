@@ -103,6 +103,11 @@ IMPORTANT_DELETE_ACTIONS = {
     # P3.4-A (0068): agent provenance is kept, never erased by a delete.
     "fk_execution_requests_service_token": "a",
     "fk_problem_specs_service_token": "a",
+    # P4.9-A (0069): a scoring run keeps its model version, input, output and agent.
+    "fk_batch_predictions_workspace_model_version": "a",
+    "fk_batch_predictions_workspace_input_dataset": "a",
+    "fk_batch_predictions_workspace_output_artifact": "a",
+    "fk_batch_predictions_service_token": "a",
 }
 
 

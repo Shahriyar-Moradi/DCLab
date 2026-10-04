@@ -85,11 +85,12 @@ from app.domain.errors import (
     TargetIntentConflictError,
     TargetNotInDatasetError,
 )
+from app.domain.data_plane import DATASET_PURPOSE_TRAINING, DATASET_PURPOSES
 from app.domain.execution_requests import (
-    EXECUTION_OPERATIONS,
     REQUEST_NEEDS_INPUT,
     SERVER_OWNED_REQUEST_SPEC_KEYS,
     SOURCE_API,
+    SUBMITTABLE_OPERATIONS,
 )
 from app.domain.idempotency import (
     REQUEST_DIGEST_SPEC_KEY,
@@ -638,6 +639,13 @@ _DATASET_UPLOAD_BODY = {
                         "format": "binary",
                         "description": "CSV/TSV/JSON(L)/Parquet/XLSX; structurally validated (ADR 0005).",
                     },
+                    "purpose": {
+                        "type": "string",
+                        "enum": list(DATASET_PURPOSES),
+                        "default": DATASET_PURPOSE_TRAINING,
+                        "description": "training (default) or scoring: new rows without a target, "
+                        "scored by POST /v1/model-versions/{id}/predictions and never a training source.",
+                    },
                 },
             }
         }
@@ -690,8 +698,9 @@ async def create_dataset_v1(
     """Upload a file into a project: stored, structurally validated, ingested and
     published for internal training (ADR 0005) through the Labs ingestion path.
     Synchronous; does not start training (that is ``POST /v1/experiments``).
-    Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type and
-    project). Over the size limit: ``413``; no ``Content-Length``: ``411``;
+    ``purpose=scoring`` marks rows to score (no target; refused as a run source).
+    Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
+    project and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;
     a structurally invalid file: ``422 upload_rejected`` (nothing is kept).
     """
 
@@ -720,6 +729,10 @@ async def create_dataset_v1(
             project_id = None
         if project_id is None:
             raise _form_error("project_id", "project_id must be a UUID", "uuid_parsing")
+        raw_purpose = form.get("purpose", DATASET_PURPOSE_TRAINING)
+        purpose = raw_purpose.strip() if isinstance(raw_purpose, str) else None
+        if purpose not in DATASET_PURPOSES:
+            raise _form_error("purpose", "purpose must be training or scoring", "literal_error")
         if upload.size is not None and upload.size > limit:
             raise V1APIError(413, "payload_too_large", f"uploads are limited to {limit} bytes")
         filename = upload.filename or "upload"
@@ -732,6 +745,8 @@ async def create_dataset_v1(
                 "filename": filename,
                 "content_type": upload.content_type,
                 "content_sha256": await run_in_threadpool(_sha256, upload.file),
+                # Only a non-default purpose joins the digest (keys bound before P4.9-A replay).
+                **({"purpose": purpose} if purpose != DATASET_PURPOSE_TRAINING else {}),
             },
             required=True,
         )
@@ -750,6 +765,7 @@ async def create_dataset_v1(
                 upload_stream=upload.file,
                 declared_mime=upload.content_type,
                 before_commit=lambda dataset: bind(dataset.id),
+                purpose=purpose,
             ).dataset
 
         try:
@@ -808,7 +824,7 @@ def submit_execution_request(
         body_key=payload.idempotency_key,
         body=payload.model_dump(mode="json", exclude={"idempotency_key"}),
     )
-    if payload.operation not in EXECUTION_OPERATIONS:
+    if payload.operation not in SUBMITTABLE_OPERATIONS:
         raise V1APIError(400, "unsupported_operation", "unsupported operation")
     reserved = sorted(set(payload.request_spec or {}) & SERVER_OWNED_REQUEST_SPEC_KEYS)
     if reserved:

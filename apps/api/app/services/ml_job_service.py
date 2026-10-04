@@ -25,6 +25,7 @@ from app.domain.ml_jobs import (
     DEFAULT_PRIORITY,
     FORBIDDEN_JOB_PAYLOAD_KEYS,
     HANDLER_LABS_AUTO_TRAIN,
+    HANDLER_MODELS_BATCH_PREDICT,
     HANDLER_VERSION_LABS_AUTO_TRAIN,
     JOB_CANCELLED,
     JOB_COMPLETED,
@@ -235,10 +236,13 @@ def commit_job_heartbeat(
     return requested is not None and requested[0] is not None
 
 
-def ensure_run_capacity(db: Session, workspace_id: UUID) -> None:
-    """Refuse a new auto-train run when the workspace holds its maximum of queued +
-    running jobs (``RunQuotaExceededError``, 429). Serialized per workspace by a
-    transaction-scoped advisory lock, so concurrent creators cannot overshoot."""
+def ensure_run_capacity(
+    db: Session, workspace_id: UUID, *, job_types: tuple[str, ...] = (JOB_TYPE_AUTO_TRAIN,)
+) -> None:
+    """Refuse a new job of ``job_types`` (default: auto-train runs) when the workspace
+    holds its maximum of queued + running ones (``RunQuotaExceededError``, 429).
+    Serialized per workspace by a transaction-scoped advisory lock, so concurrent
+    creators cannot overshoot."""
 
     limit = int(get_settings().ml_max_active_runs_per_workspace)
     db.execute(
@@ -249,7 +253,7 @@ def ensure_run_capacity(db: Session, workspace_id: UUID) -> None:
         .select_from(MlJob)
         .where(
             MlJob.workspace_id == workspace_id,
-            MlJob.job_type == JOB_TYPE_AUTO_TRAIN,
+            MlJob.job_type.in_(job_types),
             MlJob.status.in_((JOB_QUEUED, JOB_RUNNING)),
         )
     )
@@ -349,6 +353,7 @@ def recover_abandoned_jobs(
     if recovered:
         db.flush()
     for job in recovered:
+        _sync_batch_prediction(db, job)
         if job.status == JOB_CANCELLED:
             _record_cancelled_run(db, job)  # commits, one job at a time
     return recovered
@@ -388,6 +393,7 @@ def claim_next_queued_job(
         job.lease_expires_at = None
         job.failure_reason = job.failure_reason or "max attempts exhausted before claim"
         db.flush()
+        _sync_batch_prediction(db, job)
         return None
     worker = (claimed_by or "").strip() or None
     if worker is not None:
@@ -400,6 +406,18 @@ def claim_next_queued_job(
     job.lease_expires_at = _lease_expires(moment)
     db.flush()
     return job
+
+
+def _fail_job_terminally(db: Session, job: MlJob, reason: str, *, now: datetime) -> None:
+    """A deterministic failure (the handler recorded it): never retried."""
+
+    job.status = JOB_FAILED
+    job.completed_at = now
+    job.heartbeat_at = now
+    job.claimed_by = None
+    job.lease_expires_at = None
+    job.failure_reason = str(reason)[:2048]
+    db.flush()
 
 
 def complete_job(db: Session, job: MlJob, *, now: datetime | None = None) -> None:
@@ -445,8 +463,19 @@ def fail_or_retry_job(
 ) -> None:
     _apply_failure(job, reason=reason, now=now or _now())
     db.flush()
+    _sync_batch_prediction(db, job)
     if job.status == JOB_CANCELLED:
         _record_cancelled_run(db, job)
+
+
+def _sync_batch_prediction(db: Session, job: MlJob) -> None:
+    """Keep a scoring job's ``batch_predictions`` row in step with a retry, a
+    terminal failure or a cancellation (P4.9-A). Flushes; the caller commits."""
+
+    if job.handler_key == HANDLER_MODELS_BATCH_PREDICT:
+        from app.services.batch_prediction_service import sync_prediction_with_job
+
+        sync_prediction_with_job(db, job)
 
 
 def _record_cancelled_run(db: Session, job: MlJob) -> None:
@@ -510,6 +539,7 @@ def execute_job(
         if current is None:
             raise RuntimeError("ml job disappeared during execution") from None
         _mark_job_cancelled(current, now=_now())
+        _sync_batch_prediction(db, current)
         _record_cancelled_run(db, current)
         db.commit()
         db.refresh(current)
@@ -578,6 +608,14 @@ def execute_job(
                 reason or f"auto-train ended with status {status or 'missing'}",
                 now=terminal_at,
             )
+    elif handler_key == HANDLER_MODELS_BATCH_PREDICT:
+        from app.services.batch_prediction_service import prediction_failure_code
+
+        failure = prediction_failure_code(db, current)
+        if failure is None:
+            complete_job(db, current, now=terminal_at)
+        else:
+            _fail_job_terminally(db, current, failure, now=terminal_at)
     else:
         complete_job(db, current, now=terminal_at)
     db.commit()
