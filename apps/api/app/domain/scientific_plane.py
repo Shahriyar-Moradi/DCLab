@@ -13,6 +13,10 @@ DATA_QUALITY_FINDING_TYPES = (
     "schema_problem",
     "target_leakage",
     "prediction_time_leakage",
+    # P4.10-A trust checks (app.engine.investigate); 0070 widens the CHECK.
+    "overfit_gap",
+    "class_imbalance",
+    "implausible_score",
 )
 
 DATA_QUALITY_SEVERITIES = ("info", "warning", "error", "critical")

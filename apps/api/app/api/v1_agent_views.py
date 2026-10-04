@@ -64,6 +64,15 @@ def experiment_view(request: Request, body: Any) -> Any:
     return body.model_copy(update=update)
 
 
+def findings_view(request: Request, body: Any) -> Any:
+    """Trust-check evidence never carries holdout values; strip any key naming one anyway."""
+
+    if not is_agent(request):
+        return body
+    checks = [item.model_copy(update={"evidence": strip_holdout(item.evidence)}) for item in body.checks]
+    return body.model_copy(update={"checks": checks})
+
+
 def comparison_view(request: Request, body: Any) -> Any:
     if not is_agent(request):
         return body

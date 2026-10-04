@@ -233,7 +233,7 @@
     {
       "table": "data_quality_findings",
       "name": "ck_data_quality_findings_type_valid",
-      "definition": "CHECK (((finding_type)::text = ANY ((ARRAY['missing_values'::character varying, 'duplicates'::character varying, 'outlier'::character varying, 'high_cardinality'::character varying, 'constant'::character varying, 'schema_problem'::character varying, 'target_leakage'::character varying, 'prediction_time_leakage'::character varying])::text[])))"
+      "definition": "CHECK (((finding_type)::text = ANY ((ARRAY['missing_values'::character varying, 'duplicates'::character varying, 'outlier'::character varying, 'high_cardinality'::character varying, 'constant'::character varying, 'schema_problem'::character varying, 'target_leakage'::character varying, 'prediction_time_leakage'::character varying, 'overfit_gap'::character varying, 'class_imbalance'::character varying, 'implausible_score'::character varying])::text[])))"
     },
     {
       "table": "data_sources",

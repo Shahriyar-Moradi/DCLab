@@ -74,6 +74,7 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/experiments/compare",
             "/v1/experiments/{experiment_id}",
             "/v1/experiments/{experiment_id}/code",
+            "/v1/experiments/{experiment_id}/findings",
             "/v1/decisions/{decision_id}",
             "/v1/model-versions/{model_version_id}",
             "/v1/predictions/{prediction_id}",

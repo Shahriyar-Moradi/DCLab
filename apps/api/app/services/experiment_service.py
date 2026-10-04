@@ -63,6 +63,7 @@ from app.domain.experiment_resources import (
     ModelVersionLineage,
     ModelVersionResourceRead,
 )
+from app.domain.findings import ExperimentFindingsRead, findings_read
 from app.domain.ml_jobs import JOB_CANCELLED, JOB_COMPLETED, JOB_FAILED, JOB_QUEUED, JOB_RUNNING
 from app.engine.lab.open_ingest import _from_columns as preview_from_columns
 from app.services.audience_projection import public_diagnostic, public_failure
@@ -383,6 +384,17 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
         metrics=_metrics(db, experiment) if completed else None,
         diff_vs_parent=diff,
     )
+
+
+def experiment_findings(
+    db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID
+) -> ExperimentFindingsRead:
+    """The run's five trust checks (P4.10-A), stored before its evidence lock; runs
+    that predate them read ``investigated: false``."""
+
+    _require_read(db, actor, workspace_id)
+    experiment, _status = _load(db, workspace_id, experiment_id)
+    return findings_read(experiment.id, (experiment.result or {}).get("investigation"))
 
 
 def _aware(value: datetime | None) -> datetime | None:

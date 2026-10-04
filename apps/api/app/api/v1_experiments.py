@@ -23,7 +23,7 @@ from app.api.deps import (
     require_workspace_read,
 )
 from app.api.v1 import _created, _key_scope, _keyed_command, _not_found, _principal_id
-from app.api.v1_agent_views import comparison_view, experiment_view, model_version_view
+from app.api.v1_agent_views import comparison_view, experiment_view, findings_view, model_version_view
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -68,10 +68,12 @@ from app.domain.experiment_resources import (
     ExperimentStatus,
     ModelVersionResourceRead,
 )
+from app.domain.findings import ExperimentFindingsRead
 from app.domain.idempotency import RESOURCE_EXPERIMENT
 from app.services.experiment_branch_service import branch_experiment, compare_side_by_side
 from app.services.experiment_service import (
     cancel_experiment,
+    experiment_findings,
     experiment_read,
     experiments_for_compare,
     list_experiments,
@@ -210,6 +212,38 @@ def read_experiment(
     Service-token (agent) callers get no final-holdout values (empty ``holdout``)."""
 
     body = _read(db, user, request_workspace_id(request), experiment_id, request)
+    set_etag(response, representation_etag(body))
+    return body
+
+
+@router.get(
+    "/experiments/{experiment_id}/findings",
+    response_model=ExperimentFindingsRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
+def read_experiment_findings(
+    experiment_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ExperimentFindingsRead:
+    """Five plain-language trust checks of a run: target leakage (from the leakage
+    audit), train-vs-CV overfit gap, duplicate rows (within training and across the
+    split, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a
+    status (pass | warning | fail), a severity, the numbers behind it and a
+    recommendation kind. Evidence comes from training rows and CV folds only, never
+    final-holdout values. Runs finished before the checks existed: ``investigated: false``."""
+
+    try:
+        body = experiment_findings(
+            db, actor=user, workspace_id=request_workspace_id(request), experiment_id=experiment_id
+        )
+    except ExperimentNotFoundError as exc:
+        raise _not_found("experiment not found") from exc
+    except IdentityError as exc:
+        raise domain_error(exc) from exc
+    body = findings_view(request, body)
     set_etag(response, representation_etag(body))
     return body
 
