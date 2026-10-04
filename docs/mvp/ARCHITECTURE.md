@@ -183,7 +183,7 @@ beyond the trusted worker's own gateway.
 | Finding (verify) | `data_quality_findings`, `ml_run_verifications` | exists | generalize to investigation findings (Phase 5) |
 | ProjectDecisionRecord | — | **new** (Phase 2) | proposed/accepted/rejected/superseded; subject node, rationale, evidence refs, actor (human/agent/rule) |
 | ProjectRef | — | **new** (Phase 2) | mutable pointer per node kind |
-| AgentRun / AgentProposal | — | **new** (Phase 6) | see AGENTS_NOOA_JEV.md |
+| AgentRun / AgentProposal | — | **new** (Phase 6, runs after Phase 4 Stage 1) | see AGENTS_NOOA_JEV.md |
 | ModelRelease, BatchPrediction, MonitoringWindow | — | **new** (Phase 7) | batch-first operations |
 
 Graph edges are the existing FKs; the lifecycle projection
@@ -212,7 +212,7 @@ recorded reason.
 | `app/sim/*`, opportunities/predictions/decisions/simulation/insights services + `/app` pages | **Freeze** (Decision.ai vertical): frozen now (2026-10-01) — no new features, mandatory tenant filtering, keep tests green, hide behind flag in Studio IA; removal-or-rework decision at the Phase 9 business-layer rework; hard deadline: removed or formally re-homed by 2027-03-31 (see [S0-P04D gate](../verification/S0_P04D_RETIREMENT_ISOLATION_GATE.md)) |
 | Lineage, scientific lineage, evidence lock, model_build*, reproducibility, pipeline_verifier, explorers | **Keep** — state-graph writers and Studio read models |
 | `engine/serving/artifacts.py` and every `REPO_ROOT/data|artifacts` write | **Refactor** to `ObjectStorage` (P1.3) |
-| `llm_client.py`, `openai_provider.py`, `llm_invocations` | **Refactor** into one LLM gateway with provider interface and nullable run FKs (P2.2, A2-A) |
+| `llm_client.py`, `openai_provider.py`, `llm_invocations` | **Refactor** into one LLM gateway with provider interface and nullable run FKs (P2.2, P6.2-B, which absorbs Track A's A2-A) — Phase 6 runs after Phase 4 Stage 1 |
 | `/v1`, `packages/dclab_client`, `execution_requests`, `ml_jobs`, job handlers, worker CLI | **Keep and extend** — base of SDK/CLI/MCP |
 | Auth/session/CSRF/BFF/workspace/capabilities | **Keep** |
 | `lab_decision_records`, `dataset_profiles`, `prediction_tasks`, `environments`, `client_lab_runs*` | **Freeze**, drop in a later contract migration |

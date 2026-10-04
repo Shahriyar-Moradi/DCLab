@@ -30,7 +30,7 @@ from app.db.models import (
     Project,
     SplitPlan,
 )
-from app.domain.findings import CHECK_FINDING_TYPES, INVESTIGATION_SOURCE
+from app.domain.findings import CHECK_FINDING_TYPES, INVESTIGATION_SOURCE, STORED_STATUSES
 from app.domain.scientific_plane import (
     LEDGER_SOURCE_TO_DECISION_SOURCE,
     MISSING_ACTION_TO_STRATEGY,
@@ -654,12 +654,13 @@ def _persist_investigation_findings(
     stage_id: UUID | None,
     project_id: UUID | None,
 ) -> None:
-    """One row per non-pass trust check, marked ``evidence.source = "investigate"`` so
-    it never reads as a legacy quality/leakage row (passes stay on the result only)."""
+    """One row per warning/fail trust check, marked ``evidence.source = "investigate"``
+    so it never reads as a legacy quality/leakage row (pass and not_evaluated checks
+    stay on the result only)."""
 
     investigation = evidence.investigation or {}
     for check in list(investigation.get("checks") or []):
-        if not isinstance(check, dict) or check.get("status") == "pass":
+        if not isinstance(check, dict) or check.get("status") not in STORED_STATUSES:
             continue
         finding_type = CHECK_FINDING_TYPES.get(str(check.get("check")))
         if finding_type is None:

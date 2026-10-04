@@ -346,7 +346,8 @@ export interface paths {
          * @description Five plain-language trust checks of a run: target leakage (from the leakage
          *     audit), train-vs-CV overfit gap, duplicate rows (within training and across the
          *     split, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a
-         *     status (pass | warning | fail), a severity, the numbers behind it and a
+         *     status (pass | warning | fail, or not_evaluated with a reason when its evidence is
+         *     missing or it errored), a severity, the numbers behind it and a
          *     recommendation kind. Evidence comes from training rows and CV folds only, never
          *     final-holdout values. Runs finished before the checks existed: ``investigated: false``.
          */
@@ -1661,7 +1662,7 @@ export interface components {
              */
             message: string;
             /** Recommendation Kind */
-            recommendation_kind?: ("review_columns" | "regularize" | "deduplicate" | "class_weights" | "collect_more_data" | "investigate_leakage") | null;
+            recommendation_kind?: ("review_columns" | "regularize" | "simpler_model" | "deduplicate" | "class_weights" | "collect_more_data" | "investigate_leakage") | null;
             /**
              * Severity
              * @enum {string}
@@ -1671,12 +1672,13 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "pass" | "warning" | "fail";
+            status: "pass" | "warning" | "fail" | "not_evaluated";
         };
         /**
          * ExperimentFindingsRead
          * @description The five core trust checks of one run. ``investigated`` is false for runs that
-         *     finished before P4.10-A (or have not finished): ``checks`` is then empty.
+         *     finished before P4.10-A (or have not finished): ``checks`` is then empty. A check
+         *     that could not run is ``not_evaluated`` (counted separately, never as passed).
          */
         ExperimentFindingsRead: {
             /** Checks */
@@ -1699,6 +1701,11 @@ export interface components {
              * @default 0
              */
             failures: number;
+            /**
+             * Not Evaluated
+             * @default 0
+             */
+            not_evaluated: number;
             /**
              * Passed
              * @default 0

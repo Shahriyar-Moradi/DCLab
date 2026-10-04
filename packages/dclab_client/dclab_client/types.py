@@ -445,7 +445,7 @@ class ExperimentCode(BaseModel):
 
 
 class ExperimentFinding(BaseModel):
-    """One trust check: ``status`` pass | warning | fail, a plain-language ``message``
+    """One trust check: ``status`` pass | warning | fail | not_evaluated, a plain-language ``message``
     and the numbers behind it (training rows and CV only; column names are user data)."""
 
     check: str
@@ -460,6 +460,7 @@ class ExperimentFindingsSummary(BaseModel):
     passed: int = 0
     warnings: int = 0
     failures: int = 0
+    not_evaluated: int = 0
 
 
 class ExperimentFindings(BaseModel):
