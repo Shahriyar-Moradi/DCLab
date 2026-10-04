@@ -4,6 +4,11 @@
 when ``dclab.retention_xact`` equals the current transaction id. These helpers set
 all of them with ``set_config(..., true)`` (``SET LOCAL``) in one statement, so the
 permission ends with the transaction and cannot leak on a pooled connection.
+
+These helpers grant a DB-level permission only: callers must already have
+authorized the actor for the workspace (deletion / retention job authority). The
+workspace id is coerced through ``UUID`` so a malformed value fails here, not as
+an opaque cast error inside the trigger.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ def allow_workspace_deletion(connection, workspace_id: UUID) -> None:
 
     connection.execute(
         text(f"SELECT {_STAMP}, set_config('dclab.deleting_workspace', :workspace, true)"),
-        {"workspace": str(workspace_id)},
+        {"workspace": str(UUID(str(workspace_id)))},
     )
 
 
@@ -36,5 +41,5 @@ def allow_retention(connection, workspace_id: UUID, *, horizon_days: int) -> Non
             f"SELECT {_STAMP}, set_config('dclab.retention_horizon', :horizon, true), "
             "set_config('dclab.retention_workspace', :workspace, true)"
         ),
-        {"horizon": f"{int(horizon_days)} days", "workspace": str(workspace_id)},
+        {"horizon": f"{int(horizon_days)} days", "workspace": str(UUID(str(workspace_id)))},
     )

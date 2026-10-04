@@ -75,6 +75,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("AUTH_CSRF_SECRET"),
     )
     recovery_token_minutes: int = 60
+    # Platform AI flag (ADR 0009 §3): default off; production must set it explicitly
+    # AND have the platform ``global_ai`` switch row on. The legacy decision_agent_* /
+    # pipeline_llm_verifier_* flags below stay until P6.2-B / P6.9-A retire them.
+    ai_enabled: bool = False
     # Lab decision agent (LLM). Off by default so local/dev/CI never call a provider.
     # DECISION_AGENT_API_KEY (or OPENAI_API_KEY) is required when this is on.
     decision_agent_enabled: bool = False

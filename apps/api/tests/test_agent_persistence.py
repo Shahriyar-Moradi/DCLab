@@ -52,6 +52,7 @@ JSON_COLUMNS = {
     "limits", "usage", "page_context", "payload", "rule_answer", "citations",
     "validator_reasons", "tool_arguments", "answer", "probabilities", "value_used",
     "ground_truth", "facts", "evidence_refs", "details", "redaction_summary", "scopes",
+    "policy", "evidence",
 }
 
 
@@ -779,3 +780,40 @@ def test_prompt_releases_identity_frozen_status_forward_only_and_never_deleted(d
              "prompt_releases", {"agent_key": "experiment_critic", "version": 1,
                                  "prompt_digest": "a" * 64, "output_schema_digest": "b" * 64,
                                  "status": "draft"})
+
+
+# --- 0072 follow-ups of the A1 security re-check ----------------------------------------
+
+
+def test_expired_proposal_cannot_be_extended(db_session, agents):
+    ns = agents
+    update = "UPDATE agent_proposals SET {} WHERE id = :id"
+    pid = proposal(db_session, ns, expires_at=datetime.now(UTC) + timedelta(days=1))
+    db_session.commit()
+    _sql(db_session, update.format("expires_at = now() - interval '1 second'"), id=pid)
+    db_session.commit()
+    _rejects(db_session, "cannot be extended", _sql, db_session,
+             update.format("expires_at = now() + interval '7 days'"), id=pid)
+    _sql(db_session, update.format("status = 'expired'"), id=pid)
+    db_session.commit()
+
+
+def test_ledger_freezes_provider_and_currency(db_session, agents):
+    ns = agents
+    update = "UPDATE llm_invocations SET {} WHERE id = :id"
+    row = _insert(db_session, "llm_invocations", {**agent_invocation(ns, ns.run_a), "provider": "openai"})
+    db_session.commit()
+    _sql(db_session, update.format("cost_micros = 10, currency = 'USD'"), id=row)
+    db_session.commit()
+    _rejects(db_session, "currency is write-once", _sql, db_session, update.format("currency = 'EUR'"), id=row)
+    _sql(db_session, update.format("status = 'completed', completed_at = now()"), id=row)
+    db_session.commit()
+    _rejects(db_session, "provider is final once completed", _sql, db_session,
+             update.format("provider = 'other'"), id=row)
+
+
+def test_retention_guard_coerces_workspace_ids(db_session):
+    with pytest.raises(ValueError):
+        allow_workspace_deletion(db_session, "not-a-uuid")
+    with pytest.raises(ValueError):
+        allow_retention(db_session, "1; DROP TABLE x", horizon_days=365)

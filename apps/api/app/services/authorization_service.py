@@ -269,6 +269,37 @@ def can_manage_workspace_members(db: Session, user: User, workspace_id: UUID) ->
     )
 
 
+def can_approve_ai_policy(db: Session, user: User, workspace_id: UUID) -> bool:
+    """ADR 0009 §3: an unsuspended explicit owner/admin membership of this workspace.
+
+    No legacy ``client_user`` fallback and no platform staff: platform roles may seed
+    platform rows and switch off, never approve a customer's AI policy or levels.
+    """
+
+    if platform_role_for(db, user) is not None:
+        return False
+    return explicit_workspace_role(db, user, workspace_id) in _MEMBER_ADMIN_ROLES
+
+
+def count_ai_policy_approvers(db: Session, workspace_id: UUID) -> int:
+    """Approvers of ``workspace_id`` (callers hold the workspace row lock while counting)."""
+
+    rows = db.execute(
+        select(WorkspaceMembership.role, User)
+        .join(User, User.id == WorkspaceMembership.user_id)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.suspended_at.is_(None),
+        )
+    ).all()
+    return sum(
+        1
+        for role, member in rows
+        if canonical_workspace_role(WorkspaceRole(role)) in _MEMBER_ADMIN_ROLES
+        and platform_role_for(db, member) is None
+    )
+
+
 def parse_assigned_workspace_role(raw: str) -> WorkspaceRole:
     """Parse a membership assignment target. Unknown names are rejected."""
 

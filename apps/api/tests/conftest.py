@@ -187,6 +187,7 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 "ml_workflows, workspace_domains, business_domains, "
                 "dataset_columns, visualizations, artifacts, ingestion_runs, data_access_events, data_accesses, data_sources, dataset_assets, "
                 "workspace_capabilities, workspace_entitlements, workspace_memberships, platform_memberships, "
+                "ai_switches, ai_incidents, decision_point_policies, ai_policies, workspace_llm_budgets, "
                 "agent_events, semantic_decision_answers, agent_proposals, agent_runs, prompt_releases, "
                 "idempotency_keys, project_refs, project_decision_records, service_tokens, split_plans, "
                 "problem_specs, projects, "

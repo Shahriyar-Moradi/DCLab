@@ -149,6 +149,50 @@ from app.domain.pipeline_run_branch import (
     CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
     CK_EXPERIMENTS_PARENT_NOT_SELF,
 )
+from app.domain.ai_governance import (
+    CK_AI_POLICIES_ACTOR,
+    CK_AI_POLICIES_CHANGE_KIND,
+    CK_AI_POLICIES_DIGEST,
+    CK_AI_POLICIES_EVIDENCE,
+    CK_AI_POLICIES_POLICY,
+    CK_AI_POLICIES_RATIONALE,
+    CK_AI_POLICIES_SCHEMA_VERSION,
+    CK_AI_POLICIES_SEED,
+    CK_AI_POLICIES_STATE,
+    CK_AI_POLICIES_SUPERSEDES,
+    CK_AI_POLICIES_VERSION,
+    CK_BUDGETS_AMOUNTS,
+    CK_BUDGETS_PERIOD,
+    CK_BUDGETS_SCOPE,
+    CK_BUDGETS_SHAPE,
+    CK_DPP_ACTOR,
+    CK_DPP_ACTOR_KIND,
+    CK_DPP_ACTOR_RULE,
+    CK_DPP_CHAIN,
+    CK_DPP_EVIDENCE,
+    CK_DPP_KEY,
+    CK_DPP_LEVEL,
+    CK_DPP_PAIR,
+    CK_DPP_RATIONALE,
+    CK_DPP_SELF_APPROVED,
+    CK_DPP_STATE,
+    CK_INCIDENTS_ACTION,
+    CK_INCIDENTS_ACTION_LINKS,
+    CK_INCIDENTS_EVIDENCE,
+    CK_INCIDENTS_KIND,
+    CK_INCIDENTS_RESOLVED,
+    CK_INCIDENTS_STATUS,
+    CK_INCIDENTS_SUBJECT_KEY,
+    CK_INCIDENTS_SUBJECT_KIND,
+    CK_INCIDENTS_SWITCH_OFF_RESOLVER,
+    CK_SWITCHES_ACTOR,
+    CK_SWITCHES_ACTOR_RULE,
+    CK_SWITCHES_CHAIN,
+    CK_SWITCHES_KEY,
+    CK_SWITCHES_REASON,
+    CK_SWITCHES_RULE_OFF,
+    CK_SWITCHES_STATE,
+)
 from app.domain.agent_records import (
     CK_AGENT_EVENTS_PAYLOAD,
     CK_AGENT_EVENTS_PAYLOAD_DIGEST,
@@ -6969,6 +7013,294 @@ class SemanticDecisionAnswer(Base):
     )
     supersedes_label_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+def _platform_workspace_fk() -> Mapped[uuid.UUID | None]:
+    """Plain nullable FK: NULL is a platform row (ADR 0009 §2 preamble)."""
+
+    return mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True
+    )
+
+
+class AiPolicy(Base):
+    """Append-only ``AiPolicyV1`` version chain (ADR 0009 §2.5). NULL workspace = platform.
+
+    A proposal is a ``proposed`` row; its decision is a new ``accepted`` /
+    ``rejected`` row superseding it. Effective policy reads the accepted row with
+    the highest version per scope (``app/agents/governance/policy.py``).
+    """
+
+    __tablename__ = "ai_policies"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "version", name="uq_ai_policies_workspace_version",
+            postgresql_nulls_not_distinct=True,
+        ),
+        CheckConstraint(CK_AI_POLICIES_VERSION, name="ck_ai_policies_version"),
+        CheckConstraint(CK_AI_POLICIES_STATE, name="ck_ai_policies_state"),
+        CheckConstraint(CK_AI_POLICIES_POLICY, name="ck_ai_policies_policy"),
+        CheckConstraint(CK_AI_POLICIES_DIGEST, name="ck_ai_policies_policy_digest"),
+        CheckConstraint(CK_AI_POLICIES_SCHEMA_VERSION, name="ck_ai_policies_schema_version"),
+        CheckConstraint(CK_AI_POLICIES_CHANGE_KIND, name="ck_ai_policies_change_kind"),
+        CheckConstraint(CK_AI_POLICIES_SEED, name="ck_ai_policies_seed"),
+        CheckConstraint(CK_AI_POLICIES_RATIONALE, name="ck_ai_policies_rationale"),
+        CheckConstraint(CK_AI_POLICIES_EVIDENCE, name="ck_ai_policies_evidence"),
+        CheckConstraint(CK_AI_POLICIES_ACTOR, name="ck_ai_policies_actor"),
+        CheckConstraint(CK_AI_POLICIES_SUPERSEDES, name="ck_ai_policies_supersedes"),
+        Index(
+            "uq_ai_policies_supersedes_id", "supersedes_id", unique=True,
+            postgresql_where=text("supersedes_id IS NOT NULL"),
+        ),
+        _partial_index("ix_ai_policies_proposed_by_user_id", "proposed_by_user_id"),
+        _partial_index("ix_ai_policies_decided_by_user_id", "decided_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = _platform_workspace_fk()
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    policy: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    policy_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    change_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    rationale: Mapped[str] = mapped_column(String(4000), nullable=False)
+    evidence: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    proposed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    self_approved: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ai_policies.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DecisionPointPolicy(Base):
+    """Append-only level chain per (scope, decision point) (ADR 0009 §2.6, ADR 0008 §3).
+
+    Accepted rows form one linear chain per (workspace, key); a level above 0 names
+    the (prompt release, model) pair its evidence covers. Rule actors only demote.
+    """
+
+    __tablename__ = "decision_point_policies"
+    __table_args__ = (
+        CheckConstraint(CK_DPP_KEY, name="ck_dpp_decision_point_key"),
+        CheckConstraint(CK_DPP_LEVEL, name="ck_dpp_level"),
+        CheckConstraint(CK_DPP_PAIR, name="ck_dpp_pair"),
+        CheckConstraint(CK_DPP_STATE, name="ck_dpp_state"),
+        CheckConstraint(CK_DPP_ACTOR_KIND, name="ck_dpp_actor_kind"),
+        CheckConstraint(CK_DPP_ACTOR, name="ck_dpp_actor"),
+        CheckConstraint(CK_DPP_ACTOR_RULE, name="ck_dpp_actor_rule"),
+        CheckConstraint(CK_DPP_RATIONALE, name="ck_dpp_rationale"),
+        CheckConstraint(CK_DPP_EVIDENCE, name="ck_dpp_evidence"),
+        CheckConstraint(CK_DPP_CHAIN, name="ck_dpp_chain"),
+        CheckConstraint(CK_DPP_SELF_APPROVED, name="ck_dpp_self_approved"),
+        Index(
+            "uq_dpp_supersedes_id", "supersedes_id", unique=True,
+            postgresql_where=text("supersedes_id IS NOT NULL AND state = 'accepted'"),
+        ),
+        Index(
+            "uq_dpp_chain_root", "workspace_id", "decision_point_key", unique=True,
+            postgresql_nulls_not_distinct=True,
+            postgresql_where=text("state = 'accepted' AND supersedes_id IS NULL"),
+        ),
+        Index("ix_dpp_workspace_key", "workspace_id", "decision_point_key"),
+        _partial_index("ix_dpp_prompt_release_id", "prompt_release_id"),
+        _partial_index("ix_dpp_actor_user_id", "actor_user_id"),
+        _partial_index("ix_dpp_decided_by_user_id", "decided_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = _platform_workspace_fk()
+    decision_point_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    cap_level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    prompt_release_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prompt_releases.id"), nullable=True
+    )
+    model_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    actor_rule: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    rationale: Mapped[str] = mapped_column(String(4000), nullable=False)
+    evidence: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    self_approved: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("decision_point_policies.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class WorkspaceLlmBudget(Base):
+    """Mutable budget counters for the current period (ADR 0009 §2.7); identity frozen."""
+
+    __tablename__ = "workspace_llm_budgets"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_workspace_llm_budgets_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "scope", "project_id", "run_kind", "period",
+            name="uq_workspace_llm_budgets_scope", postgresql_nulls_not_distinct=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_workspace_llm_budgets_workspace_project",
+        ),
+        CheckConstraint(CK_BUDGETS_SCOPE, name="ck_workspace_llm_budgets_scope"),
+        CheckConstraint(CK_BUDGETS_PERIOD, name="ck_workspace_llm_budgets_period"),
+        CheckConstraint(CK_BUDGETS_SHAPE, name="ck_workspace_llm_budgets_shape"),
+        CheckConstraint(CK_BUDGETS_AMOUNTS, name="ck_workspace_llm_budgets_amounts"),
+        _partial_index("ix_workspace_llm_budgets_project_id", "workspace_id", "project_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    run_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    period: Mapped[str] = mapped_column(String(8), nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    limit_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        CHAR(3), nullable=False, default="USD", server_default=text("'USD'")
+    )
+    alert_fraction: Mapped[float] = mapped_column(
+        Numeric(3, 2), nullable=False, default=0.8, server_default=text("0.80")
+    )
+    hard_stop: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    reserved_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    spent_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AiIncident(Base):
+    """Governance incident (ADR 0009 §2.9); only status/resolution change, actions fill once."""
+
+    __tablename__ = "ai_incidents"
+    __table_args__ = (
+        CheckConstraint(CK_INCIDENTS_KIND, name="ck_ai_incidents_kind"),
+        CheckConstraint(CK_INCIDENTS_SUBJECT_KIND, name="ck_ai_incidents_subject_kind"),
+        CheckConstraint(CK_INCIDENTS_SUBJECT_KEY, name="ck_ai_incidents_subject_key"),
+        CheckConstraint(CK_INCIDENTS_EVIDENCE, name="ck_ai_incidents_evidence"),
+        CheckConstraint(CK_INCIDENTS_ACTION, name="ck_ai_incidents_action"),
+        CheckConstraint(CK_INCIDENTS_STATUS, name="ck_ai_incidents_status"),
+        CheckConstraint(CK_INCIDENTS_RESOLVED, name="ck_ai_incidents_resolved"),
+        CheckConstraint(CK_INCIDENTS_SWITCH_OFF_RESOLVER, name="ck_ai_incidents_switch_off_resolver"),
+        CheckConstraint(CK_INCIDENTS_ACTION_LINKS, name="ck_ai_incidents_action_links"),
+        Index("ix_ai_incidents_workspace_status", "workspace_id", "status"),
+        _partial_index("ix_ai_incidents_action_level_policy_id", "action_level_policy_id"),
+        _partial_index("ix_ai_incidents_action_switch_id", "action_switch_id"),
+        _partial_index("ix_ai_incidents_resolved_by_user_id", "resolved_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = _platform_workspace_fk()
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    subject_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    action_level_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("decision_point_policies.id"), nullable=True
+    )
+    action_switch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ai_switches.id", use_alter=True, name="fk_ai_incidents_action_switch"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    resolved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
+class AiSwitch(Base):
+    """Append-only kill-switch chain per (scope, key) (ADR 0009 §2.11). Off always wins."""
+
+    __tablename__ = "ai_switches"
+    __table_args__ = (
+        CheckConstraint(CK_SWITCHES_KEY, name="ck_ai_switches_key"),
+        CheckConstraint(CK_SWITCHES_STATE, name="ck_ai_switches_state"),
+        CheckConstraint(CK_SWITCHES_ACTOR, name="ck_ai_switches_actor"),
+        CheckConstraint(CK_SWITCHES_ACTOR_RULE, name="ck_ai_switches_actor_rule"),
+        CheckConstraint(CK_SWITCHES_REASON, name="ck_ai_switches_reason"),
+        CheckConstraint(CK_SWITCHES_CHAIN, name="ck_ai_switches_chain"),
+        CheckConstraint(CK_SWITCHES_RULE_OFF, name="ck_ai_switches_rule_off"),
+        Index(
+            "uq_ai_switches_supersedes_id", "supersedes_id", unique=True,
+            postgresql_where=text("supersedes_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_ai_switches_chain_root", "workspace_id", "switch_key", unique=True,
+            postgresql_nulls_not_distinct=True, postgresql_where=text("supersedes_id IS NULL"),
+        ),
+        Index("ix_ai_switches_workspace_key", "workspace_id", "switch_key"),
+        _partial_index("ix_ai_switches_incident_id", "incident_id"),
+        _partial_index("ix_ai_switches_changed_by_user_id", "changed_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = _platform_workspace_fk()
+    switch_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(4), nullable=False)
+    changed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    actor_rule: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reason: Mapped[str] = mapped_column(String(2000), nullable=False)
+    incident_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ai_incidents.id"), nullable=True
+    )
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ai_switches.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

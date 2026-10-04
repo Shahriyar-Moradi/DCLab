@@ -118,6 +118,9 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_agent_proposals_workspace_project_decision_record": "a",
     "fk_sda_workspace_llm_invocation": "a",
     "fk_agent_runs_workspace_project": "a",
+    # P6.2-A2 (0072): governance links never vanish with their parents.
+    "fk_workspace_llm_budgets_workspace_project": "a",
+    "fk_ai_incidents_action_switch": "a",
 }
 
 

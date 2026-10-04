@@ -733,8 +733,362 @@ def agent_persistence_trigger_statements() -> list[str]:
     return statements
 
 
+# P6.2-A2 / Alembic 0072 (identical literal SQL inlined there): A1 follow-ups replace
+# two 0071 functions (an expired proposal cannot be extended; the ledger freezes
+# provider and makes currency write-once) and the governance tables' triggers.
+ENFORCE_AGENT_PROPOSAL_TRANSITION_V2_SQL = """
+CREATE OR REPLACE FUNCTION enforce_agent_proposal_transition()
+RETURNS trigger AS $$
+DECLARE
+    mutable text[] := ARRAY['status', 'supersede_reason', 'decided_by_user_id', 'decided_at',
+        'decision_record_id', 'applied_decision_record_id', 'expires_at'];
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.status NOT IN ('shadow', 'proposed', 'rejected_by_validator', 'applied') THEN
+            RAISE EXCEPTION 'agent_proposals cannot be created as %', NEW.status;
+        END IF;
+        IF NEW.status = 'applied' AND NEW.level_at_proposal < 2 THEN
+            RAISE EXCEPTION 'agent_proposals: applied needs level 2 or 3, got %', NEW.level_at_proposal;
+        END IF;
+        IF NEW.decided_by_user_id IS NOT NULL OR NEW.decided_at IS NOT NULL
+            OR NEW.decision_record_id IS NOT NULL
+            OR (NEW.applied_decision_record_id IS NOT NULL AND NEW.status <> 'applied') THEN
+            RAISE EXCEPTION 'agent_proposals: decision columns are set by the decision, not at creation';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF (to_jsonb(NEW) - mutable) IS DISTINCT FROM (to_jsonb(OLD) - mutable) THEN
+        RAISE EXCEPTION 'agent_proposals: only status and decision columns may change';
+    END IF;
+    IF (OLD.decision_record_id IS NOT NULL
+            AND NEW.decision_record_id IS DISTINCT FROM OLD.decision_record_id)
+        OR (OLD.applied_decision_record_id IS NOT NULL
+            AND NEW.applied_decision_record_id IS DISTINCT FROM OLD.applied_decision_record_id) THEN
+        RAISE EXCEPTION 'agent_proposals: decision record links are write-once';
+    END IF;
+    IF OLD.status = 'proposed' AND NEW.status IN ('accepted', 'rejected') THEN
+        IF NEW.decided_by_user_id IS NULL OR NEW.decided_at IS NULL THEN
+            RAISE EXCEPTION 'agent_proposals: a decision needs decided_by_user_id and decided_at';
+        END IF;
+    ELSIF NEW.decided_by_user_id IS DISTINCT FROM OLD.decided_by_user_id
+        OR NEW.decided_at IS DISTINCT FROM OLD.decided_at THEN
+        RAISE EXCEPTION 'agent_proposals: decided_* change only when a proposal is accepted or rejected';
+    END IF;
+    IF NEW.status = OLD.status THEN
+        IF OLD.status = 'proposed' THEN
+            IF NEW.decision_record_id IS DISTINCT FROM OLD.decision_record_id
+                OR NEW.applied_decision_record_id IS DISTINCT FROM OLD.applied_decision_record_id THEN
+                RAISE EXCEPTION 'agent_proposals: a proposed row may change only expires_at';
+            END IF;
+            IF OLD.expires_at IS NOT NULL AND OLD.expires_at <= now()
+                AND NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN
+                RAISE EXCEPTION 'agent_proposals: an expired proposal cannot be extended';
+            END IF;
+            RETURN NEW;
+        END IF;
+        IF OLD.status IN ('accepted', 'applied') THEN
+            IF NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN
+                RAISE EXCEPTION 'agent_proposals: expires_at changes only while proposed';
+            END IF;
+            RETURN NEW;
+        END IF;
+        RAISE EXCEPTION 'agent_proposals in status % are final', OLD.status;
+    END IF;
+    IF NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN
+        RAISE EXCEPTION 'agent_proposals: expires_at changes only while proposed';
+    END IF;
+    IF OLD.status = 'proposed' AND NEW.status = 'accepted'
+        AND OLD.expires_at IS NOT NULL AND OLD.expires_at <= now() THEN
+        RAISE EXCEPTION 'agent_proposals: the proposal has expired';
+    END IF;
+    IF (OLD.status, NEW.status) IN (
+        ('proposed', 'accepted'), ('proposed', 'rejected'), ('proposed', 'expired'),
+        ('proposed', 'superseded'), ('accepted', 'applied'), ('applied', 'reverted')
+    ) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'agent_proposals: illegal transition % -> %', OLD.status, NEW.status;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+GUARD_LLM_INVOCATION_LEDGER_V2_SQL = """
+CREATE OR REPLACE FUNCTION guard_llm_invocation_ledger()
+RETURNS trigger AS $$
+DECLARE
+    finalized text[] := ARRAY['status', 'validator_verdict', 'final_decision', 'model', 'provider',
+        'cost_micros', 'cache_hit', 'refusal_code', 'provider_resolved_model',
+        'provider_request_id', 'budget_reservation_id', 'safe_output', 'completed_at'];
+    old_row jsonb := to_jsonb(OLD);
+    new_row jsonb := to_jsonb(NEW);
+    guarded text;
+BEGIN
+    IF OLD.safe_output IS NOT NULL AND NEW.safe_output IS NULL THEN
+        IF (new_row - 'safe_output') IS DISTINCT FROM (old_row - 'safe_output') THEN
+            RAISE EXCEPTION 'llm_invocations: the retention update may only null safe_output';
+        END IF;
+        RETURN NEW;
+    END IF;
+    FOREACH guarded IN ARRAY ARRAY['cost_micros', 'currency', 'budget_reservation_id',
+        'provider_request_id', 'provider_resolved_model'] LOOP
+        IF old_row ->> guarded IS NOT NULL AND new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN
+            RAISE EXCEPTION 'llm_invocations.% is write-once', guarded;
+        END IF;
+    END LOOP;
+    IF OLD.budget_settled AND NOT NEW.budget_settled THEN
+        RAISE EXCEPTION 'llm_invocations.budget_settled only moves from false to true';
+    END IF;
+    IF OLD.completed_at IS NOT NULL THEN
+        FOREACH guarded IN ARRAY finalized LOOP
+            IF new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN
+                RAISE EXCEPTION 'llm_invocations.% is final once completed', guarded;
+            END IF;
+        END LOOP;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+# Platform rows (workspace_id NULL) and workspace rows never reference each other:
+# args are (column, table, same-key column or '-') triples.
+ENFORCE_AI_GOVERNANCE_SCOPE_SQL = """
+CREATE OR REPLACE FUNCTION enforce_ai_governance_scope()
+RETURNS trigger AS $$
+DECLARE
+    new_row jsonb := to_jsonb(NEW);
+    ref jsonb;
+    i integer := 0;
+    col text;
+    tbl text;
+    key_col text;
+BEGIN
+    WHILE i < TG_NARGS LOOP
+        col := TG_ARGV[i];
+        tbl := TG_ARGV[i + 1];
+        key_col := TG_ARGV[i + 2];
+        i := i + 3;
+        CONTINUE WHEN new_row ->> col IS NULL;
+        CONTINUE WHEN TG_OP = 'UPDATE' AND (to_jsonb(OLD) -> col) IS NOT DISTINCT FROM (new_row -> col);
+        EXECUTE format('SELECT to_jsonb(t) FROM %I AS t WHERE id = $1', tbl)
+            INTO ref USING (new_row ->> col)::uuid;
+        IF ref IS NULL THEN
+            RAISE EXCEPTION '%.% references a missing % row', TG_TABLE_NAME, col, tbl;
+        END IF;
+        IF (ref -> 'workspace_id') IS DISTINCT FROM (new_row -> 'workspace_id') THEN
+            RAISE EXCEPTION '%.% must reference a row of the same workspace scope', TG_TABLE_NAME, col;
+        END IF;
+        IF key_col <> '-' AND (ref -> key_col) IS DISTINCT FROM (new_row -> key_col) THEN
+            RAISE EXCEPTION '%.% must keep the same %', TG_TABLE_NAME, col, key_col;
+        END IF;
+    END LOOP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+# ADR 0008 §3 / ADR 0009 §2.6: accepted rows form one chain per (workspace, key);
+# rule actors only demote (ck_dpp_rule_only_down); promotions need a human decider.
+ENFORCE_DECISION_POINT_POLICY_SQL = """
+CREATE OR REPLACE FUNCTION enforce_decision_point_policy()
+RETURNS trigger AS $$
+DECLARE
+    prev_level smallint := 0;
+    prev_state text;
+    prev_release uuid;
+    prev_model text;
+    new_pair boolean;
+BEGIN
+    IF NEW.supersedes_id IS NOT NULL THEN
+        SELECT level, state, prompt_release_id, model_id
+          INTO prev_level, prev_state, prev_release, prev_model
+          FROM decision_point_policies WHERE id = NEW.supersedes_id;
+        IF prev_state IS DISTINCT FROM 'accepted' THEN
+            RAISE EXCEPTION 'decision_point_policies may only supersede an accepted row';
+        END IF;
+    END IF;
+    new_pair := NEW.level > 0
+        AND (NEW.prompt_release_id, NEW.model_id) IS DISTINCT FROM (prev_release, prev_model);
+    IF NEW.state = 'accepted' THEN
+        IF NEW.actor_kind = 'rule'
+            AND (NEW.supersedes_id IS NULL OR NEW.level >= prev_level OR new_pair) THEN
+            RAISE EXCEPTION 'ck_dpp_rule_only_down: a rule actor may only lower a level';
+        END IF;
+        IF (NEW.level > prev_level OR new_pair)
+            AND (NEW.actor_kind <> 'human' OR NEW.decided_by_user_id IS NULL) THEN
+            RAISE EXCEPTION 'decision_point_policies: a promotion needs a human decider';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+# ADR 0009 §2.9: only status / resolved_* / resolution change; the action links are
+# filled once (the switch or level row is written after the incident it cites).
+ENFORCE_AI_INCIDENT_UPDATE_SQL = """
+CREATE OR REPLACE FUNCTION enforce_ai_incident_update()
+RETURNS trigger AS $$
+DECLARE
+    mutable text[] := ARRAY['status', 'resolved_by_user_id', 'resolved_at', 'resolution',
+        'action_level_policy_id', 'action_switch_id'];
+BEGIN
+    IF NEW.action_switch_id IS NOT NULL
+        AND (TG_OP = 'INSERT' OR NEW.action_switch_id IS DISTINCT FROM OLD.action_switch_id)
+        AND NOT EXISTS (
+            SELECT 1 FROM ai_switches WHERE id = NEW.action_switch_id AND incident_id = NEW.id
+        ) THEN
+        RAISE EXCEPTION 'ai_incidents: the linked switch row must cite this incident';
+    END IF;
+    IF TG_OP = 'INSERT' THEN
+        RETURN NEW;
+    END IF;
+    IF (to_jsonb(NEW) - mutable) IS DISTINCT FROM (to_jsonb(OLD) - mutable) THEN
+        RAISE EXCEPTION 'ai_incidents: only status and resolution columns may change';
+    END IF;
+    IF (OLD.action_level_policy_id IS NOT NULL
+            AND NEW.action_level_policy_id IS DISTINCT FROM OLD.action_level_policy_id)
+        OR (OLD.action_switch_id IS NOT NULL
+            AND NEW.action_switch_id IS DISTINCT FROM OLD.action_switch_id)
+        OR (OLD.resolved_at IS NOT NULL AND (NEW.resolved_at IS DISTINCT FROM OLD.resolved_at
+            OR NEW.resolved_by_user_id IS DISTINCT FROM OLD.resolved_by_user_id
+            OR NEW.resolution IS DISTINCT FROM OLD.resolution)) THEN
+        RAISE EXCEPTION 'ai_incidents: action links and resolution are write-once';
+    END IF;
+    IF OLD.status = 'closed' AND NEW.status <> 'closed' OR OLD.status <> 'open' AND NEW.status = 'open' THEN
+        RAISE EXCEPTION 'ai_incidents: illegal status change % -> %', OLD.status, NEW.status;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+# ADR 0009 §2.5: a decision row restates exactly the proposal it decides.
+ENFORCE_AI_POLICY_DECISION_SQL = """
+CREATE OR REPLACE FUNCTION enforce_ai_policy_decision()
+RETURNS trigger AS $$
+DECLARE
+    target ai_policies%ROWTYPE;
+BEGIN
+    SELECT * INTO target FROM ai_policies WHERE id = NEW.supersedes_id;
+    IF NOT FOUND OR target.state <> 'proposed' THEN
+        RAISE EXCEPTION 'ai_policies: a decision must supersede a proposed row';
+    END IF;
+    IF NEW.policy IS DISTINCT FROM target.policy
+        OR NEW.policy_digest IS DISTINCT FROM target.policy_digest
+        OR NEW.base_version IS DISTINCT FROM target.base_version
+        OR NEW.change_kind IS DISTINCT FROM target.change_kind
+        OR NEW.schema_version IS DISTINCT FROM target.schema_version
+        OR NEW.proposed_by_user_id IS DISTINCT FROM target.proposed_by_user_id THEN
+        RAISE EXCEPTION 'ai_policies: a decision must restate its proposal';
+    END IF;
+    IF NEW.version <= target.version THEN
+        RAISE EXCEPTION 'ai_policies: a decision needs a later version than its proposal';
+    END IF;
+    IF NEW.decided_by_user_id = NEW.proposed_by_user_id AND NOT NEW.self_approved THEN
+        RAISE EXCEPTION 'ai_policies: a self-decision must be flagged self_approved';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+AI_GOVERNANCE_FUNCTIONS = (
+    ENFORCE_AI_GOVERNANCE_SCOPE_SQL,
+    ENFORCE_DECISION_POINT_POLICY_SQL,
+    ENFORCE_AI_INCIDENT_UPDATE_SQL,
+    ENFORCE_AI_POLICY_DECISION_SQL,
+)
+
+
+def _append_only(table: str) -> tuple[str, str, str]:
+    return (
+        f"{table}_append_only",
+        table,
+        f"CREATE TRIGGER {table}_append_only BEFORE UPDATE OR DELETE ON {table} "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    )
+
+
+AI_GOVERNANCE_TRIGGERS: tuple[tuple[str, str, str], ...] = (
+    _append_only("ai_policies"),
+    (
+        "ai_policies_scope",
+        "ai_policies",
+        "CREATE TRIGGER ai_policies_scope BEFORE INSERT ON ai_policies FOR EACH ROW "
+        "EXECUTE FUNCTION enforce_ai_governance_scope('supersedes_id', 'ai_policies', '-')",
+    ),
+    (
+        "ai_policies_decision",
+        "ai_policies",
+        "CREATE TRIGGER ai_policies_decision BEFORE INSERT ON ai_policies FOR EACH ROW "
+        "WHEN (NEW.supersedes_id IS NOT NULL) EXECUTE FUNCTION enforce_ai_policy_decision()",
+    ),
+    _append_only("decision_point_policies"),
+    (
+        "decision_point_policies_scope",
+        "decision_point_policies",
+        "CREATE TRIGGER decision_point_policies_scope BEFORE INSERT ON decision_point_policies "
+        "FOR EACH ROW EXECUTE FUNCTION enforce_ai_governance_scope("
+        "'supersedes_id', 'decision_point_policies', 'decision_point_key')",
+    ),
+    (
+        "decision_point_policies_levels",
+        "decision_point_policies",
+        "CREATE TRIGGER decision_point_policies_levels BEFORE INSERT ON decision_point_policies "
+        "FOR EACH ROW EXECUTE FUNCTION enforce_decision_point_policy()",
+    ),
+    _append_only("ai_switches"),
+    (
+        "ai_switches_scope",
+        "ai_switches",
+        "CREATE TRIGGER ai_switches_scope BEFORE INSERT ON ai_switches FOR EACH ROW "
+        "EXECUTE FUNCTION enforce_ai_governance_scope("
+        "'supersedes_id', 'ai_switches', 'switch_key', 'incident_id', 'ai_incidents', '-')",
+    ),
+    (
+        "ai_incidents_update_guard",
+        "ai_incidents",
+        "CREATE TRIGGER ai_incidents_update_guard BEFORE INSERT OR UPDATE ON ai_incidents "
+        "FOR EACH ROW EXECUTE FUNCTION enforce_ai_incident_update()",
+    ),
+    (
+        "ai_incidents_no_delete",
+        "ai_incidents",
+        "CREATE TRIGGER ai_incidents_no_delete BEFORE DELETE ON ai_incidents "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    ),
+    (
+        "ai_incidents_scope",
+        "ai_incidents",
+        "CREATE TRIGGER ai_incidents_scope BEFORE INSERT OR UPDATE OF action_level_policy_id, "
+        "action_switch_id ON ai_incidents FOR EACH ROW EXECUTE FUNCTION enforce_ai_governance_scope("
+        "'action_level_policy_id', 'decision_point_policies', '-', "
+        "'action_switch_id', 'ai_switches', '-')",
+    ),
+    (
+        "workspace_llm_budgets_columns_immutable",
+        "workspace_llm_budgets",
+        "CREATE TRIGGER workspace_llm_budgets_columns_immutable BEFORE UPDATE "
+        "ON workspace_llm_budgets FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation("
+        "'id,workspace_id,scope,project_id,run_kind,period,created_at')",
+    ),
+)
+
+
+def ai_governance_trigger_statements() -> list[str]:
+    statements = [
+        ENFORCE_AGENT_PROPOSAL_TRANSITION_V2_SQL,
+        GUARD_LLM_INVOCATION_LEDGER_V2_SQL,
+        *AI_GOVERNANCE_FUNCTIONS,
+    ]
+    for name, table, sql in AI_GOVERNANCE_TRIGGERS:
+        statements += [f"DROP TRIGGER IF EXISTS {name} ON {table}", sql]
+    return statements
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069 and 0071 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071 and 0072 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -774,6 +1128,8 @@ def install_immutability_triggers(connection) -> None:
     )
     connection.execute(text(BATCH_PREDICTIONS_TERMINAL_TRIGGER_SQL))
     for statement in agent_persistence_trigger_statements():
+        connection.execute(text(statement))
+    for statement in ai_governance_trigger_statements():
         connection.execute(text(statement))
 
 
