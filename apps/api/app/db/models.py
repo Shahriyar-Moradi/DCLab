@@ -6286,6 +6286,16 @@ class BatchPrediction(Base):
             "model_version_id",
             "created_at",
         ),
+        Index("ix_batch_predictions_workspace_input_dataset", "workspace_id", "input_dataset_id"),
+        Index("ix_batch_predictions_workspace_output_artifact", "workspace_id", "output_artifact_id"),
+        Index("ix_batch_predictions_workspace_ml_job", "workspace_id", "ml_job_id"),
+        Index(
+            "uq_batch_predictions_workspace_execution_request",
+            "workspace_id",
+            "execution_request_id",
+            unique=True,
+            postgresql_where=text("execution_request_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

@@ -30,6 +30,7 @@ FEATURE_CONTRACT_FAILED = "feature_contract_failed"
 UNSUPPORTED_TRANSFORM = "unsupported_transform"
 UNSUPPORTED_MODEL = "unsupported_model"
 SCORING_FAILED = "scoring_failed"
+DATASET_UNAVAILABLE = "dataset_unavailable"
 
 # DB CHECK backstops (models.py; Alembic 0069 inlines the same literal SQL).
 CK_BATCH_PREDICTIONS_STATUS = sql_in_clause("status", PREDICTION_STATUSES)

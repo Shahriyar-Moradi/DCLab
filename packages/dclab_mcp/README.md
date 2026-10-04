@@ -25,10 +25,10 @@ python -m dclab_mcp                    # same
 
 Read (default on): `inspect_project`, `inspect_dataset`, `get_experiment`,
 `compare_experiments`, `get_experiment_code`, `get_evidence`, `list_decisions`,
-`get_model`, `accept_proposal`.
+`get_model`, `get_prediction`, `accept_proposal`.
 
 Write (`DCLAB_MCP_WRITE_ENABLED`): `create_problem_spec`, `propose_problem_spec`,
-`run_experiment`, `branch_experiment`, `record_decision`.
+`run_experiment`, `branch_experiment`, `predict`, `record_decision`.
 
 URL binding: a token read from the config file is only sent to the URL stored
 with it (no stored URL, or a different `DCLAB_API_URL`, is refused; set

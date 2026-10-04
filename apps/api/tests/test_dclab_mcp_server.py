@@ -31,6 +31,7 @@ from app.db.models import (  # noqa: E402
     ClientLabUpload,
     ExecutionRequest,
     Experiment,
+    MlJob,
     ModelEvaluation,
     ModelVersion,
     ProblemSpec,
@@ -43,6 +44,7 @@ from app.db.models import (  # noqa: E402
 from app.domain.execution_requests import OPERATION_MODEL_BUILD, SOURCE_API  # noqa: E402
 from app.services.auth_service import create_access_token, create_user  # noqa: E402
 from app.services.execution_request_service import create_execution_request  # noqa: E402
+from app.services.ml_job_service import process_next_job  # noqa: E402
 from app.services.auto_train_service import run_auto_train_job  # noqa: E402
 from app.services.project_service import create_project  # noqa: E402
 from app.services.service_token_service import create_service_token, revoke_service_token  # noqa: E402
@@ -268,6 +270,24 @@ def test_full_loop_over_mcp(client, db_session, st, tmp_path):  # noqa: F811
     model = call("get_model", {"model_version_id": str(branch_mv)})["model_version"]
     assert model["final_holdout_report_only"] is None and not _holdout_values(model)  # not the champion yet
     assert all("object_key" not in a for a in model["artifacts"])
+
+    # Batch predictions (P4.9-A2): score new rows with the model version; the agent sees
+    # status, counts and the contract check only, never predicted rows or storage keys.
+    scoring = tmp_path / "score.csv"
+    pd.read_csv(_csv(tmp_path, n=30)).drop(columns=["label"]).to_csv(scoring, index=False)
+    with DCLabClient(str(client.base_url), token=raw, http=client) as api:
+        rows = api.datasets.upload(project.id, scoring, purpose="scoring")
+    assert rows.purpose == "scoring"
+    predict_args = {"model_version_id": str(branch_mv), "dataset_id": str(rows.id)}
+    queued = call("predict", predict_args)
+    assert queued["prediction"]["status"] == "queued" and call("predict", predict_args)["replayed"] is True
+    db.expire_all()
+    job = db.scalar(select(MlJob).where(MlJob.target_id == UUID(queued["prediction"]["id"])))
+    assert process_next_job(db, job_id=job.id, claimed_by="mcp-test").status == "completed"
+    scored = call("get_prediction", {"prediction_id": queued["prediction"]["id"]})["prediction"]
+    assert (scored["status"], scored["rows_in"], scored["rows_out"]) == ("completed", 30, 30)
+    assert scored["output"]["size_bytes"] > 0 and "download_path" not in scored["output"]
+    assert "object_key" not in call.texts[-1] and "predictions/" not in json.dumps(scored["output"])
 
     decision = call("record_decision", {"project_id": pid, "decision_type": "experiment_accepted",
                                         "subject_kind": "experiment", "subject_id": branch["id"],

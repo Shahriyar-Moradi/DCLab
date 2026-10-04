@@ -212,3 +212,79 @@ def test_compare_table_and_ids_param(tmp_path):
 
     code, out, _ = _run(["experiments", "compare", EID, PID], handler, tmp_path, env=_env())
     assert code == 0 and seen == [f"{EID},{PID}"] and "logreg" in out
+
+
+def _prediction(status="queued", **over):
+    return {"id": EID, "workspace_id": PID, "project_id": PID, "model_version_id": PID, "input_dataset_id": PID,
+            "execution_request_id": None, "status": status, "output_format": "csv", "rows_in": None,
+            "rows_out": None, "decision_threshold": None, "contract_check": None, "output": None,
+            "error_code": None, "error_message": None, "created_at": "2026-01-01T00:00:00Z",
+            "started_at": None, "completed_at": None, **over}
+
+
+def test_scoring_upload_sends_purpose(tmp_path):
+    seen = []
+    upload = {"id": PID, "workspace_id": PID, "project_id": PID, "dataset_asset_id": PID, "name": "s",
+              "version": "v1", "source_type": "csv", "content_digest": None, "schema_digest": None,
+              "size_bytes": 4, "row_count": 1, "column_count": 1, "purpose": "scoring",
+              "created_at": "2026-01-01T00:00:00Z",
+              "ingestion": {"id": PID, "status": "completed", "publication_state": "published",
+                            "rows_read": 1, "bytes_read": 4, "completed_at": None}}
+    csv = tmp_path / "s.csv"
+    csv.write_text("a\n1\n")
+    code, out, err = _run(["data", "upload", str(csv), "--project", PID, "--purpose", "scoring", "--json"],
+                          lambda r: seen.append(r) or httpx.Response(201, json=upload), tmp_path, env=_env())
+    assert code == 0, err
+    assert json.loads(out)["purpose"] == "scoring" and b'name="purpose"' in seen[0].content
+    code, _, err = _run(["data", "upload", str(csv), "--project", PID, "--purpose", "holdout"],
+                        lambda r: httpx.Response(500), tmp_path, env=_env())
+    assert code == cli.EXIT_USAGE
+
+
+def test_predict_create_wait_get_and_download(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_sleep", lambda s: None)
+    states = iter(["running", "completed"])
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if request.method == "POST":
+            return httpx.Response(202, json=_prediction())
+        if request.url.path.endswith("/download"):
+            return httpx.Response(200, content=b"row_number,label\n1,1\n")
+        return httpx.Response(200, json=_prediction(next(states, "completed")))
+
+    code, out, err = _run(["predict", "create", "--model-version", PID, "--dataset", PID, "--format", "parquet",
+                           "--idempotency-key", "k-1", "--wait", "--json"], handler, tmp_path, env=_env())
+    assert code == 0, err
+    assert json.loads(out)["status"] == "completed"
+    post = seen[0]
+    assert post.url.path == f"/v1/model-versions/{PID}/predictions" and post.headers["Idempotency-Key"] == "k-1"
+    assert json.loads(post.content) == {"dataset_id": PID, "output_format": "parquet"}
+    assert [r.url.path for r in seen[1:]] == [f"/v1/predictions/{EID}"] * 2
+    code, out, _ = _run(["predict", "get", EID], handler, tmp_path, env=_env())
+    assert code == 0 and "completed" in out
+    target = tmp_path / "p.csv"
+    code, out, _ = _run(["predict", "download", EID, "-o", str(target), "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and target.read_bytes() == b"row_number,label\n1,1\n"
+    assert json.loads(out) == {"prediction_id": EID, "written_to": str(target), "size_bytes": 21}
+    code, _, err = _run(["predict", "download", EID], handler, tmp_path, env=_env())
+    assert code == cli.EXIT_USAGE
+
+
+def test_predict_wait_reports_failure_and_timeout(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_sleep", lambda s: None)
+    failed = _prediction("failed", error_code="feature_contract_failed", completed_at="2026-01-01T00:00:01Z",
+                         contract_check={"missing": ["age"]})
+    code, out, _ = _run(["predict", "create", "--model-version", PID, "--dataset", PID, "--wait", "--json"],
+                        lambda r: httpx.Response(202 if r.method == "POST" else 200, json=failed),
+                        tmp_path, env=_env())
+    assert code == cli.EXIT_ERROR and json.loads(out)["error_code"] == "feature_contract_failed"
+    clock = iter([0.0, 1.0, 5.0])
+    monkeypatch.setattr(cli, "_monotonic", lambda: next(clock, 99.0))
+    code, out, err = _run(["predict", "create", "--model-version", PID, "--dataset", PID, "--wait",
+                           "--timeout", "3"], lambda r: httpx.Response(200, json=_prediction("running")),
+                          tmp_path, env=_env())
+    assert code == cli.EXIT_RETRYABLE and "still running" in err and "running" in out
+    code, _, err = _run(["predict", "get", EID], _error(404, "not_found"), tmp_path, env=_env())
+    assert code == cli.EXIT_NOT_FOUND

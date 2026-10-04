@@ -733,3 +733,76 @@ def test_decision_ref_and_model_version_routes():
         api.projects.ref(WS, "../x")
     with pytest.raises(DCLabClientError, match="UUID"):
         api.decisions.accept("../x", rationale="x")
+
+
+# --- P4.9-A batch predictions ------------------------------------------------------------------
+
+_PREDICTION = {
+    "id": WS, "workspace_id": WS, "project_id": WS, "model_version_id": WS, "model_release_id": None,
+    "input_dataset_id": WS, "execution_request_id": WS, "status": "completed", "output_format": "csv",
+    "rows_in": 2, "rows_out": 2, "decision_threshold": 0.4,
+    "contract_check": {"required": ["a"], "missing": [], "ignored": ["y"]},
+    "output": {"artifact_id": WS, "content_digest": "cd", "size_bytes": 9, "mime_type": "text/csv",
+               "download_path": f"/v1/predictions/{WS}/download"},
+    "error_code": None, "error_message": None, "created_at": "2026-10-02T00:00:00Z",
+    "started_at": None, "completed_at": "2026-10-02T00:00:01Z",
+}
+
+
+def test_prediction_routes_keys_download_and_scoring_upload(tmp_path):
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path == "/v1/datasets":
+            return httpx.Response(201, json={**_UPLOAD, "purpose": "scoring"})
+        if path.endswith("/download"):
+            return httpx.Response(200, content=b"row_number,probability\n1,0.7\n",
+                                  headers={"Content-Type": "text/csv"})
+        status = 202 if request.method == "POST" else 200
+        return httpx.Response(status, json=_PREDICTION, headers={"ETag": '"p1"', "Idempotent-Replayed": "true"})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    upload = api.datasets.upload(WS, io.BytesIO(b"a\n1\n"), filename="s.csv", purpose="scoring")
+    assert upload.purpose == "scoring"
+    created = api.predictions.create(model_version_id=WS, dataset_id=WS, output_format="parquet",
+                                     idempotency_key="pr-1")
+    assert created.etag == '"p1"' and created.idempotent_replay and created.is_terminal
+    assert created.output.download_path.endswith("/download")
+    assert api.predictions.get(WS).contract_check["ignored"] == ["y"]
+    target = tmp_path / "out.csv"
+    content = api.predictions.download(WS, to=target)
+    assert content.startswith(b"row_number") and target.read_bytes() == content
+    up, post, get, download = recorded
+    assert b'name="purpose"' in up.content and b"scoring" in up.content
+    assert post.url.path == f"/v1/model-versions/{WS}/predictions" and post.headers["Idempotency-Key"] == "pr-1"
+    assert json.loads(post.content) == {"dataset_id": WS, "output_format": "parquet"}
+    assert get.url.path == f"/v1/predictions/{WS}" and "Idempotency-Key" not in get.headers
+    assert download.url.path == f"/v1/predictions/{WS}/download" and download.method == "GET"
+    assert download.headers["Accept"] == "*/*"
+    # a generated key when none is given; the default upload sends no purpose field
+    api.predictions.create(model_version_id=WS, dataset_id=WS)
+    assert UUID(recorded[-1].headers["Idempotency-Key"])
+    api.datasets.upload(WS, io.BytesIO(b"a\n1\n"), filename="t.csv")
+    assert b'name="purpose"' not in recorded[-1].content
+    with pytest.raises(DCLabClientError, match="output_format"):
+        api.predictions.create(model_version_id=WS, dataset_id=WS, output_format="xlsx")
+    with pytest.raises(DCLabClientError, match="purpose"):
+        api.datasets.upload(WS, io.BytesIO(b"x"), filename="a.csv", purpose="holdout")
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.predictions.download("../x")
+
+
+def test_prediction_download_not_ready_is_a_typed_conflict():
+    from dclab_client import ConflictError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"error": {
+            "code": "prediction_not_ready", "message": "not completed", "retryable": False,
+            "request_id": "r-9", "details": {}}})
+
+    api = _client(handler, token="t", workspace_id=WS)
+    with pytest.raises(ConflictError) as caught:
+        api.predictions.download(WS)
+    assert caught.value.code == "prediction_not_ready" and caught.value.request_id == "r-9"

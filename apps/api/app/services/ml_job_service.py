@@ -33,6 +33,7 @@ from app.domain.ml_jobs import (
     JOB_QUEUED,
     JOB_RUNNING,
     JOB_TYPE_AUTO_TRAIN,
+    JOB_TYPE_BATCH_PREDICT,
     PAYLOAD_MAX_BYTES,
     PRIORITY_MAX,
     PRIORITY_MIN,
@@ -237,10 +238,10 @@ def commit_job_heartbeat(
 
 
 def ensure_run_capacity(
-    db: Session, workspace_id: UUID, *, job_types: tuple[str, ...] = (JOB_TYPE_AUTO_TRAIN,)
+    db: Session, workspace_id: UUID, *, job_types: tuple[str, ...] = (JOB_TYPE_AUTO_TRAIN, JOB_TYPE_BATCH_PREDICT)
 ) -> None:
-    """Refuse a new job of ``job_types`` (default: auto-train runs) when the workspace
-    holds its maximum of queued + running ones (``RunQuotaExceededError``, 429).
+    """Refuse a new job of ``job_types`` (default: training runs and batch scoring, one
+    shared worker budget) when the workspace holds its maximum of queued + running ones (``RunQuotaExceededError``, 429).
     Serialized per workspace by a transaction-scoped advisory lock, so concurrent
     creators cannot overshoot."""
 

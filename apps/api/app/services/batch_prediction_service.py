@@ -31,6 +31,7 @@ from app.db.models import (
     User,
 )
 from app.domain.batch_predictions import (
+    DATASET_UNAVAILABLE,
     PREDICTION_COMPLETED,
     PREDICTION_FAILED,
     PREDICTION_QUEUED,
@@ -120,7 +121,7 @@ def create_batch_prediction(
             "model_not_scoreable", "this model version has no locked, stored model to score with", status_code=409
         )
     dataset = uploaded_dataset(db, workspace_id, model_version.project_id, dataset_id)
-    ensure_run_capacity(db, workspace_id, job_types=(JOB_TYPE_BATCH_PREDICT,))
+    ensure_run_capacity(db, workspace_id)  # one shared limit for training and scoring jobs
     prediction_id = uuid4()
     request = create_execution_request(
         db,
@@ -292,7 +293,13 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
         raise ScoringError(UNSUPPORTED_MODEL, "the stored model does not match its recorded digest")
     pipeline = load_pipeline(payload)
     spec = scoring_spec(result, pipeline)
-    dataset = _scoped(db, Dataset, workspace_id, row.input_dataset_id)
+    # Re-check at run time: the dataset may have been unpublished or removed since it was queued.
+    from app.services.experiment_service import ExperimentRequestError, uploaded_dataset
+
+    try:
+        dataset = uploaded_dataset(db, workspace_id, row.project_id, row.input_dataset_id)
+    except ExperimentRequestError as exc:
+        raise ScoringError(DATASET_UNAVAILABLE, "the input dataset is no longer available for scoring") from exc
     with materialize_dataset(dataset, db=db) as path:
         try:
             frame = load_table(path)

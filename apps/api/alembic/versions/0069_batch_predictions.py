@@ -71,7 +71,7 @@ BEGIN
          + (SELECT count(*) FROM execution_requests WHERE operation = 'model_batch_predict')
       INTO referencing;
     IF referencing > 0 THEN
-        RAISE EXCEPTION '0069 downgrade refused: % batch prediction rows exist; repair forward', referencing;
+        RAISE EXCEPTION '0069 downgrade refused: % rows depend on 0069 (batch predictions, scoring datasets or model_batch_predict requests); repair forward', referencing;
     END IF;
 END
 $$
@@ -171,6 +171,16 @@ def upgrade() -> None:
         "batch_predictions",
         ["workspace_id", "model_version_id", "created_at"],
     )
+    # Index every composite FK so parent-side checks (e.g. a workspace delete cascade)
+    # never scan the table; one prediction per execution request.
+    op.create_index("ix_batch_predictions_workspace_input_dataset", "batch_predictions",
+                    ["workspace_id", "input_dataset_id"])
+    op.create_index("ix_batch_predictions_workspace_output_artifact", "batch_predictions",
+                    ["workspace_id", "output_artifact_id"])
+    op.create_index("ix_batch_predictions_workspace_ml_job", "batch_predictions", ["workspace_id", "ml_job_id"])
+    op.create_index("uq_batch_predictions_workspace_execution_request", "batch_predictions",
+                    ["workspace_id", "execution_request_id"], unique=True,
+                    postgresql_where=sa.text("execution_request_id IS NOT NULL"))
     op.execute(_TERMINAL_TRIGGER_SQL)
 
 

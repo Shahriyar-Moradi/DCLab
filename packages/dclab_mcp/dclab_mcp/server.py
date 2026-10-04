@@ -237,6 +237,28 @@ def _graph(g: Any) -> dict[str, Any]:
             "truncated": g.truncated}
 
 
+def _prediction(p: Any) -> dict[str, Any]:
+    """Status, counts and the contract check of a scoring run: never rows, never storage
+    keys (the download path is rebuilt from the id, not echoed from the server)."""
+
+    def ts(value: Any) -> str | None:
+        return value and value.isoformat()
+
+    output = p.output and {"artifact_id": str(p.output.artifact_id), "content_digest": p.output.content_digest,
+                           "size_bytes": p.output.size_bytes, "mime_type": p.output.mime_type}
+    return {
+        "id": str(p.id), "project_id": p.project_id and str(p.project_id),
+        "model_version_id": str(p.model_version_id), "input_dataset_id": str(p.input_dataset_id),
+        "status": p.status, "output_format": p.output_format, "rows_in": p.rows_in, "rows_out": p.rows_out,
+        "decision_threshold": p.decision_threshold, "contract_check": untrusted(p.contract_check, 1500),
+        "error_code": p.error_code, "error_message": untrusted(p.error_message, 300), "output": output,
+        "created_at": p.created_at.isoformat(), "started_at": ts(p.started_at), "completed_at": ts(p.completed_at),
+        "download": output and {"human_api": f"GET /v1/predictions/{p.id}/download",
+                                "cli": f"dclab-cli predict download {p.id} -o FILE",
+                                "note": "Predicted rows are never returned to agents."},
+    }
+
+
 # --- server --------------------------------------------------------------------------------
 
 
@@ -402,6 +424,9 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             }}
         return run(call)
 
+    def get_prediction(prediction_id: Id) -> CallToolResult:
+        return run(lambda: {"prediction": _prediction(api.predictions.get(uuid_arg(prediction_id, "prediction_id")))})
+
     def accept_proposal(proposal_id: Id) -> CallToolResult:
         def call() -> dict[str, Any]:
             record = api.decisions.get(uuid_arg(proposal_id, "proposal_id"))
@@ -438,6 +463,8 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(get_model, read, "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + "
              "digest; only the current champion carries a report-only final-holdout summary.")
+        tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
+             "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(accept_proposal, read, "Hand a decision proposal to a human. This NEVER accepts anything and performs no "
              "write: service tokens are propose-only, so it returns status 'requires_human_acceptance' with the "
              "proposal and where a human accepts it in DCLab Studio.")
@@ -543,6 +570,18 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
             return {"experiment": _experiment(child), "replayed": child.idempotent_replay}
         return run(call)
 
+    def predict(model_version_id: Id,
+                dataset_id: Annotated[str, Field(description="Dataset UUID of the model's project (uploaded with purpose=scoring).")],  # noqa: E501
+                output_format: Annotated[Literal["csv", "parquet"], Field()] = "csv",
+                idempotency_key: Salt = None) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            body = {"model_version_id": uuid_arg(model_version_id, "model_version_id"),
+                    "dataset_id": uuid_arg(dataset_id, "dataset_id"), "output_format": output_format}
+            row = api.predictions.create(**body, idempotency_key=command_key("predict", body, idempotency_key))
+            return {"prediction": _prediction(row), "replayed": row.idempotent_replay,
+                    "note": "Queued; poll get_prediction until status is completed or failed."}
+        return run(call)
+
     def record_decision(project_id: Id, rationale: Text,
                         decision_type: Annotated[Literal["experiment_accepted", "experiment_rejected"] | None, Field()] = None,  # noqa: E501
                         subject_kind: Annotated[str | None, Field(description="e.g. experiment, model_version, project")] = None,  # noqa: E501
@@ -582,6 +621,8 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
          "proposal a human accepts in DCLab Studio." + _WRITE_NOTE)
     tool(branch_experiment, write, "Branch a completed experiment with typed changes; it reuses the parent's "
          "split plan and holdout." + _WRITE_NOTE)
+    tool(predict, write, "Score a dataset with a model version (the worker scores with the locked pipeline and "
+         "threshold). Writes a predictions file only; no refs or decisions change." + _WRITE_NOTE)
     tool(record_decision, write, "Record a decision as an agent PROPOSAL (action=propose; or propose ref moves). "
          "It is never accepted by this tool: service tokens are propose-only and a human accepts in DCLab "
          "Studio." + _WRITE_NOTE)

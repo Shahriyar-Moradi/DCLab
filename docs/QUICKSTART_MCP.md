@@ -33,7 +33,7 @@ just another `/v1` client: it holds a **service token**, never a user session.
 6. To let the agent write (spec proposals, runs, branches, decision proposals), set
    `"DCLAB_MCP_WRITE_ENABLED": "1"` in `.mcp.json`, then restart Claude Code.
 7. Start Claude Code in this repo and run `/mcp`: `dclab` should be connected and list
-   its tools (9 read tools, plus 5 write tools when enabled).
+   its tools (10 read tools, plus 6 write tools when enabled).
 
 ## Phase 3 exit flow
 
@@ -55,6 +55,15 @@ Ask Claude Code, step by step (write tools enabled, a project with an uploaded d
 8. **Human accepts.** In Studio open the project -> Decisions and accept or reject
    the proposals (spec, bootstrap refs, decision). Only then do refs move
    (`POST /v1/projects/{id}/refs/{kind}` with `proposal_id`, human session only).
+
+## Scoring new data (batch predictions)
+
+Upload the rows to score as a scoring dataset (no target column), e.g.
+`dclab-cli data upload new.csv --project P --purpose scoring`, then ask "Score that
+dataset with the model." -> `predict` (write tool; `experiments:write` scope), then
+`get_prediction` until `completed` or `failed`. The agent sees status, row counts and
+the feature-contract check (required / missing / ignored columns), never the predicted
+rows; download the file yourself with `dclab-cli predict download ID -o FILE`.
 
 ## Replaying the golden scenarios
 
