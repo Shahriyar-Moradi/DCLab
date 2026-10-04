@@ -316,6 +316,16 @@ def _exp_code(c: Ctx, a: argparse.Namespace) -> None:
         c[1].text(doc.source)
 
 
+def _exp_findings(c: Ctx, a: argparse.Namespace) -> None:
+    result = c[0].experiments.findings(a.experiment_id)
+    if c[1].as_json:
+        c[1].emit(result)
+    elif not result.investigated:
+        c[1].text(f"experiment {result.experiment_id}: no trust checks recorded (run predates them)")
+    else:
+        c[1].emit(result, table=("check", "status", "severity", "message"), rows=result.checks)
+
+
 def _exp_cancel(c: Ctx, a: argparse.Namespace) -> None:
     c[1].emit(c[0].experiments.cancel(a.experiment_id, idempotency_key=a.idempotency_key))
 
@@ -419,6 +429,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("experiment_id")
     p.add_argument("--notebook", action="store_true", help="the notebook instead of the script")
     p.add_argument("--output", "-o", help="write the source to this file")
+    leaf(exps, "findings", _exp_findings, help="trust checks of a run (leakage, overfit, duplicates, "
+         "imbalance, too-good score)").add_argument("experiment_id")
     leaf(exps, "cancel", _exp_cancel, key=True).add_argument("experiment_id")
 
     pred = top.add_parser("predict", help="batch predictions").add_subparsers(dest="cmd", required=True, parser_class=_Parser)

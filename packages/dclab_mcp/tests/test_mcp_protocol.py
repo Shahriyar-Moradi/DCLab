@@ -25,7 +25,7 @@ from dclab_mcp.shaping import MAX_RESPONSE_CHARS, ArgumentError, command_key, fi
 
 TOKEN = "dclab_st_" + "a" * 32 + "_" + "B" * 43
 READ_TOOLS = {"inspect_project", "inspect_dataset", "get_experiment", "compare_experiments", "get_experiment_code",
-              "get_evidence", "list_decisions", "get_model", "get_prediction", "accept_proposal"}
+              "get_evidence", "get_findings", "list_decisions", "get_model", "get_prediction", "accept_proposal"}
 WRITE_TOOLS = {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
                "predict", "record_decision"}
 PACKAGES = Path(__file__).resolve().parents[2]

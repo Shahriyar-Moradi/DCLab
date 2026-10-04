@@ -17,6 +17,7 @@ import pandas as pd
 
 from app.engine.evaluation.metrics import LOWER_IS_BETTER
 from app.engine.investigate.types import Finding, RunEvidence
+from app.engine.modeling.objective import THRESHOLD_METRICS
 
 # --- thresholds ------------------------------------------------------------------------
 # Higher-is-better metrics bounded by 1.0 (perfect). Lower-is-better metrics
@@ -52,6 +53,8 @@ IMBALANCE_FAIR_SHARE_FAIL = 0.04
 DUPLICATE_EXCESS_WARN = 0.01
 DUPLICATE_TRAIN_EXCESS_FAIL = 0.20
 DUPLICATE_CROSS_EXCESS_FAIL = 0.10
+# Binary threshold metrics are compared on the first threshold-free metric present.
+THRESHOLD_FREE_METRICS = ("roc_auc", "pr_auc", "log_loss")
 LEAKAGE_RISKY = frozenset({"MEDIUM", "HIGH", "CRITICAL"})
 COLUMN_DETAIL_LIMIT = 20
 CLASS_WEIGHT_KEYS = ("class_weight", "auto_class_weights", "scale_pos_weight")
@@ -164,14 +167,26 @@ def check_target_leakage(ev: RunEvidence) -> Finding:
 # --- 2. train-vs-CV overfit gap ---------------------------------------------------------
 
 
+def _overfit_metric(ev: RunEvidence) -> str | None:
+    """The primary metric, except a binary threshold metric: training rows are scored at
+    the locked decision threshold but CV folds at 0.5, so compare a threshold-free one."""
+
+    if ev.task_type == "binary" and ev.primary_metric in THRESHOLD_METRICS:
+        return next((name for name in THRESHOLD_FREE_METRICS
+                     if name in ev.train_metrics and name in ev.winner_cv), None)
+    return ev.primary_metric
+
+
 def check_overfit_gap(ev: RunEvidence) -> Finding:
-    metric = ev.primary_metric
+    metric = _overfit_metric(ev)
     train = ev.train_metrics.get(metric) if metric else None
     cv = ev.winner_cv.get(metric) if metric else None
     lower = metric in LOWER_IS_BETTER
     evidence: dict[str, Any] = {"metric": metric, "direction": "lower_is_better" if lower else "higher_is_better",
                                 "winner_family": ev.winner_family, "train_score": train, "cv_score": cv,
                                 "cv_std": ev.winner_cv_std.get(metric) if metric else None}
+    if metric != ev.primary_metric:
+        evidence["primary_metric"] = ev.primary_metric
     if train is None or cv is None:
         return _finding("overfit_gap", "pass", {**evidence, "skipped_reason": "train_or_cv_metric_missing"},
                         ("overfit_gap.skipped",))
@@ -247,7 +262,7 @@ def check_duplicate_rows(train_features: pd.DataFrame | None,
         return _finding("duplicate_rows", "pass", {"skipped_reason": "partition_unavailable"},
                         ("duplicate_rows.skipped",))
     train_hashes = row_hashes(train_features)
-    test_hashes = np.asarray(list(test_row_hashes), dtype=np.uint64)
+    test_hashes = np.asarray(test_row_hashes, dtype=np.uint64)
     n_train, n_test = int(len(train_hashes)), int(len(test_hashes))
     within = int(pd.Series(train_hashes).duplicated().sum())
     groups = int((pd.Series(train_hashes).value_counts() > 1).sum())

@@ -2122,6 +2122,143 @@
         "title": "ExperimentDetailRead",
         "type": "object"
       },
+      "ExperimentFindingRead": {
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "enum": [
+              "target_leakage",
+              "overfit_gap",
+              "duplicate_rows",
+              "class_imbalance",
+              "implausible_score"
+            ],
+            "title": "Check",
+            "type": "string"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "description": "Numbers and column names behind the check (training rows and CV only; never final-holdout values). Column names are user data.",
+            "title": "Evidence",
+            "type": "object"
+          },
+          "message": {
+            "description": "Plain-language explanation with the numbers filled in.",
+            "title": "Message",
+            "type": "string"
+          },
+          "recommendation_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "review_columns",
+                  "regularize",
+                  "deduplicate",
+                  "class_weights",
+                  "collect_more_data",
+                  "investigate_leakage"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Kind"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "warning",
+              "fail"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "status",
+          "severity",
+          "message"
+        ],
+        "title": "ExperimentFindingRead",
+        "type": "object"
+      },
+      "ExperimentFindingsRead": {
+        "additionalProperties": false,
+        "description": "The five core trust checks of one run. ``investigated`` is false for runs that\nfinished before P4.10-A (or have not finished): ``checks`` is then empty.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentFindingRead"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "investigated": {
+            "title": "Investigated",
+            "type": "boolean"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ExperimentFindingsSummary"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "investigated"
+        ],
+        "title": "ExperimentFindingsRead",
+        "type": "object"
+      },
+      "ExperimentFindingsSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "failures": {
+            "default": 0,
+            "title": "Failures",
+            "type": "integer"
+          },
+          "passed": {
+            "default": 0,
+            "title": "Passed",
+            "type": "integer"
+          },
+          "warnings": {
+            "default": 0,
+            "title": "Warnings",
+            "type": "integer"
+          }
+        },
+        "title": "ExperimentFindingsSummary",
+        "type": "object"
+      },
       "ExperimentLineage": {
         "properties": {
           "execution_request_id": {
@@ -7563,6 +7700,108 @@
           }
         },
         "summary": "Read Experiment Code",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/experiments/{experiment_id}/findings": {
+      "get": {
+        "description": "Five plain-language trust checks of a run: target leakage (from the leakage\naudit), train-vs-CV overfit gap, duplicate rows (within training and across the\nsplit, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a\nstatus (pass | warning | fail), a severity, the numbers behind it and a\nrecommendation kind. Evidence comes from training rows and CV folds only, never\nfinal-holdout values. Runs finished before the checks existed: ``investigated: false``.",
+        "operationId": "read_experiment_findings_v1_experiments__experiment_id__findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentFindingsRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Experiment Findings",
         "tags": [
           "v1"
         ]

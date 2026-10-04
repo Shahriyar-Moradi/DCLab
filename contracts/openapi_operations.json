@@ -139,6 +139,7 @@
   "POST /v1/experiments/{experiment_id}/branches",
   "POST /v1/experiments/{experiment_id}/cancel",
   "GET /v1/experiments/{experiment_id}/code",
+  "GET /v1/experiments/{experiment_id}/findings",
   "GET /v1/me",
   "GET /v1/model-builds/{pipeline_run_id}",
   "GET /v1/model-builds/{pipeline_run_id}/artifacts",

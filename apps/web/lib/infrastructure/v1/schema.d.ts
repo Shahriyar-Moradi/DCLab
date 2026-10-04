@@ -334,6 +334,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/experiments/{experiment_id}/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Experiment Findings
+         * @description Five plain-language trust checks of a run: target leakage (from the leakage
+         *     audit), train-vs-CV overfit gap, duplicate rows (within training and across the
+         *     split, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a
+         *     status (pass | warning | fail), a severity, the numbers behind it and a
+         *     recommendation kind. Evidence comes from training rows and CV folds only, never
+         *     final-holdout values. Runs finished before the checks existed: ``investigated: false``.
+         */
+        get: operations["read_experiment_findings_v1_experiments__experiment_id__findings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -1615,6 +1640,75 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /** ExperimentFindingRead */
+        ExperimentFindingRead: {
+            /**
+             * Check
+             * @enum {string}
+             */
+            check: "target_leakage" | "overfit_gap" | "duplicate_rows" | "class_imbalance" | "implausible_score";
+            /**
+             * Evidence
+             * @description Numbers and column names behind the check (training rows and CV only; never final-holdout values). Column names are user data.
+             */
+            evidence?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Message
+             * @description Plain-language explanation with the numbers filled in.
+             */
+            message: string;
+            /** Recommendation Kind */
+            recommendation_kind?: ("review_columns" | "regularize" | "deduplicate" | "class_weights" | "collect_more_data" | "investigate_leakage") | null;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "warning" | "error" | "critical";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pass" | "warning" | "fail";
+        };
+        /**
+         * ExperimentFindingsRead
+         * @description The five core trust checks of one run. ``investigated`` is false for runs that
+         *     finished before P4.10-A (or have not finished): ``checks`` is then empty.
+         */
+        ExperimentFindingsRead: {
+            /** Checks */
+            checks?: components["schemas"]["ExperimentFindingRead"][];
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /** Investigated */
+            investigated: boolean;
+            summary?: components["schemas"]["ExperimentFindingsSummary"];
+            /** Version */
+            version?: string | null;
+        };
+        /** ExperimentFindingsSummary */
+        ExperimentFindingsSummary: {
+            /**
+             * Failures
+             * @default 0
+             */
+            failures: number;
+            /**
+             * Passed
+             * @default 0
+             */
+            passed: number;
+            /**
+             * Warnings
+             * @default 0
+             */
+            warnings: number;
         };
         /** ExperimentLineage */
         ExperimentLineage: {
@@ -4391,6 +4485,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExperimentCodeRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_experiment_findings_v1_experiments__experiment_id__findings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentFindingsRead"];
                 };
             };
             /** @description Bad request (error envelope) */

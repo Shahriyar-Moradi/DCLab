@@ -56,6 +56,8 @@ DEFAULT_API_URL = "http://localhost:8001"  # the API directly: the BFF drops Aut
 LIST_LIMIT = 50
 GRAPH_NODE_LIMIT = 40
 RECENT_EXPERIMENTS = 10
+FINDING_LIMIT = 10
+FINDING_EVIDENCE_CHARS = 1500
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 
@@ -392,6 +394,21 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             return evidence
         return run(call)
 
+    def get_findings(experiment_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            result = api.experiments.findings(uuid_arg(experiment_id, "experiment_id"))
+            checks = [{"check": f.check, "status": f.status, "severity": f.severity,
+                       "recommendation_kind": f.recommendation_kind,
+                       # Messages and evidence name dataset columns (user data).
+                       "message": untrusted(f.message, 800),
+                       "evidence": untrusted(cv_only(f.evidence), FINDING_EVIDENCE_CHARS)}
+                      for f in result.checks[:FINDING_LIMIT]]
+            return {"experiment_id": str(result.experiment_id), "investigated": result.investigated,
+                    "version": result.version, "summary": result.summary.model_dump(mode="json"),
+                    "checks": checks,
+                    "note": "Trust checks use training rows and CV folds only; never final-holdout values."}
+        return run(call)
+
     def list_decisions(
         project_id: Id,
         effective_state: Annotated[str | None, Field(description="proposed | accepted | rejected | superseded")] = None,  # noqa: E501
@@ -460,6 +477,9 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
              "capped. It embeds dataset column names.")
         tool(get_evidence, read, "Evidence of an experiment: locked metrics, pipeline stage summaries and artifact "
              "digests (no rows, no file contents).")
+        tool(get_findings, read, "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate "
+             "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail), "
+             "a plain-language message and the numbers behind it.")
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(get_model, read, "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + "
              "digest; only the current champion carries a report-only final-holdout summary.")

@@ -179,6 +179,24 @@ def test_experiment_code_writes_script(tmp_path):
     assert code == 0 and target.read_text() == "print(1)\n" and json.loads(out)["filename"] == "run.py"
 
 
+def test_experiment_findings_table_json_and_old_runs(tmp_path):
+    check = {"check": "class_imbalance", "status": "warning", "severity": "warning",
+             "message": "The smallest class is 5.0% of the training rows.", "evidence": {"class_count": 2},
+             "recommendation_kind": "class_weights"}
+    payload = {"experiment_id": EID, "investigated": True, "version": "investigate.v1", "checks": [check],
+               "summary": {"passed": 4, "warnings": 1, "failures": 0}}
+    handler = lambda r: httpx.Response(200, json=payload)  # noqa: E731
+    code, out, _ = _run(["experiments", "findings", EID], handler, tmp_path, env=_env())
+    assert code == 0 and out.splitlines()[0].split() == ["CHECK", "STATUS", "SEVERITY", "MESSAGE"]
+    assert "class_imbalance  warning" in out and "5.0%" in out
+    code, out, _ = _run(["experiments", "findings", EID, "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out)["summary"]["warnings"] == 1
+    old = {"experiment_id": EID, "investigated": False, "checks": []}
+    code, out, _ = _run(["experiments", "findings", EID], lambda r: httpx.Response(200, json=old), tmp_path,
+                        env=_env())
+    assert code == 0 and "no trust checks recorded" in out
+
+
 def test_branch_requires_one_change_source_and_valid_json(tmp_path):
     handler = lambda r: httpx.Response(200, json={})  # noqa: E731
     code, _, err = _run(["experiments", "branch", EID, "--intent", "x"], handler, tmp_path, env=_env())

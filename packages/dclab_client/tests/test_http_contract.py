@@ -330,6 +330,28 @@ def test_experiment_code_uses_v1_path_and_validates_ids():
     assert len(recorded) == 1
 
 
+def test_experiment_findings_use_v1_path_and_parse_checks():
+    recorded: list[httpx.Request] = []
+    check = {"check": "duplicate_rows", "status": "warning", "severity": "warning", "message": "12 rows repeat.",
+             "evidence": {"train_duplicate_rows": 12}, "recommendation_kind": "deduplicate"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"experiment_id": "33333333-3333-3333-3333-333333333333",
+                                         "investigated": True, "version": "investigate.v1", "checks": [check],
+                                         "summary": {"passed": 4, "warnings": 1, "failures": 0}})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    result = api.experiments.findings("33333333-3333-3333-3333-333333333333")
+    assert result.investigated and result.summary.warnings == 1
+    assert result.checks[0].evidence["train_duplicate_rows"] == 12
+    assert recorded[0].method == "GET"
+    assert recorded[0].url.path == "/v1/experiments/33333333-3333-3333-3333-333333333333/findings"
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.experiments.findings("../x")
+    assert len(recorded) == 1
+
+
 def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
     from datetime import UTC, datetime
 

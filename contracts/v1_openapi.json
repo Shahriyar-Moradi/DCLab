@@ -484,6 +484,29 @@
         "successSchema": "ExperimentCodeRead"
       }
     },
+    "/v1/experiments/{experiment_id}/findings": {
+      "GET": {
+        "operationId": "read_experiment_findings_v1_experiments__experiment_id__findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentFindingsRead"
+      }
+    },
     "/v1/me": {
       "GET": {
         "operationId": "read_principal_v1_me_get",
@@ -1484,6 +1507,43 @@
         "status",
         "workspace_id"
       ]
+    },
+    "ExperimentFindingRead": {
+      "properties": [
+        "check",
+        "evidence",
+        "message",
+        "recommendation_kind",
+        "severity",
+        "status"
+      ],
+      "required": [
+        "check",
+        "message",
+        "severity",
+        "status"
+      ]
+    },
+    "ExperimentFindingsRead": {
+      "properties": [
+        "checks",
+        "experiment_id",
+        "investigated",
+        "summary",
+        "version"
+      ],
+      "required": [
+        "experiment_id",
+        "investigated"
+      ]
+    },
+    "ExperimentFindingsSummary": {
+      "properties": [
+        "failures",
+        "passed",
+        "warnings"
+      ],
+      "required": []
     },
     "ExperimentLineage": {
       "properties": [

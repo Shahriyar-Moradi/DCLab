@@ -24,8 +24,8 @@ python -m dclab_mcp                    # same
 ## Tools
 
 Read (default on): `inspect_project`, `inspect_dataset`, `get_experiment`,
-`compare_experiments`, `get_experiment_code`, `get_evidence`, `list_decisions`,
-`get_model`, `get_prediction`, `accept_proposal`.
+`compare_experiments`, `get_experiment_code`, `get_evidence`, `get_findings`,
+`list_decisions`, `get_model`, `get_prediction`, `accept_proposal`.
 
 Write (`DCLAB_MCP_WRITE_ENABLED`): `create_problem_spec`, `propose_problem_spec`,
 `run_experiment`, `branch_experiment`, `predict`, `record_decision`.

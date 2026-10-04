@@ -46,7 +46,9 @@ Ask Claude Code, step by step (write tools enabled, a project with an uploaded d
 3. **Run.** "Run a baseline experiment." -> `run_experiment`, then `get_experiment`
    until `completed`. The worker trains; the token never sets refs.
 4. **Evidence and code.** "Show the evidence and the reproduction script." ->
-   `get_evidence`, `get_experiment_code` (CV metrics only).
+   `get_evidence`, `get_experiment_code` (CV metrics only). "Can I trust this run?" ->
+   `get_findings` (leakage, overfit gap, duplicates, class imbalance, too-good score:
+   pass / warning / fail with a plain-language message).
 5. **Branch.** "Branch without xgboost." -> `branch_experiment` (reuses the parent's
    split plan and holdout).
 6. **Compare.** "Compare the two runs." -> `compare_experiments` (CV only).

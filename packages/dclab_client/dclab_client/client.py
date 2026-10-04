@@ -24,6 +24,7 @@ from dclab_client.types import (
     Experiment,
     ExperimentCode,
     ExperimentComparison,
+    ExperimentFindings,
     ExperimentPage,
     ModelBuild,
     ModelVersion,
@@ -783,6 +784,19 @@ class ExperimentsClient:
             request_id=request_id,
         )
         return ExperimentCode.model_validate(payload)
+
+    def findings(
+        self, experiment_id: UUID | str, *, request_id: str | None = None
+    ) -> ExperimentFindings:
+        """The five trust checks of a run (leakage, overfit gap, duplicates, class
+        imbalance, too-good-to-be-true score) with plain-language messages."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/findings",
+            request_id=request_id,
+        )
+        return ExperimentFindings.model_validate(payload)
 
 
 class PredictionsClient:

@@ -248,6 +248,12 @@ def test_full_loop_over_mcp(client, db_session, st, tmp_path):  # noqa: F811
     code = call("get_experiment_code", {"experiment_id": root["id"]})
     assert "import" in code["source"]["untrusted_text"]
     assert not FILLED_HOLDOUT_LITERAL.search(code["source"]["untrusted_text"])
+    findings = call("get_findings", {"experiment_id": root["id"]})
+    assert findings["investigated"] is True and len(findings["checks"]) == 5
+    assert [c["check"] for c in findings["checks"]][0] == "target_leakage" and not _holdout_values(findings)
+    assert all(c["message"]["untrusted_text"] and c["status"] in {"pass", "warning", "fail"}
+               for c in findings["checks"])
+    assert sum(findings["summary"].values()) == 5
 
     # A human rejects the bootstrap proposal; the next agent run proposes again.
     rejected = client.post(f"/v1/decisions/{first.id}/reject", json={"rationale": "not yet"},

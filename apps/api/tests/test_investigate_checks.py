@@ -92,6 +92,16 @@ def test_overfit_lower_is_better_metric_is_oriented():
     assert check_overfit_gap(replace(ev, train_metrics={"rmse": 11.0})).status == "pass"
 
 
+def test_overfit_binary_threshold_metric_compares_a_threshold_free_metric():
+    # Training rows are scored at the locked decision threshold, CV folds at 0.5: F1
+    # values are not comparable, ROC AUC is.
+    ev = replace(BASE, primary_metric="f1", winner_cv={"f1": 0.40, "roc_auc": 0.80},
+                 train_metrics={"f1": 0.75, "roc_auc": 0.83})
+    finding = check_overfit_gap(ev)
+    assert finding.status == "pass" and finding.evidence["metric"] == "roc_auc"
+    assert finding.evidence["primary_metric"] == "f1"
+
+
 def test_overfit_skips_without_train_metrics():
     finding = check_overfit_gap(replace(BASE, train_metrics={}))
     assert finding.status == "pass" and finding.evidence["skipped_reason"] == "train_or_cv_metric_missing"

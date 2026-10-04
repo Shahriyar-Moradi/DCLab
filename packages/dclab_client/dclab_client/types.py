@@ -444,6 +444,35 @@ class ExperimentCode(BaseModel):
     helper_requirements: list[str] = Field(default_factory=list)
 
 
+class ExperimentFinding(BaseModel):
+    """One trust check: ``status`` pass | warning | fail, a plain-language ``message``
+    and the numbers behind it (training rows and CV only; column names are user data)."""
+
+    check: str
+    status: str
+    severity: str
+    message: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    recommendation_kind: str | None = None
+
+
+class ExperimentFindingsSummary(BaseModel):
+    passed: int = 0
+    warnings: int = 0
+    failures: int = 0
+
+
+class ExperimentFindings(BaseModel):
+    """The five core trust checks of a run (P4.10-A); ``investigated`` is false for runs
+    that predate them."""
+
+    experiment_id: UUID
+    investigated: bool
+    version: str | None = None
+    checks: list[ExperimentFinding] = Field(default_factory=list)
+    summary: ExperimentFindingsSummary = Field(default_factory=ExperimentFindingsSummary)
+
+
 class ExperimentLineage(BaseModel):
     parent_experiment_id: UUID | None = None
     split_plan_id: UUID | None = None

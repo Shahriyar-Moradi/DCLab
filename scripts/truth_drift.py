@@ -77,6 +77,10 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     # P4.9-A batch predictions.
     ("BatchPrediction", "BatchPredictionRead"),
     ("BatchPredictionOutput", "BatchPredictionOutput"),
+    # P4.10-A trust-check findings.
+    ("ExperimentFindings", "ExperimentFindingsRead"),
+    ("ExperimentFinding", "ExperimentFindingRead"),
+    ("ExperimentFindingsSummary", "ExperimentFindingsSummary"),
     # P3.1-A: every /v1 error response is this envelope.
     ("ErrorEnvelope", "V1ErrorEnvelope"),
     ("ErrorDetail", "V1Error"),
