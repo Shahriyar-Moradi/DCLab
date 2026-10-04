@@ -19,7 +19,6 @@ champion's holdout under ``final_holdout_report_only``.
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import re
 import sys
@@ -33,7 +32,8 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
 from dclab_client import DCLabClient
-from dclab_client.cli import ENV_API_URL, ENV_TOKEN, ENV_WORKSPACE, load_config
+from dclab_client.cli import ENV_WORKSPACE, ConfigError, bind_token_to_url, load_config
+from dclab_client.cli import check_api_url as _check_api_url
 from dclab_client.errors import DCLabAPIError, DCLabClientError, NotFoundError
 from dclab_client.types import DecisionRecord, Experiment
 from dclab_mcp._version import __version__
@@ -52,8 +52,6 @@ SERVICE_TOKEN_PREFIX = "dclab_st_"
 ENV_READ = "DCLAB_MCP_READ_ENABLED"
 ENV_WRITE = "DCLAB_MCP_WRITE_ENABLED"
 ENV_ALLOW_INSECURE_HTTP = "DCLAB_MCP_ALLOW_INSECURE_HTTP"
-# Plain-http hosts besides loopback / *.localhost: the docker compose API service.
-HTTP_HOST_ALLOWLIST = frozenset({"api"})
 DEFAULT_API_URL = "http://localhost:8001"  # the API directly: the BFF drops Authorization
 LIST_LIMIT = 50
 GRAPH_NODE_LIMIT = 40
@@ -85,10 +83,6 @@ Opt = Annotated[str | None, Field(max_length=200)]
 Obj = Annotated[dict[str, Any] | None, Field()]
 
 
-class ConfigError(RuntimeError):
-    """The server cannot start (missing or non-service token, unsafe API URL)."""
-
-
 def _flag(raw: str | None, default: bool) -> bool:
     if raw is None or not raw.strip():
         return default
@@ -109,22 +103,11 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
     """Environment over the ``dclab-cli login`` config, with the token bound to its URL:
     a stored token is only sent to the stored URL (an env URL that differs is refused)."""
 
-    stored = load_config(env)
-    env_url = (env.get(ENV_API_URL) or "").strip() or None
-    if env.get(ENV_TOKEN):
-        token, api_url = env[ENV_TOKEN], env_url or stored.get("api_url") or DEFAULT_API_URL
-    else:
-        token, api_url = stored.get("token"), stored.get("api_url") or env_url or DEFAULT_API_URL
-        if token and not stored.get("api_url"):
-            raise ConfigError("the stored token has no stored api_url; log in again with --api-url or set "
-                              f"{ENV_TOKEN} and {ENV_API_URL}")
-        if token and env_url and env_url.rstrip("/") != api_url.rstrip("/"):
-            raise ConfigError(f"{ENV_API_URL} differs from the URL the stored token was issued for; "
-                              f"set {ENV_TOKEN} too, or log in again")
+    token, api_url = bind_token_to_url(env, load_config(env), DEFAULT_API_URL)
     return Settings(
         api_url=api_url,
         token=token,
-        workspace=env.get(ENV_WORKSPACE) or stored.get("workspace"),
+        workspace=env.get(ENV_WORKSPACE) or load_config(env).get("workspace"),
         read_enabled=_flag(env.get(ENV_READ), True),
         write_enabled=_flag(env.get(ENV_WRITE), False),
         allow_insecure_http=_flag(env.get(ENV_ALLOW_INSECURE_HTTP), False),
@@ -132,24 +115,10 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
 
 
 def check_api_url(url: str, *, allow_insecure_http: bool = False) -> str:
-    """https anywhere; plain http only to loopback, ``localhost`` / ``*.localhost`` or
-    the compose API host (``api``), unless ``DCLAB_MCP_ALLOW_INSECURE_HTTP=1`` opts in,
-    so the token never crosses a network in clear text by accident."""
+    """The shared SDK rule (https, or plain http only to loopback / the compose host)
+    with the MCP opt-in variable ``DCLAB_MCP_ALLOW_INSECURE_HTTP``."""
 
-    parsed = httpx.URL(url)
-    host = (parsed.host or "").lower()
-    if parsed.scheme == "https" and host:
-        return url
-    if parsed.scheme == "http" and host:
-        if allow_insecure_http or host == "localhost" or host.endswith(".localhost") or host in HTTP_HOST_ALLOWLIST:
-            return url
-        try:
-            if ipaddress.ip_address(host).is_loopback:
-                return url
-        except ValueError:
-            pass
-    raise ConfigError(f"DCLAB_API_URL must be https (plain http only for localhost or the compose host "
-                      f"'api'; set {ENV_ALLOW_INSECURE_HTTP}=1 to opt in)")
+    return _check_api_url(url, allow_insecure_http=allow_insecure_http, opt_in_env=ENV_ALLOW_INSECURE_HTTP)
 
 
 def _ok(payload: dict[str, Any], token: str | None) -> CallToolResult:
@@ -524,9 +493,18 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
             pid = body.pop("project_id")
             # A ref may only point at a locked (immutable) version; locking is not acceptance.
             spec = api.projects.create_problem_spec(pid, status="locked", idempotency_key=spec_key, **body)
-            # Keyed by the spec (not the rationale): a retry with reworded text replays.
-            proposal_key = command_key("propose_problem_spec.ref", {"problem_spec_id": str(spec.id)},
-                                       idempotency_key)
+            # A retry, even with reworded rationale, returns the open proposal for this spec
+            # instead of conflicting on the rationale-bound server digest.
+            open_proposals = api.projects.decisions(
+                pid, effective_state="proposed", decision_type="ref_moved", subject_kind="problem_spec",
+                subject_id=spec.id, limit=1).items
+            if open_proposals:
+                return {"problem_spec": _spec(spec), "proposal": _decision(open_proposals[0]),
+                        "action": "already_proposed",
+                        "note": "This locked spec version already has an open proposal; nothing new was created. "
+                                "It becomes current only when a human accepts it in DCLab Studio."}
+            proposal_key = command_key("propose_problem_spec.ref",
+                                       {"problem_spec_id": str(spec.id), "rationale": rationale}, idempotency_key)
             try:
                 proposal = api.projects.propose_ref_move(
                     pid, moves={"problem_spec": spec.id}, rationale=rationale,

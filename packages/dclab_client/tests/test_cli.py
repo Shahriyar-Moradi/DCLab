@@ -26,7 +26,8 @@ def _project(**over):
 def _run(argv, handler, tmp_path, *, env=None, stdin=""):
     http = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://api.test")
     out, err = io.StringIO(), io.StringIO()
-    environ = {"XDG_CONFIG_HOME": str(tmp_path / "cfg"), **(env or {})}
+    # The mock host is plain http on a non-loopback name, so tests opt in explicitly.
+    environ = {"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "DCLAB_ALLOW_INSECURE_HTTP": "1", **(env or {})}
     code = cli.main(argv, env=environ, stdin=io.StringIO(stdin), stdout=out, stderr=err, http=http)
     return code, out.getvalue(), err.getvalue()
 
@@ -74,8 +75,44 @@ def test_env_overrides_config_file(tmp_path):
     cli.save_config({"XDG_CONFIG_HOME": str(tmp_path / "cfg")},
                     {"token": "stored", "api_url": "http://stored", "workspace": PID})
     settings = cli.resolve_settings({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "DCLAB_TOKEN": "env",
-                                     "DCLAB_API_URL": "http://env", "DCLAB_WORKSPACE": EID})
-    assert settings == {"token": "env", "api_url": "http://env", "workspace": EID}
+                                     "DCLAB_API_URL": "https://env.example", "DCLAB_WORKSPACE": EID})
+    assert settings == {"token": "env", "api_url": "https://env.example", "workspace": EID}
+
+
+def test_stored_token_is_bound_to_its_stored_url(tmp_path):
+    cfg = {"XDG_CONFIG_HOME": str(tmp_path / "cfg")}
+    cli.save_config(cfg, {"token": "stored", "api_url": "https://dclab.example", "workspace": PID})
+    assert cli.resolve_settings(cfg)["token"] == "stored"
+    assert cli.resolve_settings({**cfg, "DCLAB_API_URL": "https://dclab.example/"})["token"] == "stored"
+    with pytest.raises(cli.ConfigError, match="differs"):
+        cli.resolve_settings({**cfg, "DCLAB_API_URL": "https://evil.example"})
+    seen = []
+    code, _, err = _run(["projects", "list"], lambda r: seen.append(r) or httpx.Response(200, json=[]), tmp_path,
+                        env={"DCLAB_API_URL": "https://evil.example"})
+    assert code == cli.EXIT_ERROR and "differs" in err and not seen
+
+
+@pytest.mark.parametrize("url", ["http://dclab.example", "http://10.0.0.5:8001", "ftp://dclab.example"])
+def test_plain_http_to_a_remote_host_is_refused(tmp_path, url):
+    with pytest.raises(cli.ConfigError, match="https"):
+        cli.resolve_settings({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "DCLAB_TOKEN": TOKEN, "DCLAB_API_URL": url})
+    code, _, err = _run(["login", "--api-url", url], lambda r: httpx.Response(200, json={}), tmp_path,
+                        env={"DCLAB_ALLOW_INSECURE_HTTP": ""}, stdin=TOKEN + "\n")
+    assert code == cli.EXIT_ERROR and "https" in err
+    assert not (tmp_path / "cfg" / "dclab" / "config.json").exists()
+
+
+@pytest.mark.parametrize("url", ["https://dclab.example", "http://localhost:3000/api/backend", "http://127.0.0.1:8001",
+                                 "http://api:8001", "http://studio.localhost"])
+def test_https_and_loopback_urls_are_allowed(url):
+    assert cli.check_api_url(url) == url
+
+
+def test_token_flag_warns_about_shell_history(tmp_path):
+    ok = {"id": PID, "email": "a@b.c", "role": "ml_engineer", "full_name": "A"}
+    code, out, err = _run(["login", "--token", TOKEN, "--api-url", "http://api.test", "--workspace", PID],
+                          lambda r: httpx.Response(200, json=ok), tmp_path)
+    assert code == 0 and "shell history" in err and TOKEN not in out + err
 
 
 def test_not_logged_in_is_auth_exit(tmp_path):

@@ -202,9 +202,11 @@ def test_full_loop_over_mcp(client, db_session, st, tmp_path):  # noqa: F811
     assert proposed["problem_spec"]["status"] == "locked" and proposed["action"] == "proposed"
     assert (proposed["proposal"]["state"], proposed["proposal"]["actor_kind"]) == ("proposed", "agent")
     records = _records(db)
-    again = call("propose_problem_spec", spec_args)  # agent retry: replayed, nothing new
+    again = call("propose_problem_spec", spec_args)  # agent retry: same open proposal, nothing new
     assert again["problem_spec"]["id"] == proposed["problem_spec"]["id"] and again["problem_spec"]["replayed"]
-    assert again["proposal"]["id"] == proposed["proposal"]["id"] and again["proposal"]["replayed"]
+    assert again["proposal"]["id"] == proposed["proposal"]["id"] and again["action"] == "already_proposed"
+    reworded = call("propose_problem_spec", {**spec_args, "rationale": "same spec, reworded reason"})
+    assert reworded["proposal"]["id"] == proposed["proposal"]["id"] and reworded["action"] == "already_proposed"
     assert _records(db) == records
     spec_id = proposed["problem_spec"]["id"]
     assert db.get(ProblemSpec, UUID(spec_id)).created_by_service_token_id == token_id
