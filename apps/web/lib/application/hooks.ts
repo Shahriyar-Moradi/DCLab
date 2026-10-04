@@ -2,7 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { apiGet, apiPost, apiPostForm, uploadFile, apiDownload, newIdempotencyKey } from "@/lib/infrastructure/api-client";
+import { apiGet, apiPost, apiPostForm, uploadFile, apiDownload } from "@/lib/infrastructure/api-client";
+import { v1Get, v1Post } from "@/lib/infrastructure/v1/client";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { parseSessionUser } from "@/lib/infrastructure/session";
 import { useSession } from "./session-provider";
@@ -81,6 +82,7 @@ import {
   type BusinessModelDetail,
   type ServiceToken,
   type ServiceTokenCreated,
+  type ServiceTokenScope,
   type UploadResult,
 } from "@/lib/domain/schemas";
 
@@ -735,13 +737,13 @@ export function useBusinessDeepAudit() {
 export function useServiceTokens(): ReturnType<typeof useQuery<ServiceToken[]>> {
   return useQuery({
     queryKey: workspaceQueryKey("service-tokens"),
-    queryFn: () => apiGet("/v1/service-tokens", z.array(ServiceTokenSchema)),
+    queryFn: () => v1Get("/v1/service-tokens", z.array(ServiceTokenSchema)),
   });
 }
 
 export type ServiceTokenCreateInput = {
   name: string;
-  scopes: string[];
+  scopes: ServiceTokenScope[];
   expires_in_days: number;
   current_password: string;
   /** One key per user submit (from `newIdempotencyKey()`), so a retried submit replays. */
@@ -754,7 +756,7 @@ export function useCreateServiceToken(): ReturnType<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: ServiceTokenCreateInput) =>
-      apiPost("/v1/service-tokens", ServiceTokenCreatedSchema, body, { "Idempotency-Key": idempotencyKey }),
+      v1Post("/v1/service-tokens", ServiceTokenCreatedSchema, body, { idempotencyKey }),
     // The result carries the one-time secret: never keep it in the mutation cache.
     gcTime: 0,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("service-tokens") }),
@@ -765,9 +767,7 @@ export function useRevokeServiceToken(): ReturnType<typeof useMutation<ServiceTo
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tokenId: string) =>
-      apiPost(`/v1/service-tokens/${encodeURIComponent(tokenId)}/revoke`, ServiceTokenSchema, {}, {
-        "Idempotency-Key": newIdempotencyKey(),
-      }),
+      v1Post("/v1/service-tokens/{token_id}/revoke", ServiceTokenSchema, {}, { params: { token_id: tokenId } }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: workspaceQueryKey("service-tokens") }),
   });
 }

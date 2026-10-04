@@ -11,7 +11,7 @@ import { Select } from "@/app/components/ui/Select";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
 import { useCreateServiceToken, useRevokeServiceToken, useServiceTokens } from "@/lib/application";
-import { SERVICE_TOKEN_SCOPES, formatTimestamp } from "@/lib/domain";
+import { SERVICE_TOKEN_SCOPES, formatTimestamp, type ServiceTokenScope } from "@/lib/domain";
 import { newIdempotencyKey } from "@/lib/infrastructure/api-client";
 
 const STATUS_TONE = { active: "green", expired: "amber", revoked: "oxblood" } as const;
@@ -23,13 +23,13 @@ export function ServiceTokensPanel() {
   const create = useCreateServiceToken();
   const revoke = useRevokeServiceToken();
   const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<string[]>(["read"]);
+  const [scopes, setScopes] = useState<ServiceTokenScope[]>(["read"]);
   const [days, setDays] = useState<string>("30");
   const [password, setPassword] = useState("");
   // The secret lives only in the mutation result until "Done" resets it.
   const secret = create.data?.secret ?? null;
 
-  function toggle(scope: string, checked: boolean) {
+  function toggle(scope: ServiceTokenScope, checked: boolean) {
     setScopes((current) => (checked ? [...current, scope] : current.filter((item) => item !== scope)));
   }
 

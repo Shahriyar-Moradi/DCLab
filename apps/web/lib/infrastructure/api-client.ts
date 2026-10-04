@@ -224,8 +224,13 @@ export async function apiPostEmpty(path: string): Promise<void> {
   }
 }
 
-export function apiPostForm<T>(path: string, schema: ZodType<T>, form: FormData): Promise<T> {
-  return request(path, schema, { method: "POST", body: form });
+export function apiPostForm<T>(
+  path: string,
+  schema: ZodType<T>,
+  form: FormData,
+  headers?: Record<string, string>,
+): Promise<T> {
+  return request(path, schema, { method: "POST", body: form, headers });
 }
 
 export function uploadFile<T>(

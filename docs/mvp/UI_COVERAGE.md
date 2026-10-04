@@ -18,10 +18,10 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/app/settings` → tokens panel | exists |
 | Connect an agent (MCP/CLI) | — | — | Settings → "Connect Claude Code" (copy `.mcp.json`, CLI login) | planned P4.8-UI |
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]` | planned P4.1-A |
-| Upload dataset, inspect profile | `POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1; Data tab | planned P4.1-B |
+| Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1; Data tab | planned P4.1-B |
 | Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard step 2 (target, task, objective, constraints) | planned P4.1-B |
 | Target confirmation | `POST /v1/execution-requests/{id}/target-confirmation` | — | wizard step 2 confirm | planned P4.1-B |
-| Run an experiment | `POST /v1/experiments`, `POST/GET /v1/execution-requests` | `run_experiment` | wizard "Train" + Experiments tab "New run" | planned P4.1-B |
+| Run an experiment | `POST /v1/experiments`, `POST /v1/execution-requests`, `GET …/{id}` | `run_experiment` | wizard "Train" + Experiments tab "New run" | planned P4.1-B |
 | Live run progress | `GET /v1/model-builds/{id}`, `…/events`, `…/artifacts`, `…/visualizations` | — | experiment page progress + charts | exists (legacy `/lab/runs/[run_id]`), moved in P4.1-A |
 | Cancel a run | `POST /v1/experiments/{id}/cancel` | — | experiment page "Cancel" | planned P4.4-A |
 | Experiments list / detail | `GET /v1/experiments`, `GET /v1/experiments/{id}` | `get_experiment` | Experiments tab, experiment page | planned P4.1-A, P4.3-A |
@@ -31,7 +31,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Branch with a change set | `POST /v1/experiments/{id}/branches` | `branch_experiment` | "Branch" form on experiment | planned P4.4-A |
 | Lineage graph + staleness | `GET /v1/projects/{id}/graph` | `inspect_project` | Graph tab | planned P4.2-A |
 | Impact of changing a node | `GET /v1/nodes/{kind}/{id}/impact` | — | node inspector "What becomes stale" | planned P4.2-A |
-| Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `…/refs/{kind}` (If-Match moves) | — | project header ref badges; "Make champion" | planned P4.4-A |
+| Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `GET/POST …/refs/{kind}` (POST = If-Match move) | — | project header ref badges; "Make champion" | planned P4.4-A |
 | Decisions timeline | `GET/POST /v1/projects/{id}/decisions`, `GET /v1/decisions/{id}` | `list_decisions`, `record_decision` | Decisions tab | planned P4.4-A |
 | Accept / reject / supersede | `POST /v1/decisions/{id}/accept|reject|supersede` | `accept_proposal` | decision card actions | planned P4.4-A |
 | Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI |
@@ -40,7 +40,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 
 | Capability | `/v1` operation(s) | MCP tool | Studio screen | Status |
 | --- | --- | --- | --- | --- |
-| Score new data with a model | `POST /v1/model-versions/{id}/predictions`, `GET /v1/predictions/{id}` | `predict` | model page "Score new data" + download | planned P4.9-A / P4.9-UI |
+| Score new data with a model | `POST /v1/model-versions/{id}/predictions`, `GET /v1/predictions/{id}`, `…/download` | `predict` | model page "Score new data" + download | planned P4.9-A / P4.9-UI |
 | Core trust checks (5) | `GET /v1/experiments/{id}/findings` | `get_findings` | findings panel on every experiment | planned P4.10-A / P4.10-UI |
 | Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-A / P4.11-UI |
 | Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page: Columns & roles, Policy | planned P4.1-C |

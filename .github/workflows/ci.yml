@@ -103,6 +103,17 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
+      # P4.0-A: the web /v1 types are generated from the live FastAPI OpenAPI; a
+      # backend contract change must be committed together with regenerated types.
+      - name: Generated /v1 web types are current
+        working-directory: apps/web
+        env:
+          DCLAB_PYTHON: python
+        run: |
+          npm run gen:api
+          git diff --exit-code -- lib/infrastructure/v1/
+          test -z "$(git status --porcelain -- lib/infrastructure/v1/)" || { git status -- lib/infrastructure/v1/; exit 1; }
+
       - name: Frontend typecheck
         working-directory: apps/web
         run: npx tsc --noEmit
