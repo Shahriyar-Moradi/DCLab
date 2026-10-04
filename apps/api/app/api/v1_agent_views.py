@@ -6,7 +6,7 @@ final-holdout values: experiment metric summaries and branch diffs, comparisons,
 model-build stages and events, and the ``HOLDOUT_METRICS`` literal of exported code.
 The single exception is the *current champion's* holdout, returned as
 ``holdout_report_only`` on ``GET /v1/model-versions/{id}`` (reporting, never
-selection). Session humans get every response unchanged. Schemas stay valid:
+selection); the model card (P4.11-A) withholds its final evaluation for every version. Session humans get every response unchanged. Schemas stay valid:
 holdout fields become empty, never removed.
 """
 
@@ -90,6 +90,20 @@ def model_version_view(request: Request, body: Any) -> Any:
         "metrics": body.metrics.model_copy(update={"holdout": {}}),
         "holdout_report_only": report,
     })
+
+
+def model_card_view(request: Request, body: Any) -> Any:
+    """Agents get the card without the final evaluation, and Markdown re-rendered from
+    that withheld card (the string never carries a final-evaluation value)."""
+
+    if not is_agent(request):
+        return body
+    from app.domain.model_card import FINAL_EVALUATION_WITHHELD, ModelCardFinalEvaluation, render_markdown
+
+    card = body.model_copy(update={
+        "final_evaluation": ModelCardFinalEvaluation(status="withheld", note=FINAL_EVALUATION_WITHHELD),
+    })
+    return card.model_copy(update={"markdown": render_markdown(card)})
 
 
 def model_build_view(request: Request, body: Any) -> Any:

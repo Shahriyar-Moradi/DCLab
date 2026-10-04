@@ -441,6 +441,36 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             }}
         return run(call)
 
+    def get_model_card(model_version_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            card = api.model_versions.card(uuid_arg(model_version_id, "model_version_id"))
+            data = card.model_dump(mode="json")
+            # Holdout-blind whatever the token: the API already withholds the final
+            # evaluation from service tokens; drop it (and its Markdown section) anyway.
+            markdown = card.markdown.split("\n## Final evaluation", 1)[0].rstrip("\n")
+            return {"model_card": {
+                **{key: data[key] for key in ("card_version", "model_version_id", "version", "experiment_id",
+                                              "project_id", "family", "algorithm", "created_at", "content_digest",
+                                              "baseline", "llm") if key in data},
+                "objective": {**data["objective"],
+                              "business_objective": untrusted(data["objective"].get("business_objective"), 1000),
+                              "primary_metric_reason": untrusted(data["objective"].get("primary_metric_reason"), 512)},
+                "cv": cv_only(data["cv"]),
+                "split": {**cv_only(data["split"]),
+                          "group_column": untrusted(data["split"].get("group_column"), 256),
+                          "time_column": untrusted(data["split"].get("time_column"), 256)},
+                # Column names, labels, dataset names, messages: user data.
+                "target": untrusted(data["target"], 1500),
+                "metric_in_words": untrusted(data["metric_in_words"], 1000),
+                "drivers": untrusted(data["drivers"], 3000),
+                "risks": untrusted(data["risks"], 3000),
+                "data": untrusted(data["data"], 800),
+                "final_evaluation": {"status": "withheld",
+                                     "note": "Agents never see final-evaluation values; use the CV evidence."},
+                "markdown": untrusted(markdown, 12000),
+            }}
+        return run(call)
+
     def get_prediction(prediction_id: Id) -> CallToolResult:
         return run(lambda: {"prediction": _prediction(api.predictions.get(uuid_arg(prediction_id, "prediction_id")))})
 
@@ -483,6 +513,9 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(get_model, read, "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + "
              "digest; only the current champion carries a report-only final-holdout summary.")
+        tool(get_model_card, read, "One-page model card: primary metric in plain words (cross-validation), dummy-"
+             "baseline comparison, top drivers (permutation importance on CV validation folds), known risks from "
+             "the trust checks, data and split summary, LLM used yes/no. The final evaluation is always withheld.")
         tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
              "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(accept_proposal, read, "Hand a decision proposal to a human. This NEVER accepts anything and performs no "

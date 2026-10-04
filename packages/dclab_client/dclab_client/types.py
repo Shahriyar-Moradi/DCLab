@@ -647,6 +647,112 @@ class ModelVersion(_Versioned):
     artifacts: list[ModelVersionArtifact] = Field(default_factory=list)
 
 
+class ModelCardMetricInWords(BaseModel):
+    text: str
+    basis: str
+    numbers: dict[str, float] = Field(default_factory=dict)
+
+
+class ModelCardBaseline(BaseModel):
+    """The winner vs the dummy baseline on the selection metric (cross-validation)."""
+
+    available: bool
+    metric: str | None = None
+    baseline_candidate_id: str | None = None
+    baseline_score: float | None = None
+    winner_score: float | None = None
+    margin: float | None = None
+    beats_baseline: bool | None = None
+    clear_margin: bool | None = None
+    text: str
+
+
+class ModelCardDriver(BaseModel):
+    rank: int
+    column: str
+    importance_mean: float | None = None
+    importance_std: float | None = None
+    importance_se: float | None = None
+    distinguishable: bool | None = None
+
+
+class ModelCardDrivers(BaseModel):
+    """Top drivers: permutation importance on CV validation folds (``status`` computed |
+    skipped | not_applicable | not_computed)."""
+
+    status: str
+    method: str | None = None
+    scoring: str | None = None
+    n_repeats: int | None = None
+    folds: int | None = None
+    reason: str | None = None
+    columns_tested: int | None = None
+    critical_value: float | None = None
+    clear_drivers: list[str] = Field(default_factory=list)
+    features: list[ModelCardDriver] = Field(default_factory=list)
+    text: str
+
+
+class ModelCardRisk(BaseModel):
+    check: str
+    status: str
+    severity: str
+    message: str
+
+
+class ModelCardRisks(BaseModel):
+    investigated: bool
+    items: list[ModelCardRisk] = Field(default_factory=list)
+    text: str
+
+
+class ModelCardLlm(BaseModel):
+    used: bool
+    purposes: list[str] = Field(default_factory=list)
+    counted: str = ""
+
+
+class ModelCardFinalEvaluation(BaseModel):
+    """The locked winner's single final evaluation (``status`` reported | withheld | missing);
+    service-token callers always get ``withheld``."""
+
+    status: str
+    label: str = ""
+    metric: str | None = None
+    value: float | None = None
+    metrics: dict[str, float] = Field(default_factory=dict)
+    decision_threshold: float | None = None
+    note: str | None = None
+
+
+class ModelCard(BaseModel):
+    """One-page card of a model version (P4.11-A) with a deterministic ``markdown`` rendering."""
+
+    card_version: str
+    model_version_id: UUID
+    version: str
+    experiment_id: UUID
+    project_id: UUID | None = None
+    candidate_key: str | None = None
+    family: str | None = None
+    algorithm: str | None = None
+    created_at: datetime
+    content_digest: str
+    target: dict[str, Any]
+    objective: dict[str, Any]
+    metric_in_words: ModelCardMetricInWords
+    cv: dict[str, Any]
+    baseline: ModelCardBaseline
+    drivers: ModelCardDrivers
+    risks: ModelCardRisks
+    data: dict[str, Any]
+    split: dict[str, Any]
+    llm: ModelCardLlm
+    final_evaluation: ModelCardFinalEvaluation
+    markdown: str = ""
+    untrusted_fields: list[str] = Field(default_factory=list)
+
+
 class BatchPredictionOutput(BaseModel):
     """The predictions file by id + digest; ``download_path`` is the authorized /v1 download."""
 

@@ -25,7 +25,8 @@ python -m dclab_mcp                    # same
 
 Read (default on): `inspect_project`, `inspect_dataset`, `get_experiment`,
 `compare_experiments`, `get_experiment_code`, `get_evidence`, `get_findings`,
-`list_decisions`, `get_model`, `get_prediction`, `accept_proposal`.
+`list_decisions`, `get_model`, `get_model_card`, `get_prediction`, `accept_proposal`.
+`get_model_card` never carries the final evaluation (withheld for agents).
 
 Write (`DCLAB_MCP_WRITE_ENABLED`): `create_problem_spec`, `propose_problem_spec`,
 `run_experiment`, `branch_experiment`, `predict`, `record_decision`.

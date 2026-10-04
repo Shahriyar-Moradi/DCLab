@@ -81,6 +81,16 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     ("ExperimentFindings", "ExperimentFindingsRead"),
     ("ExperimentFinding", "ExperimentFindingRead"),
     ("ExperimentFindingsSummary", "ExperimentFindingsSummary"),
+    # P4.11-A model card.
+    ("ModelCard", "ModelCardRead"),
+    ("ModelCardMetricInWords", "ModelCardMetricInWords"),
+    ("ModelCardBaseline", "ModelCardBaseline"),
+    ("ModelCardDrivers", "ModelCardDrivers"),
+    ("ModelCardDriver", "ModelCardDriver"),
+    ("ModelCardRisks", "ModelCardRisks"),
+    ("ModelCardRisk", "ModelCardRisk"),
+    ("ModelCardLlm", "ModelCardLlm"),
+    ("ModelCardFinalEvaluation", "ModelCardFinalEvaluation"),
     # P3.1-A: every /v1 error response is this envelope.
     ("ErrorEnvelope", "V1ErrorEnvelope"),
     ("ErrorDetail", "V1Error"),

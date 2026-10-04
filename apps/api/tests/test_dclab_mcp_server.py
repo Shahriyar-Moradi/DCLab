@@ -276,6 +276,10 @@ def test_full_loop_over_mcp(client, db_session, st, tmp_path):  # noqa: F811
     model = call("get_model", {"model_version_id": str(branch_mv)})["model_version"]
     assert model["final_holdout_report_only"] is None and not _holdout_values(model)  # not the champion yet
     assert all("object_key" not in a for a in model["artifacts"])
+    card = call("get_model_card", {"model_version_id": str(branch_mv)})["model_card"]
+    assert card["final_evaluation"]["status"] == "withheld" and not _holdout_values(card)
+    assert '"status": "computed"' in card["drivers"]["untrusted_text"].replace('":"', '": "')
+    assert "## Final evaluation" not in card["markdown"]["untrusted_text"]
 
     # Batch predictions (P4.9-A2): score new rows with the model version; the agent sees
     # status, counts and the contract check only, never predicted rows or storage keys.

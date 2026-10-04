@@ -11,6 +11,7 @@ import getpass
 import ipaddress
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -326,6 +327,18 @@ def _exp_findings(c: Ctx, a: argparse.Namespace) -> None:
         c[1].emit(result, table=("check", "status", "severity", "message"), rows=result.checks)
 
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _models_card(c: Ctx, a: argparse.Namespace) -> None:
+    card = c[0].model_versions.card(a.model_version_id)
+    if c[1].as_json and not a.markdown:
+        c[1].emit(card)
+    else:
+        # The card carries user data: never pass terminal control sequences through.
+        c[1].text(_CONTROL_CHARS.sub("", card.markdown).rstrip("\n"))
+
+
 def _exp_cancel(c: Ctx, a: argparse.Namespace) -> None:
     c[1].emit(c[0].experiments.cancel(a.experiment_id, idempotency_key=a.idempotency_key))
 
@@ -432,6 +445,11 @@ def _build_parser() -> argparse.ArgumentParser:
     leaf(exps, "findings", _exp_findings, help="trust checks of a run (leakage, overfit, duplicates, "
          "imbalance, too-good score)").add_argument("experiment_id")
     leaf(exps, "cancel", _exp_cancel, key=True).add_argument("experiment_id")
+
+    models = top.add_parser("models", help="model versions").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
+    p = leaf(models, "card", _models_card, help="one-page model card (Markdown; --json for the JSON card)")
+    p.add_argument("model_version_id")
+    p.add_argument("--markdown", action="store_true", help="print the Markdown even with --json")
 
     pred = top.add_parser("predict", help="batch predictions").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     p = leaf(pred, "create", _predict_create, key=True, help="score a dataset with a model version")

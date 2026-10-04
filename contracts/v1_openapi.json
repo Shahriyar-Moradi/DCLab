@@ -649,6 +649,30 @@
         "successSchema": "ModelVersionResourceRead"
       }
     },
+    "/v1/model-versions/{model_version_id}/card": {
+      "GET": {
+        "operationId": "read_model_card_v1_model_versions__model_version_id__card_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ModelCardRead"
+      }
+    },
     "/v1/model-versions/{model_version_id}/predictions": {
       "POST": {
         "operationId": "create_prediction_v1_v1_model_versions__model_version_id__predictions_post",
@@ -1645,6 +1669,162 @@
         "timestamp",
         "workflow_run_id",
         "workspace_id"
+      ]
+    },
+    "ModelCardBaseline": {
+      "properties": [
+        "available",
+        "baseline_candidate_id",
+        "baseline_score",
+        "beats_baseline",
+        "clear_margin",
+        "margin",
+        "metric",
+        "text",
+        "winner_score"
+      ],
+      "required": [
+        "available",
+        "text"
+      ]
+    },
+    "ModelCardDriver": {
+      "properties": [
+        "column",
+        "distinguishable",
+        "importance_mean",
+        "importance_se",
+        "importance_std",
+        "rank"
+      ],
+      "required": [
+        "column",
+        "rank"
+      ]
+    },
+    "ModelCardDrivers": {
+      "properties": [
+        "clear_drivers",
+        "columns_tested",
+        "critical_value",
+        "features",
+        "folds",
+        "method",
+        "n_repeats",
+        "reason",
+        "scoring",
+        "status",
+        "text"
+      ],
+      "required": [
+        "status",
+        "text"
+      ]
+    },
+    "ModelCardFinalEvaluation": {
+      "properties": [
+        "decision_threshold",
+        "label",
+        "metric",
+        "metrics",
+        "note",
+        "status",
+        "value"
+      ],
+      "required": [
+        "status"
+      ]
+    },
+    "ModelCardLlm": {
+      "properties": [
+        "counted",
+        "purposes",
+        "used"
+      ],
+      "required": [
+        "used"
+      ]
+    },
+    "ModelCardMetricInWords": {
+      "properties": [
+        "basis",
+        "caveat",
+        "numbers",
+        "text"
+      ],
+      "required": [
+        "basis",
+        "text"
+      ]
+    },
+    "ModelCardRead": {
+      "properties": [
+        "algorithm",
+        "baseline",
+        "candidate_key",
+        "card_version",
+        "content_digest",
+        "created_at",
+        "cv",
+        "data",
+        "drivers",
+        "experiment_id",
+        "family",
+        "final_evaluation",
+        "llm",
+        "markdown",
+        "metric_in_words",
+        "model_version_id",
+        "objective",
+        "project_id",
+        "risks",
+        "split",
+        "target",
+        "untrusted_fields",
+        "version"
+      ],
+      "required": [
+        "baseline",
+        "content_digest",
+        "created_at",
+        "cv",
+        "data",
+        "drivers",
+        "experiment_id",
+        "final_evaluation",
+        "llm",
+        "metric_in_words",
+        "model_version_id",
+        "objective",
+        "risks",
+        "split",
+        "target",
+        "version"
+      ]
+    },
+    "ModelCardRisk": {
+      "properties": [
+        "check",
+        "message",
+        "severity",
+        "status"
+      ],
+      "required": [
+        "check",
+        "message",
+        "severity",
+        "status"
+      ]
+    },
+    "ModelCardRisks": {
+      "properties": [
+        "investigated",
+        "items",
+        "text"
+      ],
+      "required": [
+        "investigated",
+        "text"
       ]
     },
     "ModelVersionArtifactRef": {

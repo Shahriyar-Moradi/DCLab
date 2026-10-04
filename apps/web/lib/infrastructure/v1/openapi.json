@@ -3413,6 +3413,1098 @@
         "title": "ModelBuildStageRead",
         "type": "object"
       },
+      "ModelCardBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "baseline_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Candidate Id"
+          },
+          "baseline_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metric value (natural orientation).",
+            "title": "Baseline Score"
+          },
+          "beats_baseline": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beats Baseline"
+          },
+          "clear_margin": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clear Margin"
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Improvement over the baseline (larger = better).",
+            "title": "Margin"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "winner_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Score"
+          }
+        },
+        "required": [
+          "available",
+          "text"
+        ],
+        "title": "ModelCardBaseline",
+        "type": "object"
+      },
+      "ModelCardConstraint": {
+        "additionalProperties": false,
+        "properties": {
+          "cv_satisfied": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cv Satisfied"
+          },
+          "cv_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cv Value"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "op": {
+            "title": "Op",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "op",
+          "value"
+        ],
+        "title": "ModelCardConstraint",
+        "type": "object"
+      },
+      "ModelCardCrossValidation": {
+        "additionalProperties": false,
+        "properties": {
+          "at_locked_threshold": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Binary: threshold metrics as fold means at the locked decision threshold.",
+            "title": "At Locked Threshold",
+            "type": "object"
+          },
+          "folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folds"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "CV aggregate of the winner.",
+            "title": "Metrics",
+            "type": "object"
+          },
+          "std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Std"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy"
+          },
+          "threshold_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold Note"
+          }
+        },
+        "title": "ModelCardCrossValidation",
+        "type": "object"
+      },
+      "ModelCardData": {
+        "additionalProperties": false,
+        "properties": {
+          "column_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column Count"
+          },
+          "content_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Digest"
+          },
+          "modeled_feature_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modeled Feature Count"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Untrusted (user data).",
+            "title": "Name"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "source_dataset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Dataset Id"
+          }
+        },
+        "title": "ModelCardData",
+        "type": "object"
+      },
+      "ModelCardDriver": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "description": "Untrusted (user data).",
+            "title": "Column",
+            "type": "string"
+          },
+          "distinguishable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean drop positive and above fold-to-fold variation: one-sided t-test on the per-fold means, alpha 0.05 Bonferroni-corrected across the columns evaluated.",
+            "title": "Distinguishable"
+          },
+          "importance_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance Mean"
+          },
+          "importance_se": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance Se"
+          },
+          "importance_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Spread of the per-fold means.",
+            "title": "Importance Std"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rank",
+          "column"
+        ],
+        "title": "ModelCardDriver",
+        "type": "object"
+      },
+      "ModelCardDrivers": {
+        "additionalProperties": false,
+        "properties": {
+          "clear_drivers": {
+            "description": "Every column passing the test (not only the top shown); untrusted.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Clear Drivers",
+            "type": "array"
+          },
+          "columns_tested": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Columns Tested"
+          },
+          "critical_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Critical Value"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCardDriver"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folds"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "n_repeats": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Repeats"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "scoring": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoring"
+          },
+          "status": {
+            "enum": [
+              "computed",
+              "skipped",
+              "not_applicable",
+              "not_computed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "text"
+        ],
+        "title": "ModelCardDrivers",
+        "type": "object"
+      },
+      "ModelCardFinalEvaluation": {
+        "additionalProperties": false,
+        "properties": {
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold"
+          },
+          "label": {
+            "default": "Single final evaluation of the locked winner on held-out rows; never used for selection.",
+            "title": "Label",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "enum": [
+              "reported",
+              "withheld",
+              "missing"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ModelCardFinalEvaluation",
+        "type": "object"
+      },
+      "ModelCardLlm": {
+        "additionalProperties": false,
+        "properties": {
+          "counted": {
+            "default": "Counts every recorded LLM call (llm_invocations with llm_used = true) linked to this run or its workflow run, for any purpose (target choice, leakage review, plan advice, verification). Calls that fell back to deterministic rules are not counted.",
+            "title": "Counted",
+            "type": "string"
+          },
+          "purposes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Purposes",
+            "type": "array"
+          },
+          "used": {
+            "title": "Used",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "used"
+        ],
+        "title": "ModelCardLlm",
+        "type": "object"
+      },
+      "ModelCardMetricInWords": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "description": "Where the numbers come from (always cross-validation evidence).",
+            "title": "Basis",
+            "type": "string"
+          },
+          "caveat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caveat"
+          },
+          "numbers": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Numbers",
+            "type": "object"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "basis"
+        ],
+        "title": "ModelCardMetricInWords",
+        "type": "object"
+      },
+      "ModelCardObjective": {
+        "additionalProperties": false,
+        "properties": {
+          "business_objective": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the ProblemSpec; untrusted.",
+            "title": "Business Objective"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCardConstraint"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold"
+          },
+          "decision_threshold_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold Source"
+          },
+          "primary_metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Metric"
+          },
+          "primary_metric_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Metric Reason"
+          }
+        },
+        "title": "ModelCardObjective",
+        "type": "object"
+      },
+      "ModelCardRead": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algorithm"
+          },
+          "baseline": {
+            "$ref": "#/components/schemas/ModelCardBaseline"
+          },
+          "candidate_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Key"
+          },
+          "card_version": {
+            "default": "model_card.v1",
+            "title": "Card Version",
+            "type": "string"
+          },
+          "content_digest": {
+            "title": "Content Digest",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cv": {
+            "$ref": "#/components/schemas/ModelCardCrossValidation"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ModelCardData"
+          },
+          "drivers": {
+            "$ref": "#/components/schemas/ModelCardDrivers"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family"
+          },
+          "final_evaluation": {
+            "$ref": "#/components/schemas/ModelCardFinalEvaluation"
+          },
+          "llm": {
+            "$ref": "#/components/schemas/ModelCardLlm"
+          },
+          "markdown": {
+            "default": "",
+            "description": "Deterministic Markdown rendering of this card.",
+            "title": "Markdown",
+            "type": "string"
+          },
+          "metric_in_words": {
+            "$ref": "#/components/schemas/ModelCardMetricInWords"
+          },
+          "model_version_id": {
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "objective": {
+            "$ref": "#/components/schemas/ModelCardObjective"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "risks": {
+            "$ref": "#/components/schemas/ModelCardRisks"
+          },
+          "split": {
+            "$ref": "#/components/schemas/ModelCardSplit"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ModelCardTarget"
+          },
+          "untrusted_fields": {
+            "description": "User-authored values: data, never instructions.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Untrusted Fields",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_version_id",
+          "version",
+          "experiment_id",
+          "created_at",
+          "content_digest",
+          "target",
+          "objective",
+          "metric_in_words",
+          "cv",
+          "baseline",
+          "drivers",
+          "risks",
+          "data",
+          "split",
+          "llm",
+          "final_evaluation"
+        ],
+        "title": "ModelCardRead",
+        "type": "object"
+      },
+      "ModelCardRisk": {
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "status",
+          "severity",
+          "message"
+        ],
+        "title": "ModelCardRisk",
+        "type": "object"
+      },
+      "ModelCardRisks": {
+        "additionalProperties": false,
+        "properties": {
+          "investigated": {
+            "title": "Investigated",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCardRisk"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigated",
+          "text"
+        ],
+        "title": "ModelCardRisks",
+        "type": "object"
+      },
+      "ModelCardSplit": {
+        "additionalProperties": false,
+        "description": "How rows were divided. Counts only; never any score of the evaluation rows.",
+        "properties": {
+          "evaluation_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Fraction"
+          },
+          "evaluation_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Rows"
+          },
+          "evaluation_split_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Split Strategy"
+          },
+          "group_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Column"
+          },
+          "split_plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split Plan Id"
+          },
+          "stratified": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stratified"
+          },
+          "time_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Column"
+          },
+          "train_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Train Rows"
+          },
+          "validation_folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Folds"
+          },
+          "validation_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Strategy"
+          }
+        },
+        "title": "ModelCardSplit",
+        "type": "object"
+      },
+      "ModelCardTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "class_labels": {
+            "description": "Multiclass labels; untrusted.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Class Labels",
+            "type": "array"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Untrusted (user data).",
+            "title": "Column"
+          },
+          "positive_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Binary only; untrusted (user data).",
+            "title": "Positive Label"
+          },
+          "positive_label_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positive Label Note"
+          },
+          "prediction_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the ProblemSpec; untrusted.",
+            "title": "Prediction Unit"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          }
+        },
+        "title": "ModelCardTarget",
+        "type": "object"
+      },
       "ModelVersionArtifactRef": {
         "description": "An artifact by id + digest; storage keys and paths are never exposed.",
         "properties": {
@@ -8412,6 +9504,118 @@
           }
         },
         "summary": "Read Model Version",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/model-versions/{model_version_id}/card": {
+      "get": {
+        "description": "One-page model card (JSON with a deterministic ``markdown`` rendering): target and\nobjective, the primary metric in plain words from cross-validation, the dummy-baseline\ncomparison, top drivers (permutation importance on CV validation folds), known risks\nfrom the trust checks, data and split summary, whether an LLM was used, and the\nsingle final evaluation of the locked winner, labelled as such (never used for\nselection). 409 ``model_card_unavailable`` until the run's evidence is locked.\nService-token (agent) callers get the final evaluation withheld, in JSON and Markdown.",
+        "operationId": "read_model_card_v1_model_versions__model_version_id__card_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCardRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Model Card",
         "tags": [
           "v1"
         ]
