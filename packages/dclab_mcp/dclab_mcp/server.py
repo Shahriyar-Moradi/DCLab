@@ -478,7 +478,7 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(get_evidence, read, "Evidence of an experiment: locked metrics, pipeline stage summaries and artifact "
              "digests (no rows, no file contents).")
         tool(get_findings, read, "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate "
-             "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail), "
+             "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | not_evaluated), "
              "a plain-language message and the numbers behind it.")
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(get_model, read, "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + "

@@ -20,6 +20,7 @@ from app.engine.investigate.checks import (
     check_overfit_gap,
     check_target_leakage,
     investigate,
+    investigate_result,
     row_hashes,
     run_evidence_from_result,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "check_overfit_gap",
     "check_target_leakage",
     "investigate",
+    "investigate_result",
     "investigation_payload",
     "row_hashes",
     "run_evidence_from_result",

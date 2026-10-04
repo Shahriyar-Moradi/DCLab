@@ -77,8 +77,10 @@ def test_planted_leak_and_duplicates_produce_findings(client, db_session, setup)
     assert body["investigated"] is True and body["version"] == "investigate.v1"
     assert [item["check"] for item in body["checks"]] == list(FINDING_CHECKS)
     summary = body["summary"]
-    assert summary["passed"] + summary["warnings"] + summary["failures"] == 5
+    assert summary["passed"] + summary["warnings"] + summary["failures"] == 5 and summary["not_evaluated"] == 0
     checks = _checks(body)
+    assert not [item for item in body["checks"]
+                if item["status"] == "not_evaluated" or "not_evaluated_reason" in item["evidence"]]
 
     leakage = checks["target_leakage"]
     assert leakage["status"] == "warning" and leakage["recommendation_kind"] == "review_columns"
@@ -103,7 +105,8 @@ def test_planted_leak_and_duplicates_produce_findings(client, db_session, setup)
     by_check = {row.evidence["check"]: row for row in rows}
     assert {"target_leakage", "duplicate_rows"} <= set(by_check)
     assert by_check["duplicate_rows"].finding_type == "duplicates"
-    assert {row.evidence["check"] for row in rows} == {c for c, item in checks.items() if item["status"] != "pass"}
+    assert {row.evidence["check"] for row in rows} == {
+        c for c, item in checks.items() if item["status"] in {"warning", "fail"}}
     assert all(row.created_at <= experiment.scientific_evidence_locked_at for row in rows)
     with pytest.raises(DBAPIError):
         with db.begin_nested():
@@ -143,6 +146,8 @@ def test_clean_run_has_no_leak_or_duplicate_findings(client, db_session, setup):
     experiment_id = _run(client, db_session, setup, _csv(seed=5))
     body = client.get(f"/v1/experiments/{experiment_id}/findings", headers=_h(setup)).json()
     checks = _checks(body)
+    assert body["summary"]["not_evaluated"] == 0
+    assert not [item for item in body["checks"] if "not_evaluated_reason" in item["evidence"]]
     assert checks["target_leakage"]["status"] == "pass"
     assert checks["duplicate_rows"]["status"] == "pass"
     assert checks["implausible_score"]["status"] == "pass"

@@ -40,12 +40,12 @@
       "dclab_mcp"
     ],
     "python_file_count": 569,
-    "python_line_count": 144914,
+    "python_line_count": 145161,
     "repository_file_count": 1019,
     "sdk_test_file_count": 3,
     "test_file_count": 150,
     "ts_tsx_file_count": 173,
-    "ts_tsx_line_count": 23736,
+    "ts_tsx_line_count": 23743,
     "web_e2e_file_count": 3
   },
   "openapi_operation_count": 196,

@@ -1540,6 +1540,7 @@
     "ExperimentFindingsSummary": {
       "properties": [
         "failures",
+        "not_evaluated",
         "passed",
         "warnings"
       ],

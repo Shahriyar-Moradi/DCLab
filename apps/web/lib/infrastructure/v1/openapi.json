@@ -2153,6 +2153,7 @@
                 "enum": [
                   "review_columns",
                   "regularize",
+                  "simpler_model",
                   "deduplicate",
                   "class_weights",
                   "collect_more_data",
@@ -2180,7 +2181,8 @@
             "enum": [
               "pass",
               "warning",
-              "fail"
+              "fail",
+              "not_evaluated"
             ],
             "title": "Status",
             "type": "string"
@@ -2197,7 +2199,7 @@
       },
       "ExperimentFindingsRead": {
         "additionalProperties": false,
-        "description": "The five core trust checks of one run. ``investigated`` is false for runs that\nfinished before P4.10-A (or have not finished): ``checks`` is then empty.",
+        "description": "The five core trust checks of one run. ``investigated`` is false for runs that\nfinished before P4.10-A (or have not finished): ``checks`` is then empty. A check\nthat could not run is ``not_evaluated`` (counted separately, never as passed).",
         "properties": {
           "checks": {
             "items": {
@@ -2243,6 +2245,11 @@
           "failures": {
             "default": 0,
             "title": "Failures",
+            "type": "integer"
+          },
+          "not_evaluated": {
+            "default": 0,
+            "title": "Not Evaluated",
             "type": "integer"
           },
           "passed": {
@@ -7707,7 +7714,7 @@
     },
     "/v1/experiments/{experiment_id}/findings": {
       "get": {
-        "description": "Five plain-language trust checks of a run: target leakage (from the leakage\naudit), train-vs-CV overfit gap, duplicate rows (within training and across the\nsplit, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a\nstatus (pass | warning | fail), a severity, the numbers behind it and a\nrecommendation kind. Evidence comes from training rows and CV folds only, never\nfinal-holdout values. Runs finished before the checks existed: ``investigated: false``.",
+        "description": "Five plain-language trust checks of a run: target leakage (from the leakage\naudit), train-vs-CV overfit gap, duplicate rows (within training and across the\nsplit, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a\nstatus (pass | warning | fail, or not_evaluated with a reason when its evidence is\nmissing or it errored), a severity, the numbers behind it and a\nrecommendation kind. Evidence comes from training rows and CV folds only, never\nfinal-holdout values. Runs finished before the checks existed: ``investigated: false``.",
         "operationId": "read_experiment_findings_v1_experiments__experiment_id__findings_get",
         "parameters": [
           {

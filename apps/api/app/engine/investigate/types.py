@@ -17,8 +17,10 @@ from app.domain.findings import (
 
 @dataclass(frozen=True)
 class Finding:
-    """One trust check. ``evidence`` holds numbers and column names only (training
-    rows and CV folds); ``message`` renders the plain-language template."""
+    """One trust check. ``status`` is pass | warning | fail, or ``not_evaluated`` (with
+    ``evidence["not_evaluated_reason"]``) when its evidence is missing or the check
+    errored. ``evidence`` holds numbers and column names only (training rows and CV
+    folds); ``message`` renders the plain-language template."""
 
     check: FindingCheck
     status: FindingStatus
@@ -51,14 +53,21 @@ class RunEvidence:
     winner_cv: Mapping[str, float] = field(default_factory=dict)
     winner_cv_std: Mapping[str, float] = field(default_factory=dict)
     winner_class_weighted: bool = False
+    # Tuned winners are re-tuned on the full training partition before the final fit.
+    final_fit_retuned: bool = False
+    n_folds: int | None = None
     # Winner refit on the full training partition, scored on those same rows (raw scale).
     train_metrics: Mapping[str, float] = field(default_factory=dict)
     baseline_family: str | None = None
     baseline_cv: Mapping[str, float] = field(default_factory=dict)
+    # Best trained linear/logistic candidate (the less flexible reference model).
+    simple_family: str | None = None
+    simple_cv: Mapping[str, float] = field(default_factory=dict)
     class_weighted_candidates: int = 0
     class_distribution: Mapping[str, int] | None = None
     minority_class_fraction: float | None = None
     imbalance_ratio: float | None = None
+    leakage_audited: bool = False
     leakage_risks: Sequence[Mapping[str, Any]] = ()
     leakage_exclusions: Sequence[Mapping[str, Any]] = ()
     allowed_features: tuple[str, ...] = ()

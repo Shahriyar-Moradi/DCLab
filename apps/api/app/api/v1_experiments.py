@@ -231,7 +231,8 @@ def read_experiment_findings(
     """Five plain-language trust checks of a run: target leakage (from the leakage
     audit), train-vs-CV overfit gap, duplicate rows (within training and across the
     split, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a
-    status (pass | warning | fail), a severity, the numbers behind it and a
+    status (pass | warning | fail, or not_evaluated with a reason when its evidence is
+    missing or it errored), a severity, the numbers behind it and a
     recommendation kind. Evidence comes from training rows and CV folds only, never
     final-holdout values. Runs finished before the checks existed: ``investigated: false``."""
 
