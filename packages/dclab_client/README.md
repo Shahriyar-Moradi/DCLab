@@ -10,6 +10,11 @@ with DCLabClient("https://dclab.example/api/backend", token="dclab_st_...") as a
     project = api.projects.create(name="Churn")
     upload = api.datasets.upload(project.id, "rows.csv")
     run = api.experiments.create(project_id=project.id, dataset_id=upload.id, target_column="label")
+    # later: score new rows with a model version (the worker scores; poll until terminal)
+    rows = api.datasets.upload(project.id, "new_rows.csv", purpose="scoring")
+    pred = api.predictions.create(model_version_id="<model version id>", dataset_id=rows.id)
+    if api.predictions.get(pred.id).status == "completed":
+        api.predictions.download(pred.id, to="predictions.csv")
 ```
 
 Every `/v1` operation a bearer token can call has an SDK method (the
@@ -26,16 +31,19 @@ deliberately **not** called `dclab`: the server repo's own console script
 dclab-cli login --api-url https://... --workspace <id>   # token from stdin or prompt (--token warns)
 dclab-cli whoami | logout
 dclab-cli projects list | create --name N | get ID
-dclab-cli data upload FILE --project ID
+dclab-cli data upload FILE --project ID [--purpose training|scoring]
 dclab-cli experiments list | get ID | run --project P --dataset D [--target C] [--intent T]
 dclab-cli experiments branch ID --intent T (--changes JSON | --changes-file F)
 dclab-cli experiments compare ID ID... | code ID [--notebook] [-o FILE] | cancel ID
+dclab-cli predict create --model-version MV --dataset D [--format csv|parquet] [--wait [--timeout S]]
+dclab-cli predict get ID | download ID -o FILE
 dclab-cli decisions list --project P | propose --project P --type T --subject-kind K --rationale R | get ID
 ```
 
 Add `--json` to any command for machine output on stdout (`code` prints the
 script source by default). Commands that create things take
-`--idempotency-key` so a retry is safe.
+`--idempotency-key` so a retry is safe. `predict create --wait` exits 1 when the
+prediction failed and 7 when it is still running at `--timeout`.
 
 Credentials: `login` verifies the token with `GET /v1/me`, then stores
 `{token, api_url, workspace}` in `$XDG_CONFIG_HOME/dclab/config.json`

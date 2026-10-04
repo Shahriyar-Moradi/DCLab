@@ -158,6 +158,45 @@ class V1Transport:
 
         ``data`` + ``files`` send ``multipart/form-data`` instead of ``json``."""
 
+        response, url_path, rid, sent_key = self._send(
+            method, path, json=json, params=params, request_id=request_id, idempotency_key=idempotency_key,
+            if_match=if_match, data=data, files=files, if_none_match=if_none_match,
+        )
+        if not response.content:
+            return None, response.headers
+        try:
+            return response.json(), response.headers
+        except ValueError as exc:
+            raise DCLabAPIError(
+                response.status_code,
+                response.text,
+                method=method.upper(),
+                path=url_path,
+                request_id=rid,
+                idempotency_key=sent_key,
+            ) from exc
+
+    def request_bytes(self, path: str, *, request_id: str | None = None) -> tuple[bytes, httpx.Headers]:
+        """``GET`` a /v1 file download: raw body plus headers (errors still map to typed errors)."""
+
+        response, _path, _rid, _key = self._send("GET", path, request_id=request_id, accept="*/*")
+        return response.content, response.headers
+
+    def _send(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        request_id: str | None = None,
+        idempotency_key: str | None = None,
+        if_match: str | None = None,
+        data: dict[str, str] | None = None,
+        files: dict[str, Any] | None = None,
+        if_none_match: str | None = None,
+        accept: str = "application/json",
+    ) -> tuple[httpx.Response, str, str | None, str | None]:
         url_path = self._v1_path(path)
         # A service token (``dclab_st_``) is pinned to its workspace server-side.
         service_token = (self._token or "").startswith(SERVICE_TOKEN_PREFIX)
@@ -170,6 +209,7 @@ class V1Transport:
             if_match=if_match,
             if_none_match=if_none_match,
         )
+        headers["Accept"] = accept
         query = None
         if params:
             query = {key: value for key, value in params.items() if value is not None}
@@ -194,19 +234,7 @@ class V1Transport:
                 request_id=rid,
                 idempotency_key=sent_key,
             )
-        if not response.content:
-            return None, response.headers
-        try:
-            return response.json(), response.headers
-        except ValueError as exc:
-            raise DCLabAPIError(
-                response.status_code,
-                response.text,
-                method=method.upper(),
-                path=url_path,
-                request_id=rid,
-                idempotency_key=sent_key,
-            ) from exc
+        return response, url_path, rid, sent_key
 
     def _v1_path(self, path: str) -> str:
         cleaned = "/" + path.lstrip("/")

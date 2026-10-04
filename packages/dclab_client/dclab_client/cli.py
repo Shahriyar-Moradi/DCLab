@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
@@ -50,6 +51,8 @@ ENV_WORKSPACE = "DCLAB_WORKSPACE"
 ENV_ALLOW_INSECURE_HTTP = "DCLAB_ALLOW_INSECURE_HTTP"
 DEFAULT_API_URL = "http://localhost:3000/api/backend"
 HTTP_HOST_ALLOWLIST = frozenset({"api"})  # the compose API host
+WAIT_POLL_SECONDS = 2.0
+_sleep, _monotonic = time.sleep, time.monotonic  # patched in tests
 
 
 class ConfigError(DCLabClientError):
@@ -175,9 +178,10 @@ def _cell(value: Any) -> str:
 
 
 class _Out:
-    def __init__(self, stdout: TextIO, as_json: bool) -> None:
+    def __init__(self, stdout: TextIO, as_json: bool, stderr: TextIO | None = None) -> None:
         self.stdout = stdout
         self.as_json = as_json
+        self.stderr = stderr or sys.stderr
 
     def emit(self, value: Any, *, table: tuple[str, ...] | None = None, rows: Any = None) -> None:
         data = _plain(value)
@@ -236,8 +240,33 @@ def _data_upload(c: Ctx, a: argparse.Namespace) -> None:
     path = Path(a.file)
     if not path.is_file():
         raise DCLabClientError(f"not a file: {a.file}")
-    c[1].emit(c[0].datasets.upload(a.project, path, content_type=a.content_type,
+    c[1].emit(c[0].datasets.upload(a.project, path, content_type=a.content_type, purpose=a.purpose,
                                    idempotency_key=a.idempotency_key))
+
+
+def _predict_create(c: Ctx, a: argparse.Namespace) -> int:
+    row = c[0].predictions.create(model_version_id=a.model_version, dataset_id=a.dataset,
+                                  output_format=a.format, idempotency_key=a.idempotency_key)
+    if a.wait:
+        deadline = _monotonic() + a.timeout
+        while not row.is_terminal and _monotonic() < deadline:
+            _sleep(WAIT_POLL_SECONDS)
+            row = c[0].predictions.get(row.id)
+    c[1].emit(row)
+    if a.wait and not row.is_terminal:
+        print(f"error: prediction {row.id} still {row.status} after {a.timeout:g}s; "
+              "poll with `dclab-cli predict get`", file=c[1].stderr)
+        return EXIT_RETRYABLE
+    return EXIT_ERROR if row.status == "failed" else EXIT_OK
+
+
+def _predict_get(c: Ctx, a: argparse.Namespace) -> None:
+    c[1].emit(c[0].predictions.get(a.prediction_id))
+
+
+def _predict_download(c: Ctx, a: argparse.Namespace) -> None:
+    content = c[0].predictions.download(a.prediction_id, to=a.output)
+    c[1].emit({"prediction_id": a.prediction_id, "written_to": a.output, "size_bytes": len(content)})
 
 
 def _exp_list(c: Ctx, a: argparse.Namespace) -> None:
@@ -363,6 +392,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("file")
     p.add_argument("--project", required=True, help="project id")
     p.add_argument("--content-type")
+    p.add_argument("--purpose", choices=("training", "scoring"),
+                   help="scoring: rows to score with `predict create` (default training)")
 
     exps = top.add_parser("experiments", help="experiments").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     p = leaf(exps, "list", _exp_list)
@@ -389,6 +420,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notebook", action="store_true", help="the notebook instead of the script")
     p.add_argument("--output", "-o", help="write the source to this file")
     leaf(exps, "cancel", _exp_cancel, key=True).add_argument("experiment_id")
+
+    pred = top.add_parser("predict", help="batch predictions").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
+    p = leaf(pred, "create", _predict_create, key=True, help="score a dataset with a model version")
+    p.add_argument("--model-version", required=True, help="model version id")
+    p.add_argument("--dataset", required=True, help="dataset id (uploaded with --purpose scoring)")
+    p.add_argument("--format", choices=("csv", "parquet"), default="csv", help="output file format")
+    p.add_argument("--wait", action="store_true", help="poll until completed or failed")
+    p.add_argument("--timeout", type=float, default=600.0, help="seconds to --wait (default 600)")
+    leaf(pred, "get", _predict_get).add_argument("prediction_id")
+    p = leaf(pred, "download", _predict_download, help="save a completed predictions file")
+    p.add_argument("prediction_id")
+    p.add_argument("--output", "-o", required=True, help="file to write")
 
     decs = top.add_parser("decisions", help="decision records").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     p = leaf(decs, "list", _dec_list)
@@ -465,7 +508,7 @@ def main(
         return EXIT_USAGE
     except SystemExit as exc:  # --help / --version
         return int(exc.code or 0)
-    out = _Out(stdout, args.json_out)
+    out = _Out(stdout, args.json_out, stderr)
     try:
         if args.group == "login":
             _login(args, env, out, stdin, stderr, http)
@@ -480,8 +523,8 @@ def main(
             return EXIT_AUTH
         with DCLabClient(str(settings["api_url"]), token=settings["token"],
                          workspace_id=settings["workspace"], http=http) as api:
-            args.func((api, out), args)
-        return EXIT_OK
+            result = args.func((api, out), args)
+        return result if isinstance(result, int) else EXIT_OK
     except DCLabAPIError as exc:
         _print_api_error(exc, stderr, as_json)
         return exit_code_for(exc)

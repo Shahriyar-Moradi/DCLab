@@ -1164,6 +1164,64 @@
         "workspace_id"
       ]
     },
+    "BatchPredictionOutput": {
+      "properties": [
+        "artifact_id",
+        "content_digest",
+        "download_path",
+        "mime_type",
+        "size_bytes"
+      ],
+      "required": [
+        "artifact_id",
+        "content_digest",
+        "download_path",
+        "size_bytes"
+      ]
+    },
+    "BatchPredictionRead": {
+      "properties": [
+        "completed_at",
+        "contract_check",
+        "created_at",
+        "decision_threshold",
+        "error_code",
+        "error_message",
+        "execution_request_id",
+        "id",
+        "input_dataset_id",
+        "model_release_id",
+        "model_version_id",
+        "output",
+        "output_format",
+        "project_id",
+        "rows_in",
+        "rows_out",
+        "started_at",
+        "status",
+        "workspace_id"
+      ],
+      "required": [
+        "completed_at",
+        "contract_check",
+        "created_at",
+        "decision_threshold",
+        "error_code",
+        "error_message",
+        "execution_request_id",
+        "id",
+        "input_dataset_id",
+        "model_version_id",
+        "output",
+        "output_format",
+        "project_id",
+        "rows_in",
+        "rows_out",
+        "started_at",
+        "status",
+        "workspace_id"
+      ]
+    },
     "DatasetIngestionRead": {
       "properties": [
         "bytes_read",

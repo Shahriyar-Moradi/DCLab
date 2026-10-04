@@ -20,6 +20,8 @@ from dclab_client.errors import (
 )
 from dclab_client.types import (
     Artifact,
+    BatchPrediction,
+    BatchPredictionOutput,
     Dataset,
     DatasetIngestion,
     DatasetUpload,
@@ -58,6 +60,8 @@ __all__ = [
     "Artifact",
     "AuthenticationError",
     "BadRequestError",
+    "BatchPrediction",
+    "BatchPredictionOutput",
     "ConflictError",
     "DCLabAPIError",
     "DCLabClient",

@@ -108,6 +108,7 @@ class Dataset(BaseModel):
     content_digest: str | None = None
     row_count: int
     column_count: int
+    purpose: str = "training"
     created_at: datetime
 
 
@@ -156,6 +157,7 @@ class DatasetUpload(_Versioned):
     size_bytes: int | None = None
     row_count: int
     column_count: int
+    purpose: str = "training"
     created_at: datetime
     ingestion: DatasetIngestion
 
@@ -613,3 +615,42 @@ class ModelVersion(_Versioned):
     is_champion: bool
     ref_kinds: list[str] = Field(default_factory=list)
     artifacts: list[ModelVersionArtifact] = Field(default_factory=list)
+
+
+class BatchPredictionOutput(BaseModel):
+    """The predictions file by id + digest; ``download_path`` is the authorized /v1 download."""
+
+    artifact_id: UUID
+    content_digest: str
+    size_bytes: int
+    mime_type: str | None = None
+    download_path: str
+
+
+class BatchPrediction(_Versioned):
+    """One scoring run of a model version over a dataset (P4.9-A). ``contract_check``
+    names required/missing/ignored columns; ``error_message`` is generic text."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID | None = None
+    model_version_id: UUID
+    model_release_id: UUID | None = None
+    input_dataset_id: UUID
+    execution_request_id: UUID | None = None
+    status: str
+    output_format: str
+    rows_in: int | None = None
+    rows_out: int | None = None
+    decision_threshold: float | None = None
+    contract_check: dict[str, Any] | None = None
+    output: BatchPredictionOutput | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in {"completed", "failed"}
