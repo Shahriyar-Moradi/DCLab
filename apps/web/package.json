@@ -7,6 +7,10 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
+    "gen:api": "npm run gen:api:openapi && npm run gen:api:types",
+    "gen:api:openapi": "cd ../.. && PYTHONPATH=apps/api ${DCLAB_PYTHON:-.venv/bin/python} -m scripts.export_web_openapi",
+    "gen:api:types": "openapi-typescript lib/infrastructure/v1/openapi.json -o lib/infrastructure/v1/schema.d.ts",
+    "gen:api:check": "npm run gen:api && git diff --exit-code -- lib/infrastructure/v1/",
     "test:components": "node --experimental-strip-types --test lib/infrastructure/*.test.ts next.config.test.mjs",
     "e2e:prepare": "cd ../.. && DATABASE_URL=${DCLAB_E2E_DATABASE_URL:-postgresql://localhost:55432/dclab_e2e_verify} .venv/bin/python scripts/seed_e2e_verification.py --recreate",
     "e2e": "npm run e2e:prepare && playwright test"
@@ -29,6 +33,7 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "15.5.25",
+    "openapi-typescript": "7.13.0",
     "postcss": "8.5.28",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
