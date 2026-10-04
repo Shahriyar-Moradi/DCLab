@@ -1,8 +1,8 @@
 """Worker handler registry: handler_key -> callable.
 
-``labs.auto_train`` and ``auth.session_cleanup`` are shipped handlers. Future
-capabilities register here without a second queue table. MCP jobs are not
-registered.
+``labs.auto_train``, ``auth.session_cleanup`` and ``models.batch_predict`` are
+shipped handlers. Future capabilities register here without a second queue
+table. MCP jobs are not registered.
 """
 
 from __future__ import annotations
@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import MlJob
 from app.domain.errors import UnknownJobHandlerError
-from app.domain.ml_jobs import HANDLER_AUTH_SESSION_CLEANUP, HANDLER_LABS_AUTO_TRAIN
+from app.domain.ml_jobs import (
+    HANDLER_AUTH_SESSION_CLEANUP,
+    HANDLER_LABS_AUTO_TRAIN,
+    HANDLER_MODELS_BATCH_PREDICT,
+)
 
 Heartbeat = Callable[[], None]
 
@@ -89,3 +93,17 @@ def handle_auth_session_cleanup(
     cleanup_expired_auth_state(db)
     if on_heartbeat is not None:
         on_heartbeat()
+
+
+@register_handler(HANDLER_MODELS_BATCH_PREDICT)
+def handle_models_batch_predict(
+    db: Session,
+    job: MlJob,
+    *,
+    on_heartbeat: Heartbeat | None = None,
+) -> None:
+    """P4.9-A: the only place a stored model is loaded (worker process)."""
+
+    from app.services.batch_prediction_service import run_batch_prediction_job
+
+    run_batch_prediction_job(db, job, on_heartbeat=on_heartbeat)

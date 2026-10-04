@@ -2,6 +2,7 @@
   "artifacts",
   "auth_recovery_tokens",
   "auth_sessions",
+  "batch_predictions",
   "business_domains",
   "business_profiles",
   "client_lab_run_audits",

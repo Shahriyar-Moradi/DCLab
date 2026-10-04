@@ -873,6 +873,7 @@ export const SERVICE_TOKEN_SCOPES = [
   "experiments:write",
   "decisions:propose",
 ] as const;
+export type ServiceTokenScope = (typeof SERVICE_TOKEN_SCOPES)[number];
 export const ServiceTokenSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),

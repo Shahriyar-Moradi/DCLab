@@ -10,6 +10,7 @@ ownership rules remain valid.
 
 ```
 External agents (Claude Code, Cursor) ──MCP──► /v1 ──► services   (Phase 3)
+In-app assistant (Studio chat) ── shared tool catalog ──► read: services · write: confirm card ──► /v1   (Track A, Phase 4+)
 Internal agents (NOOA classes) ── typed proposals ──► proposal service ──► same services (Phase 6)
 Typed semantic judgments (Jev) ── advisory answers ──► decision ledger (shadow first, Phase 6)
 ```
@@ -18,6 +19,11 @@ The authority model is unchanged from `AGENT_FIRST_MVP_ARCHITECTURE.md` §4:
 agents observe, explain and **propose**; deterministic services validate and
 execute; a human (or an explicit policy) accepts. "Higher autonomy changes who
 initiates a command, not who validates or executes it."
+
+The in-app assistant (ADR 0009, `prompts/ASSISTANT.md`) is not a second
+runtime: it is a DCLab-owned bounded loop of typed single LLM calls through the
+same gateway, using the same tool catalog as MCP and the same `agent_runs` /
+`agent_proposals` tables (built early, in A2-A).
 
 The internal runtime set is reduced from four (LangGraph, Deep Agents, OpenAI
 Agents, NOOA) to **one: NOOA**, plus deterministic fakes. LangGraph/Deep Agents/

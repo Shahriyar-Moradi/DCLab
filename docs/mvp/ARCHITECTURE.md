@@ -14,8 +14,11 @@ scientifically, and remembers why each decision was made.
 - **Primary users:** data scientists and ML engineers working on structured data
   (classification, regression; forecasting later).
 - **Interfaces, in delivery order:** `/v1` API → Python SDK/CLI → **MCP server**
-  (Claude Code / Cursor / Codex drive DCLab) → **Studio** (web) → internal agents
-  (NOOA proposal classes) → notebook/IDE plugin (later).
+  (Claude Code / Cursor / Codex drive DCLab) → **Studio** (web) with the **in-app
+  assistant** (chat panel; same tool catalog as MCP, read tools run, write tools
+  become confirm cards — ADR 0009, `prompts/ASSISTANT.md`) → internal agents
+  (NOOA proposal classes) → notebook/IDE plugin (later). Every capability ships
+  its Studio screen in the phase that builds it (`UI_COVERAGE.md`).
 - **Three views of one truth** (from `docs/agentic-program/DCLAB_CORE_CONCEPT.md:20-38`):
   Level 1 conversation/actions, Level 2 ML workflow graph, Level 3 code/infra.
   Every view resolves to the same node IDs.
@@ -41,6 +44,7 @@ scientifically, and remembers why each decision was made.
               │  (nodes, refs,     (idempotent intent → (explorers, compare,    │
               │   staleness)        ExecutionRequest)    timeline)              │
               │  Decision records  Agent/proposal svc   LLM gateway (+ledger)   │
+              │  Assistant svc (tool catalog shared with MCP, SSE to Studio)    │
               └──────────┬──────────────────┬──────────────────────┬────────────┘
                          │                  │                      │
                  PostgreSQL 16         MlJob queue           Object storage
@@ -208,7 +212,7 @@ recorded reason.
 | `app/sim/*`, opportunities/predictions/decisions/simulation/insights services + `/app` pages | **Freeze** (Decision.ai vertical): frozen now (2026-10-01) — no new features, mandatory tenant filtering, keep tests green, hide behind flag in Studio IA; removal-or-rework decision at the Phase 9 business-layer rework; hard deadline: removed or formally re-homed by 2027-03-31 (see [S0-P04D gate](../verification/S0_P04D_RETIREMENT_ISOLATION_GATE.md)) |
 | Lineage, scientific lineage, evidence lock, model_build*, reproducibility, pipeline_verifier, explorers | **Keep** — state-graph writers and Studio read models |
 | `engine/serving/artifacts.py` and every `REPO_ROOT/data|artifacts` write | **Refactor** to `ObjectStorage` (P1.3) |
-| `llm_client.py`, `openai_provider.py`, `llm_invocations` | **Refactor** into one LLM gateway with provider interface and nullable run FKs (P2.2, P6.2) |
+| `llm_client.py`, `openai_provider.py`, `llm_invocations` | **Refactor** into one LLM gateway with provider interface and nullable run FKs (P2.2, A2-A) |
 | `/v1`, `packages/dclab_client`, `execution_requests`, `ml_jobs`, job handlers, worker CLI | **Keep and extend** — base of SDK/CLI/MCP |
 | Auth/session/CSRF/BFF/workspace/capabilities | **Keep** |
 | `lab_decision_records`, `dataset_profiles`, `prediction_tasks`, `environments`, `client_lab_runs*` | **Freeze**, drop in a later contract migration |

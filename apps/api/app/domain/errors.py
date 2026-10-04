@@ -274,6 +274,10 @@ class ExperimentRequestError(Exception):
         return {"code": self.code, "message": self.detail_message}
 
 
+class BatchPredictionError(ExperimentRequestError):
+    """A batch prediction cannot be created or downloaded (P4.9-A): stable ``code``."""
+
+
 class RunQuotaExceededError(Exception):
     """The workspace already holds its maximum of queued/running runs (P3.1-B2). 429."""
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -28,6 +29,8 @@ from app.services.evidence_lock_service import (
     lock_scientific_evidence,
     missing_scientific_evidence,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PersistenceInput(BaseModel):
@@ -68,6 +71,42 @@ class PersistenceOutput(BaseModel):
     experiment: Experiment
     result: dict[str, Any]
     log: dict[str, Any]
+
+
+def _investigation(inp: PersistenceInput, result: dict[str, Any]) -> dict[str, Any]:
+    """The five trust checks of this run. Test rows enter only as row hashes of the
+    model columns (duplicate check); no check reads a holdout value or label."""
+
+    from app.engine.investigate import (
+        investigate,
+        investigation_payload,
+        row_hashes,
+        run_evidence_from_result,
+    )
+    from app.engine.validation.splits import SOURCE_ROW_COLUMN
+
+    try:
+        evidence = run_evidence_from_result(result)
+        frame = inp.frame
+        split = result.get("split") if isinstance(result.get("split"), dict) else {}
+        train_rows, test_rows = split.get("train_source_rows"), split.get("test_source_rows")
+        if (train_rows is None or test_rows is None) and inp.split_assignment is not None:
+            train_rows, test_rows = list(inp.split_assignment.train_folds), list(inp.split_assignment.holdout_rows)
+        target = (result.get("task") or {}).get("target")
+        columns = [
+            name for name in (evidence.winner_features or tuple(inp.modeled_cols))
+            if name in frame.columns and name not in {SOURCE_ROW_COLUMN, target}
+        ]
+        train_features = test_hashes = None
+        if columns and train_rows is not None and test_rows is not None:
+            source = frame[SOURCE_ROW_COLUMN] if SOURCE_ROW_COLUMN in frame.columns else frame.index.to_series()
+            train_features = frame.loc[source.isin(set(train_rows)).to_numpy(), columns]
+            test_hashes = row_hashes(frame.loc[source.isin(set(test_rows)).to_numpy(), columns])
+        findings = investigate(evidence, train_features=train_features, test_row_hashes=test_hashes)
+        return investigation_payload(findings)
+    except Exception:  # noqa: BLE001 - a check bug must not fail a trained run
+        logger.exception("trust checks failed for experiment %s", inp.experiment.id)
+        return {"version": None, "error": "investigation_failed", "checks": []}
 
 
 def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput:
@@ -188,6 +227,10 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
     }
     result["stage_timings"] = [*result["stage_timings"], ml_execution_total]
     log["stage_timings"] = list(result["stage_timings"])
+    if not reuse_locked_run:
+        # P4.10-A trust checks: stored on the result now and as findings rows with the
+        # lineage below, both before the evidence lock.
+        result["investigation"] = _investigation(inp, result)
     experiment.result = result
     db.commit()
 

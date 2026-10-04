@@ -19,7 +19,6 @@ champion's holdout under ``final_holdout_report_only``.
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import re
 import sys
@@ -33,7 +32,8 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
 from dclab_client import DCLabClient
-from dclab_client.cli import ENV_API_URL, ENV_TOKEN, ENV_WORKSPACE, load_config
+from dclab_client.cli import ENV_WORKSPACE, ConfigError, bind_token_to_url, load_config
+from dclab_client.cli import check_api_url as _check_api_url
 from dclab_client.errors import DCLabAPIError, DCLabClientError, NotFoundError
 from dclab_client.types import DecisionRecord, Experiment
 from dclab_mcp._version import __version__
@@ -52,12 +52,12 @@ SERVICE_TOKEN_PREFIX = "dclab_st_"
 ENV_READ = "DCLAB_MCP_READ_ENABLED"
 ENV_WRITE = "DCLAB_MCP_WRITE_ENABLED"
 ENV_ALLOW_INSECURE_HTTP = "DCLAB_MCP_ALLOW_INSECURE_HTTP"
-# Plain-http hosts besides loopback / *.localhost: the docker compose API service.
-HTTP_HOST_ALLOWLIST = frozenset({"api"})
 DEFAULT_API_URL = "http://localhost:8001"  # the API directly: the BFF drops Authorization
 LIST_LIMIT = 50
 GRAPH_NODE_LIMIT = 40
 RECENT_EXPERIMENTS = 10
+FINDING_LIMIT = 10
+FINDING_EVIDENCE_CHARS = 1500
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 
@@ -85,10 +85,6 @@ Opt = Annotated[str | None, Field(max_length=200)]
 Obj = Annotated[dict[str, Any] | None, Field()]
 
 
-class ConfigError(RuntimeError):
-    """The server cannot start (missing or non-service token, unsafe API URL)."""
-
-
 def _flag(raw: str | None, default: bool) -> bool:
     if raw is None or not raw.strip():
         return default
@@ -109,22 +105,11 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
     """Environment over the ``dclab-cli login`` config, with the token bound to its URL:
     a stored token is only sent to the stored URL (an env URL that differs is refused)."""
 
-    stored = load_config(env)
-    env_url = (env.get(ENV_API_URL) or "").strip() or None
-    if env.get(ENV_TOKEN):
-        token, api_url = env[ENV_TOKEN], env_url or stored.get("api_url") or DEFAULT_API_URL
-    else:
-        token, api_url = stored.get("token"), stored.get("api_url") or env_url or DEFAULT_API_URL
-        if token and not stored.get("api_url"):
-            raise ConfigError("the stored token has no stored api_url; log in again with --api-url or set "
-                              f"{ENV_TOKEN} and {ENV_API_URL}")
-        if token and env_url and env_url.rstrip("/") != api_url.rstrip("/"):
-            raise ConfigError(f"{ENV_API_URL} differs from the URL the stored token was issued for; "
-                              f"set {ENV_TOKEN} too, or log in again")
+    token, api_url = bind_token_to_url(env, load_config(env), DEFAULT_API_URL)
     return Settings(
         api_url=api_url,
         token=token,
-        workspace=env.get(ENV_WORKSPACE) or stored.get("workspace"),
+        workspace=env.get(ENV_WORKSPACE) or load_config(env).get("workspace"),
         read_enabled=_flag(env.get(ENV_READ), True),
         write_enabled=_flag(env.get(ENV_WRITE), False),
         allow_insecure_http=_flag(env.get(ENV_ALLOW_INSECURE_HTTP), False),
@@ -132,24 +117,10 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
 
 
 def check_api_url(url: str, *, allow_insecure_http: bool = False) -> str:
-    """https anywhere; plain http only to loopback, ``localhost`` / ``*.localhost`` or
-    the compose API host (``api``), unless ``DCLAB_MCP_ALLOW_INSECURE_HTTP=1`` opts in,
-    so the token never crosses a network in clear text by accident."""
+    """The shared SDK rule (https, or plain http only to loopback / the compose host)
+    with the MCP opt-in variable ``DCLAB_MCP_ALLOW_INSECURE_HTTP``."""
 
-    parsed = httpx.URL(url)
-    host = (parsed.host or "").lower()
-    if parsed.scheme == "https" and host:
-        return url
-    if parsed.scheme == "http" and host:
-        if allow_insecure_http or host == "localhost" or host.endswith(".localhost") or host in HTTP_HOST_ALLOWLIST:
-            return url
-        try:
-            if ipaddress.ip_address(host).is_loopback:
-                return url
-        except ValueError:
-            pass
-    raise ConfigError(f"DCLAB_API_URL must be https (plain http only for localhost or the compose host "
-                      f"'api'; set {ENV_ALLOW_INSECURE_HTTP}=1 to opt in)")
+    return _check_api_url(url, allow_insecure_http=allow_insecure_http, opt_in_env=ENV_ALLOW_INSECURE_HTTP)
 
 
 def _ok(payload: dict[str, Any], token: str | None) -> CallToolResult:
@@ -266,6 +237,28 @@ def _graph(g: Any) -> dict[str, Any]:
             "stale_counts_by_kind": g.stale_counts_by_kind, "nodes": nodes,
             "nodes_omitted": max(0, len(g.nodes) - GRAPH_NODE_LIMIT), "edge_count": len(g.edges),
             "truncated": g.truncated}
+
+
+def _prediction(p: Any) -> dict[str, Any]:
+    """Status, counts and the contract check of a scoring run: never rows, never storage
+    keys (the download path is rebuilt from the id, not echoed from the server)."""
+
+    def ts(value: Any) -> str | None:
+        return value and value.isoformat()
+
+    output = p.output and {"artifact_id": str(p.output.artifact_id), "content_digest": p.output.content_digest,
+                           "size_bytes": p.output.size_bytes, "mime_type": p.output.mime_type}
+    return {
+        "id": str(p.id), "project_id": p.project_id and str(p.project_id),
+        "model_version_id": str(p.model_version_id), "input_dataset_id": str(p.input_dataset_id),
+        "status": p.status, "output_format": p.output_format, "rows_in": p.rows_in, "rows_out": p.rows_out,
+        "decision_threshold": p.decision_threshold, "contract_check": untrusted(p.contract_check, 1500),
+        "error_code": p.error_code, "error_message": untrusted(p.error_message, 300), "output": output,
+        "created_at": p.created_at.isoformat(), "started_at": ts(p.started_at), "completed_at": ts(p.completed_at),
+        "download": output and {"human_api": f"GET /v1/predictions/{p.id}/download",
+                                "cli": f"dclab-cli predict download {p.id} -o FILE",
+                                "note": "Predicted rows are never returned to agents."},
+    }
 
 
 # --- server --------------------------------------------------------------------------------
@@ -401,6 +394,21 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             return evidence
         return run(call)
 
+    def get_findings(experiment_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            result = api.experiments.findings(uuid_arg(experiment_id, "experiment_id"))
+            checks = [{"check": f.check, "status": f.status, "severity": f.severity,
+                       "recommendation_kind": f.recommendation_kind,
+                       # Messages and evidence name dataset columns (user data).
+                       "message": untrusted(f.message, 800),
+                       "evidence": untrusted(cv_only(f.evidence), FINDING_EVIDENCE_CHARS)}
+                      for f in result.checks[:FINDING_LIMIT]]
+            return {"experiment_id": str(result.experiment_id), "investigated": result.investigated,
+                    "version": result.version, "summary": result.summary.model_dump(mode="json"),
+                    "checks": checks,
+                    "note": "Trust checks use training rows and CV folds only; never final-holdout values."}
+        return run(call)
+
     def list_decisions(
         project_id: Id,
         effective_state: Annotated[str | None, Field(description="proposed | accepted | rejected | superseded")] = None,  # noqa: E501
@@ -432,6 +440,9 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
                                "size_bytes": a.size_bytes, "content_digest": a.content_digest} for a in m.artifacts],
             }}
         return run(call)
+
+    def get_prediction(prediction_id: Id) -> CallToolResult:
+        return run(lambda: {"prediction": _prediction(api.predictions.get(uuid_arg(prediction_id, "prediction_id")))})
 
     def accept_proposal(proposal_id: Id) -> CallToolResult:
         def call() -> dict[str, Any]:
@@ -466,9 +477,14 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
              "capped. It embeds dataset column names.")
         tool(get_evidence, read, "Evidence of an experiment: locked metrics, pipeline stage summaries and artifact "
              "digests (no rows, no file contents).")
+        tool(get_findings, read, "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate "
+             "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail), "
+             "a plain-language message and the numbers behind it.")
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(get_model, read, "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + "
              "digest; only the current champion carries a report-only final-holdout summary.")
+        tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
+             "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(accept_proposal, read, "Hand a decision proposal to a human. This NEVER accepts anything and performs no "
              "write: service tokens are propose-only, so it returns status 'requires_human_acceptance' with the "
              "proposal and where a human accepts it in DCLab Studio.")
@@ -524,9 +540,18 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
             pid = body.pop("project_id")
             # A ref may only point at a locked (immutable) version; locking is not acceptance.
             spec = api.projects.create_problem_spec(pid, status="locked", idempotency_key=spec_key, **body)
-            # Keyed by the spec (not the rationale): a retry with reworded text replays.
-            proposal_key = command_key("propose_problem_spec.ref", {"problem_spec_id": str(spec.id)},
-                                       idempotency_key)
+            # A retry, even with reworded rationale, returns the open proposal for this spec
+            # instead of conflicting on the rationale-bound server digest.
+            open_proposals = api.projects.decisions(
+                pid, effective_state="proposed", decision_type="ref_moved", subject_kind="problem_spec",
+                subject_id=spec.id, limit=1).items
+            if open_proposals:
+                return {"problem_spec": _spec(spec), "proposal": _decision(open_proposals[0]),
+                        "action": "already_proposed",
+                        "note": "This locked spec version already has an open proposal; nothing new was created. "
+                                "It becomes current only when a human accepts it in DCLab Studio."}
+            proposal_key = command_key("propose_problem_spec.ref",
+                                       {"problem_spec_id": str(spec.id), "rationale": rationale}, idempotency_key)
             try:
                 proposal = api.projects.propose_ref_move(
                     pid, moves={"problem_spec": spec.id}, rationale=rationale,
@@ -563,6 +588,18 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
                               idempotency_key)
             child = api.experiments.branch(eid, changes=changes, intent=intent, idempotency_key=key)
             return {"experiment": _experiment(child), "replayed": child.idempotent_replay}
+        return run(call)
+
+    def predict(model_version_id: Id,
+                dataset_id: Annotated[str, Field(description="Dataset UUID of the model's project (uploaded with purpose=scoring).")],  # noqa: E501
+                output_format: Annotated[Literal["csv", "parquet"], Field()] = "csv",
+                idempotency_key: Salt = None) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            body = {"model_version_id": uuid_arg(model_version_id, "model_version_id"),
+                    "dataset_id": uuid_arg(dataset_id, "dataset_id"), "output_format": output_format}
+            row = api.predictions.create(**body, idempotency_key=command_key("predict", body, idempotency_key))
+            return {"prediction": _prediction(row), "replayed": row.idempotent_replay,
+                    "note": "Queued; poll get_prediction until status is completed or failed."}
         return run(call)
 
     def record_decision(project_id: Id, rationale: Text,
@@ -604,6 +641,8 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
          "proposal a human accepts in DCLab Studio." + _WRITE_NOTE)
     tool(branch_experiment, write, "Branch a completed experiment with typed changes; it reuses the parent's "
          "split plan and holdout." + _WRITE_NOTE)
+    tool(predict, write, "Score a dataset with a model version (the worker scores with the locked pipeline and "
+         "threshold). Writes a predictions file only; no refs or decisions change." + _WRITE_NOTE)
     tool(record_decision, write, "Record a decision as an agent PROPOSAL (action=propose; or propose ref moves). "
          "It is never accepted by this tool: service tokens are propose-only and a human accepts in DCLab "
          "Studio." + _WRITE_NOTE)

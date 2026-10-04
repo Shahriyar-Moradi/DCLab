@@ -19,9 +19,13 @@ SOURCE_STUDIO = "studio"
 SOURCE_SYSTEM = "system"
 SOURCE_LEGACY_LABS = "legacy_labs"
 
-EXECUTION_OPERATIONS = ("model_build",)
+EXECUTION_OPERATIONS = ("model_build", "model_batch_predict")
 
 OPERATION_MODEL_BUILD = "model_build"
+# P4.9-A: created only by POST /v1/model-versions/{id}/predictions (with its job).
+OPERATION_MODEL_BATCH_PREDICT = "model_batch_predict"
+# What POST /v1/execution-requests may record (intent only, no job is enqueued).
+SUBMITTABLE_OPERATIONS = (OPERATION_MODEL_BUILD,)
 
 EXECUTION_REQUEST_STATUSES = (
     "accepted",
@@ -85,13 +89,16 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         # /v1 Idempotency-Key binding (P3.1-A): server-owned digest of the
         # request a key names; callers can never supply it.
         "request_digest",
+        # Batch predictions (P4.9-A), written by the server only.
+        "model_version_id",
+        "output_format",
     }
 )
 
 # Keys only server code writes (branch replay binding, /v1 digest binding); a
 # /v1 caller's request_spec may never carry them.
 SERVER_OWNED_REQUEST_SPEC_KEYS = frozenset(
-    {"parent_experiment_id", "change_set_digest", "request_digest"}
+    {"parent_experiment_id", "change_set_digest", "request_digest", "model_version_id", "output_format"}
 )
 
 CK_EXECUTION_REQUEST_OPERATION = sql_in_clause("operation", EXECUTION_OPERATIONS)

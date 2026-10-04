@@ -31,6 +31,51 @@
       "definition": "CHECK (((token_hash)::text ~ '^[a-f0-9]{64}$'::text))"
     },
     {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_completed",
+      "definition": "CHECK ((((status)::text <> 'completed'::text) OR ((output_artifact_id IS NOT NULL) AND (rows_in IS NOT NULL) AND (rows_out = rows_in) AND (completed_at IS NOT NULL))))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_contract_bounded",
+      "definition": "CHECK (((contract_check IS NULL) OR (octet_length((contract_check)::text) <= 65536)))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_contract_object",
+      "definition": "CHECK (((contract_check IS NULL) OR (jsonb_typeof(contract_check) = 'object'::text)))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_error_code",
+      "definition": "CHECK (((error_code IS NULL) OR ((error_code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_failed",
+      "definition": "CHECK ((((status)::text <> 'failed'::text) OR ((error_code IS NOT NULL) AND (completed_at IS NOT NULL))))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_output_format",
+      "definition": "CHECK (((output_format)::text = ANY ((ARRAY['csv'::character varying, 'parquet'::character varying])::text[])))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_rows",
+      "definition": "CHECK ((((rows_in IS NULL) OR (rows_in >= 0)) AND ((rows_out IS NULL) OR (rows_out >= 0))))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "ck_batch_predictions_threshold",
+      "definition": "CHECK (((decision_threshold IS NULL) OR ((decision_threshold >= (0)::double precision) AND (decision_threshold <= (1)::double precision))))"
+    },
+    {
       "table": "client_lab_uploads",
       "name": "ck_client_lab_uploads_client_status",
       "definition": "CHECK (((client_status)::text = ANY ((ARRAY['queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying, 'needs_input'::character varying])::text[])))"
@@ -188,7 +233,7 @@
     {
       "table": "data_quality_findings",
       "name": "ck_data_quality_findings_type_valid",
-      "definition": "CHECK (((finding_type)::text = ANY ((ARRAY['missing_values'::character varying, 'duplicates'::character varying, 'outlier'::character varying, 'high_cardinality'::character varying, 'constant'::character varying, 'schema_problem'::character varying, 'target_leakage'::character varying, 'prediction_time_leakage'::character varying])::text[])))"
+      "definition": "CHECK (((finding_type)::text = ANY ((ARRAY['missing_values'::character varying, 'duplicates'::character varying, 'outlier'::character varying, 'high_cardinality'::character varying, 'constant'::character varying, 'schema_problem'::character varying, 'target_leakage'::character varying, 'prediction_time_leakage'::character varying, 'overfit_gap'::character varying, 'class_imbalance'::character varying, 'implausible_score'::character varying])::text[])))"
     },
     {
       "table": "data_sources",
@@ -281,9 +326,14 @@
       "definition": "CHECK (((classification_source)::text = ANY ((ARRAY['manual'::character varying, 'system'::character varying, 'policy'::character varying, 'import'::character varying])::text[])))"
     },
     {
+      "table": "datasets",
+      "name": "ck_datasets_purpose",
+      "definition": "CHECK (((purpose)::text = ANY ((ARRAY['training'::character varying, 'scoring'::character varying])::text[])))"
+    },
+    {
       "table": "execution_requests",
       "name": "ck_execution_requests_operation",
-      "definition": "CHECK (((operation)::text = 'model_build'::text))"
+      "definition": "CHECK (((operation)::text = ANY ((ARRAY['model_build'::character varying, 'model_batch_predict'::character varying])::text[])))"
     },
     {
       "table": "execution_requests",
@@ -911,6 +961,11 @@
       "table": "artifacts",
       "name": "artifacts_columns_immutable",
       "definition": "CREATE TRIGGER artifacts_columns_immutable BEFORE UPDATE ON public.artifacts FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('provider,bucket,object_key,content_digest,size_bytes')"
+    },
+    {
+      "table": "batch_predictions",
+      "name": "batch_predictions_terminal_immutable",
+      "definition": "CREATE TRIGGER batch_predictions_terminal_immutable BEFORE UPDATE ON public.batch_predictions FOR EACH ROW WHEN (((old.status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying])::text[]))) EXECUTE FUNCTION prevent_canonical_column_mutation('id,workspace_id,project_id,model_version_id,model_release_id,input_dataset_id,execution_request_id,ml_job_id,initiated_by_service_token_id,status,output_format,rows_in,rows_out,contract_check,decision_threshold,output_artifact_id,error_code,error_message,created_at,started_at,completed_at')"
     },
     {
       "table": "code_snapshots",

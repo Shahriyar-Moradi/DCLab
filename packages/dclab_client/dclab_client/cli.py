@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import ipaddress
 import json
 import os
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
@@ -46,7 +48,60 @@ EXIT_RETRYABLE = 7
 ENV_TOKEN = "DCLAB_TOKEN"
 ENV_API_URL = "DCLAB_API_URL"
 ENV_WORKSPACE = "DCLAB_WORKSPACE"
+ENV_ALLOW_INSECURE_HTTP = "DCLAB_ALLOW_INSECURE_HTTP"
 DEFAULT_API_URL = "http://localhost:3000/api/backend"
+HTTP_HOST_ALLOWLIST = frozenset({"api"})  # the compose API host
+WAIT_POLL_SECONDS = 2.0
+_sleep, _monotonic = time.sleep, time.monotonic  # patched in tests
+
+
+class ConfigError(DCLabClientError):
+    """Unsafe or inconsistent client configuration; nothing was sent."""
+
+
+def flag(raw: str | None, default: bool = False) -> bool:
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def check_api_url(url: str, *, allow_insecure_http: bool = False, opt_in_env: str = ENV_ALLOW_INSECURE_HTTP) -> str:
+    """https anywhere; plain http only to loopback, ``localhost`` / ``*.localhost`` or the
+    compose API host (``api``) unless explicitly opted in, so a token never crosses a
+    network in clear text by accident. Shared by the CLI and the MCP server."""
+
+    parsed = httpx.URL(url)
+    host = (parsed.host or "").lower()
+    if parsed.scheme == "https" and host:
+        return url
+    if parsed.scheme == "http" and host:
+        if allow_insecure_http or host == "localhost" or host.endswith(".localhost") or host in HTTP_HOST_ALLOWLIST:
+            return url
+        try:
+            if ipaddress.ip_address(host).is_loopback:
+                return url
+        except ValueError:
+            pass
+    raise ConfigError(f"{ENV_API_URL} must be https (plain http only for localhost or the compose host "
+                      f"'api'; set {opt_in_env}=1 to opt in)")
+
+
+def bind_token_to_url(env: Mapping[str, str], stored: Mapping[str, str], default_url: str) -> tuple[str | None, str]:
+    """``(token, api_url)`` with the stored token bound to the URL it was issued for: an
+    environment URL that differs from the stored one is refused unless the environment
+    also supplies the token."""
+
+    env_url = (env.get(ENV_API_URL) or "").strip() or None
+    if env.get(ENV_TOKEN):
+        return env[ENV_TOKEN], env_url or stored.get("api_url") or default_url
+    token, api_url = stored.get("token"), stored.get("api_url") or env_url or default_url
+    if token and not stored.get("api_url"):
+        raise ConfigError("the stored token has no stored api_url; log in again with --api-url or set "
+                          f"{ENV_TOKEN} and {ENV_API_URL}")
+    if token and env_url and env_url.rstrip("/") != api_url.rstrip("/"):
+        raise ConfigError(f"{ENV_API_URL} differs from the URL the stored token was issued for; "
+                          f"set {ENV_TOKEN} too, or log in again")
+    return token, api_url
 
 
 def exit_code_for(exc: BaseException) -> int:
@@ -96,14 +151,13 @@ def save_config(env: Mapping[str, str], values: Mapping[str, str]) -> Path:
 
 
 def resolve_settings(env: Mapping[str, str]) -> dict[str, str | None]:
-    """Environment overrides the config file; the token is never logged."""
+    """Environment overrides the config file, except that a stored token is only sent to
+    its stored URL, and only over https (or loopback http); the token is never logged."""
 
     stored = load_config(env)
-    return {
-        "token": env.get(ENV_TOKEN) or stored.get("token"),
-        "api_url": env.get(ENV_API_URL) or stored.get("api_url") or DEFAULT_API_URL,
-        "workspace": env.get(ENV_WORKSPACE) or stored.get("workspace"),
-    }
+    token, api_url = bind_token_to_url(env, stored, DEFAULT_API_URL)
+    check_api_url(api_url, allow_insecure_http=flag(env.get(ENV_ALLOW_INSECURE_HTTP)))
+    return {"token": token, "api_url": api_url, "workspace": env.get(ENV_WORKSPACE) or stored.get("workspace")}
 
 
 # --- output ---------------------------------------------------------------
@@ -124,9 +178,10 @@ def _cell(value: Any) -> str:
 
 
 class _Out:
-    def __init__(self, stdout: TextIO, as_json: bool) -> None:
+    def __init__(self, stdout: TextIO, as_json: bool, stderr: TextIO | None = None) -> None:
         self.stdout = stdout
         self.as_json = as_json
+        self.stderr = stderr or sys.stderr
 
     def emit(self, value: Any, *, table: tuple[str, ...] | None = None, rows: Any = None) -> None:
         data = _plain(value)
@@ -185,8 +240,33 @@ def _data_upload(c: Ctx, a: argparse.Namespace) -> None:
     path = Path(a.file)
     if not path.is_file():
         raise DCLabClientError(f"not a file: {a.file}")
-    c[1].emit(c[0].datasets.upload(a.project, path, content_type=a.content_type,
+    c[1].emit(c[0].datasets.upload(a.project, path, content_type=a.content_type, purpose=a.purpose,
                                    idempotency_key=a.idempotency_key))
+
+
+def _predict_create(c: Ctx, a: argparse.Namespace) -> int:
+    row = c[0].predictions.create(model_version_id=a.model_version, dataset_id=a.dataset,
+                                  output_format=a.format, idempotency_key=a.idempotency_key)
+    if a.wait:
+        deadline = _monotonic() + a.timeout
+        while not row.is_terminal and _monotonic() < deadline:
+            _sleep(WAIT_POLL_SECONDS)
+            row = c[0].predictions.get(row.id)
+    c[1].emit(row)
+    if a.wait and not row.is_terminal:
+        print(f"error: prediction {row.id} still {row.status} after {a.timeout:g}s; "
+              "poll with `dclab-cli predict get`", file=c[1].stderr)
+        return EXIT_RETRYABLE
+    return EXIT_ERROR if row.status == "failed" else EXIT_OK
+
+
+def _predict_get(c: Ctx, a: argparse.Namespace) -> None:
+    c[1].emit(c[0].predictions.get(a.prediction_id))
+
+
+def _predict_download(c: Ctx, a: argparse.Namespace) -> None:
+    content = c[0].predictions.download(a.prediction_id, to=a.output)
+    c[1].emit({"prediction_id": a.prediction_id, "written_to": a.output, "size_bytes": len(content)})
 
 
 def _exp_list(c: Ctx, a: argparse.Namespace) -> None:
@@ -234,6 +314,16 @@ def _exp_code(c: Ctx, a: argparse.Namespace) -> None:
         c[1].emit(code)
     else:
         c[1].text(doc.source)
+
+
+def _exp_findings(c: Ctx, a: argparse.Namespace) -> None:
+    result = c[0].experiments.findings(a.experiment_id)
+    if c[1].as_json:
+        c[1].emit(result)
+    elif not result.investigated:
+        c[1].text(f"experiment {result.experiment_id}: no trust checks recorded (run predates them)")
+    else:
+        c[1].emit(result, table=("check", "status", "severity", "message"), rows=result.checks)
 
 
 def _exp_cancel(c: Ctx, a: argparse.Namespace) -> None:
@@ -312,6 +402,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("file")
     p.add_argument("--project", required=True, help="project id")
     p.add_argument("--content-type")
+    p.add_argument("--purpose", choices=("training", "scoring"),
+                   help="scoring: rows to score with `predict create` (default training)")
 
     exps = top.add_parser("experiments", help="experiments").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     p = leaf(exps, "list", _exp_list)
@@ -337,7 +429,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("experiment_id")
     p.add_argument("--notebook", action="store_true", help="the notebook instead of the script")
     p.add_argument("--output", "-o", help="write the source to this file")
+    leaf(exps, "findings", _exp_findings, help="trust checks of a run (leakage, overfit, duplicates, "
+         "imbalance, too-good score)").add_argument("experiment_id")
     leaf(exps, "cancel", _exp_cancel, key=True).add_argument("experiment_id")
+
+    pred = top.add_parser("predict", help="batch predictions").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
+    p = leaf(pred, "create", _predict_create, key=True, help="score a dataset with a model version")
+    p.add_argument("--model-version", required=True, help="model version id")
+    p.add_argument("--dataset", required=True, help="dataset id (uploaded with --purpose scoring)")
+    p.add_argument("--format", choices=("csv", "parquet"), default="csv", help="output file format")
+    p.add_argument("--wait", action="store_true", help="poll until completed or failed")
+    p.add_argument("--timeout", type=float, default=600.0, help="seconds to --wait (default 600)")
+    leaf(pred, "get", _predict_get).add_argument("prediction_id")
+    p = leaf(pred, "download", _predict_download, help="save a completed predictions file")
+    p.add_argument("prediction_id")
+    p.add_argument("--output", "-o", required=True, help="file to write")
 
     decs = top.add_parser("decisions", help="decision records").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     p = leaf(decs, "list", _dec_list)
@@ -363,22 +469,25 @@ def _build_parser() -> argparse.ArgumentParser:
 # --- entry ----------------------------------------------------------------
 
 
-def _read_token(args: argparse.Namespace, stdin: TextIO) -> str:
+def _read_token(args: argparse.Namespace, stdin: TextIO, stderr: TextIO) -> str:
     if args.token:
+        print("warning: --token is visible in shell history and process lists; prefer stdin or the prompt",
+              file=stderr)
         return args.token.strip()
     if stdin.isatty():
         return getpass.getpass("Token: ").strip()
     return stdin.readline().strip()
 
 
-def _login(args: argparse.Namespace, env: Mapping[str, str], out: _Out, stdin: TextIO,
+def _login(args: argparse.Namespace, env: Mapping[str, str], out: _Out, stdin: TextIO, stderr: TextIO,
            http: httpx.Client | None) -> None:
-    token = _read_token(args, stdin)
+    token = _read_token(args, stdin, stderr)
     if not token:
         raise DCLabClientError("no token given (--token, stdin or prompt)")
-    settings = resolve_settings(env)
-    api_url = args.api_url or settings["api_url"]
-    workspace = args.workspace or settings["workspace"]
+    stored = load_config(env)
+    api_url = args.api_url or (env.get(ENV_API_URL) or "").strip() or stored.get("api_url") or DEFAULT_API_URL
+    check_api_url(api_url, allow_insecure_http=flag(env.get(ENV_ALLOW_INSECURE_HTTP)))
+    workspace = args.workspace or env.get(ENV_WORKSPACE) or stored.get("workspace")
     with DCLabClient(api_url, token=token, workspace_id=workspace, http=http) as api:
         principal = api.identity.me()  # fail before storing anything
     values = {"token": token, "api_url": str(api_url)}
@@ -411,10 +520,10 @@ def main(
         return EXIT_USAGE
     except SystemExit as exc:  # --help / --version
         return int(exc.code or 0)
-    out = _Out(stdout, args.json_out)
+    out = _Out(stdout, args.json_out, stderr)
     try:
         if args.group == "login":
-            _login(args, env, out, stdin, http)
+            _login(args, env, out, stdin, stderr, http)
             return EXIT_OK
         if args.group == "logout":
             config_path(env).unlink(missing_ok=True)
@@ -426,8 +535,8 @@ def main(
             return EXIT_AUTH
         with DCLabClient(str(settings["api_url"]), token=settings["token"],
                          workspace_id=settings["workspace"], http=http) as api:
-            args.func((api, out), args)
-        return EXIT_OK
+            result = args.func((api, out), args)
+        return result if isinstance(result, int) else EXIT_OK
     except DCLabAPIError as exc:
         _print_api_error(exc, stderr, as_json)
         return exit_code_for(exc)

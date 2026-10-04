@@ -8,9 +8,11 @@ ADRs and designs are carried forward here and cited where they are reused.
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Product definition, system architecture, software/database/infrastructure fundamentals, state-graph model, keep/freeze map of the current code |
 | [AGENTS_NOOA_JEV.md](AGENTS_NOOA_JEV.md) | How internal agents (NVIDIA NOOA) and typed decisions (TypeSafe Jev) fit, with schema, safety and release gates |
-| [ROADMAP.md](ROADMAP.md) | Phases 0–9, plans, exit gates, parallel R&D track, timeline |
+| [ROADMAP.md](ROADMAP.md) | Phases 0–9, plans, exit gates, assistant and R&D tracks, merge points |
+| [design/STUDIO_DESIGN.md](design/STUDIO_DESIGN.md) | Studio target UI: the click-through prototype in `design/prototype/`, design system, shell, screen → route → backend → prompt map, sync rule |
+| [UI_COVERAGE.md](UI_COVERAGE.md) | Every `/v1` operation and MCP tool mapped to its Studio screen (exists / planned prompt / API-only) |
 | [EXECUTION_GUIDE.md](EXECUTION_GUIDE.md) | How to run a prompt with Claude Code, model selection rubric, definition of done |
-| [prompts/](prompts/) | One file per phase; each prompt is one PR |
+| [prompts/](prompts/) | One file per phase plus [ASSISTANT.md](prompts/ASSISTANT.md) (Track A, the in-app assistant); each prompt is one commit, merged in batches at merge points |
 | [../QUICKSTART_MCP.md](../QUICKSTART_MCP.md) | Connect Claude Code to DCLab over MCP (service token, `.mcp.json`, Phase 3 walk-through) |
 | [STATUS.md](STATUS.md) | The only progress ledger (prompt → done/date/SHA/evidence) |
 
@@ -18,4 +20,7 @@ Precedence when documents disagree: current founder instruction → live code an
 tests → accepted ADRs (`docs/adr/`) → this folder → `docs/agentic-program/`
 (design reference) → older docs.
 
-Start with: `/run-prompt P0.1-A` (see EXECUTION_GUIDE.md).
+Next: Phase 4, Stage 1 — `/run-prompt P4.9-A` (see EXECUTION_GUIDE.md). A1-A (assistant ADR) can run in parallel.
+
+Product focus: **an ML lab your AI agent can drive, which proves every model is
+correct** — for data scientists and ML engineers on tabular data.

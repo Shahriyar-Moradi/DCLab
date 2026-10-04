@@ -7,7 +7,8 @@ disable-model-invocation: true
 
 # Run DCLab prompt $ARGUMENTS
 
-1. **Locate.** Find `$ARGUMENTS` in `docs/mvp/prompts/PHASE_*.md`. Read the prompt,
+1. **Locate.** Find `$ARGUMENTS` in `docs/mvp/prompts/PHASE_*.md` or, for Track A
+   prompts (`A1-A`, `A3-UI`, …), `docs/mvp/prompts/ASSISTANT.md`. Read the prompt,
    its plan header (outcome, exit gate) in `docs/mvp/ROADMAP.md`, and
    `docs/mvp/EXECUTION_GUIDE.md`. Note the prompt's `Model:` line; it selects the
    implementer in step 5. You (the orchestrating session) can stay on a cheaper model.

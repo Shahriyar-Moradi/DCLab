@@ -43,6 +43,11 @@ DATA_SOURCE_STATUSES = ("active", "disabled", "error")
 
 INGESTION_RUN_STATUSES = ("queued", "running", "completed", "failed")
 
+# P4.9-A: a ``scoring`` upload has no target and is never a training source.
+DATASET_PURPOSE_TRAINING = "training"
+DATASET_PURPOSE_SCORING = "scoring"
+DATASET_PURPOSES = (DATASET_PURPOSE_TRAINING, DATASET_PURPOSE_SCORING)
+
 LABS_PROJECT_SLUG = "labs"
 LABS_PROJECT_NAME = "Labs"
 
@@ -57,3 +62,4 @@ CK_ARTIFACTS_PROVIDER = sql_in_clause("provider", OBJECT_STORAGE_PROVIDERS)
 CK_DATA_SOURCES_TYPE = sql_in_clause("source_type", DATA_SOURCE_TYPES)
 CK_DATA_SOURCES_STATUS = sql_in_clause("status", DATA_SOURCE_STATUSES)
 CK_INGESTION_RUNS_STATUS = sql_in_clause("status", INGESTION_RUN_STATUSES)
+CK_DATASETS_PURPOSE = sql_in_clause("purpose", DATASET_PURPOSES)

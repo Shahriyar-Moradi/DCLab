@@ -205,7 +205,8 @@ def test_stage_timings_feature_truth_and_persisted_report(db_session, tmp_path):
             "input_columns": ["event_date"],
             "output_columns": ["event_date"],
             "reason": "Convert datetime values to the numeric representation supported by the tabular pipeline.",
-            "parameters": {"unit": "seconds", "epoch": "unix"},
+            # P4.9-A: the date format learned on the training rows (never re-guessed).
+            "parameters": {"unit": "seconds", "epoch": "unix", "formats": {"event_date": "%Y-%m-%d"}},
             "learned_from_data": False,
             "decision_partition": "train",
         }

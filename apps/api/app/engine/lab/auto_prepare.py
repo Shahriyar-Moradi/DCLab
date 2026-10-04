@@ -25,7 +25,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from app.engine.features.encode import encode_datetime_columns
+from app.engine.features.encode import datetime_to_epoch, encode_datetime_columns, infer_datetime_format
 from app.engine.lab.schema_inference import (
     TargetChoice,
     choose_target_deterministically,
@@ -61,11 +61,15 @@ def _looks_like_identifier(name: str, series: pd.Series, n: int) -> bool:
     return looks_like_identifier(name, series, n)
 
 
-def coerce_numeric_like(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+def coerce_numeric_like(
+    frame: pd.DataFrame, columns: list[str], *, min_parsed_fraction: float = 0.9
+) -> pd.DataFrame:
     """Numeric-looking strings, including blank sentinels, become real floats.
 
     A column only converts when at least 90% of its non-null values parse as
-    numbers — otherwise it stays text (a name, a free-text note, ...).
+    numbers — otherwise it stays text (a name, a free-text note, ...). Batch
+    scoring passes ``min_parsed_fraction=0`` for the columns training already
+    decided are numeric (the decision is never re-made on scoring rows).
     """
     out = frame.copy()
     for name in columns:
@@ -77,7 +81,7 @@ def coerce_numeric_like(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame
         stripped = series.astype(str).str.strip().replace({"": np.nan, "nan": np.nan, "None": np.nan})
         candidate = pd.to_numeric(stripped, errors="coerce")
         non_null = series.notna().sum()
-        if non_null and candidate.notna().sum() / non_null >= 0.9:
+        if non_null and candidate.notna().sum() / non_null >= min_parsed_fraction:
             out[name] = candidate
     return out
 
@@ -358,23 +362,14 @@ def clean_frame(
     return out, log
 
 
-def structural_clean_frame(
-    frame: pd.DataFrame,
-    *,
-    target: str,
-    feature_columns: list[str],
-    source_row_column: str | None = None,
-) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Apply only split-safe structural hygiene.
+def clean_feature_cells(frame: pd.DataFrame, feature_columns: list[str]) -> tuple[pd.DataFrame, int, int]:
+    """Row-preserving, fit-free cell hygiene: +/-inf -> NaN in numeric columns and
+    missing-value sentinels -> NaN in text feature columns.
 
-    These operations do not estimate modeling behavior from the complete
-    dataset. Sparse/constant removal, missing-value policies, semantic role
-    decisions, and feature decisions intentionally happen after the final
-    holdout is locked and use training rows only.
+    Shared by training (``structural_clean_frame``) and batch scoring, so new rows
+    get exactly the cells the model was trained on. Returns (frame, inf, strings).
     """
     out = frame.copy()
-    transformations: list[dict[str, Any]] = []
-
     inf_cleared = 0
     for name in list(out.columns):
         if not pd.api.types.is_numeric_dtype(out[name]):
@@ -382,9 +377,6 @@ def structural_clean_frame(
         replaced = out[name].replace([np.inf, -np.inf], np.nan)
         inf_cleared += int(replaced.isna().sum() - out[name].isna().sum())
         out[name] = replaced
-    if inf_cleared:
-        transformations.append({"step": "replace_infinite", "cells_cleared": inf_cleared})
-
     string_cleared = 0
     for name in feature_columns:
         if name not in out.columns:
@@ -399,6 +391,27 @@ def structural_clean_frame(
         cleaned, n_cleared = _replace_invalid_strings(series)
         out[name] = cleaned
         string_cleared += n_cleared
+    return out, inf_cleared, string_cleared
+
+
+def structural_clean_frame(
+    frame: pd.DataFrame,
+    *,
+    target: str,
+    feature_columns: list[str],
+    source_row_column: str | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Apply only split-safe structural hygiene.
+
+    These operations do not estimate modeling behavior from the complete
+    dataset. Sparse/constant removal, missing-value policies, semantic role
+    decisions, and feature decisions intentionally happen after the final
+    holdout is locked and use training rows only.
+    """
+    out, inf_cleared, string_cleared = clean_feature_cells(frame, feature_columns)
+    transformations: list[dict[str, Any]] = []
+    if inf_cleared:
+        transformations.append({"step": "replace_infinite", "cells_cleared": inf_cleared})
     if string_cleared:
         transformations.append({"step": "replace_invalid_strings", "cells_cleared": string_cleared})
 
@@ -452,7 +465,13 @@ def engineer_features(frame: pd.DataFrame, columns: list[str]) -> tuple[pd.DataF
                 "input_columns": converted,
                 "output_columns": converted,
                 "reason": "Convert datetime values to the numeric representation supported by the tabular pipeline.",
-                "parameters": {"unit": "seconds", "epoch": "unix"},
+                # Per-column date format inferred on these (training) rows; every
+                # other partition and scoring file parses with it (never re-guessed).
+                "parameters": {
+                    "unit": "seconds",
+                    "epoch": "unix",
+                    "formats": {name: infer_datetime_format(frame[name]) for name in converted},
+                },
                 "learned_from_data": False,
                 "decision_partition": "train",
             }
@@ -464,16 +483,22 @@ def apply_feature_engineering_actions(
     frame: pd.DataFrame,
     actions: list[dict[str, Any]],
 ) -> pd.DataFrame:
-    """Apply a feature plan learned from training rows to another partition."""
+    """Apply a feature plan learned from training rows to another partition.
+
+    Dates parse with the format recorded on the training rows
+    (``parameters.formats``); actions recorded before formats existed keep pandas'
+    per-call inference.
+    """
     out = frame.copy()
     for action in actions:
         if action.get("step") != "datetime_to_unix_seconds" and action.get("transformation") != "datetime_to_epoch":
             continue
+        formats = (action.get("parameters") or {}).get("formats")
+        formats = formats if isinstance(formats, dict) else {}
         for name in action.get("output_columns") or action.get("columns") or []:
             if name not in out.columns:
                 continue
-            parsed = pd.to_datetime(out[name], errors="coerce")
-            out[name] = parsed.map(lambda value: value.timestamp() if pd.notna(value) else np.nan)
+            out[name] = datetime_to_epoch(out[name], formats.get(name))
     return out
 
 

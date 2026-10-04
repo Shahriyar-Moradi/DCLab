@@ -14,6 +14,7 @@ from dclab_client._version import __version__
 from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
     Artifact,
+    BatchPrediction,
     Dataset,
     DatasetUpload,
     DecisionRecord,
@@ -23,6 +24,7 @@ from dclab_client.types import (
     Experiment,
     ExperimentCode,
     ExperimentComparison,
+    ExperimentFindings,
     ExperimentPage,
     ModelBuild,
     ModelVersion,
@@ -64,6 +66,12 @@ def _versioned(model: type[_V], payload: Any, headers: httpx.Headers) -> _V:
     row._etag = headers.get("etag")
     row._replayed = (headers.get("idempotent-replayed") or "").lower() == "true"
     return row
+
+
+# Output formats of POST /v1/model-versions/{id}/predictions.
+PREDICTION_OUTPUT_FORMATS = frozenset({"csv", "parquet"})
+# ``purpose`` of POST /v1/datasets: ``scoring`` uploads carry rows to score (no target).
+DATASET_PURPOSES = frozenset({"training", "scoring"})
 
 
 # Kinds of project refs (ADR 0006 §2).
@@ -490,22 +498,27 @@ class DatasetsClient:
         *,
         filename: str | None = None,
         content_type: str | None = None,
+        purpose: str | None = None,
         idempotency_key: str | None = None,
         request_id: str | None = None,
     ) -> DatasetUpload:
         """Upload a file into a project; it is ingested and published (no training).
 
         ``file`` is a path or a binary stream (``filename`` required for streams).
+        ``purpose="scoring"`` marks rows to score with ``predictions.create`` (no target;
+        never a run source); the default is ``training``.
         Pass a stable ``idempotency_key`` to make a resend of the same bytes safe."""
 
+        if purpose is not None and purpose not in DATASET_PURPOSES:
+            raise DCLabClientError("purpose must be one of: " + ", ".join(sorted(DATASET_PURPOSES)))
         if isinstance(file, (str, Path)):
             path = Path(file)
             with path.open("rb") as handle:
-                return self._upload(project_id, handle, filename or path.name, content_type,
+                return self._upload(project_id, handle, filename or path.name, content_type, purpose,
                                     idempotency_key, request_id)
         if not filename:
             raise DCLabClientError("filename is required when uploading a stream")
-        return self._upload(project_id, file, filename, content_type, idempotency_key, request_id)
+        return self._upload(project_id, file, filename, content_type, purpose, idempotency_key, request_id)
 
     def _upload(
         self,
@@ -513,14 +526,18 @@ class DatasetsClient:
         stream: BinaryIO,
         filename: str,
         content_type: str | None,
+        purpose: str | None,
         idempotency_key: str | None,
         request_id: str | None,
     ) -> DatasetUpload:
         part = (filename, stream, content_type) if content_type else (filename, stream)
+        form = {"project_id": _id(project_id)}
+        if purpose is not None:
+            form["purpose"] = purpose
         payload, headers = self._transport.request_with_headers(
             "POST",
             "/v1/datasets",
-            data={"project_id": _id(project_id)},
+            data=form,
             files={"file": part},
             request_id=request_id,
             idempotency_key=idempotency_key,
@@ -768,6 +785,71 @@ class ExperimentsClient:
         )
         return ExperimentCode.model_validate(payload)
 
+    def findings(
+        self, experiment_id: UUID | str, *, request_id: str | None = None
+    ) -> ExperimentFindings:
+        """The five trust checks of a run (leakage, overfit gap, duplicates, class
+        imbalance, too-good-to-be-true score) with plain-language messages."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/findings",
+            request_id=request_id,
+        )
+        return ExperimentFindings.model_validate(payload)
+
+
+class PredictionsClient:
+    """Batch predictions (P4.9-A): score a dataset with a model version (the worker scores)."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def create(
+        self,
+        *,
+        model_version_id: UUID | str,
+        dataset_id: UUID | str,
+        output_format: str = "csv",
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> BatchPrediction:
+        """Queue scoring of a dataset of the model's project (202; poll ``get``).
+        Resend with the same ``idempotency_key`` to retry safely (one is generated
+        when omitted and exposed on errors)."""
+
+        if output_format not in PREDICTION_OUTPUT_FORMATS:
+            raise DCLabClientError("output_format must be one of: " + ", ".join(sorted(PREDICTION_OUTPUT_FORMATS)))
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/model-versions/{_id(model_version_id)}/predictions",
+            json={"dataset_id": _id(dataset_id), "output_format": output_format},
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(BatchPrediction, payload, headers)
+
+    def get(self, prediction_id: UUID | str, *, request_id: str | None = None) -> BatchPrediction:
+        """Status, row counts, the feature-contract result and the output file (by digest)."""
+
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/predictions/{_id(prediction_id)}", request_id=request_id
+        )
+        return _versioned(BatchPrediction, payload, headers)
+
+    def download(
+        self, prediction_id: UUID | str, *, to: str | Path | None = None, request_id: str | None = None
+    ) -> bytes:
+        """The completed predictions file (CSV or Parquet bytes); also written to ``to``
+        when given. Not completed: ``ConflictError`` (``prediction_not_ready``)."""
+
+        content, _headers = self._transport.request_bytes(
+            f"/v1/predictions/{_id(prediction_id)}/download", request_id=request_id
+        )
+        if to is not None:
+            Path(to).write_bytes(content)
+        return content
+
 
 class VisualizationsClient:
     def __init__(self, transport: V1Transport) -> None:
@@ -842,6 +924,7 @@ class DCLabClient:
         self.experiments = ExperimentsClient(self._transport)
         self.decisions = DecisionsClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)
+        self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)
 

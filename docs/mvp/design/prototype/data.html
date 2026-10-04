@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Data · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="data.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Data</b> › DS v1</div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Data</h1><p class="sub">Dataset versions, profile, column roles and leakage audit. Statistics come from training rows only. Role and leakage decisions show the rule's answer and the AI's answer side by side.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="upload new version (multipart → ingestion → publication policy)">Upload new version</button><button class="btn" data-mock="connector setup (Phase 9)">Connect a source</button><button class="btn" data-mock="download profile JSON">Export profile</button></div>
+</div>
+
+<div class="tabs" data-tabs="data">
+  <button data-tab="versions" aria-selected="true">Versions</button>
+  <button data-tab="columns">Columns &amp; roles</button>
+  <button data-tab="leakage">Leakage audit</button>
+  <button data-tab="findings">Findings &amp; questions</button>
+  <button data-tab="policy">Policy &amp; access</button>
+</div>
+
+<div data-tabpanel="data:versions" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Version</th><th>Rows × cols</th><th>Window</th><th>Source</th><th>Publication</th><th>Digest</th><th>Used by</th><th></th></tr></thead>
+    <tbody>
+      <tr class="sel"><td><b>DS v1 ★</b></td><td>48,210 × 31</td><td>Jan 2025 – Jun 2026</td><td>customers_2026Q3.csv · you</td><td><span class="pill ok">published</span> internal_training</td><td class="mono">7f3a…c21</td><td>SP-1 · E1, E2, E7 · MV v4</td><td><button class="btn sm" data-mock="diff v1 vs v3">diff</button></td></tr>
+      <tr><td>DS v2</td><td>48,210 × 31</td><td>same</td><td>re-upload (identical)</td><td><span class="pill gray">duplicate of v1</span></td><td class="mono">7f3a…c21</td><td>—</td><td></td></tr>
+      <tr><td>DS v3</td><td>51,330 × 31</td><td>Jan 2025 – Sep 2026</td><td>customers_2026Q4.csv · Ops agent import</td><td><span class="pill ok">published</span></td><td class="mono">b91c…77e</td><td>SP-2 · E9</td><td><button class="btn sm" data-mock="propose ref move">make current</button></td></tr>
+      <tr class="dim"><td>quarantined</td><td>—</td><td>—</td><td>export_with_notes.xlsx</td><td><span class="pill crit">rejected 422</span> 3 structurally invalid sheets</td><td>—</td><td>not retained</td><td></td></tr>
+    </tbody>
+  </table></div>
+  <div class="card sect">
+<div class="sect-head"><h2>DS v1 overview</h2></div>
+<section data-tab="Profile · DS v1 (training rows)">
+<dl class="kv"><dt>Training / holdout</dt><dd>39,306 / 8,904 rows (SP-1)</dd><dt>Target</dt><dd>churned_next_30d · 21.3% positive</dd><dt>Missing</dt><dd>2 columns &gt; 40% · 6 columns 1–10%</dd><dt>Constant</dt><dd>1 (<code>country</code>)</dd><dt>Duplicates</dt><dd>0 exact rows · 14 duplicate customer-month keys</dd><dt>Time column</dt><dd><code>snapshot_month</code> · 18 values</dd><dt>Entity</dt><dd><code>customer_id</code> · 9,412 customers</dd></dl>
+</section>
+<section data-tab="Class balance and time">
+<svg class="chart" viewBox="0 0 320 130" role="img" aria-label="Monthly positive rate from 19 to 24 percent across 18 months with holdout months shaded">
+        <rect x="236" y="12" width="70" height="92" fill="color-mix(in srgb, var(--warn) 12%, transparent)"/>
+        <line class="grid-l" x1="36" y1="104" x2="306" y2="104"/><line class="grid-l" x1="36" y1="58" x2="306" y2="58"/><line class="grid-l" x1="36" y1="12" x2="306" y2="12"/>
+        <text class="axis" x="30" y="107" text-anchor="end">15%</text><text class="axis" x="30" y="61" text-anchor="end">20%</text><text class="axis" x="30" y="15" text-anchor="end">25%</text>
+        <polyline class="ln-a" points="36,70 52,66 68,72 84,60 100,62 116,58 132,55 148,60 164,52 180,50 196,48 212,46 228,44 244,40 260,42 276,38 292,34 306,30"/>
+        <text class="axis" x="271" y="122" text-anchor="middle">holdout</text><text class="axis" x="36" y="122">Jan 25</text>
+      </svg>
+      <p class="small muted">Positive rate rises over time: a reason the Planner chose a temporal split.</p>
+</section>
+<section data-tab="Data quality checks">
+<div class="chips"><span class="pill ok">schema stable</span><span class="pill ok">no exact duplicates</span><span class="pill warn">14 duplicate keys</span><span class="pill ok">no future dates</span><span class="pill warn">2 high-missing columns</span><span class="pill ok">labels within window</span><span class="pill ok">encoding</span></div>
+      <p class="small muted">Deterministic checks (P5.1 library). The AI investigator explains them; it does not compute them.</p>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="data:columns">
+  <div class="toolbar"><input class="input" placeholder="filter columns…" style="min-width:220px"><select class="input"><option>All roles</option><option>numeric</option><option>categorical</option><option>datetime</option><option>identifier</option><option>excluded</option></select><span class="sp"></span><span class="small muted">31 columns · role decisions: 30 AI = rule · 1 AI used (L2) · 0 pending</span></div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Column</th><th>Type</th><th>Role (used)</th><th>Rule</th><th>AI (Jev)</th><th class="r">Missing</th><th class="r">Unique</th><th>Transform</th><th>Importance</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><code>customer_id</code></td><td>string</td><td><span class="pill gray">identifier</span></td><td>identifier</td><td>identifier p .99</td><td class="r">0%</td><td class="r">9,412</td><td>excluded</td><td>—</td><td><span class="lvl l2">L2</span></td></tr>
+      <tr><td><code>churned_next_30d</code></td><td>bool</td><td><span class="pill det">target</span></td><td>target</td><td>—</td><td class="r">0%</td><td class="r">2</td><td>—</td><td>—</td><td></td></tr>
+      <tr><td><code>churned_at</code></td><td>date</td><td><span class="pill crit">excluded · leak</span></td><td>after-target date</td><td>leak p .97</td><td class="r">79%</td><td class="r">412</td><td>excluded</td><td>—</td><td><span class="lvl l1">L1</span> d-302</td></tr>
+      <tr><td><code>last_login_days</code></td><td>int</td><td><span class="pill warn">numeric · review</span></td><td>numeric</td><td>numeric</td><td class="r">1%</td><td class="r">366</td><td>median impute · scale</td><td>0.41 ⚠</td><td><button class="btn sm" data-mock="mark availability: known daily">availability?</button></td></tr>
+      <tr><td><code>region_code</code></td><td>int</td><td><span class="pill ai">categorical (AI)</span></td><td>numeric</td><td>categorical .91</td><td class="r">0%</td><td class="r">12</td><td>most-frequent · one-hot</td><td>0.06</td><td><span class="lvl l2">L2</span> <button class="btn sm" data-mock="revert to rule value (numeric)">revert</button></td></tr>
+      <tr><td><code>plan_type</code></td><td>string</td><td>categorical</td><td>categorical</td><td>categorical .97</td><td class="r">0%</td><td class="r">6 (v3: 7)</td><td>one-hot</td><td>0.09</td><td></td></tr>
+      <tr><td><code>signup_date</code></td><td>date</td><td>datetime</td><td>datetime</td><td>datetime .99</td><td class="r">0%</td><td class="r">1,988</td><td>month, weekday</td><td>0.04</td><td><span class="lvl l2">L2</span></td></tr>
+      <tr><td><code>monthly_fee</code></td><td>float</td><td>numeric</td><td>numeric</td><td>numeric</td><td class="r">0%</td><td class="r">214</td><td>median · scale</td><td>0.11</td><td></td></tr>
+      <tr><td><code>retention_offer_sent</code></td><td>bool</td><td><span class="pill warn">bool · review flag</span></td><td>numeric</td><td>leak suspect p .88</td><td class="r">0%</td><td class="r">2</td><td>as is</td><td>0.07</td><td><span class="lvl l1">L1</span> d-302</td></tr>
+      <tr><td><code>contract_end</code></td><td>date</td><td>datetime</td><td>datetime</td><td>datetime .98</td><td class="r">38%</td><td class="r">640</td><td>month, days-to (as-of ✓)</td><td>0.05</td><td></td></tr>
+      <tr><td><code>support_tickets_90d</code></td><td>int</td><td>numeric</td><td>numeric</td><td>numeric</td><td class="r">0%</td><td class="r">23</td><td>median · scale</td><td>0.08</td><td></td></tr>
+      <tr><td><code>country</code></td><td>string</td><td><span class="pill gray">constant · dropped</span></td><td>constant</td><td>—</td><td class="r">0%</td><td class="r">1</td><td>dropped</td><td>—</td><td></td></tr>
+      <tr><td><code>notes_free_text</code></td><td>string</td><td><span class="pill gray">free text · dropped</span></td><td>high cardinality</td><td>free text .96</td><td class="r">61%</td><td class="r">18,210</td><td>dropped (text features Phase 9)</td><td>—</td><td></td></tr>
+      <tr class="dim"><td colspan="10">… 18 more columns</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="data:leakage">
+  <div class="card sect">
+<section data-tab="Leakage audit · training rows only">
+<p class="muted small">auditor v5 + Jev + DatasetInvestigator</p>
+<div class="tbl"><table>
+        <thead><tr><th>Column</th><th>Signal</th><th>Rule</th><th>AI</th><th>Outcome</th></tr></thead>
+        <tbody>
+          <tr><td><code>churned_at</code></td><td>date after target in 100% of positives</td><td><span class="pill crit">CRITICAL</span></td><td>leak p .97</td><td>excluded (L1 accepted)</td></tr>
+          <tr><td><code>customer_id</code></td><td>unique ratio 1.0</td><td>identifier</td><td>id p .99</td><td>excluded (L2)</td></tr>
+          <tr><td><code>last_login_days</code></td><td>single-feature AUC 0.79</td><td><span class="pill warn">review</span></td><td>"plausibly known daily"</td><td>kept · question open</td></tr>
+          <tr><td><code>retention_offer_sent</code></td><td>no statistical signal (AUC 0.58)</td><td>none</td><td><span class="pill ai">suspect p .88</span></td><td>review flag (L1 accepted) · never auto-excluded</td></tr>
+          <tr><td><code>monthly_fee</code></td><td>AUC 0.61</td><td>none</td><td>none</td><td>kept</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small muted">Re-including an excluded column creates a new root experiment; the holdout stays the same rows.</p>
+</section>
+<section data-tab="Feature availability contract">
+<p class="muted small">P5.0 / P7.1</p>
+<p class="small">Each feature declares when its value is known. Agents may propose features only with a declared fit scope and as-of column.</p>
+      <div class="tbl"><table><thead><tr><th>Feature</th><th>Fit scope</th><th>Known at</th></tr></thead><tbody>
+        <tr><td>monthly_fee, plan_type, region_code</td><td>stateless</td><td>snapshot</td></tr>
+        <tr><td>median/scale/one-hot params</td><td>fold_fitted</td><td>—</td></tr>
+        <tr><td>days_to_contract_end</td><td>as_of_aggregate (snapshot_month)</td><td>snapshot</td></tr>
+        <tr><td>last_login_days</td><td>stateless</td><td><span class="pill warn">unconfirmed</span></td></tr>
+      </tbody></table></div>
+      <div class="toolbar"><button class="btn sm" data-mock="confirm availability → decision record">Confirm availability</button><button class="btn sm" data-mock="run time-travel check">Time-travel check</button></div>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="data:findings">
+  <div class="card sect">
+<section data-tab="Findings">
+<p class="muted small">deterministic checks · AI explanations</p>
+<div class="events">
+        <div class="ev det"><span class="when">check · duplicates</span><br>14 duplicate customer-month keys. <span class="muted">AI: "likely re-exports of the same month; safe to keep the latest row."</span> <button class="btn sm" data-mock="apply dedupe rule → new dataset version">dedupe → DS v4</button></div>
+        <div class="ev det"><span class="when">check · missingness</span><br><code>contract_end</code> missing 38%. <span class="muted">AI: "month-to-month plans have no end date; missingness is informative, keep an indicator."</span></div>
+        <div class="ev ai"><span class="when">DatasetInvestigator · DS v3</span><br><code>plan_type</code> has a new value <code>family_5g</code> (6% of new rows, churns 2× average). Question: does it behave like <code>family</code>? <div class="toolbar"><button class="btn sm" data-mock="answer: it is a new family tier">Answer</button><button class="btn sm" data-mock="dismiss">Dismiss</button></div></div>
+        <div class="ev det"><span class="when">check · temporal shift</span><br>Positive rate 19% → 24% over 18 months; temporal split chosen.</div>
+      </div>
+</section>
+<section data-tab="Questions you answered">
+<dl class="kv"><dt>churn definition</dt><dd>"no payment for 60 days" (Spec v1)</dd><dt>last_login_days</dt><dd><span class="pill warn">open</span></dd><dt>family_5g</dt><dd><span class="pill warn">open</span></dd></dl>
+      <p class="small muted">Answers become decision records and are shown in reports and code comments.</p>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="data:policy">
+  <div class="card sect">
+<section data-tab="Dataset policy">
+<dl class="kv"><dt>Upload policy</dt><dd>internal_training (ADR 0005): published after structural validation, labels restricted</dd><dt>Data class for AI</dt><dd>aggregates · sample values <span class="pill gray">off</span> · raw rows <span class="pill crit">never</span></dd><dt>Residency</dt><dd>EU · workers EU only</dd><dt>Retention</dt><dd>versions kept 24 months · deletion job weekly</dd><dt>Scanner</dt><dd>content/malware scan ✓ (P8.7)</dd></dl>
+      <div class="toolbar"><a class="btn sm" href="governance.html">Change in governance</a></div>
+</section>
+<section data-tab="Access">
+<div class="tbl"><table><thead><tr><th>Who</th><th>Can</th></tr></thead><tbody>
+        <tr><td>developer@dclab.io</td><td>read, upload, train, accept decisions</td></tr>
+        <tr><td>demo@client.io (client role)</td><td>read outcomes, download predictions</td></tr>
+        <tr><td>token dclab_st_••••3kd (Claude Code)</td><td>read, upload, run, branch · no promote</td></tr>
+        <tr><td>Ops agent</td><td>read, branch (L2), propose release (L1)</td></tr>
+      </tbody></table></div>
+</section>
+</div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Versions with publication state and digests</li><li>Columns with rule vs AI role, transforms, importance, revert</li><li>Leakage audit, availability contract, findings, questions, policy, access</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Manual role override by a person: new dataset version or decision record on the recipe?</li><li>Dedupe and cleaning actions: who owns them, agent proposal or deterministic "cleaning recipe"?</li><li>Multiple tables / joins (Phase 9 connectors) will need an entity-time model here</li><li>Sample values shown to the user vs sent to AI: two different switches?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Importance column here (duplicate of experiment page)</li><li>Version diff for identical uploads</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

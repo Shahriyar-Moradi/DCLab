@@ -484,6 +484,29 @@
         "successSchema": "ExperimentCodeRead"
       }
     },
+    "/v1/experiments/{experiment_id}/findings": {
+      "GET": {
+        "operationId": "read_experiment_findings_v1_experiments__experiment_id__findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentFindingsRead"
+      }
+    },
     "/v1/me": {
       "GET": {
         "operationId": "read_principal_v1_me_get",
@@ -626,6 +649,36 @@
         "successSchema": "ModelVersionResourceRead"
       }
     },
+    "/v1/model-versions/{model_version_id}/predictions": {
+      "POST": {
+        "operationId": "create_prediction_v1_v1_model_versions__model_version_id__predictions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "BatchPredictionCreateRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "BatchPredictionRead"
+      }
+    },
     "/v1/nodes/{kind}/{node_id}/impact": {
       "GET": {
         "operationId": "read_node_impact_v1_nodes__kind___node_id__impact_get",
@@ -652,6 +705,53 @@
           "500"
         ],
         "successSchema": "NodeImpactRead"
+      }
+    },
+    "/v1/predictions/{prediction_id}": {
+      "GET": {
+        "operationId": "read_prediction_v1_predictions__prediction_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "BatchPredictionRead"
+      }
+    },
+    "/v1/predictions/{prediction_id}/download": {
+      "GET": {
+        "operationId": "download_prediction_v1_predictions__prediction_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": null
       }
     },
     "/v1/projects": {
@@ -1087,6 +1187,64 @@
         "workspace_id"
       ]
     },
+    "BatchPredictionOutput": {
+      "properties": [
+        "artifact_id",
+        "content_digest",
+        "download_path",
+        "mime_type",
+        "size_bytes"
+      ],
+      "required": [
+        "artifact_id",
+        "content_digest",
+        "download_path",
+        "size_bytes"
+      ]
+    },
+    "BatchPredictionRead": {
+      "properties": [
+        "completed_at",
+        "contract_check",
+        "created_at",
+        "decision_threshold",
+        "error_code",
+        "error_message",
+        "execution_request_id",
+        "id",
+        "input_dataset_id",
+        "model_release_id",
+        "model_version_id",
+        "output",
+        "output_format",
+        "project_id",
+        "rows_in",
+        "rows_out",
+        "started_at",
+        "status",
+        "workspace_id"
+      ],
+      "required": [
+        "completed_at",
+        "contract_check",
+        "created_at",
+        "decision_threshold",
+        "error_code",
+        "error_message",
+        "execution_request_id",
+        "id",
+        "input_dataset_id",
+        "model_version_id",
+        "output",
+        "output_format",
+        "project_id",
+        "rows_in",
+        "rows_out",
+        "started_at",
+        "status",
+        "workspace_id"
+      ]
+    },
     "DatasetIngestionRead": {
       "properties": [
         "bytes_read",
@@ -1114,6 +1272,7 @@
         "id",
         "name",
         "project_id",
+        "purpose",
         "row_count",
         "version",
         "workspace_id"
@@ -1141,6 +1300,7 @@
         "ingestion",
         "name",
         "project_id",
+        "purpose",
         "row_count",
         "schema_digest",
         "size_bytes",
@@ -1347,6 +1507,43 @@
         "status",
         "workspace_id"
       ]
+    },
+    "ExperimentFindingRead": {
+      "properties": [
+        "check",
+        "evidence",
+        "message",
+        "recommendation_kind",
+        "severity",
+        "status"
+      ],
+      "required": [
+        "check",
+        "message",
+        "severity",
+        "status"
+      ]
+    },
+    "ExperimentFindingsRead": {
+      "properties": [
+        "checks",
+        "experiment_id",
+        "investigated",
+        "summary",
+        "version"
+      ],
+      "required": [
+        "experiment_id",
+        "investigated"
+      ]
+    },
+    "ExperimentFindingsSummary": {
+      "properties": [
+        "failures",
+        "passed",
+        "warnings"
+      ],
+      "required": []
     },
     "ExperimentLineage": {
       "properties": [

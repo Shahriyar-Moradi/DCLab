@@ -55,6 +55,28 @@ Done when: observable criteria.
 3. No new parallel owner for an existing concern; no TODO left for the core outcome.
 4. Migrations: single head, upgrade/downgrade tested, truth artifacts regenerated.
 5. Behavior that is disabled/not yet supported is explicit, not faked.
-6. STATUS.md updated; nothing else in docs unless the prompt says so.
+6. **UI in the same phase.** A prompt that adds or changes a `/v1` operation, MCP
+   tool or user-visible capability either ships its screen or names the `-UI`
+   prompt in the same phase that does; it updates the row in
+   [UI_COVERAGE.md](UI_COVERAGE.md) and regenerates the web API types
+   (`npm run gen:api`, from P4.0-A on). Screens follow their `Design:` prototype
+   file under the sync rule of [design/STUDIO_DESIGN.md](design/STUDIO_DESIGN.md) §1:
+   every value from an API field, nothing drawn without a backend.
+7. **Assistant parity.** A new MCP tool is added to the shared tool catalog
+   (`app/agents/tools/`, from A2-B on), so the in-app assistant gets it too.
+8. STATUS.md updated; nothing else in docs unless the prompt says so.
 
-Exact-SHA CI is required at **phase gates**, not for every prompt.
+Exact-SHA CI is required at **merge points**, not for every prompt.
+
+## 5. Merge cadence (founder decision 2026-10-04)
+
+Speed first: work through 2–3 phases (or Phase 4 stages) on one branch without
+waiting on CI per prompt. Per prompt, run only the prompt's named fast checks.
+At each merge point (ROADMAP.md: MP-4a, MP-4b, MP-56, MP-78):
+
+1. Full backend suite, web `tsc`/lint/build/component tests, Playwright for the
+   phases' flows, single Alembic head, truth artifacts idempotent.
+2. Open one PR, get CI green on its head, merge.
+3. In the same session, fill every `(pending)` SHA in STATUS.md from
+   `git log --format='%h %s' main` (commits start with the prompt ID) and add the
+   phase gate rows. The ledger never falls behind a merge.
