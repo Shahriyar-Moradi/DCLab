@@ -3,6 +3,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    CHAR,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -147,6 +148,95 @@ from app.domain.pipeline_run_branch import (
     CK_EXPERIMENTS_BRANCH_REASON,
     CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
     CK_EXPERIMENTS_PARENT_NOT_SELF,
+)
+from app.domain.agent_records import (
+    CK_AGENT_EVENTS_PAYLOAD,
+    CK_AGENT_EVENTS_PAYLOAD_DIGEST,
+    CK_AGENT_EVENTS_SEQ,
+    CK_AGENT_EVENTS_TYPE,
+    CK_AGENT_PROPOSALS_CITATIONS,
+    CK_AGENT_PROPOSALS_DECIDED,
+    CK_AGENT_PROPOSALS_DECIDED_STATUS,
+    CK_AGENT_PROPOSALS_DECISION_POINT,
+    CK_AGENT_PROPOSALS_ESTIMATES,
+    CK_AGENT_PROPOSALS_IDEMPOTENCY,
+    CK_AGENT_PROPOSALS_LEVEL_STATUS,
+    CK_AGENT_PROPOSALS_LEVELS,
+    CK_AGENT_PROPOSALS_PAYLOAD,
+    CK_AGENT_PROPOSALS_PAYLOAD_DIGEST,
+    CK_AGENT_PROPOSALS_RULE_ANSWER,
+    CK_AGENT_PROPOSALS_SCHEMA_VERSION,
+    CK_AGENT_PROPOSALS_STATUS,
+    CK_AGENT_PROPOSALS_SUBJECT_KIND,
+    CK_AGENT_PROPOSALS_SUBJECT_MATCHES_KIND,
+    CK_AGENT_PROPOSALS_SUPERSEDE_REASON,
+    CK_AGENT_PROPOSALS_TOOL_ARGUMENTS,
+    CK_AGENT_PROPOSALS_TOOL_CALL,
+    CK_AGENT_PROPOSALS_TOOL_CALL_LEVEL,
+    CK_AGENT_PROPOSALS_TOOL_NAME,
+    CK_AGENT_PROPOSALS_TYPE,
+    CK_AGENT_PROPOSALS_VALIDATOR_REASONS,
+    CK_AGENT_PROPOSALS_VALIDATOR_VERDICT,
+    CK_AGENT_PROPOSALS_VERDICT_MATCHES_STATUS,
+    CK_AGENT_RUNS_AGENT_KEY,
+    CK_AGENT_RUNS_ASSISTANT,
+    CK_AGENT_RUNS_CONTEXT_DIGEST,
+    CK_AGENT_RUNS_DATA_CLASS,
+    CK_AGENT_RUNS_DECISION_POINT,
+    CK_AGENT_RUNS_ERROR_CODE,
+    CK_AGENT_RUNS_IDEMPOTENCY,
+    CK_AGENT_RUNS_KIND,
+    CK_AGENT_RUNS_LIMITS,
+    CK_AGENT_RUNS_MONEY,
+    CK_AGENT_RUNS_OUTCOME_SCOPE,
+    CK_AGENT_RUNS_PAGE_CONTEXT,
+    CK_AGENT_RUNS_PARENT_NOT_SELF,
+    CK_AGENT_RUNS_POLICY_DIGEST,
+    CK_AGENT_RUNS_PROJECT,
+    CK_AGENT_RUNS_PROMPT_RELEASE,
+    CK_AGENT_RUNS_PURPOSE,
+    CK_AGENT_RUNS_RUNTIME,
+    CK_AGENT_RUNS_STATUS,
+    CK_AGENT_RUNS_SUBJECT_KIND,
+    CK_AGENT_RUNS_SUBJECT_MATCHES_KIND,
+    CK_AGENT_RUNS_SUBJECT_REQUIRES_PROJECT,
+    CK_AGENT_RUNS_TOOL_CATALOG_DIGEST,
+    CK_AGENT_RUNS_USAGE,
+    CK_LLM_INVOCATIONS_AGENT_ROLE,
+    CK_LLM_INVOCATIONS_AGENT_SCOPE,
+    CK_LLM_INVOCATIONS_COST,
+    CK_LLM_INVOCATIONS_DATA_CLASS,
+    CK_LLM_INVOCATIONS_DECISION_POINT,
+    CK_LLM_INVOCATIONS_OUTCOME_SCOPE,
+    CK_LLM_INVOCATIONS_PURPOSE_KEY,
+    CK_LLM_INVOCATIONS_REFUSAL_CODE,
+    CK_PROMPT_RELEASES_AGENT_KEY,
+    CK_PROMPT_RELEASES_OUTPUT_SCHEMA_DIGEST,
+    CK_PROMPT_RELEASES_PROMPT_DIGEST,
+    CK_PROMPT_RELEASES_RELEASED_AT,
+    CK_PROMPT_RELEASES_STATUS,
+    CK_PROMPT_RELEASES_VERSION,
+    CK_SDA_AGREEMENT,
+    CK_SDA_ANSWER,
+    CK_SDA_CONFIDENCE,
+    CK_SDA_DATA_CLASS,
+    CK_SDA_DECISION_POINT,
+    CK_SDA_EVIDENCE_PARTITION,
+    CK_SDA_GROUND_TRUTH,
+    CK_SDA_LABEL,
+    CK_SDA_LABEL_CHAIN,
+    CK_SDA_LABEL_SOURCE,
+    CK_SDA_LATENCY,
+    CK_SDA_LEVEL,
+    CK_SDA_POLICY_OUTCOME,
+    CK_SDA_PRIMITIVE,
+    CK_SDA_PROBABILITIES,
+    CK_SDA_PURPOSE,
+    CK_SDA_QUESTION_DIGEST,
+    CK_SDA_RULE_ANSWER,
+    CK_SDA_SUBJECT_REQUIRES_PROJECT,
+    CK_SDA_SUPERSEDES_NOT_SELF,
+    CK_SDA_VALUE_USED,
 )
 from app.domain.decision_records import (
     CK_PDR_ACTOR,
@@ -5618,11 +5708,32 @@ class LlmInvocation(Base):
             name="fk_llm_invocations_workspace_experiment",
             ondelete="CASCADE",
         ),
+        # Alembic 0071 (ADR 0009 §2.10): the six legacy purposes still match the key regex.
+        CheckConstraint(CK_LLM_INVOCATIONS_PURPOSE_KEY, name="ck_llm_invocations_purpose"),
+        ForeignKeyConstraint(
+            ["workspace_id", "agent_run_id"],
+            ["agent_runs.workspace_id", "agent_runs.id"],
+            name="fk_llm_invocations_workspace_agent_run",
+            ondelete="SET NULL (agent_run_id)",
+        ),
+        CheckConstraint(CK_LLM_INVOCATIONS_DATA_CLASS, name="ck_llm_invocations_data_class"),
+        CheckConstraint(CK_LLM_INVOCATIONS_OUTCOME_SCOPE, name="ck_llm_invocations_outcome_scope"),
+        CheckConstraint(CK_LLM_INVOCATIONS_AGENT_ROLE, name="ck_llm_invocations_agent_role"),
         CheckConstraint(
-            "purpose IN ('semantic_target', 'semantic_missing_value', "
-            "'semantic_column_type', 'semantic_leakage', 'pipeline_audit_routine', "
-            "'pipeline_audit_deep')",
-            name="ck_llm_invocations_purpose",
+            CK_LLM_INVOCATIONS_DECISION_POINT, name="ck_llm_invocations_decision_point_key"
+        ),
+        CheckConstraint(CK_LLM_INVOCATIONS_REFUSAL_CODE, name="ck_llm_invocations_refusal_code"),
+        CheckConstraint(CK_LLM_INVOCATIONS_COST, name="ck_llm_invocations_cost"),
+        CheckConstraint(CK_LLM_INVOCATIONS_AGENT_SCOPE, name="ck_llm_invocations_agent_scope"),
+        Index(
+            "ix_llm_invocations_agent_run_id",
+            "agent_run_id",
+            postgresql_where=text("agent_run_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_llm_invocations_prompt_release_id",
+            "prompt_release_id",
+            postgresql_where=text("prompt_release_id IS NOT NULL"),
         ),
         # ADR 0006 §7 (Alembic 0064): every invocation is attributable, possibly
         # to a project or agent run only.
@@ -5666,7 +5777,7 @@ class LlmInvocation(Base):
         UUID(as_uuid=True), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=True
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    # Internal agent run (Phase 6 adds agent_runs and the FK additively).
+    # Internal agent run: composite FK, ON DELETE SET NULL (agent_run_id) (Alembic 0071).
     agent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # Port kind of the gateway that produced the row; ``provider`` keeps the vendor.
     provider_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -5694,6 +5805,31 @@ class LlmInvocation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Gateway ledger fields (ADR 0009 §2.10, Alembic 0071); NULL on legacy rows.
+    prompt_release_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("prompt_releases.id", name="fk_llm_invocations_prompt_release"),
+        nullable=True,
+    )
+    cache_hit: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    cost_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    currency: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
+    data_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    outcome_scope: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    agent_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    decision_point_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    refusal_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    budget_reservation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    budget_settled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    provider_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Provider-reported model per call (founder: OpenAI ids without dated snapshots).
+    provider_resolved_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     workspace: Mapped[Workspace] = relationship(back_populates="llm_invocations")
     workflow_run: Mapped[WorkflowRun | None] = relationship(
@@ -5907,6 +6043,12 @@ class ProjectDecisionRecord(Base):
             ["service_tokens.workspace_id", "service_tokens.id"],
             name="fk_pdr_actor_service_token",
         ),
+        # Alembic 0071: an internal agent run of the same workspace.
+        ForeignKeyConstraint(
+            ["workspace_id", "actor_agent_run_id"],
+            ["agent_runs.workspace_id", "agent_runs.id"],
+            name="fk_pdr_actor_agent_run",
+        ),
         CheckConstraint(CK_PDR_DECISION_TYPE, name="ck_pdr_decision_type"),
         CheckConstraint(CK_PDR_STATE, name="ck_pdr_state"),
         CheckConstraint(CK_PDR_SUBJECT_KIND, name="ck_pdr_subject_kind"),
@@ -5988,7 +6130,7 @@ class ProjectDecisionRecord(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     actor_rule: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # No FK until Phase 6 adds agent_runs; actor_service_token_id: composite FK (P3.2-A).
+    # Composite FKs: agent_runs (Alembic 0071), service_tokens (P3.2-A).
     actor_agent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     actor_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
@@ -6330,6 +6472,509 @@ class BatchPrediction(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+def _agent_fk(prefix: str, column: str, table: str, *, project: bool = False) -> ForeignKeyConstraint:
+    """Composite tenant FK; ``project=True`` adds project_id like ``_pdr_subject_fk``."""
+
+    local = ["workspace_id", "project_id", column] if project else ["workspace_id", column]
+    remote = [f"{table}.{name}" for name in (local[:-1] + ["id"])]
+    middle = "workspace_project" if project else "workspace"
+    return ForeignKeyConstraint(local, remote, name=f"fk_{prefix}_{middle}_{column.removesuffix('_id')}")
+
+
+def _agent_subject_fks(prefix: str) -> tuple[ForeignKeyConstraint, ...]:
+    return tuple(
+        _agent_fk(prefix, column, table, project=True)
+        for column, table in (
+            ("experiment_id", "experiments"),
+            ("dataset_id", "datasets"),
+            ("problem_spec_id", "problem_specs"),
+            ("split_plan_id", "split_plans"),
+            ("model_version_id", "model_versions"),
+        )
+    )
+
+
+def _agent_subject_indexes(prefix: str) -> tuple[Index, ...]:
+    return tuple(
+        _partial_index(f"ix_{prefix}_{column}", column)
+        for column in ("experiment_id", "dataset_id", "problem_spec_id", "split_plan_id", "model_version_id")
+    )
+
+
+class PromptRelease(Base):
+    """Versioned agent prompt / Jev purpose release (ADR 0009 §2.8). Platform row.
+
+    Identity and digests are frozen and rows are never deleted (events and the
+    ledger reference them); only ``status``, ``released_at``, ``model_hint`` and
+    ``notes`` change.
+    """
+
+    __tablename__ = "prompt_releases"
+    __table_args__ = (
+        UniqueConstraint("agent_key", "version", name="uq_prompt_releases_agent_key_version"),
+        CheckConstraint(CK_PROMPT_RELEASES_AGENT_KEY, name="ck_prompt_releases_agent_key"),
+        CheckConstraint(CK_PROMPT_RELEASES_VERSION, name="ck_prompt_releases_version"),
+        CheckConstraint(CK_PROMPT_RELEASES_PROMPT_DIGEST, name="ck_prompt_releases_prompt_digest"),
+        CheckConstraint(
+            CK_PROMPT_RELEASES_OUTPUT_SCHEMA_DIGEST, name="ck_prompt_releases_output_schema_digest"
+        ),
+        CheckConstraint(CK_PROMPT_RELEASES_STATUS, name="ck_prompt_releases_status"),
+        CheckConstraint(CK_PROMPT_RELEASES_RELEASED_AT, name="ck_prompt_releases_released_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    output_schema_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    model_hint: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AgentRun(Base):
+    """One agent run or assistant thread (ADR 0009 §2.1). Workspace-scoped.
+
+    Header columns are frozen by trigger; only status, usage, cost, error, the
+    resolved provider/model, thread title/page context and timestamps change
+    (``context_digest`` is write-once). ``outcome_scope`` is never ``holdout``.
+    """
+
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_agent_runs_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_agent_runs_workspace_project",
+        ),
+        *_agent_subject_fks("agent_runs"),
+        _agent_fk("agent_runs", "parent_run_id", "agent_runs"),
+        _agent_fk("agent_runs", "created_by_service_token_id", "service_tokens"),
+        CheckConstraint(CK_AGENT_RUNS_KIND, name="ck_agent_runs_kind"),
+        CheckConstraint(CK_AGENT_RUNS_AGENT_KEY, name="ck_agent_runs_agent_key"),
+        CheckConstraint(CK_AGENT_RUNS_ASSISTANT, name="ck_agent_runs_assistant"),
+        CheckConstraint(CK_AGENT_RUNS_RUNTIME, name="ck_agent_runs_runtime"),
+        CheckConstraint(CK_AGENT_RUNS_PROMPT_RELEASE, name="ck_agent_runs_prompt_release"),
+        CheckConstraint(CK_AGENT_RUNS_PURPOSE, name="ck_agent_runs_purpose"),
+        CheckConstraint(CK_AGENT_RUNS_DECISION_POINT, name="ck_agent_runs_decision_point_key"),
+        CheckConstraint(CK_AGENT_RUNS_SUBJECT_KIND, name="ck_agent_runs_subject_kind"),
+        CheckConstraint(CK_AGENT_RUNS_SUBJECT_MATCHES_KIND, name="ck_agent_runs_subject_matches_kind"),
+        CheckConstraint(
+            CK_AGENT_RUNS_SUBJECT_REQUIRES_PROJECT, name="ck_agent_runs_subject_requires_project"
+        ),
+        CheckConstraint(CK_AGENT_RUNS_PROJECT, name="ck_agent_runs_project"),
+        CheckConstraint(CK_AGENT_RUNS_PARENT_NOT_SELF, name="ck_agent_runs_parent_not_self"),
+        CheckConstraint(CK_AGENT_RUNS_CONTEXT_DIGEST, name="ck_agent_runs_context_digest"),
+        CheckConstraint(CK_AGENT_RUNS_POLICY_DIGEST, name="ck_agent_runs_policy_digest"),
+        CheckConstraint(CK_AGENT_RUNS_TOOL_CATALOG_DIGEST, name="ck_agent_runs_tool_catalog_digest"),
+        CheckConstraint(CK_AGENT_RUNS_DATA_CLASS, name="ck_agent_runs_data_class"),
+        CheckConstraint(CK_AGENT_RUNS_OUTCOME_SCOPE, name="ck_agent_runs_outcome_scope"),
+        CheckConstraint(CK_AGENT_RUNS_STATUS, name="ck_agent_runs_status"),
+        CheckConstraint(CK_AGENT_RUNS_LIMITS, name="ck_agent_runs_limits"),
+        CheckConstraint(CK_AGENT_RUNS_USAGE, name="ck_agent_runs_usage"),
+        CheckConstraint(CK_AGENT_RUNS_PAGE_CONTEXT, name="ck_agent_runs_page_context"),
+        CheckConstraint(CK_AGENT_RUNS_MONEY, name="ck_agent_runs_money"),
+        CheckConstraint(CK_AGENT_RUNS_ERROR_CODE, name="ck_agent_runs_error_code"),
+        CheckConstraint(CK_AGENT_RUNS_IDEMPOTENCY, name="ck_agent_runs_idempotency"),
+        Index(
+            "ix_agent_runs_workspace_project_created_at",
+            "workspace_id",
+            "project_id",
+            desc("created_at"),
+        ),
+        Index("ix_agent_runs_workspace_kind_status", "workspace_id", "kind", "status"),
+        Index("ix_agent_runs_agent_key_created_at", "agent_key", desc("created_at")),
+        Index(
+            "ix_agent_runs_assistant_user_activity",
+            "created_by_user_id",
+            desc("last_activity_at"),
+            postgresql_where=text("kind = 'assistant'"),
+        ),
+        # One active run per agent and subject; NULLS NOT DISTINCT so a NULL
+        # subject column still collides (otherwise the index never fires).
+        Index(
+            "uq_agent_runs_active_subject",
+            "workspace_id",
+            "agent_key",
+            "subject_kind",
+            "project_id",
+            "experiment_id",
+            "dataset_id",
+            "problem_spec_id",
+            "split_plan_id",
+            "model_version_id",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+            postgresql_where=text("status IN ('queued', 'running') AND kind <> 'assistant'"),
+        ),
+        Index(
+            "uq_agent_runs_workspace_idempotency_key",
+            "workspace_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+        *_agent_subject_indexes("agent_runs"),
+        _partial_index("ix_agent_runs_parent_run_id", "parent_run_id"),
+        _partial_index("ix_agent_runs_prompt_release_id", "prompt_release_id"),
+        _partial_index("ix_agent_runs_created_by_service_token_id", "created_by_service_token_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    agent_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    agent_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    prompt_release_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("prompt_releases.id", name="fk_agent_runs_prompt_release"),
+        nullable=True,
+    )
+    runtime: Mapped[str] = mapped_column(String(16), nullable=False)
+    runtime_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision_point_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    subject_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    problem_spec_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    split_plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    parent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    context_digest: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
+    policy_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    tool_catalog_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    data_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome_scope: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    limits: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    usage: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    held_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    cost_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default=text("0")
+    )
+    currency: Mapped[str] = mapped_column(
+        CHAR(3), nullable=False, default="USD", server_default=text("'USD'")
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    idempotency_digest: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    created_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    page_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AgentEvent(Base):
+    """Append-only, retention-aware run event (ADR 0009 §2.2, §5.4)."""
+
+    __tablename__ = "agent_events"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_agent_events_workspace_id"),
+        UniqueConstraint("run_id", "seq", name="uq_agent_events_run_seq"),
+        _agent_fk("agent_events", "run_id", "agent_runs"),
+        _agent_fk("agent_events", "llm_invocation_id", "llm_invocations"),
+        CheckConstraint(CK_AGENT_EVENTS_SEQ, name="ck_agent_events_seq"),
+        CheckConstraint(CK_AGENT_EVENTS_TYPE, name="ck_agent_events_type"),
+        CheckConstraint(CK_AGENT_EVENTS_PAYLOAD, name="ck_agent_events_payload"),
+        CheckConstraint(CK_AGENT_EVENTS_PAYLOAD_DIGEST, name="ck_agent_events_payload_digest"),
+        Index("ix_agent_events_workspace_created_at", "workspace_id", desc("created_at")),
+        _partial_index("ix_agent_events_llm_invocation_id", "llm_invocation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    type: Mapped[str] = mapped_column(String(48), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    payload_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    llm_invocation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AgentProposal(Base):
+    """Workflow item for an AI answer (ADR 0009 §2.3). Never the authority.
+
+    The ``agent_proposals_transition`` trigger allows only the decision columns
+    to change and only along the state arrows; ``payload`` is immutable.
+    """
+
+    __tablename__ = "agent_proposals"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_agent_proposals_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_agent_proposals_workspace_project",
+        ),
+        _agent_fk("agent_proposals", "run_id", "agent_runs"),
+        *_agent_subject_fks("agent_proposals"),
+        _agent_fk(
+            "agent_proposals", "decision_record_id", "project_decision_records", project=True
+        ),
+        _agent_fk(
+            "agent_proposals",
+            "applied_decision_record_id",
+            "project_decision_records",
+            project=True,
+        ),
+        CheckConstraint(CK_AGENT_PROPOSALS_DECISION_POINT, name="ck_agent_proposals_decision_point_key"),
+        CheckConstraint(CK_AGENT_PROPOSALS_LEVELS, name="ck_agent_proposals_levels"),
+        CheckConstraint(CK_AGENT_PROPOSALS_TYPE, name="ck_agent_proposals_type"),
+        CheckConstraint(CK_AGENT_PROPOSALS_SCHEMA_VERSION, name="ck_agent_proposals_schema_version"),
+        CheckConstraint(CK_AGENT_PROPOSALS_PAYLOAD, name="ck_agent_proposals_payload"),
+        CheckConstraint(CK_AGENT_PROPOSALS_PAYLOAD_DIGEST, name="ck_agent_proposals_payload_digest"),
+        CheckConstraint(CK_AGENT_PROPOSALS_RULE_ANSWER, name="ck_agent_proposals_rule_answer"),
+        CheckConstraint(CK_AGENT_PROPOSALS_CITATIONS, name="ck_agent_proposals_citations"),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_VALIDATOR_VERDICT, name="ck_agent_proposals_validator_verdict"
+        ),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_VALIDATOR_REASONS, name="ck_agent_proposals_validator_reasons"
+        ),
+        CheckConstraint(CK_AGENT_PROPOSALS_STATUS, name="ck_agent_proposals_status"),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_VERDICT_MATCHES_STATUS, name="ck_agent_proposals_verdict_status"
+        ),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_SUPERSEDE_REASON, name="ck_agent_proposals_supersede_reason"
+        ),
+        CheckConstraint(CK_AGENT_PROPOSALS_SUBJECT_KIND, name="ck_agent_proposals_subject_kind"),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_SUBJECT_MATCHES_KIND, name="ck_agent_proposals_subject_matches_kind"
+        ),
+        CheckConstraint(CK_AGENT_PROPOSALS_TOOL_CALL, name="ck_agent_proposals_tool_call"),
+        CheckConstraint(CK_AGENT_PROPOSALS_TOOL_NAME, name="ck_agent_proposals_tool_name"),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_TOOL_ARGUMENTS, name="ck_agent_proposals_tool_arguments"
+        ),
+        CheckConstraint(CK_AGENT_PROPOSALS_ESTIMATES, name="ck_agent_proposals_estimates"),
+        CheckConstraint(CK_AGENT_PROPOSALS_DECIDED, name="ck_agent_proposals_decided"),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_DECIDED_STATUS, name="ck_agent_proposals_decided_status"
+        ),
+        CheckConstraint(CK_AGENT_PROPOSALS_LEVEL_STATUS, name="ck_agent_proposals_level_status"),
+        CheckConstraint(
+            CK_AGENT_PROPOSALS_TOOL_CALL_LEVEL, name="ck_agent_proposals_tool_call_level"
+        ),
+        CheckConstraint(CK_AGENT_PROPOSALS_IDEMPOTENCY, name="ck_agent_proposals_idempotency"),
+        Index(
+            "ix_agent_proposals_workspace_project_status_created_at",
+            "workspace_id",
+            "project_id",
+            "status",
+            desc("created_at"),
+        ),
+        Index("ix_agent_proposals_decision_point_status", "decision_point_key", "status"),
+        Index("ix_agent_proposals_run_id", "run_id"),
+        Index(
+            "uq_agent_proposals_workspace_idempotency_key",
+            "workspace_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+        *_agent_subject_indexes("agent_proposals"),
+        _partial_index("ix_agent_proposals_decision_record_id", "decision_record_id"),
+        _partial_index(
+            "ix_agent_proposals_applied_decision_record_id", "applied_decision_record_id"
+        ),
+        _partial_index("ix_agent_proposals_decided_by_user_id", "decided_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    decision_point_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    level_at_proposal: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    answer_ceiling: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    proposal_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    payload_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    rule_answer: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    citations: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    validator_verdict: Mapped[str] = mapped_column(String(16), nullable=False)
+    validator_reasons: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    supersede_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    subject_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    problem_spec_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    split_plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tool_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tool_arguments: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    proposed_rationale: Mapped[str | None] = mapped_column(String(4000), nullable=True)
+    estimated_cost_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    estimated_duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    applied_decision_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    idempotency_digest: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SemanticDecisionAnswer(Base):
+    """One Jev answer / evaluation sample (ADR 0009 §2.4). Append-only.
+
+    Labels are new rows (``labels_version`` >= 1, ``supersedes_label_id``);
+    DELETE only under the retention or workspace-deletion GUC.
+    """
+
+    __tablename__ = "semantic_decision_answers"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_sda_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_sda_workspace_project",
+        ),
+        _agent_fk("sda", "experiment_id", "experiments", project=True),
+        _agent_fk("sda", "dataset_id", "datasets", project=True),
+        _agent_fk("sda", "llm_invocation_id", "llm_invocations"),
+        _agent_fk("sda", "agent_run_id", "agent_runs"),
+        _agent_fk("sda", "supersedes_label_id", "semantic_decision_answers"),
+        CheckConstraint(CK_SDA_SUBJECT_REQUIRES_PROJECT, name="ck_sda_subject_requires_project"),
+        CheckConstraint(CK_SDA_DECISION_POINT, name="ck_sda_decision_point_key"),
+        CheckConstraint(CK_SDA_PURPOSE, name="ck_sda_purpose"),
+        CheckConstraint(CK_SDA_QUESTION_DIGEST, name="ck_sda_question_digest"),
+        CheckConstraint(CK_SDA_DATA_CLASS, name="ck_sda_data_class"),
+        CheckConstraint(CK_SDA_EVIDENCE_PARTITION, name="ck_sda_evidence_partition"),
+        CheckConstraint(CK_SDA_PRIMITIVE, name="ck_sda_primitive"),
+        CheckConstraint(CK_SDA_ANSWER, name="ck_sda_answer"),
+        CheckConstraint(CK_SDA_PROBABILITIES, name="ck_sda_probabilities"),
+        CheckConstraint(CK_SDA_CONFIDENCE, name="ck_sda_confidence"),
+        CheckConstraint(CK_SDA_RULE_ANSWER, name="ck_sda_rule_answer"),
+        CheckConstraint(CK_SDA_AGREEMENT, name="ck_sda_agreement"),
+        CheckConstraint(CK_SDA_LEVEL, name="ck_sda_level"),
+        CheckConstraint(CK_SDA_POLICY_OUTCOME, name="ck_sda_policy_outcome"),
+        CheckConstraint(CK_SDA_VALUE_USED, name="ck_sda_value_used"),
+        CheckConstraint(CK_SDA_LATENCY, name="ck_sda_latency"),
+        CheckConstraint(CK_SDA_GROUND_TRUTH, name="ck_sda_ground_truth"),
+        CheckConstraint(CK_SDA_LABEL_SOURCE, name="ck_sda_label_source"),
+        CheckConstraint(CK_SDA_LABEL, name="ck_sda_label"),
+        CheckConstraint(CK_SDA_SUPERSEDES_NOT_SELF, name="ck_sda_supersedes_not_self"),
+        CheckConstraint(CK_SDA_LABEL_CHAIN, name="ck_sda_label_chain"),
+        Index(
+            "ix_sda_purpose_release_model_created_at",
+            "purpose",
+            "release_version",
+            "model_id",
+            desc("created_at"),
+        ),
+        Index("ix_sda_workspace_question_digest", "workspace_id", "question_digest"),
+        Index("ix_sda_workspace_decision_point", "workspace_id", "decision_point_key"),
+        Index("ix_sda_llm_invocation_id", "llm_invocation_id"),
+        _partial_index("ix_sda_agent_run_id", "agent_run_id"),
+        _partial_index("ix_sda_experiment_id", "experiment_id"),
+        _partial_index("ix_sda_dataset_id", "dataset_id"),
+        _partial_index("ix_sda_labeled_by_user_id", "labeled_by_user_id"),
+        _partial_index("ix_sda_workspace_project", "workspace_id", "project_id"),
+        Index(
+            "uq_sda_supersedes_label_id",
+            "supersedes_label_id",
+            unique=True,
+            postgresql_where=text("supersedes_label_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    llm_invocation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    decision_point_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    question_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    question_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    data_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_partition: Mapped[str] = mapped_column(String(8), nullable=False)
+    primitive: Mapped[str] = mapped_column(String(8), nullable=False)
+    answer: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    probabilities: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    in_acting_band: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    rule_answer: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    agreement: Mapped[str] = mapped_column(String(16), nullable=False)
+    level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    policy_outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    value_used: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    cache_hit: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ground_truth: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    labeled_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    labeled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    label_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    labels_version: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default=text("0")
+    )
+    supersedes_label_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 @event.listens_for(Dataset, "before_update")
 @event.listens_for(Dataset, "before_delete")
 def _protect_immutable_dataset(_mapper, _connection, _target: Dataset) -> None:
@@ -6426,6 +7071,18 @@ def _protect_append_only_decision_record(
     _mapper, _connection, _target: ProjectDecisionRecord
 ) -> None:
     raise ValueError("ProjectDecisionRecord rows are append-only")
+
+
+@event.listens_for(AgentEvent, "before_update")
+def _protect_append_only_agent_event(_mapper, _connection, _target: AgentEvent) -> None:
+    raise ValueError("AgentEvent rows are append-only")
+
+
+@event.listens_for(SemanticDecisionAnswer, "before_update")
+def _protect_append_only_semantic_answer(
+    _mapper, _connection, _target: SemanticDecisionAnswer
+) -> None:
+    raise ValueError("SemanticDecisionAnswer rows are append-only; append a label row")
 
 
 @event.listens_for(IdempotencyKey, "before_update")

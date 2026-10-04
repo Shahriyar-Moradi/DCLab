@@ -780,7 +780,9 @@
               "experiment_accepted",
               "experiment_rejected",
               "proposal_accepted",
-              "proposal_rejected"
+              "proposal_rejected",
+              "decision_point_resolved",
+              "proposal_reverted"
             ],
             "title": "Decision Type",
             "type": "string"
@@ -10504,7 +10506,9 @@
                     "experiment_accepted",
                     "experiment_rejected",
                     "proposal_accepted",
-                    "proposal_rejected"
+                    "proposal_rejected",
+                    "decision_point_resolved",
+                    "proposal_reverted"
                   ],
                   "type": "string"
                 },

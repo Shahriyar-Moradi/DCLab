@@ -41,6 +41,7 @@ from app.services.project_service import create_project
 from app.services.service_token_service import create_service_token
 from app.services.workspace_service import add_workspace_member
 from test_graph_service import _headers, _seed_graph, _source_dataset, _split_plan
+from test_agent_persistence import insert_agent_run
 from test_data_model_lineage import make_lineage_setup
 
 
@@ -76,7 +77,11 @@ def g(db_session, tmp_path, setup, monkeypatch):
     db.commit()
     _force_lock(db, g.exp[0], g.exp[3])
     g.human = DecisionActor.human(g.actor)
-    g.agent = DecisionActor.agent(agent_run_id=uuid4())
+    # A real agent run (fk_pdr_actor_agent_run, Alembic 0071).
+    g.agent = DecisionActor.agent(
+        agent_run_id=insert_agent_run(db, workspace_id=g.ws, project_id=g.project.id)
+    )
+    db.commit()
     # Test verifier: agent run / token id -> bound workspace (production: Phase 6 / P3.2-A).
     g.bindings = {g.agent.agent_run_id: g.ws}
     monkeypatch.setattr(

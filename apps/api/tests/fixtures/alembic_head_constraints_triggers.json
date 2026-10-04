@@ -1,6 +1,266 @@
 {
   "check_constraints": [
     {
+      "table": "agent_events",
+      "name": "ck_agent_events_payload",
+      "definition": "CHECK (((jsonb_typeof(payload) = 'object'::text) AND (octet_length((payload)::text) <= 16384) AND (NOT jsonb_exists_any(payload, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text]))))"
+    },
+    {
+      "table": "agent_events",
+      "name": "ck_agent_events_payload_digest",
+      "definition": "CHECK ((payload_digest ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "agent_events",
+      "name": "ck_agent_events_seq",
+      "definition": "CHECK ((seq >= 1))"
+    },
+    {
+      "table": "agent_events",
+      "name": "ck_agent_events_type",
+      "definition": "CHECK (((type)::text = ANY ((ARRAY['run_started'::character varying, 'context_built'::character varying, 'budget_reserved'::character varying, 'user_message'::character varying, 'llm_call_started'::character varying, 'llm_call_finished'::character varying, 'step_validated'::character varying, 'step_rejected'::character varying, 'tool_call_requested'::character varying, 'tool_call_denied'::character varying, 'tool_call_finished'::character varying, 'proposal_created'::character varying, 'proposal_auto_applied'::character varying, 'assistant_message'::character varying, 'clarification_requested'::character varying, 'budget_exhausted'::character varying, 'budget_settled'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'thread_closed'::character varying, 'replay_checked'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_citations",
+      "definition": "CHECK (((jsonb_typeof(citations) = 'array'::text) AND (octet_length((citations)::text) <= 16384) AND (jsonb_array_length(citations) <= 64)))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_decided",
+      "definition": "CHECK ((((status)::text <> ALL ((ARRAY['accepted'::character varying, 'rejected'::character varying])::text[])) OR ((decided_by_user_id IS NOT NULL) AND (decided_at IS NOT NULL))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_decided_status",
+      "definition": "CHECK (((decided_by_user_id IS NULL) OR ((status)::text = ANY ((ARRAY['accepted'::character varying, 'rejected'::character varying, 'applied'::character varying, 'reverted'::character varying])::text[]))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_decision_point_key",
+      "definition": "CHECK (((decision_point_key)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_estimates",
+      "definition": "CHECK ((((estimated_cost_micros IS NULL) OR (estimated_cost_micros >= 0)) AND ((estimated_duration_s IS NULL) OR (estimated_duration_s >= 0))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_idempotency",
+      "definition": "CHECK ((((idempotency_key IS NULL) = (idempotency_digest IS NULL)) AND ((idempotency_digest IS NULL) OR (idempotency_digest ~ '^[0-9a-f]{64}$'::text))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_level_status",
+      "definition": "CHECK ((((level_at_proposal = 0) AND ((status)::text = ANY ((ARRAY['shadow'::character varying, 'rejected_by_validator'::character varying])::text[]))) OR ((level_at_proposal >= 1) AND ((status)::text <> 'shadow'::text))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_levels",
+      "definition": "CHECK ((((level_at_proposal >= 0) AND (level_at_proposal <= 3)) AND ((answer_ceiling >= 0) AND (answer_ceiling <= 3)) AND (level_at_proposal <= answer_ceiling)))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_payload",
+      "definition": "CHECK (((jsonb_typeof(payload) = 'object'::text) AND (octet_length((payload)::text) <= 32768) AND (NOT jsonb_exists_any(payload, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text]))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_payload_digest",
+      "definition": "CHECK ((payload_digest ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_rule_answer",
+      "definition": "CHECK (((rule_answer IS NULL) OR ((jsonb_typeof(rule_answer) = 'object'::text) AND (octet_length((rule_answer)::text) <= 8192) AND (NOT jsonb_exists_any(rule_answer, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_schema_version",
+      "definition": "CHECK ((schema_version >= 1))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['shadow'::character varying, 'proposed'::character varying, 'rejected_by_validator'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'applied'::character varying, 'reverted'::character varying, 'superseded'::character varying, 'expired'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_subject_kind",
+      "definition": "CHECK (((subject_kind)::text = ANY ((ARRAY['problem_spec'::character varying, 'dataset_version'::character varying, 'split_plan'::character varying, 'experiment'::character varying, 'model_version'::character varying, 'project'::character varying, 'thread'::character varying, 'monitoring_window'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_subject_matches_kind",
+      "definition": "CHECK (((((subject_kind)::text = ANY ((ARRAY['project'::character varying, 'thread'::character varying, 'monitoring_window'::character varying])::text[])) AND (num_nonnulls(problem_spec_id, dataset_id, split_plan_id, experiment_id, model_version_id) = 0)) OR ((num_nonnulls(problem_spec_id, dataset_id, split_plan_id, experiment_id, model_version_id) = 1) AND ((((subject_kind)::text = 'problem_spec'::text) AND (problem_spec_id IS NOT NULL)) OR (((subject_kind)::text = 'dataset_version'::text) AND (dataset_id IS NOT NULL)) OR (((subject_kind)::text = 'split_plan'::text) AND (split_plan_id IS NOT NULL)) OR (((subject_kind)::text = 'experiment'::text) AND (experiment_id IS NOT NULL)) OR (((subject_kind)::text = 'model_version'::text) AND (model_version_id IS NOT NULL))))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_supersede_reason",
+      "definition": "CHECK (((((status)::text = 'superseded'::text) = (supersede_reason IS NOT NULL)) AND ((supersede_reason IS NULL) OR ((supersede_reason)::text = ANY ((ARRAY['plan_exists'::character varying, 'results_exist'::character varying, 'newer_proposal'::character varying])::text[])))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_tool_arguments",
+      "definition": "CHECK (((tool_arguments IS NULL) OR ((jsonb_typeof(tool_arguments) = 'object'::text) AND (octet_length((tool_arguments)::text) <= 8192) AND (NOT jsonb_exists_any(tool_arguments, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_tool_call",
+      "definition": "CHECK (((((proposal_type)::text = 'ToolCallProposal'::text) = ((tool_name IS NOT NULL) AND (tool_arguments IS NOT NULL))) AND ((tool_name IS NOT NULL) OR (tool_arguments IS NULL))))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_tool_call_level",
+      "definition": "CHECK ((((proposal_type)::text <> 'ToolCallProposal'::text) OR (level_at_proposal <= 1)))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_tool_name",
+      "definition": "CHECK (((tool_name IS NULL) OR ((tool_name)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text)))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_type",
+      "definition": "CHECK (((proposal_type)::text = ANY ((ARRAY['ExperimentPlanProposal'::character varying, 'ExperimentReviewProposal'::character varying, 'DatasetInvestigationProposal'::character varying, 'ImprovementActionProposal'::character varying, 'ToolCallProposal'::character varying, 'ReleaseProposal'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_validator_reasons",
+      "definition": "CHECK (((jsonb_typeof(validator_reasons) = 'array'::text) AND (octet_length((validator_reasons)::text) <= 4096)))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_validator_verdict",
+      "definition": "CHECK (((validator_verdict)::text = ANY ((ARRAY['accepted'::character varying, 'rejected'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "ck_agent_proposals_verdict_status",
+      "definition": "CHECK ((((validator_verdict)::text = 'rejected'::text) = ((status)::text = 'rejected_by_validator'::text)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_agent_key",
+      "definition": "CHECK (((agent_key)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_assistant",
+      "definition": "CHECK ((((kind)::text <> 'assistant'::text) OR (((agent_key)::text = 'lead'::text) AND (created_by_user_id IS NOT NULL) AND (created_by_service_token_id IS NULL))))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_context_digest",
+      "definition": "CHECK (((context_digest IS NULL) OR (context_digest ~ '^[0-9a-f]{64}$'::text)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_data_class",
+      "definition": "CHECK (((data_class)::text = ANY ((ARRAY['metadata'::character varying, 'aggregates'::character varying, 'sample_values'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_decision_point_key",
+      "definition": "CHECK (((decision_point_key IS NULL) OR ((decision_point_key)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_error_code",
+      "definition": "CHECK (((error_code IS NULL) OR ((error_code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_idempotency",
+      "definition": "CHECK ((((idempotency_key IS NULL) = (idempotency_digest IS NULL)) AND ((idempotency_digest IS NULL) OR (idempotency_digest ~ '^[0-9a-f]{64}$'::text))))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['assistant'::character varying, 'lead'::character varying, 'specialist'::character varying, 'ops'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_limits",
+      "definition": "CHECK (((jsonb_typeof(limits) = 'object'::text) AND (octet_length((limits)::text) <= 2048) AND (NOT jsonb_exists_any(limits, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text]))))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_money",
+      "definition": "CHECK (((held_micros >= 0) AND (cost_micros >= 0) AND (currency ~ '^[A-Z]{3}$'::text)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_outcome_scope",
+      "definition": "CHECK (((outcome_scope)::text = ANY ((ARRAY['none'::character varying, 'cv'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_page_context",
+      "definition": "CHECK (((page_context IS NULL) OR ((jsonb_typeof(page_context) = 'object'::text) AND (octet_length((page_context)::text) <= 1024) AND (NOT jsonb_exists_any(page_context, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_parent_not_self",
+      "definition": "CHECK (((parent_run_id IS NULL) OR (parent_run_id <> id)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_policy_digest",
+      "definition": "CHECK ((policy_digest ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_project",
+      "definition": "CHECK (((project_id IS NOT NULL) OR (((kind)::text = 'ops'::text) AND (subject_kind IS NULL))))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_prompt_release",
+      "definition": "CHECK ((((runtime)::text = 'fake'::text) OR (prompt_release_id IS NOT NULL)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_purpose",
+      "definition": "CHECK (((purpose)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_runtime",
+      "definition": "CHECK (((runtime)::text = ANY ((ARRAY['fake'::character varying, 'nooa_predict'::character varying, 'lead_loop'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'waiting_user'::character varying, 'completed'::character varying, 'failed'::character varying, 'rejected_by_validator'::character varying, 'over_budget'::character varying, 'timed_out'::character varying, 'cancelled'::character varying, 'closed'::character varying])::text[])))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_subject_kind",
+      "definition": "CHECK (((subject_kind IS NULL) OR ((subject_kind)::text = ANY ((ARRAY['problem_spec'::character varying, 'dataset_version'::character varying, 'split_plan'::character varying, 'experiment'::character varying, 'model_version'::character varying, 'project'::character varying, 'thread'::character varying, 'monitoring_window'::character varying])::text[]))))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_subject_matches_kind",
+      "definition": "CHECK (((((subject_kind IS NULL) OR ((subject_kind)::text = ANY ((ARRAY['project'::character varying, 'thread'::character varying, 'monitoring_window'::character varying])::text[]))) AND (num_nonnulls(problem_spec_id, dataset_id, split_plan_id, experiment_id, model_version_id) = 0)) OR ((num_nonnulls(problem_spec_id, dataset_id, split_plan_id, experiment_id, model_version_id) = 1) AND ((((subject_kind)::text = 'problem_spec'::text) AND (problem_spec_id IS NOT NULL)) OR (((subject_kind)::text = 'dataset_version'::text) AND (dataset_id IS NOT NULL)) OR (((subject_kind)::text = 'split_plan'::text) AND (split_plan_id IS NOT NULL)) OR (((subject_kind)::text = 'experiment'::text) AND (experiment_id IS NOT NULL)) OR (((subject_kind)::text = 'model_version'::text) AND (model_version_id IS NOT NULL))))))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_subject_requires_project",
+      "definition": "CHECK (((num_nonnulls(problem_spec_id, dataset_id, split_plan_id, experiment_id, model_version_id) = 0) OR (project_id IS NOT NULL)))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_tool_catalog_digest",
+      "definition": "CHECK ((tool_catalog_digest ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "agent_runs",
+      "name": "ck_agent_runs_usage",
+      "definition": "CHECK (((jsonb_typeof(usage) = 'object'::text) AND (octet_length((usage)::text) <= 2048) AND (NOT jsonb_exists_any(usage, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text]))))"
+    },
+    {
       "table": "artifacts",
       "name": "ck_artifacts_provider_valid",
       "definition": "CHECK (((provider)::text = ANY ((ARRAY['local'::character varying, 's3'::character varying, 'gcs'::character varying])::text[])))"
@@ -542,8 +802,38 @@
     },
     {
       "table": "llm_invocations",
+      "name": "ck_llm_invocations_agent_role",
+      "definition": "CHECK (((agent_role IS NULL) OR ((agent_role)::text = ANY ((ARRAY['lead'::character varying, 'specialist'::character varying, 'legacy_decision'::character varying, 'verifier'::character varying])::text[]))))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_agent_scope",
+      "definition": "CHECK ((((prompt_release_id IS NULL) AND (agent_run_id IS NULL)) OR ((outcome_scope IS NOT NULL) AND (data_class IS NOT NULL))))"
+    },
+    {
+      "table": "llm_invocations",
       "name": "ck_llm_invocations_attributed",
       "definition": "CHECK ((num_nonnulls(workflow_run_id, experiment_id, project_id, agent_run_id) >= 1))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_cost",
+      "definition": "CHECK ((((cost_micros IS NULL) OR (cost_micros >= 0)) AND ((currency IS NULL) OR (currency ~ '^[A-Z]{3}$'::text))))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_data_class",
+      "definition": "CHECK (((data_class IS NULL) OR ((data_class)::text = ANY ((ARRAY['metadata'::character varying, 'aggregates'::character varying, 'sample_values'::character varying])::text[]))))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_decision_point_key",
+      "definition": "CHECK (((decision_point_key IS NULL) OR ((decision_point_key)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text)))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_outcome_scope",
+      "definition": "CHECK (((outcome_scope IS NULL) OR ((outcome_scope)::text = ANY ((ARRAY['none'::character varying, 'cv'::character varying])::text[]))))"
     },
     {
       "table": "llm_invocations",
@@ -553,7 +843,12 @@
     {
       "table": "llm_invocations",
       "name": "ck_llm_invocations_purpose",
-      "definition": "CHECK (((purpose)::text = ANY ((ARRAY['semantic_target'::character varying, 'semantic_missing_value'::character varying, 'semantic_column_type'::character varying, 'semantic_leakage'::character varying, 'pipeline_audit_routine'::character varying, 'pipeline_audit_deep'::character varying])::text[])))"
+      "definition": "CHECK (((purpose)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text))"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "ck_llm_invocations_refusal_code",
+      "definition": "CHECK (((refusal_code IS NULL) OR ((refusal_code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)))"
     },
     {
       "table": "ml_jobs",
@@ -801,6 +1096,141 @@
       "definition": "CHECK ((((provenance)::text <> 'user'::text) OR (created_by IS NOT NULL)))"
     },
     {
+      "table": "prompt_releases",
+      "name": "ck_prompt_releases_agent_key",
+      "definition": "CHECK (((agent_key)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text))"
+    },
+    {
+      "table": "prompt_releases",
+      "name": "ck_prompt_releases_output_schema_digest",
+      "definition": "CHECK ((output_schema_digest ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "prompt_releases",
+      "name": "ck_prompt_releases_prompt_digest",
+      "definition": "CHECK ((prompt_digest ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "prompt_releases",
+      "name": "ck_prompt_releases_released_at",
+      "definition": "CHECK ((((status)::text <> 'released'::text) OR (released_at IS NOT NULL)))"
+    },
+    {
+      "table": "prompt_releases",
+      "name": "ck_prompt_releases_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'released'::character varying, 'retired'::character varying])::text[])))"
+    },
+    {
+      "table": "prompt_releases",
+      "name": "ck_prompt_releases_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_agreement",
+      "definition": "CHECK (((agreement)::text = ANY ((ARRAY['agree'::character varying, 'disagree'::character varying, 'abstain'::character varying, 'unavailable'::character varying])::text[])))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_answer",
+      "definition": "CHECK (((jsonb_typeof(answer) = 'object'::text) AND (octet_length((answer)::text) <= 2048) AND (NOT jsonb_exists_any(answer, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text]))))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_confidence",
+      "definition": "CHECK (((confidence IS NULL) OR ((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_data_class",
+      "definition": "CHECK (((data_class)::text = ANY ((ARRAY['metadata'::character varying, 'aggregates'::character varying, 'sample_values'::character varying])::text[])))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_decision_point_key",
+      "definition": "CHECK (((decision_point_key)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_evidence_partition",
+      "definition": "CHECK (((evidence_partition)::text = ANY ((ARRAY['metadata'::character varying, 'train'::character varying])::text[])))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_ground_truth",
+      "definition": "CHECK (((ground_truth IS NULL) OR ((jsonb_typeof(ground_truth) = 'object'::text) AND (octet_length((ground_truth)::text) <= 2048) AND (NOT jsonb_exists_any(ground_truth, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_label",
+      "definition": "CHECK ((((ground_truth IS NULL) AND (label_source IS NULL) AND (labeled_at IS NULL) AND (labeled_by_user_id IS NULL) AND (supersedes_label_id IS NULL) AND (labels_version = 0)) OR ((ground_truth IS NOT NULL) AND (label_source IS NOT NULL) AND (labeled_at IS NOT NULL) AND (labels_version >= 1))))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_label_chain",
+      "definition": "CHECK (((labels_version = 0) OR (supersedes_label_id IS NOT NULL)))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_label_source",
+      "definition": "CHECK (((label_source IS NULL) OR ((label_source)::text = ANY ((ARRAY['blind'::character varying, 'benchmark'::character varying, 'user_decision_exposed'::character varying])::text[]))))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_latency",
+      "definition": "CHECK (((latency_ms IS NULL) OR (latency_ms >= 0)))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_level",
+      "definition": "CHECK (((level >= 0) AND (level <= 3)))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_policy_outcome",
+      "definition": "CHECK (((policy_outcome)::text = ANY ((ARRAY['rule'::character varying, 'ai'::character varying, 'review'::character varying, 'human'::character varying])::text[])))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_primitive",
+      "definition": "CHECK (((primitive)::text = ANY ((ARRAY['noul'::character varying, 'choice'::character varying, 'score'::character varying])::text[])))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_probabilities",
+      "definition": "CHECK (((probabilities IS NULL) OR ((jsonb_typeof(probabilities) = 'object'::text) AND (octet_length((probabilities)::text) <= 4096) AND (NOT jsonb_exists_any(probabilities, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_purpose",
+      "definition": "CHECK (((purpose)::text ~ '^[a-z][a-z0-9_.:-]{0,63}$'::text))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_question_digest",
+      "definition": "CHECK ((question_digest ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_rule_answer",
+      "definition": "CHECK (((rule_answer IS NULL) OR ((jsonb_typeof(rule_answer) = 'object'::text) AND (octet_length((rule_answer)::text) <= 2048) AND (NOT jsonb_exists_any(rule_answer, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_subject_requires_project",
+      "definition": "CHECK (((num_nonnulls(experiment_id, dataset_id) = 0) OR (project_id IS NOT NULL)))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_supersedes_not_self",
+      "definition": "CHECK (((supersedes_label_id IS NULL) OR (supersedes_label_id <> id)))"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "ck_sda_value_used",
+      "definition": "CHECK (((value_used IS NULL) OR ((jsonb_typeof(value_used) = 'object'::text) AND (octet_length((value_used)::text) <= 2048) AND (NOT jsonb_exists_any(value_used, ARRAY['password'::text, 'secret'::text, 'token'::text, 'api_key'::text, 'access_key'::text, 'credentials'::text, 'authorization'::text, 'rows'::text, 'records'::text, 'dataset_rows'::text, 'csv'::text, 'file_bytes'::text, 'contents'::text])))))"
+    },
+    {
       "table": "service_tokens",
       "name": "ck_service_tokens_expiry",
       "definition": "CHECK (((expires_at > created_at) AND (expires_at <= (created_at + '2160:00:00'::interval))))"
@@ -958,6 +1388,56 @@
   ],
   "triggers": [
     {
+      "table": "agent_events",
+      "name": "agent_events_append_only",
+      "definition": "CREATE TRIGGER agent_events_append_only BEFORE DELETE OR UPDATE ON public.agent_events FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "agent_events",
+      "name": "agent_events_created_at_now",
+      "definition": "CREATE TRIGGER agent_events_created_at_now BEFORE INSERT ON public.agent_events FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "agent_proposals_created_at_now",
+      "definition": "CREATE TRIGGER agent_proposals_created_at_now BEFORE INSERT ON public.agent_proposals FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "agent_proposals_retention_delete",
+      "definition": "CREATE TRIGGER agent_proposals_retention_delete BEFORE DELETE ON public.agent_proposals FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "agent_proposals",
+      "name": "agent_proposals_transition",
+      "definition": "CREATE TRIGGER agent_proposals_transition BEFORE INSERT OR UPDATE ON public.agent_proposals FOR EACH ROW EXECUTE FUNCTION enforce_agent_proposal_transition()"
+    },
+    {
+      "table": "agent_runs",
+      "name": "agent_runs_columns_immutable",
+      "definition": "CREATE TRIGGER agent_runs_columns_immutable BEFORE UPDATE ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('id,workspace_id,project_id,kind,agent_key,agent_version,prompt_release_id,runtime,runtime_version,purpose,decision_point_key,subject_kind,experiment_id,dataset_id,problem_spec_id,split_plan_id,model_version_id,parent_run_id,policy_digest,tool_catalog_digest,data_class,outcome_scope,limits,currency,idempotency_key,idempotency_digest,created_by_user_id,created_by_service_token_id,created_at')"
+    },
+    {
+      "table": "agent_runs",
+      "name": "agent_runs_context_digest_write_once",
+      "definition": "CREATE TRIGGER agent_runs_context_digest_write_once BEFORE UPDATE OF context_digest ON public.agent_runs FOR EACH ROW WHEN (((old.context_digest IS NOT NULL) AND (new.context_digest IS DISTINCT FROM old.context_digest))) EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "agent_runs",
+      "name": "agent_runs_created_at_now",
+      "definition": "CREATE TRIGGER agent_runs_created_at_now BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
+    },
+    {
+      "table": "agent_runs",
+      "name": "agent_runs_held_micros_write_once",
+      "definition": "CREATE TRIGGER agent_runs_held_micros_write_once BEFORE UPDATE OF held_micros ON public.agent_runs FOR EACH ROW WHEN (((old.held_micros <> 0) AND (new.held_micros IS DISTINCT FROM old.held_micros))) EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "agent_runs",
+      "name": "agent_runs_retention_delete",
+      "definition": "CREATE TRIGGER agent_runs_retention_delete BEFORE DELETE ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
       "table": "artifacts",
       "name": "artifacts_columns_immutable",
       "definition": "CREATE TRIGGER artifacts_columns_immutable BEFORE UPDATE ON public.artifacts FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('provider,bucket,object_key,content_digest,size_bytes')"
@@ -1058,6 +1538,41 @@
       "definition": "CREATE TRIGGER ingestion_publication_events_immutable BEFORE DELETE OR UPDATE ON public.ingestion_publication_events FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
+      "table": "llm_invocations",
+      "name": "llm_invocations_agent_run_clear_by_fk",
+      "definition": "CREATE TRIGGER llm_invocations_agent_run_clear_by_fk BEFORE UPDATE OF agent_run_id ON public.llm_invocations FOR EACH ROW WHEN (((old.agent_run_id IS NOT NULL) AND (new.agent_run_id IS NULL))) EXECUTE FUNCTION prevent_llm_invocation_agent_run_clear()"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "llm_invocations_agent_run_frozen",
+      "definition": "CREATE TRIGGER llm_invocations_agent_run_frozen BEFORE UPDATE OF agent_run_id ON public.llm_invocations FOR EACH ROW WHEN (((new.agent_run_id IS NOT NULL) AND (new.agent_run_id IS DISTINCT FROM old.agent_run_id))) EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "llm_invocations_columns_immutable",
+      "definition": "CREATE TRIGGER llm_invocations_columns_immutable BEFORE UPDATE ON public.llm_invocations FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('id,workspace_id,workflow_run_id,experiment_id,project_id,purpose,prompt_release_id,input_evidence_digest,data_class,outcome_scope,agent_role,decision_point_key,provider_kind,mode,prompt_version,schema_version,llm_used,started_at,created_at')"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "llm_invocations_created_at_now",
+      "definition": "CREATE TRIGGER llm_invocations_created_at_now BEFORE INSERT ON public.llm_invocations FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "llm_invocations_ledger_guard",
+      "definition": "CREATE TRIGGER llm_invocations_ledger_guard BEFORE UPDATE ON public.llm_invocations FOR EACH ROW EXECUTE FUNCTION guard_llm_invocation_ledger()"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "llm_invocations_retention_delete",
+      "definition": "CREATE TRIGGER llm_invocations_retention_delete BEFORE DELETE ON public.llm_invocations FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "llm_invocations",
+      "name": "llm_invocations_safe_output_retention",
+      "definition": "CREATE TRIGGER llm_invocations_safe_output_retention BEFORE UPDATE OF safe_output ON public.llm_invocations FOR EACH ROW WHEN (((old.safe_output IS NOT NULL) AND (new.safe_output IS NULL))) EXECUTE FUNCTION prevent_mutation_except_retention('retention_update')"
+    },
+    {
       "table": "ml_run_events",
       "name": "ml_run_events_append_only",
       "definition": "CREATE TRIGGER ml_run_events_append_only BEFORE DELETE OR UPDATE ON public.ml_run_events FOR EACH ROW EXECUTE FUNCTION prevent_ml_run_event_mutation()"
@@ -1128,9 +1643,34 @@
       "definition": "CREATE TRIGGER project_refs_no_delete BEFORE DELETE ON public.project_refs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
+      "table": "prompt_releases",
+      "name": "prompt_releases_columns_immutable",
+      "definition": "CREATE TRIGGER prompt_releases_columns_immutable BEFORE UPDATE ON public.prompt_releases FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation('id,agent_key,version,prompt_digest,output_schema_digest,created_at')"
+    },
+    {
+      "table": "prompt_releases",
+      "name": "prompt_releases_no_delete",
+      "definition": "CREATE TRIGGER prompt_releases_no_delete BEFORE DELETE ON public.prompt_releases FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "prompt_releases",
+      "name": "prompt_releases_status_transition",
+      "definition": "CREATE TRIGGER prompt_releases_status_transition BEFORE UPDATE OF status, released_at ON public.prompt_releases FOR EACH ROW WHEN (((((new.status)::text IS DISTINCT FROM (old.status)::text) AND (NOT ((((old.status)::text = 'draft'::text) AND ((new.status)::text = 'released'::text)) OR (((old.status)::text = 'released'::text) AND ((new.status)::text = 'retired'::text))))) OR ((old.released_at IS NOT NULL) AND (new.released_at IS DISTINCT FROM old.released_at)))) EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "runtime_environments",
       "name": "runtime_environments_immutable",
       "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "semantic_decision_answers_append_only",
+      "definition": "CREATE TRIGGER semantic_decision_answers_append_only BEFORE DELETE OR UPDATE ON public.semantic_decision_answers FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "semantic_decision_answers",
+      "name": "semantic_decision_answers_created_at_now",
+      "definition": "CREATE TRIGGER semantic_decision_answers_created_at_now BEFORE INSERT ON public.semantic_decision_answers FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
     },
     {
       "table": "service_tokens",
@@ -1164,6 +1704,10 @@
       "definition": "CREATE OR REPLACE FUNCTION public.candidate_evidence_locked(wanted_candidate uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiment_candidates AS candidate_row\n        JOIN experiments AS run ON run.id = candidate_row.experiment_id\n        WHERE candidate_row.id = wanted_candidate\n          AND run.scientific_evidence_locked_at IS NOT NULL\n    );\n$function$\n"
     },
     {
+      "name": "enforce_agent_proposal_transition",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_agent_proposal_transition()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    mutable text[] := ARRAY['status', 'supersede_reason', 'decided_by_user_id', 'decided_at',\n        'decision_record_id', 'applied_decision_record_id', 'expires_at'];\nBEGIN\n    IF TG_OP = 'INSERT' THEN\n        IF NEW.status NOT IN ('shadow', 'proposed', 'rejected_by_validator', 'applied') THEN\n            RAISE EXCEPTION 'agent_proposals cannot be created as %', NEW.status;\n        END IF;\n        IF NEW.status = 'applied' AND NEW.level_at_proposal < 2 THEN\n            RAISE EXCEPTION 'agent_proposals: applied needs level 2 or 3, got %', NEW.level_at_proposal;\n        END IF;\n        IF NEW.decided_by_user_id IS NOT NULL OR NEW.decided_at IS NOT NULL\n            OR NEW.decision_record_id IS NOT NULL\n            OR (NEW.applied_decision_record_id IS NOT NULL AND NEW.status <> 'applied') THEN\n            RAISE EXCEPTION 'agent_proposals: decision columns are set by the decision, not at creation';\n        END IF;\n        RETURN NEW;\n    END IF;\n    IF (to_jsonb(NEW) - mutable) IS DISTINCT FROM (to_jsonb(OLD) - mutable) THEN\n        RAISE EXCEPTION 'agent_proposals: only status and decision columns may change';\n    END IF;\n    IF (OLD.decision_record_id IS NOT NULL\n            AND NEW.decision_record_id IS DISTINCT FROM OLD.decision_record_id)\n        OR (OLD.applied_decision_record_id IS NOT NULL\n            AND NEW.applied_decision_record_id IS DISTINCT FROM OLD.applied_decision_record_id) THEN\n        RAISE EXCEPTION 'agent_proposals: decision record links are write-once';\n    END IF;\n    IF OLD.status = 'proposed' AND NEW.status IN ('accepted', 'rejected') THEN\n        IF NEW.decided_by_user_id IS NULL OR NEW.decided_at IS NULL THEN\n            RAISE EXCEPTION 'agent_proposals: a decision needs decided_by_user_id and decided_at';\n        END IF;\n    ELSIF NEW.decided_by_user_id IS DISTINCT FROM OLD.decided_by_user_id\n        OR NEW.decided_at IS DISTINCT FROM OLD.decided_at THEN\n        RAISE EXCEPTION 'agent_proposals: decided_* change only when a proposal is accepted or rejected';\n    END IF;\n    IF NEW.status = OLD.status THEN\n        IF OLD.status = 'proposed' THEN\n            IF NEW.decision_record_id IS DISTINCT FROM OLD.decision_record_id\n                OR NEW.applied_decision_record_id IS DISTINCT FROM OLD.applied_decision_record_id THEN\n                RAISE EXCEPTION 'agent_proposals: a proposed row may change only expires_at';\n            END IF;\n            RETURN NEW;\n        END IF;\n        IF OLD.status IN ('accepted', 'applied') THEN\n            IF NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN\n                RAISE EXCEPTION 'agent_proposals: expires_at changes only while proposed';\n            END IF;\n            RETURN NEW;\n        END IF;\n        RAISE EXCEPTION 'agent_proposals in status % are final', OLD.status;\n    END IF;\n    IF NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN\n        RAISE EXCEPTION 'agent_proposals: expires_at changes only while proposed';\n    END IF;\n    IF OLD.status = 'proposed' AND NEW.status = 'accepted'\n        AND OLD.expires_at IS NOT NULL AND OLD.expires_at <= now() THEN\n        RAISE EXCEPTION 'agent_proposals: the proposal has expired';\n    END IF;\n    IF (OLD.status, NEW.status) IN (\n        ('proposed', 'accepted'), ('proposed', 'rejected'), ('proposed', 'expired'),\n        ('proposed', 'superseded'), ('accepted', 'applied'), ('applied', 'reverted')\n    ) THEN\n        RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'agent_proposals: illegal transition % -> %', OLD.status, NEW.status;\nEND;\n$function$\n"
+    },
+    {
       "name": "evaluation_target_evidence_locked",
       "definition": "CREATE OR REPLACE FUNCTION public.evaluation_target_evidence_locked(wanted_candidate uuid, wanted_version uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiment_candidates AS candidate_row\n        JOIN experiments AS run ON run.id = candidate_row.experiment_id\n        WHERE candidate_row.id = wanted_candidate\n          AND run.scientific_evidence_locked_at IS NOT NULL\n        UNION ALL\n        SELECT 1\n        FROM model_versions AS version_row\n        JOIN experiments AS run ON run.id = version_row.pipeline_run_id\n        WHERE version_row.id = wanted_version\n          AND run.scientific_evidence_locked_at IS NOT NULL\n    );\n$function$\n"
     },
@@ -1174,6 +1718,14 @@
     {
       "name": "feature_set_version_evidence_locked",
       "definition": "CREATE OR REPLACE FUNCTION public.feature_set_version_evidence_locked(wanted_version uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiment_candidates AS candidate_row\n        JOIN experiments AS run ON run.id = candidate_row.experiment_id\n        WHERE candidate_row.feature_set_version_id = wanted_version\n          AND run.scientific_evidence_locked_at IS NOT NULL\n        UNION ALL\n        SELECT 1\n        FROM model_versions AS version_row\n        JOIN experiments AS run ON run.id = version_row.pipeline_run_id\n        WHERE version_row.feature_set_version_id = wanted_version\n          AND run.scientific_evidence_locked_at IS NOT NULL\n    );\n$function$\n"
+    },
+    {
+      "name": "force_created_at_now",
+      "definition": "CREATE OR REPLACE FUNCTION public.force_created_at_now()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    NEW.created_at := now();\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "guard_llm_invocation_ledger",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_llm_invocation_ledger()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    finalized text[] := ARRAY['status', 'validator_verdict', 'final_decision', 'model',\n        'cost_micros', 'cache_hit', 'refusal_code', 'provider_resolved_model',\n        'provider_request_id', 'budget_reservation_id', 'safe_output', 'completed_at'];\n    old_row jsonb := to_jsonb(OLD);\n    new_row jsonb := to_jsonb(NEW);\n    guarded text;\nBEGIN\n    IF OLD.safe_output IS NOT NULL AND NEW.safe_output IS NULL THEN\n        IF (new_row - 'safe_output') IS DISTINCT FROM (old_row - 'safe_output') THEN\n            RAISE EXCEPTION 'llm_invocations: the retention update may only null safe_output';\n        END IF;\n        RETURN NEW;\n    END IF;\n    FOREACH guarded IN ARRAY ARRAY['cost_micros', 'budget_reservation_id', 'provider_request_id',\n        'provider_resolved_model'] LOOP\n        IF old_row ->> guarded IS NOT NULL AND new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN\n            RAISE EXCEPTION 'llm_invocations.% is write-once', guarded;\n        END IF;\n    END LOOP;\n    IF OLD.budget_settled AND NOT NEW.budget_settled THEN\n        RAISE EXCEPTION 'llm_invocations.budget_settled only moves from false to true';\n    END IF;\n    IF OLD.completed_at IS NOT NULL THEN\n        FOREACH guarded IN ARRAY finalized LOOP\n            IF new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN\n                RAISE EXCEPTION 'llm_invocations.% is final once completed', guarded;\n            END IF;\n        END LOOP;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "model_evaluation_evidence_locked",
@@ -1212,6 +1764,10 @@
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_experiment_lineage_violation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    parent_row record;\nBEGIN\n    IF TG_OP = 'UPDATE' THEN\n        IF NEW.parent_pipeline_run_id IS DISTINCT FROM OLD.parent_pipeline_run_id\n            OR NEW.change_set IS DISTINCT FROM OLD.change_set\n            OR NEW.intent IS DISTINCT FROM OLD.intent THEN\n            RAISE EXCEPTION\n                'experiments.parent_pipeline_run_id, change_set and intent are insert-only';\n        END IF;\n        IF OLD.source_dataset_id IS NOT NULL\n            AND NEW.source_dataset_id IS DISTINCT FROM OLD.source_dataset_id THEN\n            RAISE EXCEPTION 'experiments.source_dataset_id is write-once';\n        END IF;\n        IF NEW.split_plan_id IS DISTINCT FROM OLD.split_plan_id THEN\n            IF OLD.split_plan_id IS NOT NULL THEN\n                RAISE EXCEPTION 'experiments.split_plan_id is write-once';\n            END IF;\n            IF OLD.scientific_evidence_locked_at IS NOT NULL THEN\n                RAISE EXCEPTION\n                    'experiments.split_plan_id cannot be set after the run is locked';\n            END IF;\n        END IF;\n    END IF;\n    IF NEW.change_set IS NOT NULL THEN\n        SELECT workspace_id, project_id, source_dataset_id, split_plan_id\n          INTO parent_row\n          FROM experiments\n         WHERE id = NEW.parent_pipeline_run_id;\n        IF NOT FOUND OR parent_row.workspace_id IS DISTINCT FROM NEW.workspace_id THEN\n            RAISE EXCEPTION 'branch parent must exist in the same workspace';\n        END IF;\n        IF NEW.project_id IS NULL\n            OR NEW.project_id IS DISTINCT FROM parent_row.project_id THEN\n            RAISE EXCEPTION 'branch must share project_id with its parent';\n        END IF;\n        IF NEW.source_dataset_id IS NULL\n            OR NEW.source_dataset_id IS DISTINCT FROM parent_row.source_dataset_id THEN\n            RAISE EXCEPTION 'branch must share source_dataset_id with its parent';\n        END IF;\n        IF parent_row.split_plan_id IS NULL\n            OR NEW.split_plan_id IS DISTINCT FROM parent_row.split_plan_id THEN\n            RAISE EXCEPTION 'branch must share split_plan_id with its parent';\n        END IF;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
+      "name": "prevent_llm_invocation_agent_run_clear",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_llm_invocation_agent_run_clear()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF EXISTS (\n        SELECT 1 FROM agent_runs WHERE workspace_id = OLD.workspace_id AND id = OLD.agent_run_id\n    ) THEN\n        RAISE EXCEPTION 'llm_invocations.agent_run_id is immutable';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
       "name": "prevent_locked_candidate_evidence_mutation",
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_locked_candidate_evidence_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    owner uuid;\nBEGIN\n    IF TG_OP <> 'INSERT' THEN\n        owner := (to_jsonb(OLD) ->> TG_ARGV[0])::uuid;\n        IF candidate_evidence_locked(owner) THEN\n            RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n        END IF;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    owner := (to_jsonb(NEW) ->> TG_ARGV[0])::uuid;\n    IF candidate_evidence_locked(owner) THEN\n        RAISE EXCEPTION '% is frozen: scientific evidence for this pipeline run is locked', TG_TABLE_NAME;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
@@ -1246,6 +1802,10 @@
     {
       "name": "prevent_ml_run_event_mutation",
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_ml_run_event_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n        BEGIN\n            RAISE EXCEPTION 'ml_run_events is append-only';\n        END;\n        $function$\n"
+    },
+    {
+      "name": "prevent_mutation_except_retention",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_mutation_except_retention()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    xact text := coalesce(current_setting('dclab.retention_xact', true), '');\n    horizon text := coalesce(current_setting('dclab.retention_horizon', true), '');\n    retention_workspace text := coalesce(current_setting('dclab.retention_workspace', true), '');\n    deleting text := coalesce(current_setting('dclab.deleting_workspace', true), '');\n    permitted boolean := false;\nBEGIN\n    IF TG_OP = 'DELETE' OR (TG_NARGS > 0 AND TG_ARGV[0] = 'retention_update') THEN\n        IF xact <> '' THEN\n            IF xact = pg_current_xact_id()::text THEN\n                IF horizon <> '' AND retention_workspace <> '' THEN\n                    IF horizon::interval >= interval '30 days' THEN\n                        permitted := coalesce(\n                            retention_workspace::uuid = OLD.workspace_id\n                            AND OLD.created_at < now() - horizon::interval,\n                            false\n                        );\n                    END IF;\n                END IF;\n                IF NOT permitted AND deleting <> '' THEN\n                    permitted := coalesce(deleting::uuid = OLD.workspace_id, false);\n                END IF;\n            END IF;\n        END IF;\n    END IF;\n    IF NOT permitted THEN\n        RAISE EXCEPTION '% rows are append-only outside retention', TG_TABLE_NAME;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "prevent_visualization_mutation",

@@ -108,6 +108,16 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_batch_predictions_workspace_input_dataset": "a",
     "fk_batch_predictions_workspace_output_artifact": "a",
     "fk_batch_predictions_service_token": "a",
+    # P6.2-A1 (0071): agent evidence is never erased by a parent delete; an
+    # invocation keeps its workspace when its agent run goes (column-list SET NULL).
+    "fk_llm_invocations_workspace_agent_run": "n",
+    "fk_pdr_actor_agent_run": "a",
+    "fk_agent_events_workspace_run": "a",
+    "fk_agent_events_workspace_llm_invocation": "a",
+    "fk_agent_proposals_workspace_run": "a",
+    "fk_agent_proposals_workspace_project_decision_record": "a",
+    "fk_sda_workspace_llm_invocation": "a",
+    "fk_agent_runs_workspace_project": "a",
 }
 
 

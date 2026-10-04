@@ -1,4 +1,7 @@
 [
+  "agent_events",
+  "agent_proposals",
+  "agent_runs",
   "artifacts",
   "auth_recovery_tokens",
   "auth_sessions",
@@ -59,7 +62,9 @@
   "project_decision_records",
   "project_refs",
   "projects",
+  "prompt_releases",
   "runtime_environments",
+  "semantic_decision_answers",
   "service_tokens",
   "simulation_runs",
   "split_plans",

@@ -11,6 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.db.models import ClientLabUpload, LlmInvocation, WorkflowRunInput
+from app.db.retention_guard import allow_workspace_deletion
 from app.services.lineage_service import create_pipeline_run, create_workflow_run
 from test_data_model_lineage import make_lineage_setup
 
@@ -96,9 +97,9 @@ _INVOCATION_SQL = (
     "INSERT INTO llm_invocations (id, workspace_id, workflow_run_id, experiment_id, "
     "project_id, agent_run_id, provider_kind, purpose, mode, prompt_version, schema_version, "
     "input_evidence_digest, redaction_summary, llm_used, reason, status, validator_verdict, "
-    "started_at) VALUES (gen_random_uuid(), :ws, :run, :experiment, :project, :agent, :kind, "
-    "'pipeline_audit_routine', 'routine', 'v1', '1', :digest, '{}'::jsonb, false, 'r', "
-    "'not_used', 'not_run', now())"
+    "started_at, data_class, outcome_scope) VALUES (gen_random_uuid(), :ws, :run, :experiment, "
+    ":project, :agent, :kind, 'pipeline_audit_routine', 'routine', 'v1', '1', :digest, "
+    "'{}'::jsonb, false, 'r', 'not_used', 'not_run', now(), 'aggregates', 'cv')"
 )
 
 
@@ -183,9 +184,28 @@ def test_llm_invocations_must_be_attributable(db_session, tenants):
         "fk_llm_invocations_workspace_project",
         **{**base, "project": tenants.beta.pipeline.project_id},
     )
+    # 0071: agent_run_id is a composite FK to agent_runs of the same workspace.
+    _rejects(
+        db_session,
+        _INVOCATION_SQL,
+        "fk_llm_invocations_workspace_agent_run",
+        **{**base, "agent": uuid4(), "kind": "agent_runtime"},
+    )
+    agent_run_id = db_session.execute(
+        text(
+            "INSERT INTO agent_runs (id, workspace_id, project_id, kind, agent_key, agent_version, "
+            "runtime, runtime_version, purpose, subject_kind, policy_digest, tool_catalog_digest, "
+            "data_class, outcome_scope, status, limits) VALUES (gen_random_uuid(), :ws, :project, "
+            "'specialist', 'experiment_critic', '1', 'fake', 'fake==1', 'experiment.review', "
+            "'project', repeat('c', 64), repeat('d', 64), 'aggregates', 'cv', 'completed', "
+            "'{}'::jsonb) RETURNING id"
+        ),
+        {"ws": alpha_ws, "project": tenants.alpha.pipeline.project_id},
+    ).scalar_one()
+    db_session.commit()
     for extra in (
         {"project": tenants.alpha.pipeline.project_id, "kind": "semantic_decision"},
-        {"agent": uuid4(), "kind": "agent_runtime"},
+        {"agent": agent_run_id, "kind": "agent_runtime"},
     ):
         db_session.execute(text(_INVOCATION_SQL), {**base, **extra})
         db_session.commit()
@@ -206,6 +226,8 @@ def test_verification_keeps_workspace_when_invocation_is_deleted(db_session, ten
         },
     )
     db_session.commit()
+    # Invocations are retention-guarded (0071): only the deletion GUC permits this.
+    allow_workspace_deletion(db_session, tenants.setup["alpha"].id)
     db_session.execute(
         text("DELETE FROM llm_invocations WHERE id = :id"), {"id": a.invocation.id}
     )

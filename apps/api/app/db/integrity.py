@@ -392,8 +392,349 @@ EXECUTE FUNCTION prevent_canonical_column_mutation(
 """
 
 
+# P6.2-A1 / Alembic 0071 (identical literal SQL inlined there). ADR 0009 §2.2:
+# append-only rows that the retention job (horizon >= 30 days, one workspace) or the
+# workspace-deletion path may still delete. Both only work inside the transaction
+# that ``app.db.retention_guard`` stamped (``dclab.retention_xact`` = the current
+# transaction id), so a session-level SET on a pooled connection never leaks.
+# UPDATE is always refused unless the trigger passes 'retention_update' (nulling
+# llm_invocations.safe_output under the same conditions).
+PREVENT_MUTATION_EXCEPT_RETENTION_SQL = """
+CREATE OR REPLACE FUNCTION prevent_mutation_except_retention()
+RETURNS trigger AS $$
+DECLARE
+    xact text := coalesce(current_setting('dclab.retention_xact', true), '');
+    horizon text := coalesce(current_setting('dclab.retention_horizon', true), '');
+    retention_workspace text := coalesce(current_setting('dclab.retention_workspace', true), '');
+    deleting text := coalesce(current_setting('dclab.deleting_workspace', true), '');
+    permitted boolean := false;
+BEGIN
+    IF TG_OP = 'DELETE' OR (TG_NARGS > 0 AND TG_ARGV[0] = 'retention_update') THEN
+        IF xact <> '' THEN
+            IF xact = pg_current_xact_id()::text THEN
+                IF horizon <> '' AND retention_workspace <> '' THEN
+                    IF horizon::interval >= interval '30 days' THEN
+                        permitted := coalesce(
+                            retention_workspace::uuid = OLD.workspace_id
+                            AND OLD.created_at < now() - horizon::interval,
+                            false
+                        );
+                    END IF;
+                END IF;
+                IF NOT permitted AND deleting <> '' THEN
+                    permitted := coalesce(deleting::uuid = OLD.workspace_id, false);
+                END IF;
+            END IF;
+        END IF;
+    END IF;
+    IF NOT permitted THEN
+        RAISE EXCEPTION '% rows are append-only outside retention', TG_TABLE_NAME;
+    END IF;
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+ENFORCE_AGENT_PROPOSAL_TRANSITION_SQL = """
+CREATE OR REPLACE FUNCTION enforce_agent_proposal_transition()
+RETURNS trigger AS $$
+DECLARE
+    mutable text[] := ARRAY['status', 'supersede_reason', 'decided_by_user_id', 'decided_at',
+        'decision_record_id', 'applied_decision_record_id', 'expires_at'];
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.status NOT IN ('shadow', 'proposed', 'rejected_by_validator', 'applied') THEN
+            RAISE EXCEPTION 'agent_proposals cannot be created as %', NEW.status;
+        END IF;
+        IF NEW.status = 'applied' AND NEW.level_at_proposal < 2 THEN
+            RAISE EXCEPTION 'agent_proposals: applied needs level 2 or 3, got %', NEW.level_at_proposal;
+        END IF;
+        IF NEW.decided_by_user_id IS NOT NULL OR NEW.decided_at IS NOT NULL
+            OR NEW.decision_record_id IS NOT NULL
+            OR (NEW.applied_decision_record_id IS NOT NULL AND NEW.status <> 'applied') THEN
+            RAISE EXCEPTION 'agent_proposals: decision columns are set by the decision, not at creation';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF (to_jsonb(NEW) - mutable) IS DISTINCT FROM (to_jsonb(OLD) - mutable) THEN
+        RAISE EXCEPTION 'agent_proposals: only status and decision columns may change';
+    END IF;
+    IF (OLD.decision_record_id IS NOT NULL
+            AND NEW.decision_record_id IS DISTINCT FROM OLD.decision_record_id)
+        OR (OLD.applied_decision_record_id IS NOT NULL
+            AND NEW.applied_decision_record_id IS DISTINCT FROM OLD.applied_decision_record_id) THEN
+        RAISE EXCEPTION 'agent_proposals: decision record links are write-once';
+    END IF;
+    IF OLD.status = 'proposed' AND NEW.status IN ('accepted', 'rejected') THEN
+        IF NEW.decided_by_user_id IS NULL OR NEW.decided_at IS NULL THEN
+            RAISE EXCEPTION 'agent_proposals: a decision needs decided_by_user_id and decided_at';
+        END IF;
+    ELSIF NEW.decided_by_user_id IS DISTINCT FROM OLD.decided_by_user_id
+        OR NEW.decided_at IS DISTINCT FROM OLD.decided_at THEN
+        RAISE EXCEPTION 'agent_proposals: decided_* change only when a proposal is accepted or rejected';
+    END IF;
+    IF NEW.status = OLD.status THEN
+        IF OLD.status = 'proposed' THEN
+            IF NEW.decision_record_id IS DISTINCT FROM OLD.decision_record_id
+                OR NEW.applied_decision_record_id IS DISTINCT FROM OLD.applied_decision_record_id THEN
+                RAISE EXCEPTION 'agent_proposals: a proposed row may change only expires_at';
+            END IF;
+            RETURN NEW;
+        END IF;
+        IF OLD.status IN ('accepted', 'applied') THEN
+            IF NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN
+                RAISE EXCEPTION 'agent_proposals: expires_at changes only while proposed';
+            END IF;
+            RETURN NEW;
+        END IF;
+        RAISE EXCEPTION 'agent_proposals in status % are final', OLD.status;
+    END IF;
+    IF NEW.expires_at IS DISTINCT FROM OLD.expires_at THEN
+        RAISE EXCEPTION 'agent_proposals: expires_at changes only while proposed';
+    END IF;
+    IF OLD.status = 'proposed' AND NEW.status = 'accepted'
+        AND OLD.expires_at IS NOT NULL AND OLD.expires_at <= now() THEN
+        RAISE EXCEPTION 'agent_proposals: the proposal has expired';
+    END IF;
+    IF (OLD.status, NEW.status) IN (
+        ('proposed', 'accepted'), ('proposed', 'rejected'), ('proposed', 'expired'),
+        ('proposed', 'superseded'), ('accepted', 'applied'), ('applied', 'reverted')
+    ) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'agent_proposals: illegal transition % -> %', OLD.status, NEW.status;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+# Frozen identity is a separate column trigger; this guards the ledger outcome.
+GUARD_LLM_INVOCATION_LEDGER_SQL = """
+CREATE OR REPLACE FUNCTION guard_llm_invocation_ledger()
+RETURNS trigger AS $$
+DECLARE
+    finalized text[] := ARRAY['status', 'validator_verdict', 'final_decision', 'model',
+        'cost_micros', 'cache_hit', 'refusal_code', 'provider_resolved_model',
+        'provider_request_id', 'budget_reservation_id', 'safe_output', 'completed_at'];
+    old_row jsonb := to_jsonb(OLD);
+    new_row jsonb := to_jsonb(NEW);
+    guarded text;
+BEGIN
+    IF OLD.safe_output IS NOT NULL AND NEW.safe_output IS NULL THEN
+        IF (new_row - 'safe_output') IS DISTINCT FROM (old_row - 'safe_output') THEN
+            RAISE EXCEPTION 'llm_invocations: the retention update may only null safe_output';
+        END IF;
+        RETURN NEW;
+    END IF;
+    FOREACH guarded IN ARRAY ARRAY['cost_micros', 'budget_reservation_id', 'provider_request_id',
+        'provider_resolved_model'] LOOP
+        IF old_row ->> guarded IS NOT NULL AND new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN
+            RAISE EXCEPTION 'llm_invocations.% is write-once', guarded;
+        END IF;
+    END LOOP;
+    IF OLD.budget_settled AND NOT NEW.budget_settled THEN
+        RAISE EXCEPTION 'llm_invocations.budget_settled only moves from false to true';
+    END IF;
+    IF OLD.completed_at IS NOT NULL THEN
+        FOREACH guarded IN ARRAY finalized LOOP
+            IF new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN
+                RAISE EXCEPTION 'llm_invocations.% is final once completed', guarded;
+            END IF;
+        END LOOP;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+# Only the FK's ON DELETE SET NULL (agent_run_id) may clear the link: the run is gone.
+PREVENT_LLM_INVOCATION_AGENT_RUN_CLEAR_SQL = """
+CREATE OR REPLACE FUNCTION prevent_llm_invocation_agent_run_clear()
+RETURNS trigger AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM agent_runs WHERE workspace_id = OLD.workspace_id AND id = OLD.agent_run_id
+    ) THEN
+        RAISE EXCEPTION 'llm_invocations.agent_run_id is immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+# Retention compares created_at, so rows can never be inserted backdated.
+FORCE_CREATED_AT_NOW_SQL = """
+CREATE OR REPLACE FUNCTION force_created_at_now()
+RETURNS trigger AS $$
+BEGIN
+    NEW.created_at := now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+AGENT_PERSISTENCE_FUNCTIONS = (
+    PREVENT_MUTATION_EXCEPT_RETENTION_SQL,
+    ENFORCE_AGENT_PROPOSAL_TRANSITION_SQL,
+    GUARD_LLM_INVOCATION_LEDGER_SQL,
+    PREVENT_LLM_INVOCATION_AGENT_RUN_CLEAR_SQL,
+    FORCE_CREATED_AT_NOW_SQL,
+)
+
+
+def _created_at_trigger(table: str) -> tuple[str, str, str]:
+    return (
+        f"{table}_created_at_now",
+        table,
+        f"CREATE TRIGGER {table}_created_at_now BEFORE INSERT ON {table} "
+        "FOR EACH ROW EXECUTE FUNCTION force_created_at_now()",
+    )
+
+
+def _retention_delete_trigger(table: str) -> tuple[str, str, str]:
+    return (
+        f"{table}_retention_delete",
+        table,
+        f"CREATE TRIGGER {table}_retention_delete BEFORE DELETE ON {table} "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()",
+    )
+
+
+AGENT_PERSISTENCE_TRIGGERS: tuple[tuple[str, str, str], ...] = (
+    (
+        "prompt_releases_columns_immutable",
+        "prompt_releases",
+        "CREATE TRIGGER prompt_releases_columns_immutable BEFORE UPDATE ON prompt_releases "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation("
+        "'id,agent_key,version,prompt_digest,output_schema_digest,created_at')",
+    ),
+    (
+        # draft -> released -> retired only; released_at is write-once.
+        "prompt_releases_status_transition",
+        "prompt_releases",
+        "CREATE TRIGGER prompt_releases_status_transition BEFORE UPDATE OF status, released_at "
+        "ON prompt_releases FOR EACH ROW WHEN ((NEW.status IS DISTINCT FROM OLD.status "
+        "AND NOT ((OLD.status = 'draft' AND NEW.status = 'released') "
+        "OR (OLD.status = 'released' AND NEW.status = 'retired'))) "
+        "OR (OLD.released_at IS NOT NULL AND NEW.released_at IS DISTINCT FROM OLD.released_at)) "
+        "EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    ),
+    (
+        "prompt_releases_no_delete",
+        "prompt_releases",
+        "CREATE TRIGGER prompt_releases_no_delete BEFORE DELETE ON prompt_releases "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    ),
+    (
+        "agent_runs_columns_immutable",
+        "agent_runs",
+        "CREATE TRIGGER agent_runs_columns_immutable BEFORE UPDATE ON agent_runs "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation("
+        "'id,workspace_id,project_id,kind,agent_key,agent_version,prompt_release_id,runtime,"
+        "runtime_version,purpose,decision_point_key,subject_kind,experiment_id,dataset_id,"
+        "problem_spec_id,split_plan_id,model_version_id,parent_run_id,policy_digest,"
+        "tool_catalog_digest,data_class,outcome_scope,limits,currency,"
+        "idempotency_key,idempotency_digest,created_by_user_id,created_by_service_token_id,"
+        "created_at')",
+    ),
+    (
+        "agent_runs_context_digest_write_once",
+        "agent_runs",
+        "CREATE TRIGGER agent_runs_context_digest_write_once BEFORE UPDATE OF context_digest "
+        "ON agent_runs FOR EACH ROW WHEN (OLD.context_digest IS NOT NULL "
+        "AND NEW.context_digest IS DISTINCT FROM OLD.context_digest) "
+        "EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    ),
+    (
+        # ADR 0009 §5.1 step 5 reserves the hold after the row exists.
+        "agent_runs_held_micros_write_once",
+        "agent_runs",
+        "CREATE TRIGGER agent_runs_held_micros_write_once BEFORE UPDATE OF held_micros "
+        "ON agent_runs FOR EACH ROW WHEN (OLD.held_micros <> 0 "
+        "AND NEW.held_micros IS DISTINCT FROM OLD.held_micros) "
+        "EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    ),
+    _created_at_trigger("agent_runs"),
+    _retention_delete_trigger("agent_runs"),
+    (
+        "agent_events_append_only",
+        "agent_events",
+        "CREATE TRIGGER agent_events_append_only BEFORE UPDATE OR DELETE ON agent_events "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()",
+    ),
+    _created_at_trigger("agent_events"),
+    (
+        "agent_proposals_transition",
+        "agent_proposals",
+        "CREATE TRIGGER agent_proposals_transition BEFORE INSERT OR UPDATE ON agent_proposals "
+        "FOR EACH ROW EXECUTE FUNCTION enforce_agent_proposal_transition()",
+    ),
+    _created_at_trigger("agent_proposals"),
+    _retention_delete_trigger("agent_proposals"),
+    (
+        "semantic_decision_answers_append_only",
+        "semantic_decision_answers",
+        "CREATE TRIGGER semantic_decision_answers_append_only BEFORE UPDATE OR DELETE "
+        "ON semantic_decision_answers "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()",
+    ),
+    _created_at_trigger("semantic_decision_answers"),
+    (
+        "llm_invocations_columns_immutable",
+        "llm_invocations",
+        "CREATE TRIGGER llm_invocations_columns_immutable BEFORE UPDATE ON llm_invocations "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_column_mutation("
+        "'id,workspace_id,workflow_run_id,experiment_id,project_id,purpose,prompt_release_id,"
+        "input_evidence_digest,data_class,outcome_scope,agent_role,decision_point_key,"
+        "provider_kind,mode,prompt_version,schema_version,llm_used,started_at,created_at')",
+    ),
+    (
+        # Never set to (another) run after insert.
+        "llm_invocations_agent_run_frozen",
+        "llm_invocations",
+        "CREATE TRIGGER llm_invocations_agent_run_frozen BEFORE UPDATE OF agent_run_id "
+        "ON llm_invocations FOR EACH ROW WHEN (NEW.agent_run_id IS NOT NULL "
+        "AND NEW.agent_run_id IS DISTINCT FROM OLD.agent_run_id) "
+        "EXECUTE FUNCTION prevent_canonical_row_mutation()",
+    ),
+    (
+        "llm_invocations_agent_run_clear_by_fk",
+        "llm_invocations",
+        "CREATE TRIGGER llm_invocations_agent_run_clear_by_fk BEFORE UPDATE OF agent_run_id "
+        "ON llm_invocations FOR EACH ROW WHEN (OLD.agent_run_id IS NOT NULL "
+        "AND NEW.agent_run_id IS NULL) "
+        "EXECUTE FUNCTION prevent_llm_invocation_agent_run_clear()",
+    ),
+    (
+        "llm_invocations_ledger_guard",
+        "llm_invocations",
+        "CREATE TRIGGER llm_invocations_ledger_guard BEFORE UPDATE ON llm_invocations "
+        "FOR EACH ROW EXECUTE FUNCTION guard_llm_invocation_ledger()",
+    ),
+    _created_at_trigger("llm_invocations"),
+    _retention_delete_trigger("llm_invocations"),
+    (
+        "llm_invocations_safe_output_retention",
+        "llm_invocations",
+        "CREATE TRIGGER llm_invocations_safe_output_retention BEFORE UPDATE OF safe_output "
+        "ON llm_invocations FOR EACH ROW WHEN (OLD.safe_output IS NOT NULL "
+        "AND NEW.safe_output IS NULL) "
+        "EXECUTE FUNCTION prevent_mutation_except_retention('retention_update')",
+    ),
+)
+
+
+def agent_persistence_trigger_statements() -> list[str]:
+    statements = list(AGENT_PERSISTENCE_FUNCTIONS)
+    for name, table, sql in AGENT_PERSISTENCE_TRIGGERS:
+        statements += [f"DROP TRIGGER IF EXISTS {name} ON {table}", sql]
+    return statements
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067 and 0069 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069 and 0071 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -432,6 +773,8 @@ def install_immutability_triggers(connection) -> None:
         text("DROP TRIGGER IF EXISTS batch_predictions_terminal_immutable ON batch_predictions")
     )
     connection.execute(text(BATCH_PREDICTIONS_TERMINAL_TRIGGER_SQL))
+    for statement in agent_persistence_trigger_statements():
+        connection.execute(text(statement))
 
 
 def _immutability_trigger_name(table: str) -> str | None:
