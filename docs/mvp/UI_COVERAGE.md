@@ -45,10 +45,10 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-A / P4.11-UI |
 | Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page: Columns & roles, Policy | planned P4.1-C |
 | Activity feed | `GET /v1/activity` | — | Home "Activity" | planned P4.15-A / P4.15-UI |
-| Inbox | `GET /v1/inbox`, counts | `list_proposals` (A4-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |
+| Inbox | `GET /v1/inbox`, counts | `list_proposals` (P6.6-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |
 | Pipeline evidence | `GET /v1/model-builds/{id}`, `/events`, `/artifacts` | — | `/projects/[id]/pipeline/[experimentId]` | planned P4.17-UI |
-| In-app assistant | `POST /v1/assistant/threads`, `…/messages` (SSE) | — (external agents use MCP itself) | assistant panel on every project page | planned A2 / A3 |
-| Assistant action proposals | `POST /v1/assistant/proposals/{id}/confirm|dismiss` | — | confirm cards in the panel | planned A4 |
+| In-app assistant | `POST /v1/assistant/threads`, `…/messages` (SSE) | — (external agents use MCP itself) | Lab page + assistant panel on every project page | backend P6.3-B; screen planned A3-UI |
+| Assistant and agent proposals | `GET /v1/proposals`, `POST /v1/proposals/{id}/accept|reject|revert` (one proposal model, P6.6-A) | `list_proposals` | confirm cards in the Lab/panel, Inbox | planned A4-A, P4.16-UI |
 
 ## Later phases (screen ships in the same phase as the backend)
 
@@ -57,10 +57,10 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | All investigation checks | P5.1-A | renders in the P4.10 panel (no new screen) |
 | Operating point (threshold) | P5.2-A | P5.2-UI |
 | Improve loop | P5.4-A | P5.5-A (+ assistant `improve` tool, A5) |
-| Agent runs and proposals | P6.4-A, P6.6-A | P6.6-A panel (+ assistant skills, A6) |
-| Jev shadow answers | P6.7-A | P6.7-UI (development role only) |
-| Agent release decisions | P6.8-A | P6.8-UI (Agents & tools → Agent catalog) |
-| Governance | P6.9-A | P6.9-A (`/governance`) |
+| Agent runs and proposals | P6.4-A, P6.6-A, P6.10-A | A2-UI (Agent runs, Tool registry), A4-A, P4.16-UI (+ assistant skills, A6) |
+| Jev answers at decision points | P6.7-A, P6.9-A | P6.7-UI (development role only), P4.17-UI decision points |
+| Agent trust levels (R3) | P6.8-A | P6.8-UI (Agents & tools → Agent catalog) |
+| Governance | P6.11-A | P6.11-UI (`/governance`) |
 | Business Outcomes | P7.6-A | P7.6-A (`/outcomes`) |
 | Per-row reasons | P7.7-A | Outcomes list, Models → Batch predictions |
 | Notifications, webhooks | P8.8-A | Settings → Notifications, Integrations |

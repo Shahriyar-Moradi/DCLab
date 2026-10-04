@@ -1,4 +1,4 @@
-# Phase 7 — Release, batch prediction, monitoring and Phase 8 — Hosted beta
+# Phase 7 — Release, batch prediction, monitoring and agentic MLOps, and Phase 8 — Hosted beta
 
 Every backend prompt here ships its screen in the same phase; see `../UI_COVERAGE.md`. Screens follow `../design/prototype/` under the sync rule of `../design/STUDIO_DESIGN.md`. Assistant tools: A7-A, A8-A in `ASSISTANT.md`.
 
@@ -7,7 +7,7 @@ Every backend prompt here ships its screen in the same phase; see `../UI_COVERAG
 ### P7.1-A — Safe model package and feature contract
 Model: Opus 5.5 (xhigh) · Size: M · Depends on: P2.4-B · Review: security-reviewer
 Read: `docs/agentic-program/ML_PLATFORM_INTEGRATION_ARCHITECTURE.md` §6–7.
-Do: package = skops (sklearn) / native (XGBoost JSON, LightGBM text, CatBoost cbm) + manifest (feature contract, dependency lock digest, metrics); Pandera schema compiled from DCLab feature contract (strict, no coercion); joblib/pickle artifacts marked quarantined; loading only in worker.
+Do: package = skops (sklearn) / native (XGBoost JSON, LightGBM text, CatBoost cbm) + manifest (feature contract, dependency lock digest, metrics); Pandera schema compiled from DCLab feature contract (strict, no coercion), including each feature's as-of availability from P5.0-A; joblib/pickle artifacts marked quarantined; loading only in worker.
 
 ### P7.2-A — Model release and batch prediction
 Model: Opus 5.5 (high) · Size: L · Depends on: P7.1-A · Review: db-migration-reviewer
@@ -19,7 +19,7 @@ Do: `TrackingPort` with no-op default and MLflow adapter (separate DB/schema, pr
 
 ### P7.4-A — Monitoring windows and drift
 Model: Opus 5.5 (high) · Size: M · Depends on: P7.2-A
-Do: `monitoring_windows` (release, window, input/prediction drift metrics, performance when labels arrive); label arrival path: upload a dataset version with purpose `labels` joined on entity + prediction time (no connector needed); Evidently as calculator only; thresholds owned by DCLab; drift → investigation finding (reuse P5.1).
+Do: `monitoring_windows` (release, window, input/prediction drift metrics, performance when labels arrive); label arrival path: upload a dataset version with purpose `labels` joined on entity + prediction time (no connector needed); Evidently as calculator only; thresholds owned by DCLab; drift → investigation finding (reuse P5.1); with AI off this deterministic finding is the whole response.
 
 ### P7.5-A — Rollback and model UI
 Model: Sonnet 5.5 (medium) · Size: M · Depends on: P7.4-A
@@ -38,6 +38,11 @@ Model: Opus 5.5 (xhigh) · Size: M · Depends on: P7.2-A · Review: ml-correctne
 Do: deterministic explainer in the engine, run in the worker during batch scoring (tree SHAP for tree families, coefficients × values for linear, permutation fallback), top-k reasons per row stored with the predictions; reasons expressed in original feature names; shown in the Outcomes list and the Models → Batch predictions table.
 Verify: reasons reproducible for a fixed seed; additivity check where the method guarantees it.
 
+### P7.8-A — Ops agent (agentic MLOps)
+Model: Opus 5.5 (xhigh) · Size: L · Depends on: P7.5-A, P6.3-B, P6.8-A · Review: ml-correctness-reviewer, security-reviewer
+Do: `OpsAgent` on the lead-agent runtime, triggered by monitoring windows: monitor (status line per window) → diagnose (DatasetInvestigator on the drifted window, cited statistics) → retrain (branch the champion's experiment on the new DatasetVersion, same split rules) → review (Critic: new vs champion on the same evaluation, per segment) → release proposal → rollback when a release underperforms on labeled windows. Each step is a decision point with a workspace trust level (defaults: monitor/diagnose/review L3, retrain L2, release L1, rollback L3 with a threshold); `workspace_autonomy_policy` (max retrains per week, auto-release off by default, rollback threshold, LLM budget); every action is a decision record; Studio inbox shows the chain with Approve release / See comparison / Ignore.
+Verify: end-to-end test with a synthetic drift dataset and fake LLM: drift → diagnosis → retrain → proposal → approval → release; rollback test; with AI off the drift finding still appears and nothing else acts.
+
 ## Phase 8
 
 ### P8.1-A — One-cloud deployment
@@ -46,7 +51,7 @@ Do: choose GCP or AWS (ADR 0010, founder decision based on first design partner)
 
 ### P8.2-A — Security and recovery gate
 Model: **Fable 5.1** (high) review + Opus 5.5 fixes · Size: M · Depends on: P8.1-A
-Do: adversarial tenancy suite against staging, secret scanning, CSP/headers check, rate limits, backup + point-in-time restore drill, incident runbooks.
+Do: adversarial tenancy suite against staging, secret scanning, CSP/headers check, rate limits, backup + point-in-time restore drill, incident runbooks, review of agent/LLM data exposure and lead-agent tool permissions.
 
 ### P8.3-A — Compute placement
 Model: Opus 5.5 (high) · Size: M · Depends on: P8.1-A
@@ -54,7 +59,7 @@ Do: `ComputePort` with `home` (worker pool) and one external target via SkyPilot
 
 ### P8.4-A — Metering, quotas, plans
 Model: Opus 5.5 (high) · Size: M · Depends on: P8.1-A
-Do: `usage_records` (compute seconds, storage bytes, LLM tokens/cost, agent runs) from existing ledgers; enforce `workspace_entitlements` at command admission; Studio usage page (compute, storage, LLM and assistant spend, quota bars).
+Do: `usage_records` (compute seconds, storage bytes, LLM tokens/cost, agent and assistant runs) from existing ledgers, reusing the P6.2 workspace LLM budgets; enforce `workspace_entitlements` at command admission; Studio usage page (compute, storage, LLM and assistant spend, quota bars).
 
 ### P8.5-A — Observability
 Model: Sonnet 5.5 (medium) · Size: M · Depends on: P8.1-A

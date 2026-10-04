@@ -61,9 +61,11 @@ Done when: observable criteria.
    [UI_COVERAGE.md](UI_COVERAGE.md) and regenerates the web API types
    (`npm run gen:api`, from P4.0-A on). Screens follow their `Design:` prototype
    file under the sync rule of [design/STUDIO_DESIGN.md](design/STUDIO_DESIGN.md) §1:
-   every value from an API field, nothing drawn without a backend.
+   every value from an API field, nothing drawn without a backend. (Exception:
+   Phase 6 runs before the Studio shell exists; its screens are named prompts in
+   Phase 4 Stage 4.)
 7. **Assistant parity.** A new MCP tool is added to the shared tool catalog
-   (`app/agents/tools/`, from A2-B on), so the in-app assistant gets it too.
+   (`app/agents/tools/`, from P6.10-A on), so the in-app assistant gets it too.
 8. STATUS.md updated; nothing else in docs unless the prompt says so.
 
 Exact-SHA CI is required at **merge points**, not for every prompt.
@@ -72,7 +74,7 @@ Exact-SHA CI is required at **merge points**, not for every prompt.
 
 Speed first: work through 2–3 phases (or Phase 4 stages) on one branch without
 waiting on CI per prompt. Per prompt, run only the prompt's named fast checks.
-At each merge point (ROADMAP.md: MP-4a, MP-4b, MP-56, MP-78):
+At each merge point (ROADMAP.md: MP-46, MP-4a, MP-4b, MP-5, MP-78):
 
 1. Full backend suite, web `tsc`/lint/build/component tests, Playwright for the
    phases' flows, single Alembic head, truth artifacts idempotent.

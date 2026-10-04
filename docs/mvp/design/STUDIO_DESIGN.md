@@ -71,19 +71,19 @@ Status of the backend today: **✓** exists in `/v1` · **P** planned (prompt) �
 
 | Prototype | Studio route | Backend it reads | Built by |
 | --- | --- | --- | --- |
-| `home.html` Home | `/home` | ✓ `GET /v1/projects`, refs, model-versions · NEW `GET /v1/activity` (decision records + run events, workspace-wide) · NEW `GET /v1/inbox?count` · spend card after A2-A (`llm_invocations`) / P8.4 (usage) | P4.15-A, P4.15-UI |
+| `home.html` Home | `/home` | ✓ `GET /v1/projects`, refs, model-versions · NEW `GET /v1/activity` (decision records + run events, workspace-wide) · NEW `GET /v1/inbox?count` · spend card from the P6.2-B ledger (`llm_invocations`) / P8.4 (usage) | P4.15-A, P4.15-UI |
 | `inbox.html` Inbox | `/inbox` | ✓ project decisions (`status=proposed`) · NEW `GET /v1/inbox` (proposed decisions + assistant/agent proposals + open questions, workspace-wide, tabs: needs a decision / applied automatically / done) | P4.16-A, P4.16-UI |
-| `lab.html` Lab (chat) | `/projects/[id]/lab` | P `POST /v1/assistant/threads…` (SSE), proposals confirm · ✓ everything the tools read | A3-UI, A4-A |
+| `lab.html` Lab (chat) | `/projects/[id]/lab` | P `POST /v1/assistant/threads…` (SSE, P6.3-B), proposals accept/reject (P6.6-A) · ✓ everything the tools read | A3-UI, A4-A |
 | `pipeline.html` Pipeline | `/projects/[id]/pipeline/[experimentId]` | ✓ `GET /v1/model-builds/{id}`, `/events`, `/artifacts` · ✓ decisions of the run · P findings (P4.10) · AI notes per stage only after Phase 6 | P4.17-UI |
 | `graph.html` Graph | `/projects/[id]/graph` | ✓ `GET /v1/projects/{id}/graph`, `GET /v1/nodes/{kind}/{id}/impact`, refs | P4.2-A |
 | `data.html` Data | `/projects/[id]/data` | ✓ `GET /v1/datasets`, `GET /v1/datasets/{id}`, `POST /v1/datasets` · NEW `GET /v1/datasets/{id}/profile` (columns, types, roles, missing, unique, transforms; training rows only) · ✓ leakage audit via experiment evidence · P findings (P4.10) · "AI (Jev)" column only after P6.7 · policy tab reads ADR 0005 policy (NEW read field on dataset) | P4.1-C, P4.10-UI |
-| `experiments.html` Experiments | `/projects/[id]/experiments[/[eid]]` | ✓ list/detail/compare/branch/cancel/code · P findings · Critic review only after P6.4 | P4.1-A, P4.3-A, P4.4-A |
+| `experiments.html` Experiments | `/projects/[id]/experiments[/[eid]]` | ✓ list/detail/compare/branch/cancel/code · P findings · Critic review (P6.4) | P4.1-A, P4.3-A, P4.4-A |
 | `improve.html` Improve | `/projects/[id]/improve` | P `/v1/improve-runs` (P5.4) | P5.5-A |
 | `models.html` Models | `/projects/[id]/models[/[mvId]]` | ✓ `GET /v1/model-versions/{id}` · P predictions (P4.9), card (P4.11) · releases, contract, package (P7.1–P7.2) | P4.9-UI, P4.11-UI, P7.5-A |
 | `monitoring.html` Monitoring | `/projects/[id]/monitoring` | P monitoring windows, label upload (P7.4) | P7.5-A |
 | `decisions.html` Decisions | `/projects/[id]/decisions` | ✓ `GET/POST /v1/projects/{id}/decisions`, accept/reject/supersede ("Revert"/"Correct" = supersede) | P4.4-A |
-| `agents.html` Agents & tools | `/agents` | tabs: Connect ✓ (static + token) · Tokens ✓ `/v1/service-tokens` · Tool registry P `contracts/agent_tools.json` (A2-B) · Agent runs P `agent_runs` (A2-A) · Agent catalog P (P6.8) | P4.8-UI, A2-B, P6.8-UI |
-| `governance.html` Governance | `/governance` | P switches + budgets (A1/A2-A, P8.4) · ledger + replay (A2-A) · trust levels (ADR 0008 decision) · evaluation R3 (P6.8) | P6.9-A |
+| `agents.html` Agents & tools | `/agents` | tabs: Connect ✓ (static + token) · Tokens ✓ `/v1/service-tokens` · Tool registry P `contracts/agent_tools.json` (P6.10-A) · Agent runs P `agent_runs` (P6.2-A) · Agent catalog P (P6.8) | P4.8-UI, A2-UI, P6.8-UI |
+| `governance.html` Governance | `/governance` | P `GET /v1/governance` (P6.11-A): policy, switches + budgets (P6.2-B, P8.4) · ledger + replay (P6.2-B, P6.10-A) · trust levels (ADR 0008, P6.8) · evaluation R3 (P6.8) | P6.11-UI |
 | `settings.html` Settings | `/settings` | ✓ members (existing admin APIs) · P usage (P8.4) · P integrations (MLflow P7.3, compute P8.3) · P data safety (P8.7) · P notifications (P8.8) | grows per phase |
 | `client.html` Business Outcomes | `/outcomes` | P predictions (P4.9/P7.2), model card (P4.11) · per-row reasons (P7.7) · questions = proposals of kind question · plain-language Q&A = assistant with read-only client tools | P7.6-A |
 | `operator.html` Operator console | `/operator` | P queue/worker health (P8.5), quarantine (P8.7), platform caps (ADR 0008/0009 config), benchmarks (R1/R2 results) | P8.5-UI |
@@ -95,14 +95,14 @@ Status of the backend today: **✓** exists in `/v1` · **P** planned (prompt) �
 | --- | --- |
 | Inbox and activity need workspace-level read models | NEW endpoints in P4.15-A / P4.16-A (read-only projections over decision records, proposals and run events; no new tables) |
 | Data page needs column-level profile | NEW `GET /v1/datasets/{id}/profile` in P4.1-C over the existing profile/columns tables |
-| Trust levels L0–L3 (auto-apply with revert) | **Not in the MVP authority model yet.** MVP = L1 (propose → human confirms) and L0 (off). L2/L3 need ADR 0008 to decide; the UI shows the `Level` badge only for levels the backend reports |
+| Trust levels L0–L3 (auto-apply with revert) | Decided per decision point by ADR 0008 (P6.1-A) and earned through R3 (P6.8-A); every point starts at L0. The UI shows the `Level` badge only for levels the backend reports |
 | Per-row prediction reasons ("why is C-48112 flagged?") | P7.7-A: deterministic explainer in the engine (worker), ml-correctness review |
 | Label arrival for monitoring | added to P7.4-A (label upload as a dataset version with purpose `labels`) |
 | Notifications and webhooks (inbox items, run done, drift) | P8.8-A |
 | Report agent text | deterministic templates first (model card P4.11, outcome summary P7.6); AI text only if P6.8 allows |
 | Analyst role (run, not accept) | open question for the capability matrix; not planned |
-| Chat sessions persistence and "report when I leave" | A2-A threads persist; inbox item on run completion (P4.16), email/webhook in P8.8 |
-| Cleaning actions (dedupe, missing indicators) | open: proposal kind vs cleaning recipe; decide in ADR 0008 |
+| Chat sessions persistence and "report when I leave" | assistant threads persist in `agent_runs`/`agent_events` (P6.2-A, P6.3-B); inbox item on run completion (P4.16), email/webhook in P8.8 |
+| Cleaning actions (dedupe, missing indicators) | open: proposal kind vs cleaning recipe; decided in ADR 0008/0009 (P6.1-A) |
 
 ## 6. How a UI prompt uses this
 

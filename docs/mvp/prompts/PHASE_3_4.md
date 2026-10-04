@@ -34,10 +34,15 @@ Done when: founder completes the Phase 3 exit flow from Claude Code.
 
 ## Phase 4 — Studio, use and trust the model, assistant
 
-Order (founder decision 2026-10-04): use-and-trust backend first, then the Studio
-catch-up UI for everything Phases 1–3 built, then the UI for the new
-capabilities, the assistant (Track A, `ASSISTANT.md`) and the demo and partner kits.
-Every row in `../UI_COVERAGE.md` marked "planned P4.x" closes in this phase.
+Order (founder decisions 2026-10-02 and 2026-10-04, merged; ROADMAP.md): Stage 1
+(use-and-trust backend) → **Phase 6, the hybrid AI core** (`PHASE_5_6.md`) →
+Stage 2 (Studio catch-up UI for everything Phases 1–3 built) → Stage 3 (UI for
+use and trust) → Stage 4 (agent-first Studio: the Lab chat with the lead agent as
+the in-app assistant, Track A screens in `ASSISTANT.md`, and the Phase 6 screens)
+→ Stage 5 (home, inbox, demo and partner kits). Checkpoint G6 falls during Stages
+2–3 and must pass before Stage 4 exposes AI to users. Forms remain the AI-off path
+for everything the chat can do. Every row in `../UI_COVERAGE.md` marked
+"planned" for Phase 4 closes in this phase.
 
 **Design target:** every Studio screen follows the prototype in
 `../design/prototype/` under the sync rule of `../design/STUDIO_DESIGN.md` §1:
@@ -69,7 +74,7 @@ Goal: every model version explains itself in one page.
 Do: read-model service + `GET /v1/model-versions/{id}/card` (JSON + Markdown): top drivers (reuse stored importance; if absent compute permutation importance on validation folds in the engine during the run, never on holdout), metric explained in business words from the ProblemSpec objective (e.g. "of 100 flagged customers, about N really churn"), comparison with the dummy baseline, the single holdout result labelled as such, known risks from findings, data and split summary, "LLM used: yes/no"; MCP `get_model_card`.
 Verify: card tests for classification, regression, multiclass; no field reads holdout beyond the locked winner's single evaluation.
 
-### Stage 2 — UI foundation and catch-up for Phases 1–3
+### Stage 2 — UI foundation and catch-up for Phases 1–3 (after the Phase 6 gate)
 
 ### P4.0-A — Keep the UI and the API in sync
 Model: Opus 5.5 (high) · Size: M · Depends on: P3.1-B3
@@ -88,7 +93,7 @@ Verify: tsc/lint/build; Playwright screenshot of the kit in light and dark; axe 
 ### P4.1-A — Project-centric information architecture
 Model: Opus 5.5 (high) · Size: M · Depends on: P4.0-B
 Design: `prototype/app.js` nav groups; `prototype/experiments.html` page head.
-Do: routes `/home` (placeholder until P4.15), `/projects`, `/projects/[id]/{lab,pipeline,graph,data,experiments,improve,models,monitoring,decisions}` in the Studio shell (project pages appear in the sidebar only when their backend exists); ⌘K command bar searching projects, experiments, models and decisions through existing list endpoints; navigation in `components/layout/app-navigation.ts`; project header with ref badges; Decision.ai vertical pages (`/app/opportunities|decisions|insights|dashboards`, home opportunity data) hidden unless `legacy_decision_layer_enabled`; `/lab/runs/[run_id]` redirects into the project experiment page (live progress from `/v1/model-builds/*` keeps working); placeholder slot for the assistant panel (A3-UI).
+Do: routes `/home` (placeholder until P4.15), `/projects`, `/projects/[id]/{lab,pipeline,graph,data,experiments,improve,models,monitoring,decisions}` in the Studio shell (project pages appear in the sidebar only when their backend exists); ⌘K command bar searching projects, experiments, models and decisions through existing list endpoints; navigation in `components/layout/app-navigation.ts`; project header with ref badges; Decision.ai vertical pages (`/app/opportunities|decisions|insights|dashboards`, home opportunity data) hidden unless `legacy_decision_layer_enabled`; `/lab/runs/[run_id]` redirects into the project experiment page (live progress from `/v1/model-builds/*` keeps working); workspace `/inbox` route (filled by P4.16); the BFF forwards `Idempotency-Key` and Content-Length on `/v1` writes (carried from P3.1-B1; skip if already done); placeholder slot for the assistant panel (A3-UI).
 Verify: tsc/lint/build; Playwright navigation spec.
 
 ### P4.1-B — New project wizard: upload → target → train
@@ -100,18 +105,18 @@ Verify: Playwright: CSV → trained experiment on the seeded stack.
 ### P4.1-C — Data page
 Model: Opus 5.5 (high) · Size: M · Depends on: P4.1-A · Review: ml-correctness-reviewer, security-reviewer
 Design: `prototype/data.html` tabs Versions · Columns & roles · Leakage audit · Findings & questions · Policy & access.
-Do: NEW `GET /v1/datasets/{id}/profile` over the existing profile/column tables (per column: type, role used, rule role, missing %, unique, transform, importance when an experiment exists; statistics from training rows of the current SplitPlan only), policy fields (ADR 0005 upload policy, data class for AI) on the dataset read; MCP `inspect_dataset` returns the same shape via the catalog; UI tabs: Versions (list, digest, used-by from the graph, "make current" = ref move), Columns & roles, Leakage audit (from experiment evidence), Findings (slot filled by P4.10-UI), Policy & access. The "AI (Jev)" column and AI explanations stay hidden until P6.7.
+Do: NEW `GET /v1/datasets/{id}/profile` over the existing profile/column tables (per column: type, role used, rule role, missing %, unique, transform, importance when an experiment exists; statistics from training rows of the current SplitPlan only), policy fields (ADR 0005 upload policy, data class for AI) on the dataset read; MCP `inspect_dataset` returns the same shape via the catalog; UI tabs: Versions (list, digest, used-by from the graph, "make current" = ref move), Columns & roles, Leakage audit (from experiment evidence), Findings (slot filled by P4.10-UI), Policy & access. The "AI (Jev)" column and AI explanations show only for purposes whose P6.8 release decision allows it.
 Verify: profile tests incl. holdout rows never counted and tenant isolation; Playwright Data page spec.
 
 ### P4.2-A — Graph view
 Model: Opus 5.5 (high) · Size: M · Depends on: P4.1-A, P2.3-A
 Design: `prototype/graph.html` (★ refs, orange stale nodes, inspector drawer with actions).
-Do: render `GET /v1/projects/{id}/graph` (one small reviewed lib, e.g. React Flow, or SVG) with node status, stale markers, ref badges; click → inspector drawer; "what becomes stale" from `GET /v1/nodes/{kind}/{id}/impact`; accessible list fallback.
+Do: render `GET /v1/projects/{id}/graph` (one small reviewed lib, e.g. React Flow, or SVG) with node status, stale markers, ref badges, AI-decision markers (from P6.9 decision records); click → inspector drawer; "what becomes stale" from `GET /v1/nodes/{kind}/{id}/impact`; accessible list fallback.
 
 ### P4.3-A — Node inspectors with reason, evidence and code
 Model: Sonnet 5.5 (medium) · Size: M · Depends on: P4.2-A
 Design: `prototype/experiments.html` tabs All experiments · detail (Candidates, Per-fold and threshold, Feature importance) · Code; `prototype/graph.html` inspector.
-Do: inspectors for DatasetVersion (profile), SplitPlan, FeatureRecipe (each transform: reason, formula, importance, code snippet), Experiment (config, change set, CV metrics, folds, evidence, findings slot, reproducible code from `/v1/experiments/{id}/code` with copy/download), ModelVersion; reuse `components/admin/{Evaluation,FinalModel,ModelComparison,ProcessingSummary}` and `components/model-build/*`.
+Do: inspectors for DatasetVersion (profile, AI investigation from P6.4 when released), SplitPlan, FeatureRecipe (each transform: reason, formula, importance, code snippet), Experiment (config, change set, CV metrics, folds, evidence, findings slot, Critic review (P6.4), reproducible code from `/v1/experiments/{id}/code` with copy/download), ModelVersion; reuse `components/admin/{Evaluation,FinalModel,ModelComparison,ProcessingSummary}` and `components/model-build/*`.
 
 ### P4.4-A — Compare, branch, refs and decide
 Model: Sonnet 5.5 (medium) · Size: M · Depends on: P4.3-A, P2.5-A
@@ -126,7 +131,7 @@ Do: remove the always-visible technical panel (`apps/web/app/lab/runs/[run_id]/p
 ### P4.8-UI — Agents & tools page (Connect and Tokens tabs)
 Model: Sonnet 5.5 (medium) · Size: S · Depends on: P4.1-A, P3.5-A
 Design: `prototype/agents.html` tabs Connect: MCP · SDK · CLI · API and Service tokens.
-Do: `/agents` with Connect (ready `.mcp.json` snippet, SDK and CLI examples, `/v1` conventions and OpenAPI link, read/write switch explained) and Service tokens (move the existing `ServiceTokensPanel` here: scopes, expiry, last use, revoke). Tool registry tab arrives with A2-B, Agent runs with A2-A, Agent catalog with P6.8-UI.
+Do: `/agents` with Connect (ready `.mcp.json` snippet, SDK and CLI examples, `/v1` conventions and OpenAPI link, read/write switch explained) and Service tokens (move the existing `ServiceTokensPanel` here: scopes, expiry, last use, revoke). Tool registry and Agent runs tabs arrive with A2-UI, Agent catalog with P6.8-UI.
 
 ### Stage 3 — UI for use and trust
 
@@ -148,11 +153,11 @@ Do: Models tab and model page "Card" tab rendering the card; print/PDF-friendly 
 ### P4.17-UI — Pipeline evidence page
 Model: Sonnet 5.5 (medium) · Size: M · Depends on: P4.3-A, P4.10-UI
 Design: `prototype/pipeline.html` (run switcher, 4 stat cards, 10 stage cards with deterministic result, artifact digest, decision record link, checks; "Decision points in this run" and "Cost and provenance").
-Do: `/projects/[id]/pipeline/[experimentId]` from `/v1/model-builds/{id}`, `/events`, `/artifacts`, the run's decision records and findings; stage order from the engine's typed stages (P1.5-A); "AI-before / AI-after" notes and "Replay AI" are hidden until Phase 6 agents exist; download bundle uses existing artifact downloads.
+Do: `/projects/[id]/pipeline/[experimentId]` from `/v1/model-builds/{id}`, `/events`, `/artifacts`, the run's decision records and findings; stage order from the engine's typed stages (P1.5-A); "AI-before / AI-after" notes and "Decision points in this run" (AI answer, rule answer, value used, level) come from the P6.9 decision records and P6.4 Critic review, and "Replay AI" calls `GET /v1/agent-runs/{id}/replay` (P6.11-A); with AI off these rows show the rule answer only; download bundle uses existing artifact downloads.
 Verify: Playwright on a seeded completed run: 10 stages, digests shown, decision links open the Decisions page.
 
-### Stage 4 — Assistant
-Track A prompts A1-A → A2-A → A2-B → A3-UI → A4-A → A4-B (`ASSISTANT.md`). A1-A can run any time after P3.4-A.
+### Stage 4 — Agent-first Studio (after checkpoint G6)
+The backend already exists from Phase 6 (A1-A, A2-A and A2-B were absorbed into P6.1-A, P6.2-A/B, P6.10-A and P6.3-B). Prompts: A2-UI → A3-UI → A4-A → A4-B → A6-A (`ASSISTANT.md`), then P6.7-UI, P6.8-UI, P6.11-UI (`PHASE_5_6.md`).
 
 ### Stage 5 — Home, inbox, focus, demo, partners, end-to-end
 
@@ -168,12 +173,12 @@ Verify: projection tests, tenant isolation, pagination.
 
 ### P4.15-UI — Home
 Model: Sonnet 5.5 (medium) · Size: S · Depends on: P4.15-A, P4.16-A
-Design: `prototype/home.html` (4 stat cards, Projects table, Activity, Inbox preview, Quick actions). "AI health" and spend cards appear only when their backend exists (A2-A, P8.4).
+Design: `prototype/home.html` (4 stat cards, Projects table, Activity, Inbox preview, Quick actions). Agent activity and open proposals come from `/v1/activity` and `/v1/inbox`; "AI health" and spend cards read the P6.2-B ledger and P6.11-A governance API (plan spend after P8.4).
 Verify: Playwright Home spec on the seeded stack.
 
 ### P4.16-A — Inbox read model
 Model: Opus 5.5 (high) · Size: M · Depends on: P4.4-A · Review: security-reviewer
-Do: NEW `GET /v1/inbox` (workspace-wide, capability-filtered): proposed decision records, pending assistant/agent proposals (from A4-A on), open questions, run-completed notices; tabs needs a decision / applied automatically (empty until ADR 0008 allows auto-apply) / done; counts endpoint for the sidebar badge; actions reuse the existing accept/reject/supersede routes.
+Do: NEW `GET /v1/inbox` (workspace-wide, capability-filtered): proposed decision records, pending agent and assistant proposals (P6.6 `agent_proposals`), open questions, run-completed notices; tabs needs a decision / applied automatically (L2 decisions with Revert via P6.6; empty while every decision point is below L2) / done; counts endpoint for the sidebar badge; actions reuse the existing accept/reject/supersede routes and the P6.6 proposal accept/reject/revert routes.
 Verify: tests for capability filtering (a user without `decisions:accept` sees but cannot act), tenant isolation.
 
 ### P4.16-UI — Inbox
@@ -192,5 +197,5 @@ Do: one-command local install (`make partner-up` on the compose stack, demo user
 Done when: founder has 2–3 partners booked; their first runs are noted in STATUS.md.
 
 ### P4.6-A — Killer-flow E2E
-Model: Sonnet 5.5 (medium) · Size: S · Depends on: P4.4-A, P4.11-UI, A4-A
-Do: Playwright on the seeded stack: Home → new project → upload → train → Pipeline evidence → findings → Data page → inspect feature → view code → Lab: assistant proposes a branch → confirm → Inbox shows the run → compare → accept → score new data → model card.
+Model: Sonnet 5.5 (medium) · Size: S · Depends on: P4.4-A, P4.11-UI, P4.17-UI, A4-A
+Do: Playwright on the seeded stack with the fake LLM driver: Home → new project → Lab: goal in chat → AI decisions shown with their level beside the rule answer (accept one L1) → run → Pipeline evidence with every stage and digest → findings → Data page → inspect feature → view code → assistant proposes a branch → confirm → Inbox shows the run → compare → accept → score new data → model card; a second spec runs the same flow with AI off through the forms.
