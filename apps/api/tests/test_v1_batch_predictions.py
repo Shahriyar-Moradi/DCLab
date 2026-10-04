@@ -19,7 +19,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.db.models import BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
-from app.engine.lab.auto_prepare import build_preprocessor
+from app.engine.lab.auto_prepare import build_preprocessor, engineer_features
 from app.engine.serving.batch_scoring import ScoringError, prepare_features, score_frame, scoring_spec
 from app.services.ml_job_service import process_next_job
 from app.services.service_token_service import create_service_token
@@ -30,16 +30,29 @@ from test_v1_resources_experiments import _h, _key, _root, setup  # noqa: F401 (
 def _frame(task: str = "binary", n: int = 240, seed: int = 11) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     plan = rng.choice(["basic", "plus", "pro"], n)
+    code = rng.choice(["1", "2", "A", "B"], n)  # digits and letters: categorical text
     tenure = rng.integers(1, 72, n).astype(float)
     visits = rng.integers(0, 4, n)
     days = rng.integers(0, 700, n)
-    signal = 0.9 * (plan == "basic") - 0.03 * tenure + 0.4 * visits + 0.004 * (days - 350)
+    signal = 0.9 * (plan == "basic") - 0.03 * tenure + 0.4 * visits + 0.004 * (days - 350) + 0.5 * (code == "A")
+    # Cells training cleans before the pipeline: "?"/"--" markers make tenure < 90%
+    # numeric as uploaded (numeric only after cleaning), padded numbers, "n/a".
+    roll = rng.random(n)
+    tenure_text = np.array([f"{value:g}" for value in tenure], dtype=object)
+    tenure_text[roll < 0.08] = "?"
+    tenure_text[(roll >= 0.08) & (roll < 0.13)] = "--"
+    tenure_text[(roll >= 0.13) & (roll < 0.17)] = "n/a"
+    padded = (roll >= 0.17) & (roll < 0.25)
+    tenure_text[padded] = [f" {value:g} " for value in tenure[padded]]
+    spend = rng.uniform(20, 120, n).round(2)
+    spend[rng.random(n) < 0.03] = np.nan  # scoring files carry inf here (_with_inf)
     frame = pd.DataFrame(
         {
             "customer_id": [f"c{index:05d}" for index in range(n)],
-            "tenure": tenure,
-            "spend": rng.uniform(20, 120, n).round(2),
+            "tenure": tenure_text,
+            "spend": spend,
             "plan": plan,
+            "code": code,
             "visits": visits,
             "signup_date": (pd.Timestamp("2023-01-01") + pd.to_timedelta(days, unit="D")).strftime("%Y-%m-%d"),
         }
@@ -51,6 +64,13 @@ def _frame(task: str = "binary", n: int = 240, seed: int = 11) -> pd.DataFrame:
     else:
         frame["amount"] = (50 + 20 * signal + rng.normal(0, 2, n)).round(3)
     return frame
+
+
+def _with_inf(frame: pd.DataFrame) -> pd.DataFrame:
+    """The same rows with +inf where training had no spend: cleaning must make it missing.
+    (Training files keep NaN: an inf in an upload breaks the run's JSON profile today.)"""
+
+    return frame.assign(spend=frame["spend"].fillna(np.inf))
 
 
 def _upload(client, setup, frame: pd.DataFrame, *, purpose: str = "scoring", workspace: str = "alpha") -> dict:  # noqa: F811
@@ -117,10 +137,14 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     experiment, mv_id = _trained(client, db, setup, frame, "label")
     actions = experiment.result["scientific_evidence"]["feature_actions"]
     assert any("signup_date" in (action.get("columns") or []) for action in actions), actions
-    assert "signup_date" in experiment.result["best_single"]["features"]  # the transform matters
+    assert actions[0]["parameters"]["formats"] == {"signup_date": "%Y-%m-%d"}  # learned on train rows
+    features = experiment.result["best_single"]["features"]
+    assert {"signup_date", "tenure", "spend", "code"} <= set(features)  # the cleaning matters
+    cleaning = {step["step"] for step in experiment.result["cleaning"]["transformations"]}
+    assert {"replace_invalid_strings", "coerce_numeric"} <= cleaning
 
     # Scoring rows: the training rows plus an extra column; the target is present too.
-    scoring = _upload(client, setup, frame.assign(notes="free text"))
+    scoring = _upload(client, setup, _with_inf(frame).assign(notes="free text"))
     assert scoring["purpose"] == "scoring"
     # A scoring upload is never a training source.
     refused = _root(client, setup, scoring["id"])
@@ -160,7 +184,8 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     threshold = experiment.result["decision_threshold"]["value"]
     assert done["decision_threshold"] == pytest.approx(threshold)
     contract = done["contract_check"]
-    assert contract["status"] == "passed" and contract["missing_columns"] == []
+    assert contract["status"] == "passed" and contract["missing_columns"] == [] and contract["empty_columns"] == []
+    assert contract["parse_rates"] == {} and contract["unseen_categories"] == {}
     assert "notes" in contract["ignored_columns"] and "label" not in contract["ignored_columns"]
     assert contract["target_column"] == "label" and contract["target_column_ignored"] is True
     assert done["output"]["download_path"] == f"/v1/predictions/{body['id']}/download"
@@ -228,7 +253,7 @@ def test_regression_scoring_parquet_and_transient_failure(client, db_session, se
     db = db_session
     frame = _frame("regression", seed=5)
     experiment, mv_id = _trained(client, db, setup, frame, "amount")
-    scoring = _upload(client, setup, frame.drop(columns=["amount"]).assign(extra=1))
+    scoring = _upload(client, setup, _with_inf(frame).drop(columns=["amount"]).assign(extra=1))
     prediction_id = _predict(client, setup, mv_id, scoring["id"], output_format="parquet").json()["id"]
     assert _work(db, prediction_id).status == "completed"
     done = client.get(f"/v1/predictions/{prediction_id}", headers=_h(setup)).json()
@@ -265,7 +290,7 @@ def test_multiclass_scoring_maps_labels_back(client, db_session, setup):  # noqa
     experiment, mv_id = _trained(client, db, setup, frame, "tier")
     labels = experiment.result["class_labels"]
     assert sorted(labels) == ["bronze", "gold", "silver"]
-    scoring = _upload(client, setup, frame)
+    scoring = _upload(client, setup, _with_inf(frame))
     prediction_id = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
     assert _work(db, prediction_id).status == "completed"
     out = _download(client, setup, prediction_id)
@@ -339,10 +364,13 @@ def test_replay_fails_closed_and_never_refits_on_scoring_rows():
     # Training decided ``x`` is numeric and ``code`` is text: a scoring batch whose values
     # look otherwise is NOT re-decided (no 90% rule, no refit) and rows are kept.
     rows = pd.DataFrame({"x": ["oops", " 3 ", "n/a"], "code": [1, 2, 7], "y": [1, 1, 1], "z": [0, 0, 0]})
-    prepared, unparsed = prepare_features(rows, spec)
-    assert prepared["x"].tolist()[1] == 3.0 and np.isnan(prepared["x"].tolist()[0]) and unparsed == {"x": 2}
+    prepared, facts = prepare_features(rows, spec)
+    assert prepared["x"].tolist()[1] == 3.0 and np.isnan(prepared["x"].tolist()[0])
+    assert facts["unparsed_values"] == {"x": 1} and facts["parse_rates"] == {"x": 0.5}  # "n/a" is a marker
     assert prepared["code"].tolist() == ["1", "2", "7"]  # matches the fitted encoder's text categories
+    assert facts["unseen_categories"] == {"code": 1}
     scored = score_frame(rows, spec, pipeline)
+    assert scored.contract["status"] == "warning"  # under 90% of tenure-like values parsed
     alone = score_frame(rows.iloc[[1]], spec, pipeline)
     assert len(scored.predictions) == 3
     assert scored.predictions["probability"].iloc[1] == pytest.approx(alone.predictions["probability"].iloc[0])
@@ -350,3 +378,58 @@ def test_replay_fails_closed_and_never_refits_on_scoring_rows():
     with pytest.raises(ScoringError) as caught:
         score_frame(rows.drop(columns=["code"]), spec, pipeline)
     assert caught.value.code == "feature_contract_failed" and caught.value.contract["missing_columns"] == ["code"]
+    # A required column with no usable value is a contract failure, never imputed.
+    with pytest.raises(ScoringError) as caught:
+        score_frame(rows.assign(x=["?", "n/a", None]), spec, pipeline)
+    assert caught.value.code == "feature_contract_failed" and caught.value.contract["empty_columns"] == ["x"]
+    clean = score_frame(pd.DataFrame({"x": [" 1 ", "2", "--"], "code": ["1", "x", None]}), spec, pipeline)
+    assert clean.contract["status"] == "passed" and clean.contract["parse_rates"] == {}
+
+
+def test_domain_fill_is_replayed_before_the_pipeline():
+    train = pd.DataFrame({"x": [1.0, 2.0, np.nan, 4.0, 5.0, np.nan], "y": [0, 0, 1, 0, 1, 1]})
+    pipeline = _fitted(["x"], [], train.assign(x=train["x"].fillna(-1.0)), "y")  # as decisions.py fills
+    plan = {"column_decisions": [{"column": "x", "action": "domain_fill", "fill_value": -1.0}]}
+    spec = scoring_spec(_result(missing_value_plan=plan), pipeline)
+    prepared, _facts = prepare_features(pd.DataFrame({"x": [None, "n/a", "3"]}), spec)
+    assert prepared["x"].tolist() == [-1.0, -1.0, 3.0]
+
+
+def _with_actions(actions: list[dict], evidence: list[dict] | None = None) -> dict:
+    result = _result(feature_actions=actions if evidence is None else evidence)
+    result["task"]["feature_engineering"] = {"feature_engineering_actions": actions}
+    return result
+
+
+def test_dates_parse_with_the_training_format_and_fail_closed_otherwise():
+    train = pd.DataFrame({"event_date": ["13/04/2024", "02/05/2024", "28/02/2024", "15/01/2024", "30/06/2024",
+                                         "21/03/2024"], "y": [0, 1, 0, 1, 1, 0]})
+    engineered, actions = engineer_features(train, ["event_date"])
+    assert actions[0]["parameters"]["formats"] == {"event_date": "%d/%m/%Y"}  # day-first, from train rows
+    pipeline = _fitted(["event_date"], [], engineered, "y")
+    spec = scoring_spec(_with_actions(actions), pipeline)
+    # This file starts with an ambiguous date: guessed per file, 03/04 would be March 4.
+    prepared, _facts = prepare_features(pd.DataFrame({"event_date": ["03/04/2024", "13/04/2024"]}), spec)
+    assert prepared["event_date"].tolist() == [pd.Timestamp("2024-04-03").timestamp(),
+                                               pd.Timestamp("2024-04-13").timestamp()]
+    # Training parsed text: numbers or tz-aware datetimes in the scoring file fail closed.
+    for column in (pd.Series([20240403, 20240413]), pd.Series(pd.to_datetime(["2024-04-03", "2024-04-13"], utc=True))):
+        with pytest.raises(ScoringError) as caught:
+            prepare_features(pd.DataFrame({"event_date": column}), spec)
+        assert caught.value.code == "unsupported_transform"
+    # The evidence must agree with what the runner applied (here it says "no transform").
+    with pytest.raises(ScoringError) as caught:
+        scoring_spec(_with_actions(actions, evidence=[]), pipeline)
+    assert caught.value.code == "unsupported_transform"
+    # A runner action on a column the pipeline never uses does not matter.
+    extra = [{**actions[0], "columns": ["other_date"], "output_columns": ["other_date"], "input_columns": ["other_date"]}]
+    assert scoring_spec(_with_actions(actions + extra, evidence=actions), pipeline).date_formats == {
+        "event_date": "%d/%m/%Y"}
+    # Actions recorded before formats existed: only unambiguous ISO-8601 dates are scored.
+    legacy = [{**actions[0], "parameters": {"unit": "seconds", "epoch": "unix"}}]
+    legacy_spec = scoring_spec(_with_actions(legacy), pipeline)
+    with pytest.raises(ScoringError) as caught:
+        prepare_features(pd.DataFrame({"event_date": ["03/04/2024", "13/04/2024"]}), legacy_spec)
+    assert caught.value.code == "unsupported_transform"
+    iso, _facts = prepare_features(pd.DataFrame({"event_date": ["2024-04-03", None]}), legacy_spec)
+    assert iso["event_date"].iloc[0] == pd.Timestamp("2024-04-03").timestamp()

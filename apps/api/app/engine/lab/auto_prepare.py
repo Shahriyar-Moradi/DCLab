@@ -25,7 +25,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from app.engine.features.encode import encode_datetime_columns
+from app.engine.features.encode import datetime_to_epoch, encode_datetime_columns, infer_datetime_format
 from app.engine.lab.schema_inference import (
     TargetChoice,
     choose_target_deterministically,
@@ -465,7 +465,13 @@ def engineer_features(frame: pd.DataFrame, columns: list[str]) -> tuple[pd.DataF
                 "input_columns": converted,
                 "output_columns": converted,
                 "reason": "Convert datetime values to the numeric representation supported by the tabular pipeline.",
-                "parameters": {"unit": "seconds", "epoch": "unix"},
+                # Per-column date format inferred on these (training) rows; every
+                # other partition and scoring file parses with it (never re-guessed).
+                "parameters": {
+                    "unit": "seconds",
+                    "epoch": "unix",
+                    "formats": {name: infer_datetime_format(frame[name]) for name in converted},
+                },
                 "learned_from_data": False,
                 "decision_partition": "train",
             }
@@ -477,16 +483,22 @@ def apply_feature_engineering_actions(
     frame: pd.DataFrame,
     actions: list[dict[str, Any]],
 ) -> pd.DataFrame:
-    """Apply a feature plan learned from training rows to another partition."""
+    """Apply a feature plan learned from training rows to another partition.
+
+    Dates parse with the format recorded on the training rows
+    (``parameters.formats``); actions recorded before formats existed keep pandas'
+    per-call inference.
+    """
     out = frame.copy()
     for action in actions:
         if action.get("step") != "datetime_to_unix_seconds" and action.get("transformation") != "datetime_to_epoch":
             continue
+        formats = (action.get("parameters") or {}).get("formats")
+        formats = formats if isinstance(formats, dict) else {}
         for name in action.get("output_columns") or action.get("columns") or []:
             if name not in out.columns:
                 continue
-            parsed = pd.to_datetime(out[name], errors="coerce")
-            out[name] = parsed.map(lambda value: value.timestamp() if pd.notna(value) else np.nan)
+            out[name] = datetime_to_epoch(out[name], formats.get(name))
     return out
 
 

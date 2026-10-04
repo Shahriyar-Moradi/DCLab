@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ClientLabUpload, Experiment, SplitPlan
 from app.domain.errors import InvalidChangeSetError, SplitPlanLineageError
+from app.engine.features.encode import infer_datetime_format
 from app.engine.lab.auto_prepare import MissingValuePlan, apply_feature_engineering_actions
 from app.services.experiment_branch_service import INCLUDING_TREATMENTS
 
@@ -148,7 +149,11 @@ def forced_datetime_action(
         "input_columns": todo,
         "output_columns": todo,
         "reason": "Branch change: convert these columns to unix seconds.",
-        "parameters": {"unit": "seconds", "epoch": "unix"},
+        "parameters": {
+            "unit": "seconds",
+            "epoch": "unix",
+            "formats": {column: infer_datetime_format(engineered_train[column]) for column in todo},
+        },
         "learned_from_data": False,
         "decision_partition": "train",
         "source": "branch_change_set",

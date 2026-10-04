@@ -5,10 +5,11 @@ Open-ingest training transforms the upload before the fitted sklearn ``Pipeline`
 train-decided ``domain_fill`` values and datetime -> epoch feature actions, then a
 CSV round trip of the prepared table. New rows get the same transforms here, with
 the same ``app.engine.lab.auto_prepare`` functions and only parameters learned at
-training time: the fitted pipeline's input columns and encoder categories, and the
-run's locked scientific evidence. Nothing is refit or re-decided on scoring rows.
-A model whose transforms cannot be replayed deterministically fails closed
-(``unsupported_transform``); it is never scored on an untransformed frame.
+training time: the fitted pipeline's input columns and encoder categories, the
+actions the runner applied (which must agree with the locked evidence) and the
+date formats recorded on the training rows. Nothing is refit or re-decided on
+scoring rows. A model whose transforms cannot be replayed deterministically fails
+closed (``unsupported_transform``); it is never scored on an untransformed frame.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import io
 import json
 import math
 import numbers
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -45,6 +47,11 @@ _EPOCH_STEP, _EPOCH_TRANSFORMATION = "datetime_to_unix_seconds", "datetime_to_ep
 _PIPELINE_MISSING_ACTIONS = frozenset({"keep", "impute_median", "impute_most_frequent", "drop_column"})
 LISTED_MAX = 100
 NAME_MAX = 128
+PARSE_RATE_WARNING = 0.9  # below this share of parsed values the contract is a warning
+# Unambiguous dates: what a date action recorded without a format may still accept.
+_ISO_8601 = re.compile(
+    r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?)?"
+)
 CHUNK_ROWS = 50_000
 ROW_COLUMN = "row_number"
 
@@ -72,6 +79,10 @@ class ScoringSpec:
     categorical_columns: tuple[str, ...]
     categories: Mapping[str, tuple[Any, ...]]
     feature_actions: tuple[dict[str, Any], ...]
+    # Date columns of the pipeline input: format recorded on the training rows (None:
+    # the training column was already datetime-typed); legacy actions recorded none.
+    date_formats: Mapping[str, str | None]
+    legacy_date_columns: frozenset[str]
     domain_fills: Mapping[str, Any]
     class_labels: tuple[Any, ...] | None
     decision_threshold: float | None
@@ -157,6 +168,20 @@ def _feature_actions(raw: Any, categorical: set[str]) -> tuple[dict[str, Any], .
     return tuple(actions)
 
 
+def _date_plan(actions: tuple[dict[str, Any], ...], features: set[str]) -> dict[str, tuple[bool, str | None]]:
+    """{pipeline input column: (format recorded?, format)} of these epoch actions."""
+
+    plan: dict[str, tuple[bool, str | None]] = {}
+    for action in actions:
+        formats = (action.get("parameters") or {}).get("formats")
+        formats = formats if isinstance(formats, dict) else None
+        for name in _action_columns(action):
+            if name in features:
+                recorded = formats is not None and name in formats
+                plan[name] = (recorded, str(formats[name]) if recorded and formats[name] is not None else None)
+    return plan
+
+
 def _domain_fills(plan: Any) -> dict[str, Any]:
     if not isinstance(plan, dict) or not isinstance(plan.get("column_decisions"), list):
         raise _unsupported()
@@ -184,7 +209,14 @@ def scoring_spec(result: Mapping[str, Any], pipeline: Any) -> ScoringSpec:
     evidence = result.get("scientific_evidence")
     if not isinstance(evidence, dict):
         raise _unsupported()
-    actions = _feature_actions(evidence.get("feature_actions"), set(categorical))
+    # Replay what the runner applied (it records its own recomputed actions on the
+    # task); the locked evidence must say the same for every pipeline input column.
+    task_features = task.get("feature_engineering") if isinstance(task.get("feature_engineering"), dict) else {}
+    actions = _feature_actions(task_features.get("feature_engineering_actions") or [], set(categorical))
+    recorded = _feature_actions(evidence.get("feature_actions"), set(categorical))
+    plan = _date_plan(actions, set(features))
+    if plan != _date_plan(recorded, set(features)):
+        raise _unsupported()  # the evidence does not describe what the pipeline was trained on
     fills = _domain_fills(evidence.get("missing_value_plan"))
     labels = None
     if task_type == "multiclass":
@@ -211,6 +243,8 @@ def scoring_spec(result: Mapping[str, Any], pipeline: Any) -> ScoringSpec:
         categorical_columns=tuple(categorical),
         categories=categories,
         feature_actions=actions,
+        date_formats={name: fmt for name, (has, fmt) in plan.items() if has},
+        legacy_date_columns=frozenset(name for name, (has, _fmt) in plan.items() if not has),
         domain_fills=fills,
         class_labels=labels,
         decision_threshold=threshold,
@@ -225,7 +259,10 @@ def _bounded(contract: dict[str, Any]) -> dict[str, Any]:
     """Halve the longest name list until the contract is well inside the DB bound
     (escaped or multibyte names); the ``*_count`` fields stay exact."""
 
-    keys = ("required_columns", "missing_columns", "ignored_columns", "values_set_missing")
+    keys = (
+        "required_columns", "missing_columns", "ignored_columns", "empty_columns",
+        "unparsed_values", "parse_rates", "unseen_categories",
+    )
     while len(json.dumps(contract, ensure_ascii=False).encode("utf-8")) > CONTRACT_CHECK_MAX_BYTES // 2:
         key = max(keys, key=lambda name: len(contract.get(name) or ()))
         items = contract.get(key) or ()
@@ -288,8 +325,67 @@ def _align_categorical(series: pd.Series, categories: tuple[Any, ...]) -> pd.Ser
     return series
 
 
-def prepare_features(frame: pd.DataFrame, spec: ScoringSpec) -> tuple[pd.DataFrame, dict[str, int]]:
-    """The pipeline input for ``frame``, transformed as training transformed its rows.
+def _date_kind(series: pd.Series) -> str:
+    if isinstance(series.dtype, pd.DatetimeTZDtype):
+        return "datetime_tz"
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return "datetime"
+    if not series.notna().any():
+        return "empty"
+    if pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+        return "numeric"
+    return "text"
+
+
+def _date_replay(work: pd.DataFrame, spec: ScoringSpec) -> dict[str, str | None]:
+    """How each date column of this file is parsed: with the training format, or as
+    ISO-8601 when training recorded none. Raises ``unsupported_transform`` when the
+    column cannot be read the way training read it (numbers or tz-aware datetimes
+    where training parsed text; non-ISO text without a recorded format)."""
+
+    replay: dict[str, str | None] = {}
+    for name in sorted(set(spec.date_formats) | set(spec.legacy_date_columns)):
+        kind = _date_kind(work[name])
+        trained_on_text = spec.date_formats.get(name) is not None
+        recorded = name in spec.date_formats
+        if kind == "numeric" or (kind == "datetime_tz" and (trained_on_text or not recorded)):
+            raise _unsupported()
+        if kind == "text" and not trained_on_text:
+            values = work[name].dropna()
+            if not all(_ISO_8601.fullmatch(str(value).strip()) for value in values):
+                raise _unsupported()
+            replay[name] = "ISO8601"
+        else:
+            replay[name] = spec.date_formats.get(name)
+    return replay
+
+
+def _epoch_action(name: str, date_format: str | None) -> dict[str, Any]:
+    return {"step": _EPOCH_STEP, "columns": [name], "output_columns": [name], "parameters": {"formats": {name: date_format}}}
+
+
+def _rates(present: pd.DataFrame, parsed: pd.DataFrame, names: list[str]) -> tuple[dict[str, int], dict[str, float]]:
+    """Per column: non-missing input values that did not parse, and the parsed share."""
+
+    unparsed: dict[str, int] = {}
+    rates: dict[str, float] = {}
+    for name in names:
+        count = int((present[name] & parsed[name].isna()).sum())
+        if count:
+            unparsed[name[:NAME_MAX]] = count
+            rates[name[:NAME_MAX]] = round(1.0 - count / int(present[name].sum()), 4)
+    return unparsed, rates
+
+
+def _unseen(series: pd.Series, categories: tuple[Any, ...]) -> int:
+    known = [value for value in categories if not _missing(value)]
+    return int((series.notna() & ~series.isin(known)).sum()) if known else 0
+
+
+def prepare_features(frame: pd.DataFrame, spec: ScoringSpec) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """The pipeline input for ``frame``, transformed as training transformed its rows,
+    and data-quality facts for the contract (unparsed values, parse rates, empty
+    columns, unseen categories).
 
     Order mirrors training: numeric coercion (target stage) -> cell hygiene
     (structural cleaning) -> ``domain_fill`` -> datetime feature actions -> the
@@ -297,26 +393,37 @@ def prepare_features(frame: pd.DataFrame, spec: ScoringSpec) -> tuple[pd.DataFra
     """
 
     columns = list(spec.feature_columns)
-    work = frame.loc[:, columns].copy()
-    epoch_columns = {name for action in spec.feature_actions for name in _action_columns(action)}
-    plain_numeric = [name for name in spec.numeric_columns if name not in epoch_columns]
-    present_before = {name: int(work[name].notna().sum()) for name in spec.numeric_columns}
-    work = coerce_numeric_like(work, plain_numeric, min_parsed_fraction=0.0)
-    work, _inf, _sentinels = clean_feature_cells(work, columns)
+    raw = frame.loc[:, columns]
+    present = clean_feature_cells(raw, columns)[0].notna()  # real values, not missing markers
+    dates = set(spec.date_formats) | set(spec.legacy_date_columns)
+    plain_numeric = [name for name in spec.numeric_columns if name not in dates]
+    work = coerce_numeric_like(raw.copy(), plain_numeric, min_parsed_fraction=0.0)
+    work, _inf, _markers = clean_feature_cells(work, columns)
+    unparsed, rates = _rates(present, work, plain_numeric)  # before fills
     for column, value in spec.domain_fills.items():
         if column in work.columns:
             work[column] = work[column].fillna(value)
-    work = apply_feature_engineering_actions(work, list(spec.feature_actions))
+    replay = _date_replay(work, spec)
+    try:
+        work = apply_feature_engineering_actions(work, [_epoch_action(name, fmt) for name, fmt in replay.items()])
+    except (TypeError, ValueError) as exc:  # e.g. mixed time zones
+        raise _unsupported() from exc
+    date_unparsed, date_rates = _rates(present, work, sorted(replay))
     for name in spec.numeric_columns:
         work[name] = pd.to_numeric(work[name], errors="coerce").astype(float).replace([np.inf, -np.inf], np.nan)
+    unseen: dict[str, int] = {}
     for name in spec.categorical_columns:
-        work[name] = _align_categorical(work[name], tuple(spec.categories.get(name, ())))
-    unparsed = {
-        name[:NAME_MAX]: present_before[name] - int(work[name].notna().sum())
-        for name in spec.numeric_columns
-        if present_before[name] - int(work[name].notna().sum()) > 0
+        categories = tuple(spec.categories.get(name, ()))
+        work[name] = _align_categorical(work[name], categories)
+        if count := _unseen(work[name], categories):
+            unseen[name[:NAME_MAX]] = count
+    facts = {
+        "empty_columns": _listed([name for name in columns if not work[name].notna().any()]),
+        "unparsed_values": {**unparsed, **date_unparsed},
+        "parse_rates": {**rates, **date_rates},
+        "unseen_categories": unseen,
     }
-    return work.loc[:, columns], dict(list(unparsed.items())[:LISTED_MAX])
+    return work.loc[:, columns], facts
 
 
 def _scores(pipeline: Any, features: pd.DataFrame, spec: ScoringSpec, on_progress: Callable[[], None] | None) -> np.ndarray:
@@ -372,8 +479,19 @@ def score_frame(
         raise ScoringError(FEATURE_CONTRACT_FAILED, message + (f" and {more} more" if more else ""), contract=contract)
     if frame.empty:
         raise ScoringError(FEATURE_CONTRACT_FAILED, "the file has no rows to score", contract=contract)
-    features, unparsed = prepare_features(frame, spec)
-    contract = _bounded({**contract, "values_set_missing": unparsed})
+    features, facts = prepare_features(frame, spec)
+    contract = {**contract, **facts}
+    if facts["empty_columns"]:
+        contract["status"] = "failed"
+        names = ", ".join(facts["empty_columns"][:20])
+        raise ScoringError(
+            FEATURE_CONTRACT_FAILED,
+            f"required column(s) have no usable values after cleaning: {names}",
+            contract=_bounded(contract),
+        )
+    if any(rate < PARSE_RATE_WARNING for rate in facts["parse_rates"].values()):
+        contract["status"] = "warning"  # scored, but many values could not be read
+    contract = _bounded(contract)
     table = _prediction_table(frame, spec, _scores(pipeline, features, spec, on_progress))
     if len(table) != len(frame):
         raise ScoringError(SCORING_FAILED, "scoring did not return one prediction per row", contract=contract)

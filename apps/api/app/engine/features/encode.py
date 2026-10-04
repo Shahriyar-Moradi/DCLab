@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -86,6 +88,39 @@ def encode_datetime_columns(frame: pd.DataFrame, columns: list[str]) -> tuple[pd
         out[name] = parsed.map(lambda value: value.timestamp() if pd.notna(value) else np.nan)
         converted.append(name)
     return out, converted
+
+
+def infer_datetime_format(series: pd.Series) -> str | None:
+    """The format ``pd.to_datetime`` infers for this column (from its first non-null
+    value), ``"mixed"`` when it cannot infer one (pandas then parses each value on its
+    own), or None for an already datetime-typed column.
+
+    Recorded on the training partition so the holdout and every scoring file read an
+    ambiguous ``03/04/2024`` the way training did, instead of re-guessing per frame.
+    """
+
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return None
+    values = np.asarray(series, dtype=object)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        try:  # the helper to_datetime itself uses: recording never changes a training parse
+            from pandas.core.tools.datetimes import _guess_datetime_format_for_array
+
+            guessed = _guess_datetime_format_for_array(values, dayfirst=False)
+        except ImportError:  # pragma: no cover - pandas moved its private helper
+            from pandas.tseries.api import guess_datetime_format
+
+            first = next((value for value in values if isinstance(value, str) and value.strip()), None)
+            guessed = guess_datetime_format(first) if first is not None else None
+    return guessed or "mixed"
+
+
+def datetime_to_epoch(series: pd.Series, date_format: str | None = None) -> pd.Series:
+    """Unix seconds (unparsed values stay NA), parsing with ``date_format`` when given."""
+
+    parsed = pd.to_datetime(series, errors="coerce", format=date_format)
+    return parsed.map(lambda value: value.timestamp() if pd.notna(value) else np.nan)
 
 
 def encode_feature_columns(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
