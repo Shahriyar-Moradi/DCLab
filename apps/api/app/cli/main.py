@@ -123,6 +123,30 @@ def cmd_governance_switch(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_agents_sync_prompts(args: argparse.Namespace) -> int:
+    """Create prompt_releases rows from app/agents/prompts (ADR 0009 §2.8); --check only verifies."""
+
+    from app.agents.prompt_releases import sync_prompt_releases, verify_prompt_releases
+
+    from pathlib import Path
+
+    from app.agents.prompt_releases import PROMPTS_ROOT
+
+    root = Path(args.root) if args.root else PROMPTS_ROOT
+    db = _session()
+    try:
+        result = {} if args.check else sync_prompt_releases(db, root).as_dict()
+        problems = verify_prompt_releases(db, root)
+        if args.check:
+            db.rollback()
+        else:
+            db.commit()
+    finally:
+        db.close()
+    print(json.dumps({**result, "problems": problems}))
+    return 1 if problems or result.get("mismatched") else 0
+
+
 def cmd_env_seed(_args: argparse.Namespace) -> int:
     db = _session()
     env = seed_dogfood(db)
@@ -381,6 +405,13 @@ def build_parser() -> argparse.ArgumentParser:
     governance_switch.add_argument("--reason", required=True)
     governance_switch.add_argument("--workspace", default=None, help="workspace id (omit for platform keys)")
     governance_switch.set_defaults(func=cmd_governance_switch)
+
+    agents = sub.add_parser("agents")
+    agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)
+    sync_prompts = agents_sub.add_parser("sync-prompts")
+    sync_prompts.add_argument("--check", action="store_true", help="verify only; write nothing")
+    sync_prompts.add_argument("--root", default=None, help="prompt directory (default app/agents/prompts)")
+    sync_prompts.set_defaults(func=cmd_agents_sync_prompts)
 
     env = sub.add_parser("env")
     env_sub = env.add_subparsers(dest="env_cmd", required=True)

@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "verdict": {
+      "enum": [
+        "keep",
+        "revise"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "verdict",
+    "confidence"
+  ],
+  "title": "GatewayFixtureOutput",
+  "type": "object"
+}
