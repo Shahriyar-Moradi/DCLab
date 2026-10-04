@@ -59,7 +59,9 @@ Done when: observable criteria.
    tool or user-visible capability either ships its screen or names the `-UI`
    prompt in the same phase that does; it updates the row in
    [UI_COVERAGE.md](UI_COVERAGE.md) and regenerates the web API types
-   (`npm run gen:api`, from P4.0-A on).
+   (`npm run gen:api`, from P4.0-A on). Screens follow their `Design:` prototype
+   file under the sync rule of [design/STUDIO_DESIGN.md](design/STUDIO_DESIGN.md) §1:
+   every value from an API field, nothing drawn without a backend.
 7. **Assistant parity.** A new MCP tool is added to the shared tool catalog
    (`app/agents/tools/`, from A2-B on), so the in-app assistant gets it too.
 8. STATUS.md updated; nothing else in docs unless the prompt says so.

@@ -19,7 +19,10 @@ Revised 2026-10-04 (founder decision):
    pages leave the navigation (P4.12-A).
 5. **Design partners join at the end of Phase 4**, not Phase 8, and their feedback
    reorders Phases 5–7.
-6. **Merge cadence:** build 2–3 phases (or Phase 4 stages) on one branch, run the
+6. **Studio looks like the prototype.** `design/prototype/` is the visual and
+   structural target; `design/STUDIO_DESIGN.md` maps every screen to its route,
+   backend and prompt, and its sync rule forbids drawing what the backend lacks.
+7. **Merge cadence:** build 2–3 phases (or Phase 4 stages) on one branch, run the
    full suite and CI once at the merge point, merge, and fill every STATUS.md
    SHA in one go (EXECUTION_GUIDE.md §5).
 
@@ -118,20 +121,22 @@ authority beyond the token's workspace/capabilities.
 | 1 Use & trust (backend + MCP) | P4.9 Score new data | Upload a scoring file → predictions from a chosen ModelVersion (worker only, feature-contract check); first slice of P7.2 |
 | | P4.10 Five core checks | Leakage, overfit gap, duplicates, imbalance, too-good-to-be-true as plain-language findings on every run |
 | | P4.11 Model card | Drivers, metric in business words, baseline comparison, risks, single holdout result |
-| 2 UI foundation + catch-up (Phases 1–3) | P4.0 UI–API sync | Generated TS types from `v1_openapi.json`, drift fails CI, coverage test against UI_COVERAGE.md |
-| | P4.1 Project IA + new-project wizard | Projects → Graph / Data / Experiments / Models / Decisions; upload → target → train in the browser |
+| 2 UI foundation + catch-up (Phases 1–3) | P4.0 UI–API sync + design system | Generated TS types from `v1_openapi.json`, drift fails CI, coverage test; prototype tokens, shell and `components/studio/*` (P4.0-B) |
+| | P4.1 Project IA, wizard, Data page | Workspace + project sidebar per prototype, ⌘K; upload → target → train; Data page with column profile (NEW `/v1/datasets/{id}/profile`) |
 | | P4.2 Graph view | Interactive lineage with stale markers and impact |
 | | P4.3 Node inspectors | Reason, formula, evidence and code for data/feature/split/experiment/model nodes |
 | | P4.4 Compare, branch, refs, decide | Diff, branch form, champion ref move, decision timeline |
 | | P4.5 Client run page cleanup | No technical internals for client role |
-| | P4.8 Connect an agent | Token + `.mcp.json` snippet + CLI login in Settings |
-| 3 UI for use & trust | P4.9-UI / P4.10-UI / P4.11-UI | Score page, findings panel, model card page |
-| 4 Assistant (Track A) | A1–A4 | ADR 0009, LLM gateway + agent tables, read-only assistant (SSE), Studio panel, confirm cards, golden conversations |
-| 5 Focus, demo, partners | P4.12 One story · P4.13 Demo kit · P4.14 Partner kit · P4.6 Killer-flow E2E | DCLab-only navigation, 2-minute demo (MCP + Studio), partner install, full Playwright flow |
+| | P4.8 Agents & tools page | Connect (MCP/SDK/CLI/API) and Service tokens tabs |
+| 3 UI for use & trust | P4.9-UI / P4.10-UI / P4.11-UI / P4.17-UI | Score page, findings panel, model card page, Pipeline evidence page |
+| 4 Assistant (Track A) | A1–A4 | ADR 0009, LLM gateway + agent tables, read-only assistant (SSE), Lab page per prototype, confirm cards, tool registry and agent runs tabs, golden conversations |
+| 5 Home, inbox, focus, demo, partners | P4.15 Home · P4.16 Inbox · P4.12 One story · P4.13 Demo kit · P4.14 Partner kit · P4.6 Killer-flow E2E | Home and Inbox (NEW `/v1/activity`, `/v1/inbox`), role landing, 2-minute demo, partner install, full Playwright flow |
 
-**Exit gate:** Playwright, against the real backend with the fake LLM: new project
-→ upload → train → findings → inspect feature → view code → assistant proposes a
-branch → confirm → compare → accept → score new data → model card. Every
+**Exit gate:** Playwright, against the real backend with the fake LLM: Home → new
+project → upload → train → Pipeline evidence → findings → Data page → inspect
+feature → view code → Lab: assistant proposes a branch → confirm → Inbox →
+compare → accept → score new data → model card. Every Phase 4 screen matches its
+prototype screen minus elements whose backend comes later. Every
 "planned P4.x" row in UI_COVERAGE.md is "exists"; with the assistant disabled all
 of it still works. Founder steps: demo video recorded; 2–3 design partners booked.
 
@@ -161,7 +166,8 @@ tasks without touching holdout; every iteration has change set, reason, result, 
 | P6.5 Improvement hypothesis agent | Optional proposer inside the Phase 5 loop |
 | P6.6 Proposal review | API/MCP/Studio accept/reject → command service → decision record; one proposals panel for agents and assistant; assistant skills (A6) |
 | P6.7 Jev shadow | `SemanticDecisionPort`, 5 purposes in shadow, answers ledger; development-only shadow view (P6.7-UI) |
-| P6.8 Agent & Jev gate (R3) | Golden tasks, citation validity, ablation vs deterministic; release decision per agent/purpose; Settings → Agents (P6.8-UI) |
+| P6.8 Agent & Jev gate (R3) | Golden tasks, citation validity, ablation vs deterministic; release decision per agent/purpose; Agent catalog tab (P6.8-UI) |
+| P6.9 Governance page | Policy, trust levels (as ADR 0008 allows), budgets and spend, kill switches, incidents, audit and replay, R3 |
 
 **Exit gate:** each agent and Jev purpose has a recorded decision; disabling NOOA
 and Jev leaves every Phase 1–5 test green.
@@ -174,7 +180,9 @@ and Jev leaves every Phase 1–5 test green.
 | P7.2 Release + batch prediction | `model_releases`; extends P4.9 `batch_predictions` with releases; Studio release and scoring actions |
 | P7.3 MLflow mirror (optional) | Telemetry mirror behind a port; `tracking_degraded` blocks promotion |
 | P7.4 Monitoring + drift | `monitoring_windows`, Evidently calculations, drift investigation check |
-| P7.5 Rollback + UI | Champion ref rollback, Studio models tab with releases, batch runs, drift charts; assistant operations tools (A7) |
+| P7.5 Rollback + UI | Champion ref rollback, Models and Monitoring pages per prototype; assistant operations tools (A7) |
+| P7.6 Business Outcomes | `/outcomes` for the client role: plain-words results, weekly list, questions, trust and limits, read-only Q&A |
+| P7.7 Per-row reasons | Deterministic explainer in the worker; top reasons per scored row |
 
 **Exit gate:** ModelVersion → release → batch scoring → drift window → rollback,
 end to end, API never loads a model.
@@ -187,8 +195,9 @@ end to end, API never loads a model.
 | P8.2 Security & recovery gate | Adversarial tenancy, secrets, CSP, backup/restore drill |
 | P8.3 Compute placement | Worker pools; one external provider for heavy jobs (SkyPilot), cost recorded and shown per experiment |
 | P8.4 Metering & plans | Usage records, quotas, entitlements enforced; usage page incl. assistant spend (A8) |
-| P8.5 Observability | OTel traces/metrics, alerts, runbooks; admin system health page (P8.5-UI) |
+| P8.5 Observability | OTel traces/metrics, alerts, runbooks; Operator console (P8.5-UI) |
 | P8.6 Open-source readiness | Package boundaries for engine/SDK/MCP, license, extraction plan |
+| P8.8 Notifications | Email for inbox items, run completion, drift; signed webhooks |
 | P8.7 Data safety (old S0-P05C–E) | Content/malware scanner and classifier adapters, resumable quarantine worker, retention and deletion jobs, residency enforcement, operator quarantine-review UI (see ADR 0005) |
 
 **Exit gate:** the design partners from Phase 4 (3 or more) complete a real

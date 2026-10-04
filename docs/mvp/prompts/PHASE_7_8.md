@@ -1,6 +1,6 @@
 # Phase 7 — Release, batch prediction, monitoring and Phase 8 — Hosted beta
 
-Every backend prompt here ships its screen in the same phase; see `../UI_COVERAGE.md`. Assistant tools: A7-A, A8-A in `ASSISTANT.md`.
+Every backend prompt here ships its screen in the same phase; see `../UI_COVERAGE.md`. Screens follow `../design/prototype/` under the sync rule of `../design/STUDIO_DESIGN.md`. Assistant tools: A7-A, A8-A in `ASSISTANT.md`.
 
 ## Phase 7
 
@@ -19,12 +19,24 @@ Do: `TrackingPort` with no-op default and MLflow adapter (separate DB/schema, pr
 
 ### P7.4-A — Monitoring windows and drift
 Model: Opus 5.5 (high) · Size: M · Depends on: P7.2-A
-Do: `monitoring_windows` (release, window, input/prediction drift metrics, performance when labels arrive); Evidently as calculator only; thresholds owned by DCLab; drift → investigation finding (reuse P5.1).
+Do: `monitoring_windows` (release, window, input/prediction drift metrics, performance when labels arrive); label arrival path: upload a dataset version with purpose `labels` joined on entity + prediction time (no connector needed); Evidently as calculator only; thresholds owned by DCLab; drift → investigation finding (reuse P5.1).
 
 ### P7.5-A — Rollback and model UI
 Model: Sonnet 5.5 (medium) · Size: M · Depends on: P7.4-A
+Design: `prototype/models.html` tabs Releases · Batch predictions · Feature contract · Package & integrity; `prototype/monitoring.html` (PSI per window, performance when labels arrive, windows table, thresholds, "With AI off"; the Ops-agent chain only if ADR 0008 allows it).
 Do: champion rollback via ref change + decision record; Studio models tab: releases, batch runs, drift charts per monitoring window with the drift finding in plain words, Rollback button with confirm.
 Verify: Playwright: release → score → drift window visible → rollback → decision recorded.
+
+### P7.6-A — Business Outcomes view
+Model: Sonnet 5.5 (high) · Size: M · Depends on: P7.5-A, P4.11-A, A4-A
+Design: `prototype/client.html` (outcome stats in plain words, "How the model was built", this week's list, questions for you, trust and limits, plain-language Q&A).
+Do: `/outcomes` for the client role from the champion release, latest batch prediction and model card; questions are proposals of kind `question` addressed to the client; Q&A uses the assistant with a read-only client tool set (stored predictions and card only, no experiment internals); banned-terms scanner covers the page; business boundary banner kept.
+Verify: banned-terms scan; Playwright client journey; client role cannot reach developer routes.
+
+### P7.7-A — Per-row prediction reasons
+Model: Opus 5.5 (xhigh) · Size: M · Depends on: P7.2-A · Review: ml-correctness-reviewer
+Do: deterministic explainer in the engine, run in the worker during batch scoring (tree SHAP for tree families, coefficients × values for linear, permutation fallback), top-k reasons per row stored with the predictions; reasons expressed in original feature names; shown in the Outcomes list and the Models → Batch predictions table.
+Verify: reasons reproducible for a fixed seed; additivity check where the method guarantees it.
 
 ## Phase 8
 
@@ -48,9 +60,10 @@ Do: `usage_records` (compute seconds, storage bytes, LLM tokens/cost, agent runs
 Model: Sonnet 5.5 (medium) · Size: M · Depends on: P8.1-A
 Do: OpenTelemetry traces/metrics (low-cardinality labels), structured logs, alerts (job failures, queue age, error rate), runbooks under `docs/runbooks/`.
 
-### P8.5-UI — System health page
-Model: Sonnet 5.5 (low) · Size: S · Depends on: P8.5-A
-Do: `/admin/monitoring` shows queue depth and age, worker heartbeats, failed jobs with links, error rate; admin role only.
+### P8.5-UI — Operator console
+Model: Sonnet 5.5 (medium) · Size: M · Depends on: P8.5-A
+Design: `prototype/operator.html` tabs Workspaces · Jobs & workers · Quarantine · Platform AI caps · Benchmarks & gates.
+Do: `/operator` (operator role only; replaces `/admin/monitoring`): workspaces with quotas and usage, queue depth and age, worker heartbeats, failed jobs, quarantine metadata (P8.7), platform AI caps (read-only, code-owned), R1/R2/R3 results; never shows customer rows.
 
 ### P8.6-A — Open-source readiness
 Model: Opus 5.5 (high) · Size: M · Depends on: P8.1-A
@@ -60,3 +73,9 @@ Do: ensure `app/engine` has no imports from services/db/api (import-linter rule)
 Model: Opus 5.5 (xhigh) · Size: L (split) · Depends on: P8.1-A · Review: security-reviewer, db-migration-reviewer
 Do: content/malware scanner and classifier adapters, resumable quarantine worker, retention and deletion jobs, residency enforcement (ADR 0005); operator quarantine-review page (release / reject with reason, audit trail).
 Verify: adversarial upload tests; deletion job tests; Playwright review flow.
+
+### P8.8-A — Notifications and webhooks
+Model: Opus 5.5 (high) · Size: M · Depends on: P8.1-A, P4.16-A · Review: security-reviewer
+Design: `prototype/settings.html` Notifications and Integrations → Webhooks.
+Do: email notifications for inbox items, run completion and drift findings (per-user preferences); signed outbound webhooks (`run.completed`, `proposal.created`, `drift.alert`) with retries and a delivery log; settings tabs to manage both.
+Verify: signature and retry tests; no tenant data in webhook bodies beyond ids and summaries.

@@ -1,6 +1,7 @@
 # Track A — The in-app assistant (agentic chat in Studio)
 
-The assistant is the chat panel on every Studio project page. A user asks in
+The assistant is the **Lab** page of every Studio project (design:
+`../design/prototype/lab.html`) plus a compact panel on the other project pages. A user asks in
 plain language ("why did model B win?", "what is stale?", "try class weights",
 "score this file") and the assistant answers from the project's real evidence,
 using tools. It can **propose** actions (run, branch, predict, record a decision)
@@ -52,21 +53,25 @@ Done when: ADR accepted by the founder; ARCHITECTURE.md and AGENTS_NOOA_JEV.md u
 ### A2-A — LLM gateway and agent persistence (moved forward from P6.2)
 Model: Opus 5.5 (high) · Size: L · Depends on: A1-A · Review: db-migration-reviewer, security-reviewer
 Do: `app/agents/gateway/` with a provider interface (refactor `engine/lab/llm_client.py` + `services/openai_provider.py` into it), DB-backed cache keyed by input digest, uniform `llm_invocations` writes, budgets; migration (via `/new-migration`) for `agent_runs`, `agent_events` (append-only), `agent_proposals` per AGENTS_NOOA_JEV.md §6 with `kind` (`assistant` now, NOOA classes in Phase 6); FK `llm_invocations.agent_run_id`.
+Also: Agents & tools page gets the **Agent runs** tab (design: `prototype/agents.html` Agent runs: run id, agent, subject, steps/calls, tokens, cost, outcome, trace as `EventList`).
 Verify: migration tests; existing LLM decision tests unchanged; gateway tests with a fake provider (no network).
 
 ### A2-B — Assistant service, read-only
 Model: Opus 5.5 (xhigh) · Size: L · Depends on: A2-A · Review: security-reviewer, ml-correctness-reviewer
 Do: `app/agents/tools/` catalog with the 8 read tools MCP already has (`inspect_project`, `inspect_dataset`, `get_experiment`, `compare_experiments`, `get_experiment_code`, `get_evidence`, `list_decisions`, `get_model`), a new `get_impact` (over `/v1/nodes/{kind}/{id}/impact`, also added to MCP), plus `get_findings`/`get_model_card` once P4.10/P4.11 land; export `contracts/agent_tools.json` and a contract test against `dclab_mcp`; assistant loop service; `POST /v1/assistant/threads`, `POST /v1/assistant/threads/{id}/messages` streaming SSE; `GET` thread history; fake LLM for all tests.
+Also: Agents & tools page gets the **Tool registry** tab rendered from `contracts/agent_tools.json` (design: `prototype/agents.html` Tool registry: tool, effect, capability, level, validator, MCP ✓, assistant ✓; the "no such tool exists" row lists the forbidden operations).
 Don't: execute any write; send raw rows or holdout metrics to the LLM.
 Verify: loop tests (budget stop, invalid step rejected, unknown tool rejected, fabricated citation rejected), tenant isolation (thread of workspace A unreadable from B), LLM-off path.
 
-### A3-UI — Assistant panel in Studio
-Model: Sonnet 5.5 (medium) · Size: M · Depends on: A2-B, P4.1-A
-Do: right-side panel on `/projects/[id]/**` (toggle + keyboard shortcut), streaming messages, tool-step chips ("read 3 experiments"), citations as links into the graph/inspectors, "LLM used" label, page context sent with each message (current tab, selected node); BFF streaming passthrough; LLM-off mode shows quick actions ("Explain this experiment", "What is stale?", "Compare with champion") rendered from deterministic templates.
+### A3-UI — Lab page and assistant panel
+Model: Sonnet 5.5 (high) · Size: M · Depends on: A2-B, P4.0-B, P4.1-A
+Design: `prototype/lab.html`: session header (model, budget, step limit, data class, tools available / needing approval), user and agent messages with "N tool calls · time · cost · run id", proposal chips with `Level` badge and the rule's answer beside the AI's, live run card ("E1 · running · stage 6 of 10") linking to the Pipeline page, right column "This run at a glance" + "Agent capabilities in this session" + "Sessions"; "Use forms instead" opens the P4.1-B wizard.
+Do: `/projects/[id]/lab` full page + compact panel (toggle + shortcut) on other project pages; streaming messages over the BFF; citations as links into Graph/Experiments/Decisions; "LLM used" label; page context sent with each message; every figure in the header and summary comes from the thread/run API. LLM-off mode: quick actions ("Explain this experiment", "What is stale?", "Compare with champion") from deterministic templates. Proposal chips show L1 only until ADR 0008 decides other levels.
 Verify: tsc/lint/build; Playwright with the fake LLM: ask → streamed answer → click citation opens inspector.
 
 ### A4-A — Action proposals and confirm cards
 Model: Opus 5.5 (high) · Size: M · Depends on: A3-UI, P4.4-A · Review: security-reviewer
+Design: `prototype/lab.html` proposal chips and "Accept all 4 and run" / "Review each"; confirmed or pending proposals also appear in the Inbox (P4.16).
 Do: write tools in the catalog (`run_experiment`, `branch_experiment`, `predict`, `record_decision`, `propose_problem_spec`) become `agent_proposals`; `POST /v1/assistant/proposals/{id}/confirm|dismiss`; confirm executes through the existing command service with an Idempotency-Key and writes the decision record (`proposed_by=assistant`); confirm cards in the panel show the exact change set and estimated cost; proposals expire.
 Verify: a proposal can never execute without a confirm by a user who holds the capability; replayed confirm is idempotent; Playwright: "try class weights" → card → confirm → new branched experiment appears in the graph.
 
