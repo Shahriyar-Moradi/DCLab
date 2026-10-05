@@ -219,6 +219,7 @@ def start_root_experiment(
     problem_spec_id: UUID | None = None,
     target_column: str | None = None,
     intent: str | None = None,
+    plan: UUID | None = None,
     before_commit: Callable[[Experiment], None] | None = None,
     initiated_by_service_token_id: UUID | None = None,
 ) -> RootRunResult:
@@ -313,6 +314,14 @@ def start_root_experiment(
         intent=text,
     )
     upload.experiment_id = shell.id
+    plan_id, plan_refusal = (None, None)
+    if plan is not None:  # P6.9-A: never an error; a refused plan makes the run rule-only
+        from app.services.run_plan_service import plan_for_request
+
+        plan_id, plan_refusal = plan_for_request(db, workspace_id=workspace_id, project_id=project.id, plan_id=plan)
+    request_spec = _legacy_labs_request_spec(upload, problem_spec_id=spec.id if spec is not None else None)
+    if plan_refusal is not None:
+        request_spec["plan_refusal"] = plan_refusal
     request = create_execution_request(
         db,
         workspace_id=workspace_id,
@@ -321,10 +330,11 @@ def start_root_experiment(
         source_surface=SOURCE_API,
         requested_by_user_id=actor.id,
         initiated_by_service_token_id=initiated_by_service_token_id,
-        request_spec=_legacy_labs_request_spec(upload, problem_spec_id=spec.id if spec is not None else None),
+        request_spec=request_spec,
         workflow_run_id=workflow_run.id,
         pipeline_run_id=shell.id,
     )
+    request.plan_proposal_id = plan_id  # consumed (unique: single use)
     job = create_auto_train_job(
         db,
         workspace_id=workspace_id,

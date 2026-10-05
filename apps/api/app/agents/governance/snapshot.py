@@ -8,8 +8,12 @@ live by the gateway; the snapshot only fixes the levels. ``fingerprint_digest`` 
 the part of the policy that can change an applied value: the digest when some point
 may apply an AI value (level >= 2), else ``None`` — at L0/L1 the rule value is used
 by construction, so the candidate fingerprint (whose contract is "equivalent
-configurations fingerprint identically") stays the rule run's. AI off (setting,
-missing provider, branch run) reads nothing and has no digest.
+configurations fingerprint identically") stays the rule run's. At L2 the digest
+enters every candidate fingerprint even when no AI value ends up applied (all answers
+agree, abstain or are refused): conservative on purpose (ADR 0008 §2c — a run under a
+policy that could have changed values is not the rule run's configuration); the run's
+applied values are hashed in on top (``RunDecisionPoints.fingerprint_digest``). AI off
+(setting, missing provider, branch run) reads nothing and has no digest.
 """
 
 from __future__ import annotations
@@ -64,8 +68,11 @@ def _canonical(value: Any) -> bytes:
 
 
 def take_snapshot(db: Session, workspace_id: UUID, keys: tuple[str, ...], *, port: Any = None,
-                  settings: Any = None) -> PolicySnapshot:
-    """Levels of ``keys`` (Jev points) for one run. ``port`` defaults to ``semantic_port()``."""
+                  settings: Any = None, agent_keys: tuple[str, ...] = (), agent_release: Any = None,
+                  plan: dict[str, Any] | None = None) -> PolicySnapshot:
+    """Levels of ``keys`` (Jev points) and of ``agent_keys`` (the run plan's points, keyed by
+    the plan's agent run (prompt release id, model id), ``agent_release``) for one run.
+    ``port`` defaults to ``semantic_port()``; ``plan`` (id, status) enters the digest."""
 
     from app.agents.semantic.deterministic import DeterministicSemanticPort
     from app.agents.semantic.port import semantic_port
@@ -96,9 +103,18 @@ def take_snapshot(db: Session, workspace_id: UUID, keys: tuple[str, ...], *, por
         releases[key] = {"prompt_release_id": str(release_id) if release_id else None,
                          "release": f"{key}@{release.version}", "model_id": release.model_id}
         blocking[key] = switches.blocking(ai_enabled=True, provider="typesafe", purpose=key)
+    release_id, model_id = agent_release or (None, None)
+    for key in agent_keys:
+        point = REGISTRY[key]
+        levels[key] = {kind or NO_KIND: effective_level(db, workspace_id, key, kind, prompt_release_id=release_id,
+                                                        model_id=model_id)
+                       for kind in (None, *sorted(point.answer_kinds))}
+        releases[key] = {"prompt_release_id": str(release_id) if release_id else None,
+                         "release": point.ai_kind, "model_id": model_id}
+        blocking[key] = switches.blocking(ai_enabled=True, agent_key=point.ai_kind.split(":", 1)[-1])
     digest = hashlib.sha256(_canonical({
         "schema": SNAPSHOT_SCHEMA, "policy_digest": policy_digest, "levels": levels, "releases": releases,
-        "switches": blocking,
+        "switches": blocking, **({"plan": plan} if plan else {}),
     })).hexdigest()
     return PolicySnapshot(ai="on", digest=digest, levels=MappingProxyType(levels),
                           releases=MappingProxyType(releases), port=port)

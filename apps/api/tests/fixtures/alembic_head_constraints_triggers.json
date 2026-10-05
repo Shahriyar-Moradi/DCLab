@@ -82,6 +82,11 @@
     },
     {
       "table": "agent_proposals",
+      "name": "ck_agent_proposals_source",
+      "definition": "CHECK (((num_nonnulls(run_id, semantic_answer_id) = 1) AND ((semantic_answer_id IS NOT NULL) = ((proposal_type)::text = 'SemanticReviewProposal'::text)) AND ((semantic_answer_id IS NULL) OR (level_at_proposal = 1))))"
+    },
+    {
+      "table": "agent_proposals",
       "name": "ck_agent_proposals_status",
       "definition": "CHECK (((status)::text = ANY ((ARRAY['shadow'::character varying, 'proposed'::character varying, 'rejected_by_validator'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'applied'::character varying, 'reverted'::character varying, 'superseded'::character varying, 'expired'::character varying])::text[])))"
     },
@@ -123,7 +128,7 @@
     {
       "table": "agent_proposals",
       "name": "ck_agent_proposals_type",
-      "definition": "CHECK (((proposal_type)::text = ANY ((ARRAY['ExperimentPlanProposal'::character varying, 'ExperimentReviewProposal'::character varying, 'DatasetInvestigationProposal'::character varying, 'ImprovementActionProposal'::character varying, 'ToolCallProposal'::character varying, 'ReleaseProposal'::character varying])::text[])))"
+      "definition": "CHECK (((proposal_type)::text = ANY ((ARRAY['ExperimentPlanProposal'::character varying, 'ExperimentReviewProposal'::character varying, 'DatasetInvestigationProposal'::character varying, 'ImprovementActionProposal'::character varying, 'ToolCallProposal'::character varying, 'ReleaseProposal'::character varying, 'SemanticReviewProposal'::character varying])::text[])))"
     },
     {
       "table": "agent_proposals",

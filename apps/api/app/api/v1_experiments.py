@@ -271,9 +271,12 @@ def create_experiment_v1(
     Requires ``Idempotency-Key``; ``202`` + ``Location``; the worker trains."""
 
     workspace_id = request_workspace_id(request)
+    body = payload.model_dump(mode="json")
+    if body.get("plan") is None:  # keeps the request digest of plan-less bodies unchanged
+        body.pop("plan", None)
     binding = idempotency_binding(
         operation=_CREATE_EXPERIMENT, principal_id=_principal_id(request, user), header_key=idempotency_key,
-        body=payload.model_dump(mode="json"), required=True,
+        body=body, required=True,
     )
 
     def execute(bind: Callable[[Any], None]) -> Experiment:

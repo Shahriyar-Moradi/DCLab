@@ -204,6 +204,7 @@ from app.domain.agent_records import (
     CK_AGENT_PROPOSALS_DECISION_POINT,
     CK_AGENT_PROPOSALS_ESTIMATES,
     CK_AGENT_PROPOSALS_IDEMPOTENCY,
+    CK_AGENT_PROPOSALS_SOURCE,
     CK_AGENT_PROPOSALS_LEVEL_STATUS,
     CK_AGENT_PROPOSALS_LEVELS,
     CK_AGENT_PROPOSALS_PAYLOAD,
@@ -1849,6 +1850,21 @@ class ExecutionRequest(Base):
             "pipeline_run_id",
             postgresql_where=text("initiated_by_service_token_id IS NOT NULL"),
         ),
+        # P6.9-A (0075): the ``plan`` input is single use; this request consumed the proposal.
+        ForeignKeyConstraint(
+            ["workspace_id", "plan_proposal_id"],
+            ["agent_proposals.workspace_id", "agent_proposals.id"],
+            name="fk_execution_requests_workspace_plan_proposal",
+            ondelete="SET NULL (plan_proposal_id)",
+            use_alter=True,
+        ),
+        Index(
+            "uq_execution_requests_plan_proposal",
+            "workspace_id",
+            "plan_proposal_id",
+            unique=True,
+            postgresql_where=text("plan_proposal_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1867,6 +1883,7 @@ class ExecutionRequest(Base):
     initiated_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
+    plan_proposal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
     source_surface: Mapped[str] = mapped_column(String(32), nullable=False)
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -6837,6 +6854,15 @@ class AgentProposal(Base):
             CK_AGENT_PROPOSALS_TOOL_CALL_LEVEL, name="ck_agent_proposals_tool_call_level"
         ),
         CheckConstraint(CK_AGENT_PROPOSALS_IDEMPOTENCY, name="ck_agent_proposals_idempotency"),
+        CheckConstraint(CK_AGENT_PROPOSALS_SOURCE, name="ck_agent_proposals_source"),
+        _agent_fk("agent_proposals", "semantic_answer_id", "semantic_decision_answers"),
+        Index(
+            "uq_agent_proposals_semantic_answer",
+            "workspace_id",
+            "semantic_answer_id",
+            unique=True,
+            postgresql_where=text("semantic_answer_id IS NOT NULL"),
+        ),
         Index(
             "ix_agent_proposals_workspace_project_status_created_at",
             "workspace_id",
@@ -6866,7 +6892,9 @@ class AgentProposal(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # Exactly one of run_id (an agent run) / semantic_answer_id (a Jev L1 review item; 0075).
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    semantic_answer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     decision_point_key: Mapped[str] = mapped_column(String(64), nullable=False)
     level_at_proposal: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     answer_ceiling: Mapped[int] = mapped_column(SmallInteger, nullable=False)

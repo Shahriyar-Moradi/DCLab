@@ -462,6 +462,7 @@ def mark_execution_needs_input(
     upload: ClientLabUpload,
     waiting: dict[str, Any],
     source: str,
+    event_type: str = TARGET_CONFIRMATION_REQUIRED,
 ) -> ExecutionRequest | None:
     """Park the control-plane request in needs_input. Does not fail the run."""
 
@@ -478,7 +479,7 @@ def mark_execution_needs_input(
             db,
             upload=upload,
             request=request,
-            event_type=TARGET_CONFIRMATION_REQUIRED,
+            event_type=event_type,
             status=REQUEST_NEEDS_INPUT,
             payload={
                 **dict(summary or {}),

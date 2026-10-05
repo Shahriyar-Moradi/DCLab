@@ -1104,15 +1104,39 @@ def _verify_decision_point_partitions(add, report: dict[str, Any], db: Session) 
     )))
     if not rows:
         return
+    from app.services.decision_point_service import source_rows_digest
+
     check, stage = "decision_point_evidence_partition", "decision_points"
-    bad = sorted(
-        str(_as_dict(row.details).get("decision_point") or row.id)
-        for row in rows
-        if _as_dict(row.details).get("evidence_partition") not in ("train", "metadata")
-    )
+    split = _as_dict(report.get("split"))
+    train_rows = _as_list(split.get("train_source_rows"))
+    n_train = split.get("n_train")
+    train_digest = source_rows_digest(train_rows) if train_rows else None
+    bad, unknown = [], []
+    for row in rows:
+        details = _as_dict(row.details)
+        name = str(details.get("decision_point") or row.id)
+        partition = details.get("evidence_partition")
+        if partition not in ("train", "metadata"):
+            bad.append(name)
+        elif partition == "train":
+            # The evidence frame must be this run's locked training partition (A1 review).
+            evidence = _as_dict(details.get("partition"))
+            if not evidence or train_digest is None or not isinstance(n_train, int):
+                unknown.append(name)
+            elif (evidence.get("subset_of_train") is not True or evidence.get("train_rows_digest") != train_digest
+                  or not 0 < int(evidence.get("row_count") or 0) <= n_train
+                  # a full-size frame must be exactly the training rows (the subset flag then
+                  # only matters for frames that dropped rows)
+                  or (int(evidence.get("row_count") or 0) == n_train
+                      and evidence.get("source_rows_digest") != train_digest)):
+                bad.append(name)
     if bad:
-        add(check, stage, CHECK_FAIL, f"Decision points cite evidence outside the training partition: {bad}.",
-            "project_decision_records")
+        add(check, stage, CHECK_FAIL, f"Decision points cite evidence outside the training partition: {sorted(bad)}.",
+            "project_decision_records", "split.train_source_rows")
+    elif unknown:
+        add(check, stage, CHECK_NOT_VERIFIABLE,
+            f"Decision point evidence cannot be matched to the training partition: {sorted(unknown)}.",
+            "project_decision_records", "split.train_source_rows")
     else:
         add(check, stage, CHECK_PASS, "Every decision point record cites train-partition or metadata evidence.",
             "project_decision_records")
@@ -1768,7 +1792,8 @@ class PipelineVerifier:
                 ):
                     if status_value in {"unsatisfiable", "not_satisfied"}:
                         add(check_id, "model_selection", CHECK_WARN, f"The declared metric constraints are not met on {where}; see decision_threshold.constraints.", "decision_threshold.constraints")
-                    elif status_value == "not_verifiable":
+                    elif status_value == "not_verifiable" or (check_id == HOLDOUT_CONSTRAINTS_CHECK and not status_value):
+                        # A missing holdout status is not evidence that the constraints hold (P6.9-A).
                         add(check_id, "model_selection", CHECK_NOT_VERIFIABLE, f"A declared constraint metric was not measured on {where}.", "decision_threshold.constraints")
                     else:
                         add(check_id, "model_selection", CHECK_PASS, f"Declared metric constraints hold on {where}.", "decision_threshold.constraints")

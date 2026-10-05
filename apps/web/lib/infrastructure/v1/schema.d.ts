@@ -1592,6 +1592,11 @@ export interface components {
              */
             intent?: string | null;
             /**
+             * Plan
+             * @description An ExperimentPlanProposal of this project (accepted by a person, or applied at L2 for L2 kinds only); single use. Its answers are re-validated when the run starts; a plan that cannot be used makes the run rule-only and the refusal is recorded (never an error).
+             */
+            plan?: string | null;
+            /**
              * Problem Spec Id
              * @description ProblemSpec of this project (objective, target).
              */

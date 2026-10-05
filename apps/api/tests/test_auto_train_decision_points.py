@@ -12,6 +12,7 @@ import hashlib
 import json
 from collections import Counter
 from types import SimpleNamespace
+from uuid import UUID
 
 import pandas as pd
 import pytest
@@ -32,6 +33,7 @@ from app.agents.semantic.port import Resolution, SemanticOutcome
 from app.agents.semantic.releases import ROLES, sync_jev_releases
 from app.agents.semantic.typesafe_jev import JevSemanticPort
 from app.db.models import (
+    AgentProposal,
     AiIncident,
     ClientLabUpload,
     DatasetColumn,
@@ -46,6 +48,7 @@ from app.domain.errors import InvalidChangeSetError
 from app.domain.experiment_changes import ExperimentChangeSet
 from app.engine.search.fingerprint import scientific_candidate_config_payload, scientific_candidate_fingerprint
 from app.engine.types import SearchConfig
+from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.auto_train import decision_points as dp
 from app.services.auto_train_service import run_auto_train_job
 from app.services.dataset_column_service import publish_dataset_policy_defaults, set_dataset_column_policy
@@ -55,7 +58,8 @@ from test_ai_gateway import gw  # noqa: F401 - fixture
 from test_auto_train_event_sequence import _classification_frame
 
 ON = SimpleNamespace(ai_enabled=True, dclab_env="test")
-FRAME = pd.DataFrame({"feature": [1, 2, 3] * 10, "target": [0, 1] * 15})
+FRAME = pd.DataFrame({"feature": [1, 2, 3] * 10, "target": [0, 1] * 15, SOURCE_ROW_COLUMN: range(30)})
+TRAIN_ROWS = list(range(40))  # the run's locked training partition (FRAME's rows are inside it)
 
 
 def jev(answers) -> FakeProvider:
@@ -119,7 +123,8 @@ def roles(ctx, *, missing="keep", protected=(), legacy_categorical=False):
         ctx, engineered_train=FRAME, kept_columns=["feature"], rule_numeric=["feature"], rule_categorical=[],
         rule_identifiers=[], legacy_numeric=legacy_num, legacy_categorical=legacy_cat,
         num_cols=list(legacy_num), cat_cols=list(legacy_cat), identifier_cols=[], ignored=[],
-        transformed_datetime=set(), protected=set(protected), missing_actions={"feature": missing})
+        transformed_datetime=set(), protected=set(protected), missing_actions={"feature": missing},
+        train_rows=TRAIN_ROWS)
 
 
 def leakage(ctx):
@@ -201,7 +206,12 @@ def test_semantic_role_per_level(hk, case, level, answer, missing, used, source,
     details = records(hk.db, hk.alpha.pipeline.id)[dp.ROLE].details
     column = details["columns"][0]
     if source == "human_pending":
-        assert details["review_answer_ids"] == [str(item.answer_id)] and details["proposal_id"] is None
+        proposal = hk.db.get(AgentProposal, UUID(details["proposal_id"]))  # one SemanticReviewProposal (0075)
+        assert details["proposal_ids"] == [details["proposal_id"]] == [column["proposal_id"]]
+        assert (proposal.proposal_type, proposal.status, proposal.level_at_proposal, proposal.run_id,
+                proposal.semantic_answer_id, proposal.experiment_id) == (
+            "SemanticReviewProposal", "proposed", 1, None, item.answer_id, hk.alpha.pipeline.id)
+        assert proposal.payload["evidence"]["cardinality"] == "low" and proposal.payload["ai"] == answer[0]
         assert column["accept_change"]["kind"] == "feature_transform_add"
         assert item.level == 1  # every exclusion and every L1 answer is a review item, never applied
     snapshot_digest = ctx.decisions.snapshot.fingerprint_digest
@@ -323,18 +333,44 @@ def test_legacy_column_type_values_are_never_the_rule_answer_or_asked(hk):
     assert details["columns"][0]["rule"] == "numeric"
 
 
-def test_no_value_is_applied_without_a_record_and_l2_parents_cannot_be_branched(hk):
+def test_no_value_is_applied_without_a_record_and_branches_inherit_recorded_values(hk):
     ctx = hk.ctx(jev({dp.ROLE: {"feature": ("categorical_code", 0.9)}, dp.IDENTIFIER: {"*": (0.05, None)}}), 2)
     ctx.upload.experiment_id = None  # no project to record on: at most L1
     assert roles(ctx) == (["feature"], [], set())
     assert ctx.decisions.levels(ctx, dp.ROLE) == {"*": 1, "exclusion": 1, "role_numeric_categorical": 1}
     assert ctx.decisions.resolved[dp.ROLE].answers[0].source != "ai"
-    parent = hk.alpha.pipeline
-    parent.result = {**(parent.result or {}), "decision_points": {"points": {dp.ROLE: {"ai_applied": 1}}}}
-    hk.db.commit()
-    with pytest.raises(InvalidChangeSetError) as refused:
-        dp.start_decision_points(SimpleNamespace(branch=SimpleNamespace(parent_id=parent.id), db=hk.db, upload=None))
+    applied = hk.ctx(jev({dp.ROLE: {"feature": ("categorical_code", 0.9)}, dp.IDENTIFIER: {"*": (0.05, None)}}), 2)
+    assert roles(applied)[1] == ["feature"]  # recorded on the parent experiment
+    branch = SimpleNamespace(parent_id=hk.alpha.pipeline.id, columns={})
+    assert dp.inherited_values(hk.db, branch) == {dp.ROLE: {"feature": "categorical_code"}}
+    started = dp.start_decision_points(SimpleNamespace(branch=branch, db=hk.db, upload=None))
+    assert (started.snapshot.reason, started.inherited) == ("branch_run", {dp.ROLE: {"feature": "categorical_code"}})
+    # precedence: the branch's own change (a revert) > the inherited value > rule
+    outcome = SemanticOutcome(purpose=dp.ROLE, ai="off", resolutions=(
+        _res("feature", "numeric", "numeric", "rule", 0, agreement="off"),
+        _res("other", "numeric", "numeric", "rule", 0, agreement="off")))
+    inherited = resolve(dp.ROLE, outcome, evidence_partition="train", overrides={"feature": "numeric"},
+                        inherited={"feature": "categorical_code", "other": "categorical_code"})
+    assert [(a.question_key, a.used, a.source) for a in inherited.answers] == [
+        ("feature", "numeric", "human"), ("other", "categorical_code", "ai_inherited")]
+    assert inherited.ai == "inherited" and inherited.recorded and [a.question_key for a in inherited.applied()] == [
+        "other"]
+    truncated = SimpleNamespace(details={**records(hk.db, hk.alpha.pipeline.id)[dp.ROLE].details, "columns": []})
+    with pytest.raises(InvalidChangeSetError) as refused:  # applied values no longer named: fail closed
+        dp.inherited_values(SimpleNamespace(scalars=lambda _query: [truncated]), branch)
     assert refused.value.reason == "ai_values_not_inherited"
+
+
+def test_an_inherited_value_that_fails_the_recheck_is_recorded_not_dropped_silently(hk):
+    ctx = Ctx(hk, PolicySnapshot.off("branch_run"))
+    ctx.decisions = dp.RunDecisionPoints(PolicySnapshot.off("branch_run"),
+                                         inherited={dp.ROLE: {"feature": "categorical_code"}})
+    assert roles(ctx, protected=("feature",)) == (["feature"], [], set())  # now a protected column
+    column = records(hk.db, hk.alpha.pipeline.id)[dp.ROLE].details["columns"][0]
+    assert (column["source"], column["used"], column["ai"]) == ("rule", "numeric", None)
+    assert column["validator_reasons"] == ["group_or_entity_column"]
+    assert ctx.events[-1]["ai"] == "inherited" and ctx.events[-1]["ai_applied"] == 0
+    assert ctx.decisions.resolved[dp.ROLE].answers[0].refusal == "recheck_failed"
 
 
 def test_a_column_name_the_record_guard_refuses_keeps_counts_not_names(hk):
@@ -417,7 +453,10 @@ def test_snapshot_digest_levels_and_fingerprint(hk):
 def test_verifier_fails_a_record_outside_the_training_partition(hk):
     ctx = hk.ctx(jev({dp.ROLE: {"*": ("numeric", 0.9)}, dp.IDENTIFIER: {"*": (0.05, None)}}), 0)
     roles(ctx)
-    report = {"run": {"experiment_id": str(hk.alpha.pipeline.id)}}
+    partition = records(hk.db, hk.alpha.pipeline.id)[dp.ROLE].details["partition"]
+    assert partition["row_count"] == 30 and partition["subset_of_train"] is True
+    report = {"run": {"experiment_id": str(hk.alpha.pipeline.id)},
+              "split": {"n_train": len(TRAIN_ROWS), "train_source_rows": TRAIN_ROWS}}
 
     def check():
         found = [c for c in verify_pipeline(report, db=hk.db)["checks"]
@@ -425,8 +464,23 @@ def test_verifier_fails_a_record_outside_the_training_partition(hk):
         return found[0]["status"] if found else None
 
     assert check() == "PASS"
+    report["split"] = {"n_train": 30, "train_source_rows": list(range(10, 40))}  # another partition's rows
+    assert check() == "FAIL"
+    report["split"] = {}
+    assert check() == "NOT_VERIFIABLE"
+    report["split"] = {"n_train": len(TRAIN_ROWS), "train_source_rows": TRAIN_ROWS}
     bad = ctx.decisions.resolved[dp.ROLE]
     from dataclasses import replace
+
+    from app.services.decision_point_service import source_rows_digest
+
+    # A full-size frame must be exactly the training rows, whatever its subset flag says.
+    lying = {"row_count": len(TRAIN_ROWS), "source_rows_digest": source_rows_digest(range(1, 41)),
+             "train_rows_digest": source_rows_digest(TRAIN_ROWS), "subset_of_train": True}
+    write_record(hk.db, replace(bad, key="column.missing_value_action", partition=lying), workspace_id=hk.ws_a,
+                 project_id=hk.project_a, experiment_id=hk.alpha.pipeline.id)
+    hk.db.commit()
+    assert check() == "FAIL"
 
     row = write_record(hk.db, replace(bad, key=dp.LEAKAGE), workspace_id=hk.ws_a, project_id=hk.project_a,
                        experiment_id=hk.alpha.pipeline.id)
@@ -616,6 +670,7 @@ def test_l2_role_value_reaches_the_fold_pipeline_with_its_record_and_fingerprint
     assert evidence["points"][dp.ROLE]["ai_applied"] == 1
     assert run["search_config"]["ai_policy_digest"] == evidence["fingerprint_digest"] != evidence["policy_digest"]
     details = records(db_session, run["experiment"].id)[dp.ROLE].details
-    assert details["used"] == {"source": "ai", "ai_applied": 1, "legacy_overrides": 0} and details["revert"]["changes"] == [
+    assert details["used"] == {"source": "ai", "ai_applied": 1, "legacy_overrides": 0, "human_overrides": 0}
+    assert details["revert"]["changes"] == [
         {"kind": "feature_transform_add", "column": "visits", "transform": "impute_median"}]
     assert run["checks"]["decision_point_evidence_partition"] == "PASS"

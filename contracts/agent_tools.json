@@ -1249,6 +1249,20 @@
             "default": null,
             "title": "Intent"
           },
+          "plan": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "An accepted/applied ExperimentPlanProposal id (single use).",
+            "title": "Plan"
+          },
           "problem_spec_id": {
             "anyOf": [
               {

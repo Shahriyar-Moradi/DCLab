@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.db.models import ClientLabUpload
 from app.engine.lab.auto_prepare import MissingValuePlan, plan_missing_values
-from app.engine.lab.schema_inference import TargetChoice
+from app.engine.lab.schema_inference import TargetChoice, infer_entity_column
 from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan, plan_model_development
 from app.engine.modeling.metric_planner import MetricPlan
@@ -23,6 +23,7 @@ from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.auto_train.branch import apply_missing_value_overrides
 from app.services.auto_train.context import RunContext, StageHalt
 from app.services.auto_train.decision_points import resolve_leakage_point
+from app.services.auto_train.plan_points import resolve_missing_point
 from app.services.lab_decision_ledger import leakage_reviewer, record_missing_value_decisions
 
 
@@ -120,6 +121,12 @@ def run_train_only_decisions(
         c for c in inp.feature_columns if c in locked_train.columns and c != SOURCE_ROW_COLUMN
     ]
     missing_plan = plan_missing_values(locked_train, decision_columns)
+    # P6.9-A column.missing_value_action: the run plan's (or the parent's inherited) actions,
+    # before the branch's own drop/keep treatments (which take precedence).
+    resolve_missing_point(ctx, locked_train=locked_train, missing_plan=missing_plan,
+                          leakage_excluded=set(leakage_excluded),
+                          protected={target.column, development_plan.group_column, development_plan.time_column,
+                                     infer_entity_column(locked_train, decision_columns)})
     if ctx.branch is not None:
         # Branch column treatments (drop / keep), decided before the ledger records them.
         apply_missing_value_overrides(ctx.branch, missing_plan, leakage_excluded=set(leakage_excluded))
@@ -143,7 +150,8 @@ def run_train_only_decisions(
     # P6.9-A: Jev cross-check of the leakage plan (L1: a review flag at most; the rule's
     # exclusions above are final). Evidence: the locked training partition only.
     resolve_leakage_point(
-        ctx, locked_train=locked_train, target=target, audit=_leakage_audit, development_plan=development_plan
+        ctx, locked_train=locked_train, target=target, audit=_leakage_audit, development_plan=development_plan,
+        train_rows=locked_split.get("train_source_rows"),
     )
     for decision in missing_plan.column_decisions:
         if decision.action == "domain_fill" and decision.fill_value is not None and decision.column in frame:

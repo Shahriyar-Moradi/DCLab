@@ -30,6 +30,7 @@ from app.services.auto_train.branch import (
 )
 from app.services.auto_train.context import RunContext, StageHalt, service_module
 from app.services.auto_train.decision_points import decision_points, resolve_column_points
+from app.services.auto_train.plan_points import finish_missing_point, missing_treatments, resolve_families_point
 from app.services.lab_decision_ledger import record_column_type_decisions
 
 
@@ -138,6 +139,14 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
         for action in fe_transformations
         for name in (action.get("output_columns") or action.get("columns") or [])
     }
+    # P6.9-A: an applied missing-value action fixes the column's treatment (§1b,
+    # ``_ROLE_TREATMENT``); those columns are not asked again at the role point.
+    treated = {column: value for column, value in missing_treatments(ctx).items()
+               if column in num_cols or column in cat_cols}
+    for column, (role, _human) in treated.items():
+        num_cols = [name for name in num_cols if name != column]
+        cat_cols = [name for name in cat_cols if name != column]
+        (num_cols if role == "numeric" else cat_cols).append(column)
     # P6.9-A decision points (precedence: branch override > AI at L2 > rule). Root runs
     # only ask; the identifier point is L1 (never changes a value); the role point may
     # move a modeled column between numeric and categorical at L2, validator-accepted.
@@ -158,7 +167,11 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
         protected={entity_column, development_plan.group_column, development_plan.time_column},
         missing_actions={item.column: item.action for item in missing_plan.column_decisions},
         leakage_excluded={item["column"] for item in development_plan.excluded_features},
+        skip={column for column, (_role, human) in treated.items() if human},  # a person decided: final
+        plan_roles={column: role for column, (role, human) in treated.items() if not human},  # §1b vs Jev
+        train_rows=inp.locked_split.get("train_source_rows"),
     )
+    num_cols, cat_cols = finish_missing_point(ctx, missing_plan, num_cols, cat_cols, rule_numeric)
     if branch is not None:
         num_cols, cat_cols = apply_role_overrides(
             branch,
@@ -266,12 +279,15 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
         )
         raise StageHalt
 
+    families, budget = resolve_families_point(ctx, target.task_type)  # training.families_budget
     search = svc._search_config(
         holdout_plan=inp.holdout_plan,
         development_plan=development_plan,
         objective=inp.run_objective,
         branch_overrides=None if branch is None else dict(branch.overrides),
         ai_policy_digest=decision_points(ctx).fingerprint_digest,
+        families=families,
+        max_training_seconds=budget,
     )
     groups_map = {"features": num_cols + cat_cols}
     combos = generate_group_combinations(

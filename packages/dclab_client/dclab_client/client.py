@@ -711,10 +711,12 @@ class ExperimentsClient:
         problem_spec_id: UUID | str | None = None,
         target_column: str | None = None,
         intent: str | None = None,
+        plan: UUID | str | None = None,
         idempotency_key: str | None = None,
         request_id: str | None = None,
     ) -> Experiment:
         """Queue a root run on a published dataset (202; the worker trains).
+        ``plan``: an accepted/applied ExperimentPlanProposal id (single use).
         Resend with the same ``idempotency_key`` to retry safely."""
 
         body: dict[str, Any] = {"project_id": _id(project_id), "dataset_id": _id(dataset_id)}
@@ -724,6 +726,8 @@ class ExperimentsClient:
             body["target_column"] = target_column
         if intent is not None:
             body["intent"] = intent
+        if plan is not None:
+            body["plan"] = _id(plan)
         payload, headers = self._transport.request_with_headers(
             "POST", "/v1/experiments", json=body, request_id=request_id, idempotency_key=idempotency_key
         )

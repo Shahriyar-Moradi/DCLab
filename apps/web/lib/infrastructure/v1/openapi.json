@@ -1902,6 +1902,19 @@
             "description": "Why this run (\"untrusted\" free text).",
             "title": "Intent"
           },
+          "plan": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An ExperimentPlanProposal of this project (accepted by a person, or applied at L2 for L2 kinds only); single use. Its answers are re-validated when the run starts; a plan that cannot be used makes the run rule-only and the refusal is recorded (never an error).",
+            "title": "Plan"
+          },
           "problem_spec_id": {
             "anyOf": [
               {

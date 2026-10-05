@@ -72,11 +72,16 @@ class SearchConfig:
     # or all points at L0/L1, where the rule value is used) is left out of ``to_dict``,
     # so such configurations stay byte-identical to the rule run's.
     ai_policy_digest: str | None = None
+    # ADR 0008 §2c: the learned-family subset a run plan (training.families_budget, L2) or
+    # an inherited value chose; the dummy baseline is always added. In the fingerprint.
+    # None = the rule's portfolio, left out of ``to_dict`` like ``ai_policy_digest``.
+    families: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
-        if payload.get("ai_policy_digest") is None:
-            payload.pop("ai_policy_digest", None)
+        for name in ("ai_policy_digest", "families"):
+            if payload.get(name) is None:
+                payload.pop(name, None)
         return payload
 
 

@@ -61,6 +61,7 @@ class RunExperimentInput(BaseModel):
     problem_spec_id: UUID | None = None
     target_column: Opt = None
     intent: Annotated[str | None, Field(max_length=500)] = None
+    plan: UUID | None = Field(default=None, description="An accepted/applied ExperimentPlanProposal id (single use).")
 
 
 class BranchExperimentInput(BaseModel):

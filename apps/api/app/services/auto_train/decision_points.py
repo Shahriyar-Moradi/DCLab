@@ -26,6 +26,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -35,18 +36,21 @@ from sqlalchemy import select
 from app.agents.contracts import Untrusted
 from app.agents.governance.snapshot import PolicySnapshot, take_snapshot
 from app.agents.semantic.deterministic import DeterministicSemanticPort
-from app.agents.semantic.port import Resolution, SemanticAsk, SemanticOutcome, Subject, semantic_port
+from app.agents.governance.decision_points import answer_ceiling
+from app.agents.semantic.port import NO_KIND, Resolution, SemanticAsk, SemanticOutcome, Subject, semantic_port
 from app.agents.semantic.releases import cardinality_band, name_tokens, ratio_band
-from app.db.models import Dataset, DatasetColumn, Experiment
+from app.db.models import Dataset, DatasetColumn, Experiment, ProjectDecisionRecord
 from app.engine.lab.auto_prepare import MAX_CATEGORICAL_CARDINALITY
 from app.engine.lab.schema_inference import IDENTIFIER_UNIQUE_RATIO
 from app.domain.errors import InvalidChangeSetError
+from app.services.run_plan_service import RunPlan, load_run_plan
 from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.decision_point_service import (
     EVENT_STAGE,
     EVENT_TYPE,
     PointResolution,
     idempotency_key,
+    source_rows_digest,
     record_details,
     resolve,
     write_record,
@@ -57,6 +61,9 @@ logger = logging.getLogger("app.services.auto_train_service")
 
 LEAKAGE, IDENTIFIER, ROLE = "feature.leakage_suspect", "column.is_identifier", "column.semantic_role"
 JEV_POINTS = (IDENTIFIER, ROLE, LEAKAGE)
+TARGET, OBJECTIVE, SPLIT, FAMILIES, MISSING = (
+    "target.column", "spec.objective", "split.strategy", "training.families_budget", "column.missing_value_action")
+AGENT_POINTS = (TARGET, OBJECTIVE, SPLIT, FAMILIES, MISSING)  # AI-before: answers travel in the run plan
 EVIDENCE_PARTITION = "train"
 MAX_SUBJECTS_PER_ASK = 512
 _MODELED_ROLES = ("numeric", "categorical_code")
@@ -69,9 +76,14 @@ _DATE_LIKE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}|^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4
 class RunDecisionPoints:
     """The run's snapshot and its resolved points (``RunContext.decisions``)."""
 
-    def __init__(self, snapshot: PolicySnapshot) -> None:
+    def __init__(self, snapshot: PolicySnapshot, *, plan: RunPlan | None = None,
+                 inherited: dict[str, dict[str, Any]] | None = None) -> None:
         self.snapshot = snapshot
+        self.plan = plan  # the run's ``plan`` input (agent-before answers), re-validated at claim
+        self.inherited = dict(inherited or {})  # a branch: the parent's applied values per point
         self.resolved: dict[str, PointResolution] = {}
+        self.pending: dict[str, PointResolution] = {}  # resolved, recorded once its effect is settled
+        self.missing_conflicts: set[str] = set()  # §1b: applied plan treatment vs Jev role
         self.record_ids: dict[str, UUID] = {}
         self._column_ids: dict[str, UUID] | None = None
         self._target: tuple[UUID, UUID, UUID] | None | object = _UNSET
@@ -82,13 +94,15 @@ class RunDecisionPoints:
 
     @property
     def fingerprint_digest(self) -> str | None:
-        """The snapshot's fingerprint digest, plus the values AI actually applied (two L2
-        runs under one policy can apply different values: their candidates differ)."""
+        """The snapshot's fingerprint digest, plus every AI-originated value the run uses
+        (applied at L2, inherited on a branch, or from a plan a person accepted): two runs
+        that use different values never share candidate fingerprints."""
 
         digest = self.snapshot.fingerprint_digest
-        applied = {key: {a.question_key: a.used for a in item.applied()} for key, item in self.resolved.items()}
+        applied = {key: {a.question_key: a.used for a in item.changed()}
+                   for key, item in self.resolved.items() if item.recorded}  # AI participated (not a plain branch)
         applied = {key: values for key, values in applied.items() if values}
-        if digest is None or not applied:
+        if not applied:
             return digest
         return hashlib.sha256(json.dumps({"policy_digest": digest, "applied": applied}, sort_keys=True,
                                          default=str).encode()).hexdigest()
@@ -113,7 +127,7 @@ class RunDecisionPoints:
         applied value reaches the Pipeline; if it cannot be written, applied AI values fall
         back to the rule value (no run trains on an unrecorded AI value)."""
 
-        if resolution.ai == "on" and resolution.answers and not self._record(ctx, resolution) and resolution.applied():
+        if resolution.recorded and not self._record(ctx, resolution) and resolution.changed():
             resolution = resolution.rule_fallback("record_write_failed")
         self.resolved[resolution.key] = resolution
         ctx.emit_event(EVENT_STAGE, EVENT_TYPE, "completed", resolution.event_payload())
@@ -160,9 +174,10 @@ class RunDecisionPoints:
     def evidence(self) -> dict[str, Any] | None:
         """Run evidence (ADR 0008 §2c); None when AI is off, so AI-off results are unchanged."""
 
-        if not self.ai_on:
-            return None
+        if not self.ai_on and not self.inherited:
+            return {"plan": self.plan.evidence()} if self.plan is not None else None
         return {
+            **({"plan": self.plan.evidence()} if self.plan is not None else {}),
             "policy_digest": self.snapshot.digest,
             "fingerprint_digest": self.fingerprint_digest,
             "points": {
@@ -198,30 +213,66 @@ def _guarded(db: Any, read: Callable[[], Any], default: Any) -> Any:
         return default
 
 
-def _parent_applied_ai_roles(db: Any, branch: Any) -> bool:
-    parent = db.get(Experiment, branch.parent_id) if getattr(branch, "parent_id", None) else None
-    points = ((parent.result or {}).get("decision_points") or {}).get("points") or {} if parent is not None else {}
-    return any(int((item or {}).get("ai_applied") or 0) > 0 for item in points.values())
+def inherited_values(db: Any, branch: Any) -> dict[str, dict[str, Any]]:
+    """ADR 0008 §2c: a branch (revert, re-run) inherits its parent's applied AI values
+    (``decision_point_resolved`` ``used``, sources ai / ai_inherited) as ``ai_inherited``
+    overrides; its own change set still takes precedence (a revert flips the value back
+    to the recorded rule answer). A parent record whose applied values are not all named
+    (truncated detail) cannot be reproduced: fail closed."""
+
+    parent_id = getattr(branch, "parent_id", None)
+    if parent_id is None:
+        return {}
+    rows = db.scalars(select(ProjectDecisionRecord).where(
+        ProjectDecisionRecord.experiment_id == parent_id,
+        ProjectDecisionRecord.decision_type == "decision_point_resolved"))
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        details = row.details or {}
+        # A run plan's values a human accepted are reproduced too (they were AI answers).
+        sources = ("ai", "ai_inherited", "human") if (details.get("ai") or {}).get("plan_proposal_id") else (
+            "ai", "ai_inherited")
+        applied = [c for c in details.get("columns") or []
+                   if c.get("source") in sources and c.get("used") != c.get("rule")]
+        named = sum(c.get("source") in ("ai", "ai_inherited") for c in applied)
+        humans = sum(c.get("source") == "human" for c in applied)
+        used = details.get("used") or {}
+        if int(used.get("ai_applied") or 0) > named or ("human" in sources
+                                                         and int(used.get("human_overrides") or 0) > humans):
+            raise InvalidChangeSetError("ai_values_not_inherited",
+                                        "the parent's applied AI values are not all recorded by name", path="parent")
+        if applied:
+            out[str(details.get("decision_point"))] = {str(c["column"]): c["used"] for c in applied}
+    return out
 
 
 def start_decision_points(ctx: Any) -> RunDecisionPoints:
-    """Snapshot the policy at job claim (root runs only)."""
+    """Snapshot the policy at job claim. Root runs only make new AI decisions (with the
+    run's re-validated ``plan``); a branch inherits its parent's applied values."""
 
     if ctx.branch is not None:
-        if _parent_applied_ai_roles(ctx.db, ctx.branch):  # A2 inherits them as ai_inherited overrides
-            raise InvalidChangeSetError(
-                "ai_values_not_inherited", "the parent applied AI values; branching it needs inherited overrides",
-                path="parent")
-        return RunDecisionPoints(PolicySnapshot.off("branch_run"))
+        return RunDecisionPoints(PolicySnapshot.off("branch_run"), inherited=inherited_values(ctx.db, ctx.branch))
+    plan = _guarded(ctx.db, lambda: load_run_plan(ctx.db, ctx.upload), None) if ctx.upload is not None else None
     try:
         port = semantic_port()
     except Exception:  # noqa: BLE001 - AI can never fail a run
         logger.exception("semantic port unavailable; decision points run rule-only")
-        return RunDecisionPoints(PolicySnapshot.off("snapshot_unavailable"))
-    if isinstance(port, DeterministicSemanticPort):  # AI off: no read, no savepoint
-        return RunDecisionPoints(PolicySnapshot.off("ai_disabled", port))
-    snapshot = _guarded(ctx.db, lambda: take_snapshot(ctx.db, ctx.upload.workspace_id, JEV_POINTS, port=port), None)
-    return RunDecisionPoints(snapshot or PolicySnapshot.off("snapshot_unavailable"))
+        return RunDecisionPoints(PolicySnapshot.off("snapshot_unavailable"), plan=_refused(plan, "ai_off"))
+    if isinstance(port, DeterministicSemanticPort):  # AI off: no AI read, no savepoint
+        return RunDecisionPoints(PolicySnapshot.off("ai_disabled", port), plan=_refused(plan, "ai_off"))
+    usable = plan is not None and plan.usable
+    snapshot = _guarded(ctx.db, lambda: take_snapshot(
+        ctx.db, ctx.upload.workspace_id, JEV_POINTS, port=port,
+        agent_keys=AGENT_POINTS if usable else (),
+        agent_release=(plan.prompt_release_id, plan.model_id) if usable else None,
+        plan={"proposal_id": str(plan.proposal_id), "status": plan.status} if usable else None), None)
+    if snapshot is None:
+        return RunDecisionPoints(PolicySnapshot.off("snapshot_unavailable"), plan=_refused(plan, "ai_off"))
+    return RunDecisionPoints(snapshot, plan=plan)
+
+
+def _refused(plan: RunPlan | None, code: str) -> RunPlan | None:
+    return None if plan is None else (plan if plan.refusal else replace(plan, plan=None, refusal=code))
 
 
 def decision_points(ctx: Any) -> RunDecisionPoints:
@@ -343,7 +394,9 @@ def _ask(ctx: Any, points: RunDecisionPoints, key: str, rules: dict[str, Any],
 
 def _resolve(ctx: Any, key: str, rules: dict[str, Any], fields: Callable[[str], dict[str, Any]], *,
              validator: Any = None, reasons: dict[str, list[str]] | None = None, askable: bool = True,
-             legacy: dict[str, Any] | None = None, **ask: Any) -> PointResolution:
+             legacy: dict[str, Any] | None = None, overrides: dict[str, Any] | None = None,
+             partition: dict[str, Any] | None = None, adjust: Callable[[PointResolution], PointResolution] | None = None,
+             **ask: Any) -> PointResolution:
     """``legacy``: columns the pre-Phase-6 decision agent already changed (value it applied);
     they are not asked, their rule answer stays the rule's and they are never a revert target."""
 
@@ -368,17 +421,112 @@ def _resolve(ctx: Any, key: str, rules: dict[str, Any], fields: Callable[[str], 
         outcome = SemanticOutcome(purpose=key, ai="on", resolutions=tuple(
             by_name.get(n) or _unavailable(n, rules[n], "legacy_override") for n in rules))
     on = outcome.ai == "on"
-    return points.keep(ctx, resolve(
+    resolution = resolve(
         key, outcome, evidence_partition=EVIDENCE_PARTITION, validator_reasons=reasons if on else None,
-        legacy=legacy, policy_digest=snapshot.digest if on else None,
-        release=(snapshot.releases.get(key) or {}) if on else None, reason=None if on else reason))
+        legacy=legacy, overrides=overrides, inherited=points.inherited.get(key),
+        policy_digest=snapshot.digest if on else None,
+        release=(snapshot.releases.get(key) or {}) if on else None, reason=None if on else reason)
+    if partition:
+        resolution = replace(resolution, partition=partition)
+    if adjust is not None:  # settle the values the stage will use before the record is written
+        resolution = adjust(resolution)
+    if resolution.reviews():  # the bands each L1 review item's proposal carries
+        resolution = replace(resolution, evidence={
+            a.question_key: _jsonable(fields(a.question_key)) for a in resolution.reviews()})
+    return points.keep(ctx, resolution)
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, Untrusted):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def resolve_plan_point(ctx: Any, key: str, rules: dict[str, Any], answers: dict[str, Any], *,
+                       kinds: dict[str, str | None] | None = None, reasons: dict[str, list[str]] | None = None,
+                       evidence_partition: str = "metadata", defer: bool = False) -> PointResolution | None:
+    """An AI-before point whose AI answers travel in the run's ``plan`` (ADR 0008 §2). The
+    rule answer is computed first by the stage. A human-``accepted`` plan applies each
+    validated answer as human input; an ``applied`` (L2) plan applies a validated answer
+    only when its §1b kind may reach L2 and the snapshotted level is L2; anything else is
+    the rule value with the refusal recorded. None when the run has no usable plan or the
+    plan does not answer this point (no record, no event)."""
+
+    points = decision_points(ctx)
+    plan = points.plan
+    answered = {name: value for name, value in answers.items() if name in rules and value is not None}
+    if not points.ai_on or plan is None or not plan.usable or not answered:
+        return None
+    kinds, reasons = dict(kinds or {}), dict(reasons or {})
+    levels = points.levels(ctx, key)
+    overrides, items = {}, []
+    for name, ai in answered.items():
+        rule, bad = rules[name], list(reasons.get(name) or [])
+        level = min(int(levels.get(kinds.get(name) or NO_KIND, 0)), answer_ceiling(key, kinds.get(name)))
+        agreement = "agree" if ai == rule else "disagree"
+        applies = not bad and (plan.human or level >= 2)
+        if applies and plan.human and agreement == "disagree":
+            overrides[name] = ai
+        items.append(Resolution(
+            question_key=name, column_id=None, rule_answer=rule, agreement=agreement, level=level, ai_answer=ai,
+            value_used=ai if applies and not plan.human else rule,
+            policy_outcome="ai" if applies and not plan.human else "rule",
+            refusal="validator_rejected" if bad else (None if applies else "level_below_l2")))
+    resolution = resolve(
+        key, SemanticOutcome(purpose=key, ai="on", resolutions=tuple(items)), evidence_partition=evidence_partition,
+        overrides=overrides, validator_reasons=reasons, policy_digest=points.snapshot.digest,
+        release=points.snapshot.releases.get(key) or {}, kinds=kinds, agent_run_id=plan.agent_run_id,
+        plan_proposal_id=plan.proposal_id)
+    if defer:  # recorded (or rolled back) by the stage that settles its effect
+        points.pending[key] = resolution
+        return resolution
+    return points.keep(ctx, resolution)
+
+
+def plan_refusal(ctx: Any, field_name: str) -> list[str]:
+    """Refusal codes the plan's ``field_name`` answer carries from job claim (``results_exist``)."""
+
+    plan = decision_points(ctx).plan
+    code = plan.refused_fields.get(field_name) if plan is not None else None
+    return [code] if code else []
+
+
+def plan_answers(ctx: Any, key: str) -> Any:
+    """The run plan's answer for an AI-before point (None: no usable plan or no answer)."""
+
+    points = decision_points(ctx)
+    plan = points.plan
+    if not points.ai_on or plan is None or not plan.usable:
+        return None
+    fields = {"target.column": "target_column", "spec.objective": "primary_metric", "split.strategy": "split",
+              "column.missing_value_action": "missing_values"}
+    if key == FAMILIES:
+        found = {"families": list(plan.plan.families) if plan.plan.families else None,
+                 "max_training_seconds": plan.plan.max_training_seconds}
+        return {k: v for k, v in found.items() if v is not None} or None
+    return getattr(plan.plan, fields[key])
 
 
 # --- the points --------------------------------------------------------------------------
 
 
+def partition_evidence(frame: pd.DataFrame, train_rows: Any) -> dict[str, Any]:
+    """What the pipeline verifier checks: the evidence frame's rows are the run's locked
+    training partition (row count, source-row digests, subset)."""
+
+    rows = [int(r) for r in frame[SOURCE_ROW_COLUMN]] if SOURCE_ROW_COLUMN in frame.columns else None
+    train = [int(r) for r in train_rows or []]
+    return {"row_count": int(len(frame)), "source_rows_digest": source_rows_digest(rows) if rows is not None else None,
+            "train_rows_digest": source_rows_digest(train) if train else None,
+            "subset_of_train": bool(rows is not None and train and set(rows) <= set(train))}
+
+
 def resolve_leakage_point(ctx: Any, *, locked_train: pd.DataFrame, target: Any, audit: Any,
-                          development_plan: Any) -> PointResolution:
+                          development_plan: Any, train_rows: Any = None) -> PointResolution:
     """``feature.leakage_suspect`` (cap L1: the AI may only add a review flag; the rule's
     exclusions are unchanged). Rule: excluded by the plan → ``exclude``; kept with a warning
     → ``review_flag``; else ``clear``. Identifier and reserved columns are not leakage questions."""
@@ -402,6 +550,7 @@ def resolve_leakage_point(ctx: Any, *, locked_train: pd.DataFrame, target: Any, 
         return {"dtype": _dtype(locked_train[name]), "availability": availability[name]}
 
     return _resolve(ctx, LEAKAGE, rules, fields, askable=target_id is not None,
+                    partition=partition_evidence(locked_train, train_rows) if points.ai_on else None,
                     context={"target": Untrusted(untrusted_text=target.column),
                              "task": _TASKS.get(str(target.task_type), "regression")},
                     context_columns={"target": target_id} if target_id else None)
@@ -454,7 +603,8 @@ def resolve_column_points(
     rule_categorical: list[str], rule_identifiers: list[str], legacy_numeric: list[str],
     legacy_categorical: list[str], num_cols: list[str], cat_cols: list[str], identifier_cols: list[str],
     ignored: list[str], transformed_datetime: set[str], protected: set[str], missing_actions: dict[str, str],
-    leakage_excluded: set[str] | None = None,
+    leakage_excluded: set[str] | None = None, skip: set[str] | None = None, train_rows: Any = None,
+    plan_roles: dict[str, str] | None = None,
 ) -> tuple[list[str], list[str], set[str]]:
     """``column.is_identifier`` (cap L1) then ``column.semantic_role`` (L2 for numeric ↔
     categorical among modeled columns). Rule answers come from ``split_column_roles`` /
@@ -465,8 +615,9 @@ def resolve_column_points(
 
     names = [c for c in kept_columns if c in engineered_train.columns]
     rule_ids, used_ids = set(rule_identifiers), set(identifier_cols)
+    partition = partition_evidence(engineered_train, train_rows) if decision_points(ctx).ai_on else None
     _resolve(ctx, IDENTIFIER, {c: c in rule_ids for c in names}, lambda c: identifier_fields(engineered_train[c], c),
-             legacy={c: c in used_ids for c in names if (c in rule_ids) != (c in used_ids)})
+             legacy={c: c in used_ids for c in names if (c in rule_ids) != (c in used_ids)}, partition=partition)
 
     def role_of(column: str, numeric: list[str], categorical: list[str], identifiers: set[str]) -> str:
         if column in numeric:
@@ -480,12 +631,45 @@ def resolve_column_points(
     validator = RoleValidator(engineered_train, num_cols, cat_cols, protected=protected,
                               missing_actions=missing_actions)
     # Columns the leakage plan excluded are not role questions (their role is moot).
-    role_names = [c for c in names if c in rule_ids or c not in (leakage_excluded or set())]
+    role_names = [c for c in names if (c in rule_ids or c not in (leakage_excluded or set()))
+                  and c not in (skip or set())]  # skip: treated by column.missing_value_action
     rules = {c: role_of(c, rule_numeric, rule_categorical, rule_ids) for c in role_names}
     used = {c: role_of(c, legacy_numeric, legacy_categorical, used_ids) for c in role_names}
+    branch = getattr(ctx, "branch", None)  # a branch's own treatments take precedence (incl. reverts)
+    overrides = {c: {"numeric": "numeric", "categorical": "categorical_code"}[spec["treatment"]]
+                 for c, spec in (branch.columns.items() if branch is not None else ())
+                 if spec.get("treatment") in ("numeric", "categorical") and c in rules}
+    plan_roles = {c: r for c, r in (plan_roles or {}).items() if c in rules}
+    conflicts: set[str] = set()
+
+    def adjust(resolution: PointResolution) -> PointResolution:
+        """§1b: a column an applied (L2) plan re-typed through column.missing_value_action
+        keeps that treatment unless Jev answers otherwise — then the rule for both. A new or
+        inherited AI value that fails the re-check falls back to the rule, recorded."""
+
+        out = []
+        for a in resolution.answers:
+            name = a.question_key
+            if name in plan_roles:
+                if a.ai is not None and a.ai != plan_roles[name]:
+                    conflicts.add(name)
+                    a = replace(a, used=a.rule, source="rule", refusal="conflicts_with_missing_value_action")
+                else:
+                    a = replace(a, used=plan_roles[name], source="upstream", refusal="set_by_" + MISSING)
+            elif a in resolution.applied() and (bad := validator.check(name, a.used)):
+                a = replace(a, used=a.rule, source="rule", refusal="recheck_failed", validator_reasons=tuple(bad))
+            out.append(a)
+        return replace(resolution, answers=tuple(out))
+
     resolution = _resolve(ctx, ROLE, rules, lambda c: role_fields(engineered_train[c]), validator=validator,
-                          reasons=validator.reasons, legacy={c: v for c, v in used.items() if v != rules[c]})
+                          reasons=validator.reasons, legacy={c: v for c, v in used.items() if v != rules[c]},
+                          overrides=overrides, partition=partition, adjust=adjust)
+    decision_points(ctx).missing_conflicts = conflicts
     num, cat, applied = list(num_cols), list(cat_cols), set()
+    for column in conflicts:  # back to the rule's role (the missing-value point reverts too)
+        num = [c for c in num if c != column]
+        cat = [c for c in cat if c != column]
+        (num if column in rule_numeric else cat).append(column)
     for answer in resolution.applied():  # defence in depth: re-check before changing the Pipeline's roles
         column = answer.question_key
         if answer.used not in _MODELED_ROLES or validator.check(column, answer.used):

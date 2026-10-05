@@ -121,6 +121,7 @@ def _fingerprint_for(experiment: Experiment, row: dict[str, Any], candidate_key:
         metric_plan=result.get("metric_plan"),
         feature_set_version_digest=row.get("feature_set_version_digest"),
         ai_policy_digest=(experiment.config if isinstance(experiment.config, dict) else {}).get("ai_policy_digest"),
+        search_families=(experiment.config if isinstance(experiment.config, dict) else {}).get("families"),
     )
 
 

@@ -128,7 +128,8 @@ def _run_objective(
 
 
 def _search_config(
-    *, holdout_plan=None, development_plan=None, objective=None, branch_overrides=None, ai_policy_digest=None
+    *, holdout_plan=None, development_plan=None, objective=None, branch_overrides=None, ai_policy_digest=None,
+    families=None, max_training_seconds=None,
 ) -> SearchConfig:
     return SearchConfig(
         strategy="open_ingest",
@@ -137,7 +138,7 @@ def _search_config(
         max_ensemble_size=1,
         # Honoured by the runner since P1.4-A1: later candidates are skipped (and
         # reported) once exceeded, never before one learned model has trained.
-        max_training_seconds=600.0,
+        max_training_seconds=600.0 if max_training_seconds is None else float(max_training_seconds),
         # One nested-CV-tuned variant of the strongest family (P1.4-C), bounded
         # by this trial count and the time budget above; skipped without optuna.
         max_hyperparameter_trials=12,
@@ -151,6 +152,7 @@ def _search_config(
         objective=None if objective is None else objective.to_dict(),
         branch_overrides=branch_overrides,
         ai_policy_digest=ai_policy_digest,
+        families=families,
     )
 
 

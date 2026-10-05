@@ -33,7 +33,12 @@ from app.db.models import (
     ProjectDecisionRecord,
     SplitPlan,
 )
-from app.domain.agent_records import PROPOSAL_PAYLOAD_MAX_BYTES, PROPOSAL_TYPES, TOOL_ARGUMENTS_MAX_BYTES
+from app.domain.agent_records import (
+    PROPOSAL_PAYLOAD_MAX_BYTES,
+    PROPOSAL_TYPES,
+    SERVICE_ONLY_PROPOSAL_TYPES,
+    TOOL_ARGUMENTS_MAX_BYTES,
+)
 from app.domain.errors import DecisionRecordError
 
 PAYLOAD_SCHEMA_VERSION = 1
@@ -163,7 +168,7 @@ def output_reasons(db: Session, output: Any, runtime: Any, *, workspace_id: UUID
 def draft_reasons(draft: Any) -> list[str]:
     from app.agents.governance.decision_points import REGISTRY
 
-    if draft.proposal_type not in PROPOSAL_TYPES or draft.proposal_type == "ToolCallProposal":
+    if draft.proposal_type not in PROPOSAL_TYPES or draft.proposal_type in SERVICE_ONLY_PROPOSAL_TYPES:
         return ["proposal_type_invalid"]
     if draft.decision_point_key not in REGISTRY:
         return ["decision_point_unknown"]

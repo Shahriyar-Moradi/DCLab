@@ -623,11 +623,14 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
 
     def run_experiment(project_id: Id, dataset_id: Id, problem_spec_id: Annotated[str | None, Field()] = None,  # noqa: E501
                        target_column: Opt = None, intent: Annotated[str | None, Field(max_length=500)] = None,  # noqa: E501
+                       plan: Annotated[str | None, Field(description="An accepted/applied ExperimentPlanProposal id (single use).")] = None,  # noqa: E501
                        idempotency_key: Salt = None) -> CallToolResult:
         def call() -> dict[str, Any]:
             body = {"project_id": uuid_arg(project_id, "project_id"), "dataset_id": uuid_arg(dataset_id, "dataset_id"),
                     "problem_spec_id": problem_spec_id and uuid_arg(problem_spec_id, "problem_spec_id"),
                     "target_column": target_column, "intent": intent}
+            if plan:  # only when given: existing command keys stay the same
+                body["plan"] = uuid_arg(plan, "plan")
             run_ = api.experiments.create(**body, idempotency_key=command_key("run_experiment", body, idempotency_key))
             return {"experiment": _experiment(run_), "replayed": run_.idempotent_replay,
                     "note": "Queued; poll get_experiment until status is completed."}

@@ -132,6 +132,7 @@ def scientific_candidate_config_payload(
     metric_plan: Any = None,
     feature_set_version_digest: str | None = None,
     ai_policy_digest: str | None = None,
+    search_families: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     resolved_task_type = task_type or (task.task_type if task is not None else None)
     resolved_target = target if target is not None else (task.target if task is not None else None)
@@ -172,6 +173,8 @@ def scientific_candidate_config_payload(
     }
     if ai_policy_digest:  # ADR 0008 §2c; absent (not null) so rule-only fingerprints never change
         payload["ai_policy_digest"] = str(ai_policy_digest)
+    if search_families is not None:  # SearchConfig.families (training.families_budget)
+        payload["search_families"] = sorted(str(name) for name in search_families)
     return payload
 
 
@@ -194,6 +197,7 @@ def scientific_candidate_fingerprint(
     metric_plan: Any = None,
     feature_set_version_digest: str | None = None,
     ai_policy_digest: str | None = None,
+    search_families: Sequence[str] | None = None,
 ) -> str:
     payload = scientific_candidate_config_payload(
         features=features,
@@ -213,5 +217,6 @@ def scientific_candidate_fingerprint(
         metric_plan=metric_plan,
         feature_set_version_digest=feature_set_version_digest,
         ai_policy_digest=ai_policy_digest,
+        search_families=search_families,
     )
     return candidate_fingerprint(_strip_identity(payload))
