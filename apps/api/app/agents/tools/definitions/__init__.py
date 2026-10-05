@@ -126,6 +126,7 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
            "Studio.", w.RecordDecisionInput, ("POST /v1/projects/{project_id}/decisions",),
            ("app.services.decision_record_service.record", "app.services.project_ref_service.propose_ref_move"),
            ("decisions:propose",), validator=w._record_decision_validator,
-           notes=("Agent arguments citing the final holdout are rejected (holdout_not_allowed); a human adds the "
-                  "final-evaluation citation when accepting a champion move.",)),
+           notes=("Agent arguments citing the final holdout are rejected (holdout_not_allowed). On a champion move "
+                  "DCLab attaches the promoted model's own locked final evaluation itself (never shown to the "
+                  "agent); only a human accepts it.",)),
 )

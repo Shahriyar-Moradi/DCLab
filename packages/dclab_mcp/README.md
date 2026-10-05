@@ -52,7 +52,9 @@ ML correctness: agents never see final-holdout metrics. The API itself withholds
 them from service tokens (experiments, comparisons, model versions, model-build
 stages and events, the `HOLDOUT_METRICS` literal of exported code); the MCP tools
 additionally reduce metric records to a CV allowlist and drop holdout keys and
-holdout-scoped list items. There is no champion exception (ADR 0008 §2b). CV records carry `cv_threshold` (0.5: binary
+holdout-scoped list items. There is no champion exception (ADR 0008 §2b): an agent never
+cites the final holdout (`holdout_not_allowed`); on a proposed champion move DCLab attaches
+the promoted model's own locked final evaluation itself and only a human accepts. CV records carry `cv_threshold` (0.5: binary
 threshold-dependent fold metrics) and `selected_score_convention`
 (`higher_is_better`); `decision_threshold` is the locked out-of-fold threshold.
 

@@ -31,6 +31,7 @@ from app.agents.tools.shaping import (
     cv_only,
     cv_record,
     data_text,
+    sample_text,
     text,
     withhold_holdout_code,
 )
@@ -268,7 +269,7 @@ def _experiment(e: Any) -> dict[str, Any]:
     return {
         "id": e.id, "project_id": e.project_id, "status": code(e.status), "created_at": e.created_at,
         "ended_at": e.ended_at, "cancel_requested": e.cancel_requested_at is not None, "task_type": code(e.task_type),
-        "target_column": data_text(e.target_column, 200), "intent": text(e.intent),
+        "target_column": data_text(e.target_column, 200), "intent": data_text(e.intent),
         "failure_reason": data_text(e.failure_reason, 500), "lineage": e.lineage.model_dump(mode="json"),
         "change_set": data_text(e.change_set, 2000), "metrics": cv_record(e.metrics),
         "diff_vs_parent": bound(cv_only(e.diff_vs_parent), max_items=20),
@@ -276,13 +277,15 @@ def _experiment(e: Any) -> dict[str, Any]:
 
 
 def decision_summary(r: Any) -> dict[str, Any]:
+    # Agent-authored rationale may echo dataset content: dataset text (ADR 0005 labels).
+    rationale = data_text(r.rationale) if r.content_origin == "agent" else text(r.rationale)
     return {
         "id": r.id, "project_id": r.project_id, "decision_type": code(r.decision_type), "state": code(r.state),
         "effective_state": code(r.effective_state), "supersedes_id": r.supersedes_id, "subject": Code(r.subject.key),
-        "actor_kind": code(r.actor.kind), "content_origin": code(r.content_origin), "rationale": text(r.rationale),
+        "actor_kind": code(r.actor.kind), "content_origin": code(r.content_origin), "rationale": rationale,
         "rationale_label": code(r.rationale_label),
-        # Facts/details may carry CV scores (e.g. the locked selected_score): aggregates, and
-        # with no recorded source dataset they never reach an AI call (fail closed).
+        # Facts/details may carry CV scores (e.g. the locked selected_score): aggregates of the
+        # project's datasets (list_decisions); without a recorded source they are omitted.
         "facts": data_text(cv_only(r.facts), 1500, aggregate=True),
         "details": data_text(cv_only(r.details), 1500, aggregate=True),
         "evidence_refs": cv_only([ref.model_dump(mode="json", exclude_none=True) for ref in r.evidence_refs[:20]]),
@@ -292,7 +295,7 @@ def decision_summary(r: Any) -> dict[str, Any]:
 
 def _graph(g: Any) -> dict[str, Any]:
     nodes = [{"key": Code(n.key), "status": code(n.status), "label": data_text(n.label, 200),
-              "intent": text(n.intent, 300), "stale": n.stale, "ref_kinds": [Code(k) for k in n.ref_kinds]}
+              "intent": data_text(n.intent, 300), "stale": n.stale, "ref_kinds": [Code(k) for k in n.ref_kinds]}
              for n in g.nodes[:GRAPH_NODE_LIMIT]]
     refs = [{"ref_kind": Code(r.ref_kind), "target": Code(r.target.key), "version": r.version, "stale": r.stale}
             for r in g.refs]
@@ -340,7 +343,7 @@ def _inspect_project_shape(raw: dict[str, Any]) -> Shaped:
         "recent_experiments": [
             {"id": i.id, "status": code(i.status), "created_at": i.created_at,
              "parent_experiment_id": i.parent_experiment_id, "has_change_set": i.has_change_set,
-             "intent": text(i.intent, 300)}
+             "intent": data_text(i.intent, 300)}
             for i in recent
         ],
     }, source_datasets=datasets)
@@ -458,14 +461,17 @@ def _findings_shape(raw: dict[str, Any]) -> Shaped:
                       raw["experiment"], "checks")
 
 
-def _decisions_fetch(reads: Any, a: ListDecisionsInput) -> Any:
-    return reads.decisions(a.project_id, effective_state=a.effective_state, decision_type=a.decision_type,
+def _decisions_fetch(reads: Any, a: ListDecisionsInput) -> dict[str, Any]:
+    page = reads.decisions(a.project_id, effective_state=a.effective_state, decision_type=a.decision_type,
                            limit=a.limit, cursor=a.cursor)
+    graph = reads.graph(a.project_id, GRAPH_NODE_LIMIT)  # the project's datasets source agent/dataset text
+    return {"page": page, "datasets": _ids(*(n.id for n in graph.nodes if n.kind == "dataset_version"))}
 
 
-def _decisions_shape(page: Any) -> Shaped:
+def _decisions_shape(raw: dict[str, Any]) -> Shaped:
+    page = raw["page"]
     return Shaped({"decisions": [decision_summary(r) for r in page.items], "next_cursor": page.next_cursor},
-                  data_class="aggregates", outcome_scope="cv")
+                  data_class="aggregates", outcome_scope="cv", source_datasets=raw["datasets"])
 
 
 def _model_fetch(reads: Any, a: ModelInput) -> Any:
@@ -496,6 +502,10 @@ def _card_shape(card: Any) -> Shaped:
     data = card.model_dump(mode="json")
     # Holdout-blind whatever the principal: the final evaluation (and its Markdown section) is dropped.
     markdown = card.markdown.split("\n## Final evaluation", 1)[0].rstrip("\n")
+    # Target labels are values of the target column (sample_values); the words and the
+    # Markdown embed them when present.
+    labelled = bool(data["target"].get("positive_label") or data["target"].get("class_labels"))
+    words = sample_text if labelled else data_text
     objective, cv = data["objective"], cv_only(data["cv"])
     payload = {"model_card": {
         **{key: data[key] for key in _CARD_KEYS if key in data},
@@ -507,14 +517,14 @@ def _card_shape(card: Any) -> Shaped:
         "split": {**cv_only(data["split"]), "group_column": data_text(data["split"].get("group_column"), 256),
                   "time_column": data_text(data["split"].get("time_column"), 256)},
         # Column names, labels, dataset names, messages: user data.
-        "target": data_text(data["target"], 1500),
-        "metric_in_words": data_text(data["metric_in_words"], 1000),
+        "target": sample_text(data["target"], 1500),
+        "metric_in_words": words(data["metric_in_words"], 1000),
         "drivers": data_text(data["drivers"], 3000),
         "risks": data_text(data["risks"], 3000),
         "data": data_text(data["data"], 800),
         "final_evaluation": {"status": "withheld",
                              "note": "Agents never see final-evaluation values; use the CV evidence."},
-        "markdown": data_text(markdown, 12000),
+        "markdown": words(markdown, 12000),
     }}
     return Shaped(payload, data_class="aggregates", outcome_scope="cv",
                   source_datasets=_ids(card.data.source_dataset_id),

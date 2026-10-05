@@ -150,7 +150,14 @@ EVIDENCE_METRIC_PATTERN = r"^[A-Za-z0-9_.:-]{1,64}$"
 # Service-owned ``details`` keys; callers may never set them.
 DETAIL_REF_MOVES = "ref_moves"
 DETAIL_CARRIED_FROM_AGENT = "carried_from_agent_proposal"
-RESERVED_DETAIL_KEYS = frozenset({DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, "skipped_refs"})
+# P6.10-A champion evidence rule: an agent never cites the final holdout; on an agent's
+# champion proposal the service attaches the promoted model's own locked final
+# evaluation itself and marks it here (audit: rule, evaluation id; re-checked at accept).
+DETAIL_SERVICE_ATTACHED_EVIDENCE = "service_attached_evidence"
+RULE_CHAMPION_FINAL_EVALUATION = "champion.final_evaluation.v1"
+RESERVED_DETAIL_KEYS = frozenset(
+    {DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, DETAIL_SERVICE_ATTACHED_EVIDENCE, "skipped_refs"}
+)
 
 # /v1 read bounds.
 DECISION_PAGE_DEFAULT = 50

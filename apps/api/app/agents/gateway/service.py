@@ -363,7 +363,8 @@ class GatewayService:
 
     def release(self, db: Session, reservation: BudgetReservation, *, final_status: str = "completed") -> int:
         """Free the remaining hold (run end; with an agent run this also moves the run to
-        ``final_status``, once). Never raises: a failure is logged and the hold stays
+        ``final_status`` and stamps ``budget_released_at``, once: the only live -> terminal
+        transition of a run). Never raises: a failure is logged and the hold stays
         reserved for reconciliation."""
 
         if not budget.seal_valid(reservation):
@@ -377,6 +378,21 @@ class GatewayService:
             return 0
         budget.mark_released(reservation)
         return freed
+
+    def release_run(self, db: Session, *, workspace_id: UUID, agent_run_id: UUID, final_status: str,
+                    error_code: str | None = None) -> int | None:
+        """End a live agent run from its row (no sealed reservation in hand: a run that
+        never got a hold, a crashed or cancelled worker); frees any hold it still has.
+        The same live -> terminal compare-and-set as ``release``. ``None`` on failure
+        (logged; the run stays live for the janitor), else the micros freed."""
+
+        try:
+            with self._session(db) as session:
+                return budget.release_run(session, workspace_id=workspace_id, agent_run_id=agent_run_id,
+                                          final_status=final_status, error_code=error_code)
+        except Exception:
+            logger.exception("agent run release failed", extra={"agent_run_id": str(agent_run_id)})
+            return None
 
     # --- public calls ---------------------------------------------------------------
 

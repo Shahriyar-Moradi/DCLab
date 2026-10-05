@@ -11,10 +11,11 @@ from __future__ import annotations
 from app.domain.data_plane import sql_in_clause
 
 # Shipped types. Not a closed database enum — see CK_ML_JOB_TYPE.
-ML_JOB_TYPES = ("auto_train", "auth_cleanup", "batch_predict")
+ML_JOB_TYPES = ("auto_train", "auth_cleanup", "batch_predict", "agent_run")
 JOB_TYPE_AUTO_TRAIN = "auto_train"
 JOB_TYPE_AUTH_CLEANUP = "auth_cleanup"
 JOB_TYPE_BATCH_PREDICT = "batch_predict"
+JOB_TYPE_AGENT_RUN = "agent_run"
 
 HANDLER_LABS_AUTO_TRAIN = "labs.auto_train"
 HANDLER_VERSION_LABS_AUTO_TRAIN = "1"
@@ -23,6 +24,9 @@ HANDLER_VERSION_AUTH_SESSION_CLEANUP = "1"
 # P4.9-A: score a scoring dataset with a model version (the only place a model loads).
 HANDLER_MODELS_BATCH_PREDICT = "models.batch_predict"
 HANDLER_VERSION_MODELS_BATCH_PREDICT = "1"
+# P6.10-A: run one agent through the harness (payload: {"agent_run_id"} only).
+HANDLER_AGENTS_RUN = "agents.run"
+HANDLER_VERSION_AGENTS_RUN = "1"
 
 ML_JOB_STATUSES = (
     "queued",

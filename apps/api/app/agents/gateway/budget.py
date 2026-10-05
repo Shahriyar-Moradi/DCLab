@@ -18,10 +18,15 @@ settle after ``release`` still charges ``spent`` without driving ``reserved``
 below zero.
 
 Release markers: a reservation bound to an agent run is released by moving the
-run from a live to a terminal status (compare-and-set under the counter locks;
-durable and idempotent across processes). A reservation without an agent run has
-only a process-local marker: a second release from another process would free
-the hold twice. A durable marker for run-less reservations needs schema (P6.10-A).
+run from a live to a terminal status and stamping ``agent_runs.budget_released_at``
+in one compare-and-set under the counter locks (durable, write-once and idempotent
+across processes; Alembic 0073 makes the terminal status final). This is the only
+live -> terminal transition of a run. ``release_run`` does the same from the run row
+alone (no sealed reservation: a crashed worker, a run that never got a hold), with
+the counters re-derived from the run's workspace, project and ``AGENT_RUN_BUDGET_KIND``.
+A reservation without an agent run (assistant turns, Jev batches) keeps a
+process-local marker plus its sealed expiry: a second release from another process
+would free the hold twice, so run-less holds are short-lived by design.
 Crossing ``alert_fraction`` of a period limit is reported once per period (spend
 only grows within a period) and logged; Inbox notices come later.
 """
@@ -34,6 +39,7 @@ import logging
 import math
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
@@ -46,6 +52,7 @@ from app.agents.gateway.contract import BudgetReservation, GatewayRefusal
 from app.agents.governance.platform_default import AiPolicyV1
 from app.agents.governance.policy import advisory_lock
 from app.db.models import AgentRun, LlmInvocation, WorkspaceLlmBudget
+from app.domain.agent_records import AGENT_RUN_LIVE_STATUSES, AGENT_RUN_TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +71,12 @@ _RUN_KIND_POLICY_FIELD = {
     "jev": "specialist_run_micros",
 }
 LOCK_NS_BUDGET_HOLD = 72063  # next to governance's 72061 / 72062
-LIVE_RUN_STATUSES = ("queued", "running", "waiting_user")
-TERMINAL_RUN_STATUSES = ("completed", "failed", "rejected_by_validator", "over_budget", "timed_out",
-                         "cancelled", "closed")
+LIVE_RUN_STATUSES = AGENT_RUN_LIVE_STATUSES
+TERMINAL_RUN_STATUSES = AGENT_RUN_TERMINAL_STATUSES
+# agent_runs.kind -> the per-run budget row the harness reserves on (ADR 0009 §2.7 run
+# kinds differ from run kinds: assistant turns hold per turn, P6.3-B).
+AGENT_RUN_BUDGET_KIND = {"specialist": "specialist", "ops": "specialist", "lead": "assistant_turn",
+                         "assistant": "assistant_turn"}
 _RELEASED: OrderedDict[UUID, None] = OrderedDict()
 _RELEASED_MAX = 100_000
 _RELEASED_LOCK = threading.Lock()
@@ -243,7 +253,8 @@ def reserve(
     if agent_run_id is not None:
         stamped = db.execute(
             update(AgentRun)
-            .where(AgentRun.workspace_id == workspace_id, AgentRun.id == agent_run_id, AgentRun.held_micros == 0)
+            .where(AgentRun.workspace_id == workspace_id, AgentRun.id == agent_run_id, AgentRun.held_micros == 0,
+                   AgentRun.status.in_(LIVE_RUN_STATUSES), AgentRun.budget_released_at.is_(None))
             .values(held_micros=estimate_micros)
         ).rowcount
         if stamped != 1:
@@ -273,9 +284,9 @@ def is_released(db: Session, reservation: BudgetReservation) -> bool:
         return True
     if reservation.agent_run_id is None:
         return False
-    status = db.scalar(select(AgentRun.status).where(
-        AgentRun.workspace_id == reservation.workspace_id, AgentRun.id == reservation.agent_run_id))
-    return status is None or status in TERMINAL_RUN_STATUSES
+    row = db.execute(select(AgentRun.status, AgentRun.budget_released_at).where(
+        AgentRun.workspace_id == reservation.workspace_id, AgentRun.id == reservation.agent_run_id)).first()
+    return row is None or row.budget_released_at is not None or row.status in TERMINAL_RUN_STATUSES
 
 
 def mark_released(reservation: BudgetReservation) -> None:
@@ -370,27 +381,88 @@ def settle(
 
 def release(db: Session, reservation: BudgetReservation, *, final_status: str = "completed") -> int:
     """Free the remaining hold. With an agent run, the run's move from a live to
-    ``final_status`` is the durable, idempotent marker (0 when it already ended).
-    Pair with ``mark_released`` after commit."""
+    ``final_status`` plus ``budget_released_at`` is the durable, idempotent marker (0
+    when it already ended). Pair with ``mark_released`` after commit."""
 
     if _released_in_process(reservation):
         return 0
+    if reservation.agent_run_id is not None:
+        return _end_run(db, workspace_id=reservation.workspace_id, agent_run_id=reservation.agent_run_id,
+                        final_status=final_status, counter_ids=reservation.counter_ids)
     rows = _lock_rows(db, reservation.workspace_id, reservation.counter_ids)
     remaining = remaining_hold(db, reservation)
-    if reservation.agent_run_id is not None:
-        if final_status not in TERMINAL_RUN_STATUSES:
-            raise ValueError(f"{final_status} is not a terminal run status")
-        moved = db.execute(
-            update(AgentRun)
-            .where(AgentRun.workspace_id == reservation.workspace_id, AgentRun.id == reservation.agent_run_id,
-                   AgentRun.status.in_(LIVE_RUN_STATUSES))
-            .values(status=final_status, finished_at=func.coalesce(AgentRun.finished_at, func.now()),
-                    cost_micros=_settled_micros(db, reservation))
-        ).rowcount
-        if moved != 1:
-            return 0
     for row in rows:
         row.reserved_micros = max(0, row.reserved_micros - remaining)
         row.updated_at = func.now()
     db.flush()
     return remaining
+
+
+def _run_settled_micros(db: Session, workspace_id: UUID, agent_run_id: UUID) -> int:
+    # One hold per run (held_micros is write-once), so the run's settled rows are the hold's.
+    return int(db.scalar(
+        select(func.coalesce(func.sum(LlmInvocation.cost_micros), 0)).where(
+            LlmInvocation.workspace_id == workspace_id, LlmInvocation.agent_run_id == agent_run_id,
+            LlmInvocation.budget_reservation_id.is_not(None), LlmInvocation.budget_settled.is_(True),
+        )
+    ) or 0)
+
+
+def _end_run(db: Session, *, workspace_id: UUID, agent_run_id: UUID, final_status: str,
+             counter_ids: tuple[UUID, ...], error_code: str | None = None,
+             derive: Callable[[], tuple[UUID, ...]] | None = None) -> int:
+    """The live -> terminal compare-and-set (counters locked first, the fixed order). The
+    hold freed is the row's own ``held_micros`` as the CAS saw it (RETURNING), so a hold
+    stamped concurrently is never leaked."""
+
+    if final_status not in TERMINAL_RUN_STATUSES:
+        raise ValueError(f"{final_status} is not a terminal run status")
+    rows = _lock_rows(db, workspace_id, counter_ids)
+    settled = _run_settled_micros(db, workspace_id, agent_run_id)
+    values = dict(status=final_status, finished_at=func.coalesce(AgentRun.finished_at, func.now()),
+                  cost_micros=settled, budget_released_at=func.now())
+    if error_code is not None:
+        values["error_code"] = func.coalesce(AgentRun.error_code, error_code)
+    held = db.execute(
+        update(AgentRun)
+        .where(AgentRun.workspace_id == workspace_id, AgentRun.id == agent_run_id,
+               AgentRun.status.in_(LIVE_RUN_STATUSES), AgentRun.budget_released_at.is_(None))
+        .values(**values)
+        .returning(AgentRun.held_micros)
+    ).scalar()
+    if held is None:
+        return 0
+    remaining = max(0, held - settled)
+    if remaining and not rows and derive is not None:  # counters created after we looked them up
+        rows = _lock_rows(db, workspace_id, derive())
+    for row in rows:
+        row.reserved_micros = max(0, row.reserved_micros - remaining)
+        row.updated_at = func.now()
+    db.flush()
+    return remaining
+
+
+def _run_counter_ids(db: Session, workspace_id: UUID, run: AgentRun) -> tuple[UUID, ...]:
+    ids = []
+    for scope, project, kind, period in _specs(run.project_id, AGENT_RUN_BUDGET_KIND[run.kind]):
+        row_id = db.scalar(select(WorkspaceLlmBudget.id).where(
+            WorkspaceLlmBudget.workspace_id == workspace_id, WorkspaceLlmBudget.scope == scope,
+            WorkspaceLlmBudget.project_id.is_not_distinct_from(project),
+            WorkspaceLlmBudget.run_kind.is_not_distinct_from(kind), WorkspaceLlmBudget.period == period,
+        ))
+        if row_id is not None:
+            ids.append(row_id)
+    return tuple(ids)
+
+
+def release_run(db: Session, *, workspace_id: UUID, agent_run_id: UUID, final_status: str,
+                error_code: str | None = None) -> int:
+    """End a live run from its row alone (no sealed reservation): its hold, if any, is
+    freed from the counters re-derived from the run. 0 when the run already ended."""
+
+    run = db.scalar(select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == agent_run_id))
+    if run is None or run.status not in LIVE_RUN_STATUSES or run.budget_released_at is not None:
+        return 0
+    return _end_run(db, workspace_id=workspace_id, agent_run_id=agent_run_id, final_status=final_status,
+                    counter_ids=_run_counter_ids(db, workspace_id, run), error_code=error_code,
+                    derive=lambda: _run_counter_ids(db, workspace_id, run))

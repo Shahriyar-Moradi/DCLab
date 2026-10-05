@@ -265,10 +265,9 @@ def _normalize(schema, *, write: bool = False, drop_description: tuple[str, ...]
     return out
 
 
-# record_decision.ref_moves: MCP tells service tokens to cite the champion's final_holdout
-# (the decision service requires it on a token's proposal); catalog agents never cite the
-# holdout (the accepting human does), so that one description differs on purpose.
-_DESCRIPTION_DIVERGES = {"record_decision": ("ref_moves",)}
+# No divergence left (P6.10-A2 champion evidence rule): neither MCP nor the catalog tells an
+# agent to cite the final holdout; DCLab attaches the champion's final evaluation itself.
+_DESCRIPTION_DIVERGES: dict[str, tuple[str, ...]] = {}
 
 
 def test_mcp_tools_equal_the_catalog_export():

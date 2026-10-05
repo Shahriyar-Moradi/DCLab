@@ -20,6 +20,17 @@ versioned UPDATE (or, for a missing kind, an INSERT) of every moved ref; any
 no accepted move record exists without its move. ``propose_ref_move`` records
 a proposal (agents and humans) that nothing applies until a human ``move_ref``
 with ``proposal_id``.
+
+Champion evidence rule (P6.10-A; ADR 0008 §2b, ADR 0006 Q1): agents never see or cite
+the final holdout. On an agent's ``champion_promoted`` proposal the service attaches
+the promoted model's own single locked winner final-holdout evaluation itself
+(``champion_final_evaluation``: same model version / winner candidate, same experiment
+and so the same split plan, evidence locked; selected by identity, never by value),
+refuses with the generic ``champion_evidence_unavailable`` when there is none, and
+marks it ``details.service_attached_evidence`` for the audit; an agent-supplied
+holdout ref is refused (``holdout_not_allowed``). Accepting stays human
+(``move_ref``), which re-checks that the evaluation still belongs to the model;
+``champion_final_evaluation_for_human`` gives the accepting human its values.
 """
 
 from __future__ import annotations
@@ -29,14 +40,16 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import (
     Dataset,
+    EvaluationMetric,
     ExecutionRequest,
     Experiment,
+    ExperimentCandidate,
     FeatureSetVersion,
     ModelEvaluation,
     ModelVersion,
@@ -47,7 +60,12 @@ from app.db.models import (
     WorkflowRun,
 )
 from app.domain.decision_records import (
+    ACTOR_AGENT,
+    ACTOR_HUMAN,
     DECISION_CHAMPION_PROMOTED,
+    DETAIL_SERVICE_ATTACHED_EVIDENCE,
+    EVIDENCE_REFS_MAX,
+    RULE_CHAMPION_FINAL_EVALUATION,
     DECISION_REF_INITIALIZED,
     DECISION_REF_MOVED,
     REF_INITIALIZED_SCHEMA_VERSION,
@@ -61,6 +79,7 @@ from app.domain.decision_records import (
 )
 from app.domain.errors import (
     ChampionSplitPlanMismatchError,
+    DecisionActorNotPermittedError,
     InvalidDecisionRecordError,
     RefTargetNotFoundError,
     RefVersionConflictError,
@@ -79,6 +98,7 @@ from app.services.decision_record_service import (
     node_digest,
     parse_evidence_refs,
     raise_for_record_race,
+    refuse_agent_holdout,
     replay_record,
     require_open_proposal,
     rule_record,
@@ -372,6 +392,9 @@ def _propose_bootstrap(
                      scope=FINAL_HOLDOUT_SCOPE)
     ]
     try:
+        # The same single locked evaluation the accept re-check requires (never by value).
+        holdout_id = champion_final_evaluation(db, workspace_id=ws, project_id=project_id,
+                                               model_version_id=model_version.id).id
         rows = _load_targets(db, workspace_id=ws, project_id=project_id, moves=moves)
         _check_targets(db, moves=moves, targets=rows, current=current, evidence=evidence)
     except (InvalidDecisionRecordError, RefTargetNotFoundError, ChampionSplitPlanMismatchError) as exc:
@@ -386,7 +409,8 @@ def _propose_bootstrap(
                "final_holdout_evaluation_id": str(holdout_id)},
         supersedes_id=None, key=key,
     )
-    record.details = {**record.details, "skipped_refs": skipped}
+    record.details = {**record.details, "skipped_refs": skipped,
+                      DETAIL_SERVICE_ATTACHED_EVIDENCE: [_attached_marker(evidence[0], holdout_id)]}
     try:
         with db.begin_nested():
             db.add(record)
@@ -428,6 +452,88 @@ class RefMoveResult:
     record: ProjectDecisionRecord
     refs: list[ProjectRef] = field(default_factory=list)
     replayed: bool = False
+
+
+CHAMPION_EVIDENCE_UNAVAILABLE = "champion_evidence_unavailable"
+
+
+def champion_final_evaluation(
+    db: Session, *, workspace_id: UUID, project_id: UUID, model_version_id: UUID
+) -> ModelEvaluation:
+    """The promoted model's own single locked winner final-holdout evaluation. Chosen
+    by identity only (never by a metric value: no holdout oracle); anything else, or
+    more than one, is the same generic refusal."""
+
+    model = db.scalar(select(ModelVersion).where(
+        ModelVersion.id == model_version_id, ModelVersion.workspace_id == workspace_id,
+        ModelVersion.project_id == project_id))
+    experiment = model and db.scalar(select(Experiment).where(
+        Experiment.id == model.pipeline_run_id, Experiment.workspace_id == workspace_id,
+        Experiment.project_id == project_id))
+    rows = [] if experiment is None or experiment.scientific_evidence_locked_at is None else list(db.scalars(
+        select(ModelEvaluation)
+        .join(ExperimentCandidate, ExperimentCandidate.id == ModelEvaluation.candidate_id)
+        .where(ModelEvaluation.workspace_id == workspace_id,
+               ModelEvaluation.candidate_id == model.selected_candidate_id,
+               ModelEvaluation.evaluation_scope == FINAL_HOLDOUT_SCOPE,
+               or_(ModelEvaluation.model_version_id.is_(None), ModelEvaluation.model_version_id == model.id),
+               ExperimentCandidate.workspace_id == workspace_id, ExperimentCandidate.experiment_id == experiment.id)
+        .limit(2)
+    ))
+    if len(rows) != 1:
+        raise InvalidDecisionRecordError(CHAMPION_EVIDENCE_UNAVAILABLE, "the promoted model is not eligible")
+    return rows[0]
+
+
+def _attached_marker(ref: dict[str, str], evaluation_id: UUID) -> dict[str, str]:
+    return {**ref, "rule": RULE_CHAMPION_FINAL_EVALUATION, "evaluation_id": str(evaluation_id)}
+
+
+def _champion_evidence(
+    db: Session, *, workspace_id: UUID, project_id: UUID, moves: Sequence[RefMove]
+) -> tuple[dict[str, str], dict[str, str]] | None:
+    """(evidence ref, audit marker) the service attaches to a champion move, or None."""
+
+    champion = next((move for move in moves if move.ref_kind == "champion_model"), None)
+    if champion is None:
+        return None
+    evaluation = champion_final_evaluation(
+        db, workspace_id=workspace_id, project_id=project_id, model_version_id=champion.target_id)
+    ref = evidence_ref("candidate", evaluation.candidate_id, scope=FINAL_HOLDOUT_SCOPE)
+    return ref, _attached_marker(ref, evaluation.id)
+
+
+def check_proposed_ref_moves(
+    db: Session, *, workspace_id: UUID, project_id: UUID, moves: dict[str, UUID]
+) -> None:
+    """Validator of an agent's ref-move tool call (harness, P6.10-A): every target is a
+    node of this project and a champion has its attachable final evaluation."""
+
+    items = _normalized_moves([RefMove(kind, target, None) for kind, target in moves.items()])
+    _load_targets(db, workspace_id=workspace_id, project_id=project_id, moves=items)
+    _champion_evidence(db, workspace_id=workspace_id, project_id=project_id, moves=items)
+
+
+def champion_final_evaluation_for_human(
+    db: Session, *, actor: DecisionActor, workspace_id: UUID, project_id: UUID, record_id: UUID
+) -> dict[str, Any]:
+    """The values of the final evaluation a champion proposal carries, for the human
+    about to accept it (P6.6-A confirm card). Humans with ML-write only, never a token,
+    an agent run or a rule; re-checked against the promoted model."""
+
+    if actor.kind != ACTOR_HUMAN:
+        raise DecisionActorNotPermittedError("human_only", "only a human sees the final evaluation")
+    authorize_writer(db, actor, workspace_id=workspace_id, allow_rule=False)
+    proposal = get_record(db, workspace_id=workspace_id, project_id=project_id, record_id=record_id)
+    target = next((m for m in (proposal.details or {}).get("ref_moves") or []
+                   if isinstance(m, dict) and m.get("ref_kind") == "champion_model"), None)
+    if proposal.decision_type != DECISION_CHAMPION_PROMOTED or target is None:
+        raise InvalidDecisionRecordError("not_a_champion_proposal", "this record does not promote a champion")
+    evaluation = champion_final_evaluation(
+        db, workspace_id=workspace_id, project_id=project_id, model_version_id=UUID(str(target["to"]["id"])))
+    metrics = dict(db.execute(select(EvaluationMetric.metric_name, EvaluationMetric.metric_value).where(
+        EvaluationMetric.model_evaluation_id == evaluation.id)).all())
+    return {"evaluation_id": evaluation.id, "candidate_id": evaluation.candidate_id, "metrics": metrics}
 
 
 def current_refs(
@@ -688,6 +794,7 @@ def _prepare(
     rationale: str,
     evidence_refs: Iterable[Any] | None,
     lock: bool,
+    attached: dict[str, str] | None = None,
 ) -> tuple[list[RefMove], str, list[dict[str, str]], dict[str, ProjectRef], dict[str, Any]]:
     items = _normalized_moves(moves)
     text = clean_rationale(rationale)
@@ -696,6 +803,10 @@ def _prepare(
     )
     if not evidence:
         raise InvalidDecisionRecordError("evidence_required", "a ref move cites at least one evidence ref")
+    if attached is not None and attached not in evidence:  # the service-attached champion evidence
+        if len(evidence) >= EVIDENCE_REFS_MAX:
+            raise InvalidDecisionRecordError("too_many_evidence_refs", f"at most {EVIDENCE_REFS_MAX} evidence refs")
+        evidence = [*evidence, attached]
     current = current_refs(db, workspace_id=workspace_id, project_id=project_id, lock=lock)
     targets = _load_targets(db, workspace_id=workspace_id, project_id=project_id, moves=items)
     _check_targets(db, moves=items, targets=targets, current=current, evidence=evidence)
@@ -718,26 +829,34 @@ def propose_ref_move(
     """A proposed ``ref_moved``/``champion_promoted`` record; no ref changes."""
 
     authorize_writer(db, actor, workspace_id=workspace_id, allow_agent=True, allow_rule=False)
+    refuse_agent_holdout(actor, evidence_refs, facts)
     load_project(db, workspace_id=workspace_id, project_id=project_id)
     items = _normalized_moves(moves)
     kind = _decision_type(items, decision_type)
     key = scoped_idempotency_key(actor, idempotency_key)
+    service_attaches = actor.kind == ACTOR_AGENT and kind == DECISION_CHAMPION_PROMOTED
+    request = _replay_request(items, rationale, evidence_refs)
+    if service_attaches:
+        request["evidence_refs_without_holdout"] = request.pop("evidence_refs")
     replayed = replay_record(
         db, workspace_id=workspace_id, project_id=project_id, idempotency_key=key,
-        decision_type=kind, state=STATE_PROPOSED, supersedes_id=None,
-        request=_replay_request(items, rationale, evidence_refs),
+        decision_type=kind, state=STATE_PROPOSED, supersedes_id=None, request=request,
     )
     if replayed is not None:
         return replayed
+    champion = (_champion_evidence(db, workspace_id=workspace_id, project_id=project_id, moves=items)
+                if service_attaches else None)
     items, text, evidence, current, targets = _prepare(
         db, workspace_id=workspace_id, project_id=project_id, moves=moves,
-        rationale=rationale, evidence_refs=evidence_refs, lock=False,
+        rationale=rationale, evidence_refs=evidence_refs, lock=False, attached=champion and champion[0],
     )
     row = _ref_move_record(
         workspace_id=workspace_id, project_id=project_id, actor=actor, decision_type=kind,
         state=STATE_PROPOSED, moves=items, targets=targets, current=current, rationale=text,
         evidence=evidence, facts=facts, supersedes_id=None, key=key,
     )
+    if champion is not None:
+        row.details = {**row.details, DETAIL_SERVICE_ATTACHED_EVIDENCE: [champion[1]]}
     return insert_record(db, row)
 
 
@@ -770,21 +889,35 @@ def move_ref(
     items = _normalized_moves(moves)
     kind = _decision_type(items, decision_type)
     key = scoped_idempotency_key(actor, idempotency_key)
+    proposal = (get_record(db, workspace_id=workspace_id, project_id=project_id, record_id=proposal_id)
+                if proposal_id is not None else None)
+    marked = list((proposal.details or {}).get(DETAIL_SERVICE_ATTACHED_EVIDENCE) or []) if proposal else []
+    request = _replay_request(items, rationale, evidence_refs)
+    if marked:  # the stored record also carries the service-attached ref
+        request["evidence_refs_without_holdout"] = [
+            ref for ref in request.pop("evidence_refs") if ref.get("scope") != FINAL_HOLDOUT_SCOPE]
     replayed = replay_record(
         db, workspace_id=workspace_id, project_id=project_id, idempotency_key=key,
-        decision_type=kind, state=STATE_ACCEPTED, supersedes_id=proposal_id,
-        request=_replay_request(items, rationale, evidence_refs),
+        decision_type=kind, state=STATE_ACCEPTED, supersedes_id=proposal_id, request=request,
     )
     if replayed is not None:
         refs = current_refs(db, workspace_id=workspace_id, project_id=project_id)
         return RefMoveResult(record=replayed, refs=list(refs.values()), replayed=True)
+    champion = None
+    if marked:
+        # Champion evidence the service attached: re-checked now (it must still be the
+        # promoted model's own final evaluation) and carried for the human.
+        proposed_moves = [RefMove(m["ref_kind"], UUID(str(m["to"]["id"])), None)
+                          for m in (proposal.details or {}).get("ref_moves") or [] if isinstance(m, dict)]
+        champion = _champion_evidence(db, workspace_id=workspace_id, project_id=project_id, moves=proposed_moves)
+        if champion is None or [champion[1]["evaluation_id"]] != [m.get("evaluation_id") for m in marked]:
+            raise InvalidDecisionRecordError(CHAMPION_EVIDENCE_UNAVAILABLE, "the promoted model is not eligible")
     items, text, evidence, current, targets = _prepare(
         db, workspace_id=workspace_id, project_id=project_id, moves=moves,
-        rationale=rationale, evidence_refs=evidence_refs, lock=True,
+        rationale=rationale, evidence_refs=evidence_refs, lock=True, attached=champion and champion[0],
     )
     check_ref_versions(items, current)
-    if proposal_id is not None:
-        proposal = get_record(db, workspace_id=workspace_id, project_id=project_id, record_id=proposal_id)
+    if proposal is not None:
         require_open_proposal(db, proposal)
         proposed = {
             (move.get("ref_kind"), (move.get("to") or {}).get("id"))
@@ -800,6 +933,8 @@ def move_ref(
         state=STATE_ACCEPTED, moves=items, targets=targets, current=current, rationale=text,
         evidence=evidence, facts=facts, supersedes_id=proposal_id, key=key,
     )
+    if champion is not None:
+        row.details = {**row.details, DETAIL_SERVICE_ATTACHED_EVIDENCE: [{**champion[1], "rechecked_at_accept": True}]}
     try:
         with db.begin_nested():
             db.add(row)

@@ -1087,8 +1087,42 @@ def ai_governance_trigger_statements() -> list[str]:
     return statements
 
 
+# P6.10-A2 / Alembic 0073 (identical literal SQL inlined there): a terminal agent run
+# status is final and the gateway's release marker is write-once (ADR 0009 §4, §5.1).
+_TERMINAL_RUN_STATUSES = (
+    "'completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed'"
+)
+GUARD_AGENT_RUN_LIFECYCLE_SQL = f"""
+CREATE OR REPLACE FUNCTION guard_agent_run_lifecycle()
+RETURNS trigger AS $$
+BEGIN
+    IF OLD.status IN ({_TERMINAL_RUN_STATUSES}) AND NEW.status IS DISTINCT FROM OLD.status THEN
+        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;
+    END IF;
+    IF OLD.budget_released_at IS NOT NULL
+        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN
+        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+AGENT_RUN_LIFECYCLE_TRIGGER_SQL = (
+    "CREATE TRIGGER agent_runs_lifecycle BEFORE UPDATE OF status, budget_released_at ON agent_runs "
+    "FOR EACH ROW EXECUTE FUNCTION guard_agent_run_lifecycle()"
+)
+
+
+def agent_run_release_trigger_statements() -> list[str]:
+    return [
+        GUARD_AGENT_RUN_LIFECYCLE_SQL,
+        "DROP TRIGGER IF EXISTS agent_runs_lifecycle ON agent_runs",
+        AGENT_RUN_LIFECYCLE_TRIGGER_SQL,
+    ]
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071 and 0072 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071, 0072 and 0073 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -1130,6 +1164,8 @@ def install_immutability_triggers(connection) -> None:
     for statement in agent_persistence_trigger_statements():
         connection.execute(text(statement))
     for statement in ai_governance_trigger_statements():
+        connection.execute(text(statement))
+    for statement in agent_run_release_trigger_statements():
         connection.execute(text(statement))
 
 

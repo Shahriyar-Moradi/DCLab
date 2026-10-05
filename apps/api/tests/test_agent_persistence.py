@@ -193,7 +193,7 @@ def test_create_all_helpers_match_alembic_0071_catalog(test_engine):
         }
 
     expected = subset(json.loads(FIXTURE.read_text(encoding="utf-8")))
-    assert len(expected["triggers"]) == 22
+    assert len(expected["triggers"]) == 23  # 22 from 0071 + agent_runs_lifecycle (0073)
     assert len(expected["functions"]) == len(NEW_FUNCTIONS)
     assert subset(dump_constraints_triggers(test_engine)) == expected
 
@@ -521,21 +521,24 @@ def test_proposal_decision_fields_are_write_once(db_session, agents):
 
 def test_agent_run_header_is_frozen_and_digest_and_hold_write_once(db_session, agents):
     ns = agents
+    # A live run (Alembic 0073: a terminal status such as the fixture's "completed" is final).
+    live = agent_run(db_session, ns, status="queued")
+    db_session.commit()
     update = "UPDATE agent_runs SET {} WHERE id = :id"
     _sql(db_session, update.format(
         "status = 'running', usage = '{\"steps\": 1}'::jsonb, cost_micros = 5, "
         "provider = 'openai', model = 'gpt-x', started_at = now(), last_activity_at = now()"),
-        id=ns.run_a)
-    _sql(db_session, update.format("context_digest = repeat('9', 64)"), id=ns.run_a)
-    _sql(db_session, update.format("held_micros = 2500"), id=ns.run_a)
+        id=live)
+    _sql(db_session, update.format("context_digest = repeat('9', 64)"), id=live)
+    _sql(db_session, update.format("held_micros = 2500"), id=live)
     db_session.commit()
     for assignment in (
         "kind = 'ops'", "limits = '{}'::jsonb", "policy_digest = repeat('0', 64)",
         "outcome_scope = 'none'", "agent_key = 'other'", "created_at = now()",
     ):
-        _rejects(db_session, "is immutable", _sql, db_session, update.format(assignment), id=ns.run_a)
+        _rejects(db_session, "is immutable", _sql, db_session, update.format(assignment), id=live)
     for assignment in ("context_digest = repeat('8', 64)", "held_micros = 1", "held_micros = 0"):
-        _rejects(db_session, "immutable", _sql, db_session, update.format(assignment), id=ns.run_a)
+        _rejects(db_session, "immutable", _sql, db_session, update.format(assignment), id=live)
 
 
 def test_agent_run_checks_and_outcome_scope_never_holdout(db_session, agents):

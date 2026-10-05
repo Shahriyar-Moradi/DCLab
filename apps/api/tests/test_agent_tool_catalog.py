@@ -16,6 +16,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime
+from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -322,6 +323,71 @@ def _read_calls(t: SimpleNamespace) -> list[tuple[str, dict]]:
     ]
 
 
+def _numbers(value, out=None) -> list[float]:
+    out = [] if out is None else out
+    if isinstance(value, bool):
+        return out
+    if isinstance(value, (int, float)):
+        out.append(float(value))
+    elif isinstance(value, dict):
+        for item in value.values():
+            _numbers(item, out)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _numbers(item, out)
+    elif hasattr(value, "untrusted_text"):
+        _numbers(value.untrusted_text, out)
+    elif isinstance(value, str):
+        out.extend(float(item) for item in re.findall(r"-?\d+\.\d+", value))
+    return out
+
+
+def _holdout_values(human: dict) -> set[float]:
+    """The human's final-holdout numbers that no CV / other field of the same responses
+    shows (a value-based oracle: none of them may reach an agent)."""
+
+    from app.agents.tools.shaping import strip_holdout
+
+    found: list[float] = []
+    for body in human.values():
+        for section in ("metrics", "common", "experiments"):
+            _numbers(_holdout_sections(body.get(section) if isinstance(body, dict) else None), found)
+        card = body.get("final_evaluation") if isinstance(body, dict) else None
+        if card:
+            _numbers({"metrics": card.get("metrics"), "value": card.get("value")}, found)
+        script = (body.get("script") or {}).get("source", "") if isinstance(body, dict) else ""
+        literal = re.search(r"HOLDOUT_METRICS = \{[^}]*\}", script)
+        if literal:
+            _numbers(literal.group(0), found)
+    others: list[float] = []
+    for body in human.values():
+        visible = strip_holdout(body)
+        if isinstance(visible, dict):
+            visible.pop("final_evaluation", None)
+            if "script" in visible:
+                visible["script"] = re.sub(r"HOLDOUT_METRICS = \{[^}]*\}", "", str(visible["script"]))
+                visible.pop("notebook", None)
+        _numbers(visible, others)
+    # Small-denominator fractions (accuracy, precision on a small holdout) can coincide with
+    # legitimate CV numbers by chance; the distinctive values (AUC, log loss, ...) cannot.
+    return {value for value in found if value not in set(others)
+            and abs(float(Fraction(value).limit_denominator(100)) - value) > 1e-12}
+
+
+def _holdout_sections(value):
+    if isinstance(value, dict):
+        return [item if HOLDOUT.search(str(key)) else _holdout_sections(item) for key, item in value.items()]
+    if isinstance(value, list):
+        return [_holdout_sections(item) for item in value]
+    return None
+
+
+def _assert_no_holdout_values(values: set[float], tool, payload, fields) -> None:
+    seen = set(_numbers(payload)) | set(_numbers([item.value for item in fields]))
+    leaked = {value for value in values if value in seen}
+    assert not leaked, (tool, leaked)
+
+
 def _check_consumer_result(db, ws, tool, definition, shaped, monkeypatch) -> dict:
     payload, _text = to_mcp(shaped)
     assert not _holdout_hits(payload) and not _holdout_hits(mcp_json(shaped.payload)), (tool, _holdout_hits(payload))
@@ -335,7 +401,9 @@ def _check_consumer_result(db, ws, tool, definition, shaped, monkeypatch) -> dic
         assert all(set(u.model_dump()) == {"untrusted_text"} for u in _untrusted_items(item.value))
         assert all(len(u.untrusted_text) <= 4000 for u in _untrusted_items(item.value))
     allowed = _redacted(db, ws, fields, "allow", monkeypatch)
-    assert allowed.summary["fields_kept"] == sum(1 for item in fields if item.sources), tool
+    # Target labels are sample values (A2): dropped unless the policy allows sample values.
+    assert allowed.summary["fields_kept"] == sum(
+        1 for item in fields if item.sources and item.data_class != "sample_values"), tool
     denied = _redacted(db, ws, fields, "deny", monkeypatch)
     label_free = [item for item in fields if item.sources and all(s.kind in ("system", "workspace_text")
                                                                   for s in item.sources)]
@@ -348,7 +416,7 @@ def _check_consumer_result(db, ws, tool, definition, shaped, monkeypatch) -> dic
     assert workspace_keys <= TENANT_TEXT_KEYS, (tool, workspace_keys)
     metadata_only = _redacted(db, ws, fields, "metadata_only", monkeypatch)
     assert metadata_only.summary["dropped"]["data_class"] == sum(
-        1 for item in fields if item.data_class == "aggregates" and item.sources), tool
+        1 for item in fields if item.data_class in ("aggregates", "sample_values") and item.sources), tool
     transcript = (TranscriptItem(kind="tool_result", tool_name=tool, fields=fields),)
     redaction.redact(db, workspace_id=ws, fields=(), transcript=transcript, user_text=(),
                      max_class="aggregates", max_scope="cv")
@@ -370,12 +438,18 @@ def test_consumer_mode_is_holdout_free_for_a_human_principal(client, db_session,
     assert _holdout_hits(human[f"/v1/projects/{t.project}/decisions"])
     assert FILLED_HOLDOUT_LITERAL.search(human[f"/v1/experiments/{t.branch}/code"]["script"]["source"])
 
+    # A1 review note 1: value-based too: the human's holdout numbers never reach an agent.
+    holdout_values = _holdout_values(human)
+    assert holdout_values, "the fixture must expose distinctive holdout values to the human"
+
     ctx = ToolContext(db=db, actor=st.admin, workspace_id=st.alpha.id)
     calls = _read_calls(t)
     assert {tool for tool, _ in calls} == {name for name, item in catalog().items() if item.effect == "read"}
     for tool, args in calls:
         definition = catalog()[tool]
-        payload = _check_consumer_result(db, st.alpha.id, tool, definition, definition.read(ctx, args), monkeypatch)
+        shaped = definition.read(ctx, args)
+        payload = _check_consumer_result(db, st.alpha.id, tool, definition, shaped, monkeypatch)
+        _assert_no_holdout_values(holdout_values, tool, payload, to_context_fields(tool, shaped))
         if tool == "get_experiment_code":
             assert not FILLED_HOLDOUT_LITERAL.search(payload["source"]["untrusted_text"])
         if tool == "get_model_card":

@@ -1161,7 +1161,7 @@
               }
             ],
             "default": null,
-            "description": "Propose moving refs instead: {ref_kind: target_id}. A champion_model move also moves feature_recipe to the model's recipe; the human who accepts it cites the final evaluation.",
+            "description": "Propose moving refs instead: {ref_kind: target_id}. A champion_model move also moves feature_recipe to the model's recipe. Cite CV evidence only: DCLab attaches the promoted model's final evaluation itself, and only a human accepts.",
             "title": "Ref Moves"
           },
           "subject_id": {
@@ -1200,7 +1200,7 @@
       },
       "name": "record_decision",
       "notes": [
-        "Agent arguments citing the final holdout are rejected (holdout_not_allowed); a human adds the final-evaluation citation when accepting a champion move."
+        "Agent arguments citing the final holdout are rejected (holdout_not_allowed). On a champion move DCLab attaches the promoted model's own locked final evaluation itself (never shown to the agent); only a human accepts it."
       ],
       "operations": [
         "POST /v1/projects/{project_id}/decisions"

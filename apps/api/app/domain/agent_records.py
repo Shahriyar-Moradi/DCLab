@@ -40,6 +40,10 @@ AGENT_RUN_STATUSES = (
     "cancelled",
     "closed",
 )
+# The gateway's release (ADR 0009 §4) is the only live -> terminal transition; a terminal
+# status is final and ``budget_released_at`` is stamped with it (Alembic 0073).
+AGENT_RUN_LIVE_STATUSES = ("queued", "running", "waiting_user")
+AGENT_RUN_TERMINAL_STATUSES = tuple(s for s in AGENT_RUN_STATUSES if s not in AGENT_RUN_LIVE_STATUSES)
 # ADR 0006 subject kinds that have a typed column here, plus kinds without one.
 AGENT_SUBJECT_COLUMNS: dict[str, str] = {
     "problem_spec": "problem_spec_id",
@@ -214,6 +218,9 @@ CK_AGENT_RUNS_TOOL_CATALOG_DIGEST = sql_digest("tool_catalog_digest")
 CK_AGENT_RUNS_DATA_CLASS = sql_in_clause("data_class", DATA_CLASSES)
 CK_AGENT_RUNS_OUTCOME_SCOPE = sql_in_clause("outcome_scope", OUTCOME_SCOPES)
 CK_AGENT_RUNS_STATUS = sql_in_clause("status", AGENT_RUN_STATUSES)
+CK_AGENT_RUNS_RELEASED_TERMINAL = (
+    f"budget_released_at IS NULL OR {sql_in_clause('status', AGENT_RUN_TERMINAL_STATUSES)}"
+)
 CK_AGENT_RUNS_LIMITS = sql_object("limits", RUN_LIMITS_MAX_BYTES)
 CK_AGENT_RUNS_USAGE = sql_object("usage", RUN_USAGE_MAX_BYTES)
 CK_AGENT_RUNS_PAGE_CONTEXT = sql_object("page_context", PAGE_CONTEXT_MAX_BYTES, nullable=True)
@@ -225,7 +232,8 @@ CK_AGENT_RUNS_IDEMPOTENCY = (
     "(idempotency_key IS NULL) = (idempotency_digest IS NULL) "
     f"AND (idempotency_digest IS NULL OR idempotency_digest ~ '{HEX_SHA256_PATTERN}')"
 )
-# Mutable columns of §2.1; ``context_digest`` (step 3) and ``held_micros`` (step 5) are write-once.
+# Mutable columns of §2.1; ``context_digest`` (step 3), ``held_micros`` (step 5) and
+# ``budget_released_at`` (step 9, Alembic 0073) are write-once.
 AGENT_RUNS_FROZEN_COLUMNS = (
     "id",
     "workspace_id",

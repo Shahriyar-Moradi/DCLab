@@ -11,7 +11,8 @@
   ``metadata``; only text a tenant wrote); and ``<key>.data`` with dataset text (the
   source datasets; under an ``aggregates`` path it carries that path's class and scope
   because such text embeds the numbers; elsewhere number-bearing dataset text goes to
-  ``<key>.agg``; omitted when no source dataset is recorded: fail closed). ``Untrusted`` carries
+  ``<key>.agg``; text embedding column values goes to ``<key>.sample``, class
+  ``sample_values``; omitted when no source dataset is recorded: fail closed). ``Untrusted`` carries
   ≤ 4000 chars and no ``truncated`` key; object keys that are not code keys, code
   values that name the holdout, and anything nested deeper than 5 levels are dropped.
 """
@@ -70,6 +71,8 @@ def _uuid(value: str) -> UUID | None:
 def _matches(text: Text, part: str) -> bool:
     if text.origin == "workspace":
         return part == "workspace"
+    if text.sample:
+        return part == "dataset_sample"
     return part in ("dataset_any", "dataset_aggregate" if text.aggregate else "dataset")
 
 
@@ -157,13 +160,13 @@ def to_context_fields(tool: str, shaped: Shaped) -> tuple[ContextField, ...]:
         # a recorded source dataset it is omitted (the gateway refuses unsourced text).
         if not datasets:
             continue
-        splits = ((".data", "dataset_any", True),) if aggregate else (
-            (".data", "dataset", False), (".agg", "dataset_aggregate", True))
-        for suffix, part, is_aggregate in splits:
+        splits = ((".data", "dataset_any", "aggregates"),) if aggregate else (
+            (".data", "dataset", "metadata"), (".agg", "dataset_aggregate", "aggregates"))
+        for suffix, part, data_class in (*splits, (".sample", "dataset_sample", "sample_values")):
             dataset = _part(value, part)
             if dataset is not _DROP:
-                fields.append(ContextField(key=f"{key}{suffix}", value=dataset,
-                                           data_class="aggregates" if is_aggregate else "metadata",
-                                           outcome_scope=shaped.outcome_scope if is_aggregate else "none",
+                scoped = data_class == "aggregates" or (aggregate and data_class == "sample_values")
+                fields.append(ContextField(key=f"{key}{suffix}", value=dataset, data_class=data_class,
+                                           outcome_scope=shaped.outcome_scope if scoped else "none",
                                            sources=datasets))
     return tuple(fields)

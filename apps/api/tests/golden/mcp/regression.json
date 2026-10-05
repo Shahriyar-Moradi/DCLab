@@ -748,7 +748,7 @@
           "content_origin": "agent",
           "decision_type": "champion_promoted",
           "details": {
-            "untrusted_text": "{\"ref_moves\":[{\"from\":null,\"from_version\":null,\"ref_kind\":\"problem_spec\",\"to\":{\"id\":\"<id:3>\",\"kind\":\"problem_spec\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"dataset\",\"to\":{\"id\":\"<id:2>\",\"kind\":\"dataset_version\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"split_plan\",\"to\":{\"id\":\"<id:9>\",\"kind\":\"split_plan\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"feature_recipe\",\"to\":{\"id\":\"<id:23>\",\"kind\":\"feature_recipe\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"champion_model\",\"to\":{\"id\":\"<id:24>\",\"kind\":\"model_version\"}}],\"skipped_refs\":[]}"
+            "untrusted_text": "{\"ref_moves\":[{\"from\":null,\"from_version\":null,\"ref_kind\":\"problem_spec\",\"to\":{\"id\":\"<id:3>\",\"kind\":\"problem_spec\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"dataset\",\"to\":{\"id\":\"<id:2>\",\"kind\":\"dataset_version\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"split_plan\",\"to\":{\"id\":\"<id:9>\",\"kind\":\"split_plan\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"feature_recipe\",\"to\":{\"id\":\"<id:23>\",\"kind\":\"feature_recipe\"}},{\"from\":null,\"from_version\":null,\"ref_kind\":\"champion_model\",\"to\":{\"id\":\"<id:24>\",\"kind\":\"model_version\"}}],\"service_attached_evidence\":[],\"skipped_refs\":[]}"
           },
           "effective_state": "proposed",
           "evidence_refs": [],

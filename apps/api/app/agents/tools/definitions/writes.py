@@ -4,9 +4,11 @@ From an agent a write tool never acts: the harness validates the arguments here 
 stores them in a ``ToolCallProposal`` at L1 under ``decision_point_key``; the command
 runs through ``services`` (the functions the ``/v1`` route calls) only when a human
 accepts it (P6.6-A), where the validator runs again. Validators are deterministic
-and never read holdout: an agent may not cite the final holdout as evidence (a human
-adds the final-evaluation citation when accepting a champion move). The MCP-only
-``idempotency_key`` salt is not part of these schemas (the proposal id is the key).
+and never read holdout: an agent may not cite the final holdout as evidence; on a
+champion move DCLab attaches the promoted model's own locked final evaluation itself
+(``project_ref_service.champion_final_evaluation``) and only a human accepts. The
+harness also checks that every node an argument names is in the run's project. The
+MCP-only ``idempotency_key`` salt is not part of these schemas (the proposal id is the key).
 """
 
 from __future__ import annotations
@@ -80,7 +82,7 @@ class RecordDecisionInput(BaseModel):
     subject_kind: str | None = Field(default=None, description="e.g. experiment, model_version, project")
     subject_id: UUID | None = None
     evidence_refs: list[dict[str, Any]] | None = Field(default=None, max_length=20, description="[{kind, id, metric?, scope?}]")  # noqa: E501
-    ref_moves: dict[str, UUID] | None = Field(default=None, description="Propose moving refs instead: {ref_kind: target_id}. A champion_model move also moves feature_recipe to the model's recipe; the human who accepts it cites the final evaluation.")  # noqa: E501
+    ref_moves: dict[str, UUID] | None = Field(default=None, description="Propose moving refs instead: {ref_kind: target_id}. A champion_model move also moves feature_recipe to the model's recipe. Cite CV evidence only: DCLab attaches the promoted model's final evaluation itself, and only a human accepts.")  # noqa: E501
     facts: Obj = None
 
 

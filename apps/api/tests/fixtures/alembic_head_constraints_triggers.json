@@ -227,6 +227,11 @@
     },
     {
       "table": "agent_runs",
+      "name": "ck_agent_runs_released_terminal",
+      "definition": "CHECK (((budget_released_at IS NULL) OR ((status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'rejected_by_validator'::character varying, 'over_budget'::character varying, 'timed_out'::character varying, 'cancelled'::character varying, 'closed'::character varying])::text[]))))"
+    },
+    {
+      "table": "agent_runs",
       "name": "ck_agent_runs_runtime",
       "definition": "CHECK (((runtime)::text = ANY ((ARRAY['fake'::character varying, 'nooa_predict'::character varying, 'lead_loop'::character varying])::text[])))"
     },
@@ -1644,6 +1649,11 @@
     },
     {
       "table": "agent_runs",
+      "name": "agent_runs_lifecycle",
+      "definition": "CREATE TRIGGER agent_runs_lifecycle BEFORE UPDATE OF status, budget_released_at ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION guard_agent_run_lifecycle()"
+    },
+    {
+      "table": "agent_runs",
       "name": "agent_runs_retention_delete",
       "definition": "CREATE TRIGGER agent_runs_retention_delete BEFORE DELETE ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
     },
@@ -2008,6 +2018,10 @@
     {
       "name": "force_created_at_now",
       "definition": "CREATE OR REPLACE FUNCTION public.force_created_at_now()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    NEW.created_at := now();\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "guard_agent_run_lifecycle",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_agent_run_lifecycle()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF OLD.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.status IS DISTINCT FROM OLD.status THEN\n        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;\n    END IF;\n    IF OLD.budget_released_at IS NOT NULL\n        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN\n        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "guard_llm_invocation_ledger",

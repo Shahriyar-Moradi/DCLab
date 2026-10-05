@@ -284,12 +284,15 @@ class Text:
     (names, descriptions, intents, rationales, the business objective); ``dataset`` =
     everything else, bound by ADR 0005 labels: column names, findings messages,
     generated code and any DCLab-written text. ``aggregate`` marks dataset text that
-    embeds numbers derived from the data (CV scores, class balance)."""
+    embeds numbers derived from the data (CV scores, class balance); ``sample`` marks
+    dataset text that embeds column values (the target's positive label / class
+    labels): class ``sample_values`` (ADR 0009 §8), dropped unless the policy allows them."""
 
     text: str
     limit: int
     origin: TextOrigin
     aggregate: bool = False
+    sample: bool = False
 
 
 class Code(str):
@@ -307,6 +310,11 @@ def text(value: Any, limit: int = MAX_UNTRUSTED, origin: TextOrigin = "workspace
 def data_text(value: Any, limit: int = MAX_UNTRUSTED, *, aggregate: bool = False) -> Text | None:
     raw = _as_text(value)
     return None if raw is None else Text(raw, limit, "dataset", aggregate)
+
+
+def sample_text(value: Any, limit: int = MAX_UNTRUSTED) -> Text | None:
+    raw = _as_text(value)
+    return None if raw is None else Text(raw, limit, "dataset", sample=True)
 
 
 def code(value: Any) -> Code | None:

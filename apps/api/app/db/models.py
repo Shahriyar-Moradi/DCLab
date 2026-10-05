@@ -240,6 +240,7 @@ from app.domain.agent_records import (
     CK_AGENT_RUNS_PROMPT_RELEASE,
     CK_AGENT_RUNS_PURPOSE,
     CK_AGENT_RUNS_RUNTIME,
+    CK_AGENT_RUNS_RELEASED_TERMINAL,
     CK_AGENT_RUNS_STATUS,
     CK_AGENT_RUNS_SUBJECT_KIND,
     CK_AGENT_RUNS_SUBJECT_MATCHES_KIND,
@@ -6619,6 +6620,7 @@ class AgentRun(Base):
         CheckConstraint(CK_AGENT_RUNS_DATA_CLASS, name="ck_agent_runs_data_class"),
         CheckConstraint(CK_AGENT_RUNS_OUTCOME_SCOPE, name="ck_agent_runs_outcome_scope"),
         CheckConstraint(CK_AGENT_RUNS_STATUS, name="ck_agent_runs_status"),
+        CheckConstraint(CK_AGENT_RUNS_RELEASED_TERMINAL, name="ck_agent_runs_released_terminal"),
         CheckConstraint(CK_AGENT_RUNS_LIMITS, name="ck_agent_runs_limits"),
         CheckConstraint(CK_AGENT_RUNS_USAGE, name="ck_agent_runs_usage"),
         CheckConstraint(CK_AGENT_RUNS_PAGE_CONTEXT, name="ck_agent_runs_page_context"),
@@ -6730,6 +6732,8 @@ class AgentRun(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Durable, write-once release marker stamped by the gateway's release CAS (Alembic 0073).
+    budget_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

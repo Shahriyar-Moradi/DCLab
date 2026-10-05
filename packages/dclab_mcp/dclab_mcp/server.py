@@ -662,7 +662,7 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
                         subject_kind: Annotated[str | None, Field(description="e.g. experiment, model_version, project")] = None,  # noqa: E501
                         subject_id: Annotated[str | None, Field()] = None,
                         evidence_refs: Annotated[list[dict[str, Any]] | None, Field(max_length=20, description="[{kind, id, metric?, scope?}]")] = None,  # noqa: E501
-                        ref_moves: Annotated[dict[str, str] | None, Field(description="Propose moving refs instead: {ref_kind: target_id}. A champion_model move also moves feature_recipe to the model's recipe and cites the model's final_holdout in evidence_refs.")] = None,  # noqa: E501
+                        ref_moves: Annotated[dict[str, str] | None, Field(description="Propose moving refs instead: {ref_kind: target_id}. A champion_model move also moves feature_recipe to the model's recipe. Cite CV evidence only: DCLab attaches the promoted model's final evaluation itself, and only a human accepts.")] = None,  # noqa: E501
                         facts: Obj = None, idempotency_key: Salt = None) -> CallToolResult:
         def call() -> dict[str, Any]:
             pid = uuid_arg(project_id, "project_id")
