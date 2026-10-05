@@ -7,7 +7,7 @@ resources and status, not internal service function names.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Literal, Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,6 +52,13 @@ class ExecutionRequestCreate(BaseModel):
 
 class ExecutionTargetConfirmation(BaseModel):
     target_column: str = Field(min_length=1, max_length=256)
+
+
+class ExecutionSplitConfirmation(BaseModel):
+    """A person's answer to ``split_confirmation_required`` (P6.9-A, ADR 0008 §2): keep the
+    rule's split; the run plan's split answer is refused for this execution."""
+
+    answer: Literal["keep_rule_split"]
 
 
 class ExecutionRequestRead(BaseModel):

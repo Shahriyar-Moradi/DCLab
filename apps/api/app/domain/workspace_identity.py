@@ -88,6 +88,14 @@ class ProblemSpecCreateRequest(BaseModel):
     constraints: dict[str, Any] = Field(default_factory=dict)
     success_criteria: dict[str, Any] = Field(default_factory=dict)
     status: str = Field(default="draft", max_length=32)
+    plan: UUID | None = Field(
+        default=None,
+        description=(
+            "An ExperimentPlanProposal of this project (P6.9-A; the same checks as a run's plan): its "
+            "target_column and primary_metric fill the spec. A value here that differs, or an unusable "
+            "plan, is a 422 plan_refused. A spec does not consume the plan."
+        ),
+    )
 
     @model_validator(mode="after")
     def _objective_is_valid(self) -> ProblemSpecCreateRequest:

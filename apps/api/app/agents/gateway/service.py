@@ -58,7 +58,7 @@ from app.agents.gateway.contract import (
 from app.agents.gateway.limits import LIMITS, GatewayLimits
 from app.agents.gateway.providers import Provider, ProviderCall, ProviderError, default_providers
 from app.agents.gateway.router import Route, route
-from app.agents.governance.decision_points import REGISTRY
+from app.agents.governance.decision_points import REGISTRY, registry_key_for
 from app.agents.governance.policy import PolicyUnavailable, effective_policy
 from app.agents.governance.switches import effective_switches
 from app.agents.prompt_releases import (
@@ -576,13 +576,16 @@ class GatewayService:
         # 2. switches (the provider switch is checked again once the route is known)
         switches = effective_switches(db, r.workspace_id)
         ai_enabled = bool(self._settings().ai_enabled)
-        blocking = switches.blocking(ai_enabled=ai_enabled, agent_key=call.agent_key, purpose=r.purpose)
+        # A legacy purpose also obeys the switch of its registry point (P6.9-A, ADR 0008 §1).
+        purposes = dict.fromkeys(p for p in (r.purpose, registry_key_for(r.purpose)) if p)
+        blocking = next((b for p in purposes if (b := switches.blocking(
+            ai_enabled=ai_enabled, agent_key=call.agent_key, purpose=p))), None)
         if blocking:
             raise GatewayRefusal("kill_switch", "AI is switched off", scope=blocking)
         # 3. router, provider adapter, prompt release
         call.route = route(policy, role=call.role, agent_key=call.agent_key, requested=steps.requested_model)
-        blocking = switches.blocking(ai_enabled=ai_enabled, agent_key=call.agent_key,
-                                     provider=call.route.provider, purpose=r.purpose)
+        blocking = next((b for p in purposes if (b := switches.blocking(
+            ai_enabled=ai_enabled, agent_key=call.agent_key, provider=call.route.provider, purpose=p))), None)
         if blocking:
             raise GatewayRefusal("kill_switch", "AI is switched off", scope=blocking)
         call.adapter = self._provider(call.route.provider)

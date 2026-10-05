@@ -24,7 +24,11 @@ from app.services.auto_train.branch import apply_missing_value_overrides
 from app.services.auto_train.context import RunContext, StageHalt
 from app.services.auto_train.decision_points import resolve_leakage_point
 from app.services.auto_train.plan_points import resolve_missing_point
-from app.services.lab_decision_ledger import leakage_reviewer, record_missing_value_decisions
+from app.services.lab_decision_ledger import (
+    consult_missing_values,
+    leakage_reviewer,
+    record_missing_value_decisions,
+)
 
 
 class TrainOnlyDecisionsInput(BaseModel):
@@ -121,12 +125,17 @@ def run_train_only_decisions(
         c for c in inp.feature_columns if c in locked_train.columns and c != SOURCE_ROW_COLUMN
     ]
     missing_plan = plan_missing_values(locked_train, decision_columns)
-    # P6.9-A column.missing_value_action: the run plan's (or the parent's inherited) actions,
-    # before the branch's own drop/keep treatments (which take precedence).
-    resolve_missing_point(ctx, locked_train=locked_train, missing_plan=missing_plan,
-                          leakage_excluded=set(leakage_excluded),
-                          protected={target.column, development_plan.group_column, development_plan.time_column,
-                                     infer_entity_column(locked_train, decision_columns)})
+    # The legacy decision agent answers ambiguous columns (interim AI source; root runs only:
+    # a branch makes no new AI decision); nothing is applied here.
+    legacy_missing = consult_missing_values(db, upload.id, locked_train, missing_plan, target.column,
+                                            consult_agent=ctx.branch is None)
+    # P6.9-A column.missing_value_action: the run plan's / legacy agent's (or the parent's
+    # inherited) actions by level, before the branch's own drop/keep treatments (which win).
+    agent_applied = resolve_missing_point(
+        ctx, locked_train=locked_train, missing_plan=missing_plan, leakage_excluded=set(leakage_excluded),
+        protected={target.column, development_plan.group_column, development_plan.time_column,
+                   infer_entity_column(locked_train, decision_columns)},
+        legacy={c: item.action for c, item in legacy_missing.items() if item.action})
     if ctx.branch is not None:
         # Branch column treatments (drop / keep), decided before the ledger records them.
         apply_missing_value_overrides(ctx.branch, missing_plan, leakage_excluded=set(leakage_excluded))
@@ -136,6 +145,8 @@ def run_train_only_decisions(
         locked_train,
         missing_plan,
         target.column,
+        consulted=legacy_missing,
+        agent_applied=agent_applied,
     )
     db.commit()
     ctx.emit_event(

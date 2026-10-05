@@ -951,6 +951,20 @@
             "default": null,
             "title": "Constraints"
           },
+          "plan": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "An accepted/applied ExperimentPlanProposal id: its target_column and primary_metric fill the spec (not consumed).",
+            "title": "Plan"
+          },
           "prediction_horizon": {
             "anyOf": [
               {

@@ -78,13 +78,11 @@ class Settings(BaseSettings):
     # Platform AI flag (ADR 0009 §3): default off; production must set it explicitly
     # AND have the platform ``global_ai`` switch row on. Every model call goes through
     # the AI gateway (models from the governance policy roles; the provider key is read
-    # only by ``app/agents/gateway/providers``). The two legacy flags below gate their
-    # paths in addition to AI_ENABLED until P6.9-A retires them (kill switches replace them).
+    # only by ``app/agents/gateway/providers``). P6.9-A retired the legacy
+    # DECISION_AGENT_ENABLED / PIPELINE_LLM_VERIFIER_ENABLED flags (ADR 0008 §1): the Lab
+    # decision agent and the advisory auditor run whenever AI_ENABLED is on, governed by
+    # kill switches (``agent:<key>`` / ``purpose:<key>`` rows) and decision-point levels.
     ai_enabled: bool = False
-    # Lab decision agent (semantic target / column type / missing value / leakage review).
-    decision_agent_enabled: bool = False
-    # Advisory pipeline auditor. Deterministic verification remains authoritative.
-    pipeline_llm_verifier_enabled: bool = False
     pipeline_llm_timeout_seconds: float = 30.0
     # Application-level object storage. Default is local disk for tests/dev.
     # S3/GCS adapters live behind ObjectStorage; core services never import SDKs.
@@ -181,14 +179,9 @@ def validate_runtime_settings(settings: Settings) -> None:
         return
     if not publication_enforced(settings):
         problems.append("DATASET_PUBLICATION_ENFORCED cannot be false in production")
-    # The AI gateway enforces every dataset and column llm_exposure_policy (ADR 0009 §8), so
-    # the advisory verifier may run in production. The legacy decision writers stay refused
-    # (deviation from ADR 0009 §8): they apply answers above the ADR 0008 decision-point caps.
-    if settings.decision_agent_enabled:
-        problems.append(
-            "DECISION_AGENT_ENABLED cannot be on in production until P6.9-A applies "
-            "ADR 0008 decision-point levels"
-        )
+    # AI in production (P6.9-A lifted the P6.2-B2 block): the gateway enforces every dataset
+    # and column llm_exposure_policy (ADR 0009 §8), the kill switches and budgets, and the
+    # legacy decision writers apply nothing above the ADR 0008 decision-point levels.
     if _secret_is_unsafe(settings.jwt_secret):
         problems.append("JWT_SECRET is missing or the development default")
     if _secret_is_unsafe(settings.auth_token_hash_secret):

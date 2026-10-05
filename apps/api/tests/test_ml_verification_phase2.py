@@ -29,8 +29,7 @@ HOLDOUT_SENTINEL = 0.987654321
 
 
 def _settings(*, enabled: bool = True, ai_enabled: bool = True):
-    return SimpleNamespace(pipeline_llm_verifier_enabled=enabled, ai_enabled=ai_enabled,
-                           pipeline_llm_timeout_seconds=1.0)
+    return SimpleNamespace(ai_enabled=ai_enabled and enabled, pipeline_llm_timeout_seconds=1.0)
 
 
 def _report(status: str = "VERIFIED") -> dict:
@@ -89,7 +88,7 @@ def _attributed(auth_client, db_session, monkeypatch, status: str = "VERIFIED", 
         payload = response if response is not None else _advisory()
         return payload.model_dump(mode="json") if isinstance(payload, PipelineAuditReport) else payload
 
-    ai = enable_legacy_ai(monkeypatch, db_session, handler=answer, verifier=True)
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=answer)
     return upload, ai
 
 

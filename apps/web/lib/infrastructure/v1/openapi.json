@@ -1490,6 +1490,21 @@
         "title": "ExecutionRequestRead",
         "type": "object"
       },
+      "ExecutionSplitConfirmation": {
+        "description": "A person's answer to ``split_confirmation_required`` (P6.9-A, ADR 0008 §2): keep the\nrule's split; the run plan's split answer is refused for this execution.",
+        "properties": {
+          "answer": {
+            "const": "keep_rule_split",
+            "title": "Answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "title": "ExecutionSplitConfirmation",
+        "type": "object"
+      },
       "ExecutionTargetConfirmation": {
         "properties": {
           "target_column": {
@@ -5079,6 +5094,19 @@
             "title": "Constraints",
             "type": "object"
           },
+          "plan": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An ExperimentPlanProposal of this project (P6.9-A; the same checks as a run's plan): its target_column and primary_metric fill the spec. A value here that differs, or an unusable plan, is a 422 plan_refused. A spec does not consume the plan.",
+            "title": "Plan"
+          },
           "prediction_horizon": {
             "anyOf": [
               {
@@ -7605,6 +7633,176 @@
           }
         },
         "summary": "Read Execution Request",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/execution-requests/{request_id}/split-confirmation": {
+      "post": {
+        "description": "Answer ``split_confirmation_required``: keep the rule's split and resume once (the\nrun plan's split answer is refused for this execution). Replay-safe by state; ``409``\nwhen the request is not waiting for a split answer; ``If-Match`` as for the target.",
+        "operationId": "confirm_execution_request_split_v1_execution_requests__request_id__split_confirmation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionSplitConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition failed (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Confirm Execution Request Split",
         "tags": [
           "v1"
         ]

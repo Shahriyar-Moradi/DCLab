@@ -80,6 +80,28 @@ def plan_for_request(db: Session, *, workspace_id: UUID, project_id: UUID, plan_
     return row.id, None
 
 
+SPEC_PLAN_FIELDS = ("target_column", "primary_metric")  # target.column, spec.objective (both L1)
+
+
+def plan_spec_answers(db: Session, *, workspace_id: UUID, project_id: UUID, plan_id: UUID) -> dict[str, str]:
+    """A ProblemSpec's answers from a run plan (P6.9-A): the same checks as a run's ``plan``
+    (``plan_for_request``), then its target and metric. Both points are L1: the spec is a
+    draft, or a proposal a person accepts. A spec does not consume the plan (single use binds
+    runs; a spec-side binding would need a migration). Raises ``PlanRefusedError``."""
+
+    from app.domain.errors import PlanRefusedError
+
+    _bound, refusal = plan_for_request(db, workspace_id=workspace_id, project_id=project_id, plan_id=plan_id)
+    if refusal is not None:
+        raise PlanRefusedError(str(refusal["code"]))
+    row = db.get(AgentProposal, plan_id)
+    plan = ExperimentPlan.model_validate(row.payload)
+    answers = {name: getattr(plan, name) for name in SPEC_PLAN_FIELDS if getattr(plan, name) is not None}
+    if not answers:
+        raise PlanRefusedError("plan_has_no_spec_answers")
+    return answers
+
+
 def load_run_plan(db: Session, upload: ClientLabUpload) -> RunPlan | None:
     """The run's plan, re-validated at job claim; None when the request named none."""
 
@@ -105,10 +127,12 @@ def load_run_plan(db: Session, upload: ClientLabUpload) -> RunPlan | None:
     run = db.get(AgentRun, row.run_id) if row.run_id is not None else None
     results_at = first_results_at(db, request, upload, plan)
     refused = {}
+    if plan.split is not None and (request.request_spec or {}).get("split_resolution") == "keep_rule_split":
+        refused["split"] = "kept_rule_split"  # a person answered the split confirmation
     if results_at is not None and row.created_at is not None and row.created_at > results_at:
         # "Decisions that cannot follow results": an objective or portfolio answer made after
         # the first completed experiment could have adapted to its results.
-        refused = {name: RESULTS_EXIST for name in RESULTS_BOUND_FIELDS if getattr(plan, name) is not None}
+        refused |= {name: RESULTS_EXIST for name in RESULTS_BOUND_FIELDS if getattr(plan, name) is not None}
     return RunPlan(proposal_id=row.id, status=row.status, plan=plan, agent_run_id=row.run_id,
                    prompt_release_id=run.prompt_release_id if run is not None else None,
                    model_id=run.model if run is not None else None, refused_fields=refused)

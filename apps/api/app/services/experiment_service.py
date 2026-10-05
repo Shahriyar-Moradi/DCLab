@@ -334,7 +334,8 @@ def start_root_experiment(
         workflow_run_id=workflow_run.id,
         pipeline_run_id=shell.id,
     )
-    request.plan_proposal_id = plan_id  # consumed (unique: single use)
+    if plan_id is not None:
+        _bind_plan(db, request, plan_id)
     job = create_auto_train_job(
         db,
         workspace_id=workspace_id,
@@ -349,6 +350,28 @@ def start_root_experiment(
     db.commit()
     enqueue_auto_train(upload.id)
     return RootRunResult(shell, request, upload, job)
+
+
+def _bind_plan(db: Session, request: Any, plan_id: UUID) -> None:
+    """Consume the plan (unique: single use). Two runs naming the same plan at once: the
+    loser's request records ``plan_already_used`` and its run is rule-only (never an error)."""
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.decision_record_service import unique_violation
+    from app.services.execution_request_service import bound_request_spec
+
+    db.flush()  # everything else is written before the savepoint, so only the binding can roll back
+    try:
+        with db.begin_nested():
+            request.plan_proposal_id = plan_id
+            db.flush()
+    except IntegrityError as exc:  # the single-use index, or the plan's FK (deleted meanwhile)
+        used = unique_violation(exc) == "uq_execution_requests_plan_proposal"
+        db.refresh(request)
+        request.request_spec = bound_request_spec({**dict(request.request_spec or {}), "plan_refusal": {
+            "code": "plan_already_used" if used else "plan_not_found", "proposal_id": str(plan_id)}})
+        db.flush()
 
 
 # --- reads ---------------------------------------------------------------------------

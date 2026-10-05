@@ -70,6 +70,7 @@ def create_problem_spec(
     success_criteria: dict[str, Any] | None = None,
     status: str = "draft",
     created_by_service_token_id: UUID | None = None,
+    plan: UUID | None = None,
 ) -> ProblemSpec:
     if not can_perform_ml_write(db, actor, workspace_id):
         raise IdentityError(
@@ -83,6 +84,9 @@ def create_problem_spec(
         raise IdentityError("problem spec status must be draft or locked")
     constraints = constraints or {}
     success_criteria = success_criteria or {}
+    if plan is not None:  # P6.9-A: a run plan's target / metric answers fill the spec (both L1)
+        target_column, primary_metric = _plan_answers(db, project, plan, task_type=task_type, constraints=constraints,
+                                                      target_column=target_column, primary_metric=primary_metric)
     if created_by_service_token_id is not None:
         _check_agent_spec_text(
             task_type=task_type, business_objective=business_objective, target_column=target_column,
@@ -125,6 +129,27 @@ def create_problem_spec(
     db.add(spec)
     db.flush()
     return spec
+
+
+def _plan_answers(db: Session, project: Project, plan: UUID, *, task_type: str, constraints: dict[str, Any],
+                  target_column: str | None, primary_metric: str | None) -> tuple[str | None, str | None]:
+    """(target, metric) with the plan's answers; a request value that differs is refused,
+    and a plan metric must be valid for the task (the request validator's own check)."""
+
+    from app.domain.errors import PlanRefusedError
+    from app.engine.modeling.objective import parse_objective
+    from app.services.run_plan_service import plan_spec_answers
+
+    answers = plan_spec_answers(db, workspace_id=project.workspace_id, project_id=project.id, plan_id=plan)
+    given = {"target_column": target_column, "primary_metric": primary_metric}
+    if any(given[name] is not None and given[name] != value for name, value in answers.items()):
+        raise PlanRefusedError("plan_conflicts_with_request")
+    merged = {**given, **answers}
+    try:
+        parse_objective(task_type, primary_metric=merged["primary_metric"], constraints=constraints)
+    except ValueError as exc:
+        raise PlanRefusedError("plan_metric_invalid_for_task") from exc
+    return merged["target_column"], merged["primary_metric"]
 
 
 def _check_agent_spec_text(**fields: Any) -> None:

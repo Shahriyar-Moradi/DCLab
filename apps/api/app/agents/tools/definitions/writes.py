@@ -53,6 +53,7 @@ class ProposeProblemSpecInput(BaseModel):
     prediction_horizon: Opt = None
     constraints: Obj = None
     success_criteria: Obj = None
+    plan: UUID | None = Field(default=None, description="An accepted/applied ExperimentPlanProposal id: its target_column and primary_metric fill the spec (not consumed).")  # noqa: E501
 
 
 class RunExperimentInput(BaseModel):

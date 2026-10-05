@@ -131,6 +131,7 @@
   "POST /v1/decisions/{decision_id}/supersede",
   "POST /v1/execution-requests",
   "GET /v1/execution-requests/{request_id}",
+  "POST /v1/execution-requests/{request_id}/split-confirmation",
   "POST /v1/execution-requests/{request_id}/target-confirmation",
   "GET /v1/experiments",
   "POST /v1/experiments",

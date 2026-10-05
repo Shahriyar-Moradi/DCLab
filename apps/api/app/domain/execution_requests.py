@@ -44,6 +44,10 @@ REQUEST_NEEDS_INPUT = "needs_input"
 TARGET_CONFIRMATION_REQUIRED = "target_confirmation_required"
 # P6.9-A: a run plan's split answer needs a person before anything is split.
 SPLIT_CONFIRMATION_REQUIRED = "split_confirmation_required"
+SPLIT_CONFIRMED = "split_confirmed"
+# The answers that resolve a split confirmation (P6.9-A): keep the rule's split; the run
+# plan's split answer is refused for this execution and the run resumes.
+SPLIT_RESOLUTIONS = ("keep_rule_split",)
 TARGET_CONFIRMED = "target_confirmed"
 EXECUTION_RESUMED = "execution_resumed"
 
@@ -94,8 +98,10 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         # Batch predictions (P4.9-A), written by the server only.
         "model_version_id",
         "output_format",
-        # P6.9-A: why a root run's ``plan`` input was refused (the run is rule-only).
+        # P6.9-A: why a root run's ``plan`` input was refused (the run is rule-only), and a
+        # person's answer to a split confirmation (``SPLIT_RESOLUTIONS``).
         "plan_refusal",
+        "split_resolution",
     }
 )
 

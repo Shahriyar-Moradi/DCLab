@@ -150,6 +150,9 @@ def open_ingest_portfolio(task_type: str, overrides: dict | None = None, subset:
     for name in overrides.get("families_include") or []:
         if name in avail and name not in excluded and name not in families and name not in DUMMY_FAMILIES:
             families.append(name)
+    if subset is not None:  # a restored family (the subset's revert) keeps the rule's candidate order
+        order = open_ingest_families(task_type)
+        families = [n for n in order if n in families] + [n for n in families if n not in order]
     return families
 
 

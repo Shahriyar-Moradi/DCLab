@@ -60,7 +60,9 @@ def _concrete(path: str, fill: str = UUID_ZERO) -> str:
 def _call(client, method: str, path: str, **kwargs):
     if method == "POST":
         body = {}
-        if "confirmation" in path:
+        if path.endswith("/split-confirmation"):
+            body = {"answer": "keep_rule_split"}
+        elif "confirmation" in path:
             body = {"target_column": "y"}
         elif path.endswith("/problem-specs"):
             body = {"task_type": "binary", "business_objective": "x"}
@@ -123,6 +125,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/datasets/{dataset_id}",
         "POST /v1/execution-requests",
         "POST /v1/execution-requests/{request_id}/target-confirmation",
+        "POST /v1/execution-requests/{request_id}/split-confirmation",
         "GET /v1/execution-requests/{request_id}",
         "GET /v1/model-builds/{pipeline_run_id}",
         "GET /v1/model-builds/{pipeline_run_id}/events",

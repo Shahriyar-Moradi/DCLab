@@ -249,7 +249,7 @@ def test_ambiguous_deterministic_target_without_explicit_intent_stays_unresolved
 ):
     monkeypatch.setattr(
         "app.services.lab_decision_ledger.get_settings",
-        lambda: SimpleNamespace(decision_agent_enabled=False, decision_agent_api_key=""),
+        lambda: SimpleNamespace(ai_enabled=False),
     )
     frame = _ambiguous_binary_tie_frame()
     choice = resolve_execution_target(
@@ -307,7 +307,7 @@ def test_semantic_assistance_is_not_called_when_target_is_canonical(db_session, 
     assert choice.intent_source == "problem_spec"
 
 
-def test_semantic_assistance_may_resolve_genuinely_ambiguous_inference(auth_client, db_session, monkeypatch):
+def test_semantic_assistance_on_ambiguous_inference_is_only_a_suggestion(auth_client, db_session, monkeypatch):
     from legacy_ai_support import enable_legacy_ai, upload_via_api
 
     frame = pd.DataFrame(
@@ -332,9 +332,9 @@ def test_semantic_assistance_may_resolve_genuinely_ambiguous_inference(auth_clie
         columns=list(frame.columns),
         upload_id=upload.id,
     )
-    assert choice.column == "measure_b"
-    assert choice.source == "llm"
-    assert choice.intent_source == "llm"
+    # P6.9-A: target.column is L1; the run stops for a person, with the suggestion recorded.
+    assert choice.column is None and choice.intent_source == "unresolved"
+    assert choice.raw_llm_output["target"] == "measure_b" and choice.validator_verdict == "accept"
 
 
 def test_foreign_problem_spec_is_not_applied(db_session):

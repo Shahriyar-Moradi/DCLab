@@ -185,6 +185,61 @@ def test_plan_input_is_checked_bound_once_and_refusals_are_recorded(client, ai):
     ai.db.rollback()
 
 
+def test_two_runs_racing_for_one_plan_the_loser_runs_rule_only(client, ai, monkeypatch):
+    from app.services import run_plan_service
+
+    plan = _plan(ai, {"families": ["random_forest"]})
+    dataset_id = _dataset(client, ai)
+    first = _root(client, ai, dataset_id, plan=str(plan.id))
+    assert _request(ai.db, first).plan_proposal_id == plan.id
+    # The race: the check ran before the first run committed, so only the unique index sees it.
+    monkeypatch.setattr(run_plan_service, "plan_for_request", lambda db, **kw: (plan.id, None))
+    second = _root(client, ai, dataset_id, plan=str(plan.id))  # 202, not a 500
+    request = _request(ai.db, second)
+    assert request.plan_proposal_id is None
+    assert request.request_spec["plan_refusal"] == {"code": "plan_already_used", "proposal_id": str(plan.id)}
+    assert _work(ai.db, second.id).status == "completed"
+    assert "families" not in ai.db.get(Experiment, second.id).config  # rule-only
+
+
+def test_the_harness_refuses_a_plan_outside_the_run_project(ai):
+    from app.agents.harness.validation import check_proposal_nodes
+    from app.agents.tools.catalog import ToolError
+
+    own = _plan(ai, {"families": ["random_forest"]})
+    check_proposal_nodes(ai.db, workspace_id=ai.ws, project_id=ai.project, tool="run_experiment",
+                         arguments={"plan": str(own.id)})
+    for foreign in (uuid4(), own.id):
+        with pytest.raises(ToolError) as refused:
+            check_proposal_nodes(ai.db, workspace_id=ai.ws, project_id=uuid4() if foreign == own.id else ai.project,
+                                 tool="run_experiment", arguments={"plan": str(foreign)})
+        assert refused.value.code == "node_not_in_project"
+
+
+def test_a_problem_spec_takes_the_plan_target_and_metric_with_the_run_checks(client, ai):
+    url = f"/v1/projects/{ai.project}/problem-specs"
+    base = {"task_type": "binary", "business_objective": "Predict label."}
+    plan = _plan(ai, {"target_column": "label", "primary_metric": "f1"})
+    created = client.post(url, json={**base, "plan": str(plan.id)}, headers=_h(ai.setup, key=_key()))
+    assert created.status_code == 201, created.text
+    assert (created.json()["target_column"], created.json()["primary_metric"]) == ("label", "f1")
+    again = client.post(url, json={**base, "target_column": "label", "plan": str(plan.id)},
+                        headers=_h(ai.setup, key=_key()))
+    assert again.status_code == 201  # agreeing request values; a spec does not consume the plan
+
+    def refusal(payload, plan_id):
+        response = client.post(url, json={**base, **payload, "plan": str(plan_id)}, headers=_h(ai.setup, key=_key()))
+        assert response.status_code == 422, response.text
+        return response.json()["error"]["details"]["refusal"]
+
+    assert refusal({"target_column": "tenure"}, plan.id) == "plan_conflicts_with_request"
+    assert refusal({}, uuid4()) == "plan_not_found"
+    assert refusal({}, _plan(ai, {"target_column": "label"}, status="proposed").id) == "plan_not_accepted"
+    assert refusal({}, _plan(ai, {"families": ["random_forest"]}).id) == "plan_has_no_spec_answers"
+    assert refusal({"task_type": "regression"}, _plan(ai, {"primary_metric": "f1"}).id) == \
+        "plan_metric_invalid_for_task"
+
+
 def test_proposal_sources_are_exactly_one_and_review_items_are_l1(ai):
     base = dict(workspace_id=ai.ws, project_id=ai.project, decision_point_key="column.semantic_role",
                 level_at_proposal=1, answer_ceiling=2, schema_version=1, payload={"x": 1}, payload_digest="a" * 64,
@@ -318,6 +373,60 @@ def test_a_valid_split_change_stops_at_needs_input_before_the_holdout_lock(clien
     assert column["validator_reasons"] == ["needs_confirmation"]
 
 
+def test_keep_the_rule_split_resumes_the_parked_run_once_without_parking_again(client, ai):
+    plan = _plan(ai, {"split": {"strategy": "stratified_random", "test_size": 0.3}})
+    experiment = _root(client, ai, _dataset(client, ai), plan=str(plan.id))
+    _work(ai.db, experiment.id)
+    request = _request(ai.db, experiment)
+    assert request.status == "needs_input"
+    url = f"/v1/execution-requests/{request.id}/split-confirmation"
+    target = client.post(f"/v1/execution-requests/{request.id}/target-confirmation", json={"target_column": "tenure"},
+                         headers=_h(ai.setup, key=_key()))
+    assert target.status_code == 409  # the target is resolved; only the split question is open
+    wrong = client.post(url, json={"answer": "use_plan_split"}, headers=_h(ai.setup, key=_key()))
+    assert wrong.status_code == 422  # only the rule's split can be kept here
+    confirmed = client.post(url, json={"answer": "keep_rule_split"}, headers=_h(ai.setup, key=_key()))
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["status"] == "running"
+    replay = client.post(url, json={"answer": "keep_rule_split"}, headers=_h(ai.setup, key=_key()))
+    assert replay.status_code == 200  # replay-safe by state: the same answer returns the request
+    assert _work(ai.db, experiment.id).status == "completed", _upload(ai.db, experiment.id).pipeline_log.get("reason")
+    request = _request(ai.db, experiment)
+    assert request.status != "needs_input" and request.request_spec["split_resolution"] == "keep_rule_split"
+    assert _upload(ai.db, experiment.id).pipeline_status == "completed"
+    rows = list(ai.db.scalars(select(MlRunEvent).where(MlRunEvent.experiment_id == experiment.id)))
+    locked = next(e.payload for e in rows if e.event_type == "holdout_locked")
+    assert locked["requested_test_size"] == pytest.approx(0.2)  # the rule's fraction, not the plan's 0.3
+    events = [e.event_type for e in rows]
+    assert events.count("split_confirmation_required") == 1 and "split_confirmed" in events
+    confirmed_event = next(e.payload for e in rows if e.event_type == "split_confirmed")
+    assert confirmed_event["answer"] == "keep_rule_split" and confirmed_event["confirmed_by"]
+    # The parked run's record is reused on resume (records are idempotent per point and the
+    # rule value is unchanged); the plan evidence carries the refusal.
+    column = _column(_records(ai.db, experiment.id)["split.strategy"], "split")
+    assert column["source"] == "rule"
+    evidence = ai.db.get(Experiment, experiment.id).result["decision_points"]["plan"]
+    assert evidence["refused_fields"] == {"split": "kept_rule_split"}
+    late = client.post(url, json={"answer": "keep_rule_split"}, headers=_h(ai.setup, key=_key()))
+    assert late.status_code == 200  # still the same answer after completion
+
+
+def test_split_confirmation_needs_a_split_question(client, ai):
+    experiment = _root(client, ai, _dataset(client, ai))
+    response = client.post(f"/v1/execution-requests/{_request(ai.db, experiment).id}/split-confirmation",
+                           json={"answer": "keep_rule_split"}, headers=_h(ai.setup, key=_key()))
+    assert response.status_code == 409
+
+
+def test_a_families_revert_keeps_the_rule_candidate_order():
+    from app.engine.search.generator import open_ingest_families, open_ingest_portfolio
+
+    rule = open_ingest_families("binary")
+    last = rule[-1]
+    restored = open_ingest_portfolio("binary", {"families_include": rule[:1]}, subset=[last])
+    assert restored == [n for n in rule if n in {last, rule[0]}]
+
+
 # --- branches inherit (reproducibility, ADR 0008 §2c) --------------------------------------------
 
 
@@ -434,6 +543,48 @@ def test_a_branch_never_inherits_the_time_budget(client, ai):
     budget = _column(_records(ai.db, child.id)["training.families_budget"], "max_training_seconds")
     assert (budget["source"], budget["used"], budget["ai"]) == ("rule", 600.0, 300.0)
     assert _records(ai.db, child.id)["training.families_budget"].details["ai"]["refusals"] == ["budget_not_inherited"]
+
+
+@pytest.mark.parametrize(("jev_role", "kept"), [("numeric", False), ("categorical_code", True)])
+def test_a_legacy_l2_switch_applies_by_level_and_a_role_conflict_reverts_the_ledger(client, ai, monkeypatch,
+                                                                                     jev_role, kept):
+    from app.db.models import DataPreparationDecision, LabDecisionRecord
+    from app.engine.lab.decision_validator import ValidationResult
+    from app.services import lab_decision_ledger
+    from legacy_ai_support import enable_legacy_ai
+
+    low = {"column_type": {"action": "numerical", "evidence_field": "dtype", "rationale": "unsure", "confidence": 0.1},
+           "leakage_review": {"availability_status": "unknown", "risk_level": "LOW", "evidence_field": "column",
+                              "rationale": "unsure", "confidence": 0.1}}
+    enable_legacy_ai(monkeypatch, ai.db, handler=lambda call: {
+        "action": "impute_most_frequent", "evidence_field": "missing_fraction", "rationale": "a small integer code",
+        "confidence": 0.9} if call.agent_key == "missing_value" else low[call.agent_key])
+    # The legacy validator ties most_frequent to non-numeric dtypes, so in practice a legacy answer never
+    # reaches this L2 switch; accept it here to drive the decision-point path end to end.
+    monkeypatch.setattr(lab_decision_ledger, "validate_decision", lambda *a, **k: ValidationResult("accept", "t"))
+    ai.level["value"] = 2
+    ai.answers[dp.ROLE] = {"visits": (jev_role, 0.95), "*": ("numeric", 0.5)}
+    experiment = _root(client, ai, _dataset(client, ai, labelled=True))
+    assert _work(ai.db, experiment.id).status == "completed", _upload(ai.db, experiment.id).pipeline_log.get("reason")
+    experiment = ai.db.get(Experiment, experiment.id)
+    missing = _column(_records(ai.db, experiment.id)["column.missing_value_action"], "visits")
+    upload = _upload(ai.db, experiment.id)
+    ledger = ai.db.scalar(select(LabDecisionRecord).where(  # the missing-value row (not the column-type row)
+        LabDecisionRecord.upload_id == upload.id, LabDecisionRecord.column == "visits",
+        LabDecisionRecord.rule_decision == "impute_median"))
+    assert ledger.raw_llm_output["action"] == "impute_most_frequent"
+    if kept:  # applied at L2 through the hook; the ledger says the agent's answer was used
+        assert (missing["source"], missing["used"], missing["level"]) == ("ai", "impute_most_frequent", 2)
+        assert (ledger.source, ledger.final_decision) == ("llm", "impute_most_frequent")
+        assert "visits" in _modeled(experiment)[1] and experiment.config["ai_policy_digest"]
+    else:  # Jev disagrees: the rule for both, and the ledger and lineage agree with what trained
+        assert (missing["source"], missing["used"]) == ("rule", "impute_median")
+        assert (ledger.source, ledger.final_decision) == ("rule", "impute_median")
+        assert "visits" in _modeled(experiment)[0]
+    lineage = next(row for row in ai.db.scalars(select(DataPreparationDecision).where(
+        DataPreparationDecision.pipeline_run_id == experiment.id,
+        DataPreparationDecision.decision_type == "missing_value")) if row.evidence["column"] == "visits")
+    assert lineage.parameter_value["action"] == missing["used"]  # the locked lineage shows what trained
 
 
 @pytest.mark.parametrize(("jev_role", "kept"), [("numeric", False), ("categorical_code", True)])

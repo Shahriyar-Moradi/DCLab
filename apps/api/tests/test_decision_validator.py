@@ -57,14 +57,15 @@ def _decision(**overrides) -> MissingValueDecision:
 
 
 def test_allowed_actions_come_from_missing_value_v1():
-    assert ALLOWED_ACTIONS == {
+    assert ALLOWED_ACTIONS == {  # v1's enum plus v3's drop_column (P6.9-A)
         "drop_rows",
         "impute_mean",
         "impute_median",
         "impute_most_frequent",
         "domain_fill",
+        "drop_column",
     }
-    for action in ALLOWED_ACTIONS:
+    for action in ALLOWED_ACTIONS - {"drop_column"}:
         assert action in SYSTEM_PROMPT
 
 

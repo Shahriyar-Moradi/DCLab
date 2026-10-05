@@ -70,6 +70,22 @@ def resolve_target_point(ctx: Any, *, frame: pd.DataFrame, columns: list[str], r
     return used if used != rule else requested
 
 
+def resolve_legacy_target(ctx: Any, target: Any) -> dict[str, Any] | None:
+    """The legacy decision agent's accepted target answer (the rule could not decide) as an
+    interim AI answer of ``target.column`` (L1: never applied). Recorded; at L1 it is the
+    suggestion the needs_input target confirmation shows a person (returned)."""
+
+    raw = target.raw_llm_output or {}
+    if ctx.branch is not None or not raw.get("target") or str(target.validator_verdict) != "accept":
+        return None
+    resolution = resolve_plan_point(ctx, TARGET, {"target_column": target.column}, {},
+                                    legacy_answers={"target_column": raw["target"]})
+    if resolution is None or resolution.answers[0].level < 1:
+        return None  # L0: shadow only
+    return {"decision_point": TARGET, "target_column": raw["target"], "task_type": raw.get("task_type"),
+            "level": resolution.answers[0].level}
+
+
 def resolve_objective_point(ctx: Any, task_type: str, objective: Any) -> Any:
     """The run objective with the human-accepted plan's primary metric (validated)."""
 
@@ -166,6 +182,7 @@ def resolve_split_point(ctx: Any, *, frame: pd.DataFrame, rule: HoldoutPlan, sou
     else:
         value = _normalized(value, rule)
         reasons, _structural = split_reasons(rule, value, frame, target=target.column, task_type=target.task_type)
+        reasons = plan_refusal(ctx, "split") or reasons  # kept_rule_split: a person already answered
         confirm = not reasons and value != _split_value(rule)
     if confirm:  # a person confirms a valid change before anything is split
         reasons = ["needs_confirmation"]
@@ -227,9 +244,11 @@ def _missing_reasons(column: str, rule: str, ai: str, train: pd.DataFrame, *, le
 
 
 def resolve_missing_point(ctx: Any, *, locked_train: pd.DataFrame, missing_plan: Any, leakage_excluded: set[str],
-                          protected: set[str]) -> None:
-    """Apply the plan's (root) or the parent's inherited (branch) missing-value actions to
-    ``missing_plan`` (before the branch's own drop/keep overrides, which win)."""
+                          protected: set[str], legacy: dict[str, str] | None = None) -> set[str]:
+    """Apply the plan's or the legacy decision agent's (root; ``legacy``: accepted legacy
+    actions per column) or the parent's inherited (branch) missing-value actions to
+    ``missing_plan`` (before the branch's own drop/keep overrides, which win). Returns the
+    columns whose value came from the legacy agent's answer."""
 
     decisions = {item.column: item for item in missing_plan.column_decisions}
     rules = {column: item.action for column, item in decisions.items()}
@@ -248,14 +267,17 @@ def resolve_missing_point(ctx: Any, *, locked_train: pd.DataFrame, missing_plan:
     else:
         answers = plan_answers(ctx, MISSING) or {}
         answers = {c: a for c, a in answers.items() if c in rules}
+        legacy = {c: a for c, a in (legacy or {}).items() if c in rules and c not in answers}
+        every = {**legacy, **answers}
         plan = points.plan
         resolution = resolve_plan_point(
-            ctx, MISSING, rules, answers, kinds={c: _missing_kind(rules[c], a) for c, a in answers.items()},
+            ctx, MISSING, rules, answers, legacy_answers=legacy,
+            kinds={c: _missing_kind(rules[c], a) for c, a in every.items()},
             reasons={c: _missing_reasons(c, rules[c], a, locked_train, leakage_excluded=leakage_excluded,
-                                         protected=protected) for c, a in answers.items()},
-            # An applied (L2) treatment is settled against the role point first (§1b): recorded
-            # in run_column_roles. A human-accepted one is final and recorded now.
-            defer=plan is not None and not plan.human)
+                                         protected=protected) for c, a in every.items()},
+            # An AI treatment (applied plan or legacy answer at L2) is settled against the role
+            # point first (§1b) and recorded in run_column_roles; a human-accepted one is final.
+            defer=bool(legacy) or (bool(answers) and plan is not None and not plan.human))
     for answer in resolution.changed() if resolution is not None else []:
         decision = decisions[answer.question_key]
         decision.action = answer.used
@@ -263,6 +285,9 @@ def resolve_missing_point(ctx: Any, *, locked_train: pd.DataFrame, missing_plan:
             missing_plan.dropped_columns.append(answer.question_key)
         elif answer.used != "drop_column" and answer.question_key in missing_plan.dropped_columns:
             missing_plan.dropped_columns.remove(answer.question_key)
+    from_agent = set(legacy or {}) if ctx.branch is None else set()  # a branch consults no agent
+    changed = resolution.changed() if resolution is not None else []
+    return {a.question_key for a in changed if a.question_key in from_agent and a.source == "ai"}
 
 
 _TREATMENT_ROLE = {"impute_median": "numeric", "impute_most_frequent": "categorical_code"}
@@ -277,7 +302,7 @@ def missing_treatments(ctx: Any) -> dict[str, tuple[str, bool]]:
     resolution = points.pending.get(MISSING) or points.resolved.get(MISSING)
     if resolution is None:
         return {}
-    return {a.question_key: (_TREATMENT_ROLE[a.used], MISSING not in points.pending)
+    return {a.question_key: (_TREATMENT_ROLE[a.used], a.source != "ai")
             for a in resolution.changed() if a.used in _TREATMENT_ROLE}
 
 
@@ -301,6 +326,10 @@ def finish_missing_point(ctx: Any, missing_plan: Any, num: list[str], cat: list[
     for answer in resolution.answers:
         if answer.question_key in undone | conflicts and answer.question_key in decisions:
             decisions[answer.question_key].action = answer.rule
+    if undone | conflicts:
+        from app.services.lab_decision_ledger import revert_missing_value_decisions
+
+        revert_missing_value_decisions(ctx.db, ctx.upload_id, (undone | conflicts) & set(decisions))
     for column in undone - conflicts:  # the record failed: the treatment goes too
         num = [c for c in num if c != column]
         cat = [c for c in cat if c != column]
@@ -353,5 +382,5 @@ def _off_outcome(rules: dict[str, Any]) -> Any:
         for k, v in rules.items()))
 
 
-__all__ = ["finish_missing_point", "missing_treatments", "resolve_families_point", "resolve_missing_point", "resolve_objective_point",
+__all__ = ["finish_missing_point", "missing_treatments", "resolve_families_point", "resolve_legacy_target", "resolve_missing_point", "resolve_objective_point",
            "resolve_split_point", "resolve_target_point", "split_reasons"]

@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "missing_value v3: only actions the pipeline executes; no fill value (P6.9-A).",
+  "properties": {
+    "action": {
+      "enum": [
+        "impute_median",
+        "impute_most_frequent",
+        "drop_column"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidence_field": {
+      "enum": [
+        "column",
+        "dtype",
+        "missing_count",
+        "missing_fraction",
+        "correlation_with_target",
+        "missingness_cooccurrence"
+      ],
+      "title": "Evidence Field",
+      "type": "string"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "evidence_field",
+    "rationale",
+    "confidence"
+  ],
+  "title": "MissingValueDecisionV3",
+  "type": "object"
+}

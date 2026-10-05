@@ -289,7 +289,7 @@ def test_prediction_download_and_deep_audit_cannot_bypass_capabilities(
         db_session,
         upload.id,
         deep=True,
-        settings=SimpleNamespace(pipeline_llm_verifier_enabled=False),
+        settings=SimpleNamespace(ai_enabled=False),
     )
     monkeypatch.setattr(
         "app.api.business_explorer.request_pipeline_verification",

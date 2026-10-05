@@ -208,7 +208,7 @@ class RunContext:
 
     def request_routine_advisory_verification(self) -> None:
         """Run only after ML state commits; provider failure cannot fail the job."""
-        if not get_settings().pipeline_llm_verifier_enabled:
+        if not get_settings().ai_enabled:  # P6.9-A: AI_ENABLED + kill switches gate it
             return
         try:
             request_pipeline_verification(self.db, self.upload_id)

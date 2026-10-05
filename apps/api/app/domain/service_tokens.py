@@ -105,6 +105,8 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/decisions/{decision_id}/reject"),
         ("POST", "/v1/decisions/{decision_id}/supersede"),
         ("POST", "/v1/projects/{project_id}/refs/{ref_kind}"),
+        # P6.9-A: a split confirmation is a person's answer (ADR 0008 §2).
+        ("POST", "/v1/execution-requests/{request_id}/split-confirmation"),
     }
 )
 

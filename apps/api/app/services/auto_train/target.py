@@ -18,7 +18,11 @@ from app.engine.modeling.objective import Objective, ObjectiveError, objective_f
 from app.services.auto_train.branch import require_same_target
 from app.services.auto_train.context import RunContext, StageHalt, service_module
 from app.services.auto_train.decision_points import TARGET, plan_answers
-from app.services.auto_train.plan_points import resolve_objective_point, resolve_target_point
+from app.services.auto_train.plan_points import (
+    resolve_legacy_target,
+    resolve_objective_point,
+    resolve_target_point,
+)
 from app.services.target_intent_service import (
     UNRESOLVED_TARGET_STATUS,
     audit_source_for_choice,
@@ -99,6 +103,7 @@ def run_target_resolution(ctx: RunContext, inp: TargetResolutionInput) -> Target
             extra={"target": detail, "analysis": profile, "quality": quality},
         )
         raise StageHalt from exc
+    suggestion = resolve_legacy_target(ctx, target) if target.column is None else None  # target.column (L1)
     target_evidence = {
         **public_target_payload(target),
         "locked_at": datetime.now(UTC).isoformat() if target.column is not None else None,
@@ -128,6 +133,8 @@ def run_target_resolution(ctx: RunContext, inp: TargetResolutionInput) -> Target
             raise StageHalt
         ctx.finish_stage(status="completed")
         waiting = target_confirmation_required_payload(target)
+        if suggestion is not None:  # the legacy agent's answer, for a person to confirm (L1)
+            waiting["ai_suggestion"] = suggestion
         payload = {
             "target": {**target_evidence, "status": UNRESOLVED_TARGET_STATUS},
             "target_confirmation": waiting,

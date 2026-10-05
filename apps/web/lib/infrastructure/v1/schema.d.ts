@@ -173,6 +173,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/execution-requests/{request_id}/split-confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Execution Request Split
+         * @description Answer ``split_confirmation_required``: keep the rule's split and resume once (the
+         *     run plan's split answer is refused for this execution). Replay-safe by state; ``409``
+         *     when the request is not waiting for a split answer; ``If-Match`` as for the target.
+         */
+        post: operations["confirm_execution_request_split_v1_execution_requests__request_id__split_confirmation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/execution-requests/{request_id}/target-confirmation": {
         parameters: {
             query?: never;
@@ -1412,6 +1434,18 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /**
+         * ExecutionSplitConfirmation
+         * @description A person's answer to ``split_confirmation_required`` (P6.9-A, ADR 0008 §2): keep the
+         *     rule's split; the run plan's split answer is refused for this execution.
+         */
+        ExecutionSplitConfirmation: {
+            /**
+             * Answer
+             * @constant
+             */
+            answer: "keep_rule_split";
         };
         /** ExecutionTargetConfirmation */
         ExecutionTargetConfirmation: {
@@ -2752,6 +2786,11 @@ export interface components {
             constraints?: {
                 [key: string]: unknown;
             };
+            /**
+             * Plan
+             * @description An ExperimentPlanProposal of this project (P6.9-A; the same checks as a run's plan): its target_column and primary_metric fill the spec. A value here that differs, or an unusable plan, is a 422 plan_refused. A spec does not consume the plan.
+             */
+            plan?: string | null;
             /** Prediction Horizon */
             prediction_horizon?: string | null;
             /** Prediction Time Column */
@@ -4140,6 +4179,111 @@ export interface operations {
             };
             /** @description Not found (error envelope) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    confirm_execution_request_split_v1_execution_requests__request_id__split_confirmation_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+                /** @description Strong ETag from a previous read; a mismatch is 412 precondition_failed. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionSplitConfirmation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionRequestRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

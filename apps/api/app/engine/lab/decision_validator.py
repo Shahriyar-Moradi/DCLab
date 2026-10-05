@@ -61,7 +61,8 @@ def _allowed_actions() -> frozenset[str]:
     raise RuntimeError("missing_value_v1 prompt does not list an action enum")
 
 
-ALLOWED_ACTIONS = _allowed_actions()
+# missing_value v3 (P6.9-A) adds drop_column (an exclusion: recorded, never above L1).
+ALLOWED_ACTIONS = _allowed_actions() | {"drop_column"}
 
 
 def _allowed_column_type_actions() -> frozenset[str]:
@@ -90,7 +91,7 @@ def validate_decision(
     """Accept a structured decision only if evidence actually backs the claim."""
     action = getattr(decision, "action", None)
     if action not in ALLOWED_ACTIONS:
-        return _reject(f"action {action!r} is not in the missing_value_v1 enum")
+        return _reject(f"action {action!r} is not in the missing_value enum")
 
     confidence = getattr(decision, "confidence", None)
     if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
@@ -281,6 +282,10 @@ def _claim_unsupported(
         return _domain_fill_unsupported(evidence, cited, value, fill_value)
     if action == "drop_rows":
         return _drop_rows_unsupported(evidence, cited, value)
+    if action == "drop_column":
+        if cited not in {"missing_fraction", "missing_count"}:
+            return f"drop_column must cite missing_fraction or missing_count, not {cited!r}"
+        return None
     if action in {"impute_mean", "impute_median"}:
         return _numeric_impute_unsupported(evidence, cited, value)
     if action == "impute_most_frequent":

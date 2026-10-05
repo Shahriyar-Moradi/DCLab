@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, LabDecisionRecord
-from app.engine.lab.prompts.missing_value_v2 import PROMPT_VERSION
+from app.engine.lab.prompts.missing_value_v3 import PROMPT_VERSION
 from app.services.auto_train_service import run_auto_train_job
 
 
@@ -57,7 +57,7 @@ def _telco_like_frame(n: int = 200, seed: int = 0) -> pd.DataFrame:
 def _rule_engine_only(monkeypatch):
     monkeypatch.setattr(
         "app.services.lab_decision_ledger.get_settings",
-        lambda: SimpleNamespace(decision_agent_enabled=False, decision_agent_api_key=""),
+        lambda: SimpleNamespace(ai_enabled=False),
     )
 
 

@@ -116,10 +116,11 @@ class RunDecisionPoints:
             self._target = _guarded(ctx.db, lambda: _record_target(ctx), None)
         return self._target  # type: ignore[return-value]
 
-    def levels(self, ctx: Any, key: str) -> dict[str, int]:
-        """The snapshot's levels; at most L1 when the record's experiment cannot take a record."""
+    def levels(self, ctx: Any, key: str, *, legacy: bool = False) -> dict[str, int]:
+        """The snapshot's levels (``legacy``: keyed by the legacy prompt release); at most L1
+        when the record's experiment cannot take a record."""
 
-        levels = self.snapshot.levels_for(key)
+        levels = self.snapshot.levels_for(key, legacy=legacy)
         return levels if self.target(ctx) is not None else {kind: min(level, 1) for kind, level in levels.items()}
 
     def keep(self, ctx: Any, resolution: PointResolution) -> PointResolution:
@@ -255,20 +256,35 @@ def start_decision_points(ctx: Any) -> RunDecisionPoints:
     plan = _guarded(ctx.db, lambda: load_run_plan(ctx.db, ctx.upload), None) if ctx.upload is not None else None
     try:
         port = semantic_port()
+        legacy = _legacy_sources()
     except Exception:  # noqa: BLE001 - AI can never fail a run
         logger.exception("semantic port unavailable; decision points run rule-only")
         return RunDecisionPoints(PolicySnapshot.off("snapshot_unavailable"), plan=_refused(plan, "ai_off"))
-    if isinstance(port, DeterministicSemanticPort):  # AI off: no AI read, no savepoint
+    if isinstance(port, DeterministicSemanticPort) and not legacy:  # AI off: no AI read, no savepoint
         return RunDecisionPoints(PolicySnapshot.off("ai_disabled", port), plan=_refused(plan, "ai_off"))
     usable = plan is not None and plan.usable
     snapshot = _guarded(ctx.db, lambda: take_snapshot(
         ctx.db, ctx.upload.workspace_id, JEV_POINTS, port=port,
         agent_keys=AGENT_POINTS if usable else (),
         agent_release=(plan.prompt_release_id, plan.model_id) if usable else None,
-        plan={"proposal_id": str(plan.proposal_id), "status": plan.status} if usable else None), None)
+        plan={"proposal_id": str(plan.proposal_id), "status": plan.status} if usable else None,
+        legacy=legacy or None), None)
     if snapshot is None:
         return RunDecisionPoints(PolicySnapshot.off("snapshot_unavailable"), plan=_refused(plan, "ai_off"))
     return RunDecisionPoints(snapshot, plan=plan)
+
+
+def _legacy_sources() -> dict[str, tuple[str, int]]:
+    """The legacy decision agent's points (interim AI answer source, ADR 0008 §1) when it
+    may run (AI_ENABLED; the gateway enforces its kill switches per call): point -> (agent
+    key, released prompt version)."""
+
+    from app.engine.lab.llm_client import CALLS, agent_enabled
+
+    if not agent_enabled():
+        return {}
+    return {TARGET: ("target_selection", CALLS["target_selection"].prompt_version),
+            MISSING: ("missing_value", CALLS["missing_value"].prompt_version)}
 
 
 def _refused(plan: RunPlan | None, code: str) -> RunPlan | None:
@@ -405,7 +421,9 @@ def _resolve(ctx: Any, key: str, rules: dict[str, Any], fields: Callable[[str], 
     reason = snapshot.reason
     legacy = {n: v for n, v in (legacy or {}).items() if n in rules}
     asked = {n: r for n, r in rules.items() if n not in legacy}
-    if not points.ai_on:
+    if points.ai_on and isinstance(snapshot.port, DeterministicSemanticPort):
+        outcome, reason = _off(key, rules), "jev_unavailable"  # only the legacy agent answers this run
+    elif not points.ai_on:
         outcome = _off(key, rules)
     elif not askable:  # e.g. the leakage context's target name has no source column
         outcome = SemanticOutcome(purpose=key, ai="on", resolutions=tuple(
@@ -448,39 +466,51 @@ def _jsonable(value: Any) -> Any:
 
 def resolve_plan_point(ctx: Any, key: str, rules: dict[str, Any], answers: dict[str, Any], *,
                        kinds: dict[str, str | None] | None = None, reasons: dict[str, list[str]] | None = None,
-                       evidence_partition: str = "metadata", defer: bool = False) -> PointResolution | None:
-    """An AI-before point whose AI answers travel in the run's ``plan`` (ADR 0008 §2). The
-    rule answer is computed first by the stage. A human-``accepted`` plan applies each
-    validated answer as human input; an ``applied`` (L2) plan applies a validated answer
-    only when its §1b kind may reach L2 and the snapshotted level is L2; anything else is
-    the rule value with the refusal recorded. None when the run has no usable plan or the
-    plan does not answer this point (no record, no event)."""
+                       evidence_partition: str = "metadata", defer: bool = False,
+                       legacy_answers: dict[str, Any] | None = None) -> PointResolution | None:
+    """An AI-before point (ADR 0008 §2). The rule answer is computed first by the stage.
+    AI answers come from the run's ``plan`` and, for questions the plan does not answer, from
+    the legacy decision agent (``legacy_answers``; the interim source until P6.4-A agent
+    classes exist). A human-``accepted`` plan applies each validated answer as human input;
+    an ``applied`` (L2) plan and a legacy answer apply a validated answer only when its §1b
+    kind may reach L2 and the snapshotted level (the plan's agent release / the legacy
+    prompt release) is L2; anything else is the rule value with the refusal recorded (a
+    legacy L1 answer is recorded beside the rule value). ``defer`` leaves the record to the
+    stage that settles the effect (``points.pending``). None when
+    nothing answers this point (no record, no event)."""
 
     points = decision_points(ctx)
     plan = points.plan
-    answered = {name: value for name, value in answers.items() if name in rules and value is not None}
-    if not points.ai_on or plan is None or not plan.usable or not answered:
+    planned = ({name: value for name, value in answers.items() if name in rules and value is not None}
+               if points.ai_on and plan is not None and plan.usable else {})
+    legacy = ({name: value for name, value in (legacy_answers or {}).items()
+               if name in rules and value is not None and name not in planned} if points.ai_on else {})
+    if not planned and not legacy:
         return None
     kinds, reasons = dict(kinds or {}), dict(reasons or {})
-    levels = points.levels(ctx, key)
+    plan_levels, legacy_levels = points.levels(ctx, key), points.levels(ctx, key, legacy=True)
     overrides, items = {}, []
-    for name, ai in answered.items():
+    for name, ai in [*planned.items(), *legacy.items()]:
+        human = name in planned and plan.human
         rule, bad = rules[name], list(reasons.get(name) or [])
+        levels = plan_levels if name in planned else legacy_levels
         level = min(int(levels.get(kinds.get(name) or NO_KIND, 0)), answer_ceiling(key, kinds.get(name)))
         agreement = "agree" if ai == rule else "disagree"
-        applies = not bad and (plan.human or level >= 2)
-        if applies and plan.human and agreement == "disagree":
+        applies = not bad and (human or level >= 2)
+        if applies and human and agreement == "disagree":
             overrides[name] = ai
         items.append(Resolution(
             question_key=name, column_id=None, rule_answer=rule, agreement=agreement, level=level, ai_answer=ai,
-            value_used=ai if applies and not plan.human else rule,
-            policy_outcome="ai" if applies and not plan.human else "rule",
+            value_used=ai if applies and not human else rule,
+            policy_outcome="ai" if applies and not human else "rule",
             refusal="validator_rejected" if bad else (None if applies else "level_below_l2")))
+    planned_release = points.snapshot.releases.get(key) if planned else None
     resolution = resolve(
         key, SemanticOutcome(purpose=key, ai="on", resolutions=tuple(items)), evidence_partition=evidence_partition,
         overrides=overrides, validator_reasons=reasons, policy_digest=points.snapshot.digest,
-        release=points.snapshot.releases.get(key) or {}, kinds=kinds, agent_run_id=plan.agent_run_id,
-        plan_proposal_id=plan.proposal_id)
+        release=planned_release or points.snapshot.legacy_releases.get(key) or {}, kinds=kinds,
+        agent_run_id=plan.agent_run_id if planned else None,
+        plan_proposal_id=plan.proposal_id if planned else None)
     if defer:  # recorded (or rolled back) by the stage that settles its effect
         points.pending[key] = resolution
         return resolution

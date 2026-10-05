@@ -49,7 +49,8 @@ _NODE_TABLES: dict[str, Any] = {
 }
 # Write-tool argument -> node kind it must name in the run's project.
 _ARGUMENT_NODES = {"experiment_id": "experiment", "dataset_id": "dataset_version",
-                   "model_version_id": "model_version", "problem_spec_id": "problem_spec"}
+                   "model_version_id": "model_version", "problem_spec_id": "problem_spec",
+                   "plan": "proposal"}  # P6.9-A: a run plan is a proposal of the run's project
 
 
 def names_holdout(value: Any) -> bool:

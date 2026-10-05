@@ -586,11 +586,14 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
                              primary_metric: Opt = None, prediction_unit: Opt = None,
                              prediction_time_column: Opt = None, prediction_horizon: Opt = None,
                              constraints: Obj = None, success_criteria: Obj = None,
+                             plan: Annotated[str | None, Field(description="An accepted/applied ExperimentPlanProposal id: its target_column and primary_metric fill the spec (not consumed).")] = None,  # noqa: E501
                              idempotency_key: Salt = None) -> CallToolResult:
         def call() -> dict[str, Any]:
             body = _spec_body(project_id, task_type, business_objective, target_column, primary_metric,
                               prediction_unit, prediction_time_column, prediction_horizon, constraints,
                               success_criteria)
+            if plan:  # only when given: existing command keys stay the same
+                body["plan"] = uuid_arg(plan, "plan")
             spec_key = command_key("propose_problem_spec.spec", body, idempotency_key)
             pid = body.pop("project_id")
             # A ref may only point at a locked (immutable) version; locking is not acceptance.

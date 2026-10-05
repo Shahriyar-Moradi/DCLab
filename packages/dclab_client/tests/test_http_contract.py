@@ -146,6 +146,10 @@ def test_confirm_target_posts_column_to_v1():
     assert request.headers["X-Request-Id"] == "trace-confirm"
     body = json.loads(request.content.decode("utf-8"))
     assert body == {"target_column": "Churn"}
+    api.execution_requests.keep_rule_split("11111111-1111-1111-1111-111111111111")
+    split = recorded[1]
+    assert split.url.path == "/v1/execution-requests/11111111-1111-1111-1111-111111111111/split-confirmation"
+    assert json.loads(split.content) == {"answer": "keep_rule_split"}
 
 
 def test_omits_workspace_header_unless_constructed_with_one():
@@ -591,6 +595,9 @@ def test_create_project_spec_and_upload_post_to_v1_with_keys(tmp_path):
     assert project.etag == '"e1"' and project.idempotent_replay is True
     spec = api.projects.create_problem_spec(WS, task_type="binary", business_objective="Reduce churn")
     assert spec.version == 1
+    api.projects.create_problem_spec(WS, task_type="binary", business_objective="Reduce churn", plan=WS)
+    planned = recorded.pop()  # a plan is sent only when given (plan-less request digests unchanged)
+    assert json.loads(planned.content)["plan"] == WS and "plan" not in json.loads(recorded[-1].content)
     data = tmp_path / "churn.csv"
     data.write_bytes(b"a,b\n1,2\n3,4\n")
     upload = api.datasets.upload(WS, data, content_type="text/csv", idempotency_key="d-1")

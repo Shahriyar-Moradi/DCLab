@@ -709,6 +709,8 @@ def _apply_reviewer(
         return availability, True, False, "leakage reviewer failed closed"
     if decision is None:
         return availability, True, False, "leakage reviewer unavailable"
+    if isinstance(decision, str):  # recorded as advice only: the rule assessment stands
+        return availability, True, False, decision
     from app.engine.lab.decision_validator import validate_leakage_review_decision
 
     check = validate_leakage_review_decision(evidence, decision)

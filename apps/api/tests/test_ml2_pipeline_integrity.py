@@ -127,7 +127,7 @@ def test_missing_value_llm_evidence_contains_training_targets_only(db_session, t
     frame.loc[list(test_rows)[:5], "feature"] = np.nan
 
     captured = []
-    settings = SimpleNamespace(decision_agent_enabled=True, ai_enabled=True, dclab_env="test")
+    settings = SimpleNamespace(ai_enabled=True, dclab_env="test")
     monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
 
     def fake_consult(kind, evidence, **_kwargs):
@@ -193,7 +193,7 @@ def test_column_type_and_leakage_llm_evidence_is_train_only(db_session, tmp_path
     frame.loc[test_rows, "final_marker"] = 5_000_000 + np.arange(len(test_rows))
 
     captured: dict[str, list] = {"column_type": [], "leakage_review": []}
-    settings = SimpleNamespace(decision_agent_enabled=True, ai_enabled=True, dclab_env="test")
+    settings = SimpleNamespace(ai_enabled=True, dclab_env="test")
     monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
 
     def fake_consult(kind, evidence, **_kwargs):

@@ -18,10 +18,10 @@ from app.db.models import LlmInvocation
 from app.engine.lab.evidence import ColumnEvidence, MissingnessCooccurrence
 from app.engine.lab.llm_client import (
     DecisionAgentUnavailable,
-    MissingValueDecision,
+    MissingValueDecisionV3,
     request_decision,
 )
-from app.engine.lab.prompts.missing_value_v2 import PROMPT_VERSION, SYSTEM_PROMPT
+from app.engine.lab.prompts.missing_value_v3 import PROMPT_VERSION, SYSTEM_PROMPT
 from legacy_ai_support import enable_legacy_ai, forbid_gateway, sent, upload_via_api
 
 SENTINEL = "SENTINEL-RAW-ROW-7731"
@@ -57,12 +57,11 @@ def _evidence() -> ColumnEvidence:
     )
 
 
-def _valid_payload() -> dict:
+def _valid_payload() -> dict:  # missing_value v3: executed actions only, no fill value
     return {
-        "action": "domain_fill",
-        "evidence_field": "missingness_cooccurrence",
-        "fill_value": 0,
-        "rationale": "missingness_cooccurrence exact_match with tenure 0",
+        "action": "impute_median",
+        "evidence_field": "missing_fraction",
+        "rationale": "numeric column with a bounded missing fraction",
         "confidence": 0.94,
     }
 
@@ -86,11 +85,11 @@ def test_happy_path_returns_the_validated_decision_through_the_gateway(run, db_s
     first = request_decision(_evidence(), PROMPT_VERSION, context=context)
     second = request_decision(_evidence(), PROMPT_VERSION, context=context)
 
-    assert first == second == MissingValueDecision(**_valid_payload())
+    assert first == second == MissingValueDecisionV3(**_valid_payload())
     # legacy rows keep a narrowed summary, so the gateway cache is not used for them
     assert len(ai.fake.calls) == 2
     call = ai.fake.calls[0]
-    assert (call.model, call.temperature, call.output_schema) == ("gpt-6-luna", 0.0, MissingValueDecision)
+    assert (call.model, call.temperature, call.output_schema) == ("gpt-6-luna", 0.0, MissingValueDecisionV3)
     assert call.instructions.startswith(SYSTEM_PROMPT.rstrip())
     fields = sent(call)
     assert fields["column"] == {"untrusted_text": "TotalCharges"}
@@ -101,18 +100,10 @@ def test_happy_path_returns_the_validated_decision_through_the_gateway(run, db_s
     row = _rows(db_session)[0]
     assert (row.status, row.llm_used, row.provider, row.model) == ("completed", True, "fake", "gpt-6-luna")
     assert (row.agent_role, row.decision_point_key, row.prompt_version) == (
-        "legacy_decision", "column.missing_value_action", "missing_value:v2")
+        "legacy_decision", "column.missing_value_action", "missing_value:v3")
     assert (row.data_class, row.outcome_scope, row.experiment_id) == ("aggregates", "none", run.experiment_id)
     assert row.redaction_summary["dropped"]["data_class"] == 2  # above the aggregates ceiling
     assert row.budget_settled and row.cost_micros > 0 and row.input_tokens > 0
-
-
-def test_unavailable_when_flag_off(run, db_session, monkeypatch):
-    enable_legacy_ai(monkeypatch, db_session, decision_agent=False)
-    forbid_gateway(monkeypatch)
-    with pytest.raises(DecisionAgentUnavailable, match="disabled"):
-        request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, run.id))
-    assert _rows(db_session) == []
 
 
 def test_unavailable_when_ai_enabled_is_off(run, db_session, monkeypatch):
@@ -158,9 +149,10 @@ def test_unknown_prompt_version_is_unavailable(run, db_session, monkeypatch):
         request_decision(_evidence(), "missing_value_v9", context=context_for_upload(db_session, run.id))
 
 
-def test_unavailable_outside_a_development_environment(run, db_session, monkeypatch):
-    ai = enable_legacy_ai(monkeypatch, db_session)
-    ai.settings.dclab_env = "production"  # blocked until P6.9-A applies ADR 0008 decision-point levels
-    forbid_gateway(monkeypatch)
-    with pytest.raises(DecisionAgentUnavailable, match="disabled"):
-        request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, run.id))
+def test_production_is_governed_by_switches_and_levels_not_blocked(run, db_session, monkeypatch):
+    # P6.9-A lifted the P6.2-B2 block: the writers apply nothing above the decision-point levels.
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: _valid_payload())
+    ai.settings.dclab_env = "production"
+    assert request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, run.id)).action == (
+        "impute_median")
+    assert len(ai.fake.calls) == 1

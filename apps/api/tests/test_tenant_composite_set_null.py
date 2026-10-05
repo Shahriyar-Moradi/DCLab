@@ -59,6 +59,8 @@ EXPECTED_ACTION_COLUMNS = {
     "fk_ml_run_verifications_workspace_llm_invocation": ["llm_invocation_id"],
     # 0071 (ADR 0009 §2.10): an invocation keeps its workspace when its agent run goes.
     "fk_llm_invocations_workspace_agent_run": ["agent_run_id"],
+    # 0075 (ADR 0008 Consequences): an execution request keeps its workspace when its plan goes.
+    "fk_execution_requests_workspace_plan_proposal": ["plan_proposal_id"],
 }
 
 

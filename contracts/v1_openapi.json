@@ -227,6 +227,41 @@
         "successSchema": "ExecutionRequestRead"
       }
     },
+    "/v1/execution-requests/{request_id}/split-confirmation": {
+      "POST": {
+        "operationId": "confirm_execution_request_split_v1_execution_requests__request_id__split_confirmation_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ExecutionSplitConfirmation",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExecutionRequestRead"
+      }
+    },
     "/v1/execution-requests/{request_id}/target-confirmation": {
       "POST": {
         "operationId": "confirm_execution_request_target_v1_execution_requests__request_id__target_confirmation_post",

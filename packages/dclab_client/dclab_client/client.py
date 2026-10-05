@@ -163,10 +163,12 @@ class ProjectsClient:
         constraints: dict[str, Any] | None = None,
         success_criteria: dict[str, Any] | None = None,
         status: str = "draft",
+        plan: UUID | str | None = None,
         idempotency_key: str | None = None,
         request_id: str | None = None,
     ) -> ProblemSpec:
-        """Append the next ProblemSpec version (``draft`` or ``locked``)."""
+        """Append the next ProblemSpec version (``draft`` or ``locked``). ``plan``: an
+        ExperimentPlanProposal whose target and metric fill the spec (``422 plan_refused``)."""
 
         body = {
             "task_type": task_type,
@@ -180,6 +182,8 @@ class ProjectsClient:
             "success_criteria": dict(success_criteria or {}),
             "status": status,
         }
+        if plan is not None:  # only when given: plan-less request digests stay the same
+            body["plan"] = _id(plan)
         payload, headers = self._transport.request_with_headers(
             "POST",
             f"/v1/projects/{_id(project_id)}/problem-specs",
@@ -611,6 +615,27 @@ class ExecutionRequestsClient:
             "POST",
             f"/v1/execution-requests/{_id(execution_request_id)}/target-confirmation",
             json={"target_column": target_column},
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            if_match=if_match,
+        )
+        return _versioned(ExecutionRequest, payload, headers)
+
+    def keep_rule_split(
+        self,
+        execution_request_id: UUID | str,
+        *,
+        request_id: str | None = None,
+        if_match: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> ExecutionRequest:
+        """Answer ``split_confirmation_required``: keep the rule's split and resume the run
+        (the run plan's split is refused). A person's answer: service tokens are refused."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/execution-requests/{_id(execution_request_id)}/split-confirmation",
+            json={"answer": "keep_rule_split"},
             request_id=request_id,
             idempotency_key=idempotency_key,
             if_match=if_match,
