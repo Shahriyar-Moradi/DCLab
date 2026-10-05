@@ -1,25 +1,38 @@
-"""Unit tests for the Lab decision-agent LLM client.
+"""Lab decision-agent wrappers over the AI gateway (ADR 0009 §1, §4, §8).
 
-Mocked tests never call a provider. The live smoke test is skipped unless
-DECISION_AGENT_LIVE=1 and a real API key are set in the environment.
+Fake provider only: these tests never reach a network. The live provider check is
+``dclab verify-openai-smoke``.
 """
 
 from __future__ import annotations
 
 import json
-import os
-from types import SimpleNamespace
 
-import httpx
+import pandas as pd
 import pytest
+from sqlalchemy import select
 
+from app.agents.governance.switches import flip_off
+from app.agents.legacy import context_for_upload
+from app.db.models import LlmInvocation
 from app.engine.lab.evidence import ColumnEvidence, MissingnessCooccurrence
 from app.engine.lab.llm_client import (
     DecisionAgentUnavailable,
     MissingValueDecision,
     request_decision,
 )
-from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION
+from app.engine.lab.prompts.missing_value_v2 import PROMPT_VERSION, SYSTEM_PROMPT
+from legacy_ai_support import enable_legacy_ai, forbid_gateway, sent, upload_via_api
+
+SENTINEL = "SENTINEL-RAW-ROW-7731"
+
+
+def _frame() -> pd.DataFrame:
+    return pd.DataFrame({
+        "TotalCharges": [None, None, 12.5, 30.0] * 10,
+        "tenure": [0, 0, 5, 9] * 10,
+        "Churn": ["No", "Yes"] * 20,
+    })
 
 
 def _evidence() -> ColumnEvidence:
@@ -40,29 +53,8 @@ def _evidence() -> ColumnEvidence:
                 exact_match=True,
             )
         ],
-        sample_rows=[{"TotalCharges": None, "tenure": 0, "Churn": "No"}],
+        sample_rows=[{"TotalCharges": None, "tenure": 0, "Churn": SENTINEL}],
     )
-
-
-def _settings(*, enabled: bool, api_key: str, model: str = "gpt-4o-mini") -> SimpleNamespace:
-    return SimpleNamespace(
-        decision_agent_enabled=enabled,
-        decision_agent_api_key=api_key,
-        decision_agent_model=model,
-    )
-
-
-@pytest.fixture(autouse=True)
-def _clear_decision_cache():
-    from app.engine.lab import llm_client
-
-    llm_client._CACHE.clear()
-    llm_client._COLUMN_TYPE_CACHE.clear()
-    llm_client._TARGET_SELECTION_CACHE.clear()
-    yield
-    llm_client._CACHE.clear()
-    llm_client._COLUMN_TYPE_CACHE.clear()
-    llm_client._TARGET_SELECTION_CACHE.clear()
 
 
 def _valid_payload() -> dict:
@@ -75,92 +67,100 @@ def _valid_payload() -> dict:
     }
 
 
-def test_happy_path_returns_validated_decision_and_caches(monkeypatch):
-    from app.engine.lab import llm_client
-
-    monkeypatch.setattr(llm_client, "get_settings", lambda: _settings(enabled=True, api_key="sk-test"))
-
-    calls: list[dict] = []
-
-    def fake_post(url, **kwargs):
-        calls.append({"url": url, **kwargs})
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(_valid_payload())}}]},
-            request=httpx.Request("POST", url),
-        )
-
-    monkeypatch.setattr(llm_client.httpx, "post", fake_post)
-
-    first = request_decision(_evidence(), PROMPT_VERSION)
-    second = request_decision(_evidence(), PROMPT_VERSION)
-
-    assert first == second
-    assert isinstance(first, MissingValueDecision)
-    assert first.action == "domain_fill"
-    assert first.evidence_field == "missingness_cooccurrence"
-    assert first.fill_value == 0
-    assert len(calls) == 1
-    body = calls[0]["json"]
-    assert body["temperature"] == 0
-    assert body["response_format"]["type"] == "json_schema"
-    assert body["response_format"]["json_schema"]["strict"] is True
-    assert "drop_rows" in body["response_format"]["json_schema"]["schema"]["properties"]["action"]["enum"]
+@pytest.fixture
+def run(auth_client, db_session, monkeypatch):
+    upload = upload_via_api(auth_client, db_session, monkeypatch, _frame())
+    return upload
 
 
-def test_unavailable_when_flag_off(monkeypatch):
-    from app.engine.lab import llm_client
+def _rows(db) -> list[LlmInvocation]:
+    db.expire_all()
+    return list(db.scalars(select(LlmInvocation).where(LlmInvocation.purpose == "semantic_missing_value")
+                           .order_by(LlmInvocation.created_at)))
 
-    monkeypatch.setattr(
-        llm_client,
-        "get_settings",
-        lambda: _settings(enabled=False, api_key="sk-test"),
-    )
-    monkeypatch.setattr(
-        llm_client.httpx,
-        "post",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not call the provider")),
-    )
 
+def test_happy_path_returns_the_validated_decision_through_the_gateway(run, db_session, monkeypatch):
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: _valid_payload())
+    context = context_for_upload(db_session, run.id)
+
+    first = request_decision(_evidence(), PROMPT_VERSION, context=context)
+    second = request_decision(_evidence(), PROMPT_VERSION, context=context)
+
+    assert first == second == MissingValueDecision(**_valid_payload())
+    # legacy rows keep a narrowed summary, so the gateway cache is not used for them
+    assert len(ai.fake.calls) == 2
+    call = ai.fake.calls[0]
+    assert (call.model, call.temperature, call.output_schema) == ("gpt-6-luna", 0.0, MissingValueDecision)
+    assert call.instructions.startswith(SYSTEM_PROMPT.rstrip())
+    fields = sent(call)
+    assert fields["column"] == {"untrusted_text": "TotalCharges"}
+    assert fields["missingness_cooccurrence"][0]["exact_match"] is True
+    # raw values are sample_values: the accepted policy (0 samples) drops them
+    assert {"sample_rows", "cooccurring_values"}.isdisjoint(fields)
+    assert "other_value" not in json.dumps(fields) and SENTINEL not in call.input_json
+    row = _rows(db_session)[0]
+    assert (row.status, row.llm_used, row.provider, row.model) == ("completed", True, "fake", "gpt-6-luna")
+    assert (row.agent_role, row.decision_point_key, row.prompt_version) == (
+        "legacy_decision", "column.missing_value_action", "missing_value:v2")
+    assert (row.data_class, row.outcome_scope, row.experiment_id) == ("aggregates", "none", run.experiment_id)
+    assert row.redaction_summary["dropped"]["data_class"] == 2  # above the aggregates ceiling
+    assert row.budget_settled and row.cost_micros > 0 and row.input_tokens > 0
+
+
+def test_unavailable_when_flag_off(run, db_session, monkeypatch):
+    enable_legacy_ai(monkeypatch, db_session, decision_agent=False)
+    forbid_gateway(monkeypatch)
     with pytest.raises(DecisionAgentUnavailable, match="disabled"):
-        request_decision(_evidence(), PROMPT_VERSION)
+        request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, run.id))
+    assert _rows(db_session) == []
 
 
-def test_unavailable_when_api_key_missing(monkeypatch):
-    from app.engine.lab import llm_client
-
-    monkeypatch.setattr(
-        llm_client,
-        "get_settings",
-        lambda: _settings(enabled=True, api_key=""),
-    )
-    monkeypatch.setattr(
-        llm_client.httpx,
-        "post",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not call the provider")),
-    )
-
-    with pytest.raises(DecisionAgentUnavailable, match="API key"):
-        request_decision(_evidence(), PROMPT_VERSION)
+def test_unavailable_when_ai_enabled_is_off(run, db_session, monkeypatch):
+    enable_legacy_ai(monkeypatch, db_session, ai_enabled=False)
+    forbid_gateway(monkeypatch)
+    with pytest.raises(DecisionAgentUnavailable, match="disabled"):
+        request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, run.id))
 
 
-@pytest.mark.skipif(
-    os.environ.get("DECISION_AGENT_LIVE") != "1"
-    or not (os.environ.get("DECISION_AGENT_API_KEY") or os.environ.get("OPENAI_API_KEY")),
-    reason="live smoke requires DECISION_AGENT_LIVE=1 and a real API key",
-)
-def test_live_smoke_request_decision(monkeypatch):
-    from app.engine.lab import llm_client
+def test_unavailable_without_an_attributable_run(db_session, monkeypatch):
+    enable_legacy_ai(monkeypatch, db_session)
+    forbid_gateway(monkeypatch)
+    with pytest.raises(DecisionAgentUnavailable, match="attributable"):
+        request_decision(_evidence(), PROMPT_VERSION, context=None)
 
-    key = (os.environ.get("DECISION_AGENT_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
-    monkeypatch.setattr(llm_client, "get_settings", lambda: _settings(enabled=True, api_key=key))
 
-    decision = request_decision(_evidence(), PROMPT_VERSION)
-    assert isinstance(decision, MissingValueDecision)
-    assert decision.action in {
-        "drop_rows",
-        "impute_mean",
-        "impute_median",
-        "impute_most_frequent",
-        "domain_fill",
-    }
+def test_kill_switch_is_a_refusal_row_and_no_provider_call(run, db_session, monkeypatch):
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: _valid_payload())
+    flip_off(db_session, workspace_id=run.workspace_id, switch_key="purpose:semantic_missing_value",
+             reason="test", actor_rule="test.switch.v1")
+    db_session.commit()
+    with pytest.raises(DecisionAgentUnavailable, match="kill_switch"):
+        request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, run.id))
+    assert ai.fake.calls == []
+    [row] = _rows(db_session)
+    assert (row.status, row.refusal_code, row.llm_used, row.provider_kind) == (
+        "refused", "kill_switch", False, "deterministic_fallback")
+
+
+def test_a_denied_column_never_leaves_the_process(auth_client, db_session, monkeypatch):
+    upload = upload_via_api(auth_client, db_session, monkeypatch, _frame(), exposure="deny")
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: _valid_payload())
+    with pytest.raises(DecisionAgentUnavailable, match="data_class_exceeded"):
+        request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, upload.id))
+    assert ai.fake.calls == []
+    assert _rows(db_session)[0].refusal_code == "data_class_exceeded"
+
+
+def test_unknown_prompt_version_is_unavailable(run, db_session, monkeypatch):
+    enable_legacy_ai(monkeypatch, db_session)
+    forbid_gateway(monkeypatch)
+    with pytest.raises(DecisionAgentUnavailable, match="prompt version"):
+        request_decision(_evidence(), "missing_value_v9", context=context_for_upload(db_session, run.id))
+
+
+def test_unavailable_outside_a_development_environment(run, db_session, monkeypatch):
+    ai = enable_legacy_ai(monkeypatch, db_session)
+    ai.settings.dclab_env = "production"  # blocked until P6.9-A applies ADR 0008 decision-point levels
+    forbid_gateway(monkeypatch)
+    with pytest.raises(DecisionAgentUnavailable, match="disabled"):
+        request_decision(_evidence(), PROMPT_VERSION, context=context_for_upload(db_session, run.id))

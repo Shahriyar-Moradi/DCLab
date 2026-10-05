@@ -1,0 +1,68 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "drop_rows",
+        "impute_mean",
+        "impute_median",
+        "impute_most_frequent",
+        "domain_fill"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidence_field": {
+      "enum": [
+        "column",
+        "dtype",
+        "missing_count",
+        "missing_fraction",
+        "correlation_with_target",
+        "missingness_cooccurrence",
+        "sample_rows"
+      ],
+      "title": "Evidence Field",
+      "type": "string"
+    },
+    "fill_value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Fill Value"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "evidence_field",
+    "fill_value",
+    "rationale",
+    "confidence"
+  ],
+  "title": "MissingValueDecision",
+  "type": "object"
+}

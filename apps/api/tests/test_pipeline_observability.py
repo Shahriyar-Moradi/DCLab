@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from uuid import uuid4
 
 import numpy as np
@@ -37,6 +36,8 @@ from app.services.observability_service import (
 from app.services.pipeline_audit_service import request_pipeline_verification
 from app.services.audience_projection import PUBLIC_FAILURE
 from dclab_client.types import EventPage as SdkEventPage
+from app.agents.gateway.providers import ProviderResult
+from legacy_ai_support import enable_legacy_ai, label_dataset
 
 
 def _classification_frame(n: int = 120) -> pd.DataFrame:
@@ -94,38 +95,29 @@ def _post_and_run(auth_client, db_session, monkeypatch, *, fail_family: str | No
     return upload, workflow_run, pipeline
 
 
-class _AuditProvider:
-    def audit(self, *, evidence, model):
-        self.last_usage = {
-            "input_tokens": 120,
-            "output_tokens": 30,
-            "total_tokens": 150,
-        }
-        return PipelineAuditReport(
-            overall_status="NOT_VERIFIABLE",
-            summary="Conservative advisory result for observability testing.",
-            stages=[
-                PipelineAuditStage(
-                    stage="pipeline",
-                    status="NOT_VERIFIABLE",
-                    summary="The supplied bounded evidence was reviewed.",
-                    evidence_refs=[evidence["allowed_evidence_refs"][0]],
-                )
-            ],
-            confidence=0.8,
-            warnings=["Additional manual review is appropriate."],
-            recommendations=["Retain deterministic checks as authoritative."],
-        )
+PROVIDER_SECRET = "sk-observability-test-secret"
 
 
-def _audit_settings():
-    return SimpleNamespace(
-        pipeline_llm_verifier_enabled=True,
-        pipeline_llm_verifier_api_key="sk-observability-test-secret",
-        pipeline_llm_verifier_model="gpt-5.6-luna",
-        pipeline_llm_verifier_deep_model="gpt-5.6-terra",
-        pipeline_llm_timeout_seconds=1.0,
+def _audit_answer(call):
+    refs = json.loads(call.input_json)["context"]
+    first_ref = next(item["value"][0]["untrusted_text"] for item in refs if item["key"] == "allowed_evidence_refs")
+    report = PipelineAuditReport(
+        overall_status="NOT_VERIFIABLE",
+        summary="Conservative advisory result for observability testing.",
+        stages=[
+            PipelineAuditStage(
+                stage="pipeline",
+                status="NOT_VERIFIABLE",
+                summary="The supplied bounded evidence was reviewed.",
+                evidence_refs=[first_ref],
+            )
+        ],
+        confidence=0.8,
+        warnings=["Additional manual review is appropriate."],
+        recommendations=["Retain deterministic checks as authoritative."],
     )
+    return ProviderResult(output=report.model_dump(mode="json"), input_tokens=120, output_tokens=30,
+                          request_id="fake-audit", resolved_model=call.model)
 
 
 def test_real_pipeline_events_llm_contract_and_tenant_apis(
@@ -261,25 +253,23 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
 
     from app.services import lab_decision_ledger
 
-    monkeypatch.setattr(lab_decision_ledger, "_agent_configured", lambda: True)
-    monkeypatch.setattr(
-        lab_decision_ledger,
-        "request_decision",
-        lambda evidence, prompt_version: MissingValueDecision(
-            action="impute_median",
-            evidence_field="missing_fraction",
-            fill_value=None,
-            rationale="Median is robust for this bounded numeric evidence.",
-            confidence=0.9,
-        ),
-    )
+    label_dataset(db_session, workspace_id=upload.workspace_id, dataset_id=upload.dataset_id)
+    monkeypatch.setenv("DCLAB_OPENAI_API_KEY", PROVIDER_SECRET)
+    ai = enable_legacy_ai(monkeypatch, db_session, verifier=True, handler=lambda call: _audit_answer(call)
+                          if call.agent_key == "pipeline_auditor" else MissingValueDecision(
+        action="impute_median",
+        evidence_field="missing_fraction",
+        fill_value=None,
+        rationale="Median is robust for this bounded numeric evidence.",
+        confidence=0.9,
+    ).model_dump())
     decision_frame = pd.DataFrame(
         {
-            "feature": [None] * 10 + list(range(90)),
+            "monthly": [None] * 10 + list(range(90)),
             "churn": [0, 1] * 50,
         }
     )
-    plan = plan_missing_values(decision_frame, ["feature"])
+    plan = plan_missing_values(decision_frame, ["monthly"])
     lab_decision_ledger.record_missing_value_decisions(
         db_session,
         upload.id,
@@ -296,7 +286,7 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     )
     assert used_invocation.llm_used is True
     assert used_invocation.purpose == "semantic_missing_value"
-    assert used_invocation.provider == "openai"
+    assert used_invocation.provider == "fake"  # the gateway adapter that answered
     assert used_invocation.validator_verdict == "accept"
     assert used_invocation.final_decision["final_decision"] == "impute_median"
 
@@ -304,14 +294,13 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
         db_session,
         upload.id,
         deep=True,
-        provider=_AuditProvider(),
-        settings=_audit_settings(),
+        settings=ai.settings,
     )
     audit_invocation = db_session.get(LlmInvocation, attempt.llm_invocation_id)
     assert isinstance(attempt, MlRunVerification)
     assert audit_invocation.purpose == "pipeline_audit_deep"
-    assert audit_invocation.mode == "deep"
-    assert audit_invocation.model == "gpt-5.6-terra"
+    assert audit_invocation.mode == "completion"  # gateway rows; the audit mode is the purpose suffix
+    assert audit_invocation.model == "gpt-6.1-sol"
     assert audit_invocation.purpose not in {
         "semantic_target",
         "semantic_missing_value",
@@ -363,7 +352,7 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     assert "real-row" not in serialized_event
     assert "person@example.com" not in serialized_event
     assert "555-1234" not in serialized_event
-    assert _audit_settings().pipeline_llm_verifier_api_key not in serialized_invocations
+    assert PROVIDER_SECRET not in serialized_invocations
     secret_event.payload = {"changed": True}
     with pytest.raises(ValueError, match="append-only"):
         db_session.commit()

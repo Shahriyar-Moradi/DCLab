@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 
-import httpx
 import numpy as np
 import pandas as pd
+from sqlalchemy import select
 
 from app.engine.lab.decision_validator import validate_target_selection_decision
 from app.engine.lab.evidence import build_target_selection_evidence
@@ -17,7 +16,9 @@ from app.engine.lab.schema_inference import (
     generate_target_candidates,
     infer_entity_column,
 )
+from app.db.models import LlmInvocation
 from app.services.lab_decision_ledger import resolve_target_selection
+from legacy_ai_support import enable_legacy_ai, sent, upload_via_api
 
 
 def _rng_frame(seed: int = 7, n: int = 200) -> tuple[np.random.Generator, int]:
@@ -150,41 +151,7 @@ def test_llm_target_validator_rejects_nonexistent_column():
     assert "not a real eligible column" in result.reason
 
 
-def test_ambiguous_target_uses_existing_configured_llm_path(monkeypatch):
-    from app.engine.lab import llm_client
-    from app.services import lab_decision_ledger
-
-    llm_client._TARGET_SELECTION_CACHE.clear()
-    settings = SimpleNamespace(
-        decision_agent_enabled=True,
-        decision_agent_api_key="sk-test",
-        decision_agent_model="configured-small-model",
-    )
-    monkeypatch.setattr(llm_client, "get_settings", lambda: settings)
-    monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
-
-    seen: dict = {}
-
-    def fake_post(url, **kwargs):
-        seen.update(kwargs["json"])
-        evidence = json.loads(kwargs["json"]["messages"][1]["content"])
-        assert evidence["row_count"] == 100
-        assert set(evidence) == {"row_count", "column_count", "columns"}
-        assert all("sample_values" in item for item in evidence["columns"])
-        payload = {
-            "target": "measure_b",
-            "task_type": "regression",
-            "evidence_field": "columns",
-            "rationale": "measure_b is the intended response",
-            "confidence": 0.91,
-        }
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(payload)}}]},
-            request=httpx.Request("POST", url),
-        )
-
-    monkeypatch.setattr(llm_client.httpx, "post", fake_post)
+def test_ambiguous_target_uses_the_gateway_llm_path(auth_client, db_session, monkeypatch):
     frame = pd.DataFrame(
         {
             "measure_a": np.linspace(1, 50, 100),
@@ -192,13 +159,30 @@ def test_ambiguous_target_uses_existing_configured_llm_path(monkeypatch):
             "measure_c": np.linspace(3, 75, 100) ** 1.05,
         }
     )
-    choice = resolve_target_selection(frame, list(frame.columns))
+    upload = upload_via_api(auth_client, db_session, monkeypatch, frame)
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: {
+        "target": "measure_b",
+        "task_type": "regression",
+        "evidence_field": "columns",
+        "rationale": "measure_b is the intended response",
+        "confidence": 0.91,
+    })
+    choice = resolve_target_selection(frame, list(frame.columns), db=db_session, upload_id=upload.id)
     assert choice.column == "measure_b"
     assert choice.task_type == "regression"
     assert choice.source == "llm"
     assert choice.validator_verdict == "accept"
-    assert seen["model"] == "configured-small-model"
     assert "measure_b is the intended response" == choice.reason
+    [call] = ai.fake.calls
+    assert call.model == "gpt-6-luna"  # the legacy_decision role's policy model
+    evidence = sent(call)
+    assert evidence["row_count"] == 100
+    assert set(evidence) == {"row_count", "column_count", "columns"}  # sample values withheld (metadata only)
+    assert all("sample_values" not in item for item in evidence["columns"])
+    db_session.commit()
+    row = db_session.scalar(select(LlmInvocation).where(LlmInvocation.purpose == "semantic_target"))
+    assert (row.status, row.data_class, row.decision_point_key) == ("completed", "metadata", "target.column")
+    assert row.final_decision["column"] == "measure_b"
 
 
 def test_column_position_does_not_break_an_ambiguous_binary_tie():

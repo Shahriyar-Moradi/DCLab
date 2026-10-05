@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidence_field": {
+      "const": "columns",
+      "title": "Evidence Field",
+      "type": "string"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "target": {
+      "title": "Target",
+      "type": "string"
+    },
+    "task_type": {
+      "enum": [
+        "binary",
+        "multiclass",
+        "regression"
+      ],
+      "title": "Task Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "task_type",
+    "evidence_field",
+    "rationale",
+    "confidence"
+  ],
+  "title": "TargetSelectionDecision",
+  "type": "object"
+}

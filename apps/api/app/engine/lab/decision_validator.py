@@ -9,6 +9,10 @@ the evidence object and accepts the decision only when:
   is not enough — an empty co-occurrence list does not justify domain_fill;
   a high-cardinality integer does not justify categorical)
 - stated confidence is at least MIN_CONFIDENCE
+- the cited field was shown to the model: ``withheld`` (a required keyword, so no caller
+  can forget it) names evidence the data-exposure policy dropped from the call (ADR 0009
+  §8; ``llm_client.WITHHELD``), and a decision citing it, or a domain fill whose value only
+  withheld co-occurring values carry, is rejected
 
 Anything else is a reject with a reason. The caller then keeps the existing
 rule-engine action from auto_prepare.py, unchanged.
@@ -80,7 +84,9 @@ class ValidationResult:
     reason: str
 
 
-def validate_decision(evidence: ColumnEvidence, decision: MissingValueDecision) -> ValidationResult:
+def validate_decision(
+    evidence: ColumnEvidence, decision: MissingValueDecision, *, withheld: frozenset[str]
+) -> ValidationResult:
     """Accept a structured decision only if evidence actually backs the claim."""
     action = getattr(decision, "action", None)
     if action not in ALLOWED_ACTIONS:
@@ -97,6 +103,10 @@ def validate_decision(evidence: ColumnEvidence, decision: MissingValueDecision) 
     cited = getattr(decision, "evidence_field", None)
     if not isinstance(cited, str) or cited not in _EVIDENCE_FIELD_NAMES:
         return _reject(f"cited field {cited!r} does not exist on the evidence object")
+    if cited in withheld:
+        return _withheld(cited)
+    if action == "domain_fill" and "missingness_cooccurrence.other_value" in withheld:
+        return _reject("domain_fill needs co-occurring values, which were withheld from the model")
 
     support_reason = _claim_unsupported(evidence, decision, action, cited)
     if support_reason:
@@ -106,7 +116,7 @@ def validate_decision(evidence: ColumnEvidence, decision: MissingValueDecision) 
 
 
 def validate_column_type_decision(
-    evidence: ColumnTypeEvidence, decision: ColumnTypeDecision
+    evidence: ColumnTypeEvidence, decision: ColumnTypeDecision, *, withheld: frozenset[str]
 ) -> ValidationResult:
     """Accept a column-type decision only if evidence actually backs the claim."""
     action = getattr(decision, "action", None)
@@ -124,6 +134,8 @@ def validate_column_type_decision(
     cited = getattr(decision, "evidence_field", None)
     if not isinstance(cited, str) or cited not in _COLUMN_TYPE_FIELD_NAMES:
         return _reject(f"cited field {cited!r} does not exist on the evidence object")
+    if cited in withheld:
+        return _withheld(cited)
 
     support_reason = _column_type_unsupported(evidence, action, cited)
     if support_reason:
@@ -250,6 +262,10 @@ def _leakage_claim_unsupported(
 
 def _reject(reason: str) -> ValidationResult:
     return ValidationResult(verdict="reject", reason=reason)
+
+
+def _withheld(cited: str) -> ValidationResult:
+    return _reject(f"cited field {cited!r} was withheld from the model by the data-exposure policy")
 
 
 def _claim_unsupported(

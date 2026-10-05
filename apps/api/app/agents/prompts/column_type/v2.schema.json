@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "numerical",
+        "categorical",
+        "identifier"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidence_field": {
+      "enum": [
+        "column",
+        "dtype",
+        "cardinality",
+        "cardinality_ratio",
+        "sample_values"
+      ],
+      "title": "Evidence Field",
+      "type": "string"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "evidence_field",
+    "rationale",
+    "confidence"
+  ],
+  "title": "ColumnTypeDecision",
+  "type": "object"
+}

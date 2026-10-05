@@ -100,11 +100,13 @@ redirect to login.
 
 ## Live OpenAI
 
-Requires `OPENAI_API_KEY` in the process environment or `.env`. Never print the
-key.
+Requires `DCLAB_OPENAI_API_KEY` in the process environment (read only by the
+gateway's provider adapter, ADR 0009 §1). Never print the key. Legacy LLM paths
+in the app additionally need `AI_ENABLED=true`, the platform `global_ai` switch
+on and synced prompt releases (`dclab user seed` / `dclab agents sync-prompts`).
 
 ```bash
-.venv/bin/dclab verify-openai-smoke
+AI_ENABLED=true .venv/bin/dclab verify-openai-smoke --live   # also needs the platform global_ai switch on
 ```
 
 Safe fields to retain: `provider`, `model`, `status`, `request_duration_ms`,

@@ -35,6 +35,7 @@ from app.agents.gateway import budget, cache, ledger, redaction
 from app.agents.gateway.contract import (
     CompletionRequest,
     GatewayRefusal,
+    LedgerNote as ledger_note,
     Refusal,
     SemanticDecisionRequest,
     SemanticQuestion,
@@ -767,6 +768,74 @@ def test_stale_pending_rows_are_reconciled(gw):
     assert ledger.reconcile_stale_pending(gw.db) == 0
 
 
+def test_an_in_flight_call_is_never_reconciled(gw):
+    # the longest legitimate call: the specialist retry at the request-timeout cap
+    with pytest.raises(ValidationError):
+        gw.request(timeout_s=301)
+    longest = timedelta(seconds=ledger.MAX_ATTEMPTS * ledger.MAX_PROVIDER_TIMEOUT_S)
+    assert ledger.STALE_PENDING_AFTER >= max(timedelta(minutes=15), longest + timedelta(minutes=1))
+    held = gw.reserve(estimate=10_000)
+    in_flight = uuid4()
+    ledger.insert_pending(gw.db, ledger.LedgerEntry(
+        invocation_id=in_flight, workspace_id=gw.ws_a, project_id=gw.project_a, purpose=PURPOSE,
+        provider_kind="llm_provider", mode="completion", prompt_version="v1", schema_version="1",
+        input_evidence_digest="b" * 64, data_class="metadata", outcome_scope="none",
+        started_at=datetime.now(UTC) - longest - timedelta(seconds=30), llm_used=True,
+        prompt_release_id=gw.release, budget_reservation_id=held.id,
+    ), worst_case_micros=1_000)
+    gw.db.commit()
+    assert ledger.reconcile_stale_pending(gw.db) == 0
+    gw.db.commit()
+    reconciled = []
+
+    def answer(_call):  # a reconciliation job running while the provider is answering
+        with Session(bind=gw.db.get_bind()) as other:
+            reconciled.append(ledger.reconcile_stale_pending(other))
+            other.commit()
+        return dict(OK)
+
+    assert gw.service(FakeProvider(handler=answer, environment="test")).complete(gw.db, gw.request()).ok
+    assert reconciled == [0]
+    assert {row.id: row.status for row in rows(gw)}[in_flight] == "pending"
+
+
+def test_ledger_note_words_the_row_and_a_rejected_output_is_never_served_from_cache(gw):
+    seen = []
+
+    def annotate(output, refusal, llm_used):
+        seen.append((output, refusal, llm_used))
+        if refusal is not None:
+            return ledger_note(reason=f"refused: {refusal.code}", validator_verdict="unavailable",
+                               safe_output={"ignored": True}, final_decision={"final": "rule"})
+        return ledger_note(reason="validator said no", validator_verdict="reject: low", rejected=True,
+                           final_decision={"final": "rule"}, safe_output={"verdict": output.verdict})
+
+    service = gw.service()
+    first = service.complete(gw.db, gw.request(), annotate=annotate)
+    second = service.complete(gw.db, gw.request(), annotate=annotate)
+    assert first.ok and second.ok and not second.cache_hit and len(gw.fake.calls) == 2
+    row = rows(gw)[0]
+    assert (row.status, row.reason, row.validator_verdict) == ("rejected", "validator said no", "reject: low")
+    assert (row.final_decision, row.safe_output, row.llm_used) == ({"final": "rule"}, {"verdict": "keep"}, True)
+    assert seen[0][2] is True and seen[0][1] is None
+    flip_off(gw.db, workspace_id=gw.ws_a, switch_key="all_ai", reason="test", actor_rule="test.switch.v1")
+    gw.db.commit()
+    refused = service.complete(gw.db, gw.request(), annotate=annotate)
+    assert refused.refusal.code == "kill_switch" and seen[-1][2] is False
+    last = rows(gw)[-1]
+    assert (last.status, last.reason, last.validator_verdict) == ("refused", "refused: kill_switch", "unavailable")
+    assert (last.safe_output, last.final_decision) == (None, {"final": "rule"})  # refused rows store no output
+
+
+def test_a_failing_ledger_note_keeps_the_gateway_wording(gw):
+    def annotate(*_args):
+        raise RuntimeError("caller bug")
+
+    assert gw.service().complete(gw.db, gw.request(), annotate=annotate).ok
+    [row] = rows(gw)
+    assert (row.status, row.reason, row.final_decision) == ("completed", "completed", None)
+
+
 # --- step 7: cache -----------------------------------------------------------------------
 
 
@@ -878,14 +947,21 @@ def test_exactly_one_row_per_call(gw):
     assert [row.id for row in rows(gw)] == [item.invocation_id for item in outcomes]
 
 
-def test_a_caller_session_with_unflushed_changes_is_refused(gw):
+def test_a_caller_session_with_unflushed_changes_is_refused(gw, caplog):
+    from app.agents.gateway.service import caller_session_refusals
+
     req = gw.request()
+    before = caller_session_refusals().get(PURPOSE, 0)
     gw.db.add(Workspace(slug=f"dirty-{uuid4().hex[:8]}", name="uncommitted"))
-    response = gw.service().complete(gw.db, req)
+    with caplog.at_level("WARNING", logger="app.agents.gateway.service"):
+        response = gw.service().complete(gw.db, req)
     gw.db.rollback()
     assert (response.refusal.code, response.refusal.scope, response.invocation_id) == (
         "provider_error", "caller_session", None)
     assert gw.fake.calls == [] and rows(gw) == []
+    assert caller_session_refusals()[PURPOSE] == before + 1  # no ledger row, so it is counted and logged
+    [record] = [item for item in caplog.records if "caller session" in item.getMessage()]
+    assert (record.purpose, record.caller_session_refusals) == (PURPOSE, before + 1)
 
 
 def test_attribution_outside_the_workspace_writes_and_sends_nothing(gw):
@@ -1103,19 +1179,9 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 PROVIDER_MODULES = ("openai", "litellm", "typesafe_sdk", "anthropic", "nooa.unifiedllm")
 PROVIDER_HOSTS = ("api.openai.com", "api.anthropic.com", "typesafe.ai", "openrouter.ai")
 # Any provider-key reader: OPENAI_API_KEY, DCLAB_X_API_KEY, decision_agent_api_key, f"{p}_API_KEY".
-# The bare "api_key" entries of forbidden-key deny lists do not match.
+# The bare "api_key" entries of forbidden-key deny lists do not match. No allowlist: since
+# P6.2-B2 every legacy LLM path is a gateway caller (the grep test for key readers too).
 KEY_READER = re.compile(r"_api_key\b", re.IGNORECASE)
-# Legacy LLM paths, removed when P6.2-B2 moves them onto the gateway: (file, kind) -> lines.
-# Exact counts, so a legacy file cannot grow a new reader and the list can only shrink.
-LEGACY_ALLOWLIST = {
-    ("config.py", "key"): 5,
-    ("engine/lab/llm_client.py", "host"): 1,
-    ("engine/lab/llm_client.py", "key"): 4,
-    ("services/lab_decision_ledger.py", "key"): 1,
-    ("services/openai_provider.py", "import"): 1,
-    ("services/openai_smoke.py", "key"): 5,
-    ("services/pipeline_audit_service.py", "key"): 3,
-}
 
 
 def _provider_module(name: str) -> bool:
@@ -1153,7 +1219,7 @@ def scan_provider_boundary(root: Path) -> dict[tuple[str, str], int]:
 
 
 def test_provider_sdks_hosts_and_keys_live_only_in_gateway_providers():
-    assert scan_provider_boundary(APP_ROOT) == LEGACY_ALLOWLIST
+    assert scan_provider_boundary(APP_ROOT) == {}
 
 
 def test_provider_boundary_scan_catches_planted_violations(tmp_path):

@@ -15,18 +15,14 @@ from app.db.models import ClientLabUpload
 from app.engine.lab.auto_prepare import MissingValuePlan, plan_missing_values
 from app.engine.lab.schema_inference import TargetChoice
 from app.engine.modeling.holdout_planner import HoldoutPlan
-from app.engine.modeling.leakage_auditor import (
-    ModelDevelopmentPlan,
-    consult_leakage_llm,
-    plan_model_development,
-)
+from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan, plan_model_development
 from app.engine.modeling.metric_planner import MetricPlan
 from app.engine.modeling.objective import Objective
 from app.engine.modeling.validation_planner import ValidationPlan
 from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.auto_train.branch import apply_missing_value_overrides
 from app.services.auto_train.context import RunContext, StageHalt
-from app.services.lab_decision_ledger import record_missing_value_decisions
+from app.services.lab_decision_ledger import leakage_reviewer, record_missing_value_decisions
 
 
 class TrainOnlyDecisionsInput(BaseModel):
@@ -92,7 +88,7 @@ def run_train_only_decisions(
         task_type=target.task_type,
         requested_folds=5,
         random_state=42,
-        reviewer=consult_leakage_llm,
+        reviewer=leakage_reviewer(db, upload.id),
         conservative_auto_train=True,
         on_event=_planning_on_event,
         objective=inp.run_objective,

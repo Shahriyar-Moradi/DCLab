@@ -64,10 +64,12 @@ def cmd_user_seed(_args: argparse.Namespace) -> int:
     from app.services.auth_service import demo_logins, ensure_demo_users
 
     from app.agents.governance.seed import seed_platform_governance
+    from app.agents.prompt_releases import sync_prompt_releases
 
     db = _session()
     users = ensure_demo_users(db)
     seed_platform_governance(db)
+    sync_prompt_releases(db)  # idempotent: the code-owned prompts become releases (ADR 0009 §2.8)
     db.commit()
     print(
         json.dumps(
@@ -304,10 +306,20 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_verify_openai_smoke(_args: argparse.Namespace) -> int:
-    """Run exactly one synthetic-only live OpenAI verification request."""
-    from app.services.openai_smoke import OpenAISmokeError, run_openai_verification_smoke
+def cmd_verify_openai_smoke(args: argparse.Namespace) -> int:
+    """Run exactly one synthetic-only live OpenAI request (needs --live and AI switched on)."""
+    from app.config import get_settings
+    from app.services.openai_smoke import OpenAISmokeError, live_smoke_refusal, run_openai_verification_smoke
 
+    db = _session()
+    try:
+        refusal = live_smoke_refusal(db, live=bool(getattr(args, "live", False)),
+                                     ai_enabled=bool(get_settings().ai_enabled))
+    finally:
+        db.close()
+    if refusal is not None:
+        print(f"live smoke not executed: {refusal}", file=sys.stderr)
+        return 1
     try:
         print(json.dumps(run_openai_verification_smoke()))
     except OpenAISmokeError as exc:
@@ -457,6 +469,8 @@ def build_parser() -> argparse.ArgumentParser:
         "verify-openai-smoke",
         help="call the production OpenAI verifier once with synthetic bounded evidence",
     )
+    smoke.add_argument("--live", action="store_true",
+                       help="required: the call leaves the process (AI_ENABLED and global_ai must be on)")
     smoke.set_defaults(func=cmd_verify_openai_smoke)
 
     worker = sub.add_parser(

@@ -91,6 +91,13 @@ def _path(root: Path, agent_key: str, version: int) -> Path:
     return root / agent_key / f"v{version}.md"
 
 
+def prompt_text(agent_key: str, version: int, root: Path = PROMPTS_ROOT) -> str:
+    """The code-owned prompt file's text (the file is the single owner; legacy modules
+    that still export ``SYSTEM_PROMPT`` read it from here)."""
+
+    return _path(root, agent_key, version).read_text(encoding="utf-8")
+
+
 def load_release_text(release: PromptRelease, root: Path = PROMPTS_ROOT) -> str:
     """The released prompt text; refuses a missing or changed file."""
 

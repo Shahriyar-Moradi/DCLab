@@ -6,7 +6,6 @@ import json
 from types import SimpleNamespace
 from uuid import uuid4
 
-import httpx
 import numpy as np
 import pandas as pd
 import pytest
@@ -293,9 +292,7 @@ def test_semantic_assistance_is_not_called_when_target_is_canonical(db_session, 
     monkeypatch.setattr(
         "app.services.target_intent_service.resolve_target_selection", boom
     )
-    monkeypatch.setattr(
-        "app.services.lab_decision_ledger.request_target_selection_decision", boom
-    )
+    monkeypatch.setattr("app.services.lab_decision_ledger.consult", boom)
     frame = _ambiguous_binary_tie_frame()
     choice = resolve_execution_target(
         db_session,
@@ -310,34 +307,9 @@ def test_semantic_assistance_is_not_called_when_target_is_canonical(db_session, 
     assert choice.intent_source == "problem_spec"
 
 
-def test_semantic_assistance_may_resolve_genuinely_ambiguous_inference(db_session, monkeypatch):
-    from app.engine.lab import llm_client
-    from app.services import lab_decision_ledger
+def test_semantic_assistance_may_resolve_genuinely_ambiguous_inference(auth_client, db_session, monkeypatch):
+    from legacy_ai_support import enable_legacy_ai, upload_via_api
 
-    llm_client._TARGET_SELECTION_CACHE.clear()
-    settings = SimpleNamespace(
-        decision_agent_enabled=True,
-        decision_agent_api_key="sk-test",
-        decision_agent_model="configured-small-model",
-    )
-    monkeypatch.setattr(llm_client, "get_settings", lambda: settings)
-    monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
-
-    def fake_post(url, **kwargs):
-        payload = {
-            "target": "measure_b",
-            "task_type": "regression",
-            "evidence_field": "columns",
-            "rationale": "measure_b is the intended response",
-            "confidence": 0.91,
-        }
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(payload)}}]},
-            request=httpx.Request("POST", url),
-        )
-
-    monkeypatch.setattr(llm_client.httpx, "post", fake_post)
     frame = pd.DataFrame(
         {
             "measure_a": np.linspace(1, 50, 100),
@@ -345,11 +317,20 @@ def test_semantic_assistance_may_resolve_genuinely_ambiguous_inference(db_sessio
             "measure_c": np.linspace(3, 75, 100) ** 1.05,
         }
     )
+    upload = upload_via_api(auth_client, db_session, monkeypatch, frame)
+    enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: {
+        "target": "measure_b",
+        "task_type": "regression",
+        "evidence_field": "columns",
+        "rationale": "measure_b is the intended response",
+        "confidence": 0.91,
+    })
     choice = resolve_execution_target(
         db_session,
         workspace_id=DEFAULT_WORKSPACE_ID,
         frame=frame,
         columns=list(frame.columns),
+        upload_id=upload.id,
     )
     assert choice.column == "measure_b"
     assert choice.source == "llm"

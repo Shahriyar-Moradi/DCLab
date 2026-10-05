@@ -7,8 +7,10 @@ from zipfile import ZipFile
 import joblib
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, Experiment
+from app.agents.gateway.contract import CompletionResponse, Refusal
 from app.engine.lab.llm_client import MissingValueDecision
 from app.engine.types import SearchConfig, TaskSpec
 from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
@@ -125,20 +127,23 @@ def test_missing_value_llm_evidence_contains_training_targets_only(db_session, t
     frame.loc[list(test_rows)[:5], "feature"] = np.nan
 
     captured = []
-    settings = SimpleNamespace(decision_agent_enabled=True, decision_agent_api_key="test")
+    settings = SimpleNamespace(decision_agent_enabled=True, ai_enabled=True, dclab_env="test")
     monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
 
-    def fake_decision(evidence, _prompt_version):
+    def fake_consult(kind, evidence, **_kwargs):
+        if kind != "missing_value":
+            return CompletionResponse(ok=False, refusal=Refusal(code="kill_switch"))
         captured.append(evidence)
-        return MissingValueDecision(
+        return CompletionResponse(ok=True, output=MissingValueDecision(
             action="impute_median",
             evidence_field="dtype",
             fill_value=None,
             rationale="Numeric training evidence supports median imputation.",
             confidence=0.99,
-        )
+        ))
 
-    monkeypatch.setattr(lab_decision_ledger, "request_decision", fake_decision)
+    # The evidence the writer builds (before the gateway redacts it) is train-only.
+    monkeypatch.setattr(lab_decision_ledger, "consult", fake_consult)
     path = tmp_path / "llm_train_only.csv"
     frame.to_csv(path, index=False)
     upload = ClientLabUpload(
@@ -163,6 +168,65 @@ def test_missing_value_llm_evidence_contains_training_targets_only(db_session, t
     assert sampled_targets
     assert max(sampled_targets) < 1_000_000
     assert feature_evidence.missing_count == len(train_rows[::8])
+
+
+def test_column_type_and_leakage_llm_evidence_is_train_only(db_session, tmp_path, monkeypatch):
+    """Values that exist only in holdout rows never shape the column-type or leakage evidence."""
+    from app.services import lab_decision_ledger
+
+    n = 120
+    rng = np.random.default_rng(45)
+    frame = pd.DataFrame(
+        {
+            "feature": rng.normal(0, 2, n),
+            "plan_code": (np.arange(n) % 3 + 1).astype(int),
+            "final_marker": rng.normal(0, 1, n).round(6),
+            "outcome": rng.normal(150, 20, n),
+        }
+    )
+    provenance = frame.copy()
+    provenance[SOURCE_ROW_COLUMN] = np.arange(n)
+    _, _, _, split = split_train_test_holdout(provenance, target="outcome", stratify=False, seed=42)
+    test_rows = sorted(split["test_source_rows"])
+    train_rows = [index for index in range(n) if index not in set(test_rows)]
+    frame.loc[test_rows, "plan_code"] = 777_001 + np.arange(len(test_rows))  # holdout-only codes
+    frame.loc[test_rows, "final_marker"] = 5_000_000 + np.arange(len(test_rows))
+
+    captured: dict[str, list] = {"column_type": [], "leakage_review": []}
+    settings = SimpleNamespace(decision_agent_enabled=True, ai_enabled=True, dclab_env="test")
+    monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
+
+    def fake_consult(kind, evidence, **_kwargs):
+        captured.setdefault(kind, []).append(evidence)
+        return CompletionResponse(ok=False, refusal=Refusal(code="kill_switch"))
+
+    monkeypatch.setattr(lab_decision_ledger, "consult", fake_consult)
+    path = tmp_path / "llm_train_only_roles.csv"
+    frame.to_csv(path, index=False)
+    upload = ClientLabUpload(
+        workspace_id=DEFAULT_WORKSPACE_ID,
+        category="Revenue",
+        original_filename=path.name,
+        stored_path=str(path),
+        kind="spreadsheet",
+        record_count=n,
+        fields_noticed=list(frame.columns),
+        has_named_fields=True,
+        explicit_target_column="outcome",
+    )
+    db_session.add(upload)
+    db_session.commit()
+
+    run_auto_train_job(db_session, upload.id)
+    db_session.refresh(upload)
+    assert upload.pipeline_status == "completed", upload.pipeline_log
+    plan = next(item for item in captured["column_type"] if item.column == "plan_code")
+    assert plan.cardinality == 3  # the whole file has 3 + len(test_rows) distinct codes
+    assert all(value < 777_001 for value in plan.sample_values)
+    assert plan.cardinality_ratio == pytest.approx(3 / len(train_rows))
+    leak = next(item for item in captured["leakage_review"] if item.column == "final_marker")
+    assert leak.cardinality == len(train_rows)  # train rows only, never the holdout markers
+    assert leak.unique_ratio == pytest.approx(1.0)
 
 
 def test_stage_timings_feature_truth_and_persisted_report(db_session, tmp_path):

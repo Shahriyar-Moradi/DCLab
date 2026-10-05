@@ -92,6 +92,11 @@ def effective_switches(db: Session, workspace_id: UUID) -> EffectiveSwitches:
     return EffectiveSwitches(platform=_states(db, None), workspace=_states(db, workspace_id))
 
 
+def platform_switches(db: Session) -> EffectiveSwitches:
+    """Platform rows only, for callers outside any workspace (the developer live smoke)."""
+    return EffectiveSwitches(platform=_states(db, None))
+
+
 def _authorize(db: Session, actor: User, workspace_id: UUID | None, *, turning_off: bool) -> None:
     """Platform keys: platform admins. Workspace keys: owners/admins; platform admins may
     switch a workspace key off (ADR 0009 rev. 1), never back on."""

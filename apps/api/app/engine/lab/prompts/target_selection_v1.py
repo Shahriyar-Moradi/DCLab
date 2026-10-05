@@ -1,15 +1,14 @@
-"""Strict prompt for ranking ambiguous generic target candidates."""
+"""System prompt for ranking ambiguous generic target candidates.
 
-PROMPT_VERSION = "target_selection_v1"
-
-SYSTEM_PROMPT = """You rank target candidates for a tabular supervised-learning dataset.
-You receive compact, deterministic column profiles only. Select a target only from
-the supplied columns. Do not invent a column and do not rely on a business template.
-Use the probable task type supported by the selected column's dtype/cardinality.
-Return only the required JSON schema. Cite the columns evidence field.
-If the evidence does not support a clear selection, keep confidence below 0.7.
-
-task_type enum:
-binary | multiclass | regression
+The text lives in ``app/agents/prompts/target_selection/v1.md`` (its digest is the gateway's
+prompt release, ADR 0009 §2.8); this module only re-exports it. A wording change is
+a new ``v2.md``, never an edit. Recorded decisions keep pinning ``PROMPT_VERSION``.
 """
 
+from app.agents.prompt_releases import prompt_text
+
+AGENT_KEY = "target_selection"
+PROMPT_VERSION = "target_selection_v1"
+SYSTEM_PROMPT = prompt_text(AGENT_KEY, 1)
+
+__all__ = ["AGENT_KEY", "PROMPT_VERSION", "SYSTEM_PROMPT"]

@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -41,10 +43,12 @@ from sqlalchemy.orm import Session
 
 from app.agents.gateway import budget, cache, ledger, redaction
 from app.agents.gateway.contract import (
+    Annotate,
     BudgetReservation,
     CompletionRequest,
     CompletionResponse,
     GatewayRefusal,
+    LedgerNote,
     Refusal,
     SemanticAnswers,
     SemanticDecisionRequest,
@@ -71,6 +75,16 @@ logger = logging.getLogger(__name__)
 _PROVIDER_REFUSALS = {"timeout": "timeout", "rate_limited": "rate_limited", "invalid_output": "invalid_output"}
 _BREAKER_FAILURES = ("timeout", "server_error")
 JEV_INSTRUCTIONS = "Answer each question about the supplied state with the release's primitive."
+# Calls refused because the caller had not committed (no ledger row exists for them), by
+# purpose; in-process like the limits. Logged too, so a call site that forgets the caller
+# contract shows up in logs and diagnostics instead of silently taking its rule path.
+_CALLER_SESSION_REFUSALS: Counter[str] = Counter()
+_CALLER_SESSION_LOCK = threading.Lock()
+
+
+def caller_session_refusals() -> dict[str, int]:
+    with _CALLER_SESSION_LOCK:
+        return dict(_CALLER_SESSION_REFUSALS)
 
 
 @dataclass
@@ -97,9 +111,22 @@ class _Call:
     outcome_scope: str = "none"
     digest: str | None = None
     summary: dict[str, Any] = field(default_factory=dict)
+    annotate: Annotate | None = None
 
     def latency_ms(self) -> int:
         return int((time.monotonic() - self.t0) * 1000)
+
+    def note(self, output: BaseModel | None, refusal: Refusal | None, *, llm_used: bool) -> LedgerNote:
+        """The caller's wording for this row (``complete(..., annotate=)``); never raises."""
+
+        if self.annotate is None:
+            return LedgerNote()
+        try:
+            note = self.annotate(output, refusal, llm_used)
+        except Exception:
+            logger.exception("ledger annotation failed; the gateway wording is kept")
+            return LedgerNote()
+        return note if isinstance(note, LedgerNote) else LedgerNote()
 
     def identity_digest(self) -> str:
         # Refused before the cache key existed: a digest of identity only, never content.
@@ -149,7 +176,7 @@ class _CompletionSteps:
     def __init__(self, service: "GatewayService", request: CompletionRequest) -> None:
         self.service, self.request = service, request
         self.requested_model = request.model
-        self.attempts = 2 if request.agent_role == "specialist" else 1
+        self.attempts = ledger.MAX_ATTEMPTS if request.agent_role == "specialist" else 1
         self.use_cache = request.cache
         self.max_output_tokens = request.max_output_tokens
 
@@ -353,11 +380,14 @@ class GatewayService:
 
     # --- public calls ---------------------------------------------------------------
 
-    def complete(self, db: Session, request: CompletionRequest) -> CompletionResponse:
+    def complete(self, db: Session, request: CompletionRequest, *,
+                 annotate: Annotate | None = None) -> CompletionResponse:
+        """``annotate`` (legacy writers only): see ``contract.LedgerNote``."""
+
         try:
             call = _Call(kind="completion", request=request, role=request.agent_role,
                          agent_key=request.agent_key, agent_role=request.agent_role,
-                         provider_kind="llm_provider", mode="completion")
+                         provider_kind="llm_provider", mode="completion", annotate=annotate)
             return self._execute(db, call, _CompletionSteps(self, request), request.max_data_class,
                                  request.outcome_scope)
         except Exception:  # last line of defence: callers never see an exception
@@ -378,7 +408,12 @@ class GatewayService:
 
     def _execute(self, db: Session, call: _Call, steps: Any, max_class: str, max_scope: str) -> Any:
         if db.new or db.dirty or db.deleted:  # the gateway cannot see uncommitted caller work
-            logger.warning("gateway refused: caller session has unflushed changes")
+            purpose = str(call.request.purpose)
+            with _CALLER_SESSION_LOCK:
+                _CALLER_SESSION_REFUSALS[purpose] += 1
+                count = _CALLER_SESSION_REFUSALS[purpose]
+            logger.warning("gateway refused: caller session has unflushed changes",
+                           extra={"purpose": purpose, "caller_session_refusals": count})
             return steps.respond(call, refusal=Refusal(
                 code="provider_error", scope="caller_session",
                 message="commit the caller's session before calling the gateway"))
@@ -459,11 +494,14 @@ class GatewayService:
             hit = cache.lookup(db, workspace_id=r.workspace_id, key=call.digest)
             parsed = self._parse_cached(steps, hit)
             if parsed is not None:
+                note = call.note(parsed, None, llm_used=True)
                 row = ledger.insert_completed(
-                    db, call.entry(llm_used=True, provider=hit.provider), status="completed",
-                    validator_verdict="accepted", reason="cache hit", output=hit.safe_output,
-                    cache_hit=True, budget_settled=True, provider_resolved_model=hit.provider_resolved_model,
-                    latency_ms=call.latency_ms(),
+                    db, call.entry(llm_used=True, provider=hit.provider),
+                    status="rejected" if note.rejected else "completed",
+                    validator_verdict=note.validator_verdict or "accepted", reason=note.reason or "cache hit",
+                    output=hit.safe_output if note.safe_output is None else note.safe_output,
+                    final_decision=note.final_decision, cache_hit=True, budget_settled=True,
+                    provider_resolved_model=hit.provider_resolved_model, latency_ms=call.latency_ms(),
                 )
                 served = {"provider": hit.provider} if call.kind == "completion" else {}
                 return _Prepared(response=steps.respond(
@@ -548,16 +586,19 @@ class GatewayService:
 
     def _finish(self, db: Session, call: _Call, steps: Any, prepared: _Prepared, outcome: _Outcome) -> Any:
         refusal = outcome.refusal
+        note = call.note(outcome.output if refusal is None else None, refusal, llm_used=True)
+        output = outcome.output.model_dump(mode="json") if refusal is None else None
         try:
             with self._session(db) as session:
                 ledger.finalize(
                     session, invocation_id=prepared.pending_id, workspace_id=call.request.workspace_id,
-                    status="completed" if refusal is None else "failed",
-                    validator_verdict="accepted" if refusal is None else (
-                        "rejected" if refusal.code == "invalid_output" else "not_run"),
-                    reason="completed" if refusal is None else (refusal.message or refusal.code),
+                    status="failed" if refusal is not None else ("rejected" if note.rejected else "completed"),
+                    validator_verdict=note.validator_verdict or ("accepted" if refusal is None else (
+                        "rejected" if refusal.code == "invalid_output" else "not_run")),
+                    reason=note.reason or ("completed" if refusal is None else (refusal.message or refusal.code)),
                     refusal_code=refusal.code if refusal else None,
-                    output=outcome.output.model_dump(mode="json") if refusal is None else None,
+                    output=output if note.safe_output is None else note.safe_output,
+                    final_decision=note.final_decision,
                     cost_micros=outcome.cost_micros, usage=outcome.usage, latency_ms=call.latency_ms(),
                     provider_request_id=outcome.request_id, provider_resolved_model=outcome.resolved_model,
                 )
@@ -582,13 +623,15 @@ class GatewayService:
         if not call.attribution_ok:
             logger.warning("gateway refusal without ledger row (attribution outside the workspace)")
             return steps.respond(call, refusal=refusal)
+        note = call.note(None, refusal, llm_used=False)
         try:
             with self._session(db) as session:
                 row = ledger.insert_completed(
                     session, call.entry(llm_used=False, provider_kind="deterministic_fallback"),
-                    status="refused", validator_verdict="not_run", reason=refusal.message or refusal.code,
-                    refusal_code=refusal.code, budget_settled=call.reservation_ok,
-                    latency_ms=call.latency_ms(),
+                    status="refused", validator_verdict=note.validator_verdict or "not_run",
+                    reason=note.reason or refusal.message or refusal.code, refusal_code=refusal.code,
+                    final_decision=note.final_decision,  # a refused row never stores an output
+                    budget_settled=call.reservation_ok, latency_ms=call.latency_ms(),
                 )
             return steps.respond(call, refusal=refusal, invocation_id=row.id)
         except Exception:

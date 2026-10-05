@@ -12,6 +12,8 @@ routing or the ledger itself could not be written.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -141,6 +143,28 @@ class CompletionResponse(_Frozen):
     outcome_scope: OutcomeScope = "none"
 
 
+@dataclass(frozen=True)
+class LedgerNote:
+    """A legacy caller's wording for the gateway's own ledger row (ADR 0009 §4: the four
+    legacy writers keep their purposes until P6.9-A). ``complete(..., annotate=fn)`` calls
+    ``fn(output, refusal, llm_used)`` before the row is final and writes the note in the
+    same INSERT / finalizing UPDATE: ``reason``, ``validator_verdict`` and ``final_decision``
+    replace the gateway's defaults, ``safe_output`` replaces the stored output by a narrower
+    summary (ignored on refused rows, which never store an output), and ``rejected`` marks a
+    valid output the caller's deterministic validator
+    refused (status ``rejected``, never served from the cache). Refused and failed rows keep
+    their gateway status; a note that raises is ignored."""
+
+    reason: str | None = None
+    validator_verdict: str | None = None
+    final_decision: dict[str, Any] | None = None
+    safe_output: dict[str, Any] | None = None
+    rejected: bool = False
+
+
+Annotate = Callable[[BaseModel | None, Refusal | None, bool], LedgerNote | None]
+
+
 class SemanticQuestion(_Frozen):
     question_key: str = Field(min_length=1, max_length=200)  # travels as untrusted text
     primitive: Literal["noul", "choice", "score"]
@@ -197,10 +221,12 @@ class SemanticDecisionResponse(_Frozen):
 
 
 __all__ = [
+    "Annotate",
     "BudgetReservation",
     "CompletionRequest",
     "CompletionResponse",
     "GatewayRefusal",
+    "LedgerNote",
     "Refusal",
     "RefusalCode",
     "SemanticAnswer",

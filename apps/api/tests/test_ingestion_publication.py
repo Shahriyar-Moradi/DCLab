@@ -270,12 +270,16 @@ def test_failed_publication_rolls_back_upload_and_object(auth_client, db_session
     assert len(deleted) == 1
 
 
-def test_production_refuses_llm_flags_until_dataset_policy_is_enforced():
+def test_production_allows_the_gateway_verifier_but_refuses_the_decision_agent():
+    # The AI gateway applies every dataset and column llm_exposure_policy (ADR 0009 §8), so the
+    # advisory verifier may run in production; the legacy decision writers stay refused until
+    # P6.9-A applies ADR 0008 decision-point levels (deviation from ADR 0009 §8).
     from app.config import Settings, validate_runtime_settings
 
-    for flags in ({"decision_agent_enabled": True}, {"pipeline_llm_verifier_enabled": True}):
-        with pytest.raises(RuntimeError, match="llm_exposure_policy"):
-            validate_runtime_settings(Settings(dclab_env="production", **flags))
+    secrets = {"jwt_secret": "j" * 40, "auth_token_hash_secret": "h" * 40, "auth_csrf_secret": "c" * 40}
+    validate_runtime_settings(Settings(dclab_env="production", pipeline_llm_verifier_enabled=True, **secrets))
+    with pytest.raises(RuntimeError, match="P6.9-A applies ADR 0008 decision-point levels"):
+        validate_runtime_settings(Settings(dclab_env="production", decision_agent_enabled=True, **secrets))
 
 
 def test_unverified_upload_projection_hides_preview_and_dataset(auth_client, monkeypatch):

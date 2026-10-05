@@ -1,20 +1,24 @@
 """Resolve and persist Lab decisions during auto-train.
 
 After auto_prepare's rule engine runs, ambiguous columns may consult the
-evidence → LLM → validator chain. An accepted decision overrides that
-column's action or role. Disabled, unavailable, or rejected agent calls fall
-back safely. Every missing-value column still gets a ledger row with both the original
-rule-engine action (`rule_decision`) and whatever was actually applied
-(`final_decision`). Column-type rows are written only for columns the type
+evidence → AI gateway → validator chain (``llm_client.consult``; ADR 0009 §4). An
+accepted decision overrides that column's action or role. Disabled, refused,
+unavailable, or rejected calls fall back safely. A real gateway call's
+``llm_invocations`` row is written by the gateway ledger (one per call, with this
+module's legacy wording as a ``LedgerNote``); deterministic ``llm_used = false`` rows
+are written here as before. Every missing-value column still gets a ledger row with
+both the original rule-engine action (`rule_decision`) and whatever was actually
+applied (`final_decision`). Column-type rows are written only for columns the type
 agent actually consulted.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
-import time
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -22,30 +26,32 @@ from uuid import UUID
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from app.agents.gateway.contract import LedgerNote, Refusal
+from app.agents.governance.platform_default import is_development_env
+from app.agents.legacy import LegacyContext, context_for_upload, refusal_text
 from app.config import get_settings
 from app.db.models import LabDecisionRecord, LlmInvocation
 from app.engine.lab.auto_prepare import ColumnMissingDecision, MissingValuePlan
 from app.engine.lab.decision_validator import (
+    ValidationResult,
     validate_column_type_decision,
     validate_decision,
+    validate_leakage_review_decision,
     validate_target_selection_decision,
 )
 from app.engine.lab.evidence import (
     ColumnEvidence,
     ColumnTypeEvidence,
+    LeakageReviewEvidence,
     build_column_evidence,
     build_column_type_evidence,
     build_target_selection_evidence,
     is_ambiguous_column_type,
 )
-from app.engine.lab.llm_client import (
-    DecisionAgentUnavailable,
-    request_column_type_decision,
-    request_decision,
-    request_target_selection_decision,
-)
-from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION as COLUMN_TYPE_PROMPT_VERSION
-from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION
+from app.engine.lab.llm_client import WITHHELD, consult
+from app.engine.lab.prompts.column_type_v2 import PROMPT_VERSION as COLUMN_TYPE_PROMPT_VERSION
+from app.engine.lab.prompts.leakage_review_v1 import PROMPT_VERSION as LEAKAGE_PROMPT_VERSION
+from app.engine.lab.prompts.missing_value_v2 import PROMPT_VERSION
 from app.engine.lab.prompts.target_selection_v1 import PROMPT_VERSION as TARGET_SELECTION_PROMPT_VERSION
 from app.engine.lab.schema_inference import TargetChoice, choose_target_deterministically, metric_for_task
 
@@ -59,6 +65,40 @@ AMBIGUOUS_MISSING_MIN = 0.02
 AMBIGUOUS_MISSING_MAX = 0.40
 
 _DETERMINISTIC_REASON = "LLM used: NO — deterministic evidence was sufficient."
+_DISABLED_REASON = "LLM used: NO — semantic assistance was disabled or unconfigured."
+
+
+@dataclass(frozen=True)
+class _Wording:
+    accepted: str
+    rejected: str
+    retained: str
+
+
+_MISSING_VALUE = _Wording("LLM used: YES — missing-value evidence was ambiguous.",
+                          "LLM used: YES — validator rejected the missing-value response.", "rule retained")
+_COLUMN_TYPE = _Wording("LLM used: YES — column-type evidence was ambiguous.",
+                        "LLM used: YES — validator rejected the column-type response.", "inferred type retained")
+_TARGET = _Wording("LLM used: YES — deterministic target evidence was ambiguous.",
+                   "LLM used: YES — validator rejected the semantic target response.",
+                   "deterministic fallback retained")
+_LEAKAGE = _Wording("LLM used: YES — leakage evidence was ambiguous; recommendation is advisory.",
+                    "LLM used: YES — validator rejected the leakage recommendation.", "rule assessment retained")
+
+
+def _refused_reason(wording: _Wording, refusal: Refusal | None, llm_used: bool) -> str:
+    code = refusal.code if refusal is not None else "provider_error"
+    if llm_used:
+        return f"LLM used: YES — provider attempt was unavailable ({code}); {wording.retained}."
+    return f"LLM used: NO — the AI gateway refused the call ({code}); {wording.retained}."
+
+
+def _unavailable(refusal: Refusal | None) -> str:
+    return f"unavailable: {refusal_text(refusal)}"[:1024]
+
+
+def _verdict(check: ValidationResult) -> str:
+    return "accept" if check.verdict == "accept" else f"reject: {check.reason}"[:1024]
 
 
 def _safe_semantic_output(value: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -70,9 +110,60 @@ def _safe_semantic_output(value: dict[str, Any] | None) -> dict[str, Any] | None
         "evidence_field",
         "target",
         "task_type",
+        "availability_status",
+        "risk_level",
         "confidence",
     }
     return {key: value[key] for key in allowed if key in value}
+
+
+@dataclass
+class _Consulted:
+    decision: Any | None
+    check: ValidationResult | None
+    verdict: str
+    invocation_id: UUID | None
+    refusal: Refusal | None = None
+
+
+def _consult(
+    kind: str,
+    evidence: Any,
+    context: LegacyContext | None,
+    *,
+    wording: _Wording,
+    judge: Callable[[Any], ValidationResult],
+    final_decision: Callable[[_Consulted], dict[str, Any]],
+    target: str | None = None,
+) -> _Consulted:
+    """One gateway call; its ledger row carries the legacy reason, verdict and final
+    decision. Never raises: an unexpected error is an unavailable consultation."""
+
+    def judged(decision: Any, refusal: Refusal | None, invocation_id: UUID | None = None) -> _Consulted:
+        if decision is None:
+            return _Consulted(None, None, _unavailable(refusal), invocation_id, refusal)
+        check = judge(decision)
+        return _Consulted(decision, check, _verdict(check), invocation_id)
+
+    def note(decision: Any, refusal: Refusal | None, llm_used: bool) -> LedgerNote:
+        outcome = judged(decision, refusal)
+        if outcome.check is None:
+            return LedgerNote(reason=_refused_reason(wording, refusal, llm_used), validator_verdict=outcome.verdict,
+                              final_decision=final_decision(outcome))
+        accepted = outcome.check.verdict == "accept"
+        return LedgerNote(
+            reason=wording.accepted if accepted else wording.rejected, validator_verdict=outcome.verdict,
+            final_decision=final_decision(outcome), rejected=not accepted,
+            safe_output=_safe_semantic_output(decision.model_dump(mode="json")),
+        )
+
+    try:
+        response = consult(kind, evidence, context=context, annotate=note, target=target)
+        ok = response.ok and response.output is not None
+        return judged(response.output if ok else None, response.refusal, response.invocation_id)
+    except Exception:  # noqa: BLE001 - the ML pipeline never fails on advisory AI
+        logger.exception("%s consultation failed; the rule value is kept", kind)
+        return _Consulted(None, None, "unavailable: unexpected error", None)
 
 
 def _target_final_decision(choice: TargetChoice) -> dict[str, Any]:
@@ -94,20 +185,16 @@ def _observe_semantic_decision(
     purpose: str,
     prompt_version: str,
     evidence: Any,
-    llm_used: bool,
     reason: str,
     status: str,
     validator_verdict: str,
-    safe_output: dict[str, Any] | None,
     final_decision: dict[str, Any],
-    started_at: datetime | None = None,
-    latency_ms: float | None = None,
 ) -> LlmInvocation | None:
+    """A deterministic row (no provider call): ``llm_used = false``."""
     if db is None or upload_id is None:
         return None
     from app.services.observability_service import create_llm_invocation
 
-    settings = get_settings()
     return create_llm_invocation(
         db,
         upload_id=upload_id,
@@ -116,18 +203,37 @@ def _observe_semantic_decision(
         prompt_version=prompt_version,
         schema_version=1,
         evidence=evidence,
-        llm_used=llm_used,
+        llm_used=False,
         reason=reason,
         status=status,
         validator_verdict=validator_verdict,
-        provider="openai" if llm_used else None,
-        model=getattr(settings, "decision_agent_model", None) if llm_used else None,
-        safe_output=safe_output,
+        safe_output=None,
         final_decision=final_decision,
-        started_at=started_at,
         completed_at=datetime.now(UTC),
-        latency_ms=latency_ms,
     )
+
+
+def _ledger_row_id(
+    consulted: _Consulted,
+    db: Session | None,
+    upload_id: UUID | None,
+    *,
+    purpose: str,
+    prompt_version: str,
+    evidence: Any,
+    wording: _Wording,
+    final_decision: dict[str, Any],
+) -> UUID | None:
+    """The gateway's row, or (refused before the gateway wrote one) a deterministic row."""
+
+    if consulted.invocation_id is not None:
+        return consulted.invocation_id
+    row = _observe_semantic_decision(
+        db, upload_id, purpose=purpose, prompt_version=prompt_version, evidence=evidence,
+        reason=_refused_reason(wording, consulted.refusal, False), status="refused",
+        validator_verdict=consulted.verdict, final_decision=final_decision,
+    )
+    return row.id if row is not None else None
 
 
 def _jsonable(value: Any) -> Any:
@@ -139,8 +245,39 @@ def _evidence_snapshot(evidence: ColumnEvidence | ColumnTypeEvidence) -> dict[st
 
 
 def _agent_configured() -> bool:
+    """Flag AND ``AI_ENABLED`` AND a development environment (``llm_client.agent_enabled``:
+    production is blocked until P6.9-A applies ADR 0008 decision-point levels)."""
     settings = get_settings()
-    return bool(settings.decision_agent_enabled and (settings.decision_agent_api_key or "").strip())
+    return bool(
+        settings.decision_agent_enabled
+        and getattr(settings, "ai_enabled", False)
+        and is_development_env(str(getattr(settings, "dclab_env", "") or ""))
+    )
+
+
+def _target_outcome(choice: TargetChoice, consulted: _Consulted) -> TargetChoice:
+    """The choice after one semantic consultation (a copy; pure)."""
+    outcome = copy.copy(choice)
+    outcome.validator_verdict = consulted.verdict
+    outcome.source = "fallback"
+    decision, check = consulted.decision, consulted.check
+    if decision is None or check is None:
+        outcome.reason += "; semantic target assistance was unavailable"
+        return outcome
+    outcome.raw_llm_output = decision.model_dump(mode="json")
+    if check.verdict != "accept":
+        outcome.reason += f"; semantic decision rejected: {check.reason}"
+        return outcome
+    candidate = next(item for item in choice.candidates if item.column == decision.target)
+    outcome.column = candidate.column
+    outcome.task_type = decision.task_type
+    outcome.evaluation_metric = metric_for_task(decision.task_type)
+    outcome.confidence = float(decision.confidence)
+    outcome.source = "llm"
+    outcome.intent_source = "llm"
+    outcome.reason = decision.rationale
+    outcome.evidence = candidate.evidence
+    return outcome
 
 
 def resolve_target_selection(
@@ -166,11 +303,9 @@ def resolve_target_selection(
             purpose="semantic_target",
             prompt_version=TARGET_SELECTION_PROMPT_VERSION,
             evidence=evidence_summary,
-            llm_used=False,
             reason=_DETERMINISTIC_REASON,
             status="not_used",
             validator_verdict=choice.validator_verdict or "not_run",
-            safe_output=None,
             final_decision=_target_final_decision(choice),
         )
         return choice
@@ -183,108 +318,24 @@ def resolve_target_selection(
             purpose="semantic_target",
             prompt_version=TARGET_SELECTION_PROMPT_VERSION,
             evidence=evidence_summary,
-            llm_used=False,
-            reason="LLM used: NO — semantic assistance was disabled or unconfigured.",
+            reason=_DISABLED_REASON,
             status="not_used",
             validator_verdict="not_run",
-            safe_output=None,
             final_decision=_target_final_decision(choice),
         )
         return choice
 
     evidence = build_target_selection_evidence(len(frame), len(columns), choice.candidates)
-    started_at = datetime.now(UTC)
-    timer = time.perf_counter()
-    try:
-        decision = request_target_selection_decision(evidence, TARGET_SELECTION_PROMPT_VERSION)
-        choice.raw_llm_output = decision.model_dump(mode="json")
-        check = validate_target_selection_decision(evidence, decision)
-        choice.validator_verdict = check.verdict if check.verdict == "accept" else f"reject: {check.reason}"
-        if check.verdict != "accept":
-            choice.source = "fallback"
-            choice.reason += f"; semantic decision rejected: {check.reason}"
-            _observe_semantic_decision(
-                db,
-                upload_id,
-                purpose="semantic_target",
-                prompt_version=TARGET_SELECTION_PROMPT_VERSION,
-                evidence=asdict(evidence),
-                llm_used=True,
-                reason="LLM used: YES — validator rejected the semantic target response.",
-                status="rejected",
-                validator_verdict=choice.validator_verdict,
-                safe_output=_safe_semantic_output(choice.raw_llm_output),
-                final_decision=_target_final_decision(choice),
-                started_at=started_at,
-                latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
-            )
-            return choice
-        candidate = next(item for item in choice.candidates if item.column == decision.target)
-        choice.column = candidate.column
-        choice.task_type = decision.task_type
-        choice.evaluation_metric = metric_for_task(decision.task_type)
-        choice.confidence = float(decision.confidence)
-        choice.source = "llm"
-        choice.intent_source = "llm"
-        choice.reason = decision.rationale
-        choice.evidence = candidate.evidence
-        _observe_semantic_decision(
-            db,
-            upload_id,
-            purpose="semantic_target",
-            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
-            evidence=asdict(evidence),
-            llm_used=True,
-            reason="LLM used: YES — deterministic target evidence was ambiguous.",
-            status="completed",
-            validator_verdict=choice.validator_verdict,
-            safe_output=_safe_semantic_output(choice.raw_llm_output),
-            final_decision=_target_final_decision(choice),
-            started_at=started_at,
-            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
-        )
-        return choice
-    except DecisionAgentUnavailable as exc:
-        choice.source = "fallback"
-        choice.validator_verdict = f"unavailable: {exc}"
-        choice.reason += "; semantic target assistance was unavailable"
-        _observe_semantic_decision(
-            db,
-            upload_id,
-            purpose="semantic_target",
-            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
-            evidence=asdict(evidence),
-            llm_used=True,
-            reason="LLM used: YES — provider attempt was unavailable; deterministic fallback retained.",
-            status="unavailable",
-            validator_verdict=choice.validator_verdict,
-            safe_output=None,
-            final_decision=_target_final_decision(choice),
-            started_at=started_at,
-            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
-        )
-        return choice
-    except Exception:  # noqa: BLE001
-        logger.exception("target-selection agent failed; refusing to guess a target")
-        choice.source = "fallback"
-        choice.validator_verdict = "unavailable: unexpected error"
-        choice.reason += "; semantic target assistance failed"
-        _observe_semantic_decision(
-            db,
-            upload_id,
-            purpose="semantic_target",
-            prompt_version=TARGET_SELECTION_PROMPT_VERSION,
-            evidence=asdict(evidence),
-            llm_used=True,
-            reason="LLM used: YES — semantic target processing failed; deterministic fallback retained.",
-            status="failed",
-            validator_verdict=choice.validator_verdict,
-            safe_output=None,
-            final_decision=_target_final_decision(choice),
-            started_at=started_at,
-            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
-        )
-        return choice
+    consulted = _consult(
+        "target_selection", evidence, context_for_upload(db, upload_id), wording=_TARGET,
+        judge=lambda decision: validate_target_selection_decision(evidence, decision),
+        final_decision=lambda item: _target_final_decision(_target_outcome(choice, item)),
+    )
+    outcome = _target_outcome(choice, consulted)
+    _ledger_row_id(consulted, db, upload_id, purpose="semantic_target",
+                   prompt_version=TARGET_SELECTION_PROMPT_VERSION, evidence=asdict(evidence), wording=_TARGET,
+                   final_decision=_target_final_decision(outcome))
+    return outcome
 
 
 def is_ambiguous_column(
@@ -309,6 +360,12 @@ def _apply_accepted_override(frame: pd.DataFrame, rule: ColumnMissingDecision, a
         frame[rule.column] = frame[rule.column].fillna(fill_value)
 
 
+def _source(check: ValidationResult | None) -> str:
+    if check is None:
+        return "rule"
+    return "llm" if check.verdict == "accept" else "fallback"
+
+
 def record_missing_value_decisions(
     db: Session,
     upload_id: UUID,
@@ -319,96 +376,60 @@ def record_missing_value_decisions(
     """Consult the agent on ambiguous columns, apply accepted overrides, persist the ledger.
 
     Mutates `missing_plan.column_decisions` and `frame` when an override is applied.
-    Re-running the job for the same upload replaces the previous rows.
+    Re-running the job for the same upload replaces the previous rows. Each record is
+    flushed at once so the session stays clean for the next gateway call.
     """
     db.query(LabDecisionRecord).filter(LabDecisionRecord.upload_id == upload_id).delete(
         synchronize_session=False
     )
 
     consult_agent = _agent_configured()
+    context = context_for_upload(db, upload_id) if consult_agent else None
+    withheld = WITHHELD["missing_value"]
     for rule in missing_plan.column_decisions:
         if rule.column not in frame.columns:
             continue
         original_action = rule.action
         evidence = build_column_evidence(frame, rule.column, target=target)
-        source = "rule"
-        verdict = _VERDICT_NOT_RUN
-        raw: dict[str, Any] | None = None
-        applied_fill: Any = None
         ambiguous = is_ambiguous_column(rule, evidence, frame)
-        llm_used = consult_agent and ambiguous
-        started_at = datetime.now(UTC) if llm_used else None
-        timer = time.perf_counter() if llm_used else None
 
+        def final(item: _Consulted, column: str = rule.column, original: str = original_action) -> dict[str, Any]:
+            accepted = _source(item.check) == "llm"
+            return {"column": column, "rule_decision": original,
+                    "final_decision": item.decision.action if accepted else original, "source": _source(item.check)}
+
+        source, verdict, raw, applied_fill, invocation_id = "rule", _VERDICT_NOT_RUN, None, None, None
         if consult_agent and ambiguous:
-            try:
-                llm_decision = request_decision(evidence, PROMPT_VERSION)
-                raw = llm_decision.model_dump(mode="json")
-                check = validate_decision(evidence, llm_decision)
-                if check.verdict == "accept":
-                    source = "llm"
-                    verdict = "accept"
-                    _apply_accepted_override(frame, rule, llm_decision.action, llm_decision.fill_value)
-                    applied_fill = llm_decision.fill_value
-                else:
-                    source = "fallback"
-                    verdict = (f"reject: {check.reason}")[:1024]
-            except DecisionAgentUnavailable as exc:
-                source = "rule"
-                verdict = (f"unavailable: {exc}")[:1024]
-                raw = None
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "decision agent failed for column %s; keeping the rule-engine action",
-                    rule.column,
-                )
-                source = "rule"
-                verdict = "unavailable: unexpected error"
-                raw = None
-
-        if not llm_used:
-            invocation_reason = (
-                _DETERMINISTIC_REASON
-                if not ambiguous
-                else "LLM used: NO — semantic assistance was disabled or unconfigured."
+            consulted = _consult(
+                "missing_value", evidence, context, wording=_MISSING_VALUE, target=target, final_decision=final,
+                judge=lambda decision, item=evidence: validate_decision(item, decision, withheld=withheld),
             )
-            invocation_status = "not_used"
-        elif verdict == "accept":
-            invocation_reason = "LLM used: YES — missing-value evidence was ambiguous."
-            invocation_status = "completed"
-        elif verdict.startswith("reject:"):
-            invocation_reason = "LLM used: YES — validator rejected the missing-value response."
-            invocation_status = "rejected"
+            verdict, source = consulted.verdict, _source(consulted.check)
+            if consulted.decision is not None:
+                raw = consulted.decision.model_dump(mode="json")
+                if source == "llm":
+                    _apply_accepted_override(frame, rule, consulted.decision.action, consulted.decision.fill_value)
+                    applied_fill = consulted.decision.fill_value
+            invocation_id = _ledger_row_id(
+                consulted, db, upload_id, purpose="semantic_missing_value", prompt_version=PROMPT_VERSION,
+                evidence=asdict(evidence), wording=_MISSING_VALUE, final_decision=final(consulted),
+            )
         else:
-            invocation_reason = "LLM used: YES — provider attempt was unavailable; rule retained."
-            invocation_status = "unavailable"
-        invocation = _observe_semantic_decision(
-            db,
-            upload_id,
-            purpose="semantic_missing_value",
-            prompt_version=PROMPT_VERSION,
-            evidence=asdict(evidence),
-            llm_used=llm_used,
-            reason=invocation_reason,
-            status=invocation_status,
-            validator_verdict=verdict,
-            safe_output=_safe_semantic_output(raw),
-            final_decision={
-                "column": rule.column,
-                "rule_decision": original_action,
-                "final_decision": rule.action,
-                "source": source,
-            },
-            started_at=started_at,
-            latency_ms=(
-                max(0.001, (time.perf_counter() - timer) * 1000.0)
-                if timer is not None
-                else None
-            ),
-        )
+            invocation = _observe_semantic_decision(
+                db,
+                upload_id,
+                purpose="semantic_missing_value",
+                prompt_version=PROMPT_VERSION,
+                evidence=asdict(evidence),
+                reason=_DETERMINISTIC_REASON if not ambiguous else _DISABLED_REASON,
+                status="not_used",
+                validator_verdict=verdict,
+                final_decision=final(_Consulted(None, None, verdict, None)),
+            )
+            invocation_id = invocation.id if invocation is not None else None
         db.add(
             LabDecisionRecord(
-                llm_invocation_id=invocation.id if invocation is not None else None,
+                llm_invocation_id=invocation_id,
                 upload_id=upload_id,
                 column=rule.column,
                 evidence_snapshot=_evidence_snapshot(evidence),
@@ -421,7 +442,7 @@ def record_missing_value_decisions(
                 source=source,
             )
         )
-    db.flush()
+        db.flush()
     return frame
 
 
@@ -456,7 +477,9 @@ def record_column_type_decisions(
     numerical = list(numerical_cols)
     categorical = list(categorical_cols)
     consult_agent = _agent_configured()
+    context = context_for_upload(db, upload_id) if consult_agent else None
     original_numerical = set(numerical_cols)
+    withheld = WITHHELD["column_type"]
 
     for column in dict.fromkeys([*numerical_cols, *categorical_cols]):
         if column not in frame.columns:
@@ -466,6 +489,12 @@ def record_column_type_decisions(
             frame, column, evidence
         )
         original = "numerical" if column in original_numerical else "categorical"
+
+        def final(item: _Consulted, name: str = column, rule_role: str = original) -> dict[str, Any]:
+            accepted = _source(item.check) == "llm"
+            return {"column": name, "rule_decision": rule_role,
+                    "final_decision": item.decision.action if accepted else rule_role, "source": _source(item.check)}
+
         if not consult_agent or not ambiguous:
             _observe_semantic_decision(
                 db,
@@ -473,90 +502,33 @@ def record_column_type_decisions(
                 purpose="semantic_column_type",
                 prompt_version=COLUMN_TYPE_PROMPT_VERSION,
                 evidence=asdict(evidence),
-                llm_used=False,
-                reason=(
-                    _DETERMINISTIC_REASON
-                    if not ambiguous
-                    else "LLM used: NO — semantic assistance was disabled or unconfigured."
-                ),
+                reason=_DETERMINISTIC_REASON if not ambiguous else _DISABLED_REASON,
                 status="not_used",
                 validator_verdict=_VERDICT_NOT_RUN,
-                safe_output=None,
-                final_decision={
-                    "column": column,
-                    "rule_decision": original,
-                    "final_decision": original,
-                    "source": "rule",
-                },
+                final_decision=final(_Consulted(None, None, _VERDICT_NOT_RUN, None)),
             )
             continue
 
-        final = original
-        source = "rule"
-        verdict = _VERDICT_NOT_RUN
-        raw: dict[str, Any] | None = None
-        started_at = datetime.now(UTC)
-        timer = time.perf_counter()
-
-        try:
-            llm_decision = request_column_type_decision(evidence, COLUMN_TYPE_PROMPT_VERSION)
-            raw = llm_decision.model_dump(mode="json")
-            check = validate_column_type_decision(evidence, llm_decision)
-            if check.verdict == "accept":
-                source = "llm"
-                verdict = "accept"
+        final_role, raw = original, None
+        consulted = _consult(
+            "column_type", evidence, context, wording=_COLUMN_TYPE, final_decision=final,
+            judge=lambda decision, item=evidence: validate_column_type_decision(item, decision, withheld=withheld),
+        )
+        verdict, source = consulted.verdict, _source(consulted.check)
+        if consulted.decision is not None:
+            raw = consulted.decision.model_dump(mode="json")
+            if source == "llm":
                 numerical, categorical = _apply_column_type_override(
-                    numerical, categorical, column, llm_decision.action
+                    numerical, categorical, column, consulted.decision.action
                 )
-                final = llm_decision.action
-            else:
-                source = "fallback"
-                verdict = (f"reject: {check.reason}")[:1024]
-        except DecisionAgentUnavailable as exc:
-            source = "rule"
-            verdict = (f"unavailable: {exc}")[:1024]
-            raw = None
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "column-type agent failed for column %s; keeping the dtype-based role",
-                column,
-            )
-            source = "rule"
-            verdict = "unavailable: unexpected error"
-            raw = None
-
-        if verdict == "accept":
-            invocation_status = "completed"
-            reason = "LLM used: YES — column-type evidence was ambiguous."
-        elif verdict.startswith("reject:"):
-            invocation_status = "rejected"
-            reason = "LLM used: YES — validator rejected the column-type response."
-        else:
-            invocation_status = "unavailable"
-            reason = "LLM used: YES — provider attempt was unavailable; inferred type retained."
-        invocation = _observe_semantic_decision(
-            db,
-            upload_id,
-            purpose="semantic_column_type",
-            prompt_version=COLUMN_TYPE_PROMPT_VERSION,
-            evidence=asdict(evidence),
-            llm_used=True,
-            reason=reason,
-            status=invocation_status,
-            validator_verdict=verdict,
-            safe_output=_safe_semantic_output(raw),
-            final_decision={
-                "column": column,
-                "rule_decision": original,
-                "final_decision": final,
-                "source": source,
-            },
-            started_at=started_at,
-            latency_ms=max(0.001, (time.perf_counter() - timer) * 1000.0),
+                final_role = consulted.decision.action
+        invocation_id = _ledger_row_id(
+            consulted, db, upload_id, purpose="semantic_column_type", prompt_version=COLUMN_TYPE_PROMPT_VERSION,
+            evidence=asdict(evidence), wording=_COLUMN_TYPE, final_decision=final(consulted),
         )
         db.add(
             LabDecisionRecord(
-                llm_invocation_id=invocation.id if invocation is not None else None,
+                llm_invocation_id=invocation_id,
                 upload_id=upload_id,
                 column=column,
                 evidence_snapshot=_evidence_snapshot(evidence),
@@ -564,10 +536,43 @@ def record_column_type_decisions(
                 raw_llm_output=raw,
                 validator_verdict=verdict,
                 rule_decision=original,
-                final_decision=final,
+                final_decision=final_role,
                 fill_value=None,
                 source=source,
             )
         )
-    db.flush()
+        db.flush()
     return numerical, categorical
+
+
+def leakage_reviewer(db: Session, upload_id: UUID) -> Callable[[LeakageReviewEvidence], Any]:
+    """The leakage auditor's reviewer for one run: a gateway call with a ledger row per
+    consulted column (``semantic_leakage``). With the agent off it is the context-free
+    reviewer, which never calls a model (today's AI-off behaviour)."""
+
+    from app.engine.modeling.leakage_auditor import consult_leakage_llm
+
+    if not _agent_configured():
+        return consult_leakage_llm
+    context = context_for_upload(db, upload_id)
+
+    def review(evidence: LeakageReviewEvidence) -> Any:
+        def final(item: _Consulted) -> dict[str, Any]:
+            accepted = _source(item.check) == "llm"
+            return {"column": evidence.column, "rule_availability": evidence.availability_status,
+                    "availability_status": item.decision.availability_status if accepted else evidence.availability_status,
+                    "recommended_risk_level": item.decision.risk_level if accepted else None,
+                    "source": _source(item.check)}
+
+        consulted = _consult(
+            "leakage_review", evidence, context, wording=_LEAKAGE, final_decision=final,
+            judge=lambda decision: validate_leakage_review_decision(evidence, decision),
+        )
+        _ledger_row_id(consulted, db, upload_id, purpose="semantic_leakage", prompt_version=LEAKAGE_PROMPT_VERSION,
+                       evidence=asdict(evidence), wording=_LEAKAGE, final_decision=final(consulted))
+        # A rejected recommendation is returned on purpose: ``leakage_auditor._apply_reviewer``
+        # re-runs the same deterministic validator on the same evidence, applies only an accepted
+        # availability status (never keep / exclude) and records the rejection reason.
+        return consulted.decision
+
+    return review

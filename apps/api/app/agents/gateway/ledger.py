@@ -26,8 +26,11 @@ from app.db.models import AgentRun, Experiment, LlmInvocation, Project, Workflow
 from app.services.observability_service import sanitize_observability_payload
 
 CURRENCY = "USD"
-# Longer than the largest provider timeout a request may set (300 s), plus margin.
-STALE_PENDING_AFTER = timedelta(seconds=360)
+# Longer than the longest legitimate in-flight call: two attempts (the specialist retry)
+# at the 300 s request-timeout cap, plus five minutes for limits, budget and ledger writes.
+MAX_ATTEMPTS = 2
+MAX_PROVIDER_TIMEOUT_S = 300
+STALE_PENDING_AFTER = timedelta(seconds=MAX_ATTEMPTS * MAX_PROVIDER_TIMEOUT_S + 300)
 
 
 @dataclass
@@ -77,6 +80,16 @@ def _safe(output: dict[str, Any] | None) -> tuple[dict[str, Any] | None, dict[st
     if output is None:
         return None, None
     return sanitize_observability_payload(output)
+
+
+def _summaries(base: dict[str, Any], output: dict[str, Any] | None,
+               final_decision: dict[str, Any] | None) -> tuple[Any, Any, dict[str, Any]]:
+    safe_output, output_summary = _safe(output)
+    safe_decision, decision_summary = _safe(final_decision)
+    summary = {**base, "safe_output": output_summary}
+    if final_decision is not None:
+        summary["final_decision"] = decision_summary
+    return safe_output, safe_decision, summary
 
 
 def _row(entry: LedgerEntry, **outcome: Any) -> LlmInvocation:
@@ -132,8 +145,9 @@ def raise_pending_estimate(db: Session, *, invocation_id: UUID, workspace_id: UU
 
 def reconcile_stale_pending(db: Session, *, older_than: timedelta = STALE_PENDING_AFTER,
                             workspace_id: UUID | None = None) -> int:
-    """Finalize gateway rows left ``pending`` by a dead process (older than the longest
-    provider timeout) as ``failed`` / ``timeout`` with zero cost; returns the count.
+    """Finalize gateway rows left ``pending`` by a dead process (older than
+    ``STALE_PENDING_AFTER``, the longest legitimate call) as ``failed`` / ``timeout`` with
+    zero cost; returns the count.
     Legacy pending rows (no prompt release) are never touched. For a reconciliation job."""
 
     query = (
@@ -159,6 +173,7 @@ def insert_completed(
     reason: str,
     refusal_code: str | None = None,
     output: dict[str, Any] | None = None,
+    final_decision: dict[str, Any] | None = None,
     cost_micros: int = 0,
     cache_hit: bool = False,
     budget_settled: bool = False,
@@ -169,16 +184,17 @@ def insert_completed(
 ) -> LlmInvocation:
     """A row that is final at INSERT: refusals, cache hits, calls made without a provider."""
 
-    safe_output, output_summary = _safe(output)
+    safe_output, safe_decision, summary = _summaries(entry.redaction_summary, output, final_decision)
     usage = usage or Usage()
     row = _row(
         entry,
-        redaction_summary={**entry.redaction_summary, "safe_output": output_summary},
+        redaction_summary=summary,
         reason=reason[:1024],
         status=status,
         validator_verdict=validator_verdict[:1024],
         refusal_code=refusal_code,
         safe_output=safe_output,
+        final_decision=safe_decision,
         cost_micros=cost_micros,
         currency=CURRENCY,
         estimated_cost=cost_micros / 1_000_000,
@@ -212,6 +228,7 @@ def finalize(
     latency_ms: float,
     provider_request_id: str | None,
     provider_resolved_model: str | None,
+    final_decision: dict[str, Any] | None = None,
 ) -> LlmInvocation:
     """The one UPDATE that completes a pending row (outcome and cost together)."""
 
@@ -223,13 +240,14 @@ def finalize(
     )
     if row is None or row.completed_at is not None:
         raise ValueError("no pending invocation to finalize")
-    safe_output, output_summary = _safe(output)
+    safe_output, safe_decision, summary = _summaries(dict(row.redaction_summary or {}), output, final_decision)
     row.status = status
     row.validator_verdict = validator_verdict[:1024]
     row.reason = reason[:1024]
     row.refusal_code = refusal_code
     row.safe_output = safe_output
-    row.redaction_summary = {**dict(row.redaction_summary or {}), "safe_output": output_summary}
+    row.final_decision = safe_decision
+    row.redaction_summary = summary
     row.cost_micros = cost_micros
     row.currency = CURRENCY
     row.estimated_cost = cost_micros / 1_000_000

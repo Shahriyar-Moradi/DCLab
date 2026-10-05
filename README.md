@@ -35,11 +35,12 @@ dclab env seed-dogfood
 dclab experiment run --dataset synthetic --task purchase_prediction
 ```
 
-Optional live OpenAI verifier smoke test (synthetic evidence only; it never
-sends an uploaded dataset):
+Optional live OpenAI smoke test of the AI gateway's provider adapter (synthetic
+evidence only; it never sends an uploaded dataset). The key is read only by
+`app/agents/gateway/providers/openai.py`:
 
 ```bash
-OPENAI_API_KEY=... dclab verify-openai-smoke
+AI_ENABLED=true DCLAB_OPENAI_API_KEY=... dclab verify-openai-smoke --live
 ```
 
 Olist (manual benchmark, not CI):
