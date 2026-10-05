@@ -651,6 +651,7 @@ class ModelCardMetricInWords(BaseModel):
     text: str
     basis: str
     numbers: dict[str, float] = Field(default_factory=dict)
+    caveat: str | None = None
 
 
 class ModelCardBaseline(BaseModel):

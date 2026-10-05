@@ -461,8 +461,8 @@ export interface paths {
          * @description Model version detail: family, locked metrics (CV + final holdout at the locked
          *     decision threshold, constraint status), source experiment/candidate, split plan,
          *     dataset lineage, feature recipe, champion flag, and artifacts by id + digest.
-         *     Service-token (agent) callers get CV metrics only; the current champion's holdout
-         *     comes as ``holdout_report_only`` (reporting, never selection).
+         *     Service-token (agent) callers get CV metrics only, champion included
+         *     (``holdout_report_only`` is always null).
          */
         get: operations["read_model_version_v1_model_versions__model_version_id__get"];
         put?: never;
@@ -2606,7 +2606,7 @@ export interface components {
             family?: string | null;
             /**
              * Holdout Report Only
-             * @description Service-token (agent) callers only: the current champion's final-holdout metrics, for reporting, never for selection. Agents never get holdout values in `metrics`.
+             * @description Always null (kept for compatibility): agents never receive final-holdout values, with no champion exception (ADR 0008 §2b). Session humans read them in `metrics`.
              */
             holdout_report_only?: {
                 [key: string]: number;

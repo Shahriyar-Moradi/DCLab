@@ -1,0 +1,2858 @@
+{
+ "ids": {
+  "branch": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+  "decision": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8",
+  "model_version": "4810b254-866c-42a9-b41d-045c9749aa83",
+  "project": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+  "root": "59c35e71-34a0-462b-996e-abc42cb4842a"
+ },
+ "responses": {
+  "GET /v1/datasets": [
+   {
+    "column_count": 3,
+    "content_digest": "0d550ab3a37fe6cfee6a35f3b2f955e69f89036b7c95cec169c9e980dc9fad29",
+    "created_at": "2026-10-05T04:53:38.051436+04:00",
+    "dataset_asset_id": "29ad5b05-a337-47c6-b6f8-97e0630e9a25",
+    "id": "d2a3b364-b20e-4ba0-af89-fcb69fc23d8c",
+    "name": "score",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "purpose": "scoring",
+    "row_count": 30,
+    "version": "v1",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "column_count": 5,
+    "content_digest": "0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31",
+    "created_at": "2026-10-05T04:53:32.668600+04:00",
+    "dataset_asset_id": "29167416-f33e-4271-bd70-56c45eec1ebf",
+    "id": "85f553ec-dadf-4adc-a07d-5236e88a8fac",
+    "name": "client-upload-f96687ab-4bb7-42f8-b711-d3be20bdfd48",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "purpose": "training",
+    "row_count": 240,
+    "version": "v1",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "column_count": 5,
+    "content_digest": "0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31",
+    "created_at": "2026-10-05T04:53:26.867096+04:00",
+    "dataset_asset_id": "753df402-9750-4fc0-9da3-f5603614cd0b",
+    "id": "3744c121-05f3-4175-a40d-e1c9241475d7",
+    "name": "client-upload-42f9baa2-8b34-4455-ab26-a5878bfcb27a",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "purpose": "training",
+    "row_count": 240,
+    "version": "v1",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "column_count": 4,
+    "content_digest": "14a2691613d95b8bf6319884127708ad2c8cbbd986311639959700ad0c6fdf1d",
+    "created_at": "2026-10-05T04:53:26.135132+04:00",
+    "dataset_asset_id": "1b872171-e3e0-4b50-ac1c-c805b1142c3b",
+    "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+    "name": "rows",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "purpose": "training",
+    "row_count": 240,
+    "version": "v1",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   }
+  ],
+  "GET /v1/datasets/325430e9-837c-43b4-91d3-96cefe3f9aed": {
+   "column_count": 4,
+   "content_digest": "14a2691613d95b8bf6319884127708ad2c8cbbd986311639959700ad0c6fdf1d",
+   "created_at": "2026-10-05T04:53:26.135132+04:00",
+   "dataset_asset_id": "1b872171-e3e0-4b50-ac1c-c805b1142c3b",
+   "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+   "name": "rows",
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "purpose": "training",
+   "row_count": 240,
+   "version": "v1",
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/decisions/a0ff9dca-afe0-41d4-b032-0a77c0789cf8": {
+   "actor": {
+    "agent_run_id": null,
+    "kind": "agent",
+    "rule": null,
+    "service_token_id": "351f7a9b-226e-4020-a7e2-11eb1302f022",
+    "user_id": null
+   },
+   "content_origin": "agent",
+   "decision_type": "experiment_accepted",
+   "details": {},
+   "details_truncated": false,
+   "effective_state": "proposed",
+   "event_at": "2026-10-05T04:53:38.468060+04:00",
+   "evidence_refs": [
+    {
+     "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "kind": "experiment",
+     "metric": null,
+     "scope": null
+    }
+   ],
+   "facts": {},
+   "id": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8",
+   "policy_version": "dclab.decisions.v1",
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "rationale": "branch holds CV quality",
+   "rationale_label": "unverified agent rationale",
+   "rationale_truncated": false,
+   "rationale_untrusted": true,
+   "recorded_at": "2026-10-05T04:53:38.468060+04:00",
+   "schema_version": 1,
+   "state": "proposed",
+   "subject": {
+    "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+    "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+    "kind": "experiment"
+   },
+   "subject_digest": null,
+   "superseded_by_id": null,
+   "supersedes_id": null
+  },
+  "GET /v1/experiments": {
+   "items": [
+    {
+     "created_at": "2026-10-05T04:53:32.256829+04:00",
+     "ended_at": "2026-10-05T04:53:35.805429+04:00",
+     "has_change_set": true,
+     "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "intent": "no xgboost",
+     "parent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "source_dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+     "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+     "started_at": "2026-10-05T04:53:32.699337+04:00",
+     "status": "completed",
+     "untrusted_fields": [
+      "intent"
+     ]
+    },
+    {
+     "created_at": "2026-10-05T04:53:26.410599+04:00",
+     "ended_at": "2026-10-05T04:53:30.475744+04:00",
+     "has_change_set": false,
+     "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "intent": "baseline",
+     "parent_experiment_id": null,
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "source_dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+     "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+     "started_at": "2026-10-05T04:53:26.905667+04:00",
+     "status": "completed",
+     "untrusted_fields": [
+      "intent"
+     ]
+    }
+   ],
+   "limit": 10,
+   "next_cursor": null
+  },
+  "GET /v1/experiments/1aa95c9b-e3be-4547-9f1b-b03da5467571": {
+   "cancel_requested_at": null,
+   "change_set": {
+    "changes": [
+     {
+      "family": "xgboost",
+      "kind": "family_exclude"
+     }
+    ],
+    "schema_version": 1
+   },
+   "created_at": "2026-10-05T04:53:32.256829+04:00",
+   "diff_vs_parent": {
+    "authoritative": false,
+    "cv": {
+     "accuracy": {
+      "child": 0.7758434547908232,
+      "delta": 0.0,
+      "parent": 0.7758434547908232
+     },
+     "balanced_accuracy": {
+      "child": 0.5025000000000001,
+      "delta": 0.0,
+      "parent": 0.5025000000000001
+     },
+     "brier": {
+      "child": 0.16240958489559282,
+      "delta": 0.0,
+      "parent": 0.16240958489559282
+     },
+     "brier_score": {
+      "child": 0.16240958489559282,
+      "delta": 0.0,
+      "parent": 0.16240958489559282
+     },
+     "calibration_gap": {
+      "child": 0.1765519222039012,
+      "delta": 0.0,
+      "parent": 0.1765519222039012
+     },
+     "f1": {
+      "child": 0.04444444444444444,
+      "delta": 0.0,
+      "parent": 0.04444444444444444
+     },
+     "log_loss": {
+      "child": 0.49562961951252893,
+      "delta": 0.0,
+      "parent": 0.49562961951252893
+     },
+     "positive_rate": {
+      "child": 0.2134952766531714,
+      "delta": 0.0,
+      "parent": 0.2134952766531714
+     },
+     "pr_auc": {
+      "child": 0.40548969265237444,
+      "delta": 0.0,
+      "parent": 0.40548969265237444
+     },
+     "precision": {
+      "child": 0.2,
+      "delta": 0.0,
+      "parent": 0.2
+     },
+     "recall": {
+      "child": 0.025,
+      "delta": 0.0,
+      "parent": 0.025
+     },
+     "roc_auc": {
+      "child": 0.6750029868578256,
+      "delta": 0.0,
+      "parent": 0.6750029868578256
+     },
+     "specificity": {
+      "child": 0.9800000000000001,
+      "delta": 0.0,
+      "parent": 0.9800000000000001
+     },
+     "top_decile_lift": {
+      "child": 1.6,
+      "delta": 0.0,
+      "parent": 1.6
+     },
+     "top_k_precision": {
+      "child": 0.3333333333333333,
+      "delta": 0.0,
+      "parent": 0.3333333333333333
+     }
+    },
+    "holdout": {
+     "accuracy": {
+      "child": 0.8125,
+      "delta": 0.0,
+      "parent": 0.8125
+     },
+     "balanced_accuracy": {
+      "child": 0.5868421052631579,
+      "delta": 0.0,
+      "parent": 0.5868421052631579
+     },
+     "brier": {
+      "child": 0.1657280191961533,
+      "delta": -2.7755575615628914e-17,
+      "parent": 0.16572801919615332
+     },
+     "brier_score": {
+      "child": 0.1657280191961533,
+      "delta": -2.7755575615628914e-17,
+      "parent": 0.16572801919615332
+     },
+     "calibration_gap": {
+      "child": 0.22415939031999496,
+      "delta": -1.1102230246251565e-16,
+      "parent": 0.22415939031999507
+     },
+     "f1": {
+      "child": 0.3076923076923077,
+      "delta": 0.0,
+      "parent": 0.3076923076923077
+     },
+     "log_loss": {
+      "child": 0.5169744742583808,
+      "delta": 0.0,
+      "parent": 0.5169744742583808
+     },
+     "positive_rate": {
+      "child": 0.20833333333333334,
+      "delta": 0.0,
+      "parent": 0.20833333333333334
+     },
+     "pr_auc": {
+      "child": 0.35684817193487645,
+      "delta": 0.0,
+      "parent": 0.35684817193487645
+     },
+     "precision": {
+      "child": 0.6666666666666666,
+      "delta": 0.0,
+      "parent": 0.6666666666666666
+     },
+     "recall": {
+      "child": 0.2,
+      "delta": 0.0,
+      "parent": 0.2
+     },
+     "roc_auc": {
+      "child": 0.6210526315789474,
+      "delta": 0.0,
+      "parent": 0.6210526315789474
+     },
+     "specificity": {
+      "child": 0.9736842105263158,
+      "delta": 0.0,
+      "parent": 0.9736842105263158
+     },
+     "top_decile_lift": {
+      "child": 2.4,
+      "delta": 0.0,
+      "parent": 2.4
+     },
+     "top_k_precision": {
+      "child": 0.5,
+      "delta": 0.0,
+      "parent": 0.5
+     }
+    },
+    "parent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+    "schema_version": 1,
+    "selection_metric": {
+     "child": "pr_auc",
+     "parent": "pr_auc"
+    },
+    "source": "evaluation_metrics",
+    "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+    "status": "compared",
+    "unmatched": {
+     "cv": {
+      "child_only": [],
+      "parent_only": []
+     },
+     "holdout": {
+      "child_only": [],
+      "parent_only": []
+     }
+    },
+    "winner": {
+     "candidate_id": {
+      "child": "logistic_regression",
+      "parent": "logistic_regression"
+     },
+     "constraint_status": {
+      "child": "not_requested",
+      "parent": "not_requested"
+     },
+     "decision_threshold": {
+      "child": 0.5,
+      "parent": 0.5
+     },
+     "family": {
+      "child": "logistic_regression",
+      "parent": "logistic_regression"
+     }
+    }
+   },
+   "ended_at": "2026-10-05T04:53:35.805429+04:00",
+   "failure_reason": null,
+   "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+   "intent": "no xgboost",
+   "lineage": {
+    "execution_request_id": "cf2eec81-3530-400f-87dd-90580125478f",
+    "parent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+    "prepared_dataset_id": "85f553ec-dadf-4adc-a07d-5236e88a8fac",
+    "problem_spec_id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+    "source_dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+    "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+    "workflow_run_id": "5187028f-071a-43ca-a1c2-ec9e3bef410c"
+   },
+   "metrics": {
+    "baseline_comparison": {
+     "baseline_candidate_id": "majority",
+     "baseline_cv_score": 0.2134952766531714,
+     "beats_baseline": true,
+     "clear_margin": true,
+     "margin": 0.19199441599920306,
+     "metric": "pr_auc",
+     "winner_candidate_id": "logistic_regression",
+     "winner_cv_score": 0.40548969265237444,
+     "winner_cv_std": 0.17353181063271952
+    },
+    "candidate_id": "logistic_regression",
+    "constraint_status": "not_requested",
+    "cv": {
+     "accuracy": 0.7758434547908232,
+     "balanced_accuracy": 0.5025000000000001,
+     "brier": 0.16240958489559282,
+     "brier_score": 0.16240958489559282,
+     "calibration_gap": 0.1765519222039012,
+     "f1": 0.04444444444444444,
+     "log_loss": 0.49562961951252893,
+     "positive_rate": 0.2134952766531714,
+     "pr_auc": 0.40548969265237444,
+     "precision": 0.2,
+     "recall": 0.025,
+     "roc_auc": 0.6750029868578256,
+     "specificity": 0.9800000000000001,
+     "top_decile_lift": 1.6,
+     "top_k_precision": 0.3333333333333333
+    },
+    "decision_threshold": 0.5,
+    "family": "logistic_regression",
+    "holdout": {
+     "accuracy": 0.8125,
+     "balanced_accuracy": 0.5868421052631579,
+     "brier": 0.1657280191961533,
+     "brier_score": 0.1657280191961533,
+     "calibration_gap": 0.22415939031999496,
+     "decision_threshold": 0.5,
+     "f1": 0.3076923076923077,
+     "log_loss": 0.5169744742583808,
+     "positive_rate": 0.20833333333333334,
+     "pr_auc": 0.35684817193487645,
+     "precision": 0.6666666666666666,
+     "recall": 0.2,
+     "roc_auc": 0.6210526315789474,
+     "specificity": 0.9736842105263158,
+     "top_decile_lift": 2.4,
+     "top_k_precision": 0.5
+    },
+    "selected_score": 0.40548969265237444,
+    "selection_metric": "pr_auc"
+   },
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "started_at": "2026-10-05T04:53:32.699337+04:00",
+   "status": "completed",
+   "target_column": "label",
+   "task_type": "binary",
+   "untrusted_fields": [
+    "intent",
+    "change_set",
+    "target_column"
+   ],
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/experiments/1aa95c9b-e3be-4547-9f1b-b03da5467571/code": {
+   "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+   "generator_version": "dclab.model_build_reproduction.v2",
+   "helper_requirements": [],
+   "inputs": [
+    {
+     "artifact_id": "5067f15b-efba-4047-8d9a-b6824cd68490",
+     "content_digest": "0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31",
+     "description": "Prepared dataset version this experiment trained on; sha256 must equal content_digest.",
+     "env_var": "DCLAB_DATASET_PATH",
+     "name": "dataset",
+     "placeholder": "<authorized-local-dataset-path>"
+    },
+    {
+     "artifact_id": "8fe50e89-5000-4533-8540-ea71ec6ee8ad",
+     "content_digest": "a0067067df0226cdaa21cadc6ce224094114d22f5c482eea1b6479b6a0d6988b",
+     "description": "Stored SplitPlan map (source_row,partition,fold); the script partitions the holdout and outer folds by it and fails closed on a digest mismatch.",
+     "env_var": "DCLAB_SPLIT_ASSIGNMENT_PATH",
+     "name": "split_assignment",
+     "placeholder": "<authorized-local-split-assignment-path>"
+    }
+   ],
+   "is_branch": true,
+   "notebook": {
+    "content_digest": "b57dac8abf483331fa9abc0bf6cd705b206a26529d0c2338f820985a2c4c8bfa",
+    "filename": "1aa95c9b-e3be-4547-9f1b-b03da5467571-reproduction.ipynb",
+    "media_type": "application/x-ipynb+json",
+    "source": "{\n \"cells\": [\n  {\n   \"cell_type\": \"markdown\",\n   \"id\": \"00-md-title\",\n   \"metadata\": {},\n   \"source\": [\n    \"# DCLab model-build reproduction\\n\\nGenerator `dclab.model_build_reproduction.v2`. Spec digest `3dc4c3c7b2b7e51ad96c25c010739fbdd773a2bf8850ddb8707a569b5924f5b2`.\\nScientific order: holdout lock, train-only planning, CV selection, then one final holdout evaluation.\\n\"\n   ]\n  },\n  {\n   \"cell_type\": \"markdown\",\n   \"id\": \"01-md-run_identity\",\n   \"metadata\": {},\n   \"source\": [\n    \"## Run identity / reproducibility metadata\\n\\nGenerated from canonical persisted evidence.\\n\"\n   ]\n  },\n  {\n   \"cell_type\": \"code\",\n   \"execution_count\": null,\n   \"id\": \"01-code-run_identity\",\n   \"metadata\": {},\n   \"outputs\": [],\n   \"source\": [\n    \"PIPELINE_RUN_ID = '1aa95c9b-e3be-4547-9f1b-b03da5467571'\\nWORKSPACE_ID = '7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5'\\nGENERATOR_VERSION = 'dclab.model_build_reproduction.v2'\\nSPEC_DIGEST = '3dc4c3c7b2b7e51ad96c25c010739fbdd773a2bf8850ddb8707a569b5924f5b2'\\nSEED = 42\\nDATASET_CONTENT_DIGEST = '0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31'\\nDATASET_SCHEMA_DIGEST = '0e2b92c322ac08d39e50512c774074388acf493320ff8c114c9101e6debbcad8'\\n\\n# This document is generated from canonical persisted evidence.\\n# It does not embed raw rows, credentials, Dataset.location, or object-store keys.\\n# Authorized dataset path placeholder: <authorized-local-dataset-path>\\nSPLIT_PLAN_ID = 'be649d46-2229-4587-8c3a-0a9d4819469a'\\nASSIGNMENT_DIGEST = 'a0067067df0226cdaa21cadc6ce224094114d22f5c482eea1b6479b6a0d6988b'\\n# Set DCLAB_SPLIT_ASSIGNMENT_PATH to a local copy of this SplitPlan's split_assignment\\n# artifact (canonical CSV keyed by source row); its sha256 must equal ASSIGNMENT_DIGEST.\\n\\n# Branch run: the effective configuration below is what this run recorded.\\n# It is applied by the candidate definitions, metric plan and decision threshold;\\n# nothing is re-derived from ancestor runs.\\nPARENT_EXPERIMENT_ID = '59c35e71-34a0-462b-996e-abc42cb4842a'"
+   },
+   "parent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "script": {
+    "content_digest": "3bbcba9451e1449baa3ce8b37b9f4b84407eae8f6fa20e1a06835f2eecd48d8d",
+    "filename": "1aa95c9b-e3be-4547-9f1b-b03da5467571-reproduction.py",
+    "media_type": "text/x-python",
+    "source": "\"\"\"DCLab model-build reproduction script.\n\ngenerator=dclab.model_build_reproduction.v2\nspec_digest=3dc4c3c7b2b7e51ad96c25c010739fbdd773a2bf8850ddb8707a569b5924f5b2\npipeline_run_id=1aa95c9b-e3be-4547-9f1b-b03da5467571\n\nGenerated from canonical persisted evidence. Not a notebook.\nDoes not embed raw rows, credentials, Dataset.location, or object-store keys.\n\"\"\"\n\n# === 1. Run identity / reproducibility metadata ===\nPIPELINE_RUN_ID = '1aa95c9b-e3be-4547-9f1b-b03da5467571'\nWORKSPACE_ID = '7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5'\nGENERATOR_VERSION = 'dclab.model_build_reproduction.v2'\nSPEC_DIGEST = '3dc4c3c7b2b7e51ad96c25c010739fbdd773a2bf8850ddb8707a569b5924f5b2'\nSEED = 42\nDATASET_CONTENT_DIGEST = '0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31'\nDATASET_SCHEMA_DIGEST = '0e2b92c322ac08d39e50512c774074388acf493320ff8c114c9101e6debbcad8'\n\n# This document is generated from canonical persisted evidence.\n# It does not embed raw rows, credentials, Dataset.location, or object-store keys.\n# Authorized dataset path placeholder: <authorized-local-dataset-path>\nSPLIT_PLAN_ID = 'be649d46-2229-4587-8c3a-0a9d4819469a'\nASSIGNMENT_DIGEST = 'a0067067df0226cdaa21cadc6ce224094114d22f5c482eea1b6479b6a0d6988b'\n# Set DCLAB_SPLIT_ASSIGNMENT_PATH to a local copy of this SplitPlan's split_assignment\n# artifact (canonical CSV keyed by source row); its sha256 must equal ASSIGNMENT_DIGEST.\n\n# Branch run: the effective configuration below is what this run recorded.\n# It is applied by the candidate definitions, metric plan and decision threshold;\n# nothing is re-derived from ancestor runs.\nPARENT_EXPERIMENT_ID = '59c35e71-34a0-462b-996e-abc42cb4842a'\nCHANGE_SET_DIGEST = '26f86b44ee778c984697161af8eb7526acae37f5b61dfcf67d962b0aa3005e36'\nCHANGE_SET = {'changes': [{'family': 'xgboost', 'kind': 'family_exclude'}], 'schema_version': 1}\nBRANCH_OVERRIDES = {'change_set_digest': '26f86b44ee778c984697161af8eb7526acae37f5b61dfcf67d962b0aa3005e36', 'columns': {}, 'families_exclude': ['xgboost'], 'families_include': [], 'hyperparameters': {}, 'target_column': 'label', 'task_type': 'binary', 'version': 1}\nBRANCH_OBJECTIVE = None\nAPPLIED_CHANGES = [{'applied': True, 'index': 0, 'kind': 'family_exclude'}]\n\n# === 2. Imports and versions ===\nfrom catboost import CatBoostClassifier\nfrom lightgbm import LGBMClassifier\nfrom pathlib import Path\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.dummy import DummyClassifier\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score, brier_score_loss, f1_score, log_loss, precision_score, recall_score, roc_auc_score\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.preprocessing import OneHotEncoder\nfrom sklearn.preprocessing import StandardScaler\nimport hashlib\nimport numpy as np\nimport os\nimport pandas as pd\n\n# Persisted implementation versions\n# majority: sklearn.dummy.DummyClassifier sklearn==1.9.1\n# logistic_regression: sklearn.linear_model.LogisticRegression sklearn==1.9.1\n# random_forest: sklearn.ensemble.RandomForestClassifier sklearn==1.9.1\n# lightgbm: lightgbm.LGBMClassifier lightgbm==4.7.0\n# catboost: catboost.CatBoostClassifier catboost==1.2.10\n\n# === 3. Dataset loading placeholder + expected digest ===\nimport hashlib\nimport os\nfrom pathlib import Path\n\nimport numpy as np\nimport pandas as pd\n\n# Set DCLAB_DATASET_PATH (or replace the placeholder) to an authorized local copy\n# of this dataset version. Never substitute a persisted Dataset.location,\n# object-store key, or credential.\nDATASET_PATH = Path(os.environ.get('DCLAB_DATASET_PATH', '<authorized-local-dataset-path>'))\nCONTENT_DIGEST = '0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31'\nSCHEMA_DIGEST = '0e2b92c322ac08d39e50512c774074388acf493320ff8c114c9101e6debbcad8'\nSOURCE_TYPE = 'csv'\nDATASET_VERSION = 'v1'\n\nif CONTENT_DIGEST and hashlib.sha256(DATASET_PATH.read_bytes()).hexdigest() != CONTENT_DIGEST:\n    raise RuntimeError(\"dataset bytes do not match the recorded CONTENT_DIGEST\")\nframe = pd.read_csv(DATASET_PATH)\nschema_columns = [\n    {'name': 'tenure', 'ordinal_position': 1, 'physical_dtype': 'float64', 'role': None, 'semantic_type': 'numeric'},\n    {'name': 'spend', 'ordinal_position': 2, 'physical_dtype': 'float64', 'role': None, 'semantic_type': 'numeric'},\n    {'name': 'plan', 'ordinal_position': 3, 'physical_dtype': 'str', 'role': None, 'semantic_type': 'categorical'},\n    {'name': 'label', 'ordinal_position': 4, 'physical_dtype': 'int64', 'role': None, 'semantic_type': 'numeric'},\n    {'name': '__dclab_source_row__', 'ordinal_position': 5, 'physical_dtype': 'int64', 'role': None, 'semantic_type': 'numeric'},\n]\n\n# === 4. Schema checks ===\nEXPECTED_COLUMNS = ['tenure', 'spend', 'plan', 'label', '__dclab_source_row__']\nEXPECTED_PHYSICAL_DTYPES = {'__dclab_source_row__': 'int64', 'label': 'int64', 'plan': 'str', 'spend': 'float64', 'tenure': 'float64'}\nEXPECTED_CONTENT_DIGEST = '0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31'\nEXPECTED_SCHEMA_DIGEST = '0e2b92c322ac08d39e50512c774074388acf493320ff8c114c9101e6debbcad8'\n\n# Compare schema names only. Do not print raw rows or value samples.\nmissing_columns = [name for name in EXPECTED_COLUMNS if name not in frame.columns]\nassert not missing_columns, missing_columns\n\n# === 5. Task / target ===\nTARGET_COLUMN = 'label'\nTASK_TYPE = 'binary'\nSEED = 42\n\n# The prepared dataset version stores the binary target coded 0/1 (coerce_binary_target).\nif not pd.api.types.is_numeric_dtype(frame[TARGET_COLUMN]):\n    raise RuntimeError(\"binary target is not 0/1 coded in this dataset version\")\nframe = frame[frame[TARGET_COLUMN].isin([0, 1])].copy()\nframe[TARGET_COLUMN] = frame[TARGET_COLUMN].astype(int)\ny = frame[TARGET_COLUMN]\nX = frame.drop(columns=[TARGET_COLUMN])\n\n# === 6. Structural cleanup ===\n# Structural cleaning from persisted preparation decisions.\ndropped_columns = []\n# No datetime conversions were persisted for this run.\n\n# === 7. Holdout creation and lock ===\nimport hashlib\nimport os\nfrom pathlib import Path\n\nimport numpy as np\n\nTARGET_COLUMN = 'label'\nHOLDOUT_STRATEGY = 'stratified_random'\nHOLDOUT_TEST_SIZE = 0.2\nHOLDOUT_GROUP_COLUMN = None\nHOLDOUT_TIME_COLUMN = None\nHOLDOUT_PLAN_DIGEST = '41c9b3789f86409f5290ad8e11fb5691e92522077b09cb72dc2c05c2a1f83c60'\nSEED = 42\nHOLDOUT_RANDOM_STATE = 42\n\n# Lock the final holdout before candidate search. Do not score it until winner lock.\nSOURCE_ROW_COLUMN = '__dclab_source_row__'\nSPLIT_PLAN_ID = 'be649d46-2229-4587-8c3a-0a9d4819469a'\nSPLIT_PLAN_VERSION = 1\nASSIGNMENT_DIGEST = 'a0067067df0226cdaa21cadc6ce224094114d22f5c482eea1b6479b6a0d6988b'\nASSIGNMENT_TRAIN_ROWS = 192\nASSIGNMENT_HOLDOUT_ROWS = 48\nPARTITIONED_BY = 'split_plan_assignment'\n# Set DCLAB_SPLIT_ASSIGNMENT_PATH (or replace the placeholder) to a local copy of the\n# SplitPlan's split_assignment artifact. Never substitute an object-store key.\nSPLIT_ASSIGNMENT_PATH = Path(os.environ.get('DCLAB_SPLIT_ASSIGNMENT_PATH', '<authorized-local-split-assignment-path>'))\n\ndef read_split_assignment(payload, expected_digest):\n    \"\"\"Stored SplitPlan map -> (train row -> outer fold, holdout rows). Fails closed.\"\"\"\n    if hashlib.sha256(payload).hexdigest() != expected_digest:\n        raise RuntimeError(\"split assignment bytes do not match ASSIGNMENT_DIGEST\")\n    text = payload.decode(\"utf-8\")\n    lines = text[:-1].split(\"\\n\") if text.endswith(\"\\n\") else []\n    if not lines or lines[0] != \"source_row,partition,fold\":\n        raise RuntimeError(\"split assignment header is not canonical\")\n    train_folds, holdout_rows = {}, set()\n    for line in lines[1:]:\n        row, partition, fold = line.split(\",\")\n        if partition == \"holdout\" and fold == \"\":\n            holdout_rows.add(int(row))\n        elif partition == \"train\" and fold.isdigit():\n            train_folds[int(row)] = int(fold)\n        else:\n            raise RuntimeError(\"malformed split assignment line\")\n    return train_folds, holdout_rows\n\n\ndef outer_folds(fold_of, strategy, n_folds):\n    \"\"\"(fold number, train positions, validation positions) from the stored fold map.\n\n    Group/time invariants were proven when the map was stored; ASSIGNMENT_DIGEST pins it.\n    \"\"\"\n    fold_of = np.asarray(fold_of, dtype=int)\n    expected = list(range(1, int(n_folds) + 1))\n    if sorted({int(value) for value in fold_of if int(value) > 0}) != expected:\n        raise RuntimeError(\"stored fold map does not match ACTUAL_FOLDS\")\n    if strategy != 'TimeSeriesSplit' and bool((fold_of == 0).any()):\n        raise RuntimeError(\"stored fold map leaves training rows unvalidated\")\n    folds = []\n    for number in expected:\n        validation = np.flatnonzero(fold_of == number)\n        # Expanding window: TimeSeriesSplit trains fold k on every earlier row.\n        if strategy == 'TimeSeriesSplit':\n            training = np.flatnonzero(fold_of < number)\n        else:\n            training = np.flatnonzero(fold_of != number)\n        folds.append((number, training, validation))\n    return folds\n\n\n# The holdout and the outer folds come from the stored map, never re-derived.\ntrain_folds, holdout_rows = read_split_assignment(SPLIT_ASSIGNMENT_PATH.read_bytes(), ASSIGNMENT_DIGEST)\nif (len(train_folds), len(holdout_rows)) != (ASSIGNMENT_TRAIN_ROWS, ASSIGNMENT_HOLDOUT_ROWS):\n    raise RuntimeError(\"split assignment counts differ from the split plan\")\nsource_rows = frame[SOURCE_ROW_COLUMN].astype(int)\nif source_rows.duplicated().any() or set(source_rows) != set(train_folds) | holdout_rows:\n    raise RuntimeError(\"dataset rows differ from the split plan's row set\")\nin_holdout = source_rows.isin(holdout_rows).to_numpy()\ntrain_frame = frame.loc[~in_holdout].copy()\nholdout_frame = frame.loc[in_holdout].copy()\n\n# Holdout rows stay unused until final holdout evaluation.\nX_train = train_frame.drop(columns=[TARGET_COLUMN])\ny_train = train_frame[TARGET_COLUMN]\nX_holdout = holdout_frame.drop(columns=[TARGET_COLUMN])\ny_holdout = holdout_frame[TARGET_COLUMN]\ndel holdout_frame  # keep the partition locked; do not inspect labels during search\n\n# === 8. TRAIN-only profiling / planning ===\nTASK_TYPE = 'binary'\nMODELED_FEATURE_COUNT = 3\nEXCLUDED_FEATURE_COUNT = 0\nDROPPED_COLUMN_COUNT = 0\n# ProblemProfile is train-partition evidence only.\n\nVALIDATION_STRATEGY = 'StratifiedKFold'\nREQUESTED_FOLDS = 5\nACTUAL_FOLDS = 5\nVALIDATION_GROUP_COLUMN = None\nVALIDATION_TIME_COLUMN = None\n# Outer folds are the stored SplitPlan folds of each training row (in this order).\nfold_of = np.asarray([train_folds[int(row)] for row in train_frame[SOURCE_ROW_COLUMN]], dtype=int)\ncv_folds = outer_folds(fold_of, VALIDATION_STRATEGY, ACTUAL_FOLDS)\n\nPRIMARY_METRIC = 'pr_auc'\nLOWER_IS_BETTER = ['brier', 'brier_score', 'calibration_gap', 'log_loss', 'mae', 'mape', 'median_absolute_error', 'mse', 'rmse', 'smape']\n\nimport numpy as np\nfrom sklearn.metrics import accuracy_score, average_precision_score, balanced_accuracy_score, brier_score_loss, f1_score, log_loss, precision_score, recall_score, roc_auc_score\n\n\nDEFAULT_THRESHOLD = 0.5\n\n\ndef score_metrics(y_values, scores, threshold=DEFAULT_THRESHOLD):\n    \"\"\"Binary metrics as app.engine.evaluation.metrics.classification_metrics computes them.\"\"\"\n    labels = np.asarray(y_values)\n    raw = np.asarray(scores, dtype=float)\n    p = np.clip(raw, 1e-7, 1 - 1e-7)\n    decided = (raw >= threshold).astype(int)\n    try:\n        roc = float(roc_auc_score(labels, p))\n    except ValueError:\n        roc = 0.5\n    if not np.isfinite(roc):\n        roc = 0.5\n    base_rate = float(labels.mean()) if len(labels) else 0.0\n    try:\n        pr = float(average_precision_score(labels, p))\n    except ValueError:\n        pr = base_rate\n    if not np.isfinite(pr):\n        pr = base_rate\n    return {\n        \"accuracy\": float(accuracy_score(labels, decided)),\n        \"roc_auc\": roc,\n        \"pr_auc\": pr,\n        \"precision\": float(precision_score(labels, decided, zero_division=0)),\n        \"recall\": float(recall_score(labels, decided, zero_division=0)),\n        \"f1\": float(f1_score(labels, decided, zero_division=0)),\n        \"log_loss\": float(log_loss(labels, p, labels=[0, 1])),\n        \"balanced_accuracy\": float(balanced_accuracy_score(labels, decided)),\n        \"brier\": float(brier_score_loss(labels, p)),\n        \"brier_score\": float(brier_score_loss(labels, p)),\n    }\n\n# Missing-value strategies are applied by the fitted preprocessor below.\n# Do not impute using holdout statistics.\n# sequence=1 scope=numerical class=sklearn.impute.SimpleImputer params={'strategy': 'median'}\n# sequence=3 scope=categorical class=sklearn.impute.SimpleImputer params={'strategy': 'most_frequent'}\n\n# === 9. Leakage exclusions ===\nleakage_exclusions = []\nframe = frame.drop(columns=leakage_exclusions, errors='ignore')\nX_train = X_train.drop(columns=leakage_exclusions, errors='ignore')\n# Exclusions are applied before candidate generation. Holdout follows the same columns.\n\n# === 10. Feature engineering ===\nmodeled_features = ['plan', 'spend', 'tenure']\ndatetime_columns = []\n\n# === 11. Preprocessing ===\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.preprocessing import OneHotEncoder\n\n\ndef make_preprocessor(numerical_columns, categorical_columns):\n    \"\"\"Fitted inside each training fold only; never on holdout rows.\"\"\"\n    transformers = []\n    if numerical_columns:  # fit_scope=fold_train\n        transformers.append((\n            'numerical',\n            Pipeline(steps=[('impute', SimpleImputer(strategy='median')), ('scale', StandardScaler())]),\n            numerical_columns,\n        ))\n    if categorical_columns:  # fit_scope=fold_train\n        transformers.append((\n            'categorical',\n            Pipeline(steps=[('impute', SimpleImputer(strategy='most_frequent')), ('encode', OneHotEncoder(drop=None, handle_unknown='ignore', sparse_output=False))]),\n            categorical_columns,\n        ))\n    return ColumnTransformer(transformers=transformers)\n\n\nNUMERICAL_COLUMNS = ['tenure', 'spend']\nCATEGORICAL_COLUMNS = ['plan']\npreprocessor = make_preprocessor(NUMERICAL_COLUMNS, CATEGORICAL_COLUMNS)\n\n# === 12. Candidate definitions ===\n# Instantiated from persisted implementation_class and applied hyperparameters.\n# Do not add unpersisted estimator wrappers.\nfrom sklearn.dummy import DummyClassifier\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.ensemble import RandomForestClassifier\nfrom lightgbm import LGBMClassifier\nfrom catboost import CatBoostClassifier\n\n\ndef build_estimator(family, params):\n    \"\"\"Estimator as app.engine.models.registry.make_model builds it for this family.\"\"\"\n    if family == 'majority':\n        return DummyClassifier(**params)\n    if family == 'logistic_regression':\n        return Pipeline([('scaler', StandardScaler()), ('clf', LogisticRegression(**params))])\n    if family == 'random_forest':\n        return RandomForestClassifier(**params)\n    if family == 'lightgbm':\n        return LGBMClassifier(**params)\n    if family == 'catboost':\n        return CatBoostClassifier(**params)\n    raise ValueError(f'no standalone template for model family {family!r}')\n\n\ndef predict_scores(model, features):\n    \"\"\"Positive-class probability (app.engine.experiments.runner._predict).\"\"\"\n    if hasattr(model, \"predict_proba\"):\n        proba = model.predict_proba(features)\n        return np.asarray(proba[:, 1] if proba.shape[1] > 1 else proba[:, 0], dtype=float)\n    return np.asarray(model.predict(features), dtype=float)\n\n\ncandidates = {}\ncandidate_specs = {}\n\n# family=majority fingerprint=c5d894b566316d7c48efad26e10fb466116f98dd\n# library=sklearn version=1.9.1\ncandidate_specs['c5d894b566316d7c48efad26e10fb466116f98dd'] = {'candidate_id': '5f653ad7-b726-47bb-ab53-c9c6ed35e89e', 'categorical_columns': ['plan'], 'family': 'majority', 'fold_hyperparameters': {}, 'hyperparameters': {'strategy': 'prior'}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.2134952766531714, 'persisted_fold_scores': {1: 0.23076923076923078, 2: 0.20512820512820512, 3: 0.21052631578947367, 4: 0.21052631578947367, 5: 0.21052631578947367}, 'status': 'trained'}\ncandidates['c5d894b566316d7c48efad26e10fb466116f98dd'] = build_estimator(candidate_specs['c5d894b566316d7c48efad26e10fb466116f98dd']['family'], candidate_specs['c5d894b566316d7c48efad26e10fb466116f98dd']['hyperparameters'])\n\n# family=logistic_regression fingerprint=da5e6f596371b45caecc12a3d172b02137d92050\n# library=sklearn version=1.9.1\ncandidate_specs['da5e6f596371b45caecc12a3d172b02137d92050'] = {'candidate_id': 'ff3a0343-6510-4fda-b507-23850f8add7c', 'categorical_columns': ['plan'], 'family': 'logistic_regression', 'fold_hyperparameters': {}, 'hyperparameters': {'max_iter': 1000, 'random_state': 42}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.40548969265237444, 'persisted_fold_scores': {1: 0.2843802167331579, 2: 0.4726325757575757, 3: 0.2309895631506885, 4: 0.3262780257023678, 5: 0.7131680819180819}, 'status': 'trained'}\ncandidates['da5e6f596371b45caecc12a3d172b02137d92050'] = build_estimator(candidate_specs['da5e6f596371b45caecc12a3d172b02137d92050']['family'], candidate_specs['da5e6f596371b45caecc12a3d172b02137d92050']['hyperparameters'])\n\n# family=random_forest fingerprint=2f35d7089c453d5e45b5761534ec50b976bb3af2\n# library=sklearn version=1.9.1\ncandidate_specs['2f35d7089c453d5e45b5761534ec50b976bb3af2'] = {'candidate_id': 'ae31297d-8160-456a-93c1-3f1e2a194cff', 'categorical_columns': ['plan'], 'family': 'random_forest', 'fold_hyperparameters': {}, 'hyperparameters': {'n_estimators': 80, 'n_jobs': 1, 'random_state': 42}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.2886599503055631, 'persisted_fold_scores': {1: 0.3329968560360717, 2: 0.241078370554177, 3: 0.23778599872349873, 4: 0.35459887334887336, 5: 0.2768396528651947}, 'status': 'trained'}\ncandidates['2f35d7089c453d5e45b5761534ec50b976bb3af2'] = build_estimator(candidate_specs['2f35d7089c453d5e45b5761534ec50b976bb3af2']['family'], candidate_specs['2f35d7089c453d5e45b5761534ec50b976bb3af2']['hyperparameters'])\n\n# family=lightgbm fingerprint=23afdc5176ae77c87d347378fe39acb2a683d6c5\n# library=lightgbm version=4.7.0\ncandidate_specs['23afdc5176ae77c87d347378fe39acb2a683d6c5'] = {'candidate_id': '9f394ec2-70a8-4817-9227-6a3c260dbf26', 'categorical_columns': ['plan'], 'family': 'lightgbm', 'fold_hyperparameters': {}, 'hyperparameters': {'n_estimators': 80, 'n_jobs': 1, 'random_state': 42, 'verbose': -1}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.32062824853514144, 'persisted_fold_scores': {1: 0.28172818817980105, 2: 0.2663039722467935, 3: 0.2530543734703327, 4: 0.3425856307435255, 5: 0.45946907803525444}, 'status': 'trained'}\ncandidates['23afdc5176ae77c87d347378fe39acb2a683d6c5'] = build_estimator(candidate_specs['23afdc5176ae77c87d347378fe39acb2a683d6c5']['family'], candidate_specs['23afdc5176ae77c87d347378fe39acb2a683d6c5']['hyperparameters'])\n\n# family=catboost fingerprint=88f62cd804a78d571779e471763ca036a53abba4\n# library=catboost version=1.2.10\ncandidate_specs['88f62cd804a78d571779e471763ca036a53abba4'] = {'candidate_id': 'a40a2522-13e1-4dc2-bbb1-2152c3848bac', 'categorical_columns': ['plan'], 'family': 'catboost', 'fold_hyperparameters': {}, 'hyperparameters': {'allow_writing_files': False, 'iterations': 80, 'random_seed': 42, 'thread_count': 1, 'verbose': False}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.3046764259526947, 'persisted_fold_scores': {1: 0.2896227325122539, 2: 0.3513895418307183, 3: 0.22681376313966445, 4: 0.3025859619210003, 5: 0.3529701303598362}, 'status': 'trained'}\ncandidates['88f62cd804a78d571779e471763ca036a53abba4'] = build_estimator(candidate_specs['88f62cd804a78d571779e471763ca036a53abba4']['family'], candidate_specs['88f62cd804a78d571779e471763ca036a53abba4']['hyperparameters'])\n\n# family=logistic_regression fingerprint=66decd9ba0628de39f4b2186a92cc6f985382a44\n# library=sklearn version=1.9.1\ncandidate_specs['66decd9ba0628de39f4b2186a92cc6f985382a44'] = {'candidate_id': '993bb71d-a269-4522-bd2a-d72de5868cf5', 'categorical_columns': ['plan'], 'family': 'logistic_regression', 'fold_hyperparameters': {}, 'hyperparameters': {'class_weight': 'balanced', 'max_iter': 1000, 'random_state': 42}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.4000079174521357, 'persisted_fold_scores': {1: 0.28540192809969683, 2: 0.44486166007905137, 3: 0.2298060692252591, 4: 0.34346851460525557, 5: 0.6965014152514153}, 'status': 'trained'}\ncandidates['66decd9ba0628de39f4b2186a92cc6f985382a44'] = build_estimator(candidate_specs['66decd9ba0628de39f4b2186a92cc6f985382a44']['family'], candidate_specs['66decd9ba0628de39f4b2186a92cc6f985382a44']['hyperparameters'])\n\n# family=random_forest fingerprint=d5e73901c6b340637292c94c62fc867a3ca9fa4b\n# library=sklearn version=1.9.1\ncandidate_specs['d5e73901c6b340637292c94c62fc867a3ca9fa4b'] = {'candidate_id': 'a2d95951-5847-4160-9886-b4b017da2f8b', 'categorical_columns': ['plan'], 'family': 'random_forest', 'fold_hyperparameters': {}, 'hyperparameters': {'class_weight': 'balanced', 'n_estimators': 80, 'n_jobs': 1, 'random_state': 42}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.30164525767113604, 'persisted_fold_scores': {1: 0.38716553447736246, 2: 0.23965552256882902, 3: 0.20572498622067587, 4: 0.35967171717171714, 5: 0.3160085279170957}, 'status': 'trained'}\ncandidates['d5e73901c6b340637292c94c62fc867a3ca9fa4b'] = build_estimator(candidate_specs['d5e73901c6b340637292c94c62fc867a3ca9fa4b']['family'], candidate_specs['d5e73901c6b340637292c94c62fc867a3ca9fa4b']['hyperparameters'])\n\n# family=lightgbm fingerprint=3054201008bce764a55b43d5c7c0616458f9f720\n# library=lightgbm version=4.7.0\ncandidate_specs['3054201008bce764a55b43d5c7c0616458f9f720'] = {'candidate_id': '15e86a44-7c0c-4e13-a789-bee92c900cec', 'categorical_columns': ['plan'], 'family': 'lightgbm', 'fold_hyperparameters': {}, 'hyperparameters': {'class_weight': 'balanced', 'n_estimators': 80, 'n_jobs': 1, 'random_state': 42, 'verbose': -1}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.3219962968912454, 'persisted_fold_scores': {1: 0.35909452191868385, 2: 0.26265125777993426, 3: 0.24422690097259064, 4: 0.3182244900595284, 5: 0.4257843137254902}, 'status': 'trained'}\ncandidates['3054201008bce764a55b43d5c7c0616458f9f720'] = build_estimator(candidate_specs['3054201008bce764a55b43d5c7c0616458f9f720']['family'], candidate_specs['3054201008bce764a55b43d5c7c0616458f9f720']['hyperparameters'])\n\n# family=catboost fingerprint=56fe16cdc3246a6818e60cc9b0bac618c9cef748\n# library=catboost version=1.2.10\ncandidate_specs['56fe16cdc3246a6818e60cc9b0bac618c9cef748'] = {'candidate_id': '29ad41b5-bd23-4fb9-b7e0-52f3b08d63f4', 'categorical_columns': ['plan'], 'family': 'catboost', 'fold_hyperparameters': {}, 'hyperparameters': {'allow_writing_files': False, 'auto_class_weights': 'Balanced', 'iterations': 80, 'random_seed': 42, 'thread_count': 1, 'verbose': False}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.28676625040019615, 'persisted_fold_scores': {1: 0.2909769786050621, 2: 0.3164157329598506, 3: 0.22334676659125188, 4: 0.26663950062783737, 5: 0.33645227321697907}, 'status': 'trained'}\ncandidates['56fe16cdc3246a6818e60cc9b0bac618c9cef748'] = build_estimator(candidate_specs['56fe16cdc3246a6818e60cc9b0bac618c9cef748']['family'], candidate_specs['56fe16cdc3246a6818e60cc9b0bac618c9cef748']['hyperparameters'])\n\n# family=lightgbm fingerprint=0e167415691c36bf091395d306957ad70611bcde\n# library=lightgbm version=4.7.0\ncandidate_specs['0e167415691c36bf091395d306957ad70611bcde'] = {'candidate_id': 'aa6ce585-cc80-4cc0-9353-a508bb47b8ff', 'categorical_columns': ['plan'], 'family': 'lightgbm', 'fold_hyperparameters': {1: {'colsample_bytree': 0.8752918047800797, 'learning_rate': 0.0382877694185723, 'min_child_samples': 7, 'n_estimators': 159, 'n_jobs': 1, 'num_leaves': 23, 'random_state': 42, 'verbose': -1}, 2: {'colsample_bytree': 0.6727299868828402, 'learning_rate': 0.1905717443408048, 'min_child_samples': 14, 'n_estimators': 55, 'n_jobs': 1, 'num_leaves': 63, 'random_state': 42, 'verbose': -1}, 3: {'colsample_bytree': 0.984730551577528, 'learning_rate': 0.020412976328176555, 'min_child_samples': 47, 'n_estimators': 250, 'n_jobs': 1, 'num_leaves': 59, 'random_state': 42, 'verbose': -1}, 4: {'colsample_bytree': 0.9896193616970134, 'learning_rate': 0.020412976328176555, 'min_child_samples': 47, 'n_estimators': 288, 'n_jobs': 1, 'num_leaves': 8, 'random_state': 42, 'verbose': -1}, 5: {'colsample_bytree': 0.9969450661841349, 'learning_rate': 0.020863637090599244, 'min_child_samples': 49, 'n_estimators': 277, 'n_jobs': 1, 'num_leaves': 39, 'random_state': 42, 'verbose': -1}}, 'hyperparameters': {'colsample_bytree': 0.8752918047800797, 'learning_rate': 0.0382877694185723, 'min_child_samples': 7, 'n_estimators': 159, 'n_jobs': 1, 'num_leaves': 23, 'random_state': 42, 'verbose': -1}, 'numerical_columns': ['tenure', 'spend'], 'persisted_cv_score': 0.3268132959034886, 'persisted_fold_scores': {1: 0.2497036136821083, 2: 0.2560851166090137, 3: 0.22892720306513412, 4: 0.2939141331589844, 5: 0.6054364130022025}, 'status': 'trained'}\ncandidates['0e167415691c36bf091395d306957ad70611bcde'] = build_estimator(candidate_specs['0e167415691c36bf091395d306957ad70611bcde']['family'], candidate_specs['0e167415691c36bf091395d306957ad70611bcde']['hyperparameters'])\n\nWINNER_FINGERPRINT = 'da5e6f596371b45caecc12a3d172b02137d92050'\nestimator = candidates[WINNER_FINGERPRINT]\n\n# === 13. CV evaluation ===\nfrom sklearn.pipeline import Pipeline\n\n# Cross-validation uses the training partition only.\n# The final holdout must not be used for candidate selection.\n# Each fold fits a fresh Pipeline (preprocessing + estimator) on its training rows;\n# nested-tuned candidates use the constructor values the run recorded for that fold.\n# Persisted CV aggregate scores used for ranking (not holdout):\nPERSISTED_CV_SCORES = {'0e167415691c36bf091395d306957ad70611bcde': 0.3268132959034886, '23afdc5176ae77c87d347378fe39acb2a683d6c5': 0.32062824853514144, '2f35d7089c453d5e45b5761534ec50b976bb3af2': 0.2886599503055631, '3054201008bce764a55b43d5c7c0616458f9f720': 0.3219962968912454, '56fe16cdc3246a6818e60cc9b0bac618c9cef748': 0.28676625040019615, '66decd9ba0628de39f4b2186a92cc6f985382a44': 0.4000079174521357, '88f62cd804a78d571779e471763ca036a53abba4': 0.3046764259526947, 'c5d894b566316d7c48efad26e10fb466116f98dd': 0.2134952766531714, 'd5e73901c6b340637292c94c62fc867a3ca9fa4b': 0.30164525767113604, 'da5e6f596371b45caecc12a3d172b02137d92050': 0.40548969265237444}\nCV_TOLERANCE = 1e-6\ny_train_values = y_train.to_numpy()\nreproduced_fold_scores = {}\nreproduced_cv_scores = {}\ncv_differences = {}\nfor fingerprint, record in candidate_specs.items():\n    if record['status'] != 'trained':\n        continue  # failed or skipped candidates have no CV evidence\n    columns = record['numerical_columns'] + record['categorical_columns']\n    fold_scores = {}\n    for fold_number, train_idx, val_idx in cv_folds:\n        params = record['fold_hyperparameters'].get(fold_number, record['hyperparameters'])\n        fold_pipeline = Pipeline([\n            ('prep', make_preprocessor(record['numerical_columns'], record['categorical_columns'])),\n            ('model', build_estimator(record['family'], params)),\n        ])\n        fold_pipeline.fit(X_train.iloc[train_idx][columns], y_train_values[train_idx])\n        fold_predictions = predict_scores(fold_pipeline, X_train.iloc[val_idx][columns])\n        fold_scores[fold_number] = score_metrics(y_train_values[val_idx], fold_predictions)[PRIMARY_METRIC]\n    reproduced_fold_scores[fingerprint] = fold_scores\n    reproduced_cv_scores[fingerprint] = float(np.mean(list(fold_scores.values())))\n    persisted = record['persisted_fold_scores']\n    gaps = [abs(fold_scores[number] - persisted[number]) for number in persisted if number in fold_scores]\n    if record['persisted_cv_score'] is not None:\n        gaps.append(abs(reproduced_cv_scores[fingerprint] - record['persisted_cv_score']))\n    cv_differences[fingerprint] = max(gaps) if gaps else None\n    if cv_differences[fingerprint] is not None and cv_differences[fingerprint] > CV_TOLERANCE:\n        print(f'CV {PRIMARY_METRIC} of {fingerprint} differs from the run by {cv_differences[fingerprint]:.3g}')\n\n# === 14. CV-only winner selection ===\n# Rank candidates from persisted CV aggregates only.\n# Never read X_holdout or y_holdout in this stage.\nSELECTION_METRIC = 'pr_auc'\nSELECTION_POLICY = 'maximum eligible primary CV score'\nPERSISTED_CV_SCORES = {'0e167415691c36bf091395d306957ad70611bcde': 0.3268132959034886, '23afdc5176ae77c87d347378fe39acb2a683d6c5': 0.32062824853514144, '2f35d7089c453d5e45b5761534ec50b976bb3af2': 0.2886599503055631, '3054201008bce764a55b43d5c7c0616458f9f720': 0.3219962968912454, '56fe16cdc3246a6818e60cc9b0bac618c9cef748': 0.28676625040019615, '66decd9ba0628de39f4b2186a92cc6f985382a44': 0.4000079174521357, '88f62cd804a78d571779e471763ca036a53abba4': 0.3046764259526947, 'c5d894b566316d7c48efad26e10fb466116f98dd': 0.2134952766531714, 'd5e73901c6b340637292c94c62fc867a3ca9fa4b': 0.30164525767113604, 'da5e6f596371b45caecc12a3d172b02137d92050': 0.40548969265237444}\nWINNER_FINGERPRINT = 'da5e6f596371b45caecc12a3d172b02137d92050'\nRUNNER_UP_FINGERPRINT = '66decd9ba0628de39f4b2186a92cc6f985382a44'\nassert WINNER_FINGERPRINT not in {None, ''}\n\n# The same policy on the re-run scores: best learned candidate (baselines never win).\nBASELINE_FAMILIES = ['majority', 'mean', 'median']\norientation = -1.0 if PRIMARY_METRIC in LOWER_IS_BETTER else 1.0\neligible = {\n    fingerprint: orientation * score\n    for fingerprint, score in reproduced_cv_scores.items()\n    if candidate_specs[fingerprint]['family'] not in BASELINE_FAMILIES\n}\nREPRODUCED_WINNER_FINGERPRINT = max(eligible, key=eligible.get) if eligible else None\nCV_REPRODUCED = all(gap is None or gap <= CV_TOLERANCE for gap in cv_differences.values())\nif not CV_REPRODUCED or REPRODUCED_WINNER_FINGERPRINT != WINNER_FINGERPRINT:\n    raise RuntimeError(\"re-run CV does not reproduce the persisted scores or the locked winner\")\n\n# Winner identity locked from CV. Holdout evaluation happens later.\nWINNER_CANDIDATE_ID = 'ff3a0343-6510-4fda-b507-23850f8add7c'\nWINNER_FINGERPRINT = 'da5e6f596371b45caecc12a3d172b02137d92050'\nWINNER_FAMILY = 'logistic_regression'\nWINNER_CLASS = 'sklearn.linear_model.LogisticRegression'\nSELECTED_SCORE = 0.40548969265237444\nSELECTION_METRIC = 'pr_auc'\nSELECTION_POLICY = 'maximum eligible primary CV score'\n# reason: Winner locked from eligible CV scores before final holdout evaluation.\n\n# === 15. Winner refit on all training data ===\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.linear_model import LogisticRegression\n\n# Refit the locked winner on the full training partition only.\nMODEL_VERSION_DIGEST = '9a26fd5a72a721ec86cfe3a44829226bf5e9af3b43665a13186640d040050379'\n# library=sklearn version=1.9.1\nWINNER_HYPERPARAMETERS = {'max_iter': 1000, 'random_state': 42}\nWINNER_NUMERICAL_COLUMNS = ['tenure', 'spend']\nWINNER_CATEGORICAL_COLUMNS = ['plan']\nWINNER_COLUMNS = WINNER_NUMERICAL_COLUMNS + WINNER_CATEGORICAL_COLUMNS\nestimator = build_estimator(WINNER_FAMILY, WINNER_HYPERPARAMETERS)\npipeline = Pipeline([\n    ('prep', make_preprocessor(WINNER_NUMERICAL_COLUMNS, WINNER_CATEGORICAL_COLUMNS)),\n    ('model', estimator),\n])\npipeline.fit(X_train[WINNER_COLUMNS], y_train.to_numpy())\n\n# === 16. Final holdout exactly once ===\n# Evaluate the locked winner once. Do not change selection using these scores.\nHOLDOUT_METRICS = {'accuracy': 0.8125, 'balanced_accuracy': 0.5868421052631579, 'brier': 0.1657280191961533, 'brier_score': 0.1657280191961533, 'calibration_gap': 0.22415939031999496, 'decision_threshold': 0.5, 'f1': 0.3076923076923077, 'log_loss': 0.5169744742583808, 'positive_rate': 0.20833333333333334, 'pr_auc': 0.35684817193487645, 'precision': 0.6666666666666666, 'recall': 0.2, 'roc_auc': 0.6210526315789474, 'specificity': 0.9736842105263158, 'top_decile_lift': 2.4, 'top_k_precision': 0.5}\n# Decision threshold locked on out-of-fold training rows before the holdout was scored.\nDECISION_THRESHOLD = 0.5\nholdout_scores = predict_scores(pipeline, X_holdout[WINNER_COLUMNS])\nreproduced_holdout_metrics = score_metrics(y_holdout.to_numpy(), holdout_scores, threshold=DECISION_THRESHOLD)\n# Holdout labels and row values are not emitted.\n\n# === 17. Metrics ===\nPRIMARY_METRIC = 'pr_auc'\nHOLDOUT_METRICS = {'accuracy': 0.8125, 'balanced_accuracy': 0.5868421052631579, 'brier': 0.1657280191961533, 'brier_score': 0.1657280191961533, 'calibration_gap': 0.22415939031999496, 'decision_threshold': 0.5, 'f1': 0.3076923076923077, 'log_loss': 0.5169744742583808, 'positive_rate': 0.20833333333333334, 'pr_auc': 0.35684817193487645, 'precision': 0.6666666666666666, 'recall': 0.2, 'roc_auc': 0.6210526315789474, 'specificity': 0.9736842105263158, 'top_decile_lift': 2.4, 'top_k_precision': 0.5}\nSELECTED_CV_SCORE = 0.40548969265237444\nSELECTION_METRIC = 'pr_auc'\n\n# Holdout metrics are persisted after winner lock.\n# Do not use HOLDOUT_METRICS to change candidate selection.\n\n# === 18. Saved model / artifact information ===\n# Artifact bytes and object-store keys are not generated.\n# model_version_digest = 9a26fd5a72a721ec86cfe3a44829226bf5e9af3b43665a13186640d040050379\n# selected_fingerprint = da5e6f596371b45caecc12a3d172b02137d92050\n# generator = dclab.model_build_reproduction.v2\n# spec_digest = 3dc4c3c7b2b7e51ad96c25c010739fbdd773a2bf8850ddb8707a569b5924f5b2\n"
+   },
+   "spec_digest": "3dc4c3c7b2b7e51ad96c25c010739fbdd773a2bf8850ddb8707a569b5924f5b2",
+   "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+   "standalone_cv": true,
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/experiments/1aa95c9b-e3be-4547-9f1b-b03da5467571/findings": {
+   "checks": [
+    {
+     "check": "target_leakage",
+     "evidence": {
+      "columns": [],
+      "excluded_columns": [],
+      "excluded_count": 0,
+      "flagged_columns": [],
+      "flagged_count": 0,
+      "modeled_feature_count": 3,
+      "risky_columns": [],
+      "risky_count": 0
+     },
+     "message": "No column looks like it gives away the answer: the leakage audit excluded nothing and flagged none of the 3 columns the model uses.",
+     "recommendation_kind": null,
+     "severity": "info",
+     "status": "pass"
+    },
+    {
+     "check": "overfit_gap",
+     "evidence": {
+      "absolute_gap": -0.046416267976876646,
+      "cv_score": 0.40548969265237444,
+      "cv_std": 0.17353181063271952,
+      "direction": "higher_is_better",
+      "final_fit_retuned": false,
+      "gap_in_cv_std": -0.2674798805339315,
+      "metric": "pr_auc",
+      "relative_gap": -0.11446966178908331,
+      "threshold": {
+       "absolute_gap": 0.1,
+       "cv_std_multiple": 3.0,
+       "relative_gap": 0.35
+      },
+      "train_score": 0.3590734246754978,
+      "winner_family": "logistic_regression"
+     },
+     "message": "The model scores PR AUC 0.359 on the rows it trained on and 0.405 on unseen cross-validation folds (gap -0.0464): not a sign of memorizing the training rows.",
+     "recommendation_kind": null,
+     "severity": "info",
+     "status": "pass"
+    },
+    {
+     "check": "duplicate_rows",
+     "evidence": {
+      "chance_model": "independent_columns",
+      "excess_train_duplicate_fraction": 0.0,
+      "excess_train_test_duplicate_fraction": 0.0,
+      "expected_train_duplicate_rows": 0.0,
+      "expected_train_test_duplicate_rows": 0.0,
+      "fail_eligible": true,
+      "feature_count": 3,
+      "log10_distinct_combination_capacity": 4.41,
+      "near_unique_columns": [
+       "spend"
+      ],
+      "test_rows": 48,
+      "train_duplicate_fraction": 0.0,
+      "train_duplicate_groups": 0,
+      "train_duplicate_rows": 0,
+      "train_rows": 192,
+      "train_test_duplicate_fraction": 0.0,
+      "train_test_duplicate_rows": 0
+     },
+     "message": "No duplicate problem: 0 training row(s) repeat another training row and 0 test row(s) match a training row on the 3 model columns, no more than chance alone would produce.",
+     "recommendation_kind": null,
+     "severity": "info",
+     "status": "pass"
+    },
+    {
+     "check": "class_imbalance",
+     "evidence": {
+      "class_count": 2,
+      "class_weighted_candidates": 4,
+      "imbalance_ratio": 3.682926829268293,
+      "min_minority_rows_per_fold": 10,
+      "minority_class_fraction": 0.21354166666666666,
+      "minority_fair_share_fraction": 0.4270833333333333,
+      "minority_rows": 41,
+      "minority_rows_per_fold": 8.2,
+      "n_folds": 5,
+      "winner_class_weighted": false
+     },
+     "message": "Classes are reasonably balanced: the smallest of 2 classes is 21.4% of the training rows.",
+     "recommendation_kind": null,
+     "severity": "info",
+     "status": "pass"
+    },
+    {
+     "check": "implausible_score",
+     "evidence": {
+      "baseline_cv_score": 0.2134952766531714,
+      "baseline_family": "majority",
+      "cv_score": 0.40548969265237444,
+      "cv_std": 0.17353181063271952,
+      "direction": "higher_is_better",
+      "margin_in_cv_std": 1.1063932042152185,
+      "margin_over_baseline": 0.19199441599920306,
+      "metric": "pr_auc",
+      "threshold": {
+       "near_perfect": 0.99,
+       "trivial_residual_ratio": 0.25
+      }
+     },
+     "message": "The cross-validated PR AUC of 0.405 (baseline 0.213) is in a believable range.",
+     "recommendation_kind": null,
+     "severity": "info",
+     "status": "pass"
+    }
+   ],
+   "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+   "investigated": true,
+   "summary": {
+    "failures": 0,
+    "not_evaluated": 0,
+    "passed": 5,
+    "warnings": 0
+   },
+   "version": "investigate.v1"
+  },
+  "GET /v1/experiments/59c35e71-34a0-462b-996e-abc42cb4842a": {
+   "cancel_requested_at": null,
+   "change_set": null,
+   "created_at": "2026-10-05T04:53:26.410599+04:00",
+   "diff_vs_parent": null,
+   "ended_at": "2026-10-05T04:53:30.475744+04:00",
+   "failure_reason": null,
+   "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "intent": "baseline",
+   "lineage": {
+    "execution_request_id": "624e96e4-ba27-45ba-b2d3-858ed778b5f9",
+    "parent_experiment_id": null,
+    "prepared_dataset_id": "3744c121-05f3-4175-a40d-e1c9241475d7",
+    "problem_spec_id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+    "source_dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+    "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+    "workflow_run_id": "406f6dca-7a68-4a19-8573-a363f7c1a8bd"
+   },
+   "metrics": {
+    "baseline_comparison": {
+     "baseline_candidate_id": "majority",
+     "baseline_cv_score": 0.2134952766531714,
+     "beats_baseline": true,
+     "clear_margin": true,
+     "margin": 0.19199441599920306,
+     "metric": "pr_auc",
+     "winner_candidate_id": "logistic_regression",
+     "winner_cv_score": 0.40548969265237444,
+     "winner_cv_std": 0.17353181063271952
+    },
+    "candidate_id": "logistic_regression",
+    "constraint_status": "not_requested",
+    "cv": {
+     "accuracy": 0.7758434547908232,
+     "balanced_accuracy": 0.5025000000000001,
+     "brier": 0.16240958489559282,
+     "brier_score": 0.16240958489559282,
+     "calibration_gap": 0.1765519222039012,
+     "f1": 0.04444444444444444,
+     "log_loss": 0.49562961951252893,
+     "positive_rate": 0.2134952766531714,
+     "pr_auc": 0.40548969265237444,
+     "precision": 0.2,
+     "recall": 0.025,
+     "roc_auc": 0.6750029868578256,
+     "specificity": 0.9800000000000001,
+     "top_decile_lift": 1.6,
+     "top_k_precision": 0.3333333333333333
+    },
+    "decision_threshold": 0.5,
+    "family": "logistic_regression",
+    "holdout": {
+     "accuracy": 0.8125,
+     "balanced_accuracy": 0.5868421052631579,
+     "brier": 0.16572801919615332,
+     "brier_score": 0.16572801919615332,
+     "calibration_gap": 0.22415939031999507,
+     "decision_threshold": 0.5,
+     "f1": 0.3076923076923077,
+     "log_loss": 0.5169744742583808,
+     "positive_rate": 0.20833333333333334,
+     "pr_auc": 0.35684817193487645,
+     "precision": 0.6666666666666666,
+     "recall": 0.2,
+     "roc_auc": 0.6210526315789474,
+     "specificity": 0.9736842105263158,
+     "top_decile_lift": 2.4,
+     "top_k_precision": 0.5
+    },
+    "selected_score": 0.40548969265237444,
+    "selection_metric": "pr_auc"
+   },
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "started_at": "2026-10-05T04:53:26.905667+04:00",
+   "status": "completed",
+   "target_column": "label",
+   "task_type": "binary",
+   "untrusted_fields": [
+    "intent",
+    "change_set",
+    "target_column"
+   ],
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/experiments/compare": {
+   "authoritative": false,
+   "common": {
+    "cv": [
+     "accuracy",
+     "balanced_accuracy",
+     "brier",
+     "brier_score",
+     "calibration_gap",
+     "f1",
+     "log_loss",
+     "positive_rate",
+     "pr_auc",
+     "precision",
+     "recall",
+     "roc_auc",
+     "specificity",
+     "top_decile_lift",
+     "top_k_precision"
+    ],
+    "holdout": [
+     "accuracy",
+     "balanced_accuracy",
+     "brier",
+     "brier_score",
+     "calibration_gap",
+     "decision_threshold",
+     "f1",
+     "log_loss",
+     "positive_rate",
+     "pr_auc",
+     "precision",
+     "recall",
+     "roc_auc",
+     "specificity",
+     "top_decile_lift",
+     "top_k_precision"
+    ]
+   },
+   "experiments": [
+    {
+     "candidate_id": "logistic_regression",
+     "constraint_status": "not_requested",
+     "cv": {
+      "accuracy": 0.7758434547908232,
+      "balanced_accuracy": 0.5025000000000001,
+      "brier": 0.16240958489559282,
+      "brier_score": 0.16240958489559282,
+      "calibration_gap": 0.1765519222039012,
+      "f1": 0.04444444444444444,
+      "log_loss": 0.49562961951252893,
+      "positive_rate": 0.2134952766531714,
+      "pr_auc": 0.40548969265237444,
+      "precision": 0.2,
+      "recall": 0.025,
+      "roc_auc": 0.6750029868578256,
+      "specificity": 0.9800000000000001,
+      "top_decile_lift": 1.6,
+      "top_k_precision": 0.3333333333333333
+     },
+     "decision_threshold": 0.5,
+     "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "family": "logistic_regression",
+     "holdout": {
+      "accuracy": 0.8125,
+      "balanced_accuracy": 0.5868421052631579,
+      "brier": 0.16572801919615332,
+      "brier_score": 0.16572801919615332,
+      "calibration_gap": 0.22415939031999507,
+      "decision_threshold": 0.5,
+      "f1": 0.3076923076923077,
+      "log_loss": 0.5169744742583808,
+      "positive_rate": 0.20833333333333334,
+      "pr_auc": 0.35684817193487645,
+      "precision": 0.6666666666666666,
+      "recall": 0.2,
+      "roc_auc": 0.6210526315789474,
+      "specificity": 0.9736842105263158,
+      "top_decile_lift": 2.4,
+      "top_k_precision": 0.5
+     },
+     "parent_experiment_id": null,
+     "selected_score": 0.40548969265237444,
+     "selection_metric": "pr_auc"
+    },
+    {
+     "candidate_id": "logistic_regression",
+     "constraint_status": "not_requested",
+     "cv": {
+      "accuracy": 0.7758434547908232,
+      "balanced_accuracy": 0.5025000000000001,
+      "brier": 0.16240958489559282,
+      "brier_score": 0.16240958489559282,
+      "calibration_gap": 0.1765519222039012,
+      "f1": 0.04444444444444444,
+      "log_loss": 0.49562961951252893,
+      "positive_rate": 0.2134952766531714,
+      "pr_auc": 0.40548969265237444,
+      "precision": 0.2,
+      "recall": 0.025,
+      "roc_auc": 0.6750029868578256,
+      "specificity": 0.9800000000000001,
+      "top_decile_lift": 1.6,
+      "top_k_precision": 0.3333333333333333
+     },
+     "decision_threshold": 0.5,
+     "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "family": "logistic_regression",
+     "holdout": {
+      "accuracy": 0.8125,
+      "balanced_accuracy": 0.5868421052631579,
+      "brier": 0.1657280191961533,
+      "brier_score": 0.1657280191961533,
+      "calibration_gap": 0.22415939031999496,
+      "decision_threshold": 0.5,
+      "f1": 0.3076923076923077,
+      "log_loss": 0.5169744742583808,
+      "positive_rate": 0.20833333333333334,
+      "pr_auc": 0.35684817193487645,
+      "precision": 0.6666666666666666,
+      "recall": 0.2,
+      "roc_auc": 0.6210526315789474,
+      "specificity": 0.9736842105263158,
+      "top_decile_lift": 2.4,
+      "top_k_precision": 0.5
+     },
+     "parent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "selected_score": 0.40548969265237444,
+     "selection_metric": "pr_auc"
+    }
+   ],
+   "schema_version": 1,
+   "source": "evaluation_metrics",
+   "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a"
+  },
+  "GET /v1/model-builds/1aa95c9b-e3be-4547-9f1b-b03da5467571": {
+   "compatibility_fallback_used": false,
+   "generator_version": "dclab.model_build_reproduction.v2",
+   "pipeline_run_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+   "pipeline_run_status": "COMPLETED",
+   "reproduction_notebook": {
+    "artifact_type": "reproduction_notebook",
+    "content_digest": "1ac29136fa65280cd9784152afe4a5e322536f51ff4b45eff5782910435025f4",
+    "filename": "1aa95c9b-e3be-4547-9f1b-b03da5467571-reproduction.ipynb",
+    "generator_version": "dclab.model_build_reproduction.v2",
+    "id": "27a316ee-ee30-4a52-a915-c86ca1cb91e6",
+    "mime_type": "application/x-ipynb+json",
+    "pipeline_run_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "role": "reproduction_notebook",
+    "size_bytes": 40656,
+    "spec_digest": "a779b3f553e145779bf9c07ffc9c4639db4e492950cc8be56839403a458dee6c",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   "reproduction_script": {
+    "artifact_type": "reproduction_script",
+    "content_digest": "d096013fa15d1d3d9e3fe9a16b99c9f007b2e9ef8b3268bd5f7a4cba8d456ab4",
+    "filename": "1aa95c9b-e3be-4547-9f1b-b03da5467571-reproduction.py",
+    "generator_version": "dclab.model_build_reproduction.v2",
+    "id": "6bea0fe8-2a02-4ff4-a923-ba9abcc39838",
+    "mime_type": "text/x-python",
+    "pipeline_run_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "role": "reproduction_script",
+    "size_bytes": 33737,
+    "spec_digest": "a779b3f553e145779bf9c07ffc9c4639db4e492950cc8be56839403a458dee6c",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   "reproduction_spec_digest": "3dc4c3c7b2b7e51ad96c25c010739fbdd773a2bf8850ddb8707a569b5924f5b2",
+   "scientific_evidence_locked_at": "2026-10-05T04:53:37.738304+04:00",
+   "stages": [
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.466680+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted an immutable dataset version.",
+     "duration_ms": 2.311041000211844,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "ingestion",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 1,
+     "started_at": "2026-10-05T04:53:32.461212+04:00",
+     "status": "completed",
+     "title": "Ingestion"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.486198+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted 2 normalized profiling findings.",
+     "duration_ms": 4.742624998471001,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "profiling_eda",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 2,
+     "started_at": "2026-10-05T04:53:32.478071+04:00",
+     "status": "completed",
+     "title": "Profiling / EDA"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.497395+04:00",
+     "configuration": {},
+     "decision_summary": "Resolved the prediction target and task type.",
+     "duration_ms": 3.995834000306786,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "target_task",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 3,
+     "started_at": "2026-10-05T04:53:32.490395+04:00",
+     "status": "completed",
+     "title": "Target + task"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.513424+04:00",
+     "configuration": {},
+     "decision_summary": "Applied 0 normalized structural decisions.",
+     "duration_ms": 2.415709001070354,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "structural_cleaning",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 4,
+     "started_at": "2026-10-05T04:53:32.508200+04:00",
+     "status": "completed",
+     "title": "Structural cleaning"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.522046+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted the final holdout policy.",
+     "duration_ms": 0.0,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "final_holdout_plan",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 5,
+     "started_at": "2026-10-05T04:53:32.522291+04:00",
+     "status": "completed",
+     "title": "Final holdout plan"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.538599+04:00",
+     "configuration": {},
+     "decision_summary": "Locked the holdout and scientific plan.",
+     "duration_ms": 3.14112500018382,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "holdout_lock",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 6,
+     "started_at": "2026-10-05T04:53:32.532640+04:00",
+     "status": "completed",
+     "title": "Holdout lock"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.550703+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted a train-only problem profile.",
+     "duration_ms": 5.944,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "problem_profile",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 7,
+     "started_at": "2026-10-05T04:53:32.544759+04:00",
+     "status": "completed",
+     "title": "Train-only ProblemProfile"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.553606+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted the validation strategy.",
+     "duration_ms": 0.0,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "validation_plan",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 8,
+     "started_at": "2026-10-05T04:53:32.553864+04:00",
+     "status": "completed",
+     "title": "ValidationPlan"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.557262+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted the model-selection metric.",
+     "duration_ms": 0.0,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "metric_plan",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 9,
+     "started_at": "2026-10-05T04:53:32.557517+04:00",
+     "status": "completed",
+     "title": "MetricPlan"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.591767+04:00",
+     "configuration": {},
+     "decision_summary": "Recorded 0 findings and 0 leakage decisions.",
+     "duration_ms": 31.067,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "leakage_audit",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 10,
+     "started_at": "2026-10-05T04:53:32.560700+04:00",
+     "status": "completed",
+     "title": "Leakage audit"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.610598+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted 3 missing-value decisions.",
+     "duration_ms": 0.0,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "missing_value_decisions",
+     "reason": "Column had no missing-value intervention; values were kept as ingested.",
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 11,
+     "started_at": "2026-10-05T04:53:32.610895+04:00",
+     "status": "completed",
+     "title": "Missing-value decisions"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.658663+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted 3 features and 3 lineage edges.",
+     "duration_ms": 25.348416000269935,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "feature_engineering",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 12,
+     "started_at": "2026-10-05T04:53:32.633135+04:00",
+     "status": "completed",
+     "title": "Feature engineering"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:32.720509+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted 4 fitted preprocessing steps.",
+     "duration_ms": 58.318916000644094,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "preprocessing",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 13,
+     "started_at": "2026-10-05T04:53:32.661401+04:00",
+     "status": "completed",
+     "title": "Preprocessing"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:35.536288+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted 10 model candidates and their applied hyperparameters.",
+     "duration_ms": 2809.0886250010954,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "candidate_generation",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 14,
+     "started_at": "2026-10-05T04:53:32.728890+04:00",
+     "status": "completed",
+     "title": "Candidate generation"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:35.536288+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted 50 CV fold runs and 50 fold evaluations.",
+     "duration_ms": 2809.0886250010954,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "cv_training",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 15,
+     "started_at": "2026-10-05T04:53:32.723148+04:00",
+     "status": "completed",
+     "title": "CV training"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:35.536317+04:00",
+     "configuration": {},
+     "decision_summary": "Compared 10 canonical candidate evaluations.",
+     "duration_ms": 0.0155829984578304,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "candidate_comparison",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 16,
+     "started_at": "2026-10-05T04:53:35.538148+04:00",
+     "status": "completed",
+     "title": "Candidate comparison"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:35.547844+04:00",
+     "configuration": {},
+     "decision_summary": "Locked the winning candidate from CV evidence.",
+     "duration_ms": 0.0,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "winner_lock",
+     "reason": "Winner locked from eligible CV scores before final holdout evaluation.",
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 17,
+     "started_at": "2026-10-05T04:53:35.548090+04:00",
+     "status": "completed",
+     "title": "Winner lock"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:35.743176+04:00",
+     "configuration": {},
+     "decision_summary": "Refit and linked the selected candidate to an immutable model version.",
+     "duration_ms": 15.93791599952965,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "final_refit",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 18,
+     "started_at": "2026-10-05T04:53:35.729112+04:00",
+     "status": "completed",
+     "title": "Final refit"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:35.768670+04:00",
+     "configuration": {
+      "evaluations": [
+       {
+        "candidate_id": "ff3a0343-6510-4fda-b507-23850f8add7c",
+        "id": "d4cbb8e9-c92c-4284-a5ea-9366f0004f64",
+        "metrics": {
+         "accuracy": 0.8125,
+         "balanced_accuracy": 0.5868421052631579,
+         "brier": 0.1657280191961533,
+         "brier_score": 0.1657280191961533,
+         "calibration_gap": 0.22415939031999496,
+         "decision_threshold": 0.5,
+         "f1": 0.3076923076923077,
+         "log_loss": 0.5169744742583808,
+         "positive_rate": 0.20833333333333334,
+         "pr_auc": 0.35684817193487645,
+         "precision": 0.6666666666666666,
+         "recall": 0.2,
+         "roc_auc": 0.6210526315789474,
+         "specificity": 0.9736842105263158,
+         "top_decile_lift": 2.4,
+         "top_k_precision": 0.5
+        },
+        "model_version_id": "63b245da-e9b4-4951-8890-85771b67341e",
+        "status": "completed"
+       }
+      ]
+     },
+     "decision_summary": "Persisted 1 final-holdout evaluation without test rows.",
+     "duration_ms": 10.359249999964959,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "final_holdout",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 19,
+     "started_at": "2026-10-05T04:53:35.757836+04:00",
+     "status": "completed",
+     "title": "Final holdout"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:35.785608+04:00",
+     "configuration": {},
+     "decision_summary": "Persisted 10 artifacts and 1 code snapshots.",
+     "duration_ms": 2.2312919991236413,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "artifact_reproducibility_persistence",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": null,
+     "rows_out": null,
+     "sequence": 20,
+     "started_at": "2026-10-05T04:53:35.787883+04:00",
+     "status": "completed",
+     "title": "Artifact / reproducibility persistence"
+    },
+    {
+     "code_generation_support_status": "supported",
+     "completed_at": "2026-10-05T04:53:37.861950+04:00",
+     "configuration": {},
+     "decision_summary": null,
+     "duration_ms": 9.504916000878438,
+     "evidence_references": [],
+     "generated_code": null,
+     "key": "deterministic_verification",
+     "reason": null,
+     "related_candidate_ids": [],
+     "related_fold_ids": [],
+     "rows_in": 240,
+     "rows_out": 240,
+     "sequence": 21,
+     "started_at": "2026-10-05T04:53:37.827627+04:00",
+     "status": "completed",
+     "title": "Deterministic verification"
+    }
+   ],
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/model-builds/1aa95c9b-e3be-4547-9f1b-b03da5467571/artifacts": [
+   {
+    "artifact_type": "predictions",
+    "content_digest": "32744faf0ee0035a290fac379076929f85786cbb58ddefb24791703216f18170",
+    "created_at": "2026-10-05T04:53:37.757079+04:00",
+    "id": "7eb9c385-218c-4b4e-8f15-7b8e1fb137d3",
+    "mime_type": "text/csv",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 2576,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "report",
+    "content_digest": "7bc1cefae0aa24450fe5d07b2b5eff7d7763cb354ff6816545fd23ea63e5881b",
+    "created_at": "2026-10-05T04:53:37.757079+04:00",
+    "id": "c258b43e-d198-4f75-b2a8-cbc6f8a0ee75",
+    "mime_type": "text/markdown",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 1275,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "result_json",
+    "content_digest": "c6dc304700e2b079368db0edca38f3ad4d76eddb37c2b9811735922a5e003f04",
+    "created_at": "2026-10-05T04:53:37.757079+04:00",
+    "id": "d8f677db-2838-4580-8070-1c43c9fd273e",
+    "mime_type": "application/json",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 1025117,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "feature_manifest",
+    "content_digest": "fa7c7b17f747f2c7ac1c08650a2168c8c9ae8e3547307a120ef4435915ec1947",
+    "created_at": "2026-10-05T04:53:37.326729+04:00",
+    "id": "1daffb0c-81b9-4cd1-b9fb-433c264a97ab",
+    "mime_type": "application/json",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 232,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "reproduction_notebook",
+    "content_digest": "1ac29136fa65280cd9784152afe4a5e322536f51ff4b45eff5782910435025f4",
+    "created_at": "2026-10-05T04:53:37.326729+04:00",
+    "id": "27a316ee-ee30-4a52-a915-c86ca1cb91e6",
+    "mime_type": "application/x-ipynb+json",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 40656,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "source_code",
+    "content_digest": "6722a47a94f4747433ed60bf4a4a8bbe8d54d31f8c6c0faee2f3b86388c52925",
+    "created_at": "2026-10-05T04:53:37.326729+04:00",
+    "id": "2eeec128-43c1-4a84-bc9a-a40b641c3b7a",
+    "mime_type": "application/zip",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 144136,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "reproduction_script",
+    "content_digest": "d096013fa15d1d3d9e3fe9a16b99c9f007b2e9ef8b3268bd5f7a4cba8d456ab4",
+    "created_at": "2026-10-05T04:53:37.326729+04:00",
+    "id": "6bea0fe8-2a02-4ff4-a923-ba9abcc39838",
+    "mime_type": "text/x-python",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 33737,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "model",
+    "content_digest": "32a09a72eea2220bebff71a2f0b3c9071016a2e6aeaace0beec4774281a79f59",
+    "created_at": "2026-10-05T04:53:37.326729+04:00",
+    "id": "a99d6051-4f2e-4466-95d2-35596c58e6d5",
+    "mime_type": "application/octet-stream",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 4316,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "dependency_lock",
+    "content_digest": "e2405230f46d316b186314532ed20c8533978fc52f2b7345b8e04aef29dd53c3",
+    "created_at": "2026-10-05T04:53:37.326729+04:00",
+    "id": "b7823db4-d0f1-4f1c-80fe-bbb9c3b1a881",
+    "mime_type": "text/plain",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 1518,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "artifact_type": "preprocessor",
+    "content_digest": "25ffc39afc777ca979ad863d12e1f67e7a17afe7d556b926777d99a1ce2e2f3c",
+    "created_at": "2026-10-05T04:53:37.326729+04:00",
+    "id": "cab17d17-57f4-4ef1-a5bb-664fc5021b3d",
+    "mime_type": "application/octet-stream",
+    "object_key": "",
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "provider": "local",
+    "size_bytes": 3489,
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   }
+  ],
+  "GET /v1/model-versions/4810b254-866c-42a9-b41d-045c9749aa83": {
+   "algorithm": "logistic_regression",
+   "artifacts": [
+    {
+     "artifact_type": "feature_manifest",
+     "content_digest": "baae802c9077c67a7e840209671de9e7b5a9afb315216366e1343e0fe00fe5e5",
+     "id": "643f17fe-0d46-4062-bd2e-deb9c0aa0a2c",
+     "mime_type": "application/json",
+     "role": "feature_manifest",
+     "size_bytes": 232
+    },
+    {
+     "artifact_type": "model",
+     "content_digest": "727584604021d3abebe780aa6b559d09852fbed264372506e922c83b9419af94",
+     "id": "71d0b7af-5819-4419-9af9-25c6fb9bf423",
+     "mime_type": "application/octet-stream",
+     "role": "model",
+     "size_bytes": 4316
+    },
+    {
+     "artifact_type": "preprocessor",
+     "content_digest": "7dec13dc5d1e4ddc7b06da9b17c355c36960ca0fb617f41aa32b643a4ca7756a",
+     "id": "2b81b8e2-fdf1-41d3-b99f-ed4d6538ada9",
+     "mime_type": "application/octet-stream",
+     "role": "preprocessor",
+     "size_bytes": 3489
+    }
+   ],
+   "candidate_key": "logistic_regression",
+   "content_digest": "ee4e7f77987c119bdd99e667b97125c6750467a9462f46396964adac059d13f4",
+   "created_at": "2026-10-05T04:53:31.504127+04:00",
+   "family": "logistic_regression",
+   "holdout_report_only": null,
+   "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+   "is_champion": true,
+   "lineage": {
+    "candidate_id": "0783ac84-5dad-4d51-b9d1-247168e944c7",
+    "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+    "feature_recipe_id": "48bd018f-4774-4da7-9f4a-080e8598314b",
+    "prepared_dataset_id": "3744c121-05f3-4175-a40d-e1c9241475d7",
+    "problem_spec_id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+    "source_dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+    "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a"
+   },
+   "metrics": {
+    "candidate_id": "logistic_regression",
+    "constraint_status": "not_requested",
+    "cv": {
+     "accuracy": 0.7758434547908232,
+     "balanced_accuracy": 0.5025000000000001,
+     "brier": 0.16240958489559282,
+     "brier_score": 0.16240958489559282,
+     "calibration_gap": 0.1765519222039012,
+     "f1": 0.04444444444444444,
+     "log_loss": 0.49562961951252893,
+     "positive_rate": 0.2134952766531714,
+     "pr_auc": 0.40548969265237444,
+     "precision": 0.2,
+     "recall": 0.025,
+     "roc_auc": 0.6750029868578256,
+     "specificity": 0.9800000000000001,
+     "top_decile_lift": 1.6,
+     "top_k_precision": 0.3333333333333333
+    },
+    "decision_threshold": 0.5,
+    "family": "logistic_regression",
+    "holdout": {
+     "accuracy": 0.8125,
+     "balanced_accuracy": 0.5868421052631579,
+     "brier": 0.16572801919615332,
+     "brier_score": 0.16572801919615332,
+     "calibration_gap": 0.22415939031999507,
+     "decision_threshold": 0.5,
+     "f1": 0.3076923076923077,
+     "log_loss": 0.5169744742583808,
+     "positive_rate": 0.20833333333333334,
+     "pr_auc": 0.35684817193487645,
+     "precision": 0.6666666666666666,
+     "recall": 0.2,
+     "roc_auc": 0.6210526315789474,
+     "specificity": 0.9736842105263158,
+     "top_decile_lift": 2.4,
+     "top_k_precision": 0.5
+    },
+    "selected_score": 0.40548969265237444,
+    "selection_metric": "pr_auc"
+   },
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "ref_kinds": [
+    "champion_model"
+   ],
+   "version": "v1",
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/model-versions/4810b254-866c-42a9-b41d-045c9749aa83/card": {
+   "algorithm": "logistic_regression",
+   "baseline": {
+    "available": true,
+    "baseline_candidate_id": "majority",
+    "baseline_score": 0.2134952766531714,
+    "beats_baseline": true,
+    "clear_margin": true,
+    "margin": 0.19199441599920306,
+    "metric": "pr_auc",
+    "text": "A dummy model that ignores every column scores PR AUC 0.213 in cross-validation; this model scores 0.405 and beats it by more than its own fold-to-fold spread.",
+    "winner_score": 0.40548969265237444
+   },
+   "candidate_key": "logistic_regression",
+   "card_version": "model_card.v1",
+   "content_digest": "ee4e7f77987c119bdd99e667b97125c6750467a9462f46396964adac059d13f4",
+   "created_at": "2026-10-05T04:53:31.504127+04:00",
+   "cv": {
+    "at_locked_threshold": {},
+    "folds": 5,
+    "mean": 0.40548969265237444,
+    "metric": "pr_auc",
+    "metrics": {
+     "accuracy": 0.7758434547908232,
+     "balanced_accuracy": 0.5025000000000001,
+     "brier": 0.16240958489559282,
+     "brier_score": 0.16240958489559282,
+     "calibration_gap": 0.1765519222039012,
+     "f1": 0.04444444444444444,
+     "log_loss": 0.49562961951252893,
+     "positive_rate": 0.2134952766531714,
+     "pr_auc": 0.40548969265237444,
+     "precision": 0.2,
+     "recall": 0.025,
+     "roc_auc": 0.6750029868578256,
+     "specificity": 0.9800000000000001,
+     "top_decile_lift": 1.6,
+     "top_k_precision": 0.3333333333333333
+    },
+    "std": 0.17353181063271952,
+    "strategy": "StratifiedKFold",
+    "threshold_note": null
+   },
+   "data": {
+    "column_count": 4,
+    "content_digest": "14a2691613d95b8bf6319884127708ad2c8cbbd986311639959700ad0c6fdf1d",
+    "modeled_feature_count": 3,
+    "name": "rows",
+    "row_count": 240,
+    "source_dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed"
+   },
+   "drivers": {
+    "clear_drivers": [],
+    "columns_tested": 3,
+    "critical_value": 3.186315545559684,
+    "features": [
+     {
+      "column": "spend",
+      "distinguishable": false,
+      "importance_mean": 0.09023716640291544,
+      "importance_se": 0.08372625158454403,
+      "importance_std": 0.18721759004428992,
+      "rank": 1
+     },
+     {
+      "column": "tenure",
+      "distinguishable": false,
+      "importance_mean": 0.05267366675717714,
+      "importance_se": 0.0404490471361716,
+      "importance_std": 0.09044681902157288,
+      "rank": 2
+     },
+     {
+      "column": "plan",
+      "distinguishable": false,
+      "importance_mean": -0.010060991396111293,
+      "importance_se": 0.008552867787031484,
+      "importance_std": 0.019124793774370593,
+      "rank": 3
+     }
+    ],
+    "folds": 5,
+    "method": "permutation_validation_folds",
+    "n_repeats": 3,
+    "reason": null,
+    "scoring": "pr_auc",
+    "status": "computed",
+    "text": "Each column was shuffled (not removed) on up to 2000 sampled validation rows of each of the 5 cross-validation folds, using refits of the winning configuration on each fold (never the final-evaluation rows); importance is how much PR AUC worsens. Correlated columns share credit. No column's effect is above fold-to-fold variation (Bonferroni-corrected across 3 columns)."
+   },
+   "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "family": "logistic_regression",
+   "final_evaluation": {
+    "decision_threshold": 0.5,
+    "label": "Single final evaluation of the locked winner on held-out rows; never used for selection.",
+    "metric": "pr_auc",
+    "metrics": {
+     "accuracy": 0.8125,
+     "balanced_accuracy": 0.5868421052631579,
+     "brier": 0.16572801919615332,
+     "brier_score": 0.16572801919615332,
+     "calibration_gap": 0.22415939031999507,
+     "decision_threshold": 0.5,
+     "f1": 0.3076923076923077,
+     "log_loss": 0.5169744742583808,
+     "positive_rate": 0.20833333333333334,
+     "pr_auc": 0.35684817193487645,
+     "precision": 0.6666666666666666,
+     "recall": 0.2,
+     "roc_auc": 0.6210526315789474,
+     "specificity": 0.9736842105263158,
+     "top_decile_lift": 2.4,
+     "top_k_precision": 0.5
+    },
+    "note": null,
+    "status": "reported",
+    "value": 0.35684817193487645
+   },
+   "llm": {
+    "counted": "Counts every recorded LLM call (llm_invocations with llm_used = true) linked to this run or its workflow run, for any purpose (target choice, leakage review, plan advice, verification). Calls that fell back to deterministic rules are not counted.",
+    "purposes": [],
+    "used": false
+   },
+   "markdown": "# Model card: logistic\\_regression v1\n\nModel version `4810b254-866c-42a9-b41d-045c9749aa83` from experiment `59c35e71-34a0-462b-996e-abc42cb4842a`; content digest `ee4e7f77987c119bdd99e667b97125c6750467a9462f46396964adac059d13f4`; created 2026-10-05T04:53:31.504127+04:00.\n\n## What it predicts\n\n| Field | Value |\n| --- | --- |\n| Target column | label |\n| Task | binary |\n| Positive class | the class coded 1 \\(a yes/true-style or 1 label in the uploaded target\\) |\n| Classes | n/a |\n| Prediction unit | n/a |\n| Primary metric | PR AUC |\n| Why this metric | Binary labels are meaningfully imbalanced \\(imbalance\\_ratio=3.682926829268293, minority\\_class\\_fraction=0.21354166666666666\\); PR-AUC is the primary ranking metric. |\n| Decision threshold | 0.5 |\n\n## How good it is, in plain words\n\nOf every 100 rows the model flags as positive, about 25 really are; it finds about 2 of every 100 real positive rows at the locked decision threshold 0.5 (pooled over the cross-validation folds).\n\nCross-validation: PR AUC 0.405 \u00b1 0.174 over 5 folds (StratifiedKFold).\n\n## Compared with the dummy baseline\n\nA dummy model that ignores every column scores PR AUC 0.213 in cross-validation; this model scores 0.405 and beats it by more than its own fold-to-fold spread.\n\n## Top drivers\n\nEach column was shuffled (not removed) on up to 2000 sampled validation rows of each of the 5 cross-validation folds, using refits of the winning configuration on each fold (never the final-evaluation rows); importance is how much PR AUC worsens. Correlated columns share credit. No column's effect is above fold-to-fold variation (Bonferroni-corrected across 3 columns).\n\n| Rank | Column | Importance | Spread | Clear driver |\n| --- | --- | --- | --- | --- |\n| 1 | spend | 0.0902 | 0.187 | no |\n| 2 | tenure | 0.0527 | 0.0904 | no |\n| 3 | plan | -0.0101 | 0.0191 | no |\n\n## Known risks\n\nNo trust check raised a warning or failure \\(0 could not be evaluated\\).\n\n## Data and split\n\n| Field | Value |\n| --- | --- |\n| Source dataset | rows |\n| Rows x columns | 240 x 4 |\n| Dataset digest | 14a2691613d95b8bf6319884127708ad2c8cbbd986311639959700ad0c6fdf1d |\n| Columns the model uses | 3 |\n| Split plan | be649d46-2229-4587-8c3a-0a9d4819469a |\n| Final-evaluation split | stratified\\_random |\n| Final-evaluation fraction | 0.2 |\n| Validation | StratifiedKFold, 5 folds |\n| Group column | n/a |\n| Time column | n/a |\n| Training rows | 192 |\n| Final-evaluation rows | 48 |\n\n## AI involvement\n\nLLM used: no. Counts every recorded LLM call \\(llm\\_invocations with llm\\_used = true\\) linked to this run or its workflow run, for any purpose \\(target choice, leakage review, plan advice, verification\\). Calls that fell back to deterministic rules are not counted.\n\n## Final evaluation\n\nSingle final evaluation of the locked winner on held-out rows; never used for selection.\n\nPR AUC on held-out rows: 0.357.\nScored at the locked decision threshold 0.5.\n",
+   "metric_in_words": {
+    "basis": "pooled_out_of_fold_at_locked_threshold",
+    "caveat": null,
+    "numbers": {
+     "fn": 40.0,
+     "fp": 3.0,
+     "precision": 0.25,
+     "recall": 0.024390243902439025,
+     "tp": 1.0
+    },
+    "text": "Of every 100 rows the model flags as positive, about 25 really are; it finds about 2 of every 100 real positive rows at the locked decision threshold 0.5 (pooled over the cross-validation folds)."
+   },
+   "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+   "objective": {
+    "business_objective": "reduce churn",
+    "constraints": [],
+    "decision_threshold": 0.5,
+    "decision_threshold_source": "default",
+    "primary_metric": "pr_auc",
+    "primary_metric_reason": "Binary labels are meaningfully imbalanced (imbalance_ratio=3.682926829268293, minority_class_fraction=0.21354166666666666); PR-AUC is the primary ranking metric."
+   },
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "risks": {
+    "investigated": true,
+    "items": [],
+    "text": "No trust check raised a warning or failure (0 could not be evaluated)."
+   },
+   "split": {
+    "evaluation_fraction": 0.2,
+    "evaluation_rows": 48,
+    "evaluation_split_strategy": "stratified_random",
+    "group_column": null,
+    "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+    "stratified": true,
+    "time_column": null,
+    "train_rows": 192,
+    "validation_folds": 5,
+    "validation_strategy": "StratifiedKFold"
+   },
+   "target": {
+    "class_labels": [],
+    "column": "label",
+    "positive_label": null,
+    "positive_label_note": "the class coded 1 (a yes/true-style or 1 label in the uploaded target)",
+    "prediction_unit": null,
+    "task_type": "binary"
+   },
+   "untrusted_fields": [
+    "target.column",
+    "target.positive_label",
+    "target.class_labels",
+    "target.prediction_unit",
+    "objective.business_objective",
+    "objective.primary_metric_reason",
+    "drivers.features[].column",
+    "drivers.text",
+    "drivers.clear_drivers",
+    "risks.items[].message",
+    "data.name",
+    "split.group_column",
+    "split.time_column",
+    "metric_in_words.text",
+    "markdown"
+   ],
+   "version": "v1"
+  },
+  "GET /v1/nodes/experiment/59c35e71-34a0-462b-996e-abc42cb4842a/impact": {
+   "counts_by_kind": {
+    "experiment": 1,
+    "feature_recipe": 2,
+    "model_version": 2
+   },
+   "graph_truncated": false,
+   "items": [
+    {
+     "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "kind": "experiment"
+    },
+    {
+     "id": "48bd018f-4774-4da7-9f4a-080e8598314b",
+     "key": "feature_recipe:48bd018f-4774-4da7-9f4a-080e8598314b",
+     "kind": "feature_recipe"
+    },
+    {
+     "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "key": "model_version:4810b254-866c-42a9-b41d-045c9749aa83",
+     "kind": "model_version"
+    },
+    {
+     "id": "4df39be4-91f7-4a60-b7dd-6219232d93b2",
+     "key": "feature_recipe:4df39be4-91f7-4a60-b7dd-6219232d93b2",
+     "kind": "feature_recipe"
+    },
+    {
+     "id": "63b245da-e9b4-4951-8890-85771b67341e",
+     "key": "model_version:63b245da-e9b4-4951-8890-85771b67341e",
+     "kind": "model_version"
+    }
+   ],
+   "node": {
+    "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+    "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+    "kind": "experiment"
+   },
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "total": 5,
+   "truncated": false
+  },
+  "GET /v1/predictions/84886b60-18ba-40a1-a73b-e9849ee76c8e": {
+   "completed_at": "2026-10-05T04:53:38.206304+04:00",
+   "contract_check": {
+    "empty_columns": [],
+    "ignored_columns": [],
+    "ignored_count": 0,
+    "missing_columns": [],
+    "missing_count": 0,
+    "parse_rates": {},
+    "required_columns": [
+     "tenure",
+     "spend",
+     "plan"
+    ],
+    "required_count": 3,
+    "status": "passed",
+    "target_column": "label",
+    "target_column_ignored": false,
+    "unparsed_values": {},
+    "unseen_categories": {}
+   },
+   "created_at": "2026-10-05T04:53:38.101930+04:00",
+   "decision_threshold": 0.5,
+   "error_code": null,
+   "error_message": null,
+   "execution_request_id": "a071b4aa-e49b-4e31-a9b2-38f067e901b0",
+   "id": "84886b60-18ba-40a1-a73b-e9849ee76c8e",
+   "input_dataset_id": "d2a3b364-b20e-4ba0-af89-fcb69fc23d8c",
+   "model_release_id": null,
+   "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+   "output": {
+    "artifact_id": "2f4be5fa-4e70-4f8b-9515-7cdb7d43bc55",
+    "content_digest": "c4aa264b8342267af056ea4ee0d632e045dd43a7ec0efef10e48979238c92c84",
+    "download_path": "/v1/predictions/84886b60-18ba-40a1-a73b-e9849ee76c8e/download",
+    "mime_type": "text/csv",
+    "size_bytes": 753
+   },
+   "output_format": "csv",
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "rows_in": 30,
+   "rows_out": 30,
+   "started_at": "2026-10-05T04:53:38.159053+04:00",
+   "status": "completed",
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/projects": [
+   {
+    "archived_at": null,
+    "created_at": "2026-10-05T04:53:26.131395+04:00",
+    "created_by": "d5b9aed8-880d-4748-9f1a-ae3ea45b6169",
+    "description": "Churn project used for the agent tool corpus.",
+    "id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "name": "Tool corpus",
+    "provenance": "user",
+    "slug": "tool-corpus",
+    "status": "active",
+    "updated_at": "2026-10-05T04:53:26.131395+04:00",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   {
+    "archived_at": null,
+    "created_at": "2026-10-05T04:53:24.394225+04:00",
+    "created_by": "d5b9aed8-880d-4748-9f1a-ae3ea45b6169",
+    "description": "",
+    "id": "c99cc72c-e7b9-42ac-b93e-666fbac45b9d",
+    "name": "Alpha",
+    "provenance": "user",
+    "slug": "a-53645c",
+    "status": "active",
+    "updated_at": "2026-10-05T04:53:24.394225+04:00",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   }
+  ],
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da": {
+   "archived_at": null,
+   "created_at": "2026-10-05T04:53:26.131395+04:00",
+   "created_by": "d5b9aed8-880d-4748-9f1a-ae3ea45b6169",
+   "description": "Churn project used for the agent tool corpus.",
+   "id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "name": "Tool corpus",
+   "provenance": "user",
+   "slug": "tool-corpus",
+   "status": "active",
+   "updated_at": "2026-10-05T04:53:26.131395+04:00",
+   "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/decisions": {
+   "items": [
+    {
+     "actor": {
+      "agent_run_id": null,
+      "kind": "agent",
+      "rule": null,
+      "service_token_id": "351f7a9b-226e-4020-a7e2-11eb1302f022",
+      "user_id": null
+     },
+     "content_origin": "agent",
+     "decision_type": "experiment_accepted",
+     "details": {},
+     "details_truncated": false,
+     "effective_state": "proposed",
+     "event_at": "2026-10-05T04:53:38.468060+04:00",
+     "evidence_refs": [
+      {
+       "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+       "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+       "kind": "experiment",
+       "metric": null,
+       "scope": null
+      }
+     ],
+     "facts": {},
+     "id": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8",
+     "policy_version": "dclab.decisions.v1",
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "rationale": "branch holds CV quality",
+     "rationale_label": "unverified agent rationale",
+     "rationale_truncated": false,
+     "rationale_untrusted": true,
+     "recorded_at": "2026-10-05T04:53:38.468060+04:00",
+     "schema_version": 1,
+     "state": "proposed",
+     "subject": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     },
+     "subject_digest": null,
+     "superseded_by_id": null,
+     "supersedes_id": null
+    },
+    {
+     "actor": {
+      "agent_run_id": null,
+      "kind": "rule",
+      "rule": "selection.cv_winner.v1",
+      "service_token_id": null,
+      "user_id": null
+     },
+     "content_origin": "rule",
+     "decision_type": "winner_locked",
+     "details": {
+      "model_selection_decision_id": "ccd0bc3d-2008-4b2a-8181-7417678e5de3"
+     },
+     "details_truncated": false,
+     "effective_state": "accepted",
+     "event_at": "2026-10-05T04:53:35.536315+04:00",
+     "evidence_refs": [
+      {
+       "id": "ff3a0343-6510-4fda-b507-23850f8add7c",
+       "key": "candidate:ff3a0343-6510-4fda-b507-23850f8add7c",
+       "kind": "candidate",
+       "metric": "pr_auc",
+       "scope": "cv_aggregate"
+      },
+      {
+       "id": "993bb71d-a269-4522-bd2a-d72de5868cf5",
+       "key": "candidate:993bb71d-a269-4522-bd2a-d72de5868cf5",
+       "kind": "candidate",
+       "metric": "pr_auc",
+       "scope": "cv_aggregate"
+      }
+     ],
+     "facts": {
+      "selected_score": 0.40548969265237444,
+      "selection_metric": "pr_auc",
+      "selection_policy": "maximum eligible primary CV score"
+     },
+     "id": "95bc7795-c09f-4918-a792-0f381d0bd954",
+     "policy_version": "dclab.decisions.v1",
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "rationale": "Winner locked from eligible CV scores before final holdout evaluation.",
+     "rationale_label": null,
+     "rationale_truncated": false,
+     "rationale_untrusted": false,
+     "recorded_at": "2026-10-05T04:53:35.806076+04:00",
+     "schema_version": 1,
+     "state": "accepted",
+     "subject": {
+      "id": "ff3a0343-6510-4fda-b507-23850f8add7c",
+      "key": "candidate:ff3a0343-6510-4fda-b507-23850f8add7c",
+      "kind": "candidate"
+     },
+     "subject_digest": "da5e6f596371b45caecc12a3d172b02137d92050",
+     "superseded_by_id": null,
+     "supersedes_id": null
+    },
+    {
+     "actor": {
+      "agent_run_id": null,
+      "kind": "rule",
+      "rule": "refs.bootstrap.v1",
+      "service_token_id": null,
+      "user_id": null
+     },
+     "content_origin": "rule",
+     "decision_type": "ref_initialized",
+     "details": {
+      "ref_moves": [
+       {
+        "from": null,
+        "ref_kind": "dataset",
+        "to": {
+         "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+         "kind": "dataset_version"
+        }
+       },
+       {
+        "from": null,
+        "ref_kind": "split_plan",
+        "to": {
+         "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+         "kind": "split_plan"
+        }
+       },
+       {
+        "from": null,
+        "ref_kind": "feature_recipe",
+        "to": {
+         "id": "48bd018f-4774-4da7-9f4a-080e8598314b",
+         "kind": "feature_recipe"
+        }
+       },
+       {
+        "from": null,
+        "ref_kind": "champion_model",
+        "to": {
+         "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+         "kind": "model_version"
+        }
+       }
+      ],
+      "skipped_refs": [
+       {
+        "reason": "ref already set",
+        "ref_kind": "problem_spec"
+       }
+      ]
+     },
+     "details_truncated": false,
+     "effective_state": "accepted",
+     "event_at": "2026-10-05T04:53:31.504127+04:00",
+     "evidence_refs": [
+      {
+       "id": "0783ac84-5dad-4d51-b9d1-247168e944c7",
+       "key": "candidate:0783ac84-5dad-4d51-b9d1-247168e944c7",
+       "kind": "candidate",
+       "metric": "pr_auc",
+       "scope": "final_holdout"
+      }
+     ],
+     "facts": {
+      "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "final_holdout_evaluation_id": "d9aebfd6-5cea-47d0-b6e2-956af3e39b30",
+      "model_version": "v1"
+     },
+     "id": "a82c6dda-a588-4fff-a6af-0a35cdf10f3c",
+     "policy_version": "dclab.decisions.v1",
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "rationale": "first locked model; not a comparison",
+     "rationale_label": null,
+     "rationale_truncated": false,
+     "rationale_untrusted": false,
+     "recorded_at": "2026-10-05T04:53:31.504127+04:00",
+     "schema_version": 1,
+     "state": "accepted",
+     "subject": {
+      "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+      "key": "model_version:4810b254-866c-42a9-b41d-045c9749aa83",
+      "kind": "model_version"
+     },
+     "subject_digest": "ee4e7f77987c119bdd99e667b97125c6750467a9462f46396964adac059d13f4",
+     "superseded_by_id": null,
+     "supersedes_id": null
+    },
+    {
+     "actor": {
+      "agent_run_id": null,
+      "kind": "rule",
+      "rule": "selection.cv_winner.v1",
+      "service_token_id": null,
+      "user_id": null
+     },
+     "content_origin": "rule",
+     "decision_type": "winner_locked",
+     "details": {
+      "model_selection_decision_id": "98ece19a-7b99-4621-a6fc-a199f1335ead"
+     },
+     "details_truncated": false,
+     "effective_state": "accepted",
+     "event_at": "2026-10-05T04:53:30.203767+04:00",
+     "evidence_refs": [
+      {
+       "id": "0783ac84-5dad-4d51-b9d1-247168e944c7",
+       "key": "candidate:0783ac84-5dad-4d51-b9d1-247168e944c7",
+       "kind": "candidate",
+       "metric": "pr_auc",
+       "scope": "cv_aggregate"
+      },
+      {
+       "id": "c3cf7335-58df-4969-9eb6-0d89ae0edf53",
+       "key": "candidate:c3cf7335-58df-4969-9eb6-0d89ae0edf53",
+       "kind": "candidate",
+       "metric": "pr_auc",
+       "scope": "cv_aggregate"
+      }
+     ],
+     "facts": {
+      "selected_score": 0.40548969265237444,
+      "selection_metric": "pr_auc",
+      "selection_policy": "maximum eligible primary CV score"
+     },
+     "id": "4642860e-207d-4a4a-9551-b4dc0a2da7ec",
+     "policy_version": "dclab.decisions.v1",
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "rationale": "Winner locked from eligible CV scores before final holdout evaluation.",
+     "rationale_label": null,
+     "rationale_truncated": false,
+     "rationale_untrusted": false,
+     "recorded_at": "2026-10-05T04:53:30.476910+04:00",
+     "schema_version": 1,
+     "state": "accepted",
+     "subject": {
+      "id": "0783ac84-5dad-4d51-b9d1-247168e944c7",
+      "key": "candidate:0783ac84-5dad-4d51-b9d1-247168e944c7",
+      "kind": "candidate"
+     },
+     "subject_digest": "da5e6f596371b45caecc12a3d172b02137d92050",
+     "superseded_by_id": null,
+     "supersedes_id": null
+    },
+    {
+     "actor": {
+      "agent_run_id": null,
+      "kind": "rule",
+      "rule": "holdout.planner.v1",
+      "service_token_id": null,
+      "user_id": null
+     },
+     "content_origin": "rule",
+     "decision_type": "split_plan_created",
+     "details": {
+      "assignment_digest": "a0067067df0226cdaa21cadc6ce224094114d22f5c482eea1b6479b6a0d6988b",
+      "holdout_plan_digest": "41c9b3789f86409f5290ad8e11fb5691e92522077b09cb72dc2c05c2a1f83c60",
+      "plan_digest": "06d05eef4d70e0a9650436253fabe0976cad1f63b61bc1e2a7a5e4488d82c315"
+     },
+     "details_truncated": false,
+     "effective_state": "accepted",
+     "event_at": "2026-10-05T04:53:26.802039+04:00",
+     "evidence_refs": [
+      {
+       "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+       "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+       "kind": "dataset_version",
+       "metric": null,
+       "scope": null
+      }
+     ],
+     "facts": {
+      "holdout_row_count": 48,
+      "holdout_strategy": "stratified_random",
+      "holdout_test_size": 0.2,
+      "row_count": 240,
+      "train_row_count": 192,
+      "validation_folds": 5,
+      "validation_strategy": "StratifiedKFold",
+      "version": 1
+     },
+     "id": "246fc947-52f4-4b4c-9dbf-e1acbcef0476",
+     "policy_version": "dclab.decisions.v1",
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "rationale": "Ordinary binary classification uses a stratified random 80/20 final holdout.",
+     "rationale_label": null,
+     "rationale_truncated": false,
+     "rationale_untrusted": false,
+     "recorded_at": "2026-10-05T04:53:26.802039+04:00",
+     "schema_version": 1,
+     "state": "accepted",
+     "subject": {
+      "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+      "key": "split_plan:be649d46-2229-4587-8c3a-0a9d4819469a",
+      "kind": "split_plan"
+     },
+     "subject_digest": "06d05eef4d70e0a9650436253fabe0976cad1f63b61bc1e2a7a5e4488d82c315",
+     "superseded_by_id": null,
+     "supersedes_id": null
+    },
+    {
+     "actor": {
+      "agent_run_id": null,
+      "kind": "human",
+      "rule": null,
+      "service_token_id": null,
+      "user_id": "d5b9aed8-880d-4748-9f1a-ae3ea45b6169"
+     },
+     "content_origin": "human",
+     "decision_type": "ref_moved",
+     "details": {
+      "ref_moves": [
+       {
+        "from": null,
+        "from_version": null,
+        "ref_kind": "problem_spec",
+        "to": {
+         "id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+         "kind": "problem_spec"
+        }
+       }
+      ]
+     },
+     "details_truncated": false,
+     "effective_state": "accepted",
+     "event_at": "2026-10-05T04:53:26.360012+04:00",
+     "evidence_refs": [
+      {
+       "id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+       "key": "problem_spec:7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+       "kind": "problem_spec",
+       "metric": null,
+       "scope": null
+      }
+     ],
+     "facts": {},
+     "id": "0d0d9aeb-f788-421b-8455-5c9157e02bd7",
+     "policy_version": "dclab.decisions.v1",
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "rationale": "our spec",
+     "rationale_label": null,
+     "rationale_truncated": false,
+     "rationale_untrusted": false,
+     "recorded_at": "2026-10-05T04:53:26.360012+04:00",
+     "schema_version": 1,
+     "state": "accepted",
+     "subject": {
+      "id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "key": "problem_spec:7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "kind": "problem_spec"
+     },
+     "subject_digest": "2c45d7be298bc03ac682fa7c60863ff6872b804859be1384e42fcf0f67305717",
+     "superseded_by_id": null,
+     "supersedes_id": null
+    }
+   ],
+   "limit": 20,
+   "next_cursor": null
+  },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/graph": {
+   "counts_by_kind": {
+    "dataset_version": 3,
+    "experiment": 2,
+    "feature_recipe": 2,
+    "model_version": 2,
+    "problem_spec": 1,
+    "split_plan": 1
+   },
+   "edges": [
+    {
+     "attribute": false,
+     "from": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     },
+     "relation": "uses_problem_spec",
+     "to": {
+      "id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "key": "problem_spec:7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "kind": "problem_spec"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     },
+     "relation": "uses_dataset",
+     "to": {
+      "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "kind": "dataset_version"
+     }
+    },
+    {
+     "attribute": true,
+     "from": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     },
+     "relation": "prepared_as",
+     "to": {
+      "id": "85f553ec-dadf-4adc-a07d-5236e88a8fac",
+      "key": "dataset_version:85f553ec-dadf-4adc-a07d-5236e88a8fac",
+      "kind": "dataset_version"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     },
+     "relation": "uses_split_plan",
+     "to": {
+      "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+      "key": "split_plan:be649d46-2229-4587-8c3a-0a9d4819469a",
+      "kind": "split_plan"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     },
+     "relation": "branch_of",
+     "to": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     },
+     "relation": "uses_problem_spec",
+     "to": {
+      "id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "key": "problem_spec:7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "kind": "problem_spec"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     },
+     "relation": "uses_dataset",
+     "to": {
+      "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "kind": "dataset_version"
+     }
+    },
+    {
+     "attribute": true,
+     "from": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     },
+     "relation": "prepared_as",
+     "to": {
+      "id": "3744c121-05f3-4175-a40d-e1c9241475d7",
+      "key": "dataset_version:3744c121-05f3-4175-a40d-e1c9241475d7",
+      "kind": "dataset_version"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     },
+     "relation": "uses_split_plan",
+     "to": {
+      "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+      "key": "split_plan:be649d46-2229-4587-8c3a-0a9d4819469a",
+      "kind": "split_plan"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+      "key": "split_plan:be649d46-2229-4587-8c3a-0a9d4819469a",
+      "kind": "split_plan"
+     },
+     "relation": "partitions",
+     "to": {
+      "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "kind": "dataset_version"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "4df39be4-91f7-4a60-b7dd-6219232d93b2",
+      "key": "feature_recipe:4df39be4-91f7-4a60-b7dd-6219232d93b2",
+      "kind": "feature_recipe"
+     },
+     "relation": "produced_by",
+     "to": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "48bd018f-4774-4da7-9f4a-080e8598314b",
+      "key": "feature_recipe:48bd018f-4774-4da7-9f4a-080e8598314b",
+      "kind": "feature_recipe"
+     },
+     "relation": "produced_by",
+     "to": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "63b245da-e9b4-4951-8890-85771b67341e",
+      "key": "model_version:63b245da-e9b4-4951-8890-85771b67341e",
+      "kind": "model_version"
+     },
+     "relation": "produced_by",
+     "to": {
+      "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+      "kind": "experiment"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "63b245da-e9b4-4951-8890-85771b67341e",
+      "key": "model_version:63b245da-e9b4-4951-8890-85771b67341e",
+      "kind": "model_version"
+     },
+     "relation": "uses_feature_recipe",
+     "to": {
+      "id": "4df39be4-91f7-4a60-b7dd-6219232d93b2",
+      "key": "feature_recipe:4df39be4-91f7-4a60-b7dd-6219232d93b2",
+      "kind": "feature_recipe"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "63b245da-e9b4-4951-8890-85771b67341e",
+      "key": "model_version:63b245da-e9b4-4951-8890-85771b67341e",
+      "kind": "model_version"
+     },
+     "relation": "uses_dataset",
+     "to": {
+      "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "kind": "dataset_version"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+      "key": "model_version:4810b254-866c-42a9-b41d-045c9749aa83",
+      "kind": "model_version"
+     },
+     "relation": "produced_by",
+     "to": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+      "key": "model_version:4810b254-866c-42a9-b41d-045c9749aa83",
+      "kind": "model_version"
+     },
+     "relation": "uses_feature_recipe",
+     "to": {
+      "id": "48bd018f-4774-4da7-9f4a-080e8598314b",
+      "key": "feature_recipe:48bd018f-4774-4da7-9f4a-080e8598314b",
+      "kind": "feature_recipe"
+     }
+    },
+    {
+     "attribute": false,
+     "from": {
+      "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+      "key": "model_version:4810b254-866c-42a9-b41d-045c9749aa83",
+      "kind": "model_version"
+     },
+     "relation": "uses_dataset",
+     "to": {
+      "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "kind": "dataset_version"
+     }
+    }
+   ],
+   "experiment_limit": 40,
+   "next_cursor": null,
+   "nodes": [
+    {
+     "created_at": "2026-10-05T04:53:26.340708+04:00",
+     "derived": false,
+     "digest": "2c45d7be298bc03ac682fa7c60863ff6872b804859be1384e42fcf0f67305717",
+     "id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+     "intent": null,
+     "key": "problem_spec:7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+     "kind": "problem_spec",
+     "label": "problem spec v1 (binary_classification, target label)",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [
+      "problem_spec"
+     ],
+     "stale": false,
+     "stale_reasons": [],
+     "status": "locked",
+     "version": "1"
+    },
+    {
+     "created_at": "2026-10-05T04:53:26.802039+04:00",
+     "derived": false,
+     "digest": "06d05eef4d70e0a9650436253fabe0976cad1f63b61bc1e2a7a5e4488d82c315",
+     "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+     "intent": null,
+     "key": "split_plan:be649d46-2229-4587-8c3a-0a9d4819469a",
+     "kind": "split_plan",
+     "label": "split plan v1 (stratified_random, 5-fold StratifiedKFold)",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [
+      "split_plan"
+     ],
+     "stale": false,
+     "stale_reasons": [],
+     "status": "locked",
+     "version": "1"
+    },
+    {
+     "created_at": "2026-10-05T04:53:32.668600+04:00",
+     "derived": true,
+     "digest": "0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31",
+     "id": "85f553ec-dadf-4adc-a07d-5236e88a8fac",
+     "intent": null,
+     "key": "dataset_version:85f553ec-dadf-4adc-a07d-5236e88a8fac",
+     "kind": "dataset_version",
+     "label": "client-upload-f96687ab-4bb7-42f8-b711-d3be20bdfd48 v1",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [],
+     "stale": false,
+     "stale_reasons": [],
+     "status": null,
+     "version": "v1"
+    },
+    {
+     "created_at": "2026-10-05T04:53:26.867096+04:00",
+     "derived": true,
+     "digest": "0acaf069934b54e0341d0ec422081b0fa08b1a1b2567dd9b3718ffc87eb82d31",
+     "id": "3744c121-05f3-4175-a40d-e1c9241475d7",
+     "intent": null,
+     "key": "dataset_version:3744c121-05f3-4175-a40d-e1c9241475d7",
+     "kind": "dataset_version",
+     "label": "client-upload-42f9baa2-8b34-4455-ab26-a5878bfcb27a v1",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [],
+     "stale": false,
+     "stale_reasons": [],
+     "status": null,
+     "version": "v1"
+    },
+    {
+     "created_at": "2026-10-05T04:53:26.135132+04:00",
+     "derived": false,
+     "digest": "14a2691613d95b8bf6319884127708ad2c8cbbd986311639959700ad0c6fdf1d",
+     "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+     "intent": null,
+     "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+     "kind": "dataset_version",
+     "label": "rows v1",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [
+      "dataset"
+     ],
+     "stale": false,
+     "stale_reasons": [],
+     "status": null,
+     "version": "v1"
+    },
+    {
+     "created_at": "2026-10-05T04:53:32.256829+04:00",
+     "derived": false,
+     "digest": null,
+     "id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "intent": "no xgboost",
+     "key": "experiment:1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "kind": "experiment",
+     "label": "run #2",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [],
+     "stale": false,
+     "stale_reasons": [],
+     "status": "COMPLETED",
+     "version": null
+    },
+    {
+     "created_at": "2026-10-05T04:53:26.410599+04:00",
+     "derived": false,
+     "digest": null,
+     "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "intent": "baseline",
+     "key": "experiment:59c35e71-34a0-462b-996e-abc42cb4842a",
+     "kind": "experiment",
+     "label": "run #1",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [],
+     "stale": false,
+     "stale_reasons": [],
+     "status": "COMPLETED",
+     "version": null
+    },
+    {
+     "created_at": "2026-10-05T04:53:31.504127+04:00",
+     "derived": false,
+     "digest": "1a570a6c7963911acc492c0ea46c9df4b8ba36506941e1e06c799c16949fbe2f",
+     "id": "48bd018f-4774-4da7-9f4a-080e8598314b",
+     "intent": null,
+     "key": "feature_recipe:48bd018f-4774-4da7-9f4a-080e8598314b",
+     "kind": "feature_recipe",
+     "label": "feature recipe v1",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [
+      "feature_recipe"
+     ],
+     "stale": false,
+     "stale_reasons": [],
+     "status": "locked",
+     "version": "1"
+    },
+    {
+     "created_at": "2026-10-05T04:53:37.326729+04:00",
+     "derived": false,
+     "digest": "1a570a6c7963911acc492c0ea46c9df4b8ba36506941e1e06c799c16949fbe2f",
+     "id": "4df39be4-91f7-4a60-b7dd-6219232d93b2",
+     "intent": null,
+     "key": "feature_recipe:4df39be4-91f7-4a60-b7dd-6219232d93b2",
+     "kind": "feature_recipe",
+     "label": "feature recipe v1",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [],
+     "stale": false,
+     "stale_reasons": [],
+     "status": "locked",
+     "version": "1"
+    },
+    {
+     "created_at": "2026-10-05T04:53:37.326729+04:00",
+     "derived": false,
+     "digest": "9a26fd5a72a721ec86cfe3a44829226bf5e9af3b43665a13186640d040050379",
+     "id": "63b245da-e9b4-4951-8890-85771b67341e",
+     "intent": null,
+     "key": "model_version:63b245da-e9b4-4951-8890-85771b67341e",
+     "kind": "model_version",
+     "label": "model v2",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [],
+     "stale": false,
+     "stale_reasons": [],
+     "status": null,
+     "version": "v2"
+    },
+    {
+     "created_at": "2026-10-05T04:53:31.504127+04:00",
+     "derived": false,
+     "digest": "ee4e7f77987c119bdd99e667b97125c6750467a9462f46396964adac059d13f4",
+     "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "intent": null,
+     "key": "model_version:4810b254-866c-42a9-b41d-045c9749aa83",
+     "kind": "model_version",
+     "label": "model v1",
+     "lineage_incomplete": false,
+     "notes": [],
+     "outside_window": false,
+     "ref_kinds": [
+      "champion_model"
+     ],
+     "stale": false,
+     "stale_reasons": [],
+     "status": null,
+     "version": "v1"
+    }
+   ],
+   "project": {
+    "archived_at": null,
+    "created_at": "2026-10-05T04:53:26.131395+04:00",
+    "created_by": "d5b9aed8-880d-4748-9f1a-ae3ea45b6169",
+    "description": "Churn project used for the agent tool corpus.",
+    "id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+    "name": "Tool corpus",
+    "provenance": "user",
+    "slug": "tool-corpus",
+    "status": "active",
+    "updated_at": "2026-10-05T04:53:26.131395+04:00",
+    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+   },
+   "refs": [
+    {
+     "decision_record_id": "0d0d9aeb-f788-421b-8455-5c9157e02bd7",
+     "moved_at": "2026-10-05T04:53:26.360012+04:00",
+     "ref_kind": "problem_spec",
+     "stale": false,
+     "stale_reasons": [],
+     "staleness_bearing": true,
+     "target": {
+      "id": "7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "key": "problem_spec:7fab6706-d0ec-4b9d-9f2d-4a6af59b10fc",
+      "kind": "problem_spec"
+     },
+     "target_in_graph": true,
+     "version": 1
+    },
+    {
+     "decision_record_id": "a82c6dda-a588-4fff-a6af-0a35cdf10f3c",
+     "moved_at": "2026-10-05T04:53:31.504127+04:00",
+     "ref_kind": "dataset",
+     "stale": false,
+     "stale_reasons": [],
+     "staleness_bearing": true,
+     "target": {
+      "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "key": "dataset_version:325430e9-837c-43b4-91d3-96cefe3f9aed",
+      "kind": "dataset_version"
+     },
+     "target_in_graph": true,
+     "version": 1
+    },
+    {
+     "decision_record_id": "a82c6dda-a588-4fff-a6af-0a35cdf10f3c",
+     "moved_at": "2026-10-05T04:53:31.504127+04:00",
+     "ref_kind": "split_plan",
+     "stale": false,
+     "stale_reasons": [],
+     "staleness_bearing": true,
+     "target": {
+      "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+      "key": "split_plan:be649d46-2229-4587-8c3a-0a9d4819469a",
+      "kind": "split_plan"
+     },
+     "target_in_graph": true,
+     "version": 1
+    },
+    {
+     "decision_record_id": "a82c6dda-a588-4fff-a6af-0a35cdf10f3c",
+     "moved_at": "2026-10-05T04:53:31.504127+04:00",
+     "ref_kind": "feature_recipe",
+     "stale": false,
+     "stale_reasons": [],
+     "staleness_bearing": false,
+     "target": {
+      "id": "48bd018f-4774-4da7-9f4a-080e8598314b",
+      "key": "feature_recipe:48bd018f-4774-4da7-9f4a-080e8598314b",
+      "kind": "feature_recipe"
+     },
+     "target_in_graph": true,
+     "version": 1
+    },
+    {
+     "decision_record_id": "a82c6dda-a588-4fff-a6af-0a35cdf10f3c",
+     "moved_at": "2026-10-05T04:53:31.504127+04:00",
+     "ref_kind": "champion_model",
+     "stale": false,
+     "stale_reasons": [],
+     "staleness_bearing": true,
+     "target": {
+      "id": "4810b254-866c-42a9-b41d-045c9749aa83",
+      "key": "model_version:4810b254-866c-42a9-b41d-045c9749aa83",
+      "kind": "model_version"
+     },
+     "target_in_graph": true,
+     "version": 1
+    }
+   ],
+   "refs_initialized": true,
+   "stale_counts_by_kind": {},
+   "truncated": false,
+   "truncated_kinds": []
+  }
+ },
+ "scenarios": [
+  {
+   "args": {},
+   "tool": "inspect_project"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "inspect_project"
+  },
+  {
+   "args": {},
+   "tool": "inspect_dataset"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "inspect_dataset"
+  },
+  {
+   "args": {
+    "dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed"
+   },
+   "tool": "inspect_dataset"
+  },
+  {
+   "args": {
+    "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571"
+   },
+   "tool": "get_experiment"
+  },
+  {
+   "args": {
+    "experiment_ids": [
+     "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "1aa95c9b-e3be-4547-9f1b-b03da5467571"
+    ]
+   },
+   "tool": "compare_experiments"
+  },
+  {
+   "args": {
+    "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571"
+   },
+   "tool": "get_experiment_code"
+  },
+  {
+   "args": {
+    "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571"
+   },
+   "tool": "get_evidence"
+  },
+  {
+   "args": {
+    "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a"
+   },
+   "tool": "get_evidence"
+  },
+  {
+   "args": {
+    "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571"
+   },
+   "tool": "get_findings"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "list_decisions"
+  },
+  {
+   "args": {
+    "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83"
+   },
+   "tool": "get_model"
+  },
+  {
+   "args": {
+    "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83"
+   },
+   "tool": "get_model_card"
+  },
+  {
+   "args": {
+    "prediction_id": "84886b60-18ba-40a1-a73b-e9849ee76c8e"
+   },
+   "tool": "get_prediction"
+  },
+  {
+   "args": {
+    "kind": "experiment",
+    "node_id": "59c35e71-34a0-462b-996e-abc42cb4842a"
+   },
+   "tool": "get_impact"
+  },
+  {
+   "args": {
+    "proposal_id": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8"
+   },
+   "tool": "accept_proposal"
+  }
+ ]
+}

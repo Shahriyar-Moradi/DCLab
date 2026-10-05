@@ -26,7 +26,7 @@ from dclab_mcp.shaping import MAX_RESPONSE_CHARS, ArgumentError, command_key, fi
 TOKEN = "dclab_st_" + "a" * 32 + "_" + "B" * 43
 READ_TOOLS = {"inspect_project", "inspect_dataset", "get_experiment", "compare_experiments", "get_experiment_code",
               "get_evidence", "get_findings", "list_decisions", "get_model", "get_model_card", "get_prediction",
-              "accept_proposal"}
+              "get_impact", "accept_proposal"}
 WRITE_TOOLS = {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
                "predict", "record_decision"}
 PACKAGES = Path(__file__).resolve().parents[2]
@@ -141,7 +141,8 @@ def test_stored_token_is_bound_to_its_url_and_plain_http_is_local_only(tmp_path)
 
 def test_agents_never_see_final_holdout_values():
     metrics = {"cv": {"roc_auc": 0.8}, "holdout": {"roc_auc": 0.7}, "final_holdout_auc": 0.7,
-               "rows": [{"scope": "final_holdout", "value": 1}, {"scope": "cv_aggregate", "value": 2}],
+               "rows": [{"scope": "final_holdout", "value": 1}, {"scope": "cv_aggregate", "value": 2},
+                        {"scope": "cv", "evaluation_scope": "final_holdout", "value": 3}],
                "common": {"cv": ["roc_auc"], "holdout": ["roc_auc"]}}
     assert cv_only(metrics) == {"cv": {"roc_auc": 0.8}, "rows": [{"scope": "cv_aggregate", "value": 2}],
                                 "common": {"cv": ["roc_auc"]}}

@@ -1,5 +1,8 @@
 {
   "artifacts": {
+    "contracts/agent_tools.json": {
+      "sha256": "620592af428029a01b8cef79ce606849ed4dd68ab9551b4b1a156dfeabbe790b"
+    },
     "contracts/openapi_operations.json": {
       "sha256": "ff609d86de3e4c09d258d9f2833e3e39c025bb21e7a994ba9493ae98bd415f84"
     },
@@ -7,7 +10,7 @@
       "sha256": "4b202d27db5c3662c89771de09306808b7aeb78a6f0990350bf02dbca7111f56"
     },
     "contracts/truth_baseline.json": {
-      "sha256": "c25277e04578b4371ac835e13c9d711fac760885bee851eabe0da0c65cc75d85"
+      "sha256": "6ab73d4c93604d250ccddf1694c426861519d6e141aae2b995c8fe242f3fc07e"
     },
     "contracts/v1_openapi.json": {
       "sha256": "18deec9963c4fdd6a10d02471e5efd5e7519c4390c0336ede6d88eb67b79a629"
@@ -18,6 +21,6 @@
     "version": "1.0.0"
   },
   "schema_version": 1,
-  "source_sha": "9f3be6a5242cfa62fe8ecbbb07726bb6619de345225323e5f2b60c3840f1c8df",
+  "source_sha": "213de1e851c83262f1fa831ebea513521611f076cd690f7752f4c3bf329a3bc0",
   "source_sha_algorithm": "sha256"
 }

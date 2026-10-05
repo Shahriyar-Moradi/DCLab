@@ -74,7 +74,10 @@ def _p(key, stage, pattern, ai, rule, effects, scope, partition, cap, phase, kin
                          frozenset(kinds))
 
 
+# Every catalog write tool has its lead.* key (ADR 0008 caps every lead.* at L1);
+# lead.create_problem_spec added with the tool catalog (P6.10-A).
 _LEAD_TOOLS = (
+    "create_problem_spec",
     "propose_problem_spec",
     "record_decision",
     "move_ref",

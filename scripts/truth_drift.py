@@ -32,6 +32,7 @@ GENERATED_ARTIFACTS: tuple[str, ...] = (
     "contracts/openapi_operations.json",
     "contracts/sqlalchemy_tables.json",
     "contracts/truth_baseline.json",
+    "contracts/agent_tools.json",
 )
 GENERATED_OUTPUTS: tuple[str, ...] = (*GENERATED_ARTIFACTS, "contracts/truth_manifest.json")
 
@@ -403,6 +404,18 @@ def _openapi_schema() -> dict[str, Any]:
     from app.main import app
 
     return app.openapi()
+
+
+def _agent_tools_export() -> dict[str, Any]:
+    """The shared agent tool catalog (ADR 0009 §6); ``dclab_mcp`` is contract-tested
+    against it."""
+
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
+    from app.agents.tools.catalog import export_payload
+
+    return export_payload()
 
 
 def _success_schema_name(spec: Mapping[str, Any]) -> str | None:
@@ -1015,6 +1028,7 @@ def snapshot_payloads() -> dict[str, object]:
         "contracts/v1_openapi.json": canonicalize_v1_openapi(schema),
         "contracts/openapi_operations.json": ops,
         "contracts/sqlalchemy_tables.json": tables,
+        "contracts/agent_tools.json": _agent_tools_export(),
         "contracts/truth_baseline.json": {
             "alembic_heads": _heads(records),
             "alembic_revision_count": len(records),

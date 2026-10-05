@@ -25,8 +25,10 @@ python -m dclab_mcp                    # same
 
 Read (default on): `inspect_project`, `inspect_dataset`, `get_experiment`,
 `compare_experiments`, `get_experiment_code`, `get_evidence`, `get_findings`,
-`list_decisions`, `get_model`, `get_model_card`, `get_prediction`, `accept_proposal`.
-`get_model_card` never carries the final evaluation (withheld for agents).
+`list_decisions`, `get_model`, `get_model_card`, `get_prediction`, `get_impact`,
+`accept_proposal`. `get_model_card` never carries the final evaluation (withheld for
+agents). The tool names, read/write flags and input schemas equal the shared catalog
+export `contracts/agent_tools.json` (contract-tested), which the in-app assistant uses too.
 
 Write (`DCLAB_MCP_WRITE_ENABLED`): `create_problem_spec`, `propose_problem_spec`,
 `run_experiment`, `branch_experiment`, `predict`, `record_decision`.
@@ -49,9 +51,8 @@ it (a new one may follow a rejection). The API enforces the token's scopes (`ins
 ML correctness: agents never see final-holdout metrics. The API itself withholds
 them from service tokens (experiments, comparisons, model versions, model-build
 stages and events, the `HOLDOUT_METRICS` literal of exported code); the MCP tools
-additionally reduce metric records to a CV allowlist. Only the current champion's
-holdout is reported, under `final_holdout_report_only` of `get_model`, for
-reporting, never for selection. CV records carry `cv_threshold` (0.5: binary
+additionally reduce metric records to a CV allowlist and drop holdout keys and
+holdout-scoped list items. There is no champion exception (ADR 0008 §2b). CV records carry `cv_threshold` (0.5: binary
 threshold-dependent fold metrics) and `selected_score_convention`
 (`higher_is_better`); `decision_threshold` is the locked out-of-fold threshold.
 

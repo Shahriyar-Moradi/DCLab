@@ -5,6 +5,9 @@ total size are capped; user/agent-authored text (project names, descriptions,
 intents, rationales, graph labels, column names, ...) is wrapped by ``untrusted``
 as ``{"untrusted_text": ...}`` so the calling model treats it as data, never as
 instructions; anything that looks like a service token is redacted.
+
+This package cannot import ``app``: ``apps/api/app/agents/tools/shaping.py`` keeps the
+same helpers, and an API test runs both over one fixture corpus (equal outputs).
 """
 
 from __future__ import annotations

@@ -274,7 +274,7 @@ def test_full_loop_over_mcp(client, db_session, st, tmp_path):  # noqa: F811
     branch_mv = db.scalar(select(ModelVersion.id).where(ModelVersion.pipeline_run_id == UUID(branch["id"])))
     root_mv = db.scalar(select(ModelVersion.id).where(ModelVersion.pipeline_run_id == UUID(root["id"])))
     model = call("get_model", {"model_version_id": str(branch_mv)})["model_version"]
-    assert model["final_holdout_report_only"] is None and not _holdout_values(model)  # not the champion yet
+    assert "final_holdout_report_only" not in model and not _holdout_values(model)  # no holdout key, ever
     assert all("object_key" not in a for a in model["artifacts"])
     card = call("get_model_card", {"model_version_id": str(branch_mv)})["model_card"]
     assert card["final_evaluation"]["status"] == "withheld" and not _holdout_values(card)
@@ -319,8 +319,12 @@ def test_full_loop_over_mcp(client, db_session, st, tmp_path):  # noqa: F811
     _accept_ref_proposal(client, db, st.admin, st.alpha, second.id)
     assert {"problem_spec", "dataset", "split_plan", "champion_model"} <= _ref_kinds(db, project.id)
     champion = call("get_model", {"model_version_id": str(branch_mv)})["model_version"]
-    assert champion["is_champion"] and champion["final_holdout_report_only"]["holdout"]
-    assert not _holdout_values(champion["metrics"])
+    # No champion exception (ADR 0008 §2b): the champion's holdout never reaches an agent.
+    assert champion["is_champion"] and "final_holdout_report_only" not in champion
+    assert not _holdout_values(champion) and not re.search("holdout|final_test", json.dumps(champion), re.I)
+    impact = call("get_impact", {"kind": "experiment", "node_id": root["id"]})["impact"]
+    assert impact["node"] == {"kind": "experiment", "id": root["id"], "key": f"experiment:{root['id']}"}
+    assert branch["id"] in {item["id"] for item in impact["items"]} and impact["total"] >= 1
 
     # The API itself withholds final-holdout values from the token; a human session sees them.
     token_h = {"Authorization": f"Bearer {raw}"}
@@ -338,6 +342,9 @@ def test_full_loop_over_mcp(client, db_session, st, tmp_path):  # noqa: F811
     assert stages["human"]["final_holdout"]["configuration"]["evaluations"][0]["metrics"]
     token_mv = client.get(f"/v1/model-versions/{root_mv}", headers=token_h).json()
     assert token_mv["holdout_report_only"] is None and token_mv["metrics"]["holdout"] == {}
+    token_champion = client.get(f"/v1/model-versions/{branch_mv}", headers=token_h).json()
+    assert token_champion["is_champion"] and token_champion["holdout_report_only"] is None
+    assert token_champion["metrics"]["holdout"] == {}
     final_events = [e for e in client.get(f"/v1/model-builds/{root['id']}/events?limit=200", headers=token_h)
                     .json()["items"] if e["event_type"] == "final_test_completed"]
     assert final_events and all("metrics" not in e["payload"] for e in final_events)

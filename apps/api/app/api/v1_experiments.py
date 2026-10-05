@@ -406,8 +406,8 @@ def read_model_version(
     """Model version detail: family, locked metrics (CV + final holdout at the locked
     decision threshold, constraint status), source experiment/candidate, split plan,
     dataset lineage, feature recipe, champion flag, and artifacts by id + digest.
-    Service-token (agent) callers get CV metrics only; the current champion's holdout
-    comes as ``holdout_report_only`` (reporting, never selection)."""
+    Service-token (agent) callers get CV metrics only, champion included
+    (``holdout_report_only`` is always null)."""
 
     try:
         body = model_version_read(

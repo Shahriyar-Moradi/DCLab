@@ -12,9 +12,11 @@ itself, not the web BFF, which never forwards ``Authorization``), ``DCLAB_WORKSP
 on), ``DCLAB_MCP_WRITE_ENABLED`` (default off). A token from the config file is only
 sent to the config file's URL; plain ``http`` only to loopback / compose hosts.
 
-Agents never see final-holdout metrics (they would select on them): experiment,
-comparison and evidence outputs carry CV metrics only; ``get_model`` reports a
-champion's holdout under ``final_holdout_report_only``.
+Agents never see final-holdout values (they would select on them), with no champion
+exception (ADR 0008 §2b): every output carries CV metrics only, and holdout keys and
+holdout-scoped list items are removed. The shaping here is a behavioural copy of
+``apps/api/app/agents/tools`` (this package cannot import ``app``); an API test runs
+both over one fixture corpus and asserts equal outputs.
 """
 
 from __future__ import annotations
@@ -55,6 +57,8 @@ ENV_ALLOW_INSECURE_HTTP = "DCLAB_MCP_ALLOW_INSECURE_HTTP"
 DEFAULT_API_URL = "http://localhost:8001"  # the API directly: the BFF drops Authorization
 LIST_LIMIT = 50
 GRAPH_NODE_LIMIT = 40
+GRAPH_NODE_KINDS = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment",
+                           "model_version"]
 RECENT_EXPERIMENTS = 10
 FINDING_LIMIT = 10
 FINDING_EVIDENCE_CHARS = 1500
@@ -166,18 +170,23 @@ CV_LABELS = {
 _HOLDOUT_LITERAL = re.compile(r"HOLDOUT_METRICS = \{[^{}]*\}")
 
 
+def _holdout_scoped(item: Any) -> bool:
+    return isinstance(item, dict) and any(
+        _HOLDOUT_KEY.search(str(item.get(key) or "")) for key in ("scope", "evaluation_scope"))
+
+
 def cv_only(value: Any) -> Any:
-    """Free-form engine dicts (diffs, baselines) without final-holdout values (keys or
-    ``scope`` entries naming the holdout): an agent comparing or branching on them would
-    select on the final holdout. The API already withholds them from service tokens."""
+    """Free-form engine dicts (diffs, baselines) without final-holdout values (keys, or
+    list items whose ``scope`` or ``evaluation_scope`` names the holdout): an agent
+    comparing or branching on them would select on the final holdout. The API already
+    withholds them from service tokens."""
 
     if hasattr(value, "model_dump"):
         value = value.model_dump(mode="json")
     if isinstance(value, dict):
         return {k: cv_only(v) for k, v in value.items() if not _HOLDOUT_KEY.search(str(k))}
     if isinstance(value, list):
-        return [cv_only(v) for v in value
-                if not (isinstance(v, dict) and _HOLDOUT_KEY.search(str(v.get("scope") or "")))]
+        return [cv_only(v) for v in value if not _holdout_scoped(v)]
     return value
 
 
@@ -194,7 +203,7 @@ def cv_record(m: Any) -> dict[str, Any] | None:
 
 
 def withhold_holdout_code(source: str) -> str:
-    return _HOLDOUT_LITERAL.sub("HOLDOUT_METRICS = {}  # withheld from agents", source)
+    return _HOLDOUT_LITERAL.sub("HOLDOUT_METRICS = {}  # final-holdout values are withheld from agents", source)
 
 
 def _metrics(m: Any) -> dict[str, Any] | None:
@@ -219,8 +228,8 @@ def _decision(r: DecisionRecord) -> dict[str, Any]:
         "effective_state": r.effective_state, "supersedes_id": r.supersedes_id and str(r.supersedes_id),
         "subject": r.subject.key, "actor_kind": r.actor.kind, "content_origin": r.content_origin,
         "rationale": untrusted(r.rationale), "rationale_label": r.rationale_label,
-        "facts": untrusted(r.facts, 1500), "details": untrusted(r.details, 1500),
-        "evidence_refs": [ref.model_dump(mode="json", exclude_none=True) for ref in r.evidence_refs[:20]],
+        "facts": untrusted(cv_only(r.facts), 1500), "details": untrusted(cv_only(r.details), 1500),
+        "evidence_refs": cv_only([ref.model_dump(mode="json", exclude_none=True) for ref in r.evidence_refs[:20]]),
         "recorded_at": r.recorded_at.isoformat(), "replayed": r.idempotent_replay,
     }
 
@@ -237,6 +246,10 @@ def _graph(g: Any) -> dict[str, Any]:
             "stale_counts_by_kind": g.stale_counts_by_kind, "nodes": nodes,
             "nodes_omitted": max(0, len(g.nodes) - GRAPH_NODE_LIMIT), "edge_count": len(g.edges),
             "truncated": g.truncated}
+
+
+def _node(ref: Any) -> dict[str, Any]:
+    return {"kind": ref.kind, "id": str(ref.id), "key": ref.key}
 
 
 def _prediction(p: Any) -> dict[str, Any]:
@@ -431,11 +444,6 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
                 "is_champion": m.is_champion, "ref_kinds": m.ref_kinds, "content_digest": m.content_digest,
                 "lineage": m.lineage.model_dump(mode="json"),
                 "metrics": cv_record(m.metrics),
-                # The API sends a holdout report only for the current champion.
-                "final_holdout_report_only": ({
-                    "holdout": m.holdout_report_only,
-                    "note": "Reporting only; never use for selection, comparison or branching."}
-                    if m.is_champion and m.holdout_report_only else None),
                 "artifacts": [{"role": a.role, "id": str(a.id), "artifact_type": a.artifact_type,
                                "size_bytes": a.size_bytes, "content_digest": a.content_digest} for a in m.artifacts],
             }}
@@ -473,6 +481,18 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
 
     def get_prediction(prediction_id: Id) -> CallToolResult:
         return run(lambda: {"prediction": _prediction(api.predictions.get(uuid_arg(prediction_id, "prediction_id")))})
+
+    def get_impact(
+        kind: Annotated[GRAPH_NODE_KINDS, Field(description="Graph node kind.")],
+        node_id: Id,
+    ) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            r = api.nodes.impact(kind, uuid_arg(node_id, "node_id"))
+            return {"impact": {"node": _node(r.node), "project_id": str(r.project_id),
+                               "items": [_node(item) for item in r.items[:LIST_LIMIT]],
+                               "items_omitted": max(0, len(r.items) - LIST_LIMIT), "counts_by_kind": r.counts_by_kind,
+                               "total": r.total, "truncated": r.truncated, "graph_truncated": r.graph_truncated}}
+        return run(call)
 
     def accept_proposal(proposal_id: Id) -> CallToolResult:
         def call() -> dict[str, Any]:
@@ -512,12 +532,14 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
              "a plain-language message and the numbers behind it.")
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(get_model, read, "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + "
-             "digest; only the current champion carries a report-only final-holdout summary.")
+             "digest; never final-holdout values.")
         tool(get_model_card, read, "One-page model card: primary metric in plain words (cross-validation), dummy-"
              "baseline comparison, top drivers (permutation importance on CV validation folds), known risks from "
              "the trust checks, data and split summary, LLM used yes/no. The final evaluation is always withheld.")
         tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
              "missing / ignored columns), error code; never predicted rows or storage locations.")
+        tool(get_impact, read, "Downstream closure of one graph node: which specs, datasets, split plans, recipes, "
+             "experiments and model versions a change to it would affect (node references and counts by kind).")
         tool(accept_proposal, read, "Hand a decision proposal to a human. This NEVER accepts anything and performs no "
              "write: service tokens are propose-only, so it returns status 'requires_human_acceptance' with the "
              "proposal and where a human accepts it in DCLab Studio.")
