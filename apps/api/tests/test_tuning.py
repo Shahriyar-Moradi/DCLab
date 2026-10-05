@@ -120,7 +120,7 @@ def _xor_frame(n: int = 320, seed: int = 4):
     return pd.DataFrame({"a": a, "b": b, "noise": rng.normal(size=n), "churn": np.where(label, "Yes", "No")})
 
 
-def _xor_run(config: SearchConfig, monkeypatch=None):
+def _xor_run(config: SearchConfig, monkeypatch=None, checkpoint=None):
     from app.engine.lab.auto_prepare import split_column_roles
     from app.engine.types import TaskSpec
 
@@ -138,7 +138,7 @@ def _xor_run(config: SearchConfig, monkeypatch=None):
         column_roles={"numerical": num, "categorical": cat},
     )
     with tempfile.TemporaryDirectory() as tmp:
-        return run_experiment(frame, task, config, artifact_dir=Path(tmp))
+        return run_experiment(frame, task, config, artifact_dir=Path(tmp), on_checkpoint=checkpoint)
 
 
 def test_tuned_winner_is_retuned_on_the_training_pool_with_the_cv_trial_count(monkeypatch):
@@ -233,3 +233,108 @@ def test_xgboost_version_resolves_from_the_cpu_distribution(monkeypatch):
 
     monkeypatch.setattr(registry, "version", only_cpu_build)
     assert registry.implementation_for_family("xgboost")[2] == "3.4.1"
+
+
+# --- P4.11-A: winner feature importance is wired on CV folds, before the holdout ----------
+
+
+def _importance_wiring(monkeypatch, run):
+    import numpy as np
+
+    import app.engine.experiments.runner as runner_module
+    from app.engine.validation.splits import SOURCE_ROW_COLUMN
+
+    order: list[str] = []
+    seen: dict = {}
+    real_importance, real_holdout = runner_module.validation_fold_importance, runner_module._fit_and_score_holdout
+
+    def importance_spy(make_pipeline, X_pool, y_pool, folds, scorer, **kwargs):
+        order.append("importance")
+        seen.update(make=make_pipeline, X=X_pool, y=y_pool, folds=folds, scorer=scorer)
+        return real_importance(make_pipeline, X_pool, y_pool, folds, scorer, **kwargs)
+
+    def holdout_spy(row, pool, test, *args, **kwargs):
+        order.append("holdout")
+        seen.update(pool=pool, test=test)
+        return real_holdout(row, pool, test, *args, **kwargs)
+
+    monkeypatch.setattr(runner_module, "validation_fold_importance", importance_spy)
+    monkeypatch.setattr(runner_module, "_fit_and_score_holdout", holdout_spy)
+    result = run(lambda payload: order.append(f"checkpoint:{payload.get('status')}"))
+
+    assert [step for step in order if step in {"checkpoint:SELECTION_LOCKED", "importance", "holdout"}] == [
+        "checkpoint:SELECTION_LOCKED", "importance", "holdout"]
+    pool, test, X = seen["pool"], seen["test"], seen["X"]
+    assert len(X) == len(pool) and X.index.equals(pool.index)
+    assert not set(pool[SOURCE_ROW_COLUMN]) & set(test[SOURCE_ROW_COLUMN])
+    winner = result["best_single"]
+    stored = {fold["fold_number"]: fold for fold in winner["folds"]}
+    assert [fold.fold_number for fold in seen["folds"]] == sorted(stored)
+    metric = result["selection"]["selection_metric"]
+    for fold in seen["folds"]:
+        cv_fold = stored[fold.fold_number]
+        assert np.array_equal(pool.iloc[fold.train_index][SOURCE_ROW_COLUMN].to_numpy(), cv_fold["train_provenance"])
+        assert np.array_equal(pool.iloc[fold.validation_index][SOURCE_ROW_COLUMN].to_numpy(),
+                              cv_fold["validation_provenance"])
+        assert fold.params == (cv_fold.get("tuning") or {}).get("params")
+        refit = seen["make"](fold.params)
+        refit.fit(X.iloc[fold.train_index], seen["y"][fold.train_index])
+        score = seen["scorer"](refit, X.iloc[fold.validation_index], seen["y"][fold.validation_index])
+        stored_score = cv_fold["metrics"][metric]
+        assert score == pytest.approx(-stored_score if metric in {"mae", "rmse", "mse"} else stored_score, rel=1e-9)
+    assert result["feature_importance"]["status"] == "computed"
+    assert any(row["stage"] == "feature_importance" for row in result["execution_stage_timings"])
+    return result
+
+
+def test_importance_refits_the_tuned_winner_on_cv_folds_before_the_holdout(monkeypatch):
+    result = _importance_wiring(
+        monkeypatch,
+        lambda checkpoint: _xor_run(_config(max_candidates=1, max_hyperparameter_trials=6), checkpoint=checkpoint),
+    )
+    assert result["best_single"]["candidate_id"].endswith("__tuned")
+    assert {row["column"] for row in result["feature_importance"]["features"][:2]} == {"a", "b"}
+
+
+def test_importance_follows_time_series_folds(monkeypatch):
+    from adaptive_modeling.fixtures import temporal
+    from test_adaptive_modeling_phase1_verification import _task
+
+    frame = temporal()
+    task = _task(frame, target="revenue", task_type="regression", metric="mae")
+
+    def run(checkpoint):
+        with tempfile.TemporaryDirectory() as tmp:
+            return run_experiment(frame, task, SearchConfig(strategy="open_ingest", max_candidates=4, seed=42),
+                                  artifact_dir=Path(tmp), on_checkpoint=checkpoint)
+
+    result = _importance_wiring(monkeypatch, run)
+    assert result["validation_plan"]["strategy"] == "TimeSeriesSplit"
+
+
+
+def _without_timing(value):
+    if isinstance(value, dict):
+        return {k: _without_timing(v) for k, v in value.items()
+                if k not in {"duration_ms", "started_at", "ended_at", "locked_at", "fit_duration_ms", "duration",
+                             "train_seconds", "final_fit_started_at", "final_fit_completed_at", "split_at"}}
+    if isinstance(value, list):
+        return [_without_timing(v) for v in value]
+    return value
+
+
+def test_importance_is_deterministic_and_changes_no_other_evidence(monkeypatch):
+    import app.engine.experiments.runner as runner_module
+
+    checkpoints: list = []
+    real = [_xor_run(_config(max_candidates=1, max_hyperparameter_trials=4), checkpoint=checkpoints.append)
+            for _ in range(2)]
+    assert _without_timing(real[0]["feature_importance"]) == _without_timing(real[1]["feature_importance"])
+
+    stub_checkpoints: list = []
+    monkeypatch.setattr(runner_module, "validation_fold_importance",
+                        lambda *args, **kwargs: {"status": "skipped", "features": [], "reason": "stub"})
+    stub = _xor_run(_config(max_candidates=1, max_hyperparameter_trials=4), checkpoint=stub_checkpoints.append)
+    for key in ("test_metrics", "decision_threshold", "selection", "train_metrics"):
+        assert _without_timing(stub[key]) == _without_timing(real[0][key]), key
+    assert _without_timing(stub_checkpoints) == _without_timing(checkpoints[: len(stub_checkpoints)])

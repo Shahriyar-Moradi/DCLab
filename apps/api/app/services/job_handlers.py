@@ -1,7 +1,7 @@
 """Worker handler registry: handler_key -> callable.
 
-``labs.auto_train``, ``auth.session_cleanup`` and ``models.batch_predict`` are
-shipped handlers. Future capabilities register here without a second queue
+``labs.auto_train``, ``auth.session_cleanup``, ``models.batch_predict`` and
+``agents.run`` are shipped handlers. Future capabilities register here without a second queue
 table. MCP jobs are not registered.
 """
 
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.models import MlJob
 from app.domain.errors import UnknownJobHandlerError
 from app.domain.ml_jobs import (
+    HANDLER_AGENTS_RUN,
     HANDLER_AUTH_SESSION_CLEANUP,
     HANDLER_LABS_AUTO_TRAIN,
     HANDLER_MODELS_BATCH_PREDICT,
@@ -107,3 +108,21 @@ def handle_models_batch_predict(
     from app.services.batch_prediction_service import run_batch_prediction_job
 
     run_batch_prediction_job(db, job, on_heartbeat=on_heartbeat)
+
+
+@register_handler(HANDLER_AGENTS_RUN)
+def handle_agents_run(
+    db: Session,
+    job: MlJob,
+    *,
+    on_heartbeat: Heartbeat | None = None,
+) -> None:
+    """P6.10-A: one agent run through ``AgentService.run`` (the only caller besides the
+    assistant service and tests). The payload is the run id only; the harness
+    re-authorizes from the run row and heartbeats after every step and tool call."""
+
+    from app.agents.harness.service import AgentService, spec_for_job
+
+    spec = spec_for_job(db, job)
+    if spec is not None:
+        AgentService().run(db, spec, heartbeat=on_heartbeat)

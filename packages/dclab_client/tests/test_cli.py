@@ -306,3 +306,30 @@ def test_predict_wait_reports_failure_and_timeout(tmp_path, monkeypatch):
     assert code == cli.EXIT_RETRYABLE and "still running" in err and "running" in out
     code, _, err = _run(["predict", "get", EID], _error(404, "not_found"), tmp_path, env=_env())
     assert code == cli.EXIT_NOT_FOUND
+
+
+def _card_payload(mv: str) -> dict:
+    return {
+        "card_version": "model_card.v1", "model_version_id": mv, "version": "v1", "experiment_id": mv,
+        "created_at": "2026-10-04T00:00:00Z", "content_digest": "d" * 64, "family": "logistic_regression",
+        "target": {"column": "label", "task_type": "binary"}, "objective": {"primary_metric": "roc_auc"},
+        "metric_in_words": {"text": "Of every 100 rows the model flags as positive, about 57 really are.",
+                            "basis": "cross_validation_out_of_fold_at_locked_threshold", "numbers": {"precision": 0.57}},
+        "cv": {"metric": "roc_auc", "mean": 0.81}, "baseline": {"available": True, "text": "beats it"},
+        "drivers": {"status": "computed", "text": "Strongest: plan.",
+                    "features": [{"rank": 1, "column": "plan", "importance_mean": 0.1}]},
+        "risks": {"investigated": True, "items": [], "text": "none"}, "data": {}, "split": {},
+        "llm": {"used": False}, "final_evaluation": {"status": "withheld", "note": "Withheld"},
+        "markdown": "# Model card: logistic_regression v1\n\n## Top drivers\n\x1b[2Jcleared\n", "untrusted_fields": [],
+    }
+
+
+def test_models_card_prints_markdown_or_json(tmp_path):
+    handler = lambda r: httpx.Response(200, json=_card_payload(EID))  # noqa: E731
+    code, out, _ = _run(["models", "card", EID], handler, tmp_path, env=_env())
+    assert code == 0 and out.startswith("# Model card: logistic_regression v1") and "## Top drivers" in out
+    assert "\x1b" not in out and "[2Jcleared" in out
+    code, out, _ = _run(["models", "card", EID, "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out)["drivers"]["features"][0]["column"] == "plan"
+    code, out, _ = _run(["models", "card", EID, "--json", "--markdown"], handler, tmp_path, env=_env())
+    assert code == 0 and out.startswith("# Model card")

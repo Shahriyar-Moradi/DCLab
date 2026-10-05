@@ -34,6 +34,8 @@ DECISION_TYPES = (
     "experiment_rejected",
     "proposal_accepted",
     "proposal_rejected",
+    "decision_point_resolved",
+    "proposal_reverted",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
 DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
@@ -48,8 +50,11 @@ RULE_ONLY_DECISION_TYPES = frozenset(
 # Written only by their owning service (the ProblemSpec lock path), never via
 # the generic ``record()``.
 SERVICE_ONLY_DECISION_TYPES = RULE_ONLY_DECISION_TYPES | {"problem_spec_locked"}
-# Phase 6 reserves these for agent proposals; nothing writes them yet.
-RESERVED_DECISION_TYPES = frozenset({"proposal_accepted", "proposal_rejected"})
+# Phase 6 reserves these for agent proposals and AI decision points (ADR 0008 §7);
+# only their owning services (P6.6-A and later) write them.
+RESERVED_DECISION_TYPES = frozenset(
+    {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted"}
+)
 # Accepted rows of these types exist only together with their ref move
 # (``project_ref_service.move_ref``); they are never corrected in place.
 REF_MOVE_DECISION_TYPES = frozenset({DECISION_REF_MOVED, DECISION_CHAMPION_PROMOTED})
@@ -145,7 +150,14 @@ EVIDENCE_METRIC_PATTERN = r"^[A-Za-z0-9_.:-]{1,64}$"
 # Service-owned ``details`` keys; callers may never set them.
 DETAIL_REF_MOVES = "ref_moves"
 DETAIL_CARRIED_FROM_AGENT = "carried_from_agent_proposal"
-RESERVED_DETAIL_KEYS = frozenset({DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, "skipped_refs"})
+# P6.10-A champion evidence rule: an agent never cites the final holdout; on an agent's
+# champion proposal the service attaches the promoted model's own locked final
+# evaluation itself and marks it here (audit: rule, evaluation id; re-checked at accept).
+DETAIL_SERVICE_ATTACHED_EVIDENCE = "service_attached_evidence"
+RULE_CHAMPION_FINAL_EVALUATION = "champion.final_evaluation.v1"
+RESERVED_DETAIL_KEYS = frozenset(
+    {DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, DETAIL_SERVICE_ATTACHED_EVIDENCE, "skipped_refs"}
+)
 
 # /v1 read bounds.
 DECISION_PAGE_DEFAULT = 50
@@ -289,6 +301,8 @@ DecisionType = Literal[
     "experiment_rejected",
     "proposal_accepted",
     "proposal_rejected",
+    "decision_point_resolved",
+    "proposal_reverted",
 ]
 
 _UNTRUSTED = (

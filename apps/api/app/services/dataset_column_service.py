@@ -167,11 +167,24 @@ def resolve_dataset_policy(
 
     if not can_read_workspace(db, actor, workspace_id):
         raise IdentityError("workspace read denied", status_code=403)
+    effective = effective_dataset_policy(db, workspace_id=workspace_id, dataset_id=dataset_id)
+    if effective is None:
+        raise IdentityError("dataset not found", status_code=404)
+    return effective
+
+
+def effective_dataset_policy(
+    db: Session, *, workspace_id: UUID, dataset_id: UUID
+) -> EffectiveDatasetPolicy | None:
+    """The same resolution without an actor, for in-process callers that already
+    authorized the workspace (the AI gateway, ADR 0009 §8). ``None`` when the
+    dataset is not in ``workspace_id``."""
+
     dataset = db.scalar(
         select(Dataset).where(Dataset.id == dataset_id, Dataset.workspace_id == workspace_id)
     )
     if dataset is None:
-        raise IdentityError("dataset not found", status_code=404)
+        return None
     default = db.scalar(
         select(DatasetPolicyRevision)
         .where(DatasetPolicyRevision.dataset_id == dataset_id, DatasetPolicyRevision.workspace_id == workspace_id)

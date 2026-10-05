@@ -63,8 +63,15 @@ def cmd_user_create(args: argparse.Namespace) -> int:
 def cmd_user_seed(_args: argparse.Namespace) -> int:
     from app.services.auth_service import demo_logins, ensure_demo_users
 
+    from app.agents.governance.seed import seed_platform_governance
+    from app.agents.prompt_releases import sync_prompt_releases
+    from app.agents.semantic.releases import sync_jev_releases
+
     db = _session()
     users = ensure_demo_users(db)
+    seed_platform_governance(db)
+    sync_prompt_releases(db)  # idempotent: the code-owned prompts become releases (ADR 0009 §2.8)
+    sync_jev_releases(db)  # and the pinned Jev purpose releases (jev:<purpose>)
     db.commit()
     print(
         json.dumps(
@@ -79,6 +86,69 @@ def cmd_user_seed(_args: argparse.Namespace) -> int:
     )
     db.close()
     return 0
+
+
+def cmd_governance_seed(_args: argparse.Namespace) -> int:
+    from app.agents.governance.seed import seed_platform_governance
+
+    db = _session()
+    try:
+        result = seed_platform_governance(db)
+        db.commit()
+    finally:
+        db.close()
+    print(json.dumps(result))
+    return 0
+
+
+def cmd_governance_switch(args: argparse.Namespace) -> int:
+    """Audited switch row by a named platform admin (ADR 0009 §2.11); no HTTP route."""
+
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.agents.governance.switches import flip_off, re_enable
+    from app.db.models import User
+
+    db = _session()
+    try:
+        admin = db.scalar(select(User).where(func.lower(User.email) == args.admin.strip().lower()))
+        if admin is None:
+            print(json.dumps({"error": "unknown admin"}))
+            return 2
+        workspace_id = UUID(args.workspace) if args.workspace else None
+        common = {"workspace_id": workspace_id, "switch_key": args.key, "reason": args.reason, "actor": admin}
+        row = flip_off(db, **common) if args.state == "off" else re_enable(db, **common)
+        db.commit()
+        print(json.dumps({"id": str(row.id), "switch_key": row.switch_key, "state": row.state}))
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_agents_sync_prompts(args: argparse.Namespace) -> int:
+    """Create prompt_releases rows from app/agents/prompts (ADR 0009 §2.8); --check only verifies."""
+
+    from app.agents.prompt_releases import sync_prompt_releases, verify_prompt_releases
+
+    from pathlib import Path
+
+    from app.agents.prompt_releases import PROMPTS_ROOT
+
+    root = Path(args.root) if args.root else PROMPTS_ROOT
+    db = _session()
+    try:
+        result = {} if args.check else sync_prompt_releases(db, root).as_dict()
+        problems = verify_prompt_releases(db, root)
+        if args.check:
+            db.rollback()
+        else:
+            db.commit()
+    finally:
+        db.close()
+    print(json.dumps({**result, "problems": problems}))
+    return 1 if problems or result.get("mismatched") else 0
 
 
 def cmd_env_seed(_args: argparse.Namespace) -> int:
@@ -238,10 +308,20 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_verify_openai_smoke(_args: argparse.Namespace) -> int:
-    """Run exactly one synthetic-only live OpenAI verification request."""
-    from app.services.openai_smoke import OpenAISmokeError, run_openai_verification_smoke
+def cmd_verify_openai_smoke(args: argparse.Namespace) -> int:
+    """Run exactly one synthetic-only live OpenAI request (needs --live and AI switched on)."""
+    from app.config import get_settings
+    from app.services.openai_smoke import OpenAISmokeError, live_smoke_refusal, run_openai_verification_smoke
 
+    db = _session()
+    try:
+        refusal = live_smoke_refusal(db, live=bool(getattr(args, "live", False)),
+                                     ai_enabled=bool(get_settings().ai_enabled))
+    finally:
+        db.close()
+    if refusal is not None:
+        print(f"live smoke not executed: {refusal}", file=sys.stderr)
+        return 1
     try:
         print(json.dumps(run_openai_verification_smoke()))
     except OpenAISmokeError as exc:
@@ -328,6 +408,25 @@ def build_parser() -> argparse.ArgumentParser:
     user_seed = user_sub.add_parser("seed")
     user_seed.set_defaults(func=cmd_user_seed)
 
+    governance = sub.add_parser("governance")
+    governance_sub = governance.add_subparsers(dest="governance_cmd", required=True)
+    governance_seed = governance_sub.add_parser("seed")
+    governance_seed.set_defaults(func=cmd_governance_seed)
+    governance_switch = governance_sub.add_parser("switch")
+    governance_switch.add_argument("state", choices=["on", "off"])
+    governance_switch.add_argument("key")
+    governance_switch.add_argument("--admin", required=True, help="email of the platform admin")
+    governance_switch.add_argument("--reason", required=True)
+    governance_switch.add_argument("--workspace", default=None, help="workspace id (omit for platform keys)")
+    governance_switch.set_defaults(func=cmd_governance_switch)
+
+    agents = sub.add_parser("agents")
+    agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)
+    sync_prompts = agents_sub.add_parser("sync-prompts")
+    sync_prompts.add_argument("--check", action="store_true", help="verify only; write nothing")
+    sync_prompts.add_argument("--root", default=None, help="prompt directory (default app/agents/prompts)")
+    sync_prompts.set_defaults(func=cmd_agents_sync_prompts)
+
     env = sub.add_parser("env")
     env_sub = env.add_subparsers(dest="env_cmd", required=True)
     seed = env_sub.add_parser("seed-dogfood")
@@ -372,6 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
         "verify-openai-smoke",
         help="call the production OpenAI verifier once with synthetic bounded evidence",
     )
+    smoke.add_argument("--live", action="store_true",
+                       help="required: the call leaves the process (AI_ENABLED and global_ai must be on)")
     smoke.set_defaults(func=cmd_verify_openai_smoke)
 
     worker = sub.add_parser(

@@ -349,6 +349,8 @@ def select_decision_threshold(
         }
         if requested:
             decision["reason"] = "Out-of-fold predictions hold a single class; the default 0.5 is used."
+    # Pooled out-of-fold counts and rates at the chosen threshold, on exactly the rows it saw.
+    decision["oof_at_threshold"] = dict(at_threshold)
     decision["constraints"] = evaluate_constraints(
         objective, oof_metrics={**dict(cv_metrics or {}), **at_threshold}
     )

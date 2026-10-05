@@ -52,6 +52,72 @@ _HOLDOUT_KEYS = {
 }
 
 
+# Checks whose status is derived from final-holdout outcomes (ADR 0008 §2b): kept in the
+# deterministic report, withheld from every AI call (``verification_evidence``).
+HOLDOUT_CONSTRAINTS_CHECK = "objective_constraints_met_holdout"
+
+
+def holdout_scoped_check_ids(checks: list[dict[str, Any]]) -> set[str]:
+    """Ids of checks derived from holdout outcomes. Reports written before the split carry
+    one ``objective_constraints_met`` that also read the holdout status: it counts too."""
+
+    ids = {str(row.get("check_id")) for row in checks if isinstance(row, dict)}
+    scoped = {str(row.get("check_id")) for row in checks
+              if isinstance(row, dict) and row.get("outcome_scope") == "holdout"}
+    scoped |= ids & {HOLDOUT_CONSTRAINTS_CHECK}
+    if "objective_constraints_met" in ids and HOLDOUT_CONSTRAINTS_CHECK not in ids:
+        scoped.add("objective_constraints_met")
+    return scoped
+
+
+def summarize_checks(checks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Overall status, per-stage statuses and the warning / failure / missing lists."""
+
+    failures = [row for row in checks if row["status"] == CHECK_FAIL]
+    missing = [row for row in checks if row["status"] == CHECK_NOT_VERIFIABLE]
+    warnings = [row for row in checks if row["status"] == CHECK_WARN]
+    if failures:
+        overall = "FAILED"
+    elif missing:
+        overall = "NOT_VERIFIABLE"
+    elif warnings:
+        overall = "VERIFIED_WITH_WARNINGS"
+    else:
+        overall = "VERIFIED"
+
+    stages: list[dict[str, Any]] = []
+    for stage in dict.fromkeys(row["stage"] for row in checks):
+        stage_checks = [row for row in checks if row["stage"] == stage]
+        statuses = {row["status"] for row in stage_checks}
+        if CHECK_FAIL in statuses:
+            status = "FAILED"
+        elif CHECK_NOT_VERIFIABLE in statuses:
+            status = "NOT_VERIFIABLE"
+        elif CHECK_WARN in statuses:
+            status = "VERIFIED_WITH_WARNINGS"
+        else:
+            status = "VERIFIED"
+        stages.append(
+            {
+                "stage": stage,
+                "status": status,
+                "check_ids": [row["check_id"] for row in stage_checks],
+            }
+        )
+    return {
+        "overall_status": overall,
+        "stages": stages,
+        "warnings": warnings,
+        "failures": failures,
+        "missing_evidence": missing,
+        "summary": (
+            "All required deterministic pipeline checks passed."
+            if overall == "VERIFIED"
+            else f"Deterministic verification finished with status {overall}."
+        ),
+    }
+
+
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -1654,15 +1720,20 @@ class PipelineVerifier:
                 add("decision_threshold_from_cv", "model_selection", CHECK_FAIL, "The holdout was scored at a threshold other than the locked one.", "decision_threshold", "final_test_evaluation.metrics")
             else:
                 add("decision_threshold_from_cv", "model_selection", CHECK_PASS, "The decision threshold was locked from out-of-fold CV predictions before the holdout.", "decision_threshold")
-            statuses = {decision_threshold.get("status"), decision_threshold.get("holdout_status")}
-            if not decision_threshold.get("constraints"):
-                pass
-            elif statuses & {"unsatisfiable", "not_satisfied"}:
-                add("objective_constraints_met", "model_selection", CHECK_WARN, "The declared metric constraints are not met; see decision_threshold.constraints.", "decision_threshold.constraints")
-            elif "not_verifiable" in statuses:
-                add("objective_constraints_met", "model_selection", CHECK_NOT_VERIFIABLE, "A declared constraint metric was not measured.", "decision_threshold.constraints")
-            else:
-                add("objective_constraints_met", "model_selection", CHECK_PASS, "Declared metric constraints hold on out-of-fold predictions and the holdout.", "decision_threshold.constraints")
+            if decision_threshold.get("constraints"):
+                # Two checks, so the holdout-derived status can be withheld from AI evidence
+                # (ADR 0008 §2b): out-of-fold CV status, then the holdout status.
+                for check_id, status_value, where in (
+                    ("objective_constraints_met", decision_threshold.get("status"), "out-of-fold predictions"),
+                    (HOLDOUT_CONSTRAINTS_CHECK, decision_threshold.get("holdout_status"), "the holdout"),
+                ):
+                    if status_value in {"unsatisfiable", "not_satisfied"}:
+                        add(check_id, "model_selection", CHECK_WARN, f"The declared metric constraints are not met on {where}; see decision_threshold.constraints.", "decision_threshold.constraints")
+                    elif status_value == "not_verifiable":
+                        add(check_id, "model_selection", CHECK_NOT_VERIFIABLE, f"A declared constraint metric was not measured on {where}.", "decision_threshold.constraints")
+                    else:
+                        add(check_id, "model_selection", CHECK_PASS, f"Declared metric constraints hold on {where}.", "decision_threshold.constraints")
+                checks[-1]["outcome_scope"] = "holdout"
             selection_metric = str(selection.get("selection_metric") or "")
             if (
                 selection_metric in {"f1", "accuracy", "balanced_accuracy"}
@@ -1803,51 +1874,10 @@ class PipelineVerifier:
             _verify_split_plan_lineage(add, report, db)
             _verify_reproducibility_lineage(add, report, db)
 
-        failures = [row for row in checks if row["status"] == CHECK_FAIL]
-        missing = [row for row in checks if row["status"] == CHECK_NOT_VERIFIABLE]
-        warnings = [row for row in checks if row["status"] == CHECK_WARN]
-        if failures:
-            overall = "FAILED"
-        elif missing:
-            overall = "NOT_VERIFIABLE"
-        elif warnings:
-            overall = "VERIFIED_WITH_WARNINGS"
-        else:
-            overall = "VERIFIED"
-
-        stages: list[dict[str, Any]] = []
-        for stage in dict.fromkeys(row["stage"] for row in checks):
-            stage_checks = [row for row in checks if row["stage"] == stage]
-            statuses = {row["status"] for row in stage_checks}
-            if CHECK_FAIL in statuses:
-                status = "FAILED"
-            elif CHECK_NOT_VERIFIABLE in statuses:
-                status = "NOT_VERIFIABLE"
-            elif CHECK_WARN in statuses:
-                status = "VERIFIED_WITH_WARNINGS"
-            else:
-                status = "VERIFIED"
-            stages.append(
-                {
-                    "stage": stage,
-                    "status": status,
-                    "check_ids": [row["check_id"] for row in stage_checks],
-                }
-            )
-
         return {
             "schema_version": 1,
-            "overall_status": overall,
             "checks": checks,
-            "stages": stages,
-            "warnings": warnings,
-            "failures": failures,
-            "missing_evidence": missing,
-            "summary": (
-                "All required deterministic pipeline checks passed."
-                if overall == "VERIFIED"
-                else f"Deterministic verification finished with status {overall}."
-            ),
+            **summarize_checks(checks),
         }
 
 

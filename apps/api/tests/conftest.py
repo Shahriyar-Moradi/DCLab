@@ -34,6 +34,9 @@ TEST_URL = ADMIN_URL.rsplit("/", 1)[0] + f"/{TEST_DB_NAME}"
 # default; tests must not.
 _TEST_OBJECT_STORE_ROOT = Path(tempfile.mkdtemp(prefix="dclab-test-object-store-"))
 os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+# AI development permissions (fake provider / runtime, the global_ai seed) need an
+# explicit development DCLAB_ENV; an unset variable does not count (P6.7-A).
+os.environ["DCLAB_ENV"] = "test"
 
 
 def _clear_test_object_store() -> None:
@@ -187,6 +190,8 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 "ml_workflows, workspace_domains, business_domains, "
                 "dataset_columns, visualizations, artifacts, ingestion_runs, data_access_events, data_accesses, data_sources, dataset_assets, "
                 "workspace_capabilities, workspace_entitlements, workspace_memberships, platform_memberships, "
+                "ai_switches, ai_incidents, decision_point_policies, ai_policies, workspace_llm_budgets, "
+                "agent_events, semantic_decision_answers, agent_proposals, agent_runs, prompt_releases, "
                 "idempotency_keys, project_refs, project_decision_records, service_tokens, split_plans, "
                 "problem_specs, projects, "
                 "ml_run_verifications, experiment_test_predictions, experiment_candidates, experiments, dataset_profiles, "
@@ -202,6 +207,21 @@ def db_session(test_engine) -> Generator[Session, None, None]:
                 {"default_id": DEFAULT_WORKSPACE_ID},
             )
         _clear_test_object_store()
+
+
+def refresh_planner_stats(db: Session, *tables: str) -> None:
+    """ANALYZE ``tables`` in the open transaction before an EXPLAIN index check.
+
+    The TRUNCATE above resets row counts but keeps column statistics, so the
+    planner otherwise sees whatever autoanalyze last sampled from an earlier
+    test. On tables this small, competing indexes cost about the same and that
+    leftover snapshot decided which one won: flaky in the full suite, green
+    alone. This ANALYZE samples only the current test's rows, rolls back with
+    the test, and its lock keeps autoanalyze off the tables until then. An
+    empty table keeps its old statistics, so give each table rows first.
+    """
+    for table in tables:
+        db.execute(text(f"ANALYZE {table}"))
 
 
 @pytest.fixture(autouse=True)

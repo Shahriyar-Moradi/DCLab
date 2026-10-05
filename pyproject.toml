@@ -44,6 +44,11 @@ storage-gcs = ["google-cloud-storage>=2.14"]
 # Official MCP Python SDK for packages/dclab_mcp (P3.4-A), pinned exactly. Locked in
 # requirements-mcp.lock (`make lock-mcp`), never in requirements.lock (API/worker images).
 mcp = ["mcp==2.2.0"]
+# AI provider SDKs (ADR 0009 §9), imported only under app/agents/gateway/providers/.
+# Locked in requirements-agents.lock (`make lock-agents`), never in requirements.lock
+# (API/worker images). Every test runs without it (fake Jev). nooa==0.0.10 is not
+# here yet: it needs litellm, whose openai<3 pin conflicts with openai>=3.6 above.
+agents = ["typesafe-sdk==0.7.2"]
 storage = [
   "boto3>=1.34",
   "google-cloud-storage>=2.14",

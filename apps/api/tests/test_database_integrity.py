@@ -11,7 +11,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
-from app.db.models import ExperimentCandidate, FeatureSet, FeatureSetVersion
+from app.db.models import (
+    EvaluationMetric,
+    ExperimentCandidate,
+    FeatureSet,
+    FeatureSetVersion,
+    ModelEvaluation,
+)
 from app.engine.types import SearchConfig
 from app.services.lineage_service import (
     create_model_asset,
@@ -21,7 +27,7 @@ from app.services.lineage_service import (
 )
 from app.services.problem_spec_service import create_problem_spec
 from app.services.workflow_execution_service import create_workflow_version
-from conftest import ADMIN_URL
+from conftest import ADMIN_URL, refresh_planner_stats
 from test_data_model_lineage import make_lineage_setup
 from test_execution_hierarchy import make_hierarchy
 
@@ -312,7 +318,44 @@ def test_explain_uses_intended_list_indexes(db_session, lineage_setup):
         dataset=setup["alpha_dataset"],
         task=setup["task"],
     )
+    candidate = ExperimentCandidate(
+        workspace_id=setup["alpha"].id,
+        project_id=setup["alpha_project"].id,
+        experiment_id=pipeline.id,
+        candidate_key="explain",
+        fingerprint="e" * 40,
+        status="generated",
+        payload={},
+    )
+    db_session.add(candidate)
+    db_session.flush()
+    # Metrics shaped like a few CV runs: many evaluations sharing the same
+    # metric names. With one evaluation, (metric_name, metric_value) narrows
+    # the lookup as well as the unique key does and either index is a fair pick.
+    evaluations = [
+        ModelEvaluation(
+            workspace_id=setup["alpha"].id,
+            project_id=setup["alpha_project"].id,
+            candidate_id=candidate.id,
+            evaluation_type="cross_validation",
+            evaluation_scope="cv_fold",
+            dataset_id=setup["alpha_dataset"].id,
+            status="completed",
+            summary={},
+        )
+        for _ in range(100)
+    ]
+    db_session.add_all(evaluations)
+    db_session.flush()
+    db_session.add_all(
+        EvaluationMetric(model_evaluation_id=evaluation.id, metric_name=name, metric_value=0.5)
+        for evaluation in evaluations
+        for name in ("pr_auc", "roc_auc", "f1", "precision", "recall", "log_loss")
+    )
     db_session.commit()
+    # Only these two tables have competing indexes for the queries below; the
+    # others have a single index on the filtered column.
+    refresh_planner_stats(db_session, "experiments", "evaluation_metrics")
 
     workspace_plan = _plan(
         db_session,
@@ -378,7 +421,7 @@ def test_explain_uses_intended_list_indexes(db_session, lineage_setup):
         db_session,
         "SELECT id FROM evaluation_metrics WHERE model_evaluation_id = :evaluation_id "
         "AND metric_name = 'pr_auc'",
-        evaluation_id=uuid4(),
+        evaluation_id=evaluations[0].id,
     )
     assert "uq_evaluation_metrics_evaluation_name" in metric_plan
 

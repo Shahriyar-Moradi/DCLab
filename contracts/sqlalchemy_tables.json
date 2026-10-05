@@ -1,4 +1,10 @@
 [
+  "agent_events",
+  "agent_proposals",
+  "agent_runs",
+  "ai_incidents",
+  "ai_policies",
+  "ai_switches",
   "artifacts",
   "auth_recovery_tokens",
   "auth_sessions",
@@ -20,6 +26,7 @@
   "dataset_policy_revisions",
   "dataset_profiles",
   "datasets",
+  "decision_point_policies",
   "decisions",
   "environments",
   "evaluation_metrics",
@@ -59,7 +66,9 @@
   "project_decision_records",
   "project_refs",
   "projects",
+  "prompt_releases",
   "runtime_environments",
+  "semantic_decision_answers",
   "service_tokens",
   "simulation_runs",
   "split_plans",
@@ -71,6 +80,7 @@
   "workspace_capabilities",
   "workspace_domains",
   "workspace_entitlements",
+  "workspace_llm_budgets",
   "workspace_memberships",
   "workspaces"
 ]

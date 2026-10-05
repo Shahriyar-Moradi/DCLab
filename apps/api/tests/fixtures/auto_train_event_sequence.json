@@ -1794,6 +1794,61 @@
     ]
    ],
    [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
     "cross_validation",
     "operation_completed",
     "completed",
@@ -3545,6 +3600,61 @@
      "candidate_id",
      "cv_score",
      "selection_metric"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
+    ]
+   ],
+   [
+    "feature_importance",
+    "feature_importance_fold_completed",
+    "completed",
+    [
+     "candidate_id",
+     "feature_count",
+     "fold_number",
+     "validation_row_count"
     ]
    ],
    [

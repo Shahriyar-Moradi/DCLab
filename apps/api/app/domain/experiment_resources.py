@@ -212,8 +212,8 @@ class ModelVersionResourceRead(BaseModel):
     holdout_report_only: dict[str, float] | None = Field(
         default=None,
         description=(
-            "Service-token (agent) callers only: the current champion's final-holdout metrics, for "
-            "reporting, never for selection. Agents never get holdout values in `metrics`."
+            "Always null (kept for compatibility): agents never receive final-holdout values, with no "
+            "champion exception (ADR 0008 §2b). Session humans read them in `metrics`."
         ),
     )
     is_champion: bool = Field(description="The project's `champion_model` ref points at this model version.")

@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, LabDecisionRecord
-from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION
+from app.engine.lab.prompts.missing_value_v2 import PROMPT_VERSION
 from app.services.auto_train_service import run_auto_train_job
 
 

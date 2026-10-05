@@ -23,7 +23,14 @@ from app.api.deps import (
     require_workspace_read,
 )
 from app.api.v1 import _created, _key_scope, _keyed_command, _not_found, _principal_id
-from app.api.v1_agent_views import comparison_view, experiment_view, findings_view, model_version_view
+from app.api.v1_agent_views import (
+    comparison_view,
+    is_agent,
+    experiment_view,
+    findings_view,
+    model_card_view,
+    model_version_view,
+)
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -69,6 +76,7 @@ from app.domain.experiment_resources import (
     ModelVersionResourceRead,
 )
 from app.domain.findings import ExperimentFindingsRead
+from app.domain.model_card import ModelCardRead
 from app.domain.idempotency import RESOURCE_EXPERIMENT
 from app.services.experiment_branch_service import branch_experiment, compare_side_by_side
 from app.services.experiment_service import (
@@ -77,6 +85,7 @@ from app.services.experiment_service import (
     experiment_read,
     experiments_for_compare,
     list_experiments,
+    model_card_read,
     model_version_read,
     start_root_experiment,
 )
@@ -397,8 +406,8 @@ def read_model_version(
     """Model version detail: family, locked metrics (CV + final holdout at the locked
     decision threshold, constraint status), source experiment/candidate, split plan,
     dataset lineage, feature recipe, champion flag, and artifacts by id + digest.
-    Service-token (agent) callers get CV metrics only; the current champion's holdout
-    comes as ``holdout_report_only`` (reporting, never selection)."""
+    Service-token (agent) callers get CV metrics only, champion included
+    (``holdout_report_only`` is always null)."""
 
     try:
         body = model_version_read(
@@ -410,4 +419,44 @@ def read_model_version(
         raise _not_found("model version not found")
     body = model_version_view(request, body)
     set_etag(response, representation_etag(body))
+    return body
+
+
+@router.get(
+    "/model-versions/{model_version_id}/card",
+    response_model=ModelCardRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}, **error_responses(409)},
+)
+def read_model_card(
+    model_version_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ModelCardRead:
+    """One-page model card (JSON with a deterministic ``markdown`` rendering): target and
+    objective, the primary metric in plain words from cross-validation, the dummy-baseline
+    comparison, top drivers (permutation importance on CV validation folds), known risks
+    from the trust checks, data and split summary, whether an LLM was used, and the
+    single final evaluation of the locked winner, labelled as such (never used for
+    selection). 409 ``model_card_unavailable`` until the run's evidence is locked.
+    Service-token (agent) callers get the final evaluation withheld, in JSON and Markdown."""
+
+    try:
+        body = model_card_read(
+            db,
+            actor=user,
+            workspace_id=request_workspace_id(request),
+            model_version_id=model_version_id,
+            include_final_evaluation=not is_agent(request),
+        )
+    except (IdentityError, ExperimentRequestError) as exc:
+        raise domain_error(exc) from exc
+    if body is None:
+        raise _not_found("model version not found")
+    body = model_card_view(request, body)  # second guard for service tokens
+    set_etag(response, representation_etag(body))
+    # The representation depends on the principal (final evaluation for humans only).
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
     return body

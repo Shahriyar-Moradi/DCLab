@@ -27,6 +27,7 @@ from dclab_client.types import (
     ExperimentFindings,
     ExperimentPage,
     ModelBuild,
+    ModelCard,
     ModelVersion,
     NodeImpact,
     Principal,
@@ -451,6 +452,15 @@ class ModelVersionsClient:
             "GET", f"/v1/model-versions/{_id(model_version_id)}", request_id=request_id
         )
         return _versioned(ModelVersion, payload, headers)
+
+    def card(self, model_version_id: UUID | str, *, request_id: str | None = None) -> ModelCard:
+        """One-page model card: metric in plain words, baseline, drivers, risks, data and
+        split, LLM use, and the single final evaluation (withheld for service tokens)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/model-versions/{_id(model_version_id)}/card", request_id=request_id
+        )
+        return ModelCard.model_validate(payload)
 
 
 class NodesClient:

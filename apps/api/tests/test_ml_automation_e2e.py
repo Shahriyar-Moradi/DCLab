@@ -477,8 +477,9 @@ class TestObjective:
             for check in result["deterministic_verification"]["checks"]
         }
         assert checks["decision_threshold_from_cv"] == "PASS"
+        assert checks["objective_constraints_met"] == "PASS"  # out-of-fold status only
         expected = "PASS" if decision["holdout_status"] == "satisfied" else "WARN"
-        assert checks["objective_constraints_met"] == expected
+        assert checks["objective_constraints_met_holdout"] == expected  # holdout-scoped, never sent to AI
         assert "FAIL" not in checks.values(), [k for k, v in checks.items() if v == "FAIL"]
         holdout_recall = db_session.scalar(
             select(EvaluationMetric)

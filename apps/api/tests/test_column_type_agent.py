@@ -1,16 +1,14 @@
 """Column-type decision agent: evidence, validator, and auto-train wiring.
 
-A 3-value integer plan code is reclassified as categorical and logged.
-A normal numeric like tenure never reaches the LLM. With the agent off,
-roles stay on the dtype rule.
+A 3-value integer plan code is reclassified as categorical and logged (through the
+AI gateway, fake provider). A normal numeric like tenure never reaches the LLM. With
+the agent off, roles stay on the dtype rule and the gateway is never called.
 """
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 
-import httpx
 import pandas as pd
 import pytest
 
@@ -27,8 +25,10 @@ from app.engine.lab.evidence import (
     is_ambiguous_column_type,
 )
 from app.engine.lab.llm_client import ColumnTypeDecision
-from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION, SYSTEM_PROMPT
+from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT  # the validator's action enum
+from app.engine.lab.prompts.column_type_v2 import PROMPT_VERSION  # the prompt the agent is called with
 from app.services.auto_train_service import run_auto_train_job
+from legacy_ai_support import column_of, enable_legacy_ai, forbid_gateway, sent, upload_via_api
 
 
 def _plan_code_frame(n: int = 200) -> pd.DataFrame:
@@ -70,26 +70,20 @@ def _make_upload(db_session, *, stored_path: str, record_count: int) -> ClientLa
     return row
 
 
-def _enable_agent(monkeypatch) -> None:
-    from app.engine.lab import llm_client
-    from app.services import lab_decision_ledger
+_LEAKAGE_UNSURE = {"availability_status": "unknown", "risk_level": "LOW", "evidence_field": "column",
+                   "rationale": "unsure", "confidence": 0.1}
 
-    llm_client._CACHE.clear()
-    llm_client._COLUMN_TYPE_CACHE.clear()
-    settings = SimpleNamespace(
-        decision_agent_enabled=True,
-        decision_agent_api_key="sk-test",
-        decision_agent_model="gpt-4o-mini",
-    )
-    monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
-    monkeypatch.setattr(llm_client, "get_settings", lambda: settings)
+
+def _enable_agent(monkeypatch, db_session, column_type: dict):
+    return enable_legacy_ai(monkeypatch, db_session, handler=lambda call: (
+        column_type if call.agent_key == "column_type" else _LEAKAGE_UNSURE))
 
 
 def _disable_agent(monkeypatch) -> None:
     from app.engine.lab import llm_client
     from app.services import lab_decision_ledger
 
-    settings = SimpleNamespace(decision_agent_enabled=False, decision_agent_api_key="")
+    settings = SimpleNamespace(decision_agent_enabled=False)
     monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
     monkeypatch.setattr(llm_client, "get_settings", lambda: settings)
 
@@ -149,7 +143,7 @@ def test_allowed_actions_come_from_column_type_v1():
 
 def test_validator_accepts_categorical_backed_by_cardinality():
     evidence = build_column_type_evidence(_plan_code_frame(n=60), "plan_code")
-    result = validate_column_type_decision(evidence, _type_decision())
+    result = validate_column_type_decision(evidence, _type_decision(), withheld=frozenset())
     assert result.verdict == "accept"
     assert result.reason == ""
 
@@ -159,6 +153,7 @@ def test_validator_rejects_identifier_when_ratio_is_low():
     result = validate_column_type_decision(
         evidence,
         _type_decision(action="identifier", evidence_field="cardinality_ratio"),
+        withheld=frozenset(),
     )
     assert result.verdict == "reject"
     assert "identifier" in result.reason
@@ -166,7 +161,7 @@ def test_validator_rejects_identifier_when_ratio_is_low():
 
 def test_validator_rejects_low_confidence():
     evidence = build_column_type_evidence(_plan_code_frame(n=60), "plan_code")
-    result = validate_column_type_decision(evidence, _type_decision(confidence=0.2))
+    result = validate_column_type_decision(evidence, _type_decision(confidence=0.2), withheld=frozenset())
     assert result.verdict == "reject"
     assert "confidence" in result.reason
     assert MIN_CONFIDENCE == 0.7
@@ -174,44 +169,28 @@ def test_validator_rejects_low_confidence():
 
 def test_validator_rejects_cited_field_that_does_not_exist():
     evidence = build_column_type_evidence(_plan_code_frame(n=60), "plan_code")
-    result = validate_column_type_decision(evidence, _type_decision(evidence_field="skewness"))
+    result = validate_column_type_decision(evidence, _type_decision(evidence_field="skewness"), withheld=frozenset())
     assert result.verdict == "reject"
     assert "skewness" in result.reason
 
 
-def test_plan_code_reclassified_as_categorical_and_logged(db_session, tmp_path, monkeypatch):
-    from app.engine.lab import llm_client
-
-    _enable_agent(monkeypatch)
-    consulted: list[str] = []
-
-    def fake_post(url, **kwargs):
-        evidence = json.loads(kwargs["json"]["messages"][1]["content"])
-        consulted.append(evidence["column"])
-        assert "cardinality" in evidence
-        payload = {
-            "action": "categorical",
-            "evidence_field": "cardinality",
-            "rationale": "cardinality is 3 repeating plan codes",
-            "confidence": 0.95,
-        }
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(payload)}}]},
-            request=httpx.Request("POST", url),
-        )
-
-    monkeypatch.setattr(llm_client.httpx, "post", fake_post)
-
+def test_plan_code_reclassified_as_categorical_and_logged(auth_client, db_session, monkeypatch):
     raw = _plan_code_frame()
-    path = tmp_path / "plans.csv"
-    raw.to_csv(path, index=False)
-    upload = _make_upload(db_session, stored_path=str(path), record_count=len(raw))
+    upload = upload_via_api(auth_client, db_session, monkeypatch, raw, filename="plans.csv")
+    ai = _enable_agent(monkeypatch, db_session, {
+        "action": "categorical",
+        "evidence_field": "cardinality",
+        "rationale": "cardinality is 3 repeating plan codes",
+        "confidence": 0.95,
+    })
 
     run_auto_train_job(db_session, upload.id)
     db_session.refresh(upload)
     assert upload.pipeline_status == "completed"
 
+    type_calls = [call for call in ai.fake.calls if call.agent_key == "column_type"]
+    consulted = [column_of(call) for call in type_calls]
+    assert all("cardinality" in sent(call) and "sample_values" not in sent(call) for call in type_calls)
     assert consulted == ["plan_code"]
     assert "tenure" not in consulted
     assert "MonthlyCharges" not in consulted
@@ -242,14 +221,8 @@ def test_plan_code_reclassified_as_categorical_and_logged(db_session, tmp_path, 
 
 
 def test_agent_disabled_plan_code_stays_numerical(db_session, tmp_path, monkeypatch):
-    from app.engine.lab import llm_client
-
     _disable_agent(monkeypatch)
-    monkeypatch.setattr(
-        llm_client.httpx,
-        "post",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not call the provider")),
-    )
+    forbid_gateway(monkeypatch)
 
     raw = _plan_code_frame()
     path = tmp_path / "plans.csv"
@@ -274,30 +247,15 @@ def test_agent_disabled_plan_code_stays_numerical(db_session, tmp_path, monkeypa
     assert type_rows == []
 
 
-def test_validator_rejection_keeps_numerical_role(db_session, tmp_path, monkeypatch):
-    from app.engine.lab import llm_client
-
-    _enable_agent(monkeypatch)
-
-    def fake_post(url, **kwargs):
-        payload = {
-            "action": "identifier",
-            "evidence_field": "cardinality_ratio",
-            "rationale": "claiming identifier without a high uniqueness ratio",
-            "confidence": 0.95,
-        }
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(payload)}}]},
-            request=httpx.Request("POST", url),
-        )
-
-    monkeypatch.setattr(llm_client.httpx, "post", fake_post)
-
+def test_validator_rejection_keeps_numerical_role(auth_client, db_session, monkeypatch):
     raw = _plan_code_frame()
-    path = tmp_path / "plans.csv"
-    raw.to_csv(path, index=False)
-    upload = _make_upload(db_session, stored_path=str(path), record_count=len(raw))
+    upload = upload_via_api(auth_client, db_session, monkeypatch, raw, filename="plans.csv")
+    _enable_agent(monkeypatch, db_session, {
+        "action": "identifier",
+        "evidence_field": "cardinality_ratio",
+        "rationale": "claiming identifier without a high uniqueness ratio",
+        "confidence": 0.95,
+    })
 
     run_auto_train_job(db_session, upload.id)
     db_session.refresh(upload)
@@ -318,3 +276,11 @@ def test_validator_rejection_keeps_numerical_role(db_session, tmp_path, monkeypa
     assert row.final_decision == "numerical"
     assert row.source == "fallback"
     assert row.validator_verdict.startswith("reject:")
+
+
+def test_categorical_citing_withheld_sample_values_is_rejected():
+    evidence = build_column_type_evidence(_plan_code_frame(n=60), "plan_code")
+    decision = _type_decision(evidence_field="sample_values")
+    assert validate_column_type_decision(evidence, decision, withheld=frozenset()).verdict == "accept"
+    result = validate_column_type_decision(evidence, decision, withheld=frozenset({"sample_values"}))
+    assert result.verdict == "reject" and "withheld" in result.reason

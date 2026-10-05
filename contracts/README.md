@@ -11,6 +11,7 @@ and the drift checker never rewrites an artifact.
 | `openapi_operations.json` | Presence of every public HTTP operation (`METHOD path`), including `/v1` membership |
 | `sqlalchemy_tables.json` | SQLAlchemy mapped table names (PipelineRun remains `experiments`) |
 | `truth_baseline.json` | Alembic head/revision aggregate, OpenAPI/table aggregate counts, and repository/source/test/web inventory |
+| `agent_tools.json` | The shared agent tool catalog (`app/agents/tools`, ADR 0009 §6): names, effects, capabilities, decision-point keys, input schemas, `/v1` operations, services and surfaces. `packages/dclab_mcp` is contract-tested against it; `agent_runs.tool_catalog_digest` is the SHA-256 of this file's exact text, computed from code |
 | `truth_manifest.json` | Generator name/version, SHA-256 of all non-generated non-ignored source paths and bytes, and SHA-256 digest of each artifact above |
 
 CURRENT documentation links to these artifacts instead of owning a second copy

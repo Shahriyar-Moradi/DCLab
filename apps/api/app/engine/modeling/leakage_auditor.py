@@ -1082,12 +1082,16 @@ def plan_model_development(
     return problem_profile, validation_plan, metric_plan, audit, plan
 
 
-def consult_leakage_llm(evidence: LeakageReviewEvidence) -> Any:
-    """Optional semantic review. Fail closed; never drop a feature itself."""
+def consult_leakage_llm(evidence: LeakageReviewEvidence, *, context: Any = None, annotate: Any = None) -> Any:
+    """Optional semantic review through the AI gateway. Fail closed (``None``); never drop a
+    feature itself. ``context`` is the run's ``LegacyContext`` (``lab_decision_ledger.
+    leakage_reviewer`` binds it); without one (e.g. the legacy runner) no model is called."""
     from app.engine.lab.llm_client import DecisionAgentUnavailable, request_leakage_review
     from app.engine.lab.prompts.leakage_review_v1 import PROMPT_VERSION
 
+    if context is None:
+        return None
     try:
-        return request_leakage_review(evidence, PROMPT_VERSION)
+        return request_leakage_review(evidence, PROMPT_VERSION, context=context, annotate=annotate)
     except DecisionAgentUnavailable:
         return None

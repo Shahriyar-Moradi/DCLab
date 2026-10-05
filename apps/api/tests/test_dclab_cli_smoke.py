@@ -30,7 +30,8 @@ class Runner:
 
     def __call__(self, *argv, token=None, stdin=""):
         out, err = io.StringIO(), io.StringIO()
-        env = {"XDG_CONFIG_HOME": str(self.tmp_path / "cfg")}
+        # The in-process TestClient host is plain http ("testserver"); opt in explicitly.
+        env = {"XDG_CONFIG_HOME": str(self.tmp_path / "cfg"), cli.ENV_ALLOW_INSECURE_HTTP: "1"}
         if token is not False:
             env["DCLAB_TOKEN"] = token or self.token
             env["DCLAB_WORKSPACE"] = str(self.workspace)
@@ -113,7 +114,8 @@ def test_cli_end_to_end_loop(dclab, db_session, setup, tmp_path):
 
     # Stored config alone (no env) keeps working.
     out_buf, err_buf = io.StringIO(), io.StringIO()
-    code = cli.main(["projects", "list", "--json"], env={"XDG_CONFIG_HOME": str(tmp_path / "cfg")},
+    code = cli.main(["projects", "list", "--json"],
+                    env={"XDG_CONFIG_HOME": str(tmp_path / "cfg"), cli.ENV_ALLOW_INSECURE_HTTP: "1"},
                     stdout=out_buf, stderr=err_buf, http=dclab.client)
     assert code == 0, err_buf.getvalue()
 

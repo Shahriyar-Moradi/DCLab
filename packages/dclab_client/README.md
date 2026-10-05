@@ -13,6 +13,8 @@ with DCLabClient("https://dclab.example/api/backend", token="dclab_st_...") as a
     # once completed: five plain-language trust checks (leakage, overfit, duplicates, ...)
     for check in api.experiments.findings(run.id).checks:
         print(check.check, check.status, check.message)
+    # one-page model card: metric in plain words, baseline, drivers, risks (Markdown too)
+    print(api.model_versions.card("<model version id>").markdown)
     # later: score new rows with a model version (the worker scores; poll until terminal)
     rows = api.datasets.upload(project.id, "new_rows.csv", purpose="scoring")
     pred = api.predictions.create(model_version_id="<model version id>", dataset_id=rows.id)
@@ -38,6 +40,7 @@ dclab-cli data upload FILE --project ID [--purpose training|scoring]
 dclab-cli experiments list | get ID | run --project P --dataset D [--target C] [--intent T]
 dclab-cli experiments branch ID --intent T (--changes JSON | --changes-file F)
 dclab-cli experiments compare ID ID... | code ID [--notebook] [-o FILE] | findings ID | cancel ID
+dclab-cli models card MV [--json [--markdown]]                 # Markdown by default
 dclab-cli predict create --model-version MV --dataset D [--format csv|parquet] [--wait [--timeout S]]
 dclab-cli predict get ID | download ID -o FILE
 dclab-cli decisions list --project P | propose --project P --type T --subject-kind K --rationale R | get ID

@@ -828,3 +828,38 @@ def test_prediction_download_not_ready_is_a_typed_conflict():
     with pytest.raises(ConflictError) as caught:
         api.predictions.download(WS)
     assert caught.value.code == "prediction_not_ready" and caught.value.request_id == "r-9"
+
+
+def _card_payload(mv: str) -> dict:
+    return {
+        "card_version": "model_card.v1", "model_version_id": mv, "version": "v1", "experiment_id": mv,
+        "created_at": "2026-10-04T00:00:00Z", "content_digest": "d" * 64, "family": "logistic_regression",
+        "target": {"column": "label", "task_type": "binary"}, "objective": {"primary_metric": "roc_auc"},
+        "metric_in_words": {"text": "Of every 100 rows the model flags as positive, about 57 really are.",
+                            "basis": "cross_validation_out_of_fold_at_locked_threshold", "numbers": {"precision": 0.57}},
+        "cv": {"metric": "roc_auc", "mean": 0.81}, "baseline": {"available": True, "text": "beats it"},
+        "drivers": {"status": "computed", "text": "Strongest: plan.",
+                    "features": [{"rank": 1, "column": "plan", "importance_mean": 0.1}]},
+        "risks": {"investigated": True, "items": [], "text": "none"}, "data": {}, "split": {},
+        "llm": {"used": False}, "final_evaluation": {"status": "withheld", "note": "Withheld"},
+        "markdown": "# Model card: logistic_regression v1\n\n## Top drivers\n", "untrusted_fields": [],
+    }
+
+
+def test_model_card_uses_v1_path_and_parses_sections():
+    recorded: list[httpx.Request] = []
+    mv = "55555555-5555-5555-5555-555555555555"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=_card_payload(mv))
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    card = api.model_versions.card(mv, request_id="trace-card")
+    assert card.drivers.features[0].column == "plan" and card.final_evaluation.status == "withheld"
+    assert card.metric_in_words.numbers["precision"] == 0.57 and card.markdown.startswith("# Model card")
+    assert recorded[0].method == "GET" and recorded[0].url.path == f"/v1/model-versions/{mv}/card"
+    assert recorded[0].headers["X-Request-Id"] == "trace-card"
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.model_versions.card("../x")
+    assert len(recorded) == 1

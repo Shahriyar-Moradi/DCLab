@@ -1,25 +1,31 @@
-"""Call a model for a Lab missing-value decision, or fail closed.
+"""Lab decision agents: result models, evidence envelopes and gateway wrappers.
 
-Cache: in-process dict keyed by sha256(canonical evidence JSON + prompt_version).
-It lives only in this process — not in the database, not shared across workers,
-and cleared on restart. Re-running the same evidence with the same prompt
-version does not hit the provider again.
+The provider call lives in ``app/agents/gateway/providers/openai.py`` (ADR 0009 §1);
+every request here goes through ``GatewayService.complete`` (policy, kill switches,
+ADR 0005 labels, budget, ledger) with the legacy purposes unchanged until P6.9-A
+(ADR 0009 §4). Evidence travels as a tagged ``ContextEnvelope``: names and dtypes as
+untrusted metadata of their columns, counts and ratios as metadata, train-partition
+statistics as aggregates, and raw values (``sample_rows``, ``sample_values``,
+co-occurring values) as ``sample_values``, which the policy caps (no sample values,
+founder Q3) always drop. ``WITHHELD`` names the evidence fields the model therefore
+never sees; validators reject a decision that cites one.
 
-The public function is `request_decision`. It never retries, uses a hard
-HTTP timeout, and converts every provider/parse failure into
-`DecisionAgentUnavailable` so callers never see an unhandled exception.
+``consult`` returns the gateway response; the ``request_*`` wrappers return the
+decision or raise ``DecisionAgentUnavailable``. With ``decision_agent_enabled`` or
+``ai_enabled`` off nothing is called. The gateway cache replaces the old per-process
+caches.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-from dataclasses import asdict
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
-import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.contracts import ContextField
+from app.agents.gateway.contract import Annotate, CompletionResponse, Refusal
+from app.agents.governance.platform_default import ai_development_env
+from app.agents.legacy import LegacyCall, LegacyContext, complete, ctx_field, number, refusal_text, scalar, text
 from app.config import get_settings
 from app.engine.lab.evidence import (
     ColumnEvidence,
@@ -27,24 +33,6 @@ from app.engine.lab.evidence import (
     LeakageReviewEvidence,
     TargetSelectionEvidence,
 )
-from app.engine.lab.prompts.column_type_v1 import PROMPT_VERSION as COLUMN_TYPE_V1
-from app.engine.lab.prompts.column_type_v1 import SYSTEM_PROMPT as COLUMN_TYPE_V1_PROMPT
-from app.engine.lab.prompts.leakage_review_v1 import PROMPT_VERSION as LEAKAGE_REVIEW_V1
-from app.engine.lab.prompts.leakage_review_v1 import SYSTEM_PROMPT as LEAKAGE_REVIEW_V1_PROMPT
-from app.engine.lab.prompts.missing_value_v1 import PROMPT_VERSION as MISSING_VALUE_V1
-from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT as MISSING_VALUE_V1_PROMPT
-from app.engine.lab.prompts.target_selection_v1 import PROMPT_VERSION as TARGET_SELECTION_V1
-from app.engine.lab.prompts.target_selection_v1 import SYSTEM_PROMPT as TARGET_SELECTION_V1_PROMPT
-
-_PROVIDER_URL = "https://api.openai.com/v1/chat/completions"
-_REQUEST_TIMEOUT_SECONDS = 20.0
-
-_PROMPTS: dict[str, str] = {
-    MISSING_VALUE_V1: MISSING_VALUE_V1_PROMPT,
-    COLUMN_TYPE_V1: COLUMN_TYPE_V1_PROMPT,
-    TARGET_SELECTION_V1: TARGET_SELECTION_V1_PROMPT,
-    LEAKAGE_REVIEW_V1: LEAKAGE_REVIEW_V1_PROMPT,
-}
 
 Action = Literal[
     "drop_rows",
@@ -91,127 +79,10 @@ LeakageEvidenceField = Literal[
     "availability_status",
     "availability_reason",
 ]
-_LEAKAGE_AVAILABILITY: tuple[str, ...] = (
-    "known_before_prediction",
-    "known_at_prediction",
-    "known_after_prediction",
-    "unknown",
-)
-_LEAKAGE_RISK: tuple[str, ...] = ("NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL")
-_LEAKAGE_EVIDENCE_FIELDS: tuple[str, ...] = (
-    "column",
-    "target",
-    "task",
-    "dtype",
-    "cardinality",
-    "related_column_names",
-    "exact_target_match_fraction",
-    "single_feature_score",
-    "single_feature_score_kind",
-    "suspicious_name_tokens",
-    "target_name_similarity",
-    "datetime_after_fraction",
-    "identifier_likelihood",
-    "unique_ratio",
-    "missing_fraction",
-    "availability_status",
-    "availability_reason",
-)
-
-_ACTIONS: tuple[str, ...] = (
-    "drop_rows",
-    "impute_mean",
-    "impute_median",
-    "impute_most_frequent",
-    "domain_fill",
-)
-_EVIDENCE_FIELDS: tuple[str, ...] = (
-    "column",
-    "dtype",
-    "missing_count",
-    "missing_fraction",
-    "correlation_with_target",
-    "missingness_cooccurrence",
-    "sample_rows",
-)
-_COLUMN_TYPE_ACTIONS: tuple[str, ...] = ("numerical", "categorical", "identifier")
-_COLUMN_TYPE_EVIDENCE_FIELDS: tuple[str, ...] = (
-    "column",
-    "dtype",
-    "cardinality",
-    "cardinality_ratio",
-    "sample_values",
-)
-
-_TARGET_SELECTION_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "target": {"type": "string"},
-        "task_type": {"type": "string", "enum": ["binary", "multiclass", "regression"]},
-        "evidence_field": {"type": "string", "enum": ["columns"]},
-        "rationale": {"type": "string"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-    },
-    "required": ["target", "task_type", "evidence_field", "rationale", "confidence"],
-}
-
-_DECISION_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "action": {"type": "string", "enum": list(_ACTIONS)},
-        "evidence_field": {"type": "string", "enum": list(_EVIDENCE_FIELDS)},
-        "fill_value": {
-            "anyOf": [
-                {"type": "string"},
-                {"type": "number"},
-                {"type": "boolean"},
-                {"type": "null"},
-            ]
-        },
-        "rationale": {"type": "string"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-    },
-    "required": ["action", "evidence_field", "fill_value", "rationale", "confidence"],
-}
-
-_COLUMN_TYPE_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "action": {"type": "string", "enum": list(_COLUMN_TYPE_ACTIONS)},
-        "evidence_field": {"type": "string", "enum": list(_COLUMN_TYPE_EVIDENCE_FIELDS)},
-        "rationale": {"type": "string"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-    },
-    "required": ["action", "evidence_field", "rationale", "confidence"],
-}
-
-_LEAKAGE_REVIEW_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "availability_status": {"type": "string", "enum": list(_LEAKAGE_AVAILABILITY)},
-        "risk_level": {"type": "string", "enum": list(_LEAKAGE_RISK)},
-        "evidence_field": {"type": "string", "enum": list(_LEAKAGE_EVIDENCE_FIELDS)},
-        "rationale": {"type": "string"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-    },
-    "required": [
-        "availability_status",
-        "risk_level",
-        "evidence_field",
-        "rationale",
-        "confidence",
-    ],
-}
-
-T = TypeVar("T", bound=BaseModel)
 
 
 class DecisionAgentUnavailable(Exception):
-    """The decision agent is off, unconfigured, or the provider failed closed."""
+    """The decision agent is off, or the gateway refused / failed closed."""
 
 
 class MissingValueDecision(BaseModel):
@@ -255,225 +126,207 @@ class LeakageReviewDecision(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
-# In-process caches. See module docstring.
-_CACHE: dict[str, MissingValueDecision] = {}
-_COLUMN_TYPE_CACHE: dict[str, ColumnTypeDecision] = {}
-_TARGET_SELECTION_CACHE: dict[str, TargetSelectionDecision] = {}
-_LEAKAGE_REVIEW_CACHE: dict[str, LeakageReviewDecision] = {}
+def _call(key: str, version: int, purpose: str, point: str, schema: type[BaseModel], max_class: str) -> LegacyCall:
+    return LegacyCall(agent_role="legacy_decision", agent_key=key, prompt_version=version, purpose=purpose,
+                      decision_point_key=point, output_schema=schema, max_output_tokens=1000, timeout_s=20.0,
+                      max_data_class=max_class)
 
 
-def request_decision(evidence: ColumnEvidence, prompt_version: str) -> MissingValueDecision:
-    """Return a schema-validated missing-value decision, or raise unavailable.
-
-    Temperature is 0. Output is constrained by the provider's JSON-schema
-    structured-output mode, then validated again with pydantic — never scraped
-    from free text.
-    """
-    try:
-        settings = get_settings()
-        if not settings.decision_agent_enabled:
-            raise DecisionAgentUnavailable("decision agent is disabled")
-        api_key = (settings.decision_agent_api_key or "").strip()
-        if not api_key:
-            raise DecisionAgentUnavailable("decision agent API key is not configured")
-        system_prompt = _PROMPTS.get(prompt_version)
-        if not system_prompt:
-            raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
-        cache_key = _cache_key(evidence, prompt_version)
-        cached = _CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-        decision = _complete_structured(
-            system_prompt=system_prompt,
-            evidence=evidence,
-            api_key=api_key,
-            model=settings.decision_agent_model,
-            schema=_DECISION_JSON_SCHEMA,
-            schema_name="missing_value_decision",
-            result_model=MissingValueDecision,
-        )
-        _CACHE[cache_key] = decision
-        return decision
-    except DecisionAgentUnavailable:
-        raise
-    except Exception as exc:
-        raise DecisionAgentUnavailable("decision agent failed") from exc
+# Purpose and decision point per ADR 0008 §1; Lab-time points (target, role) are metadata only (§2c).
+CALLS: dict[str, LegacyCall] = {
+    "missing_value": _call("missing_value", 2, "semantic_missing_value", "column.missing_value_action",
+                           MissingValueDecision, "aggregates"),
+    "column_type": _call("column_type", 2, "semantic_column_type", "column.semantic_role", ColumnTypeDecision,
+                         "metadata"),
+    "target_selection": _call("target_selection", 1, "semantic_target", "target.column", TargetSelectionDecision,
+                              "metadata"),
+    "leakage_review": _call("leakage_review", 1, "semantic_leakage", "feature.leakage_suspect",
+                            LeakageReviewDecision, "aggregates"),
+}
+# Evidence the model never sees under the policy caps (sample values are always dropped).
+WITHHELD: dict[str, frozenset[str]] = {
+    "missing_value": frozenset({"sample_rows", "missingness_cooccurrence.other_value"}),
+    "column_type": frozenset({"sample_values"}),
+    "target_selection": frozenset({"columns.sample_values"}),
+    "leakage_review": frozenset(),
+}
 
 
-def request_column_type_decision(evidence: ColumnTypeEvidence, prompt_version: str) -> ColumnTypeDecision:
-    """Return a schema-validated column-type decision, or raise unavailable."""
-    try:
-        settings = get_settings()
-        if not settings.decision_agent_enabled:
-            raise DecisionAgentUnavailable("decision agent is disabled")
-        api_key = (settings.decision_agent_api_key or "").strip()
-        if not api_key:
-            raise DecisionAgentUnavailable("decision agent API key is not configured")
-        system_prompt = _PROMPTS.get(prompt_version)
-        if not system_prompt:
-            raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
-        cache_key = _cache_key(evidence, prompt_version)
-        cached = _COLUMN_TYPE_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-        decision = _complete_structured(
-            system_prompt=system_prompt,
-            evidence=evidence,
-            api_key=api_key,
-            model=settings.decision_agent_model,
-            schema=_COLUMN_TYPE_JSON_SCHEMA,
-            schema_name="column_type_decision",
-            result_model=ColumnTypeDecision,
-        )
-        _COLUMN_TYPE_CACHE[cache_key] = decision
-        return decision
-    except DecisionAgentUnavailable:
-        raise
-    except Exception as exc:
-        raise DecisionAgentUnavailable("decision agent failed") from exc
+# --- evidence → envelope ---------------------------------------------------------------
 
 
-def request_target_selection_decision(
-    evidence: TargetSelectionEvidence,
-    prompt_version: str,
-) -> TargetSelectionDecision:
-    """Return a schema-validated semantic target decision, or fail closed."""
-    try:
-        settings = get_settings()
-        if not settings.decision_agent_enabled:
-            raise DecisionAgentUnavailable("decision agent is disabled")
-        api_key = (settings.decision_agent_api_key or "").strip()
-        if not api_key:
-            raise DecisionAgentUnavailable("decision agent API key is not configured")
-        system_prompt = _PROMPTS.get(prompt_version)
-        if not system_prompt:
-            raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
-        cache_key = _cache_key(evidence, prompt_version)
-        cached = _TARGET_SELECTION_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-        decision = _complete_structured(
-            system_prompt=system_prompt,
-            evidence=evidence,
-            api_key=api_key,
-            model=settings.decision_agent_model,
-            schema=_TARGET_SELECTION_JSON_SCHEMA,
-            schema_name="target_selection_decision",
-            result_model=TargetSelectionDecision,
-        )
-        _TARGET_SELECTION_CACHE[cache_key] = decision
-        return decision
-    except DecisionAgentUnavailable:
-        raise
-    except Exception as exc:
-        raise DecisionAgentUnavailable("decision agent failed") from exc
+def _missing_value_fields(evidence: ColumnEvidence, ctx: LegacyContext, target: str | None) -> list[ContextField]:
+    own = ctx.columns([evidence.column])
+    flags = list(evidence.missingness_cooccurrence)
+    others = [flag.other_column for flag in flags]
+    row_columns = [name for row in evidence.sample_rows for name in row]
+    return [
+        ctx_field("column", text(evidence.column), "metadata", own),
+        ctx_field("dtype", text(evidence.dtype), "metadata", own),
+        ctx_field("missing_count", number(evidence.missing_count), "metadata", own),
+        ctx_field("missing_fraction", number(evidence.missing_fraction), "metadata", own),
+        ctx_field("correlation_with_target", number(evidence.correlation_with_target), "aggregates",
+                  ctx.columns([evidence.column, *([target] if target else [])])),
+        ctx_field("missingness_cooccurrence", [
+            {"other_column": text(flag.other_column), "missing_and_value_count": number(flag.missing_and_value_count),
+             "rows_with_value": number(flag.rows_with_value), "fraction_of_missing": number(flag.fraction_of_missing),
+             "fraction_of_value": number(flag.fraction_of_value), "exact_match": bool(flag.exact_match)}
+            for flag in flags
+        ], "aggregates", ctx.columns([evidence.column, *others])),
+        ctx_field("cooccurring_values", [
+            {"other_column": text(flag.other_column), "other_value": scalar(flag.other_value)} for flag in flags
+        ], "sample_values", ctx.columns(others), required=False),
+        ctx_field("sample_rows", [
+            [{"column": text(name), "value": scalar(value)} for name, value in row.items()]
+            for row in evidence.sample_rows
+        ], "sample_values", ctx.columns(row_columns), required=False),
+    ]
 
 
-def request_leakage_review(
-    evidence: LeakageReviewEvidence,
-    prompt_version: str,
-) -> LeakageReviewDecision:
-    """Return a schema-validated leakage recommendation, or fail closed.
-
-    The model cannot keep or exclude a feature. It only recommends availability
-    and risk; a deterministic validator still owns the action.
-    """
-    try:
-        settings = get_settings()
-        if not settings.decision_agent_enabled:
-            raise DecisionAgentUnavailable("decision agent is disabled")
-        api_key = (settings.decision_agent_api_key or "").strip()
-        if not api_key:
-            raise DecisionAgentUnavailable("decision agent API key is not configured")
-        system_prompt = _PROMPTS.get(prompt_version)
-        if not system_prompt:
-            raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
-        cache_key = _cache_key(evidence, prompt_version)
-        cached = _LEAKAGE_REVIEW_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-        decision = _complete_structured(
-            system_prompt=system_prompt,
-            evidence=evidence,
-            api_key=api_key,
-            model=settings.decision_agent_model,
-            schema=_LEAKAGE_REVIEW_JSON_SCHEMA,
-            schema_name="leakage_review_decision",
-            result_model=LeakageReviewDecision,
-        )
-        _LEAKAGE_REVIEW_CACHE[cache_key] = decision
-        return decision
-    except DecisionAgentUnavailable:
-        raise
-    except Exception as exc:
-        raise DecisionAgentUnavailable("decision agent failed") from exc
+def _column_type_fields(evidence: ColumnTypeEvidence, ctx: LegacyContext) -> list[ContextField]:
+    own = ctx.columns([evidence.column])
+    return [
+        ctx_field("column", text(evidence.column), "metadata", own),
+        ctx_field("dtype", text(evidence.dtype), "metadata", own),
+        ctx_field("cardinality", number(evidence.cardinality), "metadata", own),
+        ctx_field("cardinality_ratio", number(evidence.cardinality_ratio), "metadata", own),
+        ctx_field("sample_values", [scalar(value) for value in evidence.sample_values], "sample_values", own,
+                  required=False),
+    ]
 
 
-def _cache_key(
-    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence | LeakageReviewEvidence,
-    prompt_version: str,
-) -> str:
-    blob = _evidence_json(evidence) + "\0" + prompt_version
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+def _target_selection_fields(evidence: TargetSelectionEvidence, ctx: LegacyContext) -> list[ContextField]:
+    names = [item.name for item in evidence.columns]
+    candidates = ctx.columns(names)
+    return [
+        ctx_field("row_count", number(evidence.row_count), "metadata", candidates),
+        ctx_field("column_count", number(evidence.column_count), "metadata", candidates),
+        ctx_field("columns", [
+            {"name": text(item.name), "dtype": text(item.dtype), "unique_count": number(item.unique_count),
+             "unique_ratio": number(item.unique_ratio), "missing_ratio": number(item.missing_ratio),
+             "identifier_likelihood": number(item.identifier_likelihood),
+             "probable_task_type": text(item.probable_task_type),
+             "deterministic_confidence": number(item.deterministic_confidence)}
+            for item in evidence.columns
+        ], "metadata", candidates),
+        ctx_field("candidate_sample_values", [
+            {"name": text(item.name), "sample_values": [scalar(value) for value in item.sample_values]}
+            for item in evidence.columns
+        ], "sample_values", candidates, required=False),
+    ]
 
 
-def _evidence_json(
-    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence | LeakageReviewEvidence,
-) -> str:
-    return json.dumps(asdict(evidence), sort_keys=True, default=str)
-
-
-def _complete_structured(
-    *,
-    system_prompt: str,
-    evidence: ColumnEvidence | ColumnTypeEvidence | TargetSelectionEvidence | LeakageReviewEvidence,
-    api_key: str,
-    model: str,
-    schema: dict[str, Any],
-    schema_name: str,
-    result_model: type[T],
-) -> T:
-    payload = {
-        "model": model,
-        "temperature": 0,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": _evidence_json(evidence)},
-        ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_name,
-                "strict": True,
-                "schema": schema,
-            },
-        },
+def _leakage_review_fields(evidence: LeakageReviewEvidence, ctx: LegacyContext) -> list[ContextField]:
+    own = ctx.columns([evidence.column])
+    with_target = ctx.columns([evidence.column, evidence.target])
+    metadata = {
+        "column": text(evidence.column), "task": text(evidence.task), "dtype": text(evidence.dtype),
+        "cardinality": number(evidence.cardinality), "single_feature_score_kind": (
+            None if evidence.single_feature_score_kind is None else text(evidence.single_feature_score_kind)),
+        "suspicious_name_tokens": [text(token) for token in evidence.suspicious_name_tokens],
+        "identifier_likelihood": number(evidence.identifier_likelihood),
+        "unique_ratio": number(evidence.unique_ratio), "missing_fraction": number(evidence.missing_fraction),
+        "availability_status": text(evidence.availability_status),
+        "availability_reason": text(evidence.availability_reason),
     }
-    response = httpx.post(
-        _PROVIDER_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=_REQUEST_TIMEOUT_SECONDS,
+    statistics = {  # train-partition statistics against the target
+        "exact_target_match_fraction": number(evidence.exact_target_match_fraction),
+        "single_feature_score": number(evidence.single_feature_score),
+        "datetime_after_fraction": number(evidence.datetime_after_fraction),
+    }
+    return [
+        *(ctx_field(key, value, "metadata", own) for key, value in metadata.items()),
+        ctx_field("target", text(evidence.target), "metadata", ctx.columns([evidence.target])),
+        ctx_field("target_name_similarity", number(evidence.target_name_similarity), "metadata", with_target),
+        # context only: one denied related column drops this field, never the whole review
+        ctx_field("related_column_names", [text(name) for name in evidence.related_column_names], "metadata",
+                  ctx.columns(evidence.related_column_names), required=False),
+        *(ctx_field(key, value, "aggregates", with_target) for key, value in statistics.items()),
+    ]
+
+
+def envelope_fields(kind: str, evidence: Any, ctx: LegacyContext, *, target: str | None = None) -> list[ContextField]:
+    if kind == "missing_value":
+        return _missing_value_fields(evidence, ctx, target)
+    if kind == "column_type":
+        return _column_type_fields(evidence, ctx)
+    if kind == "target_selection":
+        return _target_selection_fields(evidence, ctx)
+    if kind == "leakage_review":
+        return _leakage_review_fields(evidence, ctx)
+    raise ValueError(f"unknown legacy decision kind {kind!r}")
+
+
+# --- calls ------------------------------------------------------------------------------
+
+
+def agent_enabled() -> bool:
+    """The legacy decision agent's gate: its flag AND ``AI_ENABLED`` AND a development
+    environment. Production stays blocked (API and worker alike) until P6.9-A applies the
+    ADR 0008 decision-point levels: these writers apply answers above the registry caps."""
+
+    settings = get_settings()
+    return bool(
+        getattr(settings, "decision_agent_enabled", False)
+        and getattr(settings, "ai_enabled", False)
+        and ai_development_env(settings)
     )
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise DecisionAgentUnavailable("decision agent provider rejected the request") from exc
 
-    try:
-        body = response.json()
-        content = body["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise DecisionAgentUnavailable("decision agent returned an empty or malformed payload") from exc
 
-    if not isinstance(content, str) or not content.strip():
-        raise DecisionAgentUnavailable("decision agent returned an empty or malformed payload")
+def consult(
+    kind: str,
+    evidence: Any,
+    *,
+    context: LegacyContext | None,
+    annotate: Annotate | None = None,
+    target: str | None = None,
+) -> CompletionResponse:
+    """One gateway call for ``kind``; a missing context (no attributable run) or a
+    disabled agent is a refusal without a ledger row."""
 
+    if not agent_enabled():
+        return CompletionResponse(ok=False, refusal=Refusal(code="kill_switch", scope="decision_agent",
+                                                            message="decision agent is disabled"))
+    if context is None:
+        return CompletionResponse(ok=False, refusal=Refusal(code="policy_denied", scope="attribution",
+                                                            message="no attributable run for an AI call"))
     try:
-        parsed = json.loads(content)
-        return result_model.model_validate(parsed)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise DecisionAgentUnavailable("decision agent returned JSON that failed the schema") from exc
+        fields = envelope_fields(kind, evidence, context, target=target)
+    except Exception as exc:  # an evidence value the envelope cannot carry is a refusal
+        return CompletionResponse(ok=False, refusal=Refusal(code="policy_denied", message=type(exc).__name__))
+    return complete(context, CALLS[kind], fields, annotate=annotate)
+
+
+def _request(kind: str, evidence: Any, prompt_version: str, *, context: LegacyContext | None,
+             annotate: Annotate | None = None, target: str | None = None) -> Any:
+    if prompt_version != f"{kind}_v{CALLS[kind].prompt_version}":
+        raise DecisionAgentUnavailable(f"unknown prompt version {prompt_version!r}")
+    response = consult(kind, evidence, context=context, annotate=annotate, target=target)
+    if not response.ok or response.output is None:
+        raise DecisionAgentUnavailable(refusal_text(response.refusal))
+    return response.output
+
+
+def request_decision(evidence: ColumnEvidence, prompt_version: str, *, context: LegacyContext | None = None,
+                     annotate: Annotate | None = None, target: str | None = None) -> MissingValueDecision:
+    return _request("missing_value", evidence, prompt_version, context=context, annotate=annotate, target=target)
+
+
+def request_column_type_decision(evidence: ColumnTypeEvidence, prompt_version: str, *,
+                                 context: LegacyContext | None = None,
+                                 annotate: Annotate | None = None) -> ColumnTypeDecision:
+    return _request("column_type", evidence, prompt_version, context=context, annotate=annotate)
+
+
+def request_target_selection_decision(evidence: TargetSelectionEvidence, prompt_version: str, *,
+                                      context: LegacyContext | None = None,
+                                      annotate: Annotate | None = None) -> TargetSelectionDecision:
+    return _request("target_selection", evidence, prompt_version, context=context, annotate=annotate)
+
+
+def request_leakage_review(evidence: LeakageReviewEvidence, prompt_version: str, *,
+                           context: LegacyContext | None = None,
+                           annotate: Annotate | None = None) -> LeakageReviewDecision:
+    """The model cannot keep or exclude a feature; a deterministic validator owns the action."""
+
+    return _request("leakage_review", evidence, prompt_version, context=context, annotate=annotate)

@@ -159,6 +159,7 @@ HEARTBEAT_PROGRESS_EVENTS = frozenset(
         "candidate_failed",
         "cv_fold_started",
         "cv_fold_completed",
+        "feature_importance_fold_completed",
     }
 )
 

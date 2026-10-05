@@ -1,39 +1,35 @@
 """Integration: the decision agent overrides auto_prepare only on ambiguous columns.
 
-Telco-shaped TotalCharges that are missing exactly where tenure == 0 should
-become domain_fill 0 instead of impute_median. Every other column must keep the
-rule-engine action.
+The agent runs through the AI gateway (fake provider). Telco-shaped TotalCharges
+that are missing exactly where tenure == 0 is the only consulted column; every other
+column keeps the rule-engine action. Under the accepted data policy (no sample values,
+ADR 0009 §8) the co-occurring value never reaches the model, so a domain fill citing
+it is rejected and the rule action stays.
 """
 
 from __future__ import annotations
 
-import json
-from types import SimpleNamespace
-
-import httpx
 import pandas as pd
+from sqlalchemy import select
 
-from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, LabDecisionRecord
+from app.db.models import LabDecisionRecord, LlmInvocation
 from app.engine.lab.auto_prepare import coerce_numeric_like, plan_missing_values
 from app.engine.lab.column_map import MIN_TRAIN_ROWS
 from app.services.auto_train_service import run_auto_train_job
+from legacy_ai_support import column_of, enable_legacy_ai, upload_via_api
+
+_LOW_CONFIDENCE = {
+    "column_type": {"action": "numerical", "evidence_field": "dtype", "rationale": "unsure", "confidence": 0.1},
+    "leakage_review": {"availability_status": "unknown", "risk_level": "LOW", "evidence_field": "column",
+                       "rationale": "unsure", "confidence": 0.1},
+}
 
 
-def _make_upload(db_session, *, stored_path: str, record_count: int) -> ClientLabUpload:
-    row = ClientLabUpload(
-        workspace_id=DEFAULT_WORKSPACE_ID,
-        category="Revenue",
-        original_filename="telco.csv",
-        stored_path=stored_path,
-        kind="spreadsheet",
-        record_count=record_count,
-        fields_noticed=[],
-        has_named_fields=True,
-    )
-    db_session.add(row)
-    db_session.commit()
-    db_session.refresh(row)
-    return row
+def _answer(missing_value: dict):
+    def handler(call):
+        return missing_value if call.agent_key == "missing_value" else _LOW_CONFIDENCE[call.agent_key]
+
+    return handler
 
 
 def _telco_tenure_zero_frame(n: int = 80, n_new: int = 8) -> pd.DataFrame:
@@ -61,47 +57,13 @@ def _telco_tenure_zero_frame(n: int = 80, n_new: int = 8) -> pd.DataFrame:
     )
 
 
-def test_telco_total_charges_domain_fill_overrides_impute_mean_only(db_session, tmp_path, monkeypatch):
-    from app.engine.lab import llm_client
-    from app.services import lab_decision_ledger
-
-    llm_client._CACHE.clear()
-    settings = SimpleNamespace(
-        decision_agent_enabled=True,
-        decision_agent_api_key="sk-test",
-        decision_agent_model="gpt-4o-mini",
-    )
-    monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
-    monkeypatch.setattr(llm_client, "get_settings", lambda: settings)
-
-    consulted: list[str] = []
-
-    def fake_post(url, **kwargs):
-        evidence = json.loads(kwargs["json"]["messages"][1]["content"])
-        consulted.append(evidence["column"])
-        payload = {
-            "action": "domain_fill",
-            "evidence_field": "missingness_cooccurrence",
-            "fill_value": 0,
-            "rationale": "missingness_cooccurrence exact_match with tenure 0",
-            "confidence": 0.95,
-        }
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(payload)}}]},
-            request=httpx.Request("POST", url),
-        )
-
-    monkeypatch.setattr(llm_client.httpx, "post", fake_post)
-
+def _run(auth_client, db_session, monkeypatch, missing_value: dict):
     raw = _telco_tenure_zero_frame()
-    path = tmp_path / "telco_tenure_zero.csv"
-    raw.to_csv(path, index=False)
-    upload = _make_upload(db_session, stored_path=str(path), record_count=len(raw))
-
+    upload = upload_via_api(auth_client, db_session, monkeypatch, raw, filename="telco_tenure_zero.csv")
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=_answer(missing_value))
     run_auto_train_job(db_session, upload.id)
     db_session.refresh(upload)
-    assert upload.pipeline_status == "completed"
+    assert upload.pipeline_status == "completed", upload.pipeline_log
 
     prepared = coerce_numeric_like(raw.copy(), list(raw.columns))
     prepared = prepared.dropna(subset=["churn"]).reset_index(drop=True)
@@ -117,17 +79,7 @@ def test_telco_total_charges_domain_fill_overrides_impute_mean_only(db_session, 
     )
     by_column = {row.column: row for row in rows}
     assert set(by_column) == set(expected_rule)
-    assert consulted == ["TotalCharges"]
-
-    total = by_column["TotalCharges"]
-    assert total.rule_decision == "impute_median"
-    assert total.final_decision == "domain_fill"
-    assert total.fill_value == 0
-    assert total.source == "llm"
-    assert total.validator_verdict == "accept"
-    assert total.raw_llm_output is not None
-    assert total.raw_llm_output["fill_value"] == 0
-
+    assert [column_of(call) for call in ai.fake.calls] == ["TotalCharges"]
     for column, rule_action in expected_rule.items():
         row = by_column[column]
         assert row.rule_decision == rule_action
@@ -137,12 +89,52 @@ def test_telco_total_charges_domain_fill_overrides_impute_mean_only(db_session, 
         assert row.source == "rule"
         assert row.raw_llm_output is None
         assert row.fill_value is None
+    return upload, by_column, expected_rule
+
+
+def test_telco_total_charges_override_applies_only_to_the_ambiguous_column(auth_client, db_session, monkeypatch):
+    upload, by_column, expected_rule = _run(auth_client, db_session, monkeypatch, {
+        "action": "impute_mean", "evidence_field": "dtype", "fill_value": None,
+        "rationale": "dtype is numeric", "confidence": 0.95,
+    })
+    total = by_column["TotalCharges"]
+    assert total.rule_decision == "impute_median"
+    assert total.final_decision == "impute_mean"
+    assert total.source == "llm"
+    assert total.validator_verdict == "accept"
+    assert total.raw_llm_output["action"] == "impute_mean"
+    invocation = db_session.get(LlmInvocation, total.llm_invocation_id)
+    assert (invocation.status, invocation.llm_used, invocation.purpose) == ("completed", True, "semantic_missing_value")
+    assert invocation.reason == "LLM used: YES — missing-value evidence was ambiguous."
+    assert invocation.final_decision["final_decision"] == "impute_mean"
 
     logged = {
         item["column"]: item["action"]
         for item in upload.pipeline_log["missing_value_decisions"]["column_decisions"]
     }
-    assert logged["TotalCharges"] == "domain_fill"
+    assert logged["TotalCharges"] == "impute_mean"
     for column, rule_action in expected_rule.items():
         if column != "TotalCharges":
             assert logged[column] == rule_action
+
+
+def test_domain_fill_from_withheld_cooccurring_values_is_rejected(auth_client, db_session, monkeypatch):
+    upload, by_column, _expected = _run(auth_client, db_session, monkeypatch, {
+        "action": "domain_fill", "evidence_field": "missingness_cooccurrence", "fill_value": 0,
+        "rationale": "missingness_cooccurrence exact_match with tenure 0", "confidence": 0.95,
+    })
+    total = by_column["TotalCharges"]
+    assert total.final_decision == "impute_median"
+    assert total.source == "fallback"
+    assert total.fill_value is None
+    assert total.validator_verdict.startswith("reject:") and "withheld" in total.validator_verdict
+    assert total.raw_llm_output["fill_value"] == 0
+    invocation = db_session.get(LlmInvocation, total.llm_invocation_id)
+    assert (invocation.status, invocation.reason) == (
+        "rejected", "LLM used: YES — validator rejected the missing-value response.")
+    assert invocation.final_decision["final_decision"] == "impute_median"
+    assert "rationale" not in invocation.safe_output and "fill_value" not in invocation.safe_output
+    deterministic = db_session.scalars(select(LlmInvocation).where(
+        LlmInvocation.experiment_id == upload.experiment_id, LlmInvocation.purpose == "semantic_missing_value",
+        LlmInvocation.llm_used.is_(False))).all()
+    assert deterministic and all(row.status == "not_used" for row in deterministic)

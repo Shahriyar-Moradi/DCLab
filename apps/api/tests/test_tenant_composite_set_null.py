@@ -57,6 +57,8 @@ EXPECTED_ACTION_COLUMNS = {
     # 0064 (ADR 0006 §7): workspace_id is NOT NULL, so SET NULL names the column.
     "fk_ml_run_verifications_workspace_experiment": ["experiment_id"],
     "fk_ml_run_verifications_workspace_llm_invocation": ["llm_invocation_id"],
+    # 0071 (ADR 0009 §2.10): an invocation keeps its workspace when its agent run goes.
+    "fk_llm_invocations_workspace_agent_run": ["agent_run_id"],
 }
 
 

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "agent_key": "harness_fixture",
+  "case": "probe_tool",
+  "steps": [
+    {"kind": "tool", "tool": "get_experiment", "arguments": {}, "reason": "a specialist has no tools"},
+    {"kind": "llm"}
+  ]
+}

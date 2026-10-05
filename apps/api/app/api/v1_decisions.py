@@ -44,6 +44,7 @@ from app.api.deps import (
     require_workspace_read,
 )
 from app.api.v1 import _created, _key_scope, _keyed_command, _not_found, _principal_id
+from app.api.v1_agent_views import decision_view
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -184,8 +185,11 @@ def _keyed(
         return found, row.response_status, True
 
 
-def _record_created(response: Response, db: Session, row: ProjectDecisionRecord, status: int, replayed: bool) -> DecisionRecordRead:
-    body = drs.record_read(db, row)
+def _record_created(
+    request: Request, response: Response, db: Session, row: ProjectDecisionRecord, status: int, replayed: bool
+) -> DecisionRecordRead:
+    # Service tokens never get holdout keys or scopes back (incl. an idempotent replay).
+    body = decision_view(request, drs.record_read(db, row))
     _created(response, status, replayed, etag=representation_etag(body), location=f"/v1/decisions/{body.id}")
     return body
 
@@ -248,7 +252,7 @@ def create_decision_v1(
     except _MAPPED as exc:
         db.rollback()
         raise _error(exc) from exc
-    return _record_created(response, db, row, status, replayed)
+    return _record_created(request, response, db, row, status, replayed)
 
 
 @router.get(
@@ -269,7 +273,7 @@ def read_decision(
         get_project(db, actor=user, workspace_id=workspace_id, project_id=row.project_id)
     except _MAPPED as exc:
         raise _error(exc) from exc
-    body = drs.record_read(db, row)
+    body = decision_view(request, drs.record_read(db, row))
     set_etag(response, representation_etag(body))
     return body
 
@@ -311,7 +315,7 @@ def _transition(
     except _MAPPED as exc:
         db.rollback()
         raise _error(exc) from exc
-    return _record_created(response, db, row, status, replayed)
+    return _record_created(request, response, db, row, status, replayed)
 
 
 @router.post(

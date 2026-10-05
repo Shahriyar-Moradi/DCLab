@@ -24,6 +24,7 @@ from app.domain.ml_jobs import (
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_PRIORITY,
     FORBIDDEN_JOB_PAYLOAD_KEYS,
+    HANDLER_AGENTS_RUN,
     HANDLER_LABS_AUTO_TRAIN,
     HANDLER_MODELS_BATCH_PREDICT,
     HANDLER_VERSION_LABS_AUTO_TRAIN,
@@ -471,12 +472,18 @@ def fail_or_retry_job(
 
 def _sync_batch_prediction(db: Session, job: MlJob) -> None:
     """Keep a scoring job's ``batch_predictions`` row in step with a retry, a
-    terminal failure or a cancellation (P4.9-A). Flushes; the caller commits."""
+    terminal failure or a cancellation (P4.9-A). Flushes; the caller commits.
+    An ``agents.run`` job that ends failed or cancelled ends its agent run too
+    (P6.10-A; the gateway frees the run's hold on its own session)."""
 
     if job.handler_key == HANDLER_MODELS_BATCH_PREDICT:
         from app.services.batch_prediction_service import sync_prediction_with_job
 
         sync_prediction_with_job(db, job)
+    elif job.handler_key == HANDLER_AGENTS_RUN and job.status in (JOB_FAILED, JOB_CANCELLED):
+        from app.agents.harness.service import end_run_for_job
+
+        end_run_for_job(db, job)
 
 
 def _record_cancelled_run(db: Session, job: MlJob) -> None:

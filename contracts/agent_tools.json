@@ -1,0 +1,1312 @@
+{
+  "forbidden_operations": [
+    "read_rows",
+    "read_holdout",
+    "select_winner",
+    "compute_metric",
+    "build_split",
+    "infer_entity_column",
+    "load_model",
+    "execute_code",
+    "raw_sql",
+    "move_ref",
+    "promote_champion"
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Hand a decision proposal to a human. This NEVER accepts anything and performs no write: service tokens are propose-only, so it returns status 'requires_human_acceptance' with the proposal and where a human accepts it in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "proposal_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "title": "ProposalInput",
+        "type": "object"
+      },
+      "name": "accept_proposal",
+      "notes": [],
+      "operations": [
+        "GET /v1/decisions/{decision_id}"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.decision_record_service.find_record",
+        "app.services.project_service.get_project",
+        "app.services.decision_record_service.record_read"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "experiments:write"
+      ],
+      "decision_point_cap": 1,
+      "decision_point_key": "lead.branch_experiment",
+      "description": "Branch a completed experiment with typed changes; it reuses the parent's split plan and holdout.",
+      "effect": "proposal",
+      "input_schema": {
+        "properties": {
+          "changes": {
+            "description": "Typed changes, e.g. {\"kind\": \"family_exclude\", \"family\": \"xgboost\"}.",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Changes",
+            "type": "array"
+          },
+          "experiment_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "intent": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Intent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "changes",
+          "intent"
+        ],
+        "title": "BranchExperimentInput",
+        "type": "object"
+      },
+      "name": "branch_experiment",
+      "notes": [],
+      "operations": [
+        "POST /v1/experiments/{experiment_id}/branches"
+      ],
+      "read_only": false,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.experiment_branch_service.branch_experiment"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp",
+        "studio_forms"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Side-by-side metrics of 2-10 experiments sharing one split plan.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "experiment_ids": {
+            "description": "2-10 experiment UUIDs on one split plan.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 2,
+            "title": "Experiment Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "experiment_ids"
+        ],
+        "title": "CompareInput",
+        "type": "object"
+      },
+      "name": "compare_experiments",
+      "notes": [],
+      "operations": [
+        "GET /v1/experiments/compare"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.experiment_service.experiments_for_compare",
+        "app.services.experiment_branch_service.compare_side_by_side"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "projects:write"
+      ],
+      "decision_point_cap": 1,
+      "decision_point_key": "lead.create_problem_spec",
+      "description": "Append a DRAFT ProblemSpec version. It does not become the project's current spec; propose_problem_spec proposes one for a human to accept.",
+      "effect": "proposal",
+      "input_schema": {
+        "properties": {
+          "business_objective": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Business Objective",
+            "type": "string"
+          },
+          "constraints": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Constraints"
+          },
+          "prediction_horizon": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prediction Horizon"
+          },
+          "prediction_time_column": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prediction Time Column"
+          },
+          "prediction_unit": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prediction Unit"
+          },
+          "primary_metric": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Primary Metric"
+          },
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "success_criteria": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Success Criteria"
+          },
+          "target_column": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Column"
+          },
+          "task_type": {
+            "description": "e.g. binary_classification, regression",
+            "title": "Task Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "task_type",
+          "business_objective"
+        ],
+        "title": "CreateProblemSpecInput",
+        "type": "object"
+      },
+      "name": "create_problem_spec",
+      "notes": [],
+      "operations": [
+        "POST /v1/projects/{project_id}/problem-specs"
+      ],
+      "read_only": false,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.problem_spec_service.create_problem_spec"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp",
+        "studio_forms"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Evidence of an experiment: locked metrics, pipeline stage summaries and artifact digests (no rows, no file contents).",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "experiment_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id"
+        ],
+        "title": "ExperimentInput",
+        "type": "object"
+      },
+      "name": "get_evidence",
+      "notes": [],
+      "operations": [
+        "GET /v1/experiments/{experiment_id}",
+        "GET /v1/model-builds/{pipeline_run_id}",
+        "GET /v1/model-builds/{pipeline_run_id}/artifacts"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.experiment_service.experiment_read",
+        "app.services.model_build_service.get_pipeline_model_build",
+        "app.services.artifact_service.list_artifacts"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "One experiment: status, lineage, change set, locked winner CV metrics (never final-holdout values), diff vs parent.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "experiment_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id"
+        ],
+        "title": "ExperimentInput",
+        "type": "object"
+      },
+      "name": "get_experiment",
+      "notes": [],
+      "operations": [
+        "GET /v1/experiments/{experiment_id}"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.experiment_service.experiment_read"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Reproduction script (or notebook) DCLab generated for an experiment; size capped. It embeds dataset column names.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "experiment_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "notebook": {
+            "default": false,
+            "description": "Return the notebook instead of the script.",
+            "title": "Notebook",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "experiment_id"
+        ],
+        "title": "CodeInput",
+        "type": "object"
+      },
+      "name": "get_experiment_code",
+      "notes": [],
+      "operations": [
+        "GET /v1/experiments/{experiment_id}/code"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.model_build_reproduction_service.get_experiment_code"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | not_evaluated), a plain-language message and the numbers behind it.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "experiment_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id"
+        ],
+        "title": "ExperimentInput",
+        "type": "object"
+      },
+      "name": "get_findings",
+      "notes": [],
+      "operations": [
+        "GET /v1/experiments/{experiment_id}/findings"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.experiment_service.experiment_findings"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Downstream closure of one graph node: which specs, datasets, split plans, recipes, experiments and model versions a change to it would affect (node references and counts by kind).",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "kind": {
+            "description": "Graph node kind.",
+            "enum": [
+              "problem_spec",
+              "dataset_version",
+              "split_plan",
+              "feature_recipe",
+              "experiment",
+              "model_version"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "node_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "node_id"
+        ],
+        "title": "ImpactInput",
+        "type": "object"
+      },
+      "name": "get_impact",
+      "notes": [],
+      "operations": [
+        "GET /v1/nodes/{kind}/{node_id}/impact"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.graph_service.impact"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + digest; never final-holdout values.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "model_version_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_version_id"
+        ],
+        "title": "ModelInput",
+        "type": "object"
+      },
+      "name": "get_model",
+      "notes": [],
+      "operations": [
+        "GET /v1/model-versions/{model_version_id}"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.experiment_service.model_version_read"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "One-page model card: primary metric in plain words (cross-validation), dummy-baseline comparison, top drivers (permutation importance on CV validation folds), known risks from the trust checks, data and split summary, LLM used yes/no. The final evaluation is always withheld.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "model_version_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_version_id"
+        ],
+        "title": "ModelInput",
+        "type": "object"
+      },
+      "name": "get_model_card",
+      "notes": [],
+      "operations": [
+        "GET /v1/model-versions/{model_version_id}/card"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.experiment_service.model_card_read"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Batch prediction: status, row counts, feature-contract check (required / missing / ignored columns), error code; never predicted rows or storage locations.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "prediction_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Prediction Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prediction_id"
+        ],
+        "title": "PredictionInput",
+        "type": "object"
+      },
+      "name": "get_prediction",
+      "notes": [],
+      "operations": [
+        "GET /v1/predictions/{prediction_id}"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.batch_prediction_service.batch_prediction_read"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Dataset version summary (row/column counts, digest); never rows. Omit dataset_id to list datasets.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "dataset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Dataset UUID; omit to list datasets.",
+            "title": "Dataset Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter the list by project (applied to the newest 50 datasets: /v1/datasets has no project filter yet).",
+            "title": "Project Id"
+          }
+        },
+        "title": "InspectDatasetInput",
+        "type": "object"
+      },
+      "name": "inspect_dataset",
+      "notes": [],
+      "operations": [
+        "GET /v1/datasets",
+        "GET /v1/datasets/{dataset_id}"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.technical_explorer_service.list_datasets",
+        "app.services.technical_explorer_service.get_dataset"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Project summary: refs, graph node counts, stale flags, recent experiments (omit project_id to list projects).",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project UUID; omit to list projects.",
+            "title": "Project Id"
+          }
+        },
+        "title": "InspectProjectInput",
+        "type": "object"
+      },
+      "name": "inspect_project",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects",
+        "GET /v1/projects/{project_id}",
+        "GET /v1/projects/{project_id}/graph",
+        "GET /v1/experiments"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.project_service.list_projects",
+        "app.services.project_service.get_project",
+        "app.services.graph_service.project_graph",
+        "app.services.experiment_service.list_experiments"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Append-only decision records of a project, newest first (next_cursor pages).",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "decision_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decision Type"
+          },
+          "effective_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "proposed | accepted | rejected | superseded",
+            "title": "Effective State"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "ListDecisionsInput",
+        "type": "object"
+      },
+      "name": "list_decisions",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects/{project_id}/decisions"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.decision_record_service.list_decisions"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "experiments:write"
+      ],
+      "decision_point_cap": 1,
+      "decision_point_key": "lead.predict",
+      "description": "Score a dataset with a model version (the worker scores with the locked pipeline and threshold). Writes a predictions file only; no refs or decisions change.",
+      "effect": "proposal",
+      "input_schema": {
+        "properties": {
+          "dataset_id": {
+            "description": "Dataset UUID of the model's project (uploaded with purpose=scoring).",
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "model_version_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "output_format": {
+            "default": "csv",
+            "enum": [
+              "csv",
+              "parquet"
+            ],
+            "title": "Output Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_version_id",
+          "dataset_id"
+        ],
+        "title": "PredictInput",
+        "type": "object"
+      },
+      "name": "predict",
+      "notes": [],
+      "operations": [
+        "POST /v1/model-versions/{model_version_id}/predictions"
+      ],
+      "read_only": false,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.batch_prediction_service.create_batch_prediction"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp",
+        "studio_forms"
+      ]
+    },
+    {
+      "capability": [
+        "projects:write",
+        "read",
+        "decisions:propose"
+      ],
+      "decision_point_cap": 1,
+      "decision_point_key": "lead.propose_problem_spec",
+      "description": "Create a locked ProblemSpec version and PROPOSE it as the project's current problem_spec. Only a human accepting the proposal in DCLab Studio makes it current.",
+      "effect": "proposal",
+      "input_schema": {
+        "properties": {
+          "business_objective": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Business Objective",
+            "type": "string"
+          },
+          "constraints": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Constraints"
+          },
+          "prediction_horizon": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prediction Horizon"
+          },
+          "prediction_time_column": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prediction Time Column"
+          },
+          "prediction_unit": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prediction Unit"
+          },
+          "primary_metric": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Primary Metric"
+          },
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "success_criteria": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Success Criteria"
+          },
+          "target_column": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Column"
+          },
+          "task_type": {
+            "description": "e.g. binary_classification, regression",
+            "title": "Task Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "task_type",
+          "business_objective",
+          "rationale"
+        ],
+        "title": "ProposeProblemSpecInput",
+        "type": "object"
+      },
+      "name": "propose_problem_spec",
+      "notes": [],
+      "operations": [
+        "POST /v1/projects/{project_id}/problem-specs",
+        "GET /v1/projects/{project_id}/decisions",
+        "POST /v1/projects/{project_id}/decisions"
+      ],
+      "read_only": false,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.problem_spec_service.create_problem_spec",
+        "app.services.project_ref_service.propose_ref_move"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp",
+        "studio_forms"
+      ]
+    },
+    {
+      "capability": [
+        "decisions:propose"
+      ],
+      "decision_point_cap": 1,
+      "decision_point_key": "lead.record_decision",
+      "description": "Record a decision as an agent PROPOSAL (action=propose; or propose ref moves). It is never accepted by this tool: service tokens are propose-only and a human accepts in DCLab Studio.",
+      "effect": "proposal",
+      "input_schema": {
+        "properties": {
+          "decision_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "experiment_accepted",
+                  "experiment_rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decision Type"
+          },
+          "evidence_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "[{kind, id, metric?, scope?}]",
+            "title": "Evidence Refs"
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Facts"
+          },
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "ref_moves": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Propose moving refs instead: {ref_kind: target_id}. A champion_model move also moves feature_recipe to the model's recipe. Cite CV evidence only: DCLab attaches the promoted model's final evaluation itself, and only a human accepts.",
+            "title": "Ref Moves"
+          },
+          "subject_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subject Id"
+          },
+          "subject_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "e.g. experiment, model_version, project",
+            "title": "Subject Kind"
+          }
+        },
+        "required": [
+          "project_id",
+          "rationale"
+        ],
+        "title": "RecordDecisionInput",
+        "type": "object"
+      },
+      "name": "record_decision",
+      "notes": [
+        "Agent arguments citing the final holdout are rejected (holdout_not_allowed). On a champion move DCLab attaches the promoted model's own locked final evaluation itself (never shown to the agent); only a human accepts it."
+      ],
+      "operations": [
+        "POST /v1/projects/{project_id}/decisions"
+      ],
+      "read_only": false,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.decision_record_service.record",
+        "app.services.project_ref_service.propose_ref_move"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp",
+        "studio_forms"
+      ]
+    },
+    {
+      "capability": [
+        "experiments:write"
+      ],
+      "decision_point_cap": 1,
+      "decision_point_key": "lead.run_experiment",
+      "description": "Queue a root experiment on a published dataset (the worker trains). A run started here never sets the project's refs: on a project without refs its result becomes a ref proposal a human accepts in DCLab Studio.",
+      "effect": "proposal",
+      "input_schema": {
+        "properties": {
+          "dataset_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Intent"
+          },
+          "problem_spec_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Problem Spec Id"
+          },
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "target_column": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Column"
+          }
+        },
+        "required": [
+          "project_id",
+          "dataset_id"
+        ],
+        "title": "RunExperimentInput",
+        "type": "object"
+      },
+      "name": "run_experiment",
+      "notes": [],
+      "operations": [
+        "POST /v1/experiments"
+      ],
+      "read_only": false,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.experiment_service.start_root_experiment"
+      ],
+      "surfaces": [
+        "assistant",
+        "mcp",
+        "studio_forms"
+      ]
+    }
+  ]
+}

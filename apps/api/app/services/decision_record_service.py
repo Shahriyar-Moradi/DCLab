@@ -116,6 +116,27 @@ from app.services.service_token_service import verify_agent_binding
 _DIGEST = re.compile(r"^[0-9a-f]{1,64}$")
 CV_AGGREGATE_SCOPE = "cv_aggregate"
 FINAL_HOLDOUT_SCOPE = "final_holdout"
+_HOLDOUT_TEXT = re.compile(r"holdout|final_test", re.IGNORECASE)
+
+
+def _names_holdout(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_names_holdout(str(key)) or _names_holdout(item) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(_names_holdout(item) for item in value)
+    return isinstance(value, str) and bool(_HOLDOUT_TEXT.search(value))
+
+
+def refuse_agent_holdout(actor: DecisionActor, *values: Any) -> None:
+    """Agents never cite the final holdout (ADR 0008 §2b; P6.10-A): an agent's evidence
+    ref, fact or detail naming it is refused, never stripped. A champion proposal's
+    final-evaluation ref is attached by the service (``project_ref_service``)."""
+
+    if actor.kind == ACTOR_AGENT and any(_names_holdout(value) for value in values):
+        raise InvalidDecisionRecordError(
+            "holdout_not_allowed",
+            "agents never cite the final holdout; a champion's final evaluation is attached by DCLab",
+        )
 
 
 def evidence_ref(kind: str, node_id: Any, *, metric: str | None = None, scope: str | None = None) -> dict[str, str]:
@@ -651,6 +672,8 @@ def replay_record(
 def _stored_field(row: ProjectDecisionRecord, name: str) -> Any:
     if name == "subject_id":
         return _subject_id(row)
+    if name == "evidence_refs_without_holdout":  # an agent's champion proposal (service-attached ref)
+        return [ref for ref in row.evidence_refs or [] if ref.get("scope") != FINAL_HOLDOUT_SCOPE]
     if name == "ref_moves":
         return sorted(
             (move.get("ref_kind"), (move.get("to") or {}).get("id"))
@@ -842,6 +865,7 @@ def record(
     """
 
     authorize_writer(db, actor, workspace_id=workspace_id, allow_agent=state == STATE_PROPOSED)
+    refuse_agent_holdout(actor, evidence_refs, facts, details)
     load_project(db, workspace_id=workspace_id, project_id=project_id)
     if decision_type not in DECISION_TYPES:
         raise InvalidDecisionRecordError("unknown_decision_type", "unknown decision type")

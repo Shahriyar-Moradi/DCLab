@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "agent_key": "another_agent",
+  "case": "wrong_key",
+  "steps": [{"kind": "llm"}]
+}

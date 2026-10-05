@@ -75,22 +75,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("AUTH_CSRF_SECRET"),
     )
     recovery_token_minutes: int = 60
-    # Lab decision agent (LLM). Off by default so local/dev/CI never call a provider.
-    # DECISION_AGENT_API_KEY (or OPENAI_API_KEY) is required when this is on.
+    # Platform AI flag (ADR 0009 §3): default off; production must set it explicitly
+    # AND have the platform ``global_ai`` switch row on. Every model call goes through
+    # the AI gateway (models from the governance policy roles; the provider key is read
+    # only by ``app/agents/gateway/providers``). The two legacy flags below gate their
+    # paths in addition to AI_ENABLED until P6.9-A retires them (kill switches replace them).
+    ai_enabled: bool = False
+    # Lab decision agent (semantic target / column type / missing value / leakage review).
     decision_agent_enabled: bool = False
-    decision_agent_api_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("DECISION_AGENT_API_KEY", "OPENAI_API_KEY"),
-    )
-    decision_agent_model: str = "gpt-4o-mini"
     # Advisory pipeline auditor. Deterministic verification remains authoritative.
     pipeline_llm_verifier_enabled: bool = False
-    pipeline_llm_verifier_api_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("PIPELINE_LLM_VERIFIER_API_KEY", "OPENAI_API_KEY"),
-    )
-    pipeline_llm_verifier_model: str = "gpt-5.6-luna"
-    pipeline_llm_verifier_deep_model: str = "gpt-5.6-terra"
     pipeline_llm_timeout_seconds: float = 30.0
     # Application-level object storage. Default is local disk for tests/dev.
     # S3/GCS adapters live behind ObjectStorage; core services never import SDKs.
@@ -187,13 +181,13 @@ def validate_runtime_settings(settings: Settings) -> None:
         return
     if not publication_enforced(settings):
         problems.append("DATASET_PUBLICATION_ENFORCED cannot be false in production")
-    # ADR 0005: published uploads carry llm_exposure_policy=deny, but the LLM
-    # paths do not consult dataset policy yet (Phase 6 gateway). Until they do,
-    # production must not send dataset-derived evidence to an LLM provider.
-    if settings.decision_agent_enabled or settings.pipeline_llm_verifier_enabled:
+    # The AI gateway enforces every dataset and column llm_exposure_policy (ADR 0009 §8), so
+    # the advisory verifier may run in production. The legacy decision writers stay refused
+    # (deviation from ADR 0009 §8): they apply answers above the ADR 0008 decision-point caps.
+    if settings.decision_agent_enabled:
         problems.append(
-            "DECISION_AGENT_ENABLED / PIPELINE_LLM_VERIFIER_ENABLED cannot be on in "
-            "production until LLM calls enforce dataset llm_exposure_policy"
+            "DECISION_AGENT_ENABLED cannot be on in production until P6.9-A applies "
+            "ADR 0008 decision-point levels"
         )
     if _secret_is_unsafe(settings.jwt_secret):
         problems.append("JWT_SECRET is missing or the development default")

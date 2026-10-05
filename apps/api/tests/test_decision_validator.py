@@ -16,6 +16,8 @@ from app.engine.lab.evidence import ColumnEvidence, MissingnessCooccurrence
 from app.engine.lab.llm_client import MissingValueDecision
 from app.engine.lab.prompts.missing_value_v1 import SYSTEM_PROMPT
 
+NONE_WITHHELD: frozenset[str] = frozenset()  # full evidence: these tests cover the value checks
+
 
 def _telco_evidence() -> ColumnEvidence:
     return ColumnEvidence(
@@ -67,7 +69,7 @@ def test_allowed_actions_come_from_missing_value_v1():
 
 
 def test_accepts_when_cooccurrence_actually_matches_claimed_fill():
-    result = validate_decision(_telco_evidence(), _decision())
+    result = validate_decision(_telco_evidence(), _decision(), withheld=NONE_WITHHELD)
     assert result.verdict == "accept"
     assert result.reason == ""
 
@@ -94,7 +96,7 @@ def test_rejects_when_evidence_does_not_support_claimed_pattern():
         ],
         sample_rows=[{"TotalCharges": 42.3, "Contract": "Month-to-month"}],
     )
-    result = validate_decision(evidence, _decision())
+    result = validate_decision(evidence, _decision(), withheld=NONE_WITHHELD)
     assert result.verdict == "reject"
     assert result.reason
     assert "does not support" in result.reason or "does not match" in result.reason
@@ -102,14 +104,14 @@ def test_rejects_when_evidence_does_not_support_claimed_pattern():
 
 def test_rejects_when_fill_value_does_not_match_cooccurrence_value():
     # Strong tenure==0 pattern, but the decision claims fill_value 99.
-    result = validate_decision(_telco_evidence(), _decision(fill_value=99))
+    result = validate_decision(_telco_evidence(), _decision(fill_value=99), withheld=NONE_WITHHELD)
     assert result.verdict == "reject"
     assert "99" in result.reason
     assert "other_value" in result.reason
 
 
 def test_rejects_when_cited_field_does_not_exist():
-    result = validate_decision(_telco_evidence(), _decision(evidence_field="skewness"))
+    result = validate_decision(_telco_evidence(), _decision(evidence_field="skewness"), withheld=NONE_WITHHELD)
     assert result.verdict == "reject"
     assert "skewness" in result.reason
     assert "does not exist" in result.reason
@@ -117,13 +119,23 @@ def test_rejects_when_cited_field_does_not_exist():
 
 def test_rejects_low_confidence():
     assert MIN_CONFIDENCE == 0.7
-    result = validate_decision(_telco_evidence(), _decision(confidence=0.2))
+    result = validate_decision(_telco_evidence(), _decision(confidence=0.2), withheld=NONE_WITHHELD)
     assert result.verdict == "reject"
     assert "confidence" in result.reason
     assert "0.2" in result.reason
 
 
 def test_rejects_action_outside_prompt_enum():
-    result = validate_decision(_telco_evidence(), _decision(action="drop_column"))
+    result = validate_decision(_telco_evidence(), _decision(action="drop_column"), withheld=NONE_WITHHELD)
     assert result.verdict == "reject"
     assert "drop_column" in result.reason
+
+
+def test_withheld_is_a_required_keyword_and_fails_closed():
+    import pytest
+
+    with pytest.raises(TypeError):
+        validate_decision(_telco_evidence(), _decision())  # type: ignore[call-arg]
+    result = validate_decision(_telco_evidence(), _decision(),
+                               withheld=frozenset({"missingness_cooccurrence.other_value"}))
+    assert result.verdict == "reject" and "withheld" in result.reason

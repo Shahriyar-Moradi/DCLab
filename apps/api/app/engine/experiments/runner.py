@@ -19,12 +19,14 @@ from sklearn.pipeline import Pipeline as SkPipeline
 from app.domain.lab_run_stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
 from app.engine.data.quality import quality_report
 from app.engine.evaluation.metrics import (
+    LOWER_IS_BETTER,
     aggregate_fold_metrics,
     classification_metrics,
     multiclass_metrics,
     primary_score,
     regression_metrics,
     robustness_stats,
+    selection_metric_value,
 )
 from app.engine.features.encode import coerce_binary_target
 from app.engine.lab.auto_prepare import (
@@ -55,6 +57,7 @@ from app.engine.modeling.holdout_planner import (
     require_supported_holdout,
 )
 from app.engine.modeling.coerce import from_mapping
+from app.engine.modeling.importance import ImportanceFold, validation_fold_importance
 from app.engine.modeling.leakage_auditor import (
     ModelDevelopmentPlan,
     consult_leakage_llm,
@@ -495,7 +498,7 @@ def _lock_decision_threshold(
         decision["per_fold"] = fold_constraint_values(
             [(y_pool[idx], fold_score) for idx, fold_score in all_folds],
             float(decision["value"]),
-            sorted({row["metric"] for row in decision["constraints"]} | {"precision", "recall"}),
+            sorted({row["metric"] for row in decision["constraints"]} | {"precision", "recall", str(primary_metric)}),
         )
     else:
         constraints = evaluate_constraints(objective, oof_metrics=cv_metrics)
@@ -695,6 +698,115 @@ def _prediction_rows(
     return rows
 
 
+def _row_pipeline(row: dict[str, Any], task: TaskSpec) -> Callable[[Mapping[str, Any] | None], SkPipeline]:
+    """Factory for a fresh, unfitted copy of a trained candidate's full Pipeline."""
+
+    num_cols = list(row["numerical_cols"])
+    cat_cols = list(row["categorical_cols"])
+    base_hyperparameters = {
+        key: value for key, value in (row.get("hyperparameters") or {}).items() if key != "tuning"
+    }
+
+    def _pipeline(tuned: Mapping[str, Any] | None = None) -> SkPipeline:
+        hyperparameters = dict(base_hyperparameters)
+        if tuned:
+            hyperparameters["tuned"] = dict(tuned)
+        return SkPipeline(
+            [
+                ("prep", build_preprocessor(num_cols, cat_cols)),
+                (
+                    "model",
+                    make_model(
+                        row["model_family"],
+                        seed=row["random_seed"],
+                        hyperparameters=hyperparameters,
+                        task_type=task.task_type,
+                    ),
+                ),
+            ]
+        )
+
+    return _pipeline
+
+
+def _winner_feature_importance(
+    winner: dict[str, Any],
+    pool: pd.DataFrame,
+    y_pool: np.ndarray,
+    fold_splits: list[Any],
+    task: TaskSpec,
+    *,
+    classifier: bool,
+    n_classes: int | None,
+    selection_metric: str,
+    threshold: float,
+    deadline: float | None,
+    on_event: RunEventCallback | None = None,
+) -> dict[str, Any]:
+    """Permutation importance of the locked winner on its CV validation folds.
+
+    Only the training pool is passed: final-holdout rows are never scored here. Binary
+    scoring uses the locked out-of-fold decision threshold, like the shipped model.
+    """
+
+    def _scorer(estimator, X_val, y_val) -> float:
+        value = selection_metric_value(
+            selection_metric,
+            y_val,
+            _predict(estimator, X_val, classifier, n_classes),
+            task_type=task.task_type,
+            n_classes=n_classes,
+            threshold=threshold,
+        )
+        return -value if selection_metric in LOWER_IS_BETTER else value
+
+    def _on_fold(payload: dict[str, Any]) -> None:
+        _emit_event(
+            on_event,
+            "feature_importance_fold_completed",
+            stage="feature_importance",
+            status="completed",
+            candidate_id=winner.get("candidate_id"),
+            **payload,
+        )
+
+    try:
+        tuned = {
+            int(row["fold_number"]): (row.get("tuning") or {}).get("params")
+            for row in winner.get("folds") or []
+            if isinstance(row, dict) and row.get("fold_number") is not None
+        }
+        if set(tuned) != {int(split.fold_number) for split in fold_splits}:
+            return {"status": "skipped", "method": "permutation_validation_folds", "features": [],
+                    "reason": "the winner's stored folds do not match the validation folds"}
+        folds = [
+            ImportanceFold(
+                fold_number=int(split.fold_number),
+                train_index=np.asarray(split.train_index),
+                validation_index=np.asarray(split.validation_index),
+                params=tuned[int(split.fold_number)],
+            )
+            for split in fold_splits
+        ]
+        X_pool = pool.loc[:, list(winner["features"])]
+    except Exception as exc:  # noqa: BLE001 - advisory; never fail the run
+        logger.warning("feature importance skipped: %s", type(exc).__name__)
+        return {"status": "skipped", "method": "permutation_validation_folds", "features": [],
+                "reason": f"feature importance could not be prepared ({type(exc).__name__})"}
+    return validation_fold_importance(
+        _row_pipeline(winner, task),
+        X_pool,
+        y_pool,
+        folds,
+        _scorer,
+        scoring=selection_metric,
+        seed=int(winner.get("random_seed") or 0),
+        stratify=classifier,
+        deadline=deadline,
+        on_fold=_on_fold,
+    )
+
+
 def _fit_and_score_holdout(
     row: dict[str, Any],
     pool: pd.DataFrame,
@@ -719,32 +831,9 @@ def _fit_and_score_holdout(
 ]:
     """Fit on the full training pool and score train + untouched test. Not used for ranking."""
     cols = list(row["features"])
-    num_cols = list(row["numerical_cols"])
-    cat_cols = list(row["categorical_cols"])
     X_train = pool.loc[:, cols]
     y_train = pool[task.target].to_numpy()
-    base_hyperparameters = {
-        key: value for key, value in (row.get("hyperparameters") or {}).items() if key != "tuning"
-    }
-
-    def _pipeline(tuned: dict[str, Any] | None = None) -> SkPipeline:
-        hyperparameters = dict(base_hyperparameters)
-        if tuned:
-            hyperparameters["tuned"] = dict(tuned)
-        return SkPipeline(
-            [
-                ("prep", build_preprocessor(num_cols, cat_cols)),
-                (
-                    "model",
-                    make_model(
-                        row["model_family"],
-                        seed=row["random_seed"],
-                        hyperparameters=hyperparameters,
-                        task_type=task.task_type,
-                    ),
-                ),
-            ]
-        )
+    _pipeline = _row_pipeline(row, task)
 
     final_tuning: dict[str, Any] | None = None
     tuning_spec = (row.get("hyperparameters") or {}).get("tuning")
@@ -1326,6 +1415,7 @@ def _run_open_ingest_candidates(
             constraint_status=decision_threshold.get("status"),
         )
 
+    feature_importance: dict[str, Any] | None = None
     # Persist the CV-only selection checkpoint before the holdout is touched.
     if best_single is not None:
         best_single["locked"] = True
@@ -1339,6 +1429,26 @@ def _run_open_ingest_candidates(
             candidate_id=best_single.get("candidate_id"),
             selection_metric=selection_metric,
             cv_score=best_single.get("score"),
+        )
+        # Drivers of the locked winner from its CV validation folds (pool rows only;
+        # before the holdout is touched). Advisory: a skip never fails the run.
+        importance_started = datetime.now(UTC)
+        importance_timer = time.perf_counter()
+        feature_importance = _winner_feature_importance(
+            best_single,
+            pool,
+            y_pool,
+            fold_splits,
+            task,
+            classifier=classifier,
+            n_classes=n_classes,
+            selection_metric=selection_metric,
+            threshold=threshold,
+            deadline=budget_started + max_training_seconds if max_training_seconds else None,
+            on_event=on_event,
+        )
+        stage_timings.append(
+            _timing("feature_importance", importance_started, importance_timer, status=feature_importance["status"])
         )
         (
             winner_pipeline,
@@ -1432,6 +1542,7 @@ def _run_open_ingest_candidates(
         "stage_timings": stage_timings,
         "baseline_comparison": baseline_comparison,
         "decision_threshold": decision_threshold,
+        "feature_importance": feature_importance,
     }
 
 
@@ -1680,6 +1791,7 @@ def _run_open_ingest_experiment(
         "class_labels": class_labels,
         "objective": config.objective,
         "decision_threshold": outcome.get("decision_threshold"),
+        "feature_importance": outcome.get("feature_importance"),
     }
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")

@@ -1,0 +1,69 @@
+{
+  "additionalProperties": false,
+  "description": "Recommendation only. Extra=forbid so keep/exclude cannot be supplied.",
+  "properties": {
+    "availability_status": {
+      "enum": [
+        "known_before_prediction",
+        "known_at_prediction",
+        "known_after_prediction",
+        "unknown"
+      ],
+      "title": "Availability Status",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidence_field": {
+      "enum": [
+        "column",
+        "target",
+        "task",
+        "dtype",
+        "cardinality",
+        "related_column_names",
+        "exact_target_match_fraction",
+        "single_feature_score",
+        "single_feature_score_kind",
+        "suspicious_name_tokens",
+        "target_name_similarity",
+        "datetime_after_fraction",
+        "identifier_likelihood",
+        "unique_ratio",
+        "missing_fraction",
+        "availability_status",
+        "availability_reason"
+      ],
+      "title": "Evidence Field",
+      "type": "string"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "risk_level": {
+      "enum": [
+        "NONE",
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "Risk Level",
+      "type": "string"
+    }
+  },
+  "required": [
+    "availability_status",
+    "risk_level",
+    "evidence_field",
+    "rationale",
+    "confidence"
+  ],
+  "title": "LeakageReviewDecision",
+  "type": "object"
+}

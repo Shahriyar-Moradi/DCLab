@@ -42,7 +42,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | --- | --- | --- | --- | --- |
 | Score new data with a model | `POST /v1/model-versions/{id}/predictions`, `GET /v1/predictions/{id}`, `…/download` | `predict` | model page "Score new data" + download | planned P4.9-A / P4.9-UI |
 | Core trust checks (5) | `GET /v1/experiments/{id}/findings` | `get_findings` | findings panel on every experiment | planned P4.10-A / P4.10-UI |
-| Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-A / P4.11-UI |
+| Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-UI (API + MCP shipped in P4.11-A) |
 | Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page: Columns & roles, Policy | planned P4.1-C |
 | Activity feed | `GET /v1/activity` | — | Home "Activity" | planned P4.15-A / P4.15-UI |
 | Inbox | `GET /v1/inbox`, counts | `list_proposals` (P6.6-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |

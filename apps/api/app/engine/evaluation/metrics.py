@@ -143,6 +143,62 @@ LOWER_IS_BETTER = {
 }
 
 
+def selection_metric_value(
+    metric: str, y_true, pred, *, task_type: str, n_classes: int | None = None, threshold: float = 0.5
+) -> float:
+    """One metric, with the exact definitions of the full metric sets above (cheap path for
+    repeated scoring, e.g. permutation importance); anything else uses the full set."""
+
+    y = np.asarray(y_true)
+    if task_type == "regression" and metric in {"mae", "mse", "rmse", "r2"}:
+        p = np.asarray(pred, dtype=float)
+        y = y.astype(float)
+        if metric == "mae":
+            return float(mean_absolute_error(y, p))
+        mse = float(mean_squared_error(y, p))
+        if metric == "mse":
+            return mse
+        if metric == "rmse":
+            return float(np.sqrt(mse))
+        return float(r2_score(y, p)) if len(y) > 1 else 0.0
+    if task_type == "binary" and metric in {"roc_auc", "pr_auc", "log_loss", "brier", "brier_score", "accuracy",
+                                             "precision", "recall", "f1", "balanced_accuracy"}:
+        raw = np.asarray(pred, dtype=float)
+        p = np.clip(raw, 1e-7, 1 - 1e-7)
+        decided = (raw >= threshold).astype(int)
+        if metric == "roc_auc":
+            try:
+                value = float(roc_auc_score(y, p))
+            except ValueError:
+                value = 0.5
+            return value if np.isfinite(value) else 0.5
+        if metric == "pr_auc":
+            fallback = float(y.mean()) if len(y) else 0.0
+            try:
+                value = float(average_precision_score(y, p))
+            except ValueError:
+                value = fallback
+            return value if np.isfinite(value) else fallback
+        if metric == "log_loss":
+            return float(log_loss(y, p, labels=[0, 1]))
+        if metric in {"brier", "brier_score"}:
+            return float(brier_score_loss(y, p))
+        if metric == "accuracy":
+            return float(accuracy_score(y, decided))
+        if metric == "precision":
+            return float(precision_score(y, decided, zero_division=0))
+        if metric == "recall":
+            return float(recall_score(y, decided, zero_division=0))
+        if metric == "f1":
+            return float(f1_score(y, decided, zero_division=0))
+        return float(balanced_accuracy_score(y, decided))
+    if task_type == "binary":
+        return float(classification_metrics(y, pred, threshold=threshold).get(metric) or 0.0)
+    if task_type == "multiclass":
+        return float(multiclass_metrics(y, pred, n_classes=int(n_classes or 0)).get(metric) or 0.0)
+    return float(regression_metrics(y, pred).get(metric) or 0.0)
+
+
 def primary_score(metrics: dict[str, Any], metric_name: str, task_type: str) -> float:
     if metric_name in metrics:
         value = metrics[metric_name]

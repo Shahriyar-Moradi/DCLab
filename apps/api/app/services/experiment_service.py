@@ -33,10 +33,13 @@ from app.db.models import (
     Experiment,
     ExperimentCandidate,
     IngestionRun,
+    LlmInvocation,
     MlJob,
     ModelSelectionDecision,
     ModelVersion,
+    ProblemSpec,
     ProjectRef,
+    SplitPlan,
     User,
     WorkflowRun,
 )
@@ -64,7 +67,34 @@ from app.domain.experiment_resources import (
     ModelVersionResourceRead,
 )
 from app.domain.findings import ExperimentFindingsRead, findings_read
+from app.domain.model_card import (
+    FINAL_EVALUATION_WITHHELD,
+    THRESHOLD_CAVEAT,
+    TOP_DRIVERS,
+    ModelCardBaseline,
+    ModelCardConstraint,
+    ModelCardCrossValidation,
+    ModelCardData,
+    ModelCardDriver,
+    ModelCardDrivers,
+    ModelCardFinalEvaluation,
+    ModelCardLlm,
+    ModelCardMetricInWords,
+    ModelCardObjective,
+    ModelCardRead,
+    ModelCardRisk,
+    ModelCardRisks,
+    ModelCardSplit,
+    ModelCardTarget,
+    drivers_text,
+    fmt,
+    metric_in_words_text,
+    metric_label,
+    render_markdown,
+)
 from app.domain.ml_jobs import JOB_CANCELLED, JOB_COMPLETED, JOB_FAILED, JOB_QUEUED, JOB_RUNNING
+from app.engine.evaluation.metrics import LOWER_IS_BETTER
+from app.engine.modeling.objective import DEFAULT_THRESHOLD
 from app.engine.lab.open_ingest import _from_columns as preview_from_columns
 from app.services.audience_projection import public_diagnostic, public_failure
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
@@ -597,6 +627,344 @@ def model_version_read(
             key=lambda ref: ref.role,
         ),
     )
+
+
+# --- model card (GET /v1/model-versions/{id}/card, P4.11-A) ---------------------------------
+
+
+def _num(value: Any) -> float | None:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _natural(metric: str | None, oriented: Any) -> float | None:
+    """Scores in ``baseline_comparison`` are oriented larger-is-better; undo that for display."""
+
+    value = _num(oriented)
+    return None if value is None else (-value if metric in LOWER_IS_BETTER else value)
+
+
+_THRESHOLD_DEPENDENT = ("precision", "recall", "specificity", "f1", "accuracy", "balanced_accuracy")
+
+
+def _card_metric_in_words(task_type: str | None, result: dict[str, Any], cv: dict[str, float]) -> ModelCardMetricInWords:
+    """Numbers and basis only; the sentence is built from them (``metric_in_words_text``)."""
+
+    if task_type == "binary":
+        threshold = dict(result.get("decision_threshold") or {})
+        pooled = threshold.get("oof_at_threshold") if isinstance(threshold.get("oof_at_threshold"), dict) else {}
+        counts = {key: _num(pooled.get(key)) for key in ("tp", "fp", "fn")}
+        if None not in counts.values():
+            basis = (
+                "most_recent_validation_fold_at_locked_threshold" if threshold.get("oof_folds") == "last_fold"
+                else "pooled_out_of_fold_at_locked_threshold"
+            )
+            numbers = {key: float(value) for key, value in counts.items() if value is not None}
+            for key in ("precision", "recall"):
+                if _num(pooled.get(key)) is not None:
+                    numbers[key] = float(pooled[key])
+            tuned = threshold.get("source") not in {None, "default"}
+            return ModelCardMetricInWords(text="", basis=basis, numbers=numbers, caveat=THRESHOLD_CAVEAT if tuned else None)
+        # Runs that predate the pooled rates: the CV aggregate at the default threshold.
+        numbers = {key: cv[key] for key in ("precision", "recall") if key in cv}
+        return ModelCardMetricInWords(text="", basis="cross_validation_aggregate_at_default_threshold", numbers=numbers)
+    keys = ("mae", "rmse", "r2") if task_type == "regression" else ("balanced_accuracy", "macro_f1")
+    return ModelCardMetricInWords(text="", basis="cross_validation_aggregate", numbers={k: cv[k] for k in keys if k in cv})
+
+
+def _card_cv(task_type: str | None, result: dict[str, Any], cv: dict[str, float], metric: str | None,
+             best: dict[str, Any], strategy: str | None) -> ModelCardCrossValidation:
+    threshold = dict(result.get("decision_threshold") or {})
+    locked = _num(threshold.get("value"))
+    at_locked: dict[str, float] = {}
+    note = None
+    if task_type == "binary" and locked is not None and locked != DEFAULT_THRESHOLD:
+        rows = [row for row in threshold.get("per_fold") or [] if isinstance(row, dict)]
+        for key in _THRESHOLD_DEPENDENT:
+            values = [_num(row.get(key)) for row in rows]
+            if values and None not in values:
+                at_locked[key] = sum(values) / len(values)  # type: ignore[arg-type]
+        note = (
+            "Threshold-dependent cross-validation metrics (precision, recall, specificity, F1, accuracy, "
+            f"balanced accuracy) in the fold aggregate are at the default {fmt(DEFAULT_THRESHOLD)} threshold; the "
+            f"locked decision threshold is {fmt(locked)}."
+        )
+        if threshold.get("source") not in {None, "default"}:
+            note = f"{note} {THRESHOLD_CAVEAT}"
+    return ModelCardCrossValidation(
+        metric=metric,
+        mean=cv.get(str(metric)),
+        std=_num((best.get("cv_std") or {}).get(str(metric))),
+        folds=best.get("n_folds") or best.get("actual_folds"),
+        strategy=strategy,
+        metrics=cv,
+        at_locked_threshold=at_locked,
+        threshold_note=note,
+    )
+
+
+def _card_baseline(result: dict[str, Any]) -> ModelCardBaseline:
+    stored = result.get("baseline_comparison")
+    if not isinstance(stored, dict):
+        return ModelCardBaseline(available=False, text="No dummy baseline was recorded for this run.")
+    metric = stored.get("metric")
+    baseline, winner = _natural(metric, stored.get("baseline_cv_score")), _natural(metric, stored.get("winner_cv_score"))
+    beats, clear = stored.get("beats_baseline"), stored.get("clear_margin")
+    verdict = (
+        "beats it by more than its own fold-to-fold spread" if beats and clear
+        else "beats it, but by less than its own fold-to-fold spread" if beats
+        else "does not beat it"
+    )
+    return ModelCardBaseline(
+        available=True,
+        metric=metric,
+        baseline_candidate_id=stored.get("baseline_candidate_id"),
+        baseline_score=baseline,
+        winner_score=winner,
+        margin=_num(stored.get("margin")),
+        beats_baseline=beats if isinstance(beats, bool) else None,
+        clear_margin=clear if isinstance(clear, bool) else None,
+        text=f"A dummy model that ignores every column scores {metric_label(metric)} {fmt(baseline)} in "
+        f"cross-validation; this model scores {fmt(winner)} and {verdict}.",
+    )
+
+
+def _card_drivers(result: dict[str, Any]) -> ModelCardDrivers:
+    stored = result.get("feature_importance")
+    if not isinstance(stored, dict):
+        drivers = ModelCardDrivers(status="not_computed", text="")
+        return drivers.model_copy(update={"text": drivers_text(drivers)})
+    status = stored.get("status") if stored.get("status") in {"computed", "skipped", "not_applicable"} else "skipped"
+    rows = [row for row in stored.get("features") or [] if isinstance(row, dict) and row.get("column")]
+    features = [
+        ModelCardDriver(
+            rank=index + 1,
+            column=str(untrusted_text(str(row["column"]), 256)),
+            importance_mean=_num(row.get("importance_mean")),
+            importance_std=_num(row.get("importance_std")),
+            importance_se=_num(row.get("importance_se")),
+            distinguishable=row.get("distinguishable") if isinstance(row.get("distinguishable"), bool) else None,
+        )
+        for index, row in enumerate(rows[:TOP_DRIVERS])
+    ] if status == "computed" else []
+    significance = stored.get("significance") if isinstance(stored.get("significance"), dict) else {}
+    drivers = ModelCardDrivers(
+        status=status,
+        columns_tested=significance.get("columns_tested"),
+        critical_value=_num(significance.get("critical_value")),
+        # Over every evaluated column, not only the top ones shown.
+        clear_drivers=[
+            str(untrusted_text(str(column), 256)) for column in stored.get("clear_drivers") or [] if column
+        ] if status == "computed" else [],
+        method=stored.get("method"),
+        scoring=stored.get("scoring"),
+        n_repeats=stored.get("n_repeats"),
+        folds=stored.get("folds"),
+        reason=untrusted_text(stored.get("reason"), 300),
+        features=features,
+        text="",
+    )
+    return drivers.model_copy(update={"text": drivers_text(drivers)})
+
+
+def _card_risks(experiment: Experiment) -> ModelCardRisks:
+    findings = findings_read(experiment.id, (experiment.result or {}).get("investigation"))
+    items = [
+        # Messages name dataset columns (user data): same projection as other untrusted text.
+        ModelCardRisk(check=item.check, status=item.status, severity=item.severity,
+                      message=untrusted_text(item.message, 1200) or "")
+        for item in findings.checks
+        if item.status in {"warning", "fail"}
+    ]
+    if not findings.investigated:
+        text = "Trust checks were not run for this run."
+    elif items:
+        text = f"{len(items)} of {len(findings.checks)} trust checks raised a warning or failure:"
+    else:
+        skipped = findings.summary.not_evaluated
+        text = f"No trust check raised a warning or failure ({skipped} could not be evaluated)."
+    return ModelCardRisks(investigated=findings.investigated, items=items, text=text)
+
+
+def model_card_read(
+    db: Session, *, actor: User, workspace_id: UUID, model_version_id: UUID, include_final_evaluation: bool = False
+) -> ModelCardRead | None:
+    """One-page card of a model version (None when unknown or another tenant's).
+
+    Only once the run's evidence is locked and its selection is this version (else 409).
+    Everything that says how good the model is comes from CV/out-of-fold evidence; the
+    only final-holdout read is ``winner_evidence``'s single locked-winner evaluation,
+    which fills ``final_evaluation`` alone and only with ``include_final_evaluation``
+    (fail-closed: callers that are not session humans get it withheld).
+    ``ModelVersion.metrics`` and candidate ``test_metrics`` are never read.
+    """
+
+    _require_read(db, actor, workspace_id)
+    row = db.scalar(
+        select(ModelVersion).where(ModelVersion.id == model_version_id, ModelVersion.workspace_id == workspace_id)
+    )
+    if row is None:
+        return None
+    experiment = db.scalar(
+        select(Experiment).where(Experiment.id == row.pipeline_run_id, Experiment.workspace_id == workspace_id)
+    )
+    selected = experiment is not None and db.scalar(
+        select(ModelSelectionDecision.selected_candidate_id).where(
+            ModelSelectionDecision.pipeline_run_id == experiment.id,
+            ModelSelectionDecision.workspace_id == workspace_id,
+        )
+    )
+    if experiment is None or experiment.scientific_evidence_locked_at is None or selected != row.selected_candidate_id:
+        raise ExperimentRequestError(
+            "model_card_unavailable", "the model version's run has no locked evidence for it", status_code=409
+        )
+    result = dict(experiment.result or {})
+    evidence = winner_evidence(db, experiment)
+    cv = dict(evidence.get("cv") or {})
+    candidate = db.scalar(
+        select(ExperimentCandidate).where(
+            ExperimentCandidate.id == row.selected_candidate_id, ExperimentCandidate.workspace_id == workspace_id
+        )
+    )
+    workflow_run = db.scalar(
+        select(WorkflowRun).where(WorkflowRun.id == row.workflow_run_id, WorkflowRun.workspace_id == workspace_id)
+    )
+    spec = (
+        db.scalar(select(ProblemSpec).where(
+            ProblemSpec.id == workflow_run.problem_spec_id, ProblemSpec.workspace_id == workspace_id))
+        if workflow_run is not None and workflow_run.problem_spec_id is not None
+        else None
+    )
+    upload = (
+        db.scalar(select(ClientLabUpload).where(
+            ClientLabUpload.id == workflow_run.source_upload_id, ClientLabUpload.workspace_id == workspace_id))
+        if workflow_run is not None and workflow_run.source_upload_id is not None
+        else None
+    )
+    task = dict(result.get("task") or {})
+    task_type = task.get("task_type") or (workflow_run.task_type if workflow_run is not None else None)
+    target_column = untrusted_text(task.get("target"), 256)
+    target_log = ((upload.pipeline_log or {}).get("target") or {}) if upload is not None else {}
+    positive = untrusted_text(str((target_log.get("evidence") or {}).get("positive_label") or ""), 128)
+    prediction_unit = untrusted_text(spec.prediction_unit if spec is not None else None, 128)
+    metric_plan = dict(result.get("metric_plan") or {})
+    objective = dict(result.get("objective") or {})
+    threshold = dict(result.get("decision_threshold") or {})
+    best = dict(result.get("best_single") or {})  # CV fields only (cv_std, features, folds)
+    selection_metric = evidence.get("selection_metric") or metric_plan.get("primary_metric")
+    validation_plan = dict(result.get("validation_plan") or {})
+
+    dataset = (
+        db.scalar(select(Dataset).where(Dataset.id == experiment.source_dataset_id, Dataset.workspace_id == workspace_id))
+        if experiment.source_dataset_id is not None
+        else None
+    )
+    plan = (
+        db.scalar(select(SplitPlan).where(SplitPlan.id == experiment.split_plan_id, SplitPlan.workspace_id == workspace_id))
+        if experiment.split_plan_id is not None
+        else None
+    )
+    holdout_plan = dict(result.get("holdout_plan") or {})
+    split = ModelCardSplit(
+        split_plan_id=plan.id if plan is not None else None,
+        evaluation_split_strategy=plan.holdout_strategy if plan is not None else holdout_plan.get("strategy"),
+        evaluation_fraction=plan.holdout_test_size if plan is not None else _num(holdout_plan.get("test_size")),
+        validation_strategy=plan.validation_strategy if plan is not None else validation_plan.get("strategy"),
+        validation_folds=plan.validation_folds if plan is not None else best.get("n_folds"),
+        train_rows=plan.train_row_count if plan is not None else best.get("n_train_rows"),
+        evaluation_rows=plan.holdout_row_count if plan is not None else None,
+        stratified=plan.stratified if plan is not None else holdout_plan.get("stratified"),
+        group_column=untrusted_text(plan.group_column if plan is not None else holdout_plan.get("group_column"), 256),
+        time_column=untrusted_text(plan.time_column if plan is not None else holdout_plan.get("time_column"), 256),
+    )
+    llm_filter = [LlmInvocation.experiment_id == experiment.id]
+    if experiment.workflow_run_id is not None:
+        llm_filter.append(LlmInvocation.workflow_run_id == experiment.workflow_run_id)
+    purposes = sorted(
+        db.scalars(
+            select(LlmInvocation.purpose)
+            .where(LlmInvocation.workspace_id == workspace_id, LlmInvocation.llm_used.is_(True), or_(*llm_filter))
+            .distinct()
+        )
+    )
+    holdout = dict(evidence.get("holdout") or {}) if include_final_evaluation else {}
+    final = (
+        ModelCardFinalEvaluation(status="withheld", note=FINAL_EVALUATION_WITHHELD)
+        if not include_final_evaluation
+        else ModelCardFinalEvaluation(
+            status="reported",
+            metric=selection_metric,
+            value=holdout.get(str(selection_metric)),
+            metrics=holdout,
+            decision_threshold=_num(evidence.get("decision_threshold")),
+        )
+        if holdout
+        else ModelCardFinalEvaluation(status="missing", note="No final evaluation was recorded for this run.")
+    )
+    card = ModelCardRead(
+        model_version_id=row.id,
+        version=row.version,
+        experiment_id=experiment.id,
+        project_id=row.project_id,
+        candidate_key=candidate.candidate_key if candidate is not None else None,
+        family=(candidate.model_family or None) if candidate is not None else None,
+        algorithm=(candidate.algorithm or None) if candidate is not None else None,
+        created_at=row.created_at,
+        content_digest=row.content_digest,
+        target=ModelCardTarget(
+            column=target_column,
+            task_type=task_type,
+            positive_label=positive if task_type == "binary" else None,
+            positive_label_note=(
+                None if task_type != "binary" or positive
+                else "the class coded 1 (a yes/true-style or 1 label in the uploaded target)"
+            ),
+            class_labels=[str(untrusted_text(str(label), 128)) for label in result.get("class_labels") or []],
+            prediction_unit=prediction_unit,
+        ),
+        objective=ModelCardObjective(
+            primary_metric=selection_metric,
+            # ProblemSpec constraints / branch metric_override.reason: agent-writable text.
+            primary_metric_reason=untrusted_text(
+                objective.get("primary_metric_reason") or metric_plan.get("reason") or None, 512
+            ),
+            business_objective=untrusted_text(spec.business_objective if spec is not None else None, 1000),
+            constraints=[
+                ModelCardConstraint(
+                    metric=str(item.get("metric")),
+                    op=str(item.get("op")),
+                    value=float(item.get("value")),
+                    cv_value=_num(item.get("oof_value")),
+                    cv_satisfied=item.get("oof_satisfied") if isinstance(item.get("oof_satisfied"), bool) else None,
+                )
+                for item in threshold.get("constraints") or []
+                if isinstance(item, dict) and _num(item.get("value")) is not None
+            ],
+            decision_threshold=_num(threshold.get("value")),
+            decision_threshold_source=threshold.get("source"),
+        ),
+        metric_in_words=_card_metric_in_words(task_type, result, cv),
+        cv=_card_cv(task_type, result, cv, selection_metric, best, validation_plan.get("strategy")),
+        baseline=_card_baseline(result),
+        drivers=_card_drivers(result),
+        risks=_card_risks(experiment),
+        data=ModelCardData(
+            source_dataset_id=experiment.source_dataset_id,
+            name=untrusted_text(dataset.name, 128) if dataset is not None else None,
+            row_count=dataset.row_count if dataset is not None else None,
+            column_count=dataset.column_count if dataset is not None else None,
+            content_digest=dataset.content_digest if dataset is not None else None,
+            modeled_feature_count=len(best.get("features") or []) or None,
+        ),
+        split=split,
+        llm=ModelCardLlm(used=bool(purposes), purposes=purposes),
+        final_evaluation=final,
+    )
+    words = card.metric_in_words.model_copy(update={
+        "text": metric_in_words_text(task_type, card.metric_in_words, card.target,
+                                     threshold=card.objective.decision_threshold),
+    })
+    card = card.model_copy(update={"metric_in_words": words})
+    return card.model_copy(update={"markdown": render_markdown(card)})
 
 
 # --- cancellation ----------------------------------------------------------------------

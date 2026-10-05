@@ -289,13 +289,7 @@ def test_prediction_download_and_deep_audit_cannot_bypass_capabilities(
         db_session,
         upload.id,
         deep=True,
-        settings=SimpleNamespace(
-            pipeline_llm_verifier_enabled=False,
-            pipeline_llm_verifier_api_key="",
-            pipeline_llm_verifier_model="gpt-5.6-luna",
-            pipeline_llm_verifier_deep_model="gpt-5.6-terra",
-            pipeline_llm_timeout_seconds=1.0,
-        ),
+        settings=SimpleNamespace(pipeline_llm_verifier_enabled=False),
     )
     monkeypatch.setattr(
         "app.api.business_explorer.request_pipeline_verification",
@@ -304,7 +298,7 @@ def test_prediction_download_and_deep_audit_cannot_bypass_capabilities(
     triggered = auth_client.post(deep_path, headers=admin_headers)
     assert triggered.status_code == 200, triggered.text
     assert triggered.json()["audit_mode"] == "deep"
-    assert triggered.json()["llm_model"] == "gpt-5.6-terra"
+    assert triggered.json()["llm_model"] == "gpt-6.1-sol"  # the verifier role's deep model
 
     audit_invocation = db_session.get(LlmInvocation, attempt.llm_invocation_id)
     assert audit_invocation.purpose == "pipeline_audit_deep"
