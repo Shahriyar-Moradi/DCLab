@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Lineage · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="graph.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind churn › <b>Lineage</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Lineage</h1><p class="sub">How your data, runs and models connect. Select anything to see where it came from.</p></div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="legend"><span><i class="current"></i>In use now</span><span><i class="pending"></i>Waiting for approval</span><span><i></i>Earlier work</span></div>
+    <div style="overflow-x:auto"><div class="graph">
+      <div class="gcol"><div class="gh">Data</div>
+        <div class="node current" data-insp="ds1"><b>Version 1</b><small>48,210 rows · to Jun 2026</small></div>
+        <div class="node" data-insp="ds3"><b>Version 3</b><small>51,330 rows · to Sep 2026</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Test split</div>
+        <div class="node current" data-insp="sp1"><b>Latest 3 months</b><small>of version 1</small></div>
+        <div class="node" data-insp="sp2"><b>Latest 3 months</b><small>of version 3</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Runs</div>
+        <div class="node" data-insp="e1"><b>E1</b><small>First model</small></div>
+        <div class="node" data-insp="e2"><b>E2</b><small>More weight on churners</small></div>
+        <div class="node current sel" data-insp="e7"><b>E7</b><small>Threshold tuned</small></div>
+        <div class="node pending" data-insp="e9"><b>E9</b><small>Retrained · running</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Models</div>
+        <div class="node current" data-insp="mv4"><b>Version 4</b><small>from E7</small></div>
+        <div class="node pending" data-insp="mv5"><b>Version 5</b><small>from E9</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Scoring</div>
+        <div class="node current" data-insp="r12"><b>Daily at 02:00</b><small>51,330 customers</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Monitoring</div>
+        <div class="node" data-insp="w"><b>Weekly checks</b><small>Drift alert in week 9</small></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div data-insp-panel="e7"><h2>Run E7</h2>
+      <dl class="kv" style="margin-top:18px"><dt>Came from</dt><dd>Run E2, with the threshold tuned</dd><dt>Data</dt><dd>Version 1</dd><dt>Result</dt><dd>81% caught · 63% precise</dd><dt>Led to</dt><dd>Model version 4</dd><dt>Approved by</dt><dd>Dana Reyes</dd></dl>
+      <div class="toolbar" style="margin-top:20px"><a class="btn sm" href="pipeline.html">Open run</a><a class="btn sm" href="experiments.html#compare">Compare</a></div>
+    </div>
+    <div data-insp-panel="ds1" hidden><h2>Data version 1</h2><dl class="kv" style="margin-top:18px"><dt>Rows</dt><dd>48,210</dd><dt>Period</dt><dd>Jan 2025 – Jun 2026</dd><dt>Used by</dt><dd>Runs E1, E2, E7</dd></dl><div class="toolbar" style="margin-top:20px"><a class="btn sm" href="data.html">Open data</a></div></div>
+    <div data-insp-panel="ds3" hidden><h2>Data version 3</h2><dl class="kv" style="margin-top:18px"><dt>Rows</dt><dd>51,330</dd><dt>New</dt><dd>3 more months · plan <code>family_5g</code></dd><dt>Used by</dt><dd>Run E9</dd><dt>If made current</dt><dd>Runs E1–E7 and model version 4 become out of date</dd></dl></div>
+    <div data-insp-panel="sp1" hidden><h2>Test split</h2><dl class="kv" style="margin-top:18px"><dt>Set aside</dt><dd>April to June 2026 · 8,904 rows</dd><dt>Shared by</dt><dd>E1, E2, E7 — so they can be compared</dd><dt>Can it change?</dt><dd>No. A new split means a new set of runs.</dd></dl></div>
+    <div data-insp-panel="sp2" hidden><h2>Test split</h2><dl class="kv" style="margin-top:18px"><dt>Set aside</dt><dd>July to September 2026</dd><dt>Used by</dt><dd>Run E9</dd></dl></div>
+    <div data-insp-panel="e1" hidden><h2>Run E1</h2><dl class="kv" style="margin-top:18px"><dt>What</dt><dd>First model</dd><dt>Result</dt><dd>82% caught · 61% precise</dd><dt>Led to</dt><dd>Run E2</dd></dl><div class="toolbar" style="margin-top:20px"><a class="btn sm" href="pipeline.html">Open run</a></div></div>
+    <div data-insp-panel="e2" hidden><h2>Run E2</h2><dl class="kv" style="margin-top:18px"><dt>Came from</dt><dd>Run E1, with more weight on churners</dd><dt>Result</dt><dd>85% caught · 58% precise</dd><dt>Led to</dt><dd>Run E7</dd></dl></div>
+    <div data-insp-panel="e9" hidden><h2>Run E9</h2><dl class="kv" style="margin-top:18px"><dt>Started by</dt><dd>The assistant, after the drift alert</dd><dt>Data</dt><dd>Version 3</dd><dt>Status</dt><dd>Running · fold 4 of 5</dd></dl><div class="toolbar" style="margin-top:20px"><button class="btn sm danger" data-mock="cancel run">Cancel run</button></div></div>
+    <div data-insp-panel="mv4" hidden><h2>Model version 4</h2><dl class="kv" style="margin-top:18px"><dt>From</dt><dd>Run E7</dd><dt>In use since</dt><dd>Monday</dd><dt>Approved by</dt><dd>Dana Reyes</dd></dl><div class="toolbar" style="margin-top:20px"><a class="btn sm" href="models.html">Open model</a></div></div>
+    <div data-insp-panel="mv5" hidden><h2>Model version 5</h2><dl class="kv" style="margin-top:18px"><dt>From</dt><dd>Run E9</dd><dt>Status</dt><dd>Waiting for your approval</dd></dl><div class="toolbar" style="margin-top:20px"><a class="btn sm" href="inbox.html">Review</a></div></div>
+    <div data-insp-panel="r12" hidden><h2>Daily scoring</h2><dl class="kv" style="margin-top:18px"><dt>Model</dt><dd>Version 4</dd><dt>Last run</dt><dd>Today 02:00 · 6,412 flagged</dd></dl><div class="toolbar" style="margin-top:20px"><a class="btn sm" href="models.html#scoring">Scoring runs</a></div></div>
+    <div data-insp-panel="w" hidden><h2>Weekly checks</h2><dl class="kv" style="margin-top:18px"><dt>This week</dt><dd>Drift alert on <code>plan_type</code></dd><dt>Precision</dt><dd>48% (was 63%)</dd></dl><div class="toolbar" style="margin-top:20px"><a class="btn sm" href="monitoring.html">Open monitoring</a></div></div>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>AI governance · DCLab</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="governance.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>AI governance</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>AI governance</h1><p class="sub">You decide what the AI may do on its own, what it can see and how much it can spend. Everything it does is recorded.</p></div>
+  <div class="toolbar"><span class="switch on"><i></i>AI on</span></div>
+</div>
+
+<div class="tabs" data-tabs="gov">
+  <button data-tab="autonomy" aria-selected="true">Autonomy</button>
+  <button data-tab="assistants">Assistants</button>
+  <button data-tab="data">Data and models</button>
+  <button data-tab="budget">Budget</button>
+  <button data-tab="audit">Audit</button>
+</div>
+
+<div data-tabpanel="gov:autonomy" class="on">
+  <div class="card quiet">
+    <div class="three">
+      <div><h3>Observe</h3><p class="muted">The AI's answer is recorded. A rule decides.</p></div>
+      <div><h3>Ask first</h3><p class="muted">The AI suggests. You approve.</p></div>
+      <div><h3>Automatic</h3><p class="muted">Applied when checks pass. You can undo it.</p></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Who decides what</h2><p>The AI earns "automatic" only after matching the rule on at least 300 past cases.</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Decision</th><th>Today</th><th class="r">AI right</th><th class="r">Rule right</th></tr></thead>
+      <tbody>
+        <tr><td>Is this column an identifier?</td><td><select class="input" aria-label="Autonomy for identifier check"><option>Automatic</option><option>Ask first</option><option>Observe</option></select></td><td class="r">99%</td><td class="r">97%</td></tr>
+        <tr><td>What kind of column is this?</td><td><select class="input" aria-label="Autonomy for column type"><option>Automatic</option><option>Ask first</option><option>Observe</option></select></td><td class="r">93%</td><td class="r">88%</td></tr>
+        <tr><td>Could this column give away the answer?</td><td><select class="input" aria-label="Autonomy for leakage"><option>Ask first</option><option>Observe</option></select><small>leaving a column out always asks first</small></td><td class="r">90%</td><td class="r">71%</td></tr>
+        <tr><td>Goal, target and how to test</td><td><select class="input" aria-label="Autonomy for plan"><option>Ask first</option><option>Observe</option></select></td><td class="r">95%</td><td class="r">94%</td></tr>
+        <tr><td>Next step in the improve loop</td><td><select class="input" aria-label="Autonomy for improve"><option>Automatic</option><option>Ask first</option><option>Observe</option></select></td><td class="r">70%</td><td class="r">61%</td></tr>
+        <tr><td>Retrain when data drifts</td><td><select class="input" aria-label="Autonomy for retrain"><option>Automatic</option><option>Ask first</option></select><small>at most twice a week</small></td><td class="r">—</td><td class="r">—</td></tr>
+        <tr><td>Put a model into use</td><td><select class="input" aria-label="Autonomy for release"><option>Ask first</option></select></td><td class="r">—</td><td class="r">—</td></tr>
+        <tr class="dim"><td>Choosing the best model · scoring the test data · building the test split</td><td>Always fixed code, never AI</td><td class="r">—</td><td class="r">—</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">If the AI starts making mistakes, a decision drops back to "Observe" automatically and you are told.</p>
+  </div>
+</div>
+
+<div data-tabpanel="gov:assistants">
+  <div class="card">
+    <div class="head"><h2>Assistants in this workspace</h2><p>Each one has a single job and can be switched off. With all of them off, DCLab still works with rules and forms.</p></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">Lab assistant</span><span class="d">Runs a project from your goal: prepares data, starts experiments, reports back.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">Data investigator</span><span class="d">Explains what the data checks found and asks you questions.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">Planner</span><span class="d">Suggests the goal, the test split and which models to try.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">Reviewer</span><span class="d">Reviews every finished run and points to the numbers behind each remark.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">Improver</span><span class="d">Suggests the next change to try in the improve loop.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">Operations assistant</span><span class="d">Watches for drift, retrains and proposes new releases.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">Quick checks</span><span class="d">Fast yes/no judgments about columns, such as "is this an ID?".</span><span class="a"><span class="switch on"><i></i></span></span></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="gov:data">
+  <div class="grid cols-2">
+    <div class="card">
+      <div class="head"><h2>What the AI can see</h2></div>
+      <div class="dlist">
+        <div class="drow"><span class="t">Column names, types and statistics</span><span class="a"><span class="tag ok">Always</span></span></div>
+        <div class="drow"><span class="t">Summaries and charts</span><span class="a"><span class="switch on"><i></i></span></span></div>
+        <div class="drow"><span class="t">A few sample values per column</span><span class="a"><span class="switch"><i></i></span></span></div>
+        <div class="drow"><span class="t">Full rows of your data</span><span class="a"><span class="tag crit">Never</span></span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="head"><h2>Models in use</h2></div>
+      <dl class="kv">
+        <dt>Lab assistant, planner, reviewer</dt><dd>gpt-6.1-sol · OpenAI</dd>
+        <dt>Data investigator, routine checks</dt><dd>gpt-6-luna · OpenAI</dd>
+        <dt>Quick checks</dt><dd>Jev 1.13 · TypeSafe</dd>
+        <dt>Region</dt><dd>EU</dd>
+      </dl>
+      <p class="hint">Models are pinned. If a provider changes one, its decisions go back to "Observe" until re-tested.</p>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="gov:budget">
+  <div class="stats">
+    <div class="stat"><span class="v">$9.40</span><span class="l">spent this month, of $25</span><div class="meter"><i style="width:38%"></i></div></div>
+    <div class="stat"><span class="v">$0.30</span><span class="l">typical cost per run</span></div>
+    <div class="stat"><span class="v">3</span><span class="l">times a limit was reached; rules took over</span></div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Limits</h2></div>
+    <div class="form-row">
+      <label class="field">Per month<input class="input" value="$25"></label>
+      <label class="field">Per run<input class="input" value="$1.00"></label>
+      <label class="field">When a limit is reached<select class="input"><option>Continue with rules only</option><option>Pause and ask me</option></select></label>
+      <button class="btn primary" data-mock="save limits">Save</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Spend by assistant</h2><p>This month</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Assistant</th><th class="r">Times used</th><th class="r">Cost</th></tr></thead>
+      <tbody>
+        <tr><td>Lab assistant</td><td class="r">31</td><td class="r">$5.12</td></tr>
+        <tr><td>Improver</td><td class="r">58</td><td class="r">$1.56</td></tr>
+        <tr><td>Reviewer</td><td class="r">96</td><td class="r">$1.30</td></tr>
+        <tr><td>Planner and data investigator</td><td class="r">44</td><td class="r">$1.18</td></tr>
+        <tr><td>Operations assistant</td><td class="r">6</td><td class="r">$0.24</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="gov:audit">
+  <div class="stats">
+    <div class="stat"><span class="v ok">1,948</span><span class="l">AI calls this month, all recorded</span></div>
+    <div class="stat"><span class="v ok">212 of 212</span><span class="l">past AI runs replay with the same result</span></div>
+    <div class="stat"><span class="v">0</span><span class="l">rows of your data sent to a model</span></div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Incidents</h2><button class="btn sm" data-mock="download audit report">Download audit report</button></div>
+    <div class="tbl"><table>
+      <thead><tr><th>When</th><th>What happened</th><th>What DCLab did</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>Tuesday</td><td>The leakage check cited a column that had been renamed, 5 times in a day</td><td>Moved that decision back to "Observe"; fixed and re-tested</td><td><span class="tag ok">Resolved</span></td></tr>
+        <tr><td>Last week</td><td>The quick-check service was slow for 10 minutes</td><td>Used rules instead until it recovered</td><td><span class="tag ok">Resolved</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

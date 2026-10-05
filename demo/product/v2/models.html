@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Models · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="models.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Models</b></div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Models</h1><p class="sub">Model versions, releases and batch predictions. The API never loads a model; scoring runs in the worker against the feature contract. The champion ref moves only through an accepted decision record.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="score a file with the champion release">Score a file</button><button class="btn" data-mock="new release from a model version">New release</button><button class="btn danger" data-mock="rollback champion to MV v3 → decision record">Roll back</button></div>
+</div>
+
+<div class="tabs" data-tabs="models">
+  <button data-tab="versions" aria-selected="true">Model versions</button>
+  <button data-tab="releases">Releases</button>
+  <button data-tab="batch">Batch predictions</button>
+  <button data-tab="contract">Feature contract</button>
+  <button data-tab="package">Package &amp; integrity</button>
+</div>
+
+<div data-tabpanel="models:versions" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Version</th><th>From</th><th>Family · threshold</th><th class="r">Holdout recall</th><th class="r">Holdout precision</th><th>Split plan</th><th>Status</th><th>Promoted</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>MV v5</td><td>E9 (running)</td><td>—</td><td class="r">—</td><td class="r">—</td><td>SP-2</td><td><span class="pill ai">proposed by Ops agent</span></td><td>—</td><td><a class="btn sm" href="inbox.html">review</a></td></tr>
+      <tr class="win"><td><b>MV v4 ★ champion</b></td><td>E7</td><td>lightgbm__tuned · 0.31</td><td class="r">0.81</td><td class="r">0.63</td><td>SP-1</td><td><span class="pill ok">released R-12</span></td><td>d-340 · you · Mon</td><td><button class="btn sm" data-mock="open">open</button></td></tr>
+      <tr><td>MV v3</td><td>E2</td><td>lightgbm__tuned · 0.42</td><td class="r">0.85</td><td class="r">0.58</td><td>SP-1</td><td><span class="pill gray">superseded</span></td><td>d-320</td><td><button class="btn sm" data-mock="rollback target">rollback target</button></td></tr>
+      <tr><td>MV v2</td><td>E1</td><td>lightgbm__tuned · 0.31</td><td class="r">0.82</td><td class="r">0.61</td><td>SP-1</td><td><span class="pill gray">superseded</span></td><td>d-306</td><td></td></tr>
+      <tr class="dim"><td>MV v1</td><td>legacy run</td><td>random_forest</td><td class="r">—</td><td class="r">—</td><td>—</td><td><span class="pill crit">quarantined pickle</span></td><td>—</td><td></td></tr>
+    </tbody>
+  </table></div>
+  <div class="card sect">
+<div class="sect-head"><h2>Champion</h2></div>
+<section data-tab="MV v4 · lineage">
+<dl class="kv"><dt>Experiment</dt><dd>E7 ← E2 ← E1 (IL-2)</dd><dt>Dataset · split</dt><dd>DS v1 · SP-1</dd><dt>Recipe</dt><dd>FR v3 · 29 features</dd><dt>Decisions</dt><dd>d-302 leak, d-298 AI role, d-331 winner, d-340 promoted</dd><dt>Evidence</dt><dd>final_holdout 14 metrics · verifier 19 ✓ 1 ⚠ · Critic needs_work (answered)</dd><dt>Code</dt><dd>reproduction v2 · max |Δ| 0.0</dd></dl>
+</section>
+<section data-tab="What a promotion requires">
+<div class="chips"><span class="pill ok">≥ 1 final_holdout evidence</span><span class="pill ok">same split plan as current champion (or new root accepted)</span><span class="pill ok">verifier 0 FAIL</span><span class="pill warn">Critic question answered</span><span class="pill ok">approver with decisions:accept</span><span class="pill ok">moves champion_model + feature_recipe refs together</span></div>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="models:releases">
+  <div class="tbl card"><table>
+    <thead><tr><th>Release</th><th>Model</th><th>Mode</th><th>Schedule</th><th>Status</th><th class="r">Runs</th><th>Last run</th><th>Contract</th><th>Notes</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>R-15</td><td>MV v5</td><td>batch</td><td>daily 02:00 (would replace R-12)</td><td><span class="pill ai">proposed · L1</span></td><td class="r">0</td><td>—</td><td>29 cols · as-of ✓</td><td>Ops agent: "precision 0.48 → 0.59 on labeled weeks"</td><td><a class="btn sm" href="inbox.html">approve / reject</a></td></tr>
+      <tr class="sel"><td><b>R-12</b></td><td>MV v4</td><td>batch</td><td>daily 02:00</td><td><span class="pill ok">active</span></td><td class="r">38</td><td>today 02:00 · 51,330 rows · 0 violations</td><td>29 cols · as-of ✓</td><td>champion since Mon</td><td><button class="btn sm" data-mock="pause">pause</button></td></tr>
+      <tr><td>R-9</td><td>MV v3</td><td>batch</td><td>daily</td><td><span class="pill gray">retired</span></td><td class="r">21</td><td>Sun</td><td>29 cols</td><td>replaced by R-12</td><td></td></tr>
+      <tr><td>R-4</td><td>MV v2</td><td>manual</td><td>—</td><td><span class="pill gray">retired</span></td><td class="r">3</td><td>2 weeks ago</td><td>29 cols</td><td>first release</td><td></td></tr>
+    </tbody>
+  </table></div>
+  <div class="card sect">
+<div class="sect-head"><h2>Release details</h2></div>
+<section data-tab="R-12 · settings">
+<dl class="kv"><dt>Input</dt><dd>latest DatasetVersion matching contract (DS v3 since Jul)</dd><dt>Output</dt><dd>artifact predictions.csv + manifest · client download · <span class="muted">online API: Phase 9</span></dd><dt>Threshold</dt><dd>0.31 (locked with the model)</dd><dt>On contract violation</dt><dd>fail the run, notify, do not score</dd><dt>MLflow mirror</dt><dd>on · tracking_degraded: no</dd></dl>
+</section>
+<section data-tab="Release notes (Ops agent, untrusted text) · R-15 proposal">
+<p class="small">"Retrained on DS v3 after drift on plan_type. Same families, same objective. On labeled production weeks W7–W9: precision 0.59 vs champion 0.48 at recall 0.80. No segment worse than champion by more than 0.01. Rollback: move champion ref to MV v4."</p><div class="cite"><span>monitoring W7–W9 labeled precision: v4 0.48 · v5 0.59</span><span>Critic ar-1102: promote · 4/4 citations valid</span></div>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="models:batch">
+  <div class="toolbar"><button class="btn primary" data-mock="upload file → contract check → score in worker">Score a file now</button><select class="input"><option>Release: R-12 (champion)</option></select><span class="sp"></span><span class="small muted">batch runs never load a model in the API</span></div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Run</th><th>Release</th><th>Input</th><th class="r">Rows</th><th>Contract</th><th>Status</th><th class="r">Positives @ 0.31</th><th>Output</th><th>Duration</th></tr></thead>
+    <tbody>
+      <tr><td>bp-212</td><td>R-12</td><td>DS v3 (scheduled)</td><td class="r">51,330</td><td><span class="pill ok">valid</span></td><td><span class="pill ok">done</span></td><td class="r">6,412 (12.5%)</td><td class="mono">predictions 2d4a…1e9 <button class="btn sm" data-mock="download">↓</button></td><td>38 s</td></tr>
+      <tr><td>bp-211</td><td>R-12</td><td>DS v3</td><td class="r">51,330</td><td><span class="pill ok">valid</span></td><td><span class="pill ok">done</span></td><td class="r">6,398</td><td class="mono">0b77…</td><td>37 s</td></tr>
+      <tr><td>bp-205</td><td>R-12</td><td>adhoc_scoring_sept.csv (you)</td><td class="r">1,204</td><td><span class="pill crit">2 violations</span> missing <code>monthly_fee</code>; <code>region_code</code> as text</td><td><span class="pill crit">refused</span></td><td class="r">—</td><td>—</td><td>2 s</td></tr>
+      <tr><td>bp-190</td><td>R-9</td><td>DS v1</td><td class="r">48,210</td><td><span class="pill ok">valid</span></td><td><span class="pill ok">done</span></td><td class="r">6,980</td><td class="mono">…</td><td>35 s</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="models:contract">
+  <div class="card"><h3>Feature contract · MV v4 <span class="sp">Pandera schema compiled from the recipe · strict, no coercion</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Column</th><th>Type</th><th>Nullable</th><th>Allowed values / range</th><th>Known at</th><th>Transform</th></tr></thead>
+      <tbody>
+        <tr><td><code>monthly_fee</code></td><td>float</td><td>yes (median)</td><td>0 – 500</td><td>snapshot</td><td>median · scale</td></tr>
+        <tr><td><code>plan_type</code></td><td>string</td><td>yes</td><td>6 seen categories; unknown ignored</td><td>snapshot</td><td>one-hot</td></tr>
+        <tr><td><code>region_code</code></td><td>int (categorical)</td><td>no</td><td>12 codes</td><td>snapshot</td><td>one-hot (AI role d-298)</td></tr>
+        <tr><td><code>signup_date</code></td><td>date</td><td>no</td><td>≤ snapshot</td><td>snapshot</td><td>month, weekday</td></tr>
+        <tr><td><code>last_login_days</code></td><td>int</td><td>yes</td><td>0 – 400</td><td>snapshot (confirmed d-351)</td><td>median · scale</td></tr>
+        <tr><td><code>contract_end</code></td><td>date</td><td>yes (indicator)</td><td>—</td><td>snapshot</td><td>days_to (as_of snapshot_month)</td></tr>
+        <tr class="dim"><td colspan="6">… 23 more · excluded: churned_at, customer_id (identifier passed through for output only)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="toolbar"><button class="btn sm" data-mock="download pandera schema">Schema (JSON)</button><button class="btn sm" data-mock="validate a sample file">Validate a file</button></div>
+  </div>
+</div>
+
+<div data-tabpanel="models:package">
+  <div class="card sect">
+<div class="sect-head"><h2>Package</h2></div>
+<section data-tab="Package · MV v4">
+<dl class="kv"><dt>Format</dt><dd>skops (sklearn pipeline) + LightGBM text model · manifest.json</dd><dt>Digest</dt><dd class="mono">model 9e31…b02 · manifest 4410…c7</dd><dt>Dependencies</dt><dd>requirements.lock digest 77aa… · python 3.12</dd><dt>Loaded by</dt><dd>worker only · API never</dd><dt>Pickle</dt><dd><span class="pill crit">quarantined</span> legacy joblib kept read-only</dd><dt>Signature</dt><dd>verified at load · last 02:00</dd></dl>
+</section>
+<section data-tab="Integrity checks">
+<div class="chips"><span class="pill ok">digest matches storage</span><span class="pill ok">manifest metrics = evaluation_metrics</span><span class="pill ok">contract = recipe</span><span class="pill ok">threshold in manifest</span><span class="pill ok">no code execution on load (skops trusted types)</span></div>
+</section>
+</div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Versions, promotion rules, releases, batch runs with contract results, contract, package integrity</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Online scoring API is Phase 9: should the UI already show a disabled "endpoint" tab?</li><li>Output delivery: download only, or push to a destination (S3, CRM) via connectors?</li><li>A/B or canary releases (two active releases) before Phase 9?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>MLflow mirror setting on the release (belongs in settings)</li><li>Manual "new release" when the Ops agent proposes them</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v2"></script>
+</body>
+</html>

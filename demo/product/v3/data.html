@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Data · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="data.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind churn › <b>Data</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Data</h1><p class="sub">What is in your dataset, how each column is used, and what the checks found.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="upload data">Upload new version</button></div>
+</div>
+
+<div class="tabs" data-tabs="data">
+  <button data-tab="overview" aria-selected="true">Overview</button>
+  <button data-tab="columns">Columns</button>
+  <button data-tab="checks">Checks <span class="cnt">2</span></button>
+  <button data-tab="versions">Versions</button>
+</div>
+
+<div data-tabpanel="data:overview" class="on">
+  <div class="stats">
+    <div class="stat"><span class="v">48,210</span><span class="l">rows · 9,412 customers</span></div>
+    <div class="stat"><span class="v">29 of 31</span><span class="l">columns used</span></div>
+    <div class="stat"><span class="v">21%</span><span class="l">of customers churn</span></div>
+    <div class="stat"><span class="v">18 months</span><span class="l">January 2025 to June 2026</span></div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Churn rate over time</h2><p>The shaded months are set aside for testing.</p></div>
+    <svg class="chart" viewBox="0 0 720 240" role="img" aria-label="Monthly churn rate rising from 19 to 24 percent over 18 months; the last three months are shaded as the test period">
+      <rect class="shade" x="566" y="20" width="134" height="170"/>
+      <line class="grid-l" x1="56" y1="190" x2="700" y2="190"/><line class="grid-l" x1="56" y1="105" x2="700" y2="105"/><line class="grid-l" x1="56" y1="20" x2="700" y2="20"/>
+      <text class="axis" x="46" y="194" text-anchor="end">15%</text><text class="axis" x="46" y="109" text-anchor="end">20%</text><text class="axis" x="46" y="24" text-anchor="end">25%</text>
+      <polyline class="ln-a" points="56,122 94,115 132,125 170,105 208,108 246,101 284,96 322,105 360,91 398,88 436,84 474,81 512,78 550,71 588,74 626,67 664,61 700,54"/>
+      <text class="axis" x="56" y="218">Jan 2025</text><text class="axis" x="360" y="218" text-anchor="middle">Mar 2026</text><text class="axis" x="633" y="218" text-anchor="middle">Test period</text>
+    </svg>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>What we noticed</h2></div>
+    <ul class="bullets">
+      <li><b>Churn is rising</b>, from 19% to 24%. That is why the model is tested on the newest months.</li>
+      <li><b><code>contract_end</code> is empty for 38% of customers.</b> These are month-to-month plans, so the gap itself is useful information.</li>
+      <li><b>14 customers appear twice in the same month.</b> Likely repeated exports. <button class="btn sm" data-mock="approve remove duplicates">Remove duplicates</button></li>
+    </ul>
+  </div>
+</div>
+
+<div data-tabpanel="data:columns">
+  <div class="card">
+    <div class="head"><h2>Columns</h2><input class="input" placeholder="Search columns" aria-label="Search columns" style="width:240px"></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Column</th><th>Used as</th><th>Decided by</th><th class="r">Missing</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><code>churned_next_30d</code></td><td><b>Target</b></td><td>You</td><td class="r">0%</td><td></td></tr>
+        <tr><td><code>last_login_days</code></td><td>Number</td><td>Rule</td><td class="r">1%</td><td><span class="tag warn">Strong signal · confirm</span></td></tr>
+        <tr><td><code>monthly_fee</code></td><td>Number</td><td>Rule</td><td class="r">0%</td><td></td></tr>
+        <tr><td><code>plan_type</code></td><td>Category</td><td>Rule</td><td class="r">0%</td><td></td></tr>
+        <tr><td><code>region_code</code></td><td>Category</td><td>Assistant</td><td class="r">0%</td><td><button class="btn sm" data-mock="undo">Undo</button></td></tr>
+        <tr><td><code>signup_date</code></td><td>Date → month, weekday</td><td>Rule</td><td class="r">0%</td><td></td></tr>
+        <tr><td><code>retention_offer_sent</code></td><td>Yes / no</td><td>Rule</td><td class="r">0%</td><td><span class="tag warn">Flagged for review</span></td></tr>
+        <tr class="dim"><td><code>churned_at</code></td><td>Left out</td><td>You</td><td class="r">79%</td><td>Gives away the answer</td></tr>
+        <tr class="dim"><td><code>customer_id</code></td><td>Left out</td><td>Assistant</td><td class="r">0%</td><td>Identifier</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">Showing 9 of 31 columns.</p>
+  </div>
+</div>
+
+<div data-tabpanel="data:checks">
+  <div class="card">
+    <div class="head"><h2>Could any column give away the answer?</h2><p>Checked on training data only.</p></div>
+    <div class="dlist">
+      <div class="drow"><span class="t"><code>churned_at</code> is filled in after the customer leaves</span><span class="d">Found by the rule and the assistant. Left out with your approval.</span><span class="a"><span class="tag ok">Resolved</span></span></div>
+      <div class="drow"><span class="t"><code>retention_offer_sent</code> may follow the decision to cancel</span><span class="d">Found by the assistant only. Kept in the model and flagged; it is never removed without you.</span><span class="a"><button class="btn sm" data-mock="approve leave out">Leave out</button><button class="btn sm" data-mock="approve keep">Keep</button></span></div>
+      <div class="drow"><span class="t"><code>last_login_days</code> is very predictive on its own</span><span class="d">Fine if the value is known on the day you predict.</span><span class="a"><button class="btn sm" data-mock="confirm known daily">It's known daily</button></span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Data quality</h2><span class="tag ok">5 of 7 passed</span></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">Duplicate customer-months</span><span class="d">14 rows.</span><span class="a"><span class="tag warn">Review</span></span></div>
+      <div class="drow"><span class="t">Columns with many gaps</span><span class="d"><code>contract_end</code> 38%, <code>churned_at</code> 79%.</span><span class="a"><span class="tag warn">Noted</span></span></div>
+      <div class="drow"><span class="t">Structure, dates, labels, encoding, exact duplicates</span><span class="a"><span class="tag ok">Passed</span></span></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="data:versions">
+  <div class="card">
+    <div class="head"><h2>Versions</h2><p>Each upload is kept. Models always point to the exact version they were built on.</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Version</th><th class="r">Rows</th><th>Period</th><th>Used by</th><th></th></tr></thead>
+      <tbody>
+        <tr class="win"><td><b>Version 1</b><small>uploaded by you</small></td><td class="r">48,210</td><td>Jan 2025 – Jun 2026</td><td>Runs E1, E2, E7 · Model v4</td><td><span class="tag ok">Current</span></td></tr>
+        <tr><td><b>Version 3</b><small>imported by the assistant</small></td><td class="r">51,330</td><td>Jan 2025 – Sep 2026</td><td>Run E9</td><td><button class="btn sm" data-mock="approve make current">Make current</button></td></tr>
+        <tr class="dim"><td>export_with_notes.xlsx</td><td class="r">—</td><td>—</td><td>—</td><td>Rejected: invalid file</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">Making version 3 current marks runs E1–E7 and model v4 as out of date. See <a href="graph.html">Lineage</a>.</p>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

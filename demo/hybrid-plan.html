@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DCLab Hybrid AI Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <nav class="views" aria-label="Views">
+    <a href="current-plan.html">Previous plan</a>
+    <a href="ai-first.html">AI-first proposal</a>
+    <a href="hybrid-plan.html" aria-current="page">Hybrid plan (adopted)</a>
+    <a href="comparison.html">Compare + cost</a>
+    <a href="product/map.html">Studio mock</a>
+  </nav>
+  <div class="eyebrow">DCLab · adopted roadmap · 2 Oct 2026 · Phases 0–3 done</div>
+  <h1>Hybrid AI: the agent drives, deterministic code decides what counts</h1>
+  <p class="muted">The user talks to a lead agent that runs upload → spec → train → results in the background. At every decision point AI proposes and a rule answers too; deterministic code validates, executes and measures. AI sits before or after each important step, never inside it, and every decision is a record with evidence and a way back. Screens are mockups with example data.</p>
+  <div class="legend">
+    <span><i class="dot det"></i>Deterministic (rules, engine, validators)</span>
+    <span><i class="dot ai"></i>AI (lead agent, specialists, Jev)</span>
+    <span><span class="lvl l0">L0</span> shadow</span>
+    <span><span class="lvl l1">L1</span> advise</span>
+    <span><span class="lvl l2">L2</span> auto + revert</span>
+    <span><span class="lvl l3">L3</span> auto + notify</span>
+  </div>
+  <nav class="toc" aria-label="Sections">
+    <a href="#order">Order of work</a>
+    <a href="#model">Hybrid model</a>
+    <a href="#layers">Governance · gateway · harness</a>
+    <a href="#pipeline-ai">AI before / after</a>
+    <a href="#jev">Jev, deterministically</a>
+    <a href="#chat">Lead agent</a>
+    <a href="#evidence">Pipeline evidence</a>
+    <a href="#ops">Agentic MLOps</a>
+    <a href="#dashboard">Dashboard</a>
+    <a href="#governance">Governance console</a>
+    <a href="#never">Never AI</a>
+  </nav>
+</header>
+
+<!-- ORDER -->
+<section id="order" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Order of work (phase ids kept)</div>
+    <h2>Phase 6 moves up to run right after Phase 3</h2>
+    <p class="muted">Code, ADRs and STATUS already refer to "Phase 6" for agent tables, so the ids stay and only the order changes: 0 → 1 → 2 → 3 → <b>6</b> → 4 → 5 → 7 → 8.</p>
+  </div>
+  <div class="phases">
+    <div class="phase">
+      <div class="top"><span class="num">0–3</span><span class="pill done">done</span></div>
+      <h3>Foundation, engine, state graph, agent interface</h3>
+      <p class="can">Correct models, lineage, decision records, /v1, tokens, SDK/CLI, MCP.</p>
+      <div class="plans">merged to main · PR #18 closes Phase 3</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:20%"></div></div><span>MCP</span></div>
+    </div>
+    <div class="phase ai-heavy">
+      <div class="top"><span class="num">6</span><span class="pill now">next · 3–4 wks</span></div>
+      <h3>Hybrid AI core</h3>
+      <p class="can">See, at every pipeline decision, what AI said, what the rule said and what was used; a cited Critic review on every run.</p>
+      <div class="plans">P6.1 ADR 0008 · P6.2-A tables · P6.2-B AI gateway · P6.10-A agent harness · P6.3-A fake + NOOA · P6.7 Jev policy · P6.9 decision points · P6.4 Critic, Investigator, Planner · P6.3-B lead-agent runtime · P6.6 review API · P6.10-B test harness · P6.11 governance API · P6.8 R3 + levels</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:90%"></div></div><span>core</span></div>
+    </div>
+    <div class="phase ai-heavy">
+      <div class="top"><span class="num">4</span><span class="pill plan">4–5 wks</span></div>
+      <h3>Agent-first Studio</h3>
+      <p class="can">Give a goal in chat; watch the pipeline run with evidence; decide in the inbox.</p>
+      <div class="plans">P4.1 IA · P4.7 lead-agent chat · P4.8 pipeline evidence · P4.9 dashboard · P4.2 graph · P4.3 inspectors · P4.4 compare + inbox · P4.5 · P4.6 E2E (AI on and off)</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:60%"></div></div><span>UI</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">5</span><span class="pill plan">3–4 wks</span></div>
+      <h3>Verify &amp; Improve (hybrid)</h3>
+      <p class="can">Audited iterations from two proposers, agent and rule, cross-checked.</p>
+      <div class="plans">P5.0 feature-leakage contract · P5.1 checks (+ time-travel) · P5.2 · P5.3 ADR 0007 · P5.4 loop · P6.5 agent proposer · P5.5 UX · R2 agent vs rule</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:40%"></div></div><span>loop</span></div>
+    </div>
+    <div class="phase ai-heavy">
+      <div class="top"><span class="num">7</span><span class="pill plan">4 wks</span></div>
+      <h3>Release, monitoring, agentic MLOps</h3>
+      <p class="can">Drift detected, explained, retrained and proposed for release.</p>
+      <div class="plans">P7.1 package · P7.2 release + batch · P7.3 MLflow · P7.4 drift · P7.5 rollback · P7.6 Ops agent</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:45%"></div></div><span>ops</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">8</span><span class="pill plan">3–4 wks</span></div>
+      <h3>Hosted beta</h3>
+      <p class="can">Design partners in the cloud with LLM budgets, metering and agent traces.</p>
+      <div class="plans">P8.1–P8.7</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:10%"></div></div><span>budgets</span></div>
+    </div>
+  </div>
+  <p class="callout"><b>Checkpoint G6</b>, about 4 weeks of R3 data after the Phase 6 gate and before the chat reaches users: confirm default trust levels, pick the lead agent's default model, set budget defaults.</p>
+</section>
+
+<!-- MODEL -->
+<section id="model" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">The hybrid model</div>
+    <h2>AI and rules cover each other</h2>
+  </div>
+  <div class="cards">
+    <div class="card ai"><div class="who"><b>1 · Tools are the safety boundary</b></div><p>The lead agent and specialists use the same tools as the MCP server. Each tool checks the request in code, so an agent can't skip the time split or read the test data. That is what makes multi-step agent loops safe.</p></div>
+    <div class="card ai"><div class="who"><b>2 · The state graph is the memory</b></div><p>Datasets, splits, experiments, models and decisions are nodes. The agent reads the graph to know what was tried, what worked and what is stale, not its chat history.</p></div>
+    <div class="card ai"><div class="who"><b>3 · Jev for small typed judgments</b></div><p>"Is this an ID?", "a date?", "might this leak?", "what does the user mean?" in about 100 ms, under a fixed deterministic policy. LLM agents do the reasoning and planning.</p></div>
+    <div class="card ai"><div class="who"><b>4 · Every AI action is a proposal with evidence</b></div><p>A decision record holds what was decided, by whom, why, the cited numbers, the rule's answer and how to undo it. Low-risk decisions apply automatically and reversibly.</p></div>
+    <div class="card ai"><div class="who"><b>5 · Trust levels per decision point</b></div><p>Every point starts at L0. It moves to L1, L2 or L3 only when R3 shows the AI is at least as good as the rule, and the change is itself a decision record.</p></div>
+    <div class="card"><div class="who"><b>Specialists vs lead agent</b></div><p>Specialist agents make one structured LLM call and return one typed proposal. The lead agent runs a bounded multi-step tool loop only when the task needs it.</p></div>
+  </div>
+</section>
+
+<!-- LAYERS -->
+<section id="layers" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Three layers above the agents</div>
+    <h2>Governance sets the rules, the gateway enforces them on every model call, the harness wraps every agent run</h2>
+    <p class="muted">Governance is data per workspace, not a code path. The gateway is the only door to any model; the harness is the only way to run an agent. CI rules keep both true, and every recorded run can be replayed offline.</p>
+  </div>
+  <div class="scroll-x">
+    <svg class="diagram" viewBox="0 0 960 520" role="img" aria-label="Four stacked layers: AI governance, AI gateway, agent harness, agents; with the harness lifecycle and the tool registry">
+      <defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="box det" x="40" y="16" width="880" height="86" rx="10"/>
+      <text class="t" x="60" y="40">AI governance · policies as data per workspace, with platform caps</text>
+      <text class="s" x="60" y="60">model allowlist per role · data class allowed to leave · trust level per decision point · budgets · approvers</text>
+      <text class="s" x="60" y="76">autonomy policy for operations · evaluation gates and auto-demotion · kill switches · retention · every change = decision record</text>
+      <text class="lbl" x="900" y="94" text-anchor="end">console: /v1/governance · Studio governance page</text>
+      <path class="edge" d="M480,102 L480,124" marker-end="url(#ah4)"/><text class="lbl" x="490" y="118">enforced by</text>
+      <rect class="box det" x="40" y="126" width="880" height="86" rx="10"/>
+      <text class="t" x="60" y="150">AI gateway · the only door to any model (LLM or Jev)</text>
+      <rect class="box" x="60" y="162" width="100" height="36" rx="6"/><text class="s" x="110" y="184" text-anchor="middle">router + allowlist</text>
+      <rect class="box" x="168" y="162" width="100" height="36" rx="6"/><text class="s" x="218" y="184" text-anchor="middle">redaction</text>
+      <rect class="box" x="276" y="162" width="100" height="36" rx="6"/><text class="s" x="326" y="184" text-anchor="middle">budget</text>
+      <rect class="box" x="384" y="162" width="100" height="36" rx="6"/><text class="s" x="434" y="184" text-anchor="middle">cache by digest</text>
+      <rect class="box" x="492" y="162" width="100" height="36" rx="6"/><text class="s" x="542" y="184" text-anchor="middle">limits + breakers</text>
+      <rect class="box" x="600" y="162" width="100" height="36" rx="6"/><text class="s" x="650" y="184" text-anchor="middle">ledger</text>
+      <rect class="box" x="708" y="162" width="100" height="36" rx="6"/><text class="s" x="758" y="184" text-anchor="middle">kill switches</text>
+      <rect class="box ai" x="816" y="162" width="90" height="36" rx="6"/><text class="s" x="861" y="184" text-anchor="middle">providers</text>
+      <path class="edge" d="M480,212 L480,234" marker-end="url(#ah4)"/><text class="lbl" x="490" y="228">called only through</text>
+      <rect class="box det" x="40" y="236" width="880" height="150" rx="10"/>
+      <text class="t" x="60" y="260">Agent harness · the only way to run an agent · AgentService.run(spec)</text>
+      <rect class="box" x="60" y="272" width="92" height="40" rx="6"/><text class="s" x="106" y="291" text-anchor="middle">build context</text><text class="s" x="106" y="305" text-anchor="middle">no raw rows</text>
+      <path class="edge" d="M152,292 L164,292" marker-end="url(#ah4)"/>
+      <rect class="box" x="166" y="272" width="92" height="40" rx="6"/><text class="s" x="212" y="291" text-anchor="middle">redact +</text><text class="s" x="212" y="305" text-anchor="middle">reserve budget</text>
+      <path class="edge" d="M258,292 L270,292" marker-end="url(#ah4)"/>
+      <rect class="box ai" x="272" y="272" width="92" height="40" rx="6"/><text class="s" x="318" y="291" text-anchor="middle">runtime</text><text class="s" x="318" y="305" text-anchor="middle">fake · NOOA · lead</text>
+      <path class="edge" d="M364,292 L376,292" marker-end="url(#ah4)"/>
+      <rect class="box" x="378" y="272" width="92" height="40" rx="6"/><text class="s" x="424" y="291" text-anchor="middle">tool registry</text><text class="s" x="424" y="305" text-anchor="middle">capability + validator</text>
+      <path class="edge" d="M470,292 L482,292" marker-end="url(#ah4)"/>
+      <rect class="box" x="484" y="272" width="92" height="40" rx="6"/><text class="s" x="530" y="291" text-anchor="middle">validate</text><text class="s" x="530" y="305" text-anchor="middle">output</text>
+      <path class="edge" d="M576,292 L588,292" marker-end="url(#ah4)"/>
+      <rect class="box" x="590" y="272" width="92" height="40" rx="6"/><text class="s" x="636" y="291" text-anchor="middle">record</text><text class="s" x="636" y="305" text-anchor="middle">events, proposals</text>
+      <path class="edge" d="M682,292 L694,292" marker-end="url(#ah4)"/>
+      <rect class="box" x="696" y="272" width="92" height="40" rx="6"/><text class="s" x="742" y="291" text-anchor="middle">settle usage</text><text class="s" x="742" y="305" text-anchor="middle">eval sample</text>
+      <path class="edge" d="M788,292 L800,292" marker-end="url(#ah4)"/>
+      <rect class="box" x="802" y="272" width="104" height="40" rx="6"/><text class="s" x="854" y="291" text-anchor="middle">replay</text><text class="s" x="854" y="305" text-anchor="middle">offline, identical</text>
+      <text class="lbl" x="60" y="336">hooks: pre-run · pre-call · pre-tool · post-tool · post-run — effects: observe, deny, modify result, add citation</text>
+      <text class="lbl" x="60" y="356">registry tools: inspect_dataset · propose_problem_spec · run_experiment · compare · branch · get_evidence · propose_release — shared with MCP</text>
+      <text class="lbl" x="60" y="376">no tool reads holdout rows, selects a winner or computes a metric (property-tested)</text>
+      <path class="edge" d="M480,386 L480,408" marker-end="url(#ah4)"/>
+      <rect class="box ai" x="40" y="410" width="880" height="48" rx="10"/>
+      <text class="t" x="60" y="430">Agents · lead agent (bounded loop) · specialists, one call each · Jev purposes under a fixed policy</text>
+      <text class="s" x="60" y="448">Critic · DatasetInvestigator · ExperimentPlanner · ImprovementHypothesis · Ops</text>
+      <text class="z" x="40" y="490">CI RULES · provider SDKs only under gateway/providers · runtimes only via AgentService.run · every call has a ledger row · every run replays</text>
+      <text class="z" x="40" y="508">TEST HARNESS · fake provider from recorded fixtures · golden transcripts · property tests · chaos: timeout, breaker, budget, invalid output, switch mid-run</text>
+    </svg>
+  </div>
+</section>
+
+<!-- AI BEFORE / AFTER -->
+<section id="pipeline-ai" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Where AI sits</div>
+    <h2>AI before or after each important step, never inside it</h2>
+    <p class="muted">AI-before proposes inputs and is cross-checked against the rule. AI-after reviews outputs and cites evidence. Training, selection and holdout scoring stay code only.</p>
+  </div>
+  <div class="scroll-x">
+    <svg class="diagram" viewBox="0 0 964 312" role="img" aria-label="Pipeline of seven deterministic stages with AI proposals above five of them and AI reviews below three of them">
+      <defs>
+        <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead ai" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="ah3d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <text class="z" x="20" y="22">AI-BEFORE · proposes inputs · cross-checked with the rule</text>
+      <rect class="box ai" x="20" y="32" width="120" height="48" rx="7"/><text class="t" x="80" y="52" text-anchor="middle">Planner</text><text class="s" x="80" y="69" text-anchor="middle">target, spec</text>
+      <rect class="box ai" x="154" y="32" width="120" height="48" rx="7"/><text class="t" x="214" y="52" text-anchor="middle">Jev</text><text class="s" x="214" y="69" text-anchor="middle">ID? role?</text>
+      <rect class="box ai" x="288" y="32" width="120" height="48" rx="7"/><text class="t" x="348" y="52" text-anchor="middle">Jev + Data</text><text class="s" x="348" y="69" text-anchor="middle">leak suspect?</text>
+      <rect class="box ai" x="422" y="32" width="120" height="48" rx="7"/><text class="t" x="482" y="52" text-anchor="middle">Planner</text><text class="s" x="482" y="69" text-anchor="middle">split strategy</text>
+      <rect class="box ai" x="556" y="32" width="120" height="48" rx="7"/><text class="t" x="616" y="52" text-anchor="middle">Planner</text><text class="s" x="616" y="69" text-anchor="middle">families, budget</text>
+      <path class="edge ai" d="M80,80 L80,118" marker-end="url(#ah3)"/>
+      <path class="edge ai" d="M214,80 L214,118" marker-end="url(#ah3)"/>
+      <path class="edge ai" d="M348,80 L348,118" marker-end="url(#ah3)"/>
+      <path class="edge ai" d="M482,80 L482,118" marker-end="url(#ah3)"/>
+      <path class="edge ai" d="M616,80 L616,118" marker-end="url(#ah3)"/>
+      <text class="lbl ai" x="684" y="104">⇄ rule answers too</text>
+      <text class="z" x="20" y="112">DETERMINISTIC PIPELINE · validates, executes, measures</text>
+      <rect class="box det" x="20" y="120" width="120" height="56" rx="7"/><text class="t" x="80" y="143" text-anchor="middle">Profile</text><text class="s" x="80" y="161" text-anchor="middle">train rows only</text>
+      <rect class="box det" x="154" y="120" width="120" height="56" rx="7"/><text class="t" x="214" y="143" text-anchor="middle">Column roles</text><text class="s" x="214" y="161" text-anchor="middle">rule + AI, by level</text>
+      <rect class="box det" x="288" y="120" width="120" height="56" rx="7"/><text class="t" x="348" y="143" text-anchor="middle">Leakage audit</text><text class="s" x="348" y="161" text-anchor="middle">exclusion max L1</text>
+      <rect class="box det" x="422" y="120" width="120" height="56" rx="7"/><text class="t" x="482" y="143" text-anchor="middle">Split plan</text><text class="s" x="482" y="161" text-anchor="middle">code builds split</text>
+      <rect class="box det" x="556" y="120" width="120" height="56" rx="7"/><text class="t" x="616" y="143" text-anchor="middle">Train (CV)</text><text class="s" x="616" y="161" text-anchor="middle">code only</text>
+      <rect class="box det" x="690" y="120" width="120" height="56" rx="7"/><text class="t" x="750" y="143" text-anchor="middle">Select</text><text class="s" x="750" y="161" text-anchor="middle">CV rule only</text>
+      <rect class="box det" x="824" y="120" width="120" height="56" rx="7"/><text class="t" x="884" y="143" text-anchor="middle">Holdout</text><text class="s" x="884" y="161" text-anchor="middle">scored once</text>
+      <path class="edge" d="M140,148 L152,148" marker-end="url(#ah3d)"/>
+      <path class="edge" d="M274,148 L286,148" marker-end="url(#ah3d)"/>
+      <path class="edge" d="M408,148 L420,148" marker-end="url(#ah3d)"/>
+      <path class="edge" d="M542,148 L554,148" marker-end="url(#ah3d)"/>
+      <path class="edge" d="M676,148 L688,148" marker-end="url(#ah3d)"/>
+      <path class="edge" d="M810,148 L822,148" marker-end="url(#ah3d)"/>
+      <path class="edge ai" d="M80,176 L80,218" marker-end="url(#ah3)"/>
+      <path class="edge ai" d="M750,176 L750,218" marker-end="url(#ah3)"/>
+      <path class="edge ai" d="M884,176 L884,218" marker-end="url(#ah3)"/>
+      <rect class="box ai" x="20" y="220" width="120" height="48" rx="7"/><text class="t" x="80" y="240" text-anchor="middle">Investigator</text><text class="s" x="80" y="257" text-anchor="middle">data findings</text>
+      <rect class="box ai" x="690" y="220" width="120" height="48" rx="7"/><text class="t" x="750" y="240" text-anchor="middle">Critic</text><text class="s" x="750" y="257" text-anchor="middle">run review</text>
+      <rect class="box ai" x="824" y="220" width="120" height="48" rx="7"/><text class="t" x="884" y="240" text-anchor="middle">Report agent</text><text class="s" x="884" y="257" text-anchor="middle">plain summary</text>
+      <text class="z" x="20" y="296">AI-AFTER · reviews outputs · cites evidence · never changes state by itself</text>
+    </svg>
+  </div>
+</section>
+
+<!-- JEV -->
+<section id="jev" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Jev at each decision point</div>
+    <h2>A model answer, used through fixed code</h2>
+    <p class="muted">Jev's answer is one input to a deterministic policy: a pinned release, thresholds owned in code, answers cached by input digest so the same input always gives the same result, and a fixed agreement table.</p>
+  </div>
+  <div class="window"><div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Jev vs rule</th><th>Confidence in acting band</th><th>At L2</th><th>At L0 / L1</th></tr></thead>
+      <tbody>
+        <tr><td>agree</td><td>yes</td><td>apply (same value)</td><td>rule value, logged</td></tr>
+        <tr><td>disagree</td><td>yes</td><td>Jev value if the validator accepts it, flagged in the inbox</td><td>rule value + L1 review item</td></tr>
+        <tr><td>any</td><td>no (abstain band)</td><td>rule value</td><td>rule value</td></tr>
+        <tr><td>timeout, breaker open, over budget</td><td>—</td><td>rule value</td><td>rule value</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+  <div class="tbl-wrap window">
+    <table>
+      <thead><tr><th>Purpose</th><th>Question type</th><th>Pairs with rule</th><th>Max level</th></tr></thead>
+      <tbody>
+        <tr><td>column.is_identifier</td><td>yes/no</td><td>schema inference ID rule</td><td><span class="lvl l2">L2</span></td></tr>
+        <tr><td>column.semantic_role</td><td>choice</td><td>column-role split</td><td><span class="lvl l2">L2</span></td></tr>
+        <tr><td>feature.leakage_suspect</td><td>yes/no</td><td>leakage auditor name rules</td><td><span class="lvl l1">L1</span> flag only, never excludes</td></tr>
+        <tr><td>command.intent_route</td><td>choice</td><td>none</td><td><span class="lvl l1">L1</span> route with confirmation</td></tr>
+        <tr><td>proposal.completeness</td><td>score</td><td>none</td><td><span class="lvl l0">L0</span> display only</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- CHAT -->
+<section id="chat" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">runtime Phase 6 · chat Phase 4</span><span class="pill ai">lead agent</span></div>
+    <h2>The user states a goal; the AI data scientist does the work</h2>
+    <p class="muted">Upload, settings, training and results happen in the background through validated tools. The user makes decisions instead of filling in forms. With AI off, the same Lab tab shows the forms.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › Lab</span><span class="ex">example conversation</span></div>
+    <div class="win-body">
+      <div class="chat">
+        <div class="msg user"><span class="from">You · customers.csv attached</span>Here's our customer CSV. Predict who will churn next month. We must catch at least 80% of churners.</div>
+        <div class="msg agent"><span class="from">DCLab agent · 7 tool calls · 38 s · $0.19</span>
+          <ul>
+            <li><span class="lvl l2">L2</span> <span class="mono">customer_id</span> looks like an ID, so I won't use it. (Jev p 0.99 · rule agrees)</li>
+            <li><span class="lvl l1">L1</span> <span class="mono">churned_at</span> would leak the answer, so I flagged it. (rule: after-target date · Jev p 0.97)</li>
+            <li><span class="lvl l2">L2</span> <span class="mono">signup_date</span> is a date.</li>
+            <li><span class="lvl l1">L1</span> Your data covers 18 months, so I'll test on the latest 3 months (time split), not on random rows.</li>
+            <li><span class="lvl l1">L1</span> Goal: recall ≥ 80%, then the best precision. I'll try 5 model types within a 10-minute budget.</li>
+          </ul>
+          <div class="btns"><span class="btn primary">Accept 3 decisions</span><span class="btn">Review each</span><span class="btn">See pipeline</span></div>
+        </div>
+        <div class="msg user"><span class="from">You</span>Accept. Go.</div>
+        <div class="msg agent"><span class="from">DCLab agent · run E1 · 4 m 12 s</span>
+          <p>Best: LightGBM. Recall 82%, precision 61% on unseen months. It beats the simple baseline by 34 points. One risk: <span class="mono">last_login_days</span> carries most of the signal (Critic finding, cited).</p>
+          <p>Do you want me to try to raise precision? I have 3 ideas, checked against the rule proposer.</p>
+          <div class="btns"><span class="btn ai">Try 3 ideas</span><span class="btn">See pipeline evidence</span><span class="btn">Show code</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EVIDENCE -->
+<section id="evidence" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 4 · P4.8</span><span class="pill det">reads events, records, artifacts</span></div>
+    <h2>The pipeline view proves every stage ran correctly</h2>
+    <p class="muted">While the agent works in the background, the Pipeline tab shows each stage with the deterministic result, the AI notes before and after it, the decision outcome, the artifacts by digest and the checks.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › E1 › Pipeline</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Stage</th><th>Status</th><th>Deterministic result</th><th>AI before / after</th><th>Decision</th><th>Artifact · digest</th></tr></thead>
+        <tbody>
+          <tr><td>Upload + publish</td><td><span class="pill ok">pass</span></td><td>48,210 rows · 31 cols · structural checks 6/6</td><td>—</td><td>—</td><td class="mono">dataset 7f3a…c21</td></tr>
+          <tr><td>Profile</td><td><span class="pill ok">pass</span></td><td>train rows only · 21% positive</td><td>after: Investigator, 2 findings</td><td>—</td><td class="mono">profile 19bd…04e</td></tr>
+          <tr><td>Column roles</td><td><span class="pill ok">pass</span></td><td>17 numeric · 11 categorical · 1 date</td><td>before: Jev on 31 columns</td><td>AI = rule on 30 · 1 AI at <span class="lvl l2">L2</span></td><td>—</td></tr>
+          <tr><td>Leakage audit</td><td><span class="pill warn">review</span></td><td>2 excluded · 1 review flag</td><td>before: Jev + Data</td><td><span class="lvl l1">L1</span> accepted by you</td><td class="mono">audit e801…7aa</td></tr>
+          <tr><td>Split plan</td><td><span class="pill ok">pass</span></td><td>temporal holdout 8,904 rows · 5 folds</td><td>before: Planner</td><td><span class="lvl l1">L1</span> accepted</td><td class="mono">split_assignment a3f9…d10</td></tr>
+          <tr><td>Train (CV)</td><td><span class="pill ok">pass</span></td><td>6 candidates + dummy · preprocessing in folds</td><td>code only</td><td>—</td><td class="mono">fold metrics 5×6</td></tr>
+          <tr><td>Select + threshold</td><td><span class="pill ok">pass</span></td><td>lightgbm__tuned locked · threshold 0.31 from OOF</td><td>code only</td><td>winner_locked (rule)</td><td class="mono">selection 66c2…91b</td></tr>
+          <tr><td>Holdout</td><td><span class="pill ok">pass</span></td><td>scored once · recall 0.82 · precision 0.61</td><td>code only</td><td>—</td><td class="mono">predictions 0c4d…e72</td></tr>
+          <tr><td>Verifier</td><td><span class="pill ok">pass</span></td><td>19 checks pass · 1 warning · 0 fail</td><td>after: Critic (cited)</td><td>—</td><td class="mono">report b2e0…5f3</td></tr>
+          <tr><td>Reproduction</td><td><span class="pill ok">pass</span></td><td>exported script matches CV, max |Δ| 0.0</td><td>after: Report agent</td><td>—</td><td class="mono">code 4a1f…8c0</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+</section>
+
+<!-- OPS -->
+<section id="ops" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 7 · P7.6</span><span class="pill ai">Ops agent</span><span class="pill det">drift job, release, rollback in code</span></div>
+    <h2>Three months later, without being asked</h2>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Inbox</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="msg agent" style="max-width:none"><span class="from">Ops agent · Monday 02:41</span>
+        <p><b>Churn-model drift:</b> new customers from the March campaign look different. Precision fell to 48%. I retrained on the new data and it's back to 59%, tested on the same kind of split.</p>
+        <div class="cite"><span>drift job W9: PSI 0.22 on plan_type (rule, L3)</span><span>Data agent: new plan family_5g, 6% of rows (L3)</span><span>retrain E9 on DS v3, same split rules (L2)</span><span>Critic: no segment worse than champion by &gt; 0.01 (L3)</span><span>release R-15 waits for you (L1)</span></div>
+        <div class="btns"><span class="btn primary">Approve release</span><span class="btn">See comparison</span><span class="btn">Ignore</span></div>
+      </div>
+      <p class="note">With AI off, the drift job still writes a deterministic finding and nothing else acts.</p>
+    </div>
+  </div>
+</section>
+
+<!-- DASHBOARD -->
+<section id="dashboard" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 4 · P4.9</span></div>
+    <h2>Dashboard: data, models, agents, trust levels, spend</h2>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind › Dashboard</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="stats">
+        <div class="stat"><span class="v">4</span><span class="l">projects · 3 with a champion</span></div>
+        <div class="stat"><span class="v">7</span><span class="l">open proposals in the inbox</span></div>
+        <div class="stat"><span class="v">38</span><span class="l">L2 auto-decisions this month · 2 reverted</span></div>
+        <div class="stat"><span class="v">$9.40</span><span class="l">LLM spend of $25 budget</span><div class="meter"><i style="width:38%"></i></div></div>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <h4>Decision points</h4>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Point</th><th class="num">AI vs rule</th><th>Level</th></tr></thead>
+            <tbody>
+              <tr><td>column role</td><td class="num">93% vs 88%</td><td><span class="lvl l2">L2</span></td></tr>
+              <tr><td>identifier</td><td class="num">98.6% vs 97.1%</td><td><span class="lvl l2">L2</span></td></tr>
+              <tr><td>leakage suspect</td><td class="num">90% vs 71%</td><td><span class="lvl l1">L1</span></td></tr>
+              <tr><td>split strategy</td><td class="num">95% vs 94%</td><td><span class="lvl l1">L1</span></td></tr>
+              <tr><td>next improve action</td><td class="num">pending R2</td><td><span class="lvl l0">L0</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="panel">
+          <h4>Tools available to agents</h4>
+          <div class="chips">
+            <span class="chip"><b>inspect_dataset</b><small>read</small></span>
+            <span class="chip"><b>propose_problem_spec</b><small>L1</small></span>
+            <span class="chip"><b>run_experiment</b><small>budgeted</small></span>
+            <span class="chip"><b>compare_experiments</b><small>same split only</small></span>
+            <span class="chip"><b>branch_experiment</b><small>typed change set</small></span>
+            <span class="chip"><b>get_evidence</b><small>read</small></span>
+            <span class="chip"><b>propose_release</b><small>L1 · Phase 7</small></span>
+          </div>
+          <p class="note">No tool reads the holdout, picks a winner or computes a metric.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- GOVERNANCE CONSOLE -->
+<section id="governance" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 6 · P6.11 API · Phase 4 · P4.9 page</span><span class="pill det">policies as data</span></div>
+    <h2>Governance console: what the AI may do here, and proof it did</h2>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind › Governance</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="cols">
+        <div class="panel">
+          <h4>Effective policy · v4 · changed by decision record d-218</h4>
+          <dl class="kv">
+            <dt>Models</dt><dd>lead: Sonnet 5.5 · specialists: Sonnet 5.5 · Jev 1.13 pinned</dd>
+            <dt>Data may leave</dt><dd>aggregates (sample values off, raw rows never)</dd>
+            <dt>Budget</dt><dd>$25 / month · $1.00 / run · alert at 80%</dd>
+            <dt>Autonomy (ops)</dt><dd>auto-retrain ≤ 2 / week · auto-release off · rollback if precision −0.05</dd>
+            <dt>Approvers</dt><dd>2 (policy and levels) · 4 (L1 decisions)</dd>
+            <dt>Kill switches</dt><dd>all on · last flip: none</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <h4>Incidents and audit</h4>
+          <div class="events">
+            <div class="ev det"><span class="when">Tue 11:02 · auto</span><br>`feature.leakage_suspect`: 5 validator rejections in 24 h → demoted L1 → L0, incident i-31 opened.</div>
+            <div class="ev hum"><span class="when">Tue 14:40 · approver</span><br>Reviewed: prompt release v7 cited a renamed column. Fixed in v8; level restored by d-221.</div>
+            <div class="ev det"><span class="when">Mon 02:00 · nightly</span><br>Replay of 212 recorded runs: 212 identical. Ledger rows = model calls: 1,948 = 1,948.</div>
+          </div>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Decision point</th><th class="num">Cases</th><th class="num">AI</th><th class="num">Rule</th><th class="num">Disagree</th><th>Level · cap</th><th>Evidence</th></tr></thead>
+        <tbody>
+          <tr><td>column.is_identifier</td><td class="num">412</td><td class="num">98.6%</td><td class="num">97.1%</td><td class="num">2.4%</td><td><span class="lvl l2">L2</span> · L2</td><td class="mono">r3-2026-10-20</td></tr>
+          <tr><td>column.semantic_role</td><td class="num">388</td><td class="num">93.1%</td><td class="num">88.4%</td><td class="num">9.0%</td><td><span class="lvl l2">L2</span> · L2</td><td class="mono">r3-2026-10-20</td></tr>
+          <tr><td>feature.leakage_suspect</td><td class="num">301</td><td class="num">90.4%</td><td class="num">71.0%</td><td class="num">21%</td><td><span class="lvl l0">L0</span> · L1 (incident i-31)</td><td class="mono">r3-2026-10-20</td></tr>
+          <tr><td>split.strategy</td><td class="num">320</td><td class="num">95.3%</td><td class="num">94.0%</td><td class="num">3.1%</td><td><span class="lvl l1">L1</span> · L1</td><td class="mono">r3-2026-10-20</td></tr>
+          <tr><td>improve.next_action</td><td class="num">23 tasks</td><td class="num">pending R2</td><td class="num">61%</td><td class="num">—</td><td><span class="lvl l0">L0</span> · L2</td><td>—</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+</section>
+
+<!-- NEVER AI -->
+<section id="never" class="gaps">
+  <div class="eyebrow">Stays deterministic</div>
+  <h3>Never AI, and always works with AI off</h3>
+  <ul>
+    <li>Model training, metric calculation, final model selection on validation data, holdout scoring and the splits themselves are plain code.</li>
+    <li>Column exclusion never goes above L1; Jev is never asked numeric questions; no raw rows go to an LLM without a workspace flag.</li>
+    <li>Turning off NOOA and Jev leaves every Phase 1–5 test green; LLM outages and budget limits fall back to the rule answer.</li>
+    <li>Agents propose features only after the feature-engineering leakage contract (P5.0) is in place.</li>
+    <li>No model call outside the gateway, no agent run outside the harness; both are CI rules, and every recorded run replays offline.</li>
+  </ul>
+</section>
+
+<footer>
+  Adopted 2 October 2026. Authority: <span class="mono">docs/mvp/ROADMAP.md</span> § Hybrid AI model and <span class="mono">docs/mvp/AGENTS_NOOA_JEV.md</span> §1b. All project numbers are example data; trust-level figures are illustrative until R3 runs.
+</footer>
+
+</div>
+</body>
+</html>

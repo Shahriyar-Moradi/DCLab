@@ -1,0 +1,76 @@
+<!-- title: Inbox · DCLab -->
+<!-- crumbs: Northwind Telecom › <b>Inbox</b> -->
+<div class="page-head">
+  <div><h1>Inbox</h1><p class="sub">Decisions that need you, what the assistant did on its own, and the full history.</p></div>
+</div>
+
+<div class="tabs" data-tabs="inbox">
+  <button data-tab="needs" aria-selected="true">Needs you <span class="cnt">3</span></button>
+  <button data-tab="auto">Done automatically</button>
+  <button data-tab="history">History</button>
+</div>
+
+<div data-tabpanel="inbox:needs" class="on">
+  <div class="card ask">
+    <span class="who">Northwind churn · from the assistant · today 09:12</span>
+    <h2>Put the retrained churn model into use?</h2>
+    <p>New customers on the <code>family_5g</code> plan look different from what the model learned, and precision fell to 48%. I retrained on newer data. Precision is back to 59% and it still catches 80% of churners.</p>
+    <div class="mini">
+      <div><b>48% → 59%</b><span>precision on recent weeks</span></div>
+      <div><b>80%</b><span>of churners caught, unchanged</span></div>
+      <div><b>One click</b><span>to go back to version 4</span></div>
+    </div>
+    <div class="toolbar"><button class="btn primary" data-mock="approve release">Approve</button><a class="btn" href="experiments.html#compare">See comparison</a><button class="btn" data-mock="reject release">Reject</button></div>
+    <details class="more"><summary>Evidence</summary><div>
+      <div class="ev-line"><b>Checks</b><span>All 20 automatic checks passed on the new run.</span></div>
+      <div class="ev-line"><b>Rule</b><span>The release rule agrees: every requirement is met.</span></div>
+      <div class="ev-line"><b>AI review</b><span>No customer group is worse off by more than 1 point.</span></div>
+      <div class="ev-line"><b>Safety net</b><span>If precision drops 5 points after release, version 4 comes back automatically.</span></div>
+    </div></details>
+  </div>
+
+  <div class="card ask">
+    <span class="who">Northwind churn · question from the assistant · today 09:10</span>
+    <h2>Is <code>family_5g</code> the same product family as <code>family</code>?</h2>
+    <p>This plan is new in the latest data. Your answer is saved with the project and helps the next model.</p>
+    <div class="toolbar"><button class="btn primary" data-mock="answer yes">Yes, same family</button><button class="btn" data-mock="answer no">No, it's separate</button></div>
+  </div>
+
+  <div class="card ask">
+    <span class="who">Lead scoring · from the assistant · 3 days ago</span>
+    <h2>Use <code>converted_90d</code> as the target?</h2>
+    <p>The file has three yes/no columns that could be the target. This one matches your goal best. The automatic rule could not choose between them.</p>
+    <div class="toolbar"><button class="btn primary" data-mock="approve target">Use this column</button><button class="btn" data-mock="choose another column">Choose another</button></div>
+  </div>
+</div>
+
+<div data-tabpanel="inbox:auto">
+  <div class="card">
+    <div class="head"><h2>Done automatically</h2><p>Small, safe choices the assistant made. Undo any of them.</p></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">Started retraining after the drift alert</span><span class="d">Northwind churn · Monday · allowed up to twice a week</span><span class="a"><button class="btn sm" data-mock="cancel run">Cancel run</button></span></div>
+      <div class="drow"><span class="t">Treated <code>region_code</code> as a category</span><span class="d">Northwind churn · Thursday · the rule read it as a number</span><span class="a"><button class="btn sm" data-mock="undo">Undo</button></span></div>
+      <div class="drow"><span class="t">Chose which model types to try</span><span class="d">Northwind churn · Thursday · the simple baseline is always included</span><span class="a"><button class="btn sm" data-mock="undo">Undo</button></span></div>
+      <div class="drow"><span class="t">Treated <code>vendor_code</code> as a category</span><span class="d">Invoice late payment · Wednesday · the rule agreed</span><span class="a"><button class="btn sm" data-mock="undo">Undo</button></span></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="inbox:history">
+  <div class="card">
+    <div class="head"><h2>Decision history</h2><div class="toolbar"><input class="input" placeholder="Search decisions" aria-label="Search decisions" style="width:220px"><button class="btn sm" data-mock="export history csv">Export</button></div></div>
+    <div class="tbl"><table>
+      <thead><tr><th>When</th><th>Decision</th><th>Project</th><th>Decided by</th></tr></thead>
+      <tbody>
+        <tr><td>Mon 02:14</td><td>Retrain on newer data (run E9)</td><td>Northwind churn</td><td><span class="tag info">Assistant</span></td></tr>
+        <tr><td>Mon</td><td>Model version 4 put into use</td><td>Northwind churn</td><td><span class="tag ok">You</span></td></tr>
+        <tr><td>Mon</td><td>LightGBM chosen as best model in E7</td><td>Northwind churn</td><td><span class="tag">Fixed rule</span></td></tr>
+        <tr><td>Thu 09:04</td><td>Leave out <code>churned_at</code></td><td>Northwind churn</td><td><span class="tag ok">You</span><small>suggested by the assistant</small></td></tr>
+        <tr><td>Thu 09:04</td><td>Test on the latest 3 months</td><td>Northwind churn</td><td><span class="tag ok">You</span><small>suggested by the assistant</small></td></tr>
+        <tr><td>Thu 09:03</td><td><code>region_code</code> is a category</td><td>Northwind churn</td><td><span class="tag info">Assistant</span></td></tr>
+        <tr class="dim"><td>Tue</td><td>Suggested a feature from a column that does not exist</td><td>Lead scoring</td><td>Blocked by an automatic check</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">Nothing is ever edited or deleted here. A correction is a new entry.</p>
+  </div>
+</div>

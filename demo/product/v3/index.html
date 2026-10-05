@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f8f8">
+  <title>DCLab · Product preview</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main class="launch">
+    <header class="launch-top">
+      <a class="brand" href="index.html"><span class="logo">DC</span><b>DCLab</b></a>
+      <span class="pill">Demo data</span>
+    </header>
+
+    <section>
+      <h1>See DCLab the way each person uses it.</h1>
+      <p class="sub">Pick a view. Everything inside is a working preview with sample data.</p>
+    </section>
+
+    <section class="roles" aria-label="Choose a view">
+      <a class="role" href="home.html">
+        <span class="mark" aria-hidden="true">◎</span>
+        <span class="for">For data scientists and developers</span>
+        <h2>Studio</h2>
+        <p>Give the assistant your data and a goal. Review its plan, see the evidence, and decide what goes into use.</p>
+        <ul><li>Chat-led lab with approvals</li><li>Runs, comparison and improvement</li><li>Models, monitoring and AI governance</li></ul>
+        <span class="go">Open Studio <span aria-hidden="true">→</span></span>
+      </a>
+      <a class="role business" href="client.html">
+        <span class="mark" aria-hidden="true">◉</span>
+        <span class="for">For business teams</span>
+        <h2>Results</h2>
+        <p>See the predictions in plain language, how much to trust them, and download this week's list.</p>
+        <ul><li>This week's list with reasons</li><li>Trust figures in plain words</li><li>Ask a question</li></ul>
+        <span class="go">Open Results <span aria-hidden="true">→</span></span>
+      </a>
+      <a class="role operator" href="operator.html">
+        <span class="mark" aria-hidden="true">▣</span>
+        <span class="for">For the DCLab platform team</span>
+        <h2>Operator console</h2>
+        <p>Platform health, jobs, held uploads and the limits that no workspace can change.</p>
+        <ul><li>Workspaces and jobs</li><li>Quarantine review</li><li>Quality gates</li></ul>
+        <span class="go">Open console <span aria-hidden="true">→</span></span>
+      </a>
+    </section>
+
+    <footer class="launch-foot">
+      <span>All names, numbers and events are invented. Buttons respond, but nothing real is changed.</span>
+      <span><a href="map.html">Product map</a> · <button class="btn link" type="button" id="reset-demo">Reset demo</button> <span id="reset-message" role="status" aria-live="polite"></span></span>
+    </footer>
+  </main>
+  <script>
+    (function () {
+      document.getElementById('reset-demo').addEventListener('click', function () {
+        try { localStorage.removeItem('dclab-product-prototype-v1'); } catch (_) {}
+        document.getElementById('reset-message').textContent = 'Done.';
+      });
+    })();
+  </script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

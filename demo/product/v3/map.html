@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Product map · DCLab</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="map.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs"><b>Product map</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Product map</h1><p class="sub">For the team, not for customers: what each screen is for, what the design still leaves open and what is deliberately left for later.</p></div>
+  <div class="toolbar"><a class="btn" href="index.html">Switch view</a></div>
+</div>
+
+<div class="tabs" data-tabs="map">
+  <button data-tab="screens" aria-selected="true">Screens</button>
+  <button data-tab="open">Open questions <span class="cnt">8</span></button>
+  <button data-tab="later">Later</button>
+</div>
+
+<div data-tabpanel="map:screens" class="on">
+  <div class="card">
+    <div class="head"><h2>Data scientist</h2><p>10 screens. Each has one job.</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Screen</th><th>Its one job</th><th>Tabs</th></tr></thead>
+      <tbody>
+        <tr><td><a href="home.html"><b>Home</b></a></td><td>What needs me today</td><td>Overview · Activity</td></tr>
+        <tr><td><a href="inbox.html"><b>Inbox</b></a></td><td>Decide, undo, look back</td><td>Needs you · Done automatically · History</td></tr>
+        <tr><td><a href="lab.html"><b>Lab</b></a></td><td>Give a goal, get a model</td><td>Conversation · This run · What the assistant can do</td></tr>
+        <tr><td><a href="data.html"><b>Data</b></a></td><td>Understand the dataset</td><td>Overview · Columns · Checks · Versions</td></tr>
+        <tr><td><a href="experiments.html"><b>Experiments</b></a></td><td>See, compare and improve runs</td><td>Runs · Compare · Improve</td></tr>
+        <tr><td><a href="pipeline.html"><b>Run</b></a></td><td>Trust one run</td><td>Summary · Pipeline · Models tried · Review · Code</td></tr>
+        <tr><td><a href="models.html"><b>Models</b></a></td><td>What is in use and how to score</td><td>In use · Versions · Scoring runs · Input format</td></tr>
+        <tr><td><a href="monitoring.html"><b>Monitoring</b></a></td><td>Is the model still right</td><td>Overview · Data drift · Performance · Automation</td></tr>
+        <tr><td><a href="graph.html"><b>Lineage</b></a></td><td>Where things came from</td><td>—</td></tr>
+        <tr><td><a href="governance.html"><b>AI governance</b></a></td><td>What the AI may do</td><td>Autonomy · Assistants · Data and models · Budget · Audit</td></tr>
+        <tr><td><a href="settings.html"><b>Settings</b></a></td><td>People, usage, API, safety</td><td>Members · Usage · Developers · Data safety · Notifications</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="grid cols-2">
+    <div class="card"><div class="head"><h2>Business user</h2></div><p class="muted">One screen, <a href="client.html">Churn prediction</a>: the list, how much to trust it, questions, and a plain-language description of the model. No experiment details.</p></div>
+    <div class="card"><div class="head"><h2>Operator</h2></div><p class="muted">One screen, <a href="operator.html">Operator console</a>: workspaces, jobs, held uploads, platform limits and quality gates. Metadata only.</p></div>
+  </div>
+</div>
+
+<div data-tabpanel="map:open">
+  <div class="card">
+    <div class="head"><h2>What the design assumes but the plan does not cover yet</h2></div>
+    <ul class="bullets">
+      <li><b>Reasons per customer.</b> The business list shows "main reasons". That needs a deterministic explainer in the engine.</li>
+      <li><b>Real outcomes for monitoring.</b> "Upload outcomes" exists as a button; the path (upload, connector or labeling) is undecided.</li>
+      <li><b>Notifications.</b> Email and in-app are shown; no delivery service is planned yet.</li>
+      <li><b>Plain-language summaries.</b> Start from fixed templates; add generation only if it saves time.</li>
+      <li><b>Data cleaning.</b> "Remove duplicates" is a button; who owns cleaning steps is open.</li>
+      <li><b>Workspace-level decisions.</b> Policy changes need the same history as project decisions.</li>
+      <li><b>Analyst role.</b> Shown in Settings; not in the current role model.</li>
+      <li><b>Conversations that continue.</b> What the Lab does when the user leaves mid-run.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="head"><h2>What was removed to keep the product clear</h2></div>
+    <ul class="bullets">
+      <li>Separate Pipeline, Improve, Decisions and Agents screens. They are tabs now.</li>
+      <li>Record ids, file digests, prompt versions and token counts on main views. They stay in exports and the audit report.</li>
+      <li>Trust-level codes. The product says "Observe", "Ask first" and "Automatic".</li>
+      <li>Manual tuning forms. The improve loop covers them.</li>
+    </ul>
+  </div>
+</div>
+
+<div data-tabpanel="map:later">
+  <div class="card">
+    <div class="head"><h2>Not in the first release</h2><p>Each needs a customer trigger and its own decision.</p></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">Live scoring API</span><span class="d">The first release scores files on a schedule.</span></div>
+      <div class="drow"><span class="t">Connectors to databases and CRMs</span><span class="d">The first release uses file upload and the API.</span></div>
+      <div class="drow"><span class="t">Forecasting and text data</span><span class="d">The first release covers tables: yes/no, categories and numbers.</span></div>
+      <div class="drow"><span class="t">Assistants that write their own feature code</span><span class="d">Needs a separate sandbox.</span></div>
+      <div class="drow"><span class="t">Notebooks, external GPUs, a second cloud</span><span class="d">On demand.</span></div>
+    </div>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

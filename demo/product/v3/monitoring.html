@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Monitoring · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="monitoring.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind churn › <b>Monitoring</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Monitoring <span class="tag warn">Drift detected</span></h1><p class="sub">Is the model still seeing the kind of data it learned from, and is it still right?</p></div>
+  <div class="toolbar"><button class="btn" data-mock="upload labels">Upload outcomes</button></div>
+</div>
+
+<div class="tabs" data-tabs="mon">
+  <button data-tab="overview" aria-selected="true">Overview</button>
+  <button data-tab="drift">Data drift</button>
+  <button data-tab="performance">Performance</button>
+  <button data-tab="automation">Automation</button>
+</div>
+
+<div data-tabpanel="mon:overview" class="on">
+  <div class="note warn"><div><b>New customers look different from what the model learned.</b><span class="muted">A new plan, <code>family_5g</code>, now makes up 6% of customers. Precision fell from 63% to 48%. A retrained model brings it back to 59% and is waiting for your approval.</span></div><a class="btn primary" href="inbox.html">Review new model</a></div>
+
+  <div class="stats">
+    <div class="stat"><span class="v warn">High</span><span class="l">data drift, mainly in <code>plan_type</code></span></div>
+    <div class="stat"><span class="v crit">48%</span><span class="l">precision, last 3 weeks (was 63%)</span></div>
+    <div class="stat"><span class="v ok">80%</span><span class="l">of churners still caught</span></div>
+    <div class="stat"><span class="v">4 weeks</span><span class="l">until real outcomes are known</span></div>
+  </div>
+</div>
+
+<div data-tabpanel="mon:drift">
+  <div class="card">
+    <div class="head"><h2>How much has the data changed?</h2><div class="chart-legend"><span><i></i>Drift score</span><span><i class="lim"></i>Alert level</span></div></div>
+    <svg class="chart" viewBox="0 0 720 250" role="img" aria-label="Weekly drift score rises slowly, then passes the alert level of 0.20 in week 9, reaching 0.22">
+      <line class="grid-l" x1="56" y1="200" x2="700" y2="200"/><line class="grid-l" x1="56" y1="140" x2="700" y2="140"/><line class="grid-l" x1="56" y1="80" x2="700" y2="80"/><line class="grid-l" x1="56" y1="20" x2="700" y2="20"/>
+      <text class="axis" x="46" y="204" text-anchor="end">0</text><text class="axis" x="46" y="144" text-anchor="end">0.1</text><text class="axis" x="46" y="84" text-anchor="end">0.2</text><text class="axis" x="46" y="24" text-anchor="end">0.3</text>
+      <line class="lim" x1="56" y1="80" x2="700" y2="80"/>
+      <path class="area" d="M80,182 L155,176 L230,182 L305,170 L380,164 L455,152 L530,134 L605,104 L680,68 L680,200 L80,200 Z"/>
+      <polyline class="ln-a" points="80,182 155,176 230,182 305,170 380,164 455,152 530,134 605,104 680,68"/>
+      <circle class="pt-a" cx="680" cy="68" r="6"/><text class="lbl" x="668" y="52" text-anchor="end">0.22 this week</text>
+      <text class="axis" x="80" y="228" text-anchor="middle">Week 1</text><text class="axis" x="380" y="228" text-anchor="middle">Week 5</text><text class="axis" x="680" y="228" text-anchor="middle">Week 9</text>
+    </svg>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Which columns changed</h2></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Column</th><th>What changed</th><th class="r">Drift score</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><code>plan_type</code></td><td>New value <code>family_5g</code> in 6% of rows</td><td class="r">0.22</td><td><span class="tag crit">Alert</span></td></tr>
+        <tr><td><code>monthly_fee</code></td><td>Average up 4%</td><td class="r">0.11</td><td><span class="tag warn">Watch</span></td></tr>
+        <tr><td><code>region_code</code>, <code>last_login_days</code> and 25 more</td><td>No meaningful change</td><td class="r">&lt; 0.05</td><td><span class="tag ok">Stable</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="mon:performance">
+  <div class="card">
+    <div class="head"><h2>Is the model still right?</h2><div class="chart-legend"><span><i class="b"></i>Churners caught</span><span><i></i>Precision</span></div></div>
+    <svg class="chart" viewBox="0 0 720 250" role="img" aria-label="Churners caught stays near 80 percent for nine weeks while precision falls from 62 to 48 percent">
+      <line class="grid-l" x1="56" y1="200" x2="700" y2="200"/><line class="grid-l" x1="56" y1="140" x2="700" y2="140"/><line class="grid-l" x1="56" y1="80" x2="700" y2="80"/><line class="grid-l" x1="56" y1="20" x2="700" y2="20"/>
+      <text class="axis" x="46" y="204" text-anchor="end">40%</text><text class="axis" x="46" y="144" text-anchor="end">55%</text><text class="axis" x="46" y="84" text-anchor="end">70%</text><text class="axis" x="46" y="24" text-anchor="end">85%</text>
+      <polyline class="ln-b" points="80,36 155,40 230,38 305,42 380,40 455,42 530,42 605,40 680,40"/>
+      <polyline class="ln-a" points="80,112 155,116 230,112 305,120 380,128 455,140 530,152 605,164 680,168"/>
+      <circle class="pt-a" cx="680" cy="168" r="6"/><text class="lbl" x="668" y="190" text-anchor="end">48%</text>
+      <circle class="pt-b" cx="680" cy="40" r="6"/><text class="lbl" x="668" y="60" text-anchor="end">80%</text>
+      <text class="axis" x="80" y="228" text-anchor="middle">Week 1</text><text class="axis" x="380" y="228" text-anchor="middle">Week 5</text><text class="axis" x="680" y="228" text-anchor="middle">Week 9</text>
+    </svg>
+    <p class="hint">Measured on weeks where the real outcome is known. The model still catches churners but flags too many customers on the new plan.</p>
+  </div>
+</div>
+
+<div data-tabpanel="mon:automation">
+  <div class="card">
+    <div class="head"><h2>What happened after the alert</h2><p>Each step shows who acted.</p></div>
+    <div class="events">
+      <div class="ev warn"><span class="when">Monday 02:10 · Automatic check</span><span class="what">Drift passed the alert level.</span></div>
+      <div class="ev ai"><span class="when">Monday 02:12 · Assistant</span><span class="what">Found the cause: the new <code>family_5g</code> plan, 6% of customers, churning at twice the average.</span></div>
+      <div class="ev ai"><span class="when">Monday 02:14 · Assistant, automatic</span><span class="what">Started retraining on newer data (run E9). <button class="btn sm" data-mock="cancel run">Cancel</button></span></div>
+      <div class="ev ai"><span class="when">Monday 02:41 · Assistant</span><span class="what">Reviewed the new model: better precision, no customer group worse off.</span></div>
+      <div class="ev you"><span class="when">Waiting for you</span><span class="what">Put version 5 into use? <a href="inbox.html">Review in inbox</a></span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Rules for this project</h2><a class="btn link" href="governance.html">Change in AI governance →</a></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">Retrain when drift passes the alert level</span><span class="d">At most twice a week.</span><span class="a"><span class="tag ok">Automatic</span></span></div>
+      <div class="drow"><span class="t">Put a new model into use</span><span class="a"><span class="tag info">Needs approval</span></span></div>
+      <div class="drow"><span class="t">Roll back if a new model's precision drops 5 points</span><span class="d">You are notified right away.</span><span class="a"><span class="tag ok">Automatic</span></span></div>
+    </div>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

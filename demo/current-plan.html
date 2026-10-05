@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DCLab Previous Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <nav class="views" aria-label="Views">
+    <a href="current-plan.html" aria-current="page">Previous plan</a>
+    <a href="ai-first.html">AI-first proposal</a>
+    <a href="hybrid-plan.html">Hybrid plan (adopted)</a>
+    <a href="comparison.html">Compare + cost</a>
+    <a href="product/map.html">Studio mock</a>
+  </nav>
+  <div class="eyebrow">DCLab · previous order · superseded on 2 Oct 2026 by the hybrid plan</div>
+  <h1>What DCLab will be when the roadmap is done</h1>
+  <p class="muted">A tour of the finished product, built from <span class="mono">docs/mvp/ROADMAP.md</span>, <span class="mono">ARCHITECTURE.md</span>, <span class="mono">AGENTS_NOOA_JEV.md</span> and ADR 0006. One example project, "Northwind churn", runs through every screen. Screens are mockups and every number in them is example data.</p>
+  <div class="legend">
+    <span><i class="dot det"></i>Deterministic services (own every state change)</span>
+    <span><i class="dot ai"></i>AI: agents, LLM calls, Jev (advisory)</span>
+    <span><i class="dot done"></i>Done locally</span>
+    <span><i class="dot now"></i>In progress</span>
+    <span><i class="dot plan"></i>Planned</span>
+  </div>
+  <nav class="toc" aria-label="Sections">
+    <a href="#timeline">Timeline</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#p1">1 · First model</a>
+    <a href="#p2">2 · State graph</a>
+    <a href="#p3">3 · Claude Code via MCP</a>
+    <a href="#p4">4 · Studio</a>
+    <a href="#p5">5 · Improve loop</a>
+    <a href="#p6">6 · Agents + Jev</a>
+    <a href="#p7">7 · Release &amp; drift</a>
+    <a href="#p8">8 · Hosted beta</a>
+    <a href="#p9">9 · Expansion</a>
+    <a href="#authority">Who decides</a>
+    <a href="#gaps">Open gaps</a>
+  </nav>
+</header>
+
+<!-- TIMELINE -->
+<section id="timeline" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Roadmap</div>
+    <h2>Ten phases, each ending with something a user can do</h2>
+    <p class="muted">The purple bar is how much of that phase is AI or agent work. Most of the build is the correct ML engine and the state graph, so that what agents propose can be trusted.</p>
+  </div>
+  <div class="phases">
+    <div class="phase">
+      <div class="top"><span class="num">0</span><span class="pill done">done locally</span></div>
+      <h3>Stabilize the foundation</h3>
+      <p class="can">Trust that <span class="mono">main</span> is green and reproducible; a real worker trains jobs.</p>
+      <div class="plans">P0.1 CI + locked deps · P0.2 security debt · P0.3 worker topology · P0.4 hygiene</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">1</span><span class="pill done">done locally</span></div>
+      <h3>One correct ML engine</h3>
+      <p class="can">Upload any tabular CSV and get a valid model that beats a dummy baseline.</p>
+      <div class="plans">P1.1–1.6 one training path · storage · baseline · multiclass · objective/threshold · CatBoost + Optuna · E2E · R1 benchmark</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">2</span><span class="pill done">done</span></div>
+      <h3>ML state graph</h3>
+      <p class="can">See lineage, branch an experiment, see what became stale.</p>
+      <div class="plans">P2.1 ADR ✓ · P2.2 schema + writes ✓ · P2.3 graph service · P2.4 experiment-as-diff · P2.5 decision records</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:5%"></div></div><span>prep</span></div>
+    </div>
+    <div class="phase ai-heavy">
+      <div class="top"><span class="num">3</span><span class="pill done">done</span></div>
+      <h3>Agent interface</h3>
+      <p class="can">Drive DCLab from Claude Code or Cursor through MCP.</p>
+      <div class="plans">P3.1 /v1 · P3.2 service tokens · P3.3 SDK + CLI · P3.4 MCP server · P3.5 dogfood</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:60%"></div></div><span>external</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">4</span><span class="pill plan">planned</span></div>
+      <h3>Studio</h3>
+      <p class="can">Do the same in the web UI, with the code visible.</p>
+      <div class="plans">P4.1 project IA · P4.2 graph view · P4.3 inspectors · P4.4 compare &amp; decide · P4.5 client page · P4.6 E2E</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">5</span><span class="pill plan">planned</span></div>
+      <h3>Verify &amp; Improve</h3>
+      <p class="can">Ask "optimize recall with precision ≥ 70%" and get audited iterations.</p>
+      <div class="plans">P5.1 ≥ 12 checks · P5.2 objective optimizer · P5.3 ADR 0007 · P5.4 loop engine · P5.5 loop UX · R2</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:10%"></div></div><span>hooks</span></div>
+    </div>
+    <div class="phase ai-heavy">
+      <div class="top"><span class="num">6</span><span class="pill plan">planned</span></div>
+      <h3>Internal agents + Jev</h3>
+      <p class="can">Receive cited agent proposals and accept or reject them.</p>
+      <div class="plans">P6.1 ADR 0008 · P6.2 agent tables + LLM gateway · P6.3 fake + NOOA · P6.4 classes · P6.5 loop agent · P6.6 review · P6.7 Jev shadow · P6.8 gate</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:95%"></div></div><span>internal</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">7</span><span class="pill plan">planned</span></div>
+      <h3>Release, scoring, monitoring</h3>
+      <p class="can">Ship a model to batch scoring, watch drift, roll back.</p>
+      <div class="plans">P7.1 safe package · P7.2 release + batch · P7.3 MLflow mirror · P7.4 drift · P7.5 rollback + UI</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:5%"></div></div><span>reuse</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">8</span><span class="pill plan">planned</span></div>
+      <h3>Hosted beta</h3>
+      <p class="can">Use DCLab in the cloud with design partners.</p>
+      <div class="plans">P8.1 deploy · P8.2 security gate · P8.3 compute · P8.4 metering · P8.5 observability · P8.6 OSS boundaries · P8.7 data safety</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:5%"></div></div><span>budgets</span></div>
+    </div>
+    <div class="phase">
+      <div class="top"><span class="num">9</span><span class="pill plan">demand-gated</span></div>
+      <h3>Expansion</h3>
+      <p class="can">Each item ships only with a trigger and its own ADR.</p>
+      <div class="plans">CodeAct sandbox · ML-linter plugin · evidence library · forecasting · SLM fine-tune · DuckDB · connectors · …</div>
+      <div class="aibar"><span>AI</span><div class="track"><div class="fill" style="width:40%"></div></div><span>mixed</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">End-state architecture</div>
+    <h2>Every client goes through the same API; agents only propose</h2>
+    <p class="muted">Studio, Claude Code and the CLI all reach the same <span class="mono">/v1</span> API. Training, agents and scoring run only in the worker. Agents send typed proposals to the proposal service; a command service carries out a change only after a person or a policy accepts it.</p>
+  </div>
+  <div class="scroll-x">
+    <svg class="diagram" viewBox="0 0 960 540" role="img" aria-label="DCLab architecture: clients, /v1 API, services, worker with engine and agents, storage">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="ah-ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead ai" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <!-- clients -->
+      <rect class="box" x="60" y="16" width="240" height="56" rx="8"/>
+      <text class="t" x="180" y="40" text-anchor="middle">Studio (web)</text>
+      <text class="s" x="180" y="59" text-anchor="middle">graph · inspectors · proposal inbox</text>
+      <rect class="box ai" x="360" y="16" width="240" height="56" rx="8"/>
+      <text class="t" x="480" y="40" text-anchor="middle">Claude Code / Cursor</text>
+      <text class="s" x="480" y="59" text-anchor="middle">external agents via MCP server</text>
+      <rect class="box" x="660" y="16" width="240" height="56" rx="8"/>
+      <text class="t" x="780" y="40" text-anchor="middle">CLI / Python SDK</text>
+      <text class="s" x="780" y="59" text-anchor="middle">JSON output, scripts, CI</text>
+      <path class="edge" d="M180,72 L180,114" marker-end="url(#ah)"/>
+      <path class="edge" d="M480,72 L480,114" marker-end="url(#ah)"/>
+      <path class="edge" d="M780,72 L780,114" marker-end="url(#ah)"/>
+      <text class="lbl" x="188" y="98">BFF session cookie</text>
+      <text class="lbl" x="488" y="98">service token (scoped)</text>
+      <text class="lbl" x="788" y="98">service token</text>
+      <!-- api -->
+      <rect class="box det" x="60" y="116" width="840" height="52" rx="8"/>
+      <text class="t" x="480" y="139" text-anchor="middle">/v1 API (FastAPI)</text>
+      <text class="s" x="480" y="157" text-anchor="middle">error envelope · cursors · ETags · every query filtered by workspace · capability checks</text>
+      <path class="edge" d="M157.5,168 L157.5,208" marker-end="url(#ah)"/>
+      <path class="edge" d="M372.5,168 L372.5,208" marker-end="url(#ah)"/>
+      <path class="edge" d="M587.5,168 L587.5,208" marker-end="url(#ah)"/>
+      <path class="edge" d="M802.5,168 L802.5,208" marker-end="url(#ah)"/>
+      <!-- services -->
+      <rect class="box det" x="60" y="210" width="195" height="56" rx="8"/>
+      <text class="t" x="157.5" y="234" text-anchor="middle">Command services</text>
+      <text class="s" x="157.5" y="253" text-anchor="middle">validate, then execute</text>
+      <rect class="box det" x="275" y="210" width="195" height="56" rx="8"/>
+      <text class="t" x="372.5" y="234" text-anchor="middle">Graph service</text>
+      <text class="s" x="372.5" y="253" text-anchor="middle">lineage · staleness · impact</text>
+      <rect class="box det" x="490" y="210" width="195" height="56" rx="8"/>
+      <text class="t" x="587.5" y="234" text-anchor="middle">Proposal service</text>
+      <text class="s" x="587.5" y="253" text-anchor="middle">validator · accept / reject</text>
+      <rect class="box det" x="705" y="210" width="195" height="56" rx="8"/>
+      <text class="t" x="802.5" y="234" text-anchor="middle">Decision records</text>
+      <text class="s" x="802.5" y="253" text-anchor="middle">append-only project memory</text>
+      <path class="edge" d="M685,238 L703,238" marker-end="url(#ah)"/>
+      <path class="edge" d="M157.5,266 L157.5,322" marker-end="url(#ah)"/>
+      <text class="lbl" x="165" y="292">ml_jobs</text>
+      <!-- worker zone -->
+      <rect class="zone" x="40" y="300" width="880" height="114" rx="10"/>
+      <text class="z" x="56" y="316">WORKER · claims ml_jobs · the only process that trains, scores or runs agents</text>
+      <rect class="box det" x="60" y="326" width="160" height="72" rx="8"/>
+      <text class="t" x="140" y="350" text-anchor="middle">ML engine</text>
+      <text class="s" x="140" y="368" text-anchor="middle">preprocess inside folds</text>
+      <text class="s" x="140" y="384" text-anchor="middle">holdout scored once</text>
+      <rect class="box det" x="230" y="326" width="160" height="72" rx="8"/>
+      <text class="t" x="310" y="350" text-anchor="middle">Improve loop</text>
+      <text class="s" x="310" y="368" text-anchor="middle">typed actions · budgets</text>
+      <text class="s" x="310" y="384" text-anchor="middle">stop rules</text>
+      <rect class="box det" x="400" y="326" width="160" height="72" rx="8"/>
+      <text class="t" x="480" y="350" text-anchor="middle">Scoring &amp; drift</text>
+      <text class="s" x="480" y="368" text-anchor="middle">batch predictions</text>
+      <text class="s" x="480" y="384" text-anchor="middle">monitoring windows</text>
+      <rect class="box ai" x="570" y="326" width="160" height="72" rx="8"/>
+      <text class="t" x="650" y="350" text-anchor="middle">NOOA agents</text>
+      <text class="s" x="650" y="368" text-anchor="middle">Predict strategy only</text>
+      <text class="s" x="650" y="384" text-anchor="middle">cite evidence, propose</text>
+      <rect class="box ai" x="740" y="326" width="160" height="72" rx="8"/>
+      <text class="t" x="820" y="350" text-anchor="middle">Jev</text>
+      <text class="s" x="820" y="368" text-anchor="middle">typed yes/no, choice</text>
+      <text class="s" x="820" y="384" text-anchor="middle">shadow until gated</text>
+      <path class="edge ai" d="M640,326 L600,268" marker-end="url(#ah-ai)"/>
+      <text class="lbl ai" x="626" y="292">typed proposals</text>
+      <path class="edge ai" d="M820,326 L820,268" marker-end="url(#ah-ai)"/>
+      <text class="lbl ai" x="828" y="292">answers ledger</text>
+      <!-- storage -->
+      <path class="edge" d="M195,414 L195,448" marker-end="url(#ah)"/>
+      <path class="edge" d="M480,414 L480,448" marker-end="url(#ah)"/>
+      <path class="edge" d="M765,414 L765,448" marker-end="url(#ah)"/>
+      <rect class="box store" x="60" y="450" width="270" height="60" rx="8"/>
+      <text class="t" x="195" y="474" text-anchor="middle">PostgreSQL 16</text>
+      <text class="s" x="195" y="494" text-anchor="middle">state graph · jobs · agent runs · llm_invocations</text>
+      <rect class="box store" x="345" y="450" width="270" height="60" rx="8"/>
+      <text class="t" x="480" y="474" text-anchor="middle">Object storage</text>
+      <text class="s" x="480" y="494" text-anchor="middle">datasets · split maps · models · reports</text>
+      <rect class="box store" x="630" y="450" width="270" height="60" rx="8"/>
+      <text class="t" x="765" y="474" text-anchor="middle">MLflow (optional)</text>
+      <text class="s" x="765" y="494" text-anchor="middle">telemetry mirror, never the source of truth</text>
+    </svg>
+  </div>
+</section>
+
+<!-- PHASE 1 -->
+<section id="p1" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill done">Phase 1 · done locally</span><span class="pill det">deterministic</span></div>
+    <h2>Upload a CSV, get a model you can defend</h2>
+    <p class="muted">The engine profiles the data, holds out the latest three months, audits leakage on the training part only, runs a dummy baseline plus real candidates under CV, chooses the decision threshold from out-of-fold scores, then scores the holdout exactly once.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › Experiments › E1 › Run report</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="cols">
+        <div class="panel">
+          <h4>Data and split</h4>
+          <dl class="kv">
+            <dt>Dataset</dt><dd>customers.csv · 48,210 rows · 31 columns</dd>
+            <dt>Target</dt><dd>churned_next_30d (binary, 21% positive)</dd>
+            <dt>Holdout</dt><dd>temporal_future: last 3 months, 8,904 rows</dd>
+            <dt>CV</dt><dd>TimeSeriesSplit, 5 folds on the training part</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <h4>Leakage audit (training rows only)</h4>
+          <dl class="kv">
+            <dt><span class="pill crit">excluded</span></dt><dd><span class="mono">churned_at</span>: date set after the outcome</dd>
+            <dt><span class="pill warn">excluded</span></dt><dd><span class="mono">customer_id</span>: identifier</dd>
+            <dt><span class="pill warn">review</span></dt><dd><span class="mono">last_login_days</span>: strong single-feature signal</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Candidate</th><th class="num">CV PR-AUC</th><th class="num">± sd</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr class="base"><td>dummy (prior)</td><td class="num">0.21</td><td class="num">0.00</td><td>baseline, never eligible to win</td></tr>
+            <tr><td>logistic_regression</td><td class="num">0.58</td><td class="num">0.02</td><td></td></tr>
+            <tr><td>random_forest · balanced</td><td class="num">0.63</td><td class="num">0.02</td><td>class weights for imbalance</td></tr>
+            <tr><td>xgboost</td><td class="num">0.66</td><td class="num">0.02</td><td></td></tr>
+            <tr><td>catboost</td><td class="num">0.67</td><td class="num">0.01</td><td></td></tr>
+            <tr class="win"><td><b>lightgbm__tuned</b></td><td class="num"><b>0.69</b></td><td class="num">0.02</td><td><span class="pill ok">winner locked</span> Optuna, 12 trials nested in each fold</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <h4>Holdout, scored once at the locked threshold</h4>
+          <dl class="kv">
+            <dt>PR-AUC</dt><dd>0.68 (dummy 0.21, margin +0.47)</dd>
+            <dt>Threshold</dt><dd>0.31, chosen from out-of-fold scores</dd>
+            <dt>Recall / precision</dt><dd>0.74 / 0.63</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <h4>Pipeline verifier</h4>
+          <p class="note">18 checks pass, 1 warning: "winner relies heavily on <span class="mono">last_login_days</span>". 0 failures. Reproduction script exported.</p>
+          <div class="btns"><span class="btn">Download report</span><span class="btn">Show code</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASE 2 -->
+<section id="p2" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill done">Phase 2 · done</span><span class="pill plan">graph view ships in Phase 4</span></div>
+    <h2>Every artifact is a node; refs say what is current</h2>
+    <p class="muted">The state graph records how each model was made. Refs (★) point at the current spec, dataset, split, recipe and champion. Moving a ref needs an accepted decision record. A new dataset upload previews which nodes would go stale before anyone moves the ref.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › Graph</span><span class="ex">example data</span></div>
+    <div class="scroll-x" style="border:none;border-radius:0">
+      <div class="graph">
+        <div class="gcol"><div class="gh">Problem spec</div>
+          <div class="node ref"><b>Spec v1 ★</b><small>churn in next 30 days · recall ≥ 0.80</small></div>
+        </div>
+        <div class="gcol"><div class="gh">Dataset</div>
+          <div class="node ref"><b>DS v1 ★</b><small>48,210 rows · Jan 25 – Jun 26</small></div>
+          <div class="node new"><b>DS v2</b><small>new upload · +3 months</small><div class="flags"><span class="pill warn">ref move = 5 stale</span></div></div>
+        </div>
+        <div class="gcol"><div class="gh">Split plan</div>
+          <div class="node ref"><b>SP-1 ★</b><small>temporal holdout · 5 folds · digest a3f9…</small></div>
+        </div>
+        <div class="gcol"><div class="gh">Experiments</div>
+          <div class="node"><b>E1 · root</b><small>winner lightgbm__tuned · PR-AUC 0.69</small></div>
+          <div class="node branch"><b>E2 · branch of E1</b><small>change: class_weighting = balanced</small></div>
+          <div class="node branch"><b>E3 · branch of E2</b><small>change: threshold objective recall ≥ 0.80</small></div>
+        </div>
+        <div class="gcol"><div class="gh">Models</div>
+          <div class="node ref"><b>MV v4 ★</b><small>from E3 · champion</small></div>
+        </div>
+        <div class="gcol"><div class="gh">Releases</div>
+          <div class="node"><b>R-12</b><small>batch scoring, daily 02:00</small></div>
+        </div>
+        <div class="gcol"><div class="gh">Monitoring</div>
+          <div class="node"><b>W-1 … W-8</b><small>weekly drift windows</small></div>
+        </div>
+      </div>
+    </div>
+    <div class="win-body">
+      <div class="panel">
+        <h4>Decision records for this project</h4>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Record</th><th>Subject</th><th>By</th><th>Evidence</th></tr></thead>
+          <tbody>
+            <tr><td>split_plan_created</td><td>SP-1</td><td>engine</td><td class="mono">assignment digest a3f9…</td></tr>
+            <tr><td>winner_locked</td><td>E1 → lightgbm__tuned</td><td>selection.cv_winner.v1</td><td class="mono">cv_aggregate 0.69 vs 0.67</td></tr>
+            <tr><td>branch_created</td><td>E2 from E1</td><td>you</td><td class="mono">intent: raise recall</td></tr>
+            <tr><td>champion_promoted</td><td>MV v4</td><td>you</td><td class="mono">final_holdout recall 0.81</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASE 3 -->
+<section id="p3" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill done">Phase 3 · done</span><span class="pill ai">external agent</span></div>
+    <h2>Claude Code drives the whole project over MCP</h2>
+    <p class="muted">The first agentic milestone. DCLab calls no LLM here: Claude Code is the agent, and about 14 MCP tools are its hands. The service token limits it to one workspace and a set of capabilities, and read/write kill switches can turn it off.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">~/northwind · claude</span><span class="ex">example transcript</span></div>
+<div class="term"><span class="u">&gt; Use DCLab to build a churn model from data/customers.csv. We must catch 80% of churners.</span>
+
+<span class="tool">⏺ dclab.create_project</span>(name="Northwind churn")            <span class="ok">→ project p_7Q2</span>
+<span class="tool">⏺ dclab.upload_dataset</span>(path="data/customers.csv")        <span class="ok">→ DS v1 · 48,210 rows · 31 cols</span>
+<span class="tool">⏺ dclab.propose_spec</span>(target="churned_next_30d",
+                       constraints=[{metric:"recall", op:"&gt;=", value:0.80}])
+                                                         <span class="ok">→ Spec v1 proposed · needs accept</span>
+<span class="tool">⏺ dclab.run_experiment</span>(spec="v1")                        <span class="dim">→ job queued … completed in 4m 12s</span>
+<span class="tool">⏺ dclab.get_evidence</span>(experiment="E1")                    <span class="ok">→ PR-AUC 0.69 · recall 0.74 @ 0.31</span>
+<span class="tool">⏺ dclab.branch</span>(parent="E1", changes=[{kind:"class_weighting", mode:"balanced"}],
+               intent="raise recall")                    <span class="ok">→ E2 · same split plan SP-1</span>
+<span class="tool">⏺ dclab.compare</span>(a="E1", b="E2")                          <span class="ok">→ recall +0.05 · precision −0.03</span>
+
+<span class="ai">Claude:</span> E2 improves recall to 0.79 on CV, still just under 0.80. Next I can branch
+with a threshold objective (recall ≥ 0.80). Promoting a champion needs your
+approval; my token can't do that.
+
+<span class="dim">token dclab_st_••••3kd · workspace Northwind · caps: read, upload, run, branch · no promote</span></div>
+  </div>
+</section>
+
+<!-- PHASE 4 -->
+<section id="p4" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 4 · planned</span><span class="pill det">deterministic UI</span></div>
+    <h2>Studio: inspect any node, see the reason and the code</h2>
+    <p class="muted">Projects are organized as Graph / Data / Experiments / Models / Decisions. Clicking a node shows why it exists, how it was computed, the evidence and the exact code. Compare puts two experiments side by side, with accept, reject and branch actions.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › Experiments › E2 › Preprocessing</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="cols">
+        <div class="panel">
+          <h4>Reason</h4>
+          <p class="note">31 columns: 2 excluded by the leakage audit, 17 numeric (median impute + scale), 11 categorical (most-frequent impute + one-hot), 1 date (<span class="mono">signup_date</span> → month, weekday). Every step is fitted inside each CV fold.</p>
+          <h4>Evidence</h4>
+          <dl class="kv">
+            <dt>Imputer medians</dt><dd>from 31,520 training rows only</dd>
+            <dt>Unseen categories</dt><dd>ignored at predict time (tested)</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <h4>Code (exported, reproduces CV within tolerance)</h4>
+<pre class="code"><span class="k">prep</span> = ColumnTransformer([
+  ("num", Pipeline([("impute", SimpleImputer(strategy="median")),
+                    ("scale", StandardScaler())]), NUM),
+  ("cat", Pipeline([("impute", SimpleImputer(strategy="most_frequent")),
+                    ("onehot", OneHotEncoder(handle_unknown="ignore"))]), CAT),
+])
+<span class="k">model</span> = Pipeline([("prep", prep),
+                  ("clf", LGBMClassifier(class_weight="balanced", **TUNED))])
+<span class="c"># folds come from split plan SP-1; holdout rows are never seen here</span></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <h4>Compare E1 → E2</h4>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Metric (CV, same folds)</th><th class="num">E1</th><th class="num">E2</th><th class="num">Δ</th></tr></thead>
+          <tbody>
+            <tr><td>PR-AUC</td><td class="num">0.69</td><td class="num">0.69</td><td class="num">0.00</td></tr>
+            <tr><td>Recall @ OOF threshold</td><td class="num">0.74</td><td class="num">0.79</td><td class="num">+0.05</td></tr>
+            <tr><td>Precision @ OOF threshold</td><td class="num">0.63</td><td class="num">0.60</td><td class="num">−0.03</td></tr>
+          </tbody>
+        </table></div>
+        <div class="btns"><span class="btn primary">Accept E2</span><span class="btn">Branch from E2</span><span class="btn">Reject</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASE 5 -->
+<section id="p5" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 5 · planned</span><span class="pill det">deterministic proposer + Optuna</span></div>
+    <h2>State a goal; the loop runs audited iterations</h2>
+    <p class="muted">Goal: maximize precision while keeping recall ≥ 0.80. Each iteration is a child experiment with a typed change set, a reason, a result and a cost. Iterations are judged on CV only. The holdout is used once, for the final pick.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › Improve › Run IL-3</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="cols">
+        <div class="panel">
+          <h4>CV recall and precision per iteration</h4>
+          <svg viewBox="0 0 560 220" role="img" aria-label="Recall rises from 0.71 to 0.83 and crosses the 0.80 limit at iteration 3; precision dips to 0.61 then recovers to 0.64" style="width:100%;height:auto;display:block">
+            <rect class="feas" x="44" y="16" width="500" height="43"/>
+            <line class="grid" x1="44" y1="188" x2="544" y2="188"/>
+            <line class="grid" x1="44" y1="145" x2="544" y2="145"/>
+            <line class="grid" x1="44" y1="102" x2="544" y2="102"/>
+            <line class="grid" x1="44" y1="16" x2="544" y2="16"/>
+            <text class="axis" x="38" y="191" text-anchor="end">0.5</text>
+            <text class="axis" x="38" y="148" text-anchor="end">0.6</text>
+            <text class="axis" x="38" y="105" text-anchor="end">0.7</text>
+            <text class="axis" x="38" y="62" text-anchor="end">0.8</text>
+            <text class="axis" x="38" y="19" text-anchor="end">0.9</text>
+            <line class="limit" x1="44" y1="59" x2="544" y2="59"/>
+            <text class="axis" x="540" y="54" text-anchor="end">recall ≥ 0.80</text>
+            <polyline class="ln-a" points="44,97.7 127.3,76.2 210.7,63.3 294,54.7 377.3,50.4 460.7,46.1 544,46.1"/>
+            <polyline class="ln-b" points="44,119.2 127.3,132.1 210.7,136.4 294,140.7 377.3,136.4 460.7,127.8 544,127.8"/>
+            <circle class="pt-a" cx="44" cy="97.7" r="3.5"/><circle class="pt-a" cx="127.3" cy="76.2" r="3.5"/><circle class="pt-a" cx="210.7" cy="63.3" r="3.5"/><circle class="pt-a" cx="294" cy="54.7" r="3.5"/><circle class="pt-a" cx="377.3" cy="50.4" r="3.5"/><circle class="pt-a" cx="460.7" cy="46.1" r="5"/><circle class="pt-a" cx="544" cy="46.1" r="3.5"/>
+            <circle class="pt-b" cx="44" cy="119.2" r="3.5"/><circle class="pt-b" cx="127.3" cy="132.1" r="3.5"/><circle class="pt-b" cx="210.7" cy="136.4" r="3.5"/><circle class="pt-b" cx="294" cy="140.7" r="3.5"/><circle class="pt-b" cx="377.3" cy="136.4" r="3.5"/><circle class="pt-b" cx="460.7" cy="127.8" r="5"/><circle class="pt-b" cx="544" cy="127.8" r="3.5"/>
+            <text class="axis" x="44" y="206" text-anchor="middle">0</text><text class="axis" x="127.3" y="206" text-anchor="middle">1</text><text class="axis" x="210.7" y="206" text-anchor="middle">2</text><text class="axis" x="294" y="206" text-anchor="middle">3</text><text class="axis" x="377.3" y="206" text-anchor="middle">4</text><text class="axis" x="460.7" y="206" text-anchor="middle">5</text><text class="axis" x="544" y="206" text-anchor="middle">6</text>
+            <text class="axis" x="54" y="91">recall</text>
+            <text class="axis" x="54" y="114">precision</text>
+          </svg>
+          <p class="note">Green band: iterations that meet the constraint. Iteration 5 is the best feasible one.</p>
+        </div>
+        <div class="panel">
+          <h4>Iterations</h4>
+          <div class="iters">
+            <div class="iter"><span class="i">0</span><span>Start from E1<small>baseline for the loop</small></span><span class="r">R .71 · P .66</span></div>
+            <div class="iter"><span class="i">1</span><span>class_weighting: balanced<small>recall gap 0.09; imbalance 21%</small></span><span class="r">R .76 · P .63</span></div>
+            <div class="iter"><span class="i">2</span><span>threshold objective: recall ≥ 0.80<small>threshold from OOF scores</small></span><span class="r">R .79 · P .62</span></div>
+            <div class="iter"><span class="i">3</span><span>family_include: catboost<small>first feasible</small></span><span class="r">R .81 · P .61</span></div>
+            <div class="iter"><span class="i">4</span><span>hyperparameter range: num_leaves<small>Optuna, 12 trials</small></span><span class="r">R .82 · P .62</span></div>
+            <div class="iter"><span class="i">5</span><span><b>datetime_extract: signup_date</b><small>best feasible · 3m 40s · $0.00 LLM</small></span><span class="r">R .83 · P .64</span></div>
+            <div class="iter"><span class="i">6</span><span>Stop: no gain ≥ 0.005 for 1 step<small>holdout once: R .81 · P .62</small></span><span class="r">done</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h4>Investigation checks after each run (P5.1)</h4>
+        <div class="chips">
+          <span class="pill ok">target leakage</span><span class="pill ok">train/holdout contamination</span><span class="pill ok">duplicates across splits</span><span class="pill warn">imbalance 21%</span><span class="pill ok">calibration ECE 0.03</span><span class="pill ok">overfit gap 0.02</span><span class="pill ok">fold stability</span><span class="pill warn">subgroup gap: plan_type=prepaid</span><span class="pill ok">train→holdout drift</span><span class="pill ok">temporal shift</span><span class="pill ok">multicollinearity</span><span class="pill ok">missingness shift</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASE 6 -->
+<section id="p6" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 6 · planned</span><span class="pill ai">internal agents · LLM</span></div>
+    <h2>Agents write cited proposals; a validator checks them; you decide</h2>
+    <p class="muted">Four NOOA agent classes make one structured LLM call each, under DCLab budgets. A validator checks every cited column and metric before a proposal reaches the inbox. Jev answers small typed questions in shadow mode until each question passes its release gate. With agents and Jev turned off, every Phase 1–5 feature still works.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › Proposals</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="cards">
+        <div class="card ai">
+          <div class="who"><b>ExperimentCritic</b><span class="pill ok">validator passed</span></div>
+          <p><b>Verdict: needs work.</b> <span class="mono">last_login_days</span> carries 41% of the model's gain. Confirm it is known at prediction time before promoting.</p>
+          <div class="cite"><span>feature_importance.last_login_days = 0.41</span><span>cv_pr_auc = 0.71 ± 0.02 (E7)</span><span>finding: leakage_review / review</span></div>
+          <div class="btns"><span class="btn ai">Accept as finding</span><span class="btn">Reject</span></div>
+        </div>
+        <div class="card ai">
+          <div class="who"><b>DatasetInvestigator</b><span class="pill ok">validator passed</span></div>
+          <p><span class="mono">plan_type</span> has a new value <span class="mono">family_5g</span> in 6% of DS v2 rows. The model has never seen it. Ask the business whether it behaves like <span class="mono">family</span>.</p>
+          <div class="cite"><span>profile DS v2: plan_type.unseen_share = 0.06</span><span>question for user · 1</span></div>
+          <div class="btns"><span class="btn ai">Answer question</span><span class="btn">Dismiss</span></div>
+        </div>
+        <div class="card ai">
+          <div class="who"><b>ImprovementHypothesis</b><span class="pill ok">in action space</span></div>
+          <p>Next iteration: <span class="mono">class_weighting custom {1: 3.0}</span>. Precision is 0.06 under target and calibration is good, so heavier positive weight should cost less precision than threshold moves.</p>
+          <div class="cite"><span>constraint gap: precision 0.64 → 0.70 wanted</span><span>budget left: 2 of 8 iterations</span></div>
+          <div class="btns"><span class="btn ai">Run as iteration</span><span class="btn">Use rule-based proposer</span></div>
+        </div>
+        <div class="card rej">
+          <div class="who"><b>ExperimentPlanner</b><span class="pill crit">rejected by validator</span></div>
+          <p>Proposed feature from <span class="mono">days_to_cancellation</span>.</p>
+          <div class="cite"><span>column does not exist in DS v2</span><span>never reaches the inbox; logged for evaluation</span></div>
+        </div>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <h4>Jev questions (shadow mode)</h4>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Question</th><th class="num">Labeled</th><th class="num">Precision in band</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>column.is_identifier</td><td class="num">412</td><td class="num">98.6%</td><td><span class="pill ok">advisory allowed</span></td></tr>
+              <tr><td>column.semantic_role</td><td class="num">388</td><td class="num">93.1%</td><td><span class="pill plan">shadow</span></td></tr>
+              <tr><td>feature.leakage_suspect</td><td class="num">301</td><td class="num">90.4%</td><td><span class="pill plan">shadow</span></td></tr>
+              <tr><td>command.intent_route</td><td class="num">220</td><td class="num">n &lt; 300</td><td><span class="pill warn">pending evidence</span></td></tr>
+              <tr><td>proposal.completeness</td><td class="num">160</td><td class="num">display only</td><td><span class="pill plan">shadow</span></td></tr>
+            </tbody>
+          </table></div>
+          <p class="note">Gate: ≥ 300 labels, ≥ 98% precision in the acting band, calibration, cost, no data-policy leaks.</p>
+        </div>
+        <div class="panel">
+          <h4>Agent runs this month</h4>
+          <dl class="kv">
+            <dt>Runs</dt><dd>214 (fake runtime in all tests)</dd>
+            <dt>LLM spend</dt><dd>$3.12 of $25 workspace budget</dd>
+            <dt>Accepted</dt><dd>61% of proposals that reached the inbox</dd>
+            <dt>Rejected by validator</dt><dd>9 (all logged in agent_proposals)</dd>
+            <dt>Data sent</dt><dd>metadata and aggregates, no raw rows</dd>
+          </dl>
+          <div class="meter" aria-hidden="true"><i style="width:12.5%"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASE 7 -->
+<section id="p7" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 7 · planned</span><span class="pill det">deterministic</span><span class="pill ai">agents explain</span></div>
+    <h2>Release to batch scoring, watch drift, roll back in one step</h2>
+    <p class="muted">Models are packaged safely (skops/native, with a data contract). Scoring runs as batch jobs in the worker; the API never loads a model. Monitoring windows compute drift. A drift alert opens an investigation, and a retrain becomes a normal experiment on the same split rules.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Northwind churn › Models › Champion</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="cols">
+        <div class="panel">
+          <h4>Drift on plan_type (PSI, weekly windows)</h4>
+          <svg viewBox="0 0 560 186" role="img" aria-label="PSI stays under 0.1 for six weeks, rises to 0.27 at week 10, falls to 0.05 after v5 is released at week 11" style="width:100%;height:auto;display:block">
+            <line class="grid" x1="44" y1="148" x2="544" y2="148"/>
+            <line class="grid" x1="44" y1="104" x2="544" y2="104"/>
+            <line class="grid" x1="44" y1="60" x2="544" y2="60"/>
+            <line class="grid" x1="44" y1="16" x2="544" y2="16"/>
+            <text class="axis" x="38" y="151" text-anchor="end">0</text>
+            <text class="axis" x="38" y="107" text-anchor="end">0.1</text>
+            <text class="axis" x="38" y="63" text-anchor="end">0.2</text>
+            <text class="axis" x="38" y="19" text-anchor="end">0.3</text>
+            <line class="limit-c" x1="44" y1="60" x2="544" y2="60"/>
+            <text class="axis" x="48" y="55">alert 0.2</text>
+            <line class="mark" x1="407.6" y1="16" x2="407.6" y2="148"/>
+            <line class="mark" x1="498.5" y1="16" x2="498.5" y2="148"/>
+            <text class="axis" x="403" y="30" text-anchor="end">alert W9</text>
+            <text class="axis" x="494" y="140" text-anchor="end">v5 live</text>
+            <path class="area" d="M44,148 L44,134.8 L89.5,130.4 L134.9,134.8 L180.4,126 L225.8,130.4 L271.3,121.6 L316.7,108.4 L362.2,86.4 L407.6,51.2 L453.1,29.2 L498.5,112.8 L544,126 L544,148 Z"/>
+            <polyline class="ln-a" points="44,134.8 89.5,130.4 134.9,134.8 180.4,126 225.8,130.4 271.3,121.6 316.7,108.4 362.2,86.4 407.6,51.2 453.1,29.2 498.5,112.8 544,126"/>
+            <circle class="pt-a" cx="453.1" cy="29.2" r="4.5"/>
+            <circle class="pt-a" cx="544" cy="126" r="4.5"/>
+            <text class="axis" x="44" y="166" text-anchor="middle">W1</text>
+            <text class="axis" x="225.8" y="166" text-anchor="middle">W5</text>
+            <text class="axis" x="407.6" y="166" text-anchor="middle">W9</text>
+            <text class="axis" x="544" y="166" text-anchor="middle">W12</text>
+          </svg>
+        </div>
+        <div class="panel">
+          <h4>What happened</h4>
+          <div class="events">
+            <div class="ev det"><span class="when">W9 · drift job</span><br>PSI 0.22 on <span class="mono">plan_type</span>; precision on labeled weeks fell to 0.48.</div>
+            <div class="ev ai"><span class="when">W9 · DatasetInvestigator</span><br>Cause: new <span class="mono">family_5g</span> plan from the March campaign, 6% of rows.</div>
+            <div class="ev det"><span class="when">W10 · retrain experiment E9</span><br>DS v3, same split rules; CV precision 0.59 at recall 0.81.</div>
+            <div class="ev ai"><span class="when">W10 · ExperimentCritic</span><br>Verdict: promote. Cited holdout and baseline margin.</div>
+            <div class="ev hum"><span class="when">W11 · you</span><br>Promoted MV v5, released R-15. Decision record written.</div>
+          </div>
+        </div>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <h4>Release R-15</h4>
+          <dl class="kv">
+            <dt>Model</dt><dd>MV v5 (champion) · previous MV v4</dd>
+            <dt>Schedule</dt><dd>batch, daily 02:00 · last run 51,330 rows</dd>
+            <dt>Contract</dt><dd>Pandera schema from the feature contract</dd>
+            <dt>Package</dt><dd>skops · pickle quarantined</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <h4>Rollback</h4>
+          <p class="note">Moves the champion ref back to MV v4 and writes one decision record. Batch jobs pick up the old model on their next run.</p>
+          <div class="btns"><span class="btn danger">Roll back to MV v4</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASE 8 -->
+<section id="p8" class="stack-lg">
+  <div class="screen-head">
+    <div class="tags"><span class="pill plan">Phase 8 · planned</span><span class="pill det">operations</span></div>
+    <h2>Hosted beta with design partners</h2>
+    <p class="muted">One cloud, set up with OpenTofu: managed Postgres, object storage, secrets, separate api / web / worker services. Usage is metered against quotas, traces and alerts are wired up, and backup restore is drilled. The exit gate is three design partners finishing a real project without anyone touching the database.</p>
+  </div>
+  <div class="window">
+    <div class="chrome"><span class="lights"><i></i><i></i><i></i></span><span class="path">Operator › Beta overview</span><span class="ex">example data</span></div>
+    <div class="win-body">
+      <div class="stats">
+        <div class="stat"><span class="v">3 / 3</span><span class="l">design partners with a promoted model</span></div>
+        <div class="stat"><span class="v">412 min</span><span class="l">worker compute this month</span><div class="meter"><i style="width:41%"></i></div></div>
+        <div class="stat"><span class="v">$41.80</span><span class="l">LLM spend, all workspaces</span><div class="meter"><i style="width:28%"></i></div></div>
+        <div class="stat"><span class="v">180 ms</span><span class="l">API p95 latency</span></div>
+        <div class="stat"><span class="v">0</span><span class="l">cross-tenant findings in the adversarial suite</span></div>
+        <div class="stat"><span class="v">22 min</span><span class="l">last backup-restore drill</span></div>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Workspace</th><th>Plan</th><th class="num">Projects</th><th class="num">Jobs (30d)</th><th>Heavy jobs</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Northwind Telecom</td><td>beta</td><td class="num">3</td><td class="num">146</td><td>local pool</td><td><span class="pill ok">healthy</span></td></tr>
+          <tr><td>Harbor Insurance</td><td>beta</td><td class="num">2</td><td class="num">88</td><td>SkyPilot (cost recorded)</td><td><span class="pill ok">healthy</span></td></tr>
+          <tr><td>Fieldline Retail</td><td>beta</td><td class="num">1</td><td class="num">39</td><td>local pool</td><td><span class="pill warn">quota 85%</span></td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">Also in Phase 8: content and malware scanning for uploads, retention and deletion jobs, data residency, and package boundaries so the engine, SDK and MCP server can be open-sourced later.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PHASE 9 -->
+<section id="p9" class="stack-lg">
+  <div class="stack">
+    <div class="tags"><span class="pill plan">Phase 9 · demand-gated</span></div>
+    <h2>Expansion, one ADR at a time</h2>
+    <p class="muted">Nothing here ships without a real trigger (a customer need or evidence from earlier phases) and its own decision record.</p>
+  </div>
+  <div class="chips">
+    <div class="chip"><b>NOOA CodeAct lane</b><small>AI writes feature code in a separate sandbox; engine re-runs it under CV</small></div>
+    <div class="chip"><b>ML-linter plugin</b><small>notebook / IDE checks for leakage and split mistakes</small></div>
+    <div class="chip"><b>Evidence library</b><small>solved problems with proof; similar-problem retrieval</small></div>
+    <div class="chip"><b>Forecasting</b><small>new model type</small></div>
+    <div class="chip"><b>SLM fine-tuning</b><small>model type on external GPU</small></div>
+    <div class="chip"><b>DuckDB DataScan</b><small>data larger than memory</small></div>
+    <div class="chip"><b>dlt connectors</b><small>Postgres, S3, CRM</small></div>
+    <div class="chip"><b>Jupyter runtime</b><small>stateful notebook sessions</small></div>
+    <div class="chip"><b>Decision layer</b><small>Decision.ai rework or removal by 2027-03-31</small></div>
+    <div class="chip"><b>Second cloud · online serving</b><small>after hosted beta</small></div>
+  </div>
+</section>
+
+<!-- AUTHORITY -->
+<section id="authority" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Who decides what</div>
+    <h2>AI proposes, code validates and executes, people accept</h2>
+  </div>
+  <div class="window"><div class="tbl-wrap">
+    <table class="matrix">
+      <thead><tr><th>Action</th><th>External agent (MCP)</th><th>NOOA agents</th><th>Jev</th><th>Deterministic code</th><th>Person</th></tr></thead>
+      <tbody>
+        <tr><td>Propose a spec, experiment or change</td><td class="yes">yes</td><td class="yes">yes</td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+        <tr><td>Run an experiment</td><td class="yes">if token allows</td><td class="no">no (proposes)</td><td class="no">no</td><td class="yes">executes</td><td class="yes">yes</td></tr>
+        <tr><td>Flag a column as ID or leakage risk</td><td>reads findings</td><td class="yes">suggests</td><td class="yes">shadow → hint</td><td class="yes">decides</td><td class="yes">overrides</td></tr>
+        <tr><td>Exclude a column automatically</td><td class="no">no</td><td class="no">no</td><td class="no">never</td><td class="yes">leakage rules</td><td class="yes">yes</td></tr>
+        <tr><td>Pick the winning model</td><td class="no">no</td><td class="no">no</td><td class="no">never</td><td class="yes">CV rules</td><td>accepts</td></tr>
+        <tr><td>Touch the final holdout</td><td class="no">no</td><td class="no">no</td><td class="no">never</td><td class="yes">once, at the end</td><td class="no">no</td></tr>
+        <tr><td>Promote a champion / release</td><td class="no">no promote cap</td><td class="no">proposes</td><td class="no">never</td><td class="yes">validates</td><td class="yes">decides</td></tr>
+        <tr><td>Run generated code</td><td class="no">no</td><td class="no">banned (CI test)</td><td class="no">no</td><td>—</td><td>Phase 9 sandbox only</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</section>
+
+<!-- GAPS -->
+<section id="gaps" class="gaps">
+  <div class="eyebrow">Not yet in the plan</div>
+  <h3>Gaps this tour exposes</h3>
+  <ul>
+    <li><b>Feature-engineering leakage contract.</b> Target encoding, history aggregates, lag/rolling features and point-in-time joins have no design yet. They need declared fit scopes and as-of cutoffs before agents may propose new features (suggested home: ADR 0007 or a P5.0 prompt).</li>
+    <li><b>Prediction-time availability.</b> The Phase 7 feature contract checks types, not when a value becomes known.</li>
+    <li><b>AI-first reordering.</b> Moving the agent core and Jev earlier (discussed, not adopted) would change Phases 3–6. Today, built-in agents arrive in Phase 6.</li>
+  </ul>
+</section>
+
+<footer>
+  Built from the DCLab MVP docs as of 2 October 2026. Screens are mockups; all project numbers, names and partners are example data. Phase status comes from <span class="mono">docs/mvp/STATUS.md</span>.
+</footer>
+
+</div>
+</body>
+</html>

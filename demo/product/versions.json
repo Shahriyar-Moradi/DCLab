@@ -1,0 +1,23 @@
+{
+  "latest": "v3",
+  "versions": [
+    {
+      "id": "v3",
+      "name": "Clean",
+      "date": "2026-10-05",
+      "summary": "The product look: 10 screens, one job each, details behind tabs, plain words."
+    },
+    {
+      "id": "v2",
+      "name": "Detailed, tabbed",
+      "date": "2026-10-03",
+      "summary": "Every detail kept. 16 screens, larger type, dense cards split into section tabs, review notes on each page."
+    },
+    {
+      "id": "v1",
+      "name": "Detailed",
+      "date": "2026-10-03",
+      "summary": "The first full walkthrough. 16 screens showing every field, id and review note."
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Pipeline · E1 · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="pipeline.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Pipeline</b> › E1</div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Pipeline · E1 <span class="pill ok">completed</span></h1><p class="sub">Every stage of this run with the deterministic result, the AI notes before and after it, the decision outcome, the artifacts by digest and the checks. Nothing here is generated after the fact; it is the event stream, decision records and artifact table.</p></div>
+  <div class="toolbar"><select class="input"><option>E1 · root · completed 09:09</option><option>E2 · branch of E1 · completed</option><option>E9 · retrain · running</option></select><a class="btn" href="experiments.html">Open experiment</a><button class="btn" data-mock="download run bundle (report, code, manifest)">Download bundle</button><button class="btn" data-mock="replay agent runs of E1 offline">Replay AI</button></div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">10 / 10</span><span class="l">stages completed · 4 m 12 s</span></div></div>
+  <div class="card"><div class="stat"><span class="v">19 ✓ · 1 ⚠ · 0 ✗</span><span class="l">verifier checks</span></div></div>
+  <div class="card"><div class="stat"><span class="v">8</span><span class="l">decision points · 7 AI = rule · 1 disagreement</span></div></div>
+  <div class="card"><div class="stat"><span class="v">11</span><span class="l">artifacts · all digests verified</span></div></div>
+</div>
+
+<div class="card">
+  <div class="stage"><span class="dot ok"></span><div class="name">1 · Upload + publish<small>00:00 · 3 s</small></div><div class="body">
+    <div class="line"><span>48,210 rows · 31 columns · UTF-8 · header row detected</span><span class="k">policy</span><span>internal_training · structural checks 6/6 · labels restricted</span></div>
+    <div class="line"><span class="k">artifact</span><span class="mono">dataset DS v1 · sha256 7f3a…c21 · 12.4 MB</span><button class="btn sm" data-mock="download">download</button></div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">2 · Profile<small>00:03 · 6 s · training rows only</small></div><div class="body">
+    <div class="line"><span>39,306 training rows profiled (holdout rows never read) · 2 columns &gt; 40% missing · 1 constant column</span></div>
+    <div class="ai-note"><b>AI-after · DatasetInvestigator</b> (ar-1022, L3 display): 2 findings. "<code>plan_type</code> has 7 values, one (<code>family_5g</code>) new since June"; "<code>contract_end</code> missing for 38%: likely month-to-month plans". 1 question for you. <span class="muted small">validator: all cited columns exist</span></div>
+    <div class="line"><span class="k">artifact</span><span class="mono">profile 19bd…04e</span></div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">3 · Column roles<small>00:09 · 4 s · decision point</small></div><div class="body">
+    <div class="line"><span>17 numeric · 11 categorical · 1 datetime · 1 identifier · 1 target</span></div>
+    <div class="rule-note"><b>Rule</b> (schema inference v3): identifier = unique ratio &gt; 0.99; <code>region_code</code> → numeric (integers).</div>
+    <div class="ai-note"><b>AI-before · Jev</b> <code>column.semantic_role</code> on 31 columns, 212 questions, cached 118: agrees on 30. Disagrees on <code>region_code</code>: "categorical code" conf 0.91. Policy: L2, validator accepts (values are 12 distinct integers) → <b>AI value used</b>; flagged in inbox; revert available. <span class="muted small">decision record d-298 · semantic answers sa-5510…5721</span></div>
+  </div></div>
+  <div class="stage"><span class="dot warn"></span><div class="name">4 · Leakage audit<small>00:13 · 9 s · decision point</small></div><div class="body">
+    <div class="line"><span>Excluded: <code>churned_at</code> (CRITICAL, date after target), <code>customer_id</code> (identifier) · Review: <code>last_login_days</code> (strong single-feature signal), <code>retention_offer_sent</code> (AI flag)</span></div>
+    <div class="rule-note"><b>Rule</b> (leakage auditor v5, training rows only): exact match 0 · complement 0 · single-feature AUC max 0.79 (<code>last_login_days</code>) · after-target dates 1.</div>
+    <div class="ai-note"><b>AI-before · Jev + DatasetInvestigator</b>: <code>retention_offer_sent</code> p 0.88 "offers follow cancellation intent". Point is L1 → proposal p-410, <b>accepted by you 09:04</b> as a review flag (not excluded). <span class="muted small">d-302</span></div>
+    <div class="line"><span class="k">artifact</span><span class="mono">leakage_audit e801…7aa</span><span class="k">note</span><span>re-including an excluded column creates a new root experiment (ADR 0006)</span></div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">5 · Split plan<small>00:22 · 2 s · decision point</small></div><div class="body">
+    <div class="line"><span>SP-1 · strategy temporal_future on <code>snapshot_month</code> · holdout = latest 3 months (8,904 rows) · outer CV TimeSeriesSplit 5 folds on 39,306 rows</span></div>
+    <div class="rule-note"><b>Rule</b> (holdout planner): 18 snapshots ≥ 8 → temporal; group column none.</div>
+    <div class="ai-note"><b>AI-before · Planner</b>: same strategy, reason "seasonality and campaign effects; random split would overstate recall". L1 → accepted 09:04. <span class="muted small">d-303</span></div>
+    <div class="line"><span class="k">artifact</span><span class="mono">split_assignment a3f9…d10 (row → partition/fold map)</span><span class="k">reuse</span><span>any later experiment on DS v1 with this strategy reuses SP-1 (same holdout rows)</span></div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">6 · Preprocessing<small>00:24 · inside each fold</small></div><div class="body">
+    <div class="line"><span>numeric: median impute + scale · categorical: most-frequent impute + one-hot (all categories, unknown ignored) · datetime: month, weekday · fitted per fold, never on the full frame</span></div>
+    <div class="line"><span class="k">evidence</span><span>imputer medians equal training-rows-only statistics (verifier check 7)</span><a class="btn sm" href="experiments.html">code</a></div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">7 · Training<small>00:24 · 3 m 05 s · decision point (families)</small></div><div class="body">
+    <div class="line"><span>7 candidates: dummy(prior), logistic, random_forest·balanced, xgboost, catboost, lightgbm, lightgbm__tuned (Optuna 12 trials nested per fold) · class-weight variants (imbalance 21%) · budget 600 s, used 185 s</span></div>
+    <div class="ai-note"><b>AI-before · Planner</b>: proposed LightGBM, CatBoost, logistic (L2, in allowlist) → used, plus the rule portfolio's RF and XGBoost because budget allowed; dummy always added. <span class="muted small">d-304</span></div>
+    <div class="line"><span class="k">artifact</span><span class="mono">fold_metrics (5 × 7) · candidates.json 5c77…e0b</span></div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">8 · Selection + threshold<small>03:29 · code only</small></div><div class="body">
+    <div class="line"><span>winner lightgbm__tuned · CV PR-AUC 0.69 ± 0.02 vs catboost 0.67 · margin over dummy +0.48 · threshold 0.31 chosen on out-of-fold scores to satisfy recall ≥ 0.80 then max precision</span></div>
+    <div class="rule-note"><b>Rule</b> selection.cv_winner.v1 → decision record <code>winner_locked</code> d-305. No AI involvement by design.</div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">9 · Holdout<small>03:31 · scored once</small></div><div class="body">
+    <div class="line"><span>PR-AUC 0.68 · recall 0.82 · precision 0.61 · at locked threshold · 8,904 rows · never seen before this step</span></div>
+    <div class="line"><span class="k">artifact</span><span class="mono">holdout_predictions 0c4d…e72 · evaluation_metrics 14 rows</span></div>
+  </div></div>
+  <div class="stage"><span class="dot ok"></span><div class="name">10 · Verify + review<small>03:40 · 32 s</small></div><div class="body">
+    <div class="line"><span>Verifier: 19 pass · 1 warn (<code>winner_relies_on_single_feature</code>) · 0 fail · split_plan_consistent ✓ · decision_threshold_from_cv ✓ · baseline_margin ✓</span></div>
+    <div class="ai-note"><b>AI-after · Critic</b> (ar-1024, L1): verdict <b>needs_work</b>; cites <code>feature_importance.last_login_days = 0.41</code>, <code>cv_pr_auc 0.69 ± 0.02</code>, verifier warning 1. Question to you: is <code>last_login_days</code> known at prediction time? <span class="muted small">validator: 3/3 citations valid</span></div>
+    <div class="line"><span class="k">artifacts</span><span class="mono">report.html b2e0…5f3 · result.json · reproduction.py 4a1f…8c0 (reproduces CV, max |Δ| 0.0)</span></div>
+  </div></div>
+</div>
+
+<div class="card sect">
+<div class="sect-head"><h2>Run details</h2></div>
+<section data-tab="Decision points in this run">
+<div class="tbl"><table>
+      <thead><tr><th>Point</th><th>AI</th><th>Rule</th><th>Used</th><th>Level</th><th>Record</th></tr></thead>
+      <tbody>
+        <tr><td>target.column</td><td>churned_next_30d</td><td>same</td><td>same</td><td><span class="lvl l1">L1</span></td><td class="mono">d-301</td></tr>
+        <tr><td>column.is_identifier · customer_id</td><td>yes p .99</td><td>yes</td><td>same</td><td><span class="lvl l2">L2</span></td><td class="mono">d-297</td></tr>
+        <tr><td>column.semantic_role · region_code</td><td>categorical .91</td><td>numeric</td><td><b>AI</b></td><td><span class="lvl l2">L2</span></td><td class="mono">d-298 <button class="btn sm" data-mock="revert → rule value, new record">revert</button></td></tr>
+        <tr><td>leakage · churned_at</td><td>exclude p .97</td><td>exclude</td><td>exclude</td><td><span class="lvl l1">L1</span></td><td class="mono">d-302</td></tr>
+        <tr><td>leakage · retention_offer_sent</td><td>flag p .88</td><td>none</td><td>flag</td><td><span class="lvl l1">L1</span></td><td class="mono">d-302</td></tr>
+        <tr><td>split.strategy</td><td>temporal</td><td>temporal</td><td>same</td><td><span class="lvl l1">L1</span></td><td class="mono">d-303</td></tr>
+        <tr><td>training.families</td><td>3 families</td><td>portfolio</td><td>union</td><td><span class="lvl l2">L2</span></td><td class="mono">d-304</td></tr>
+        <tr><td>selection.winner</td><td>—</td><td>lightgbm__tuned</td><td>rule</td><td><span class="pill crit">never AI</span></td><td class="mono">d-305</td></tr>
+      </tbody>
+    </table></div>
+</section>
+<section data-tab="Cost and provenance">
+<dl class="kv">
+      <dt>Compute</dt><dd>4 m 12 s worker · 1 vCPU · ≈ $0.03</dd>
+      <dt>LLM</dt><dd>3 agent runs · 5 calls · 31k in (74% cached) · 4k out · $0.27</dd>
+      <dt>Jev</dt><dd>212 questions · 118 cache hits · &lt; $0.01 · 6 s</dd>
+      <dt>Fallbacks</dt><dd>0 (no timeouts, budget OK)</dd>
+      <dt>Prompt releases</dt><dd>planner v4 · investigator v6 · critic v8</dd>
+      <dt>Engine</dt><dd>dclab-engine 1.4.0 · sklearn 1.6 · lightgbm 4.5 · seed 42</dd>
+      <dt>Fingerprint</dt><dd class="mono">search 91ab…2f0 (dataset digest + spec + split + portfolio + tuning plan)</dd>
+      <dt>Replay</dt><dd>AI runs replay identical (last check nightly)</dd>
+    </dl>
+</section>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Each stage: result, AI before/after, decision, artifacts with digests, checks</li><li>Decision-point table with revert</li><li>Cost, provenance, replay</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Live view while running: stream per stage, or poll?</li><li>Per-fold detail (fold sizes, per-fold metrics) inline or in the experiment page?</li><li>Should users be able to re-run a single stage with a changed decision, or only branch?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Fingerprint and engine versions for non-developers (keep behind "details")</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v2"></script>
+</body>
+</html>

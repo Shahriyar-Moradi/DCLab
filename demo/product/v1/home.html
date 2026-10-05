@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Home · DCLab Studio</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="home.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Home</b></div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Good morning, developer</h1><p class="sub">Workspace overview: what needs a decision, what is running, what the AI did on its own, and what it cost.</p></div>
+  <div class="toolbar"><a class="btn primary" href="lab.html">+ New project</a><a class="btn" href="data.html">Upload data</a><a class="btn ai" href="lab.html">Ask the lab agent</a></div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">7</span><span class="l">decisions waiting for you</span></div><a class="btn sm" href="inbox.html">Open inbox</a></div>
+  <div class="card"><div class="stat"><span class="v">2</span><span class="l">runs in progress · 1 queued</span></div><div class="meter"><i style="width:62%"></i></div><span class="small muted">E9 training · fold 4 of 5</span></div>
+  <div class="card"><div class="stat"><span class="v">38</span><span class="l">AI decisions applied automatically (L2) this month</span></div><span class="small muted">2 reverted · 0 incidents open</span></div>
+  <div class="card"><div class="stat"><span class="v">$9.40</span><span class="l">LLM spend of $25 budget · compute 142 min</span></div><div class="meter ai"><i style="width:38%"></i></div></div>
+</div>
+
+<div class="side">
+  <div class="grid">
+    <div class="card">
+      <h2>Projects <span class="sp">4 active · 1 archived</span></h2>
+      <div class="tbl"><table>
+        <thead><tr><th>Project</th><th>Goal</th><th>Champion</th><th>Status</th><th>Last activity</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><a href="lab.html"><b>Northwind churn</b></a></td><td>churn in next 30 d · recall ≥ 0.80</td><td>MV v4 · recall 0.81 · prec 0.63</td><td><span class="pill run">E9 running</span></td><td>2 min ago · Ops agent retrain</td><td><a class="btn sm" href="pipeline.html">Pipeline</a></td></tr>
+          <tr><td><b>Invoice late payment</b></td><td>paid &gt; 30 d late · PR-AUC</td><td>MV v2 · PR-AUC 0.58</td><td><span class="pill warn">1 drift window</span></td><td>yesterday</td><td><a class="btn sm" href="monitoring.html">Monitor</a></td></tr>
+          <tr><td><b>Lead scoring</b></td><td>converts in 90 d · precision ≥ 0.5</td><td>—</td><td><span class="pill gray">needs target</span></td><td>3 days ago · 1 question for you</td><td><a class="btn sm" href="inbox.html">Answer</a></td></tr>
+          <tr><td><b>Demand forecast (test)</b></td><td>weekly units · MAE</td><td>—</td><td><span class="pill crit">unsupported task</span></td><td>forecasting arrives in Phase 9</td><td></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Activity <span class="sp">last 24 h · agents, rules and people</span></h2>
+      <div class="events">
+        <div class="ev ai"><span class="when">09:12 · Ops agent · L2</span><br>Retrain E9 started on DS v3 for Northwind churn after drift on <code>plan_type</code> (PSI 0.22). <a href="monitoring.html">chain</a></div>
+        <div class="ev ai"><span class="when">09:10 · DatasetInvestigator · L3</span><br>Cause: new plan <code>family_5g</code>, 6% of rows, churns 2× average.</div>
+        <div class="ev hum"><span class="when">yesterday 17:40 · you</span><br>Accepted proposal p-412 (exclude <code>retention_offer_sent</code>, leakage) on E7.</div>
+        <div class="ev det"><span class="when">yesterday 17:31 · rule</span><br>winner_locked on E7: lightgbm__tuned, CV PR-AUC 0.71 ± 0.02.</div>
+        <div class="ev ai"><span class="when">yesterday 17:33 · Critic · L1</span><br>Verdict needs_work: <code>last_login_days</code> carries 41% of gain; confirm availability at prediction time.</div>
+        <div class="ev crit"><span class="when">Tue 11:02 · governance · auto</span><br><code>feature.leakage_suspect</code> demoted L1 → L0 after 5 validator rejections (incident i-31, resolved).</div>
+      </div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>Inbox preview <span class="sp"><a href="inbox.html">all 7</a></span></h3>
+      <div class="chip"><b>Approve release R-15?</b><small>Ops agent · Northwind churn · MV v5 vs v4 · precision 0.48 → 0.59</small></div>
+      <div class="chip"><b>Promote E7 winner to champion?</b><small>Critic says needs_work · 1 open question</small></div>
+      <div class="chip"><b>Is <code>family_5g</code> like <code>family</code>?</b><small>DatasetInvestigator question · Northwind churn</small></div>
+      <div class="chip"><b>Target for Lead scoring?</b><small>Planner proposes <code>converted_90d</code> (p 0.91)</small></div>
+    </div>
+    <div class="card">
+      <h3>AI health <span class="sp"><a href="governance.html">governance</a></span></h3>
+      <dl class="kv">
+        <dt>Trust levels</dt><dd>2 at L2 · 2 at L1 · 2 at L0</dd>
+        <dt>Fallbacks to rule</dt><dd>3 of 1,948 calls (timeouts)</dd>
+        <dt>Validator rejections</dt><dd>9 this month</dd>
+        <dt>Replay check</dt><dd>212 / 212 identical (nightly)</dd>
+        <dt>Kill switches</dt><dd>all on</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h3>Quick actions</h3>
+      <div class="chips">
+        <a class="btn sm" href="experiments.html">Compare E7 vs E9</a>
+        <a class="btn sm" href="improve.html">Start improve loop</a>
+        <a class="btn sm" href="agents.html">Connect Claude Code (MCP)</a>
+        <a class="btn sm" href="models.html">Score a file</a>
+        <a class="btn sm" href="data.html">Add dataset version</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Decisions waiting, running jobs, L2 auto-decisions, spend vs budget</li><li>Projects with goal, champion, status</li><li>Unified activity of agents, rules and people</li><li>AI health summary</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Should home be per workspace or per user (multiple workspaces)?</li><li>Do business users ever land here, or always on the client view?</li><li>Notifications: email/Slack for L1 items?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Quick actions duplicate the sidebar</li><li>AI health may belong only in governance</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v1"></script>
+</body>
+</html>

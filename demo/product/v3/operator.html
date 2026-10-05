@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Operator console · DCLab</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="operator.html" data-role="operator">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Platform › <b>Operator console</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Operator console</h1><p class="sub">Platform health across all workspaces. Operators see metadata only, never customer data.</p></div>
+</div>
+
+<div class="tabs" data-tabs="op">
+  <button data-tab="workspaces" aria-selected="true">Workspaces</button>
+  <button data-tab="jobs">Jobs</button>
+  <button data-tab="quarantine">Quarantine <span class="cnt">2</span></button>
+  <button data-tab="caps">Platform limits</button>
+  <button data-tab="bench">Quality gates</button>
+</div>
+
+<div data-tabpanel="op:workspaces" class="on">
+  <div class="stats">
+    <div class="stat"><span class="v ok">Healthy</span><span class="l">all services up</span></div>
+    <div class="stat"><span class="v">180 ms</span><span class="l">typical response time</span></div>
+    <div class="stat"><span class="v">4</span><span class="l">jobs running or waiting</span></div>
+    <div class="stat"><span class="v">22 min</span><span class="l">last backup restore drill</span></div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Workspaces</h2></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Workspace</th><th class="r">Projects</th><th class="r">Compute used</th><th class="r">AI budget used</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>Northwind Telecom</b></td><td class="r">4</td><td class="r">24%</td><td class="r">38%</td><td><span class="tag ok">Healthy</span></td></tr>
+        <tr><td><b>Harbor Insurance</b></td><td class="r">2</td><td class="r">68%</td><td class="r">36%</td><td><span class="tag ok">Healthy</span></td></tr>
+        <tr><td><b>Fieldline Retail</b></td><td class="r">1</td><td class="r">85%</td><td class="r">24%</td><td><span class="tag warn">Near compute limit</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="op:jobs">
+  <div class="card">
+    <div class="head"><h2>Jobs</h2><p>4 workers · 2 busy</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Job</th><th>Workspace</th><th>Running for</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Training run</td><td>Northwind Telecom</td><td>6 min</td><td><span class="tag info">Running</span></td></tr>
+        <tr><td>Run review</td><td>Harbor Insurance</td><td>20 s</td><td><span class="tag info">Running</span></td></tr>
+        <tr><td>Scoring</td><td>Fieldline Retail</td><td>—</td><td><span class="tag">Waiting</span></td></tr>
+        <tr><td>Improve loop</td><td>Harbor Insurance</td><td>—</td><td><span class="tag crit">Failed</span><small>retried once</small></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="op:quarantine">
+  <div class="card">
+    <div class="head"><h2>Uploads held for review</h2><p>You see the reason, not the content.</p></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">claims_2026.csv · Harbor Insurance</span><span class="d">May contain personal notes in free text. Held for 2 days.</span><span class="a"><button class="btn sm" data-mock="approve release upload">Release</button><button class="btn sm danger" data-mock="delete upload">Delete</button></span></div>
+      <div class="drow"><span class="t">vendor_dump.zip · Fieldline Retail</span><span class="d">Malware scanner found a match.</span><span class="a"><button class="btn sm danger" data-mock="delete upload">Delete and notify</button></span></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="op:caps">
+  <div class="card">
+    <div class="head"><h2>Limits no workspace can change</h2></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">AI never chooses the winning model, scores test data or builds the test split</span><span class="a"><span class="tag ok">Enforced</span></span></div>
+      <div class="drow"><span class="t">Full rows of customer data are never sent to a model</span><span class="a"><span class="tag ok">Enforced</span></span></div>
+      <div class="drow"><span class="t">Leaving a column out and releasing a model always need a person</span><span class="a"><span class="tag ok">Enforced</span></span></div>
+      <div class="drow"><span class="t">Assistants cannot run code they wrote themselves</span><span class="a"><span class="tag ok">Enforced</span></span></div>
+      <div class="drow"><span class="t">Only approved model providers</span><span class="d">OpenAI and TypeSafe.</span><span class="a"><span class="tag ok">Enforced</span></span></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="op:bench">
+  <div class="stats">
+    <div class="stat"><span class="v ok">23 of 23</span><span class="l">benchmark tasks beat the baseline</span></div>
+    <div class="stat"><span class="v ok">7 of 8</span><span class="l">AI decisions match or beat the rule</span></div>
+    <div class="stat"><span class="v ok">All green</span><span class="l">tests with AI switched off</span></div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Latest checks</h2></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Check</th><th>Runs</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Engine benchmark</td><td>Weekly</td><td>No regressions</td></tr>
+        <tr><td>Improve loop: assistant against rules</td><td>Weekly</td><td>Goal met on 70% of tasks, rules 61%</td></tr>
+        <tr><td>AI decisions against rules</td><td>Weekly</td><td>One decision still in "Observe" (too few cases)</td></tr>
+        <tr><td>Replay of recorded AI runs</td><td>Nightly</td><td>212 of 212 identical</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>
