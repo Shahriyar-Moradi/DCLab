@@ -140,9 +140,12 @@ def citation_reasons(db: Session, citations: Sequence[Citation], *, workspace_id
     return []
 
 
-def output_reasons(db: Session, output: Any, runtime: Any, *, workspace_id: UUID, project_id: UUID | None) -> list[str]:
+def output_reasons(db: Session, output: Any, runtime: Any, *, workspace_id: UUID, project_id: UUID | None,
+                   run_id: UUID | None = None) -> list[str]:
     """Pydantic (the runtime's declared output schema) + holdout + citations + the
-    runtime's own deterministic validator (``validate_output(output) -> [codes]``)."""
+    runtime's own deterministic validator (``validate_output(output) -> [codes]``) + its
+    agent class's database-backed validator (``check_output``, P6.4-A: cited columns, CV
+    metrics, findings) against the run's subject."""
 
     if output is None:
         return ["no_output"]
@@ -163,7 +166,23 @@ def output_reasons(db: Session, output: Any, runtime: Any, *, workspace_id: UUID
     custom = getattr(runtime, "validate_output", None)
     if not reasons and callable(custom):
         reasons = [str(code)[:64] for code in custom(output) or ()]
+    check = getattr(getattr(runtime, "agent_class", None), "check_output", None)
+    if not reasons and callable(check):
+        reasons = [str(code)[:64] for code in check(_output_check(db, workspace_id, project_id, run_id), output) or ()]
     return reasons
+
+
+def _output_check(db: Session, workspace_id: UUID, project_id: UUID | None, run_id: UUID | None) -> Any:
+    from app.agents.runtime.base import OutputCheck
+    from app.db.models import AgentRun
+    from app.domain.agent_records import AGENT_SUBJECT_COLUMNS
+
+    run = db.scalar(select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)) \
+        if run_id is not None else None
+    kind = run.subject_kind if run is not None else None
+    column = AGENT_SUBJECT_COLUMNS.get(kind or "")
+    return OutputCheck(db=db, workspace_id=workspace_id, project_id=project_id, subject_kind=kind,
+                       subject_id=getattr(run, column) if column else None)
 
 
 def draft_reasons(draft: Any) -> list[str]:

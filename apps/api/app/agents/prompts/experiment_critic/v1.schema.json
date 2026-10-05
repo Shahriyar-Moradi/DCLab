@@ -1,0 +1,110 @@
+{
+  "$defs": {
+    "CvMetricCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "experiment_id": {
+          "format": "uuid",
+          "title": "Experiment Id",
+          "type": "string"
+        },
+        "metric": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Metric",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "experiment_id",
+        "metric",
+        "value"
+      ],
+      "title": "CvMetricCitation",
+      "type": "object"
+    },
+    "FindingCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Check",
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 500,
+          "title": "Note",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "warning",
+            "fail",
+            "not_evaluated"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "status",
+        "note"
+      ],
+      "title": "FindingCitation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "cv_metrics": {
+      "items": {
+        "$ref": "#/$defs/CvMetricCitation"
+      },
+      "maxItems": 20,
+      "title": "Cv Metrics",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/FindingCitation"
+      },
+      "maxItems": 10,
+      "title": "Findings",
+      "type": "array"
+    },
+    "summary": {
+      "maxLength": 2000,
+      "title": "Summary",
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "promote_candidate",
+        "needs_work",
+        "reject"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "verdict",
+    "summary",
+    "cv_metrics",
+    "findings",
+    "confidence"
+  ],
+  "title": "ExperimentReview",
+  "type": "object"
+}

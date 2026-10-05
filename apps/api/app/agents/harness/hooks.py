@@ -360,7 +360,7 @@ def _output_validator(ctx: HookContext, run: RunOutput) -> Effect | None:
     from app.agents.harness.validation import output_reasons
 
     reasons = output_reasons(ctx.db, run.output, run.runtime, workspace_id=ctx.workspace_id,
-                             project_id=ctx.project_id)
+                             project_id=ctx.project_id, run_id=ctx.run_id)
     return DenyOutput(reasons[0]) if reasons else None
 
 

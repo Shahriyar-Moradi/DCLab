@@ -88,6 +88,27 @@ def strip_holdout(value: Any) -> Any:
 
 cv_only = strip_holdout  # the name the tool shapers use: free-form engine dicts, CV only
 
+# P6.4-A: the pipeline auditor's stored advisory report (``ml_run_verifications.llm_report``
+# and its ``openai_audit`` / ``verification_attempt`` overlay) is floored with the FULL
+# deterministic status, holdout-derived checks included, so it is holdout-scoped: no agent
+# context or tool result may carry it (the harness drops such fields).
+HOLDOUT_SCOPED_REPORT_KEYS = frozenset({"llm_report", "openai_audit", "verification_attempt", "advisory_status"})
+
+
+def names_holdout_report(value: Any, depth: int = 0) -> bool:
+    """A dotted key or an object (by its keys, recursively) naming a holdout-scoped report."""
+
+    if depth > MAX_DEPTH + 2:
+        return True  # fail closed on anything deeper than shaped results go
+    if isinstance(value, str):
+        return any(part in HOLDOUT_SCOPED_REPORT_KEYS for part in value.split("."))
+    if isinstance(value, dict):
+        return any(names_holdout_report(str(key)) or names_holdout_report(item, depth + 1)
+                   for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(names_holdout_report(item, depth + 1) for item in value)
+    return False
+
 
 def cv_record(m: Any) -> dict[str, Any] | None:
     """A winner metric record reduced to the CV allowlist, with the threshold/sign labels."""

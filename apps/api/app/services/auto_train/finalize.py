@@ -126,4 +126,5 @@ def run_finalize(ctx: RunContext, inp: FinalizeInput) -> FinalizeOutput:
         },
     )
     ctx.request_routine_advisory_verification()
+    ctx.request_experiment_review(experiment.id)
     return FinalizeOutput(status=COMPLETED, experiment=experiment, result=result)

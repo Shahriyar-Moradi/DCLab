@@ -1,0 +1,150 @@
+{
+  "$defs": {
+    "PlanSplit": {
+      "additionalProperties": false,
+      "properties": {
+        "group_column": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Column"
+        },
+        "strategy": {
+          "enum": [
+            "stratified_random",
+            "random",
+            "group_disjoint",
+            "temporal_future"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        },
+        "test_size": {
+          "anyOf": [
+            {
+              "maximum": 0.5,
+              "minimum": 0.05,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Test Size"
+        },
+        "time_column": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Column"
+        }
+      },
+      "required": [
+        "strategy"
+      ],
+      "title": "PlanSplit",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "families": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Families"
+    },
+    "max_training_seconds": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "maximum": 600.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Max Training Seconds"
+    },
+    "primary_metric": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Primary Metric"
+    },
+    "rationale": {
+      "maxLength": 2000,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "split": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlanSplit"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "task_type": {
+      "enum": [
+        "binary",
+        "multiclass",
+        "regression"
+      ],
+      "title": "Task Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_type",
+    "primary_metric",
+    "split",
+    "families",
+    "max_training_seconds",
+    "rationale",
+    "confidence"
+  ],
+  "title": "ExperimentPlanOutput",
+  "type": "object"
+}

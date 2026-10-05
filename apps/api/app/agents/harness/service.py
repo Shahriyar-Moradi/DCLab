@@ -59,8 +59,16 @@ from app.agents.harness import hooks as h
 from app.agents.harness.context import build_context, within
 from app.agents.harness.recorder import Recorder, canonical, digest, output_digest, preview
 from app.agents.harness.validation import check_proposal_nodes, draft_reasons, proposal_payload
+from app.agents import classes  # noqa: F401 - registers the specialist classes (P6.4-A)
 from app.agents.runtime import fake_runtime, nooa_runtime
-from app.agents.runtime.base import RuntimeFactory, RuntimeRefused, RuntimeWallTimeout, ToolOutcome, run_coroutine
+from app.agents.runtime.base import (
+    AGENT_CLASSES,
+    RuntimeFactory,
+    RuntimeRefused,
+    RuntimeWallTimeout,
+    ToolOutcome,
+    run_coroutine,
+)
 from app.agents.tools.catalog import ToolContext, ToolDefinition, ToolError, catalog_digest, get as get_tool, visible
 from app.agents.tools.render import to_context_fields, to_mcp
 from app.agents.tools.shaping import redact
@@ -405,9 +413,10 @@ class _Execution:
             "tool_catalog_digest": self.run.tool_catalog_digest, "policy_digest": self.run.policy_digest,
             "runtime": self.spec.runtime, "data_class": self.data_class, "outcome_scope": self.outcome_scope,
         })
+        item = AGENT_CLASSES.get(self.spec.agent_key) if self.spec.kind == "specialist" else None
         built = build_context(self.tool_ctx, project_id=self.project_id, subject_kind=self.spec.subject_kind,
                               subject_id=self.spec.subject_id, data_class=self.data_class,
-                              outcome_scope=self.outcome_scope)
+                              outcome_scope=self.outcome_scope, extra=item.context if item is not None else None)
         self.envelope = built.envelope
         db.execute(update(AgentRun).where(AgentRun.workspace_id == self.workspace_id, AgentRun.id == self.run_id,
                                           AgentRun.context_digest.is_(None)).values(context_digest=built.digest))
@@ -747,6 +756,8 @@ class _Execution:
         if draft is None:
             return None
         reasons = draft_reasons(draft) or ([] if self.project_id is not None else ["project_required"])
+        if not reasons and not self.spec.may_propose:
+            reasons = ["proposal_not_allowed"]  # §5.1 step 1: only a run that may propose stores one
         if reasons:
             return reasons[0]
         ceiling = answer_ceiling(draft.decision_point_key, draft.answer_kind)
@@ -798,3 +809,86 @@ def end_run_for_job(db: Session, job: Any) -> None:
     GatewayService().release_run(db, workspace_id=job.workspace_id, agent_run_id=job.target_id,
                                  final_status="cancelled" if job.status == "cancelled" else "failed",
                                  error_code="job_cancelled" if job.status == "cancelled" else "job_failed")
+
+
+# --- specialist runs (P6.4-A) ------------------------------------------------------------------
+
+REVIEW_AGENT_KEY = "experiment_critic"
+REVIEW_POINT = "experiment.review"
+
+
+def specialist_runtime(settings: Any) -> tuple[str, str] | None:
+    """The runtime a specialist run uses: NOOA Predict when installed, else the fake runtime in
+    an explicit development environment (AGENTS_NOOA_JEV §3); ``None`` = no runtime can run."""
+
+    from app.agents.governance.platform_default import fake_provider_allowed_by
+
+    if nooa_runtime.available():
+        return "nooa_predict", nooa_runtime.VERSION
+    if fake_provider_allowed_by(settings):
+        return "fake", fake_runtime.VERSION
+    return None
+
+
+def released_prompt_id(db: Session, agent_key: str, version: int) -> UUID | None:
+    from app.db.models import PromptRelease
+
+    return db.scalar(select(PromptRelease.id).where(
+        PromptRelease.agent_key == agent_key, PromptRelease.version == version, PromptRelease.status == "released"))
+
+
+def specialist_spec(db: Session, *, agent_key: str, workspace_id: UUID, project_id: UUID, user_id: UUID,
+                    subject_kind: str, subject_id: UUID, decision_point_key: str, outcome_scope: str = "none",
+                    settings: Any = None) -> AgentRunSpec | None:
+    """The spec of one specialist run (class version, pinned prompt release, runtime);
+    ``None`` when the class is unknown, its prompt is not released or no runtime can run."""
+
+    item = AGENT_CLASSES.get(agent_key)
+    runtime = specialist_runtime(settings or get_settings())
+    release = released_prompt_id(db, agent_key, item.prompt_version) if item is not None else None
+    if item is None or runtime is None or release is None:
+        return None
+    return AgentRunSpec(
+        workspace_id=workspace_id, project_id=project_id, kind="specialist", agent_key=agent_key,
+        agent_version=item.version, runtime=runtime[0], runtime_version=runtime[1], purpose=decision_point_key,
+        decision_point_key=decision_point_key, subject_kind=subject_kind, subject_id=subject_id,
+        prompt_release_id=release, user_id=user_id, outcome_scope=outcome_scope)
+
+
+def enqueue_experiment_review(db: Session, *, experiment_id: UUID, user_id: UUID | None,
+                              settings: Any = None) -> UUID | None:
+    """``experiment.review`` (AI-after, ADR 0008 §1): queue the Critic for a COMPLETED run as an
+    ``agents.run`` job. Nothing is created (and no model is called) when AI is off, a switch
+    blocks the Critic, the run has no project, its requester cannot propose (ML write), the
+    prompt is not released or no runtime can run. Never changes the run; refusals return None."""
+
+    from app.db.models import Experiment
+    from app.services.authorization_service import can_execute_workspace_ml
+
+    settings = settings or get_settings()
+    if not getattr(settings, "ai_enabled", False) or user_id is None:
+        return None
+    experiment = db.get(Experiment, experiment_id)
+    if experiment is None or experiment.status != "COMPLETED" or experiment.project_id is None:
+        return None
+    ws = experiment.workspace_id
+    if effective_switches(db, ws).blocking(ai_enabled=True, agent_key=REVIEW_AGENT_KEY, purpose=REVIEW_POINT):
+        return None
+    user = db.get(User, user_id)
+    if user is None or not user.is_active or not can_execute_workspace_ml(db, user, ws):
+        logger.info("experiment review skipped: the requester cannot propose",
+                    extra={"experiment_id": str(experiment_id)})
+        return None
+    spec = specialist_spec(db, agent_key=REVIEW_AGENT_KEY, workspace_id=ws, project_id=experiment.project_id,
+                           user_id=user_id, subject_kind="experiment", subject_id=experiment.id,
+                           decision_point_key=REVIEW_POINT, outcome_scope="cv", settings=settings)
+    if spec is None:
+        logger.info("experiment review skipped: no released prompt or runtime",
+                    extra={"experiment_id": str(experiment_id)})
+        return None
+    try:
+        return AgentService(settings=lambda: settings).submit(db, spec)
+    except AgentRunRefused as exc:  # e.g. run_already_active: one review per run
+        db.rollback()
+        logger.info("experiment review not queued", extra={"experiment_id": str(experiment_id), "code": exc.code})
+        return None

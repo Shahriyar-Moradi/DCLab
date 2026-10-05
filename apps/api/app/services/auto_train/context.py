@@ -215,6 +215,22 @@ class RunContext:
         except Exception:  # noqa: BLE001 - advisory isolation is intentional
             logger.exception("advisory pipeline verification failed for upload %s", self.upload_id)
 
+    def request_experiment_review(self, experiment_id: UUID) -> None:
+        """P6.4-A ``experiment.review``: queue the Critic once ML state is committed (AI on,
+        switches allow). Its own transaction; a failure never fails or changes the run."""
+        settings = get_settings()
+        if not settings.ai_enabled:
+            return
+        try:
+            from app.agents.harness.service import enqueue_experiment_review
+
+            row = self.db.get(ClientLabUpload, self.upload_id)
+            enqueue_experiment_review(self.db, experiment_id=experiment_id,
+                                      user_id=row.requested_by if row is not None else None, settings=settings)
+        except Exception:  # noqa: BLE001 - advisory isolation is intentional
+            self.db.rollback()
+            logger.exception("experiment review could not be queued for upload %s", self.upload_id)
+
     def fail(
         self,
         reason: str,

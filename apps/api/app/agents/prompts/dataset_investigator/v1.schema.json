@@ -1,0 +1,137 @@
+{
+  "$defs": {
+    "LeakageExplanation": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "explanation": {
+          "maxLength": 500,
+          "title": "Explanation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column",
+        "explanation"
+      ],
+      "title": "LeakageExplanation",
+      "type": "object"
+    },
+    "MissingValueAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "impute_median",
+            "impute_most_frequent",
+            "drop_column"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "column": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 300,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column",
+        "action",
+        "reason"
+      ],
+      "title": "MissingValueAction",
+      "type": "object"
+    },
+    "TargetCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "rank": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 300,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column",
+        "rank",
+        "reason"
+      ],
+      "title": "TargetCandidate",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "leakage_suspects": {
+      "items": {
+        "$ref": "#/$defs/LeakageExplanation"
+      },
+      "maxItems": 20,
+      "title": "Leakage Suspects",
+      "type": "array"
+    },
+    "missing_values": {
+      "items": {
+        "$ref": "#/$defs/MissingValueAction"
+      },
+      "maxItems": 64,
+      "title": "Missing Values",
+      "type": "array"
+    },
+    "questions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Questions",
+      "type": "array"
+    },
+    "target_candidates": {
+      "items": {
+        "$ref": "#/$defs/TargetCandidate"
+      },
+      "maxItems": 10,
+      "title": "Target Candidates",
+      "type": "array"
+    }
+  },
+  "required": [
+    "target_candidates",
+    "missing_values",
+    "leakage_suspects",
+    "questions",
+    "confidence"
+  ],
+  "title": "DatasetInvestigation",
+  "type": "object"
+}
