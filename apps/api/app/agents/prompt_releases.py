@@ -10,7 +10,7 @@ rows (the highest version ``released``, older ones ``retired``), retires
 superseded releases, and never rewrites a row: an edited released file is a
 mismatch (a text change is a new version). ``verify_prompt_releases`` lists
 released rows whose file is missing or differs (CI). Jev purpose releases
-(``jev:<purpose>``) are owned by ``agents/semantic/releases.py`` (P6.7-A).
+(``jev:<purpose>``) are owned by ``agents/semantic/releases.py`` (``sync_jev_releases``).
 """
 
 from __future__ import annotations

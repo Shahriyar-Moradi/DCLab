@@ -277,4 +277,7 @@ def test_user_seed_syncs_the_code_owned_prompt_releases_idempotently(db_session,
     db_session.expire_all()
     released = db_session.scalars(select(PromptRelease).where(PromptRelease.status == "released")).all()
     keys = sorted(row.agent_key for row in released)
-    assert keys == sorted({*CALLS, "pipeline_auditor"})  # one release per prompt file, never duplicated
+    from app.agents.semantic.releases import RELEASES
+
+    jev = {release.agent_key for release in RELEASES.values()}  # and one per pinned Jev purpose (P6.7-A)
+    assert keys == sorted({*CALLS, "pipeline_auditor", *jev})  # one release per prompt file, never duplicated

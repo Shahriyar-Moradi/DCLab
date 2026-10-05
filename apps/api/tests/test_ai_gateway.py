@@ -58,6 +58,7 @@ from app.agents.prompt_releases import (
     sync_prompt_releases,
     verify_prompt_releases,
 )
+from app.agents.semantic.releases import RELEASES, ROLES, sync_jev_releases
 from app.cli.main import main as dclab_main
 from app.db.models import AgentRun, DatasetColumn, LlmInvocation, PromptRelease, Workspace, WorkspaceLlmBudget
 from app.services.dataset_column_service import publish_dataset_policy_defaults, set_dataset_column_policy
@@ -1046,22 +1047,20 @@ def test_price_table_covers_the_platform_allowlist():
 
 def test_decide_with_the_fake_jev_provider_and_its_refusals(gw):
     ids = gw.ids
-    _insert(gw.db, "prompt_releases", {
-        "agent_key": "jev:column.semantic_role", "version": 1, "prompt_digest": "a" * 64,
-        "output_schema_digest": "b" * 64, "status": "released", "released_at": datetime.now(UTC),
-    })
+    sync_jev_releases(gw.db)
     gw.db.commit()
-    answer = {"answers": [{"question_key": "feature", "answer": {"value": "numeric"}, "confidence": 0.93}]}
-    jev = FakeProvider(handler=lambda _c: answer, environment="test")
+    value = {"label": "numeric"}
+    jev = FakeProvider(handler=lambda _c: {"answers": [
+        {"question_key": "feature", "answer": {"value": value["label"]}, "confidence": 0.93}]}, environment="test")
 
     def request(**overrides):
         values = dict(
             purpose="column.semantic_role", release_version="1", decision_point_key="column.semantic_role",
             workspace_id=gw.ws_a, project_id=gw.project_a, dataset_id=gw.dataset_a,
-            state={"column": Untrusted(untrusted_text="feature"), "distinct_ratio": 0.5},
-            column_keys={"column": ids["feature"]},
-            questions=(SemanticQuestion(question_key="feature", primitive="choice",
-                                        choices=("numeric", "categorical")),),
+            state={"c0": {"column": Untrusted(untrusted_text="feature"), "dtype": "float", "cardinality": "high"}},
+            column_keys={"c0": ids["feature"]},
+            questions=(SemanticQuestion(question_key="feature", primitive="choice", choices=ROLES,
+                                        column_id=ids["feature"]),),
             source_datasets=(gw.dataset_a,), source_columns=(ids["feature"],),
             budget=gw.reserve(estimate=10_000, run_kind="jev"),
         )
@@ -1074,17 +1073,19 @@ def test_decide_with_the_fake_jev_provider_and_its_refusals(gw):
     assert (row.provider_kind, row.agent_role, row.model, row.data_class) == (
         "semantic_decision", None, "jev-1.13.0", "metadata")
     assert '"untrusted_text":"feature"' in jev.calls[0].input_json and row.budget_settled
+    assert json.loads(jev.calls[0].instructions)["question"] == RELEASES["column.semantic_role"].question
     assert service.decide(gw.db, request()).cache_hit and len(jev.calls) == 1
-    question = lambda *choices: (SemanticQuestion(question_key="feature", primitive="choice",  # noqa: E731
-                                                  choices=choices),)
-    other = service.decide(gw.db, request(questions=question("numeric", "text")))
-    assert other.ok and not other.cache_hit and len(jev.calls) == 2  # the choices are part of the key
-    wrong = service.decide(gw.db, request(questions=question("text", "date")))
+    low = {"c0": {"column": Untrusted(untrusted_text="feature"), "dtype": "float", "cardinality": "low"}}
+    other = service.decide(gw.db, request(state=low))
+    assert other.ok and not other.cache_hit and len(jev.calls) == 2  # the state is part of the key
+    value["label"] = "text"
+    wrong = service.decide(gw.db, request(state={**low, "c0": {**low["c0"], "nulls": "none"}}))
     assert wrong.refusal.code == "invalid_output" and len(jev.calls) == 3
     unconfigured = gw.service(providers={"openai": gw.fake}).decide(gw.db, request())
     assert (unconfigured.refusal.code, unconfigured.refusal.message) == ("provider_error", "provider not configured")
-    unsourced = service.decide(gw.db, request(source_datasets=(), source_columns=()))
-    assert unsourced.refusal.code == "data_class_exceeded"
+    unsourced = service.decide(gw.db, request(source_datasets=(), source_columns=(), questions=(
+        SemanticQuestion(question_key="feature", primitive="choice", choices=ROLES),)))
+    assert unsourced.refusal.code == "policy_denied"  # a column question needs its source column
     label(gw, columns={"feature": "deny"})
     denied = service.decide(gw.db, request())
     assert denied.refusal.code == "data_class_exceeded" and len(jev.calls) == 3
@@ -1092,21 +1093,17 @@ def test_decide_with_the_fake_jev_provider_and_its_refusals(gw):
 
 
 def test_jev_user_text_and_state_text_are_gated(gw, monkeypatch):
-    _insert(gw.db, "prompt_releases", {
-        "agent_key": "jev:column.semantic_role", "version": 1, "prompt_digest": "a" * 64,
-        "output_schema_digest": "b" * 64, "status": "released", "released_at": datetime.now(UTC),
-    })
+    sync_jev_releases(gw.db)
     gw.db.commit()
-    answer = {"answers": [{"question_key": "feature", "answer": {"value": "numeric"}}]}
+    answer = {"answers": [{"question_key": "message", "answer": {"value": "other"}, "confidence": 0.9}]}
     jev = FakeProvider(handler=lambda _c: answer, environment="test")
     service = gw.service(providers={"openai": gw.fake, "typesafe": jev})
 
     def request(**overrides):
         values = dict(
-            purpose="column.semantic_role", release_version="1", decision_point_key="column.semantic_role",
-            workspace_id=gw.ws_a, project_id=gw.project_a, state={"distinct_ratio": 0.5},
-            questions=(SemanticQuestion(question_key="feature", primitive="choice", choices=("numeric", "text")),),
-            source_datasets=(gw.dataset_a,), source_columns=(gw.ids["feature"],),
+            purpose="command.intent_route", release_version="1", decision_point_key="command.intent_route",
+            workspace_id=gw.ws_a, project_id=gw.project_a,
+            questions=(SemanticQuestion(question_key="message", primitive="choice", choices=("run_experiment", "other")),),
             budget=gw.reserve(estimate=10_000, run_kind="jev"),
         )
         return SemanticDecisionRequest(**{**values, **overrides})
@@ -1114,7 +1111,8 @@ def test_jev_user_text_and_state_text_are_gated(gw, monkeypatch):
     note = Untrusted(untrusted_text="the user asked something")
     assert service.decide(gw.db, request(user_text=(note,))).refusal.code == "policy_denied"
     assert service.decide(gw.db, request(state={"note": note})).refusal.code == "policy_denied"
-    foreign_key = {"column_keys": {"column": gw.ids["target"]}, "state": {"column": note}}
+    foreign_key = {"column_keys": {"column": gw.ids["target"]}, "state": {"column": note},
+                   "source_columns": (gw.ids["target"],), "source_datasets": (gw.dataset_a,)}
     assert service.decide(gw.db, request(**foreign_key)).refusal.code == "policy_denied"
     assert jev.calls == []
     # with data.user_text_to_jev on (caps keep it off today), the text travels wrapped

@@ -65,11 +65,13 @@ def as_untrusted(value: Any) -> str | None:
     return text if isinstance(text, str) and len(text) <= UNTRUSTED_TEXT_MAX_CHARS else None
 
 
-def render_value(value: Any, *, untrusted: str = "allow", depth: int = 0) -> Any:
+def render_value(value: Any, *, untrusted: str = "allow", depth: int = 0, codes: bool = False) -> Any:
     """Check a value's types and return its wire form; refuses on any violation.
 
     ``untrusted``: ``allow`` (dataset/column sources), ``forbid`` (system sources:
     numbers, flags and ids only) or ``only`` (workspace text: every leaf wrapped).
+    ``codes``: bare code-key strings pass (Jev state, already checked against the
+    release's closed band vocabularies).
     """
 
     if depth > _MAX_DEPTH:
@@ -80,7 +82,7 @@ def render_value(value: Any, *, untrusted: str = "allow", depth: int = 0) -> Any
             raise GatewayRefusal("policy_denied", "text needs a dataset, column or workspace_text source")
         return {"untrusted_text": text}
     if isinstance(value, (list, tuple)):
-        return [render_value(item, untrusted=untrusted, depth=depth + 1) for item in value]
+        return [render_value(item, untrusted=untrusted, depth=depth + 1, codes=codes) for item in value]
     if isinstance(value, dict):
         out = {}
         for key, item in value.items():
@@ -88,8 +90,10 @@ def render_value(value: Any, *, untrusted: str = "allow", depth: int = 0) -> Any
                 raise GatewayRefusal("policy_denied", "object keys must be code keys; put names in Untrusted")
             if HOLDOUT_KEY.search(key):
                 raise GatewayRefusal("outcome_scope_exceeded", "holdout values never enter an AI call")
-            out[key] = render_value(item, untrusted=untrusted, depth=depth + 1)
+            out[key] = render_value(item, untrusted=untrusted, depth=depth + 1, codes=codes)
         return out
+    if isinstance(value, str) and codes and _KEY.fullmatch(value):
+        return value
     if isinstance(value, str):
         raise GatewayRefusal("policy_denied", "free text must be wrapped as Untrusted")
     if untrusted == "only":
@@ -277,7 +281,7 @@ def redact(
 
 
 def semantic_state(state: dict[str, Any], *, column_keys: dict[str, UUID],
-                   source_columns: tuple[UUID, ...]) -> dict[str, Any]:
+                   source_columns: tuple[UUID, ...], codes: bool = False) -> dict[str, Any]:
     """Jev ``state``: ``Untrusted`` only under top-level keys declared as a source column's."""
 
     if any(column not in source_columns for column in column_keys.values()):
@@ -290,7 +294,8 @@ def semantic_state(state: dict[str, Any], *, column_keys: dict[str, UUID],
             raise GatewayRefusal("policy_denied", "state keys must be code keys")
         if HOLDOUT_KEY.search(key):
             raise GatewayRefusal("outcome_scope_exceeded", "holdout values never enter an AI call")
-        out[key] = render_value(value, untrusted="allow" if key in column_keys else "forbid", depth=1)
+        out[key] = render_value(value, untrusted="allow" if key in column_keys else "forbid", depth=1,
+                                codes=codes)
     return out
 
 
@@ -301,11 +306,14 @@ def semantic_class(
     source_datasets: tuple[UUID, ...],
     source_columns: tuple[UUID, ...],
     max_class: str,
+    sourceless: bool = False,
 ) -> str:
     """Effective class of a Jev call; no recorded source, or any denied or unknown
     source, refuses (the decision point takes its rule path)."""
 
     if not source_datasets and not source_columns:
+        if sourceless:  # the release's state is code labels and flags only (no dataset content)
+            return min_class(max_class, "metadata")
         raise GatewayRefusal("data_class_exceeded", "a Jev call needs its recorded sources")
     labels = _Labels(db, workspace_id)
     exposures = [labels.exposure(FieldSource(kind="dataset", dataset_id=item))[0] for item in source_datasets]

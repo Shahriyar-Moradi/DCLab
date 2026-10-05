@@ -50,6 +50,29 @@ def jev_key(
                    question_key)
 
 
+def jev_question_keys(
+    *, workspace_id: UUID, purpose: str, release_version: str, model: str, data_class: str,
+    state: dict[str, Any], column_keys: dict[str, str], user_text: list[Any],
+    questions: list[tuple[str, str, list[str], str | None]],
+) -> list[str]:
+    """Per-question Jev keys (ADR 0008 §5) over the wire form of ``state``. A question
+    about a column (``column_id`` set) sees the shared state plus its own column's entries,
+    not the other questions' columns, so its key and cache entry survive a different
+    batch. ``questions``: ``(question_key, primitive, choices, column_id)``. The gateway
+    and the semantic port compute the same keys for the same input."""
+
+    asked = {column for *_rest, column in questions if column}
+    subject_keys = {key for key, column in column_keys.items() if column in asked}
+    keys = []
+    for question_key, primitive, choices, column in questions:
+        scoped = {k: v for k, v in state.items() if k not in subject_keys or column_keys[k] == column}
+        keyed_state = scoped if not user_text else {"state": scoped, "user_text": user_text}
+        keys.append(jev_key(workspace_id=workspace_id, purpose=purpose, release_version=release_version,
+                            model=model, data_class=data_class, state=keyed_state,
+                            question_key=canonical_json([question_key, primitive, list(choices)])))
+    return keys
+
+
 def jev_batch_key(question_keys: list[str]) -> str:
     return question_keys[0] if len(question_keys) == 1 else _digest("jev-batch", *sorted(question_keys))
 

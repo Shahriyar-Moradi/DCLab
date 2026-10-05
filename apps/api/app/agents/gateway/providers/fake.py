@@ -1,8 +1,8 @@
 """Deterministic fake provider for tests and local development (ADR 0009 §3, §9).
 
 Refuses to load or answer outside a development environment
-(``fake_provider_allowed`` on the process setting ``DCLAB_ENV`` and on any
-``environment`` argument: anything not named development/dev/test/local counts
+(``fake_provider_allowed_by`` on the process settings — ``DCLAB_ENV`` must be set
+explicitly — and ``fake_provider_allowed`` on any ``environment`` argument: anything not named development/dev/test/local counts
 as production, including ``""``, ``prod`` and ``staging``). Outputs are scripted (a queue of dicts,
 ``ProviderResult`` or exceptions) or produced by a handler, e.g. one replaying
 recorded outputs keyed by the input digest. Every call is kept in ``calls`` so
@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from app.agents.gateway.providers import ProviderCall, ProviderResult
-from app.agents.governance.platform_default import fake_provider_allowed
+from app.agents.governance.platform_default import fake_provider_allowed, fake_provider_allowed_by
 
 
 class FakeProviderForbidden(RuntimeError):
@@ -32,9 +32,12 @@ def _require_development(environment: str | None) -> None:
 
     from app.config import get_settings
 
-    for value in (get_settings().dclab_env, environment):
-        if value is not None and not fake_provider_allowed(value):
-            raise FakeProviderForbidden(f"the fake provider is refused in environment {value!r}")
+    settings = get_settings()
+    if not fake_provider_allowed_by(settings):  # an unset DCLAB_ENV is not development
+        raise FakeProviderForbidden(
+            f"the fake provider needs an explicit development DCLAB_ENV (got {getattr(settings, 'dclab_env', None)!r})")
+    if environment is not None and not fake_provider_allowed(environment):
+        raise FakeProviderForbidden(f"the fake provider is refused in environment {environment!r}")
 
 
 class FakeProvider:

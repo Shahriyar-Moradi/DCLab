@@ -219,3 +219,22 @@ def is_development_env(environment: str) -> bool:
 
 def fake_provider_allowed(environment: str) -> bool:
     return FAKE_PROVIDER_ALLOWED_IN_PRODUCTION or is_development_env(environment)
+
+
+def ai_development_env(settings: object) -> bool:
+    """AI development permissions (fake provider, fake runtime, the ``global_ai`` seed, the
+    legacy agents' gate) need an EXPLICIT development ``DCLAB_ENV`` / ``APP_ENV`` /
+    ``ENVIRONMENT``: the settings default (``development``) does not count, so an unset
+    variable in a deployment never enables them. Cookie and session behaviour keep using
+    ``config.is_production_env``. A settings object without ``model_fields_set`` (a test
+    double) states its value explicitly."""
+
+    fields_set = getattr(settings, "model_fields_set", None)
+    if fields_set is not None and "dclab_env" not in fields_set:
+        return False
+    value = getattr(settings, "dclab_env", None)
+    return isinstance(value, str) and is_development_env(value)
+
+
+def fake_provider_allowed_by(settings: object) -> bool:
+    return FAKE_PROVIDER_ALLOWED_IN_PRODUCTION or ai_development_env(settings)

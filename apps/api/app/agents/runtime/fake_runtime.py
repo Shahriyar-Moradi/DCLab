@@ -9,7 +9,7 @@ output is the last answered model call, mapped by the agent class (``to_output``
 Model calls still go through the harness and the gateway (in tests and development:
 the gateway's fake provider), so budgets, events, the ledger and replay behave as for
 a real runtime. Refused outside a development environment, like the fake provider
-(``fake_provider_allowed`` on ``DCLAB_ENV``). Never imports ``nooa``.
+(``fake_provider_allowed_by``: an explicit development ``DCLAB_ENV``). Never imports ``nooa``.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agents.contracts import AgentRunSpec
-from app.agents.governance.platform_default import fake_provider_allowed
+from app.agents.governance.platform_default import fake_provider_allowed_by
 from app.agents.runtime.base import AgentClass, ProposalDraft, RuntimeOutput, RuntimeRefused, agent_class, finish
 from app.domain.agent_records import CODE_PATTERN, KEY_PATTERN
 
@@ -68,7 +68,7 @@ class FakeCase(_Strict):
 def _require_development() -> None:
     from app.config import get_settings
 
-    if not fake_provider_allowed(get_settings().dclab_env):
+    if not fake_provider_allowed_by(get_settings()):  # an unset DCLAB_ENV is not development
         raise RuntimeRefused("fake_runtime_forbidden")
 
 

@@ -67,14 +67,15 @@ from app.agents.prompt_releases import (
     load_release_text,
     output_schema_digest,
 )
+from app.agents.semantic import releases
+from app.agents.semantic.releases import SUBJECT_KEY, release_for
 from app.config import get_settings
-from app.db.models import PromptRelease
+from app.db.models import DatasetColumn, LlmInvocation, PromptRelease, SemanticDecisionAnswer
 
 logger = logging.getLogger(__name__)
 
 _PROVIDER_REFUSALS = {"timeout": "timeout", "rate_limited": "rate_limited", "invalid_output": "invalid_output"}
 _BREAKER_FAILURES = ("timeout", "server_error")
-JEV_INSTRUCTIONS = "Answer each question about the supplied state with the release's primitive."
 # Calls refused because the caller had not committed (no ledger row exists for them), by
 # purpose; in-process like the limits. Logged too, so a call site that forgets the caller
 # contract shows up in logs and diagnostics instead of silently taking its rule path.
@@ -222,6 +223,9 @@ class _CompletionSteps:
     def validate(self, output: dict[str, Any]) -> BaseModel:
         return self.request.output_schema.model_validate(output)
 
+    def cached(self, db: Session, call: _Call) -> tuple[BaseModel, str | None, Any, str | None] | None:
+        return _ledger_cached(db, call, self)
+
     def respond(self, call: _Call, **values: Any) -> CompletionResponse:
         base = dict(
             ok=values.get("refusal") is None, provider=call.adapter.name if call.adapter else None,
@@ -239,51 +243,133 @@ class _SemanticSteps:
 
     def __init__(self, service: "GatewayService", request: SemanticDecisionRequest) -> None:
         self.service, self.request = service, request
+        self.release = release_for(request.purpose, request.release_version)
+        self.question_keys: list[str] = []
 
     def load_release(self, db: Session, call: _Call) -> str:
+        """The code-owned purpose release (question text, state fields, model pin) and its
+        released row, whose digest must match the code (ADR 0008 §5)."""
+
         r = self.request
         release = db.scalar(select(PromptRelease).where(
             PromptRelease.agent_key == f"jev:{r.purpose}", PromptRelease.version == int(r.release_version),
             PromptRelease.status == "released",
         ))
-        if release is None:
+        if release is None or self.release is None:
             raise GatewayRefusal("policy_denied", "Jev release is not released")
+        if release.prompt_digest.strip() != self.release.digest():
+            raise GatewayRefusal("policy_denied", "Jev release differs from the code-owned release")
+        if call.route.model != self.release.model_id:
+            raise GatewayRefusal("model_not_allowed", "the routed model is not the release's pinned model",
+                                 scope="role:jev")
         call.prompt_release_id = release.id
         call.prompt_version = f"jev:{r.purpose}:v{release.version}"[:64]
         call.schema_version = output_schema_digest(SemanticAnswers)
-        return JEV_INSTRUCTIONS
+        return cache.canonical_json({"question": self.release.question, "criteria": self.release.criteria})
+
+    def _check_names(self, db: Session) -> dict[UUID, str]:
+        """Decision 3 of P6.7-A: no free text rides on ``question_key`` or in ``state``.
+        A column question's key, every ``column`` / context name field and every name
+        token must be the mapped source column's stored name (workspace-scoped); any
+        other question key is the release's code key. Returns the state key per asked column."""
+
+        r, release = self.request, self.release
+        subjects = {column: key for key, column in r.column_keys.items() if SUBJECT_KEY.fullmatch(key)}
+        ids = {*r.column_keys.values(), *(q.column_id for q in r.questions if q.column_id)}
+        names = dict(db.execute(select(DatasetColumn.id, DatasetColumn.name).where(
+            DatasetColumn.workspace_id == r.workspace_id, DatasetColumn.id.in_(ids))).all()) if ids else {}
+        for key, column in r.column_keys.items():
+            name, value, subject = names.get(column), r.state.get(key), bool(SUBJECT_KEY.fullmatch(key))
+            texts = (value if isinstance(value, dict) else {}) if subject else {key: value}
+            for field, item in texts.items():
+                spec = (release.subject_fields if subject else release.context_fields).get(field)
+                if spec == releases.UNTRUSTED and redaction.as_untrusted(item) != name:
+                    raise GatewayRefusal("policy_denied", "a name in state must be its column's stored name")
+                if spec == releases.UNTRUSTED_LIST and not {redaction.as_untrusted(t) for t in item} <= set(
+                        releases.name_tokens(name or "")):
+                    raise GatewayRefusal("policy_denied", "name tokens must come from the column's stored name")
+        for q in r.questions:
+            if q.primitive != release.primitive or (release.choices and q.choices != release.choices):
+                raise GatewayRefusal("policy_denied", "question does not match the release")
+            if release.question_key is not None:
+                if q.column_id is not None or q.question_key != release.question_key:
+                    raise GatewayRefusal("policy_denied", "question_key must be the release's code key")
+                continue
+            if (q.column_id is None or q.column_id not in r.source_columns or q.column_id not in subjects
+                    or names.get(q.column_id) != q.question_key):
+                raise GatewayRefusal("policy_denied", "a column question needs its source column and stored name")
+        return subjects
 
     def redact(self, db: Session, call: _Call, max_class: str, max_scope: str) -> dict[str, Any]:
-        r = self.request
+        r, release = self.request, self.release
+        problems = releases.state_violations(release, r.state, r.column_keys)
+        if problems:
+            raise GatewayRefusal("policy_denied", f"state is not the release's: {problems[0]}")
+        subjects = self._check_names(db)
         allowed = redaction.semantic_class(db, workspace_id=r.workspace_id, source_datasets=r.source_datasets,
-                                           source_columns=r.source_columns, max_class=max_class)
+                                           source_columns=r.source_columns, max_class=max_class,
+                                           sourceless=release.sourceless and not r.column_keys)
         if redaction.class_rank(r.data_class) > redaction.class_rank(allowed):
             raise GatewayRefusal("data_class_exceeded", f"state is {r.data_class}, the call allows {allowed}")
         call.data_class, call.outcome_scope = r.data_class, max_scope
-        if r.user_text and not call.user_text_to_jev:
+        if r.user_text and not (call.user_text_to_jev and release.user_text):
             raise GatewayRefusal("policy_denied", "user text reaches Jev only with data.user_text_to_jev")
         user = [redaction.as_untrusted(item) for item in r.user_text]
         if any(text is None for text in user):
             raise GatewayRefusal("policy_denied", "user text must be wrapped as Untrusted")
-        state = redaction.semantic_state(r.state, column_keys=r.column_keys, source_columns=r.source_columns)
+        state = redaction.semantic_state(r.state, column_keys=r.column_keys, source_columns=r.source_columns,
+                                         codes=True)
+        if len(cache.canonical_json(state).encode()) > releases.MAX_STATE_BYTES:
+            raise GatewayRefusal("policy_denied", "Jev state exceeds 8 KB")
         call.summary = {"effective_data_class": allowed, "questions": len(r.questions), "untrusted_marked": True,
                         "input_evidence_persisted": False, "raw_rows_stored": False, "secrets_stored": False}
         return {"purpose": r.purpose, "state": state, "user_text": [{"untrusted_text": t} for t in user],
                 "questions": [
-            {"question_key": {"untrusted_text": q.question_key}, "primitive": q.primitive, "choices": list(q.choices)}
+            {"question_key": {"untrusted_text": q.question_key}, "primitive": q.primitive, "choices": list(q.choices),
+             "subject": subjects.get(q.column_id) if q.column_id else None}
             for q in r.questions
         ]}
 
     def cache_key(self, call: _Call, payload: dict[str, Any]) -> str:
         r = self.request
-        state = payload["state"] if not payload["user_text"] else {
-            "state": payload["state"], "user_text": payload["user_text"]}
-        return cache.jev_batch_key([
-            cache.jev_key(workspace_id=r.workspace_id, purpose=r.purpose, release_version=r.release_version,
-                          model=call.route.model, data_class=call.data_class, state=state,
-                          question_key=cache.canonical_json([q.question_key, q.primitive, list(q.choices)]))
-            for q in r.questions
-        ])
+        self.question_keys = cache.jev_question_keys(
+            workspace_id=r.workspace_id, purpose=r.purpose, release_version=r.release_version,
+            model=call.route.model, data_class=call.data_class, state=payload["state"],
+            column_keys={key: str(column) for key, column in r.column_keys.items()},
+            user_text=payload["user_text"],
+            questions=[(q.question_key, q.primitive, list(q.choices), str(q.column_id) if q.column_id else None)
+                       for q in r.questions])
+        return cache.jev_batch_key(self.question_keys)
+
+    def cached(self, db: Session, call: _Call) -> tuple[BaseModel, str | None, Any, str | None] | None:
+        """Per question: the first non-cached ``semantic_decision_answers`` row of the
+        workspace with that key (ADR 0008 §5); all questions must hit. Else the ledger's
+        batch entry."""
+
+        rows = db.scalars(
+            select(SemanticDecisionAnswer)
+            .join(LlmInvocation, (LlmInvocation.id == SemanticDecisionAnswer.llm_invocation_id)
+                  & (LlmInvocation.workspace_id == SemanticDecisionAnswer.workspace_id))
+            .where(SemanticDecisionAnswer.workspace_id == self.request.workspace_id, LlmInvocation.status == "completed",
+                   SemanticDecisionAnswer.question_digest.in_(self.question_keys),
+                   SemanticDecisionAnswer.cache_hit.is_(False), SemanticDecisionAnswer.labels_version == 0,
+                   SemanticDecisionAnswer.agreement != "unavailable")
+            .order_by(SemanticDecisionAnswer.created_at.asc(), SemanticDecisionAnswer.id.asc())
+        )
+        first: dict[str, SemanticDecisionAnswer] = {}
+        for row in rows:
+            first.setdefault(row.question_digest.strip(), row)
+        if all(key in first for key in self.question_keys):
+            output = {"answers": [
+                {"question_key": q.question_key, "answer": first[key].answer, "probabilities": first[key].probabilities,
+                 "confidence": float(first[key].confidence) if first[key].confidence is not None else None}
+                for q, key in zip(self.request.questions, self.question_keys)]}
+            try:
+                parsed = self.validate(output)
+                return parsed, call.adapter.name, parsed.model_dump(mode="json"), None
+            except (ValidationError, ValueError, TypeError):
+                pass
+        return _ledger_cached(db, call, self)
 
     def provider_call(self, call: _Call, instructions: str, input_json: str) -> ProviderCall:
         r = self.request
@@ -299,8 +385,11 @@ class _SemanticSteps:
             value = answer.answer.get("value")
             if question.primitive == "choice" and value not in question.choices:
                 raise ValueError("a choice answer outside the listed choices")
-            if question.primitive == "score" and (isinstance(value, bool) or not isinstance(value, (int, float))):
-                raise ValueError("a score answer must be a number")
+            if question.primitive in ("score", "noul") and (isinstance(value, bool)
+                                                            or not isinstance(value, (int, float))):
+                raise ValueError("a score or noul answer must be a number")
+            if question.primitive == "noul" and not 0 <= value <= 1:
+                raise ValueError("a noul answer is a probability")
         return parsed
 
     def respond(self, call: _Call, **values: Any) -> SemanticDecisionResponse:
@@ -308,7 +397,14 @@ class _SemanticSteps:
         for unused in ("usage", "resolved_model"):
             values.pop(unused, None)
         return SemanticDecisionResponse(ok=values.get("refusal") is None, latency_ms=call.latency_ms(),
-                                        answers=output.answers if output is not None else (), **values)
+                                        answers=output.answers if output is not None else (),
+                                        question_digests=tuple(self.question_keys), **values)
+
+
+def _ledger_cached(db: Session, call: _Call, steps: Any) -> tuple[BaseModel, str | None, Any, str | None] | None:
+    hit = cache.lookup(db, workspace_id=call.request.workspace_id, key=call.digest)
+    parsed = GatewayService._parse_cached(steps, hit)
+    return None if parsed is None else (parsed, hit.provider, hit.safe_output, hit.provider_resolved_model)
 
 
 class GatewayService:
@@ -344,6 +440,18 @@ class GatewayService:
         if self._providers is None:
             self._providers = default_providers()
         return self._providers.get(name)
+
+    def provider_ready(self, name: str) -> bool:
+        """An adapter is configured and, if it says so, usable (SDK installed, key set);
+        the semantic port stays deterministic otherwise. Never raises."""
+
+        try:
+            adapter = self._provider(name)
+            ready = getattr(adapter, "ready", None)
+            return adapter is not None and (ready is None or bool(ready()))
+        except Exception:
+            logger.exception("provider readiness check failed", extra={"provider": name})
+            return False
 
     def reserve(self, db: Session, *, workspace_id: UUID, estimate_micros: int, project_id: UUID | None = None,
                 run_kind: str | None = None, agent_run_id: UUID | None = None) -> BudgetReservation | Refusal:
@@ -506,24 +614,22 @@ class GatewayService:
                                  scope="reservation")
         # 7. cache
         call.digest = steps.cache_key(call, payload)
-        if steps.use_cache:
-            hit = cache.lookup(db, workspace_id=r.workspace_id, key=call.digest)
-            parsed = self._parse_cached(steps, hit)
-            if parsed is not None:
-                note = call.note(parsed, None, llm_used=True)
-                row = ledger.insert_completed(
-                    db, call.entry(llm_used=True, provider=hit.provider),
-                    status="rejected" if note.rejected else "completed",
-                    validator_verdict=note.validator_verdict or "accepted", reason=note.reason or "cache hit",
-                    output=hit.safe_output if note.safe_output is None else note.safe_output,
-                    final_decision=note.final_decision, cache_hit=True, budget_settled=True,
-                    provider_resolved_model=hit.provider_resolved_model, latency_ms=call.latency_ms(),
-                )
-                served = {"provider": hit.provider} if call.kind == "completion" else {}
-                return _Prepared(response=steps.respond(
-                    call, output=parsed, cache_hit=True, invocation_id=row.id,
-                    resolved_model=hit.provider_resolved_model, **served,
-                ))
+        hit = steps.cached(db, call) if steps.use_cache else None
+        if hit is not None:
+            parsed, provider, safe_output, resolved_model = hit
+            note = call.note(parsed, None, llm_used=True)
+            row = ledger.insert_completed(
+                db, call.entry(llm_used=True, provider=provider),
+                status="rejected" if note.rejected else "completed",
+                validator_verdict=note.validator_verdict or "accepted", reason=note.reason or "cache hit",
+                output=safe_output if note.safe_output is None else note.safe_output,
+                final_decision=note.final_decision, cache_hit=True, budget_settled=True,
+                provider_resolved_model=resolved_model, latency_ms=call.latency_ms(),
+            )
+            served = {"provider": provider} if call.kind == "completion" else {}
+            return _Prepared(response=steps.respond(
+                call, output=parsed, cache_hit=True, invocation_id=row.id, resolved_model=resolved_model, **served,
+            ))
         # 8 (prelude). The pending row is durable before anything leaves the process.
         pending = ledger.insert_pending(db, call.entry(llm_used=True, provider=call.adapter.name),
                                         worst_case_micros=worst)

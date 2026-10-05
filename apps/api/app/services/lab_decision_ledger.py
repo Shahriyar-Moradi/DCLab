@@ -27,7 +27,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.agents.gateway.contract import LedgerNote, Refusal
-from app.agents.governance.platform_default import is_development_env
+from app.agents.governance.platform_default import ai_development_env
 from app.agents.legacy import LegacyContext, context_for_upload, refusal_text
 from app.config import get_settings
 from app.db.models import LabDecisionRecord, LlmInvocation
@@ -251,7 +251,7 @@ def _agent_configured() -> bool:
     return bool(
         settings.decision_agent_enabled
         and getattr(settings, "ai_enabled", False)
-        and is_development_env(str(getattr(settings, "dclab_env", "") or ""))
+        and ai_development_env(settings)
     )
 
 

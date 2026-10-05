@@ -34,6 +34,9 @@ TEST_URL = ADMIN_URL.rsplit("/", 1)[0] + f"/{TEST_DB_NAME}"
 # default; tests must not.
 _TEST_OBJECT_STORE_ROOT = Path(tempfile.mkdtemp(prefix="dclab-test-object-store-"))
 os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+# AI development permissions (fake provider / runtime, the global_ai seed) need an
+# explicit development DCLAB_ENV; an unset variable does not count (P6.7-A).
+os.environ["DCLAB_ENV"] = "test"
 
 
 def _clear_test_object_store() -> None:

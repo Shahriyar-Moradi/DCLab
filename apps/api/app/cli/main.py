@@ -65,11 +65,13 @@ def cmd_user_seed(_args: argparse.Namespace) -> int:
 
     from app.agents.governance.seed import seed_platform_governance
     from app.agents.prompt_releases import sync_prompt_releases
+    from app.agents.semantic.releases import sync_jev_releases
 
     db = _session()
     users = ensure_demo_users(db)
     seed_platform_governance(db)
     sync_prompt_releases(db)  # idempotent: the code-owned prompts become releases (ADR 0009 §2.8)
+    sync_jev_releases(db)  # and the pinned Jev purpose releases (jev:<purpose>)
     db.commit()
     print(
         json.dumps(

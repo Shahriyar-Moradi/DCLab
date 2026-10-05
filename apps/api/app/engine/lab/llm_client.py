@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.contracts import ContextField
 from app.agents.gateway.contract import Annotate, CompletionResponse, Refusal
-from app.agents.governance.platform_default import is_development_env
+from app.agents.governance.platform_default import ai_development_env
 from app.agents.legacy import LegacyCall, LegacyContext, complete, ctx_field, number, refusal_text, scalar, text
 from app.config import get_settings
 from app.engine.lab.evidence import (
@@ -269,7 +269,7 @@ def agent_enabled() -> bool:
     return bool(
         getattr(settings, "decision_agent_enabled", False)
         and getattr(settings, "ai_enabled", False)
-        and is_development_env(str(getattr(settings, "dclab_env", "") or ""))
+        and ai_development_env(settings)
     )
 
 

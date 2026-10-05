@@ -517,3 +517,15 @@ def test_nooa_run_with_a_hook_violation_fails_the_run(hz, specialist, nooa):  # 
     service = AgentService(gateway=hz.gateway, settings=lambda: hz.settings, hooks=planted)
     result = service.run(hz.db, _spec(hz, runtime="nooa_predict", runtime_version=nooa_runtime.VERSION))
     assert (result.status, result.error_code) == ("failed", "hook_violation") and hz.fake.calls == []
+
+
+def test_gateway_llm_refuses_every_call_after_a_harness_error_escaped(specialist):
+    # no nooa needed: the refusal comes before any NOOA object is built (P6.3-A security follow-up)
+    calls = []
+    session = SimpleNamespace(limits=RunLimits(steps=2, tokens=24000, wall_s=60, cost_micros=1, tool_calls=0),
+                              complete=lambda **kwargs: calls.append(kwargs))
+    llm = nooa_runtime.GatewayLLM(session, specialist)
+    llm.escaped = RuntimeError("database went away")
+    with pytest.raises(nooa_runtime.GatewayRefusal, match="harness_error"):
+        asyncio.run(llm.acall([], output_model=HarnessStep))
+    assert calls == [] and llm.calls == 0

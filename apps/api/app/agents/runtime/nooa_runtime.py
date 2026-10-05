@@ -27,6 +27,14 @@ tenants); NOOA's per-agent events map to the recorder instead (§5.4): a validat
 ``PREDICT`` turn -> ``step_validated``; model calls are the harness's ``llm_call_*``;
 a NOOA error ends the run through the harness (``run_failed``). Specialists get no
 tools. The harness runs ``arun`` under the run's wall time (asyncio timeout).
+
+NOOA harness metrics (``nooa.runtime.harness_metrics``; ``predict_retry`` keeps up to 200
+characters of a validation error, which can quote model output) are not process-global:
+they live in a ContextVar that is a discarding null object outside a traced generation
+and a fresh ``HarnessMetrics`` per generation, written only to the current OpenTelemetry
+span on exit. DCLab installs no tracer or exporter (above), so nothing records or exports
+them and nothing carries over between runs or tenants; never wire an OTel exporter into
+the worker without stripping the ``harness.*.errors`` attributes first.
 """
 
 from __future__ import annotations
@@ -116,6 +124,8 @@ class GatewayLLM:
 
     async def acall(self, messages: list[dict[str, Any]], tools: Any = None, output_model: Any = None,
                     **_ignored: Any) -> Any:
+        if self.escaped is not None:  # a harness error already happened: no further gateway call
+            raise GatewayRefusal("harness_error")
         if self.violation is None and tools:
             self.violation = "tools_not_allowed"  # specialist runs get no tool calls
         if self.violation is None and output_model is not self._item.output_schema:

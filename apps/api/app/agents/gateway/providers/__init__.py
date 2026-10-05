@@ -59,11 +59,12 @@ class Provider(Protocol):
 
 
 def default_providers() -> dict[str, Provider]:
-    """Production adapters. TypeSafe Jev arrives in P6.7-A (``typesafe_jev.py``)."""
+    """Production adapters (each imports its SDK lazily, at call time)."""
 
     from app.agents.gateway.providers.openai import OpenAIProvider
+    from app.agents.gateway.providers.typesafe_jev import TypeSafeJevProvider
 
-    return {"openai": OpenAIProvider()}
+    return {"openai": OpenAIProvider(), "typesafe": TypeSafeJevProvider()}
 
 
 def ambient_provider_keys(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:

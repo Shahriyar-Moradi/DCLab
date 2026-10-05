@@ -166,9 +166,14 @@ Annotate = Callable[[BaseModel | None, Refusal | None, bool], LedgerNote | None]
 
 
 class SemanticQuestion(_Frozen):
-    question_key: str = Field(min_length=1, max_length=200)  # travels as untrusted text
+    """``question_key`` is a code key (``message``, ``proposal``) unless ``column_id`` names
+    the source column the question is about; then it is that column's stored name (checked
+    by the gateway) and travels as untrusted text. No other free text can ride on it."""
+
+    question_key: str = Field(min_length=1, max_length=200)
     primitive: Literal["noul", "choice", "score"]
     choices: tuple[str, ...] = Field(default=(), max_length=32)
+    column_id: UUID | None = None
 
     @model_validator(mode="after")
     def _choices(self) -> "SemanticQuestion":
@@ -176,6 +181,8 @@ class SemanticQuestion(_Frozen):
             raise ValueError("choices are code labels")
         if (self.primitive == "choice") != bool(self.choices):
             raise ValueError("choice questions (and only they) list choices")
+        if self.column_id is None and not re.fullmatch(KEY_PATTERN, self.question_key):
+            raise ValueError("a question_key without column_id must be a code key")
         return self
 
 
@@ -209,6 +216,12 @@ class SemanticDecisionRequest(_Attributed):
     budget: BudgetReservation
     timeout_ms: int = Field(default=1000, ge=1, le=60_000)
 
+    @model_validator(mode="after")
+    def _question_columns(self) -> "SemanticDecisionRequest":
+        if any(q.column_id is not None and q.column_id not in self.source_columns for q in self.questions):
+            raise ValueError("a question's column_id must be one of source_columns")
+        return self
+
 
 class SemanticDecisionResponse(_Frozen):
     ok: bool
@@ -218,6 +231,7 @@ class SemanticDecisionResponse(_Frozen):
     invocation_id: UUID | None = None
     latency_ms: int = 0
     cost_micros: int = 0
+    question_digests: tuple[str, ...] = ()  # per-question cache keys, once the gateway computed them
 
 
 __all__ = [
