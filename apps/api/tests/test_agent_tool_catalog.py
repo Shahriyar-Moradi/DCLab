@@ -441,6 +441,13 @@ def test_consumer_mode_is_holdout_free_for_a_human_principal(client, db_session,
     # A1 review note 1: value-based too: the human's holdout numbers never reach an agent.
     holdout_values = _holdout_values(human)
     assert holdout_values, "the fixture must expose distinctive holdout values to the human"
+    # Follow-up 1: a service token's REST decision responses are holdout-free too (keys, scopes, values).
+    token = {"Authorization": f"Bearer {_token(db, st, scopes=ALL_SCOPES)}"}
+    page = client.get(f"/v1/projects/{t.project}/decisions", headers=token).json()
+    assert page["items"] and len(page["items"]) == len(human[f"/v1/projects/{t.project}/decisions"]["items"])
+    for body in (page, *(client.get(f"/v1/decisions/{item['id']}", headers=token).json() for item in page["items"])):
+        assert not _holdout_hits(body), _holdout_hits(body)
+        _assert_no_holdout_values(holdout_values, "rest_decisions", body, ())
 
     ctx = ToolContext(db=db, actor=st.admin, workspace_id=st.alpha.id)
     calls = _read_calls(t)

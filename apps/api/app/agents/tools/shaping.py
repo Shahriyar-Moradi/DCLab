@@ -167,6 +167,15 @@ def withhold_model_build(body: Any) -> Any:
     return body.model_copy(update={"stages": stages})
 
 
+def withhold_decision(body: Any) -> Any:
+    """A decision record without holdout keys in facts / details and without holdout-scoped
+    evidence refs (e.g. a champion's final-evaluation ref, the service-attached marker)."""
+
+    refs = [ref for ref in body.evidence_refs if not holdout_scoped(ref.model_dump(mode="json"))]
+    return body.model_copy(update={"facts": strip_holdout(body.facts), "details": strip_holdout(body.details),
+                                   "evidence_refs": refs})
+
+
 def withhold_event(event: Any) -> Any:
     if not (HOLDOUT_KEY.search(event.stage) or HOLDOUT_KEY.search(event.event_type)):
         return event

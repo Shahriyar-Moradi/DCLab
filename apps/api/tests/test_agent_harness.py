@@ -41,7 +41,8 @@ from app.agents.prompt_releases import sync_prompt_releases
 from app.agents.runtime.base import ProposalDraft, RuntimeOutput
 from app.agents.tools.catalog import catalog, catalog_digest
 from app.agents.tools.render import to_mcp
-from app.agents.tools.shaping import HOLDOUT_KEY, Shaped
+from app.agents.tools.shaping import HOLDOUT_KEY, Code, Shaped, data_text
+from app.agents.tools.shaping import text as workspace_text
 from app.db.models import (
     AgentProposal,
     AgentRun,
@@ -255,12 +256,29 @@ def test_hook_chain_enforces_closed_effect_sets():
         h.HookChain((h.Hook("pre_tool", "other", lambda c, s: h.ModifyArguments({})),)).run(
             "pre_tool", ctx, h.ToolCallInput(1, "t", None, {}))
     result = h.ToolResult(1, "t", {}, "d", Shaped({"a": 1}, data_class="metadata", source_datasets=(uuid4(),)))
-    for bad in (Shaped({"a": 1, "holdout": 2}, data_class="metadata", source_datasets=result.shaped.source_datasets),
-                Shaped({"a": 1}, data_class="aggregates", source_datasets=result.shaped.source_datasets),
+    sources = result.shaped.source_datasets
+    for bad in (Shaped({"a": 1, "holdout": 2}, data_class="metadata", source_datasets=sources),
+                Shaped({"a": 1}, data_class="aggregates", source_datasets=sources),
                 Shaped({"a": 1}, data_class="metadata")):  # holdout key / wider class / a dropped source
         with pytest.raises(h.HookViolation):
             h.HookChain((h.Hook("post_tool", "x", lambda c, s, b=bad: h.ModifyResult(b)),)).run(
                 "post_tool", ctx, result)
+
+    # Follow-up 3: ModifyResult only removes or bounds; it keeps aggregate paths and text partitions.
+    agg = Shaped({"m": {"cv": {"auc": 0.81}}, "t": data_text("tenure", aggregate=True), "n": "note"},
+                 data_class="aggregates", outcome_scope="cv", source_datasets=sources, aggregates=("m",))
+    agg_result = h.ToolResult(1, "t", {}, "d", agg)
+    for bad in (replace(agg, aggregates=()),  # the CV numbers would render as system metadata
+                replace(agg, payload={**agg.payload, "moved": 0.81}),  # a new key
+                replace(agg, payload={**agg.payload, "t": workspace_text("tenure")}),  # dataset -> workspace text
+                replace(agg, payload={**agg.payload, "t": data_text("tenure")}),  # drops the aggregate flag
+                replace(agg, payload={**agg.payload, "m": {"cv": {"auc": 0.9}}})):  # a changed number
+        with pytest.raises(h.HookViolation):
+            h.HookChain((h.Hook("post_tool", "x", lambda c, s, b=bad: h.ModifyResult(b)),)).run(
+                "post_tool", ctx, agg_result)
+    bounded = replace(agg, payload={"m": {"cv": {}}, "t": data_text("ten", aggregate=True)})
+    assert h.HookChain((h.Hook("post_tool", "x", lambda c, s: h.ModifyResult(bounded)),)).run(
+        "post_tool", ctx, agg_result) == [h.ModifyResult(bounded)]
 
     def boom(c, s):
         raise RuntimeError("secret")
@@ -277,7 +295,9 @@ def test_each_hook_effect_in_a_run(hz):
 
     def bound_result(ctx, result):
         stripped.append(result.name)
-        return h.ModifyResult(replace(result.shaped, payload={"bounded": True}))
+        kept = {key: value for key, value in result.shaped.payload["experiment"].items() if key in ("id", "status")}
+        stripped.append({"experiment": kept})
+        return h.ModifyResult(replace(result.shaped, payload={"experiment": kept}))
 
     extra = (
         h.Hook("pre_call", "note", lambda c, s: h.AddSystemNote("cite CV only")),
@@ -293,7 +313,8 @@ def test_each_hook_effect_in_a_run(hz):
     assert "[harness note] cite CV only" in hz.fake.calls[0].input_json  # bounded untrusted note, never the prompt
     denied, read = hz.log[1], hz.log[2]
     assert (denied.status, denied.code) == ("denied", "policy_no_findings")
-    assert stripped == ["get_experiment"] and read.result_digest == digest(to_mcp(Shaped({"bounded": True}))[1])
+    assert stripped[0] == "get_experiment" and read.result_digest == digest(to_mcp(Shaped(stripped[1]))[1])
+    assert set(stripped[1]["experiment"]) == {"id", "status"} and isinstance(stripped[1]["experiment"]["status"], Code)
     events = _events(db, result.run_id)
     assert next(e for e in events if e.type == "tool_call_denied").payload["hook"] == "no_findings"
     finished = events[-1].payload
@@ -443,6 +464,9 @@ def test_replay_equality_and_mismatch_opens_an_incident(hz):
     assert not diff.equal and "tool_sequence" in diff.mismatches and "proposal_payloads" in diff.mismatches
     incident = db.get(AiIncident, diff.incident_id)
     assert (incident.kind, incident.subject_key, incident.status) == ("replay_mismatch", "harness_fixture", "open")
+    again = replay(db, workspace_id=g.ws, run_id=result.run_id, actor=g.actor, service=hz.service(changed))
+    assert again.incident_id == diff.incident_id  # one open incident per run, not one per replay
+    assert db.scalar(select(func.count()).select_from(AiIncident).where(AiIncident.kind == "replay_mismatch")) == 1
     viewer = create_user(db, email=f"v-{uuid4().hex[:6]}@test.invalid", password="test-password",
                          role=UserRole.VIEWER, workspace_id=g.ws)
     db.commit()
@@ -514,6 +538,10 @@ def test_terminal_status_is_final_and_the_release_marker_write_once(db_session, 
     db.commit()
     _rejects(db, "ck_agent_runs_released_terminal", "UPDATE agent_runs SET budget_released_at = now() WHERE id = :id",
              id=live)
+    # 0074: a live run ends only through the release (the marker in the same UPDATE).
+    for status in ("completed", "failed", "cancelled"):
+        _rejects(db, "ends only through the budget release", f"UPDATE agent_runs SET status = '{status}' WHERE id = :id",
+                 id=live)
     db.execute(text("UPDATE agent_runs SET status = 'completed', budget_released_at = now() WHERE id = :id"), {"id": live})
     db.commit()
     for assignment, match in (("status = 'running'", "is final"), ("status = 'failed'", "is final"),
@@ -594,3 +622,79 @@ def test_agent_service_run_is_called_only_by_the_job_handler():
                             "app/agents/harness/service.py"}, path
     handlers = (APP / "services" / "job_handlers.py").read_text(encoding="utf-8")
     assert re.search(r"AgentService\(\)\.run\(db, spec, heartbeat=on_heartbeat\)", handlers)
+
+
+# --- P6.10-A follow-ups (independent security review of A2) --------------------------------------
+
+
+def test_a_refused_caller_never_ends_another_principals_run(hz):
+    g, db = hz.g, hz.db
+    queued = hz.service().submit(db, hz.spec())  # the human's queued run
+    other = _token(db, g, ["read", "decisions:propose"])
+    mismatch = hz.service().run(db, hz.spec(run_id=queued, user_id=None, service_token_id=other.id))
+    assert (mismatch.status, mismatch.error_code) == ("failed", "principal_mismatch")
+    revoke_service_token(db, actor=g.actor, workspace_id=g.ws, token_id=other.id)
+    db.commit()
+    refused = hz.service().run(db, hz.spec(run_id=queued, user_id=None, service_token_id=other.id))
+    assert refused.error_code == "principal_inactive"
+    db.expire_all()
+    run = db.get(AgentRun, queued)
+    assert (run.status, run.budget_released_at) == ("queued", None)  # untouched by either refusal
+    # The owner's own refused spec (the job path: the row's principal) does end its run.
+    owned = hz.service().run(db, hz.spec(run_id=queued, kind="assistant", agent_key="lead"))
+    assert owned.error_code == "assistant_turns_unsupported"
+    db.expire_all()
+    assert db.get(AgentRun, queued).status == "failed"
+
+
+def test_previews_redacted_levels_use_the_run_model_and_limits_renarrow(hz, monkeypatch):
+    g, db = hz.g, hz.db
+    seen = {}
+
+    def level(db_, workspace_id, key, answer_kind=None, prompt_release_id=None, model_id=None):
+        seen.update(prompt_release_id=prompt_release_id, model_id=model_id)
+        return 1
+
+    monkeypatch.setattr(svc, "effective_level", level)
+    draft = ProposalDraft(proposal_type="ExperimentReviewProposal", decision_point_key="experiment.review",
+                          payload={"verdict": "keep"})
+    result = hz.service((("llm",),), final=RuntimeOutput(output=HarnessStep(**OK), proposal=draft)).run(
+        db, hz.spec(kind="specialist", tool_surface=None, decision_point_key="experiment.review"))
+    [row] = db.scalars(select(AgentProposal).where(AgentProposal.run_id == result.run_id))
+    assert seen == {"prompt_release_id": hz.release, "model_id": "gpt-6.1-sol"}
+    assert (row.status, row.level_at_proposal) == ("proposed", 1)
+    run = db.get(AgentRun, result.run_id)
+    assert (run.provider, run.model) == ("fake", "gpt-6.1-sol")
+
+    # Previews: only what the gateway lets through (dataset labels deny here) is stored.
+    read = hz.service((("tool", "get_experiment", {"experiment_id": str(g.exp[1])}), ("llm",))).run(
+        db, hz.spec(subject_id=g.exp[1]))
+    finished = next(e for e in _events(db, read.run_id) if e.type == "tool_call_finished").payload
+    dataset_texts = [u.untrusted_text for item in hz.log[-2].fields if any(s.kind == "dataset" for s in item.sources)
+                     for u in _untrusted(item.value)]
+    assert finished["preview_dropped"] > 0 and dataset_texts
+    assert not any(text_ in finished["preview"] for text_ in dataset_texts if len(text_) > 3)
+
+    # Limits are re-narrowed by the policy in force when the run executes.
+    calls = []
+
+    def limits(policy, kind):
+        calls.append(kind)
+        base = svc.RunLimits(steps=8, tokens=60000, wall_s=120, cost_micros=250_000, tool_calls=20)
+        return base if len(calls) == 1 else base.model_copy(update={"tool_calls": 0})
+
+    monkeypatch.setattr(svc, "policy_limits", limits)
+    narrowed = hz.service((("tool", "inspect_project", {}), ("llm",))).run(db, hz.spec(subject_id=g.exp[3]))
+    assert db.get(AgentRun, narrowed.run_id).limits["tool_calls"] == 20  # frozen row: as queued
+    assert _events(db, narrowed.run_id)[0].payload["limits"]["tool_calls"] == 0
+    assert hz.log[-2].code == "tool_call_limit"
+
+
+def _untrusted(value) -> list:
+    if hasattr(value, "untrusted_text"):
+        return [value]
+    if isinstance(value, dict):
+        return [hit for item in value.values() for hit in _untrusted(item)]
+    if isinstance(value, (list, tuple)):
+        return [hit for item in value for hit in _untrusted(item)]
+    return []

@@ -1113,16 +1113,41 @@ AGENT_RUN_LIFECYCLE_TRIGGER_SQL = (
 )
 
 
+# P6.10-A follow-up / Alembic 0074 (identical literal SQL inlined there): a live -> terminal
+# move must stamp budget_released_at in the same UPDATE (the gateway release CAS).
+_LIVE_RUN_STATUSES = "'queued', 'running', 'waiting_user'"
+GUARD_AGENT_RUN_LIFECYCLE_V2_SQL = f"""
+CREATE OR REPLACE FUNCTION guard_agent_run_lifecycle()
+RETURNS trigger AS $$
+BEGIN
+    IF OLD.status IN ({_TERMINAL_RUN_STATUSES}) AND NEW.status IS DISTINCT FROM OLD.status THEN
+        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;
+    END IF;
+    IF OLD.budget_released_at IS NOT NULL
+        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN
+        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';
+    END IF;
+    IF OLD.status IN ({_LIVE_RUN_STATUSES}) AND NEW.status IN ({_TERMINAL_RUN_STATUSES}) AND NEW.budget_released_at IS NULL THEN
+        RAISE EXCEPTION 'agent_runs: a run ends only through the budget release (budget_released_at)';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+
+
 def agent_run_release_trigger_statements() -> list[str]:
+    """0073's trigger with the 0074 function body (create_all installs the head state)."""
+
     return [
-        GUARD_AGENT_RUN_LIFECYCLE_SQL,
+        GUARD_AGENT_RUN_LIFECYCLE_V2_SQL,
         "DROP TRIGGER IF EXISTS agent_runs_lifecycle ON agent_runs",
         AGENT_RUN_LIFECYCLE_TRIGGER_SQL,
     ]
 
 
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071, 0072 and 0073 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074 install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 

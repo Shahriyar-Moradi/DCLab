@@ -7,7 +7,7 @@ carrying the recorded outcome and result digest, a write tool is stubbed (no
 proposal). Equality = the same ordered ``(tool, argument digest)`` sequence, the same
 final output digest and the same proposal payload digests; timestamps, latency, cost
 and provider ids are ignored. Replay writes only a ``replay_checked`` event, and a
-mismatch opens an ``ai_incidents`` row (``replay_mismatch``). The runtime gets an
+mismatch opens an ``ai_incidents`` row (``replay_mismatch``; one open incident per run). The runtime gets an
 empty envelope (only its digest was recorded): a runtime decides from model outputs,
 which are replayed. Viewing a replay needs workspace read plus platform read or ML
 write (the development roles).
@@ -159,13 +159,17 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
     if session.proposals != record.proposals:
         mismatches.append("proposal_payloads")
     incident_id = None
-    if mismatches:
-        incident = AiIncident(workspace_id=workspace_id, kind="replay_mismatch", subject_kind="agent",
-                              subject_key=run.agent_key, action="none", status="open",
-                              evidence={"agent_run_id": str(run.id), "mismatches": mismatches[:20]})
-        db.add(incident)
-        db.commit()
-        incident_id = incident.id
+    if mismatches:  # one open replay_mismatch incident per run (later replays reuse it)
+        incident_id = db.scalar(select(AiIncident.id).where(
+            AiIncident.workspace_id == workspace_id, AiIncident.kind == "replay_mismatch",
+            AiIncident.status == "open", AiIncident.evidence["agent_run_id"].astext == str(run.id)).limit(1))
+        if incident_id is None:
+            incident = AiIncident(workspace_id=workspace_id, kind="replay_mismatch", subject_kind="agent",
+                                  subject_key=run.agent_key, action="none", status="open",
+                                  evidence={"agent_run_id": str(run.id), "mismatches": mismatches[:20]})
+            db.add(incident)
+            db.commit()
+            incident_id = incident.id
     db.commit()
     Recorder(db.get_bind(), workspace_id=workspace_id, run_id=run.id).record("replay_checked", {
         "equal": not mismatches, "mismatches": mismatches[:20], "tool_calls": len(session.sequence),

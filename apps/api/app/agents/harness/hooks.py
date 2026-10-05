@@ -10,9 +10,10 @@ Five stages, each with the only effects it may return:
 | ``post_tool`` | ``Observe``, ``ModifyResult`` (shaping / bounding / holdout stripping only), ``AttachCitation`` |
 | ``post_run`` | ``Observe``, ``DenyOutput`` (-> ``rejected_by_validator``), ``AttachCitation`` |
 
-Hooks are registered in code, ordered, listed in the run's first event, and get a
-read-only ``HookContext``: no hook may call a provider, write product state or widen
-limits (``NarrowLimits`` is clamped to the current limits; ``ModifyResult`` may not add
+Hooks are registered in code, ordered, listed in the run's first event, and are
+read-only: they get a ``HookContext`` whose session they may only read (switches,
+levels, node existence), never write or commit; no hook may call a provider, write
+product state or widen limits (``NarrowLimits`` is clamped to the current limits; ``ModifyResult`` may not add
 a holdout key, widen the class or scope, or drop a source). A hook that raises denies
 (``hook_failed``, fail closed); an effect outside its stage's set is a
 ``HookViolation`` (the run fails). The first ``Deny`` / ``DenyOutput`` stops the chain.
@@ -31,7 +32,7 @@ from uuid import UUID
 
 from app.agents.contracts import Citation, ContextField, RunLimits
 from app.agents.tools.catalog import FORBIDDEN_OPERATIONS, ToolDefinition, ToolError
-from app.agents.tools.shaping import HOLDOUT_KEY, Shaped, strip_holdout
+from app.agents.tools.shaping import HOLDOUT_KEY, Shaped, Text, strip_holdout
 
 logger = logging.getLogger("dclab.agents.harness")
 
@@ -105,8 +106,9 @@ class HookViolation(Exception):
 
 @dataclass
 class HookContext:
-    """What hooks may read: the run's identity, principal, limits and counters. The
-    ``db`` session is for read-only checks (switches, levels, node existence)."""
+    """What hooks may read: the run's identity, principal, limits and counters. Read-only:
+    the ``db`` session serves checks (switches, levels, node existence) and a hook never
+    adds, flushes or commits through it; ``record`` is the harness's own recorder."""
 
     db: Any
     run_id: UUID
@@ -163,10 +165,35 @@ class Hook:
     fn: Callable[[HookContext, Any], Effect | None]
 
 
+def _shapes(original: Any, modified: Any) -> bool:
+    """``modified`` only removes or bounds parts of ``original``: no new key or item, a
+    value never moves to another path, and user / dataset text keeps its partition
+    (origin, aggregate, sample flags) so numbers cannot move into the system part."""
+
+    if modified is None:
+        return True
+    if isinstance(original, Text):
+        return isinstance(modified, Text) and original.text.startswith(modified.text) and (
+            modified.origin, modified.aggregate, modified.sample) == (original.origin, original.aggregate, original.sample)
+    if isinstance(original, dict):
+        return isinstance(modified, dict) and set(modified) <= set(original) and all(
+            _shapes(original[key], item) for key, item in modified.items())
+    if isinstance(original, (list, tuple)):  # an in-order subsequence (items dropped, never added)
+        if not isinstance(modified, (list, tuple)):
+            return False
+        remaining = iter(original)
+        return all(any(_shapes(old, new) for old in remaining) for new in modified)
+    if isinstance(original, str) and type(modified) is type(original):
+        return original.startswith(modified)  # bounded text (codes stay whole: equal or a prefix)
+    return type(modified) is type(original) and modified == original
+
+
 def _check_result(original: Shaped, modified: Shaped) -> None:
     if (not isinstance(modified, Shaped) or _RANK[modified.data_class] > _RANK[original.data_class]
             or _RANK[modified.outcome_scope] > _RANK[original.outcome_scope]
             or not set(original.source_datasets) <= set(modified.source_datasets)
+            or not set(original.aggregates) <= set(modified.aggregates)
+            or not _shapes(original.payload, modified.payload)
             or strip_holdout(modified.payload) != modified.payload):
         raise HookViolation("modify_result may only shape, bound or strip holdout")
 

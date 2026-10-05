@@ -229,19 +229,33 @@ class AgentService:
             run = self._claim(db, spec) if spec.run_id is not None else self._create(db, spec, principal)
         except AgentRunRefused as exc:
             db.rollback()
-            if spec.run_id is not None and exc.code != "run_not_queued":
+            # End the queued run only when it is the caller's own (the job path): a refused
+            # caller never ends another principal's run.
+            if spec.run_id is not None and exc.code not in ("run_not_queued", "principal_mismatch") \
+                    and self._owns(db, spec):
                 self.gateway.release_run(db, workspace_id=spec.workspace_id, agent_run_id=spec.run_id,
                                          final_status="failed", error_code=exc.code)
             return AgentRunResult(run_id=spec.run_id, status="failed" if spec.run_id else "refused",
                                   error_code=exc.code)
         return _Execution(self, db, spec, principal, run, settings, heartbeat).execute()
 
+    @staticmethod
+    def _principal_of(run: AgentRun) -> tuple[UUID | None, UUID | None]:
+        token = run.created_by_service_token_id
+        return token, None if token else run.created_by_user_id
+
+    def _owns(self, db: Session, spec: AgentRunSpec) -> bool:
+        run = db.scalar(select(AgentRun).where(AgentRun.workspace_id == spec.workspace_id, AgentRun.id == spec.run_id))
+        result = run is not None and run.status == "queued" and self._principal_of(run) == (
+            spec.service_token_id, spec.user_id)
+        db.commit()
+        return result
+
     def _claim(self, db: Session, spec: AgentRunSpec) -> AgentRun:
         run = db.scalar(select(AgentRun).where(AgentRun.workspace_id == spec.workspace_id, AgentRun.id == spec.run_id))
         if run is None or run.status != "queued":
             raise AgentRunRefused("run_not_queued")
-        if (run.created_by_service_token_id, None if run.created_by_service_token_id else run.created_by_user_id) != (
-                spec.service_token_id, spec.user_id):
+        if self._principal_of(run) != (spec.service_token_id, spec.user_id):
             raise AgentRunRefused("principal_mismatch")  # the spec's principal is the row's, never another
         return run
 
@@ -302,6 +316,9 @@ class _Execution:
     citations: list[Citation] = field(default_factory=list)
     calls_seen: int = 0
     ttl_days: int = 7
+    sample_values: int = 0
+    provider: str | None = None
+    model: str | None = None  # the routed model of the last answered call (levels, run row)
 
     def __post_init__(self) -> None:
         run = self.run
@@ -369,9 +386,12 @@ class _Execution:
         if started != 1:
             return AgentRunResult(run_id=self.run_id, status="failed", error_code="run_not_queued")
         try:
-            self.ttl_days = effective_policy(db, self.workspace_id).policy.proposals.ttl_days
+            policy = effective_policy(db, self.workspace_id).policy
         except PolicyUnavailable:
             return self._finish("failed", "policy_unavailable")
+        self.ttl_days, self.sample_values = policy.proposals.ttl_days, policy.data.sample_values_per_column
+        # The policy may have narrowed since the run was queued: limits = current policy ⊓ row.
+        self.limits = self.ctx.limits = policy_limits(policy, self.spec.kind).narrow(self.limits)
         self.record("run_started", {
             "hooks": self.service.hooks.listing(), "limits": self.limits.model_dump(), "tools": list(self.tools),
             "tool_catalog_digest": self.run.tool_catalog_digest, "policy_digest": self.run.policy_digest,
@@ -444,8 +464,9 @@ class _Execution:
         db, usage = self.db, self._usage()
         db.execute(update(AgentRun).where(
             AgentRun.workspace_id == self.workspace_id, AgentRun.id == self.run_id,
-            AgentRun.status.in_(AGENT_RUN_LIVE_STATUSES)).values(usage=usage, error_code=error_code,
-                                                               last_activity_at=func.now()))
+            AgentRun.status.in_(AGENT_RUN_LIVE_STATUSES)).values(
+                usage=usage, error_code=error_code, last_activity_at=func.now(),
+                **({"provider": self.provider[:32], "model": self.model[:128]} if self.model and self.provider else {})))
         db.commit()
         if self.reservation is not None:
             freed = self.service.gateway.release(db, self.reservation, final_status=status)
@@ -518,6 +539,8 @@ class _Execution:
         usage["tokens_out"] += response.usage.output_tokens
         usage["cache_hits"] += int(response.cache_hit)
         refusal = response.refusal.code if response.refusal else None
+        if response.ok and response.model:
+            self.provider, self.model = response.provider, response.model
         self.record("llm_call_finished", {
             "call": call, "ok": response.ok, "refusal": refusal, "cache_hit": response.cache_hit,
             "invocation_id": str(response.invocation_id) if response.invocation_id else None,
@@ -582,14 +605,27 @@ class _Execution:
         self.db.commit()
         result_digest = digest(rendered)
         self.citations.extend(cited)
-        # The stored preview comes from the fields within the run's class and scope only.
         self.record("tool_call_finished", {"call": call, "tool": name, "argument_digest": argument_digest, "ok": True,
-                                           "result_digest": result_digest,
-                                           "preview": preview(canonical([f.model_dump(mode="json") for f in fields])),
-                                           "fields": len(fields)})
+                                           "result_digest": result_digest, "fields": len(fields),
+                                           **self._preview(fields)})
         self._beat()
         return ToolOutcome(tool=name, ok=True, status="result", fields=fields, result_digest=result_digest,
                            citations=tuple(cited))
+
+    def _preview(self, fields: tuple) -> dict[str, Any]:
+        """The stored preview is what the gateway would let through (ADR 0005 dataset /
+        column labels, the run's class and scope); anything dropped is only counted."""
+
+        try:
+            redacted = redaction.redact(self.db, workspace_id=self.workspace_id, fields=fields, transcript=(),
+                                        user_text=(), max_class=self.data_class, max_scope=self.outcome_scope,
+                                        sample_values_per_column=self.sample_values)
+        except GatewayRefusal:
+            return {"preview": None, "preview_dropped": len(fields)}
+        finally:
+            self.db.commit()
+        dropped = len(fields) - redacted.summary["fields_kept"]
+        return {"preview": preview(canonical(redacted.payload["context"])), "preview_dropped": dropped}
 
     def _denied(self, call: int, name: str, code: str, hook: str) -> ToolOutcome:
         self.record("tool_call_denied", {"call": call, "tool": name, "code": code, "hook": hook})
@@ -671,8 +707,9 @@ class _Execution:
         if reasons:
             return reasons[0]
         ceiling = answer_ceiling(draft.decision_point_key, draft.answer_kind)
+        # The level evidence covers a (prompt release, model) pair: the run's own (ADR 0008 §3).
         level = min(1, ceiling, effective_level(self.db, self.workspace_id, draft.decision_point_key,
-                                                draft.answer_kind, self.spec.prompt_release_id, None))
+                                                draft.answer_kind, self.spec.prompt_release_id, self.model))
         payload = dict(draft.payload)
         row = AgentProposal(
             workspace_id=self.workspace_id, project_id=self.project_id, run_id=self.run_id,

@@ -2021,7 +2021,7 @@
     },
     {
       "name": "guard_agent_run_lifecycle",
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_agent_run_lifecycle()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF OLD.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.status IS DISTINCT FROM OLD.status THEN\n        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;\n    END IF;\n    IF OLD.budget_released_at IS NOT NULL\n        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN\n        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_agent_run_lifecycle()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF OLD.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.status IS DISTINCT FROM OLD.status THEN\n        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;\n    END IF;\n    IF OLD.budget_released_at IS NOT NULL\n        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN\n        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';\n    END IF;\n    IF OLD.status IN ('queued', 'running', 'waiting_user') AND NEW.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.budget_released_at IS NULL THEN\n        RAISE EXCEPTION 'agent_runs: a run ends only through the budget release (budget_released_at)';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "guard_llm_invocation_ledger",

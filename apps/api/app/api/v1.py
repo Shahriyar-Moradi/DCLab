@@ -55,7 +55,7 @@ from app.domain.decision_records import (
     DecisionSubjectKind,
     DecisionType,
 )
-from app.api.v1_agent_views import code_view, event_view, model_build_view, visualization_rows_view
+from app.api.v1_agent_views import code_view, decision_page_view, event_view, model_build_view, visualization_rows_view
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -547,7 +547,7 @@ def read_project_decisions(
 
     workspace_id = request_workspace_id(request)
     try:
-        return list_decisions(
+        page = list_decisions(
             db,
             actor=user,
             workspace_id=workspace_id,
@@ -571,6 +571,7 @@ def read_project_decisions(
         raise _bad_cursor(exc) from exc
     except InvalidDecisionQueryError as exc:
         raise V1APIError(400, "invalid_query", str(exc)) from exc
+    return decision_page_view(request, page)
 
 
 @router.get("/nodes/{kind}/{node_id}/impact", response_model=NodeImpactRead)

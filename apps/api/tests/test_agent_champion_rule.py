@@ -26,6 +26,7 @@ from app.services import project_ref_service as prs
 from app.services.project_ref_service import RefMove
 from app.services.service_token_service import create_service_token
 from test_decision_record_service import _bootstrap, _force_lock, _holdout, _refs, g, setup  # noqa: F401
+from test_graph_service import _headers
 
 HOLDOUT = re.compile(r"holdout|final_test", re.IGNORECASE)
 
@@ -89,6 +90,15 @@ def test_token_champion_proposal_gets_the_service_attached_final_evaluation(clie
         {**attached, "rule": "champion.final_evaluation.v1", "evaluation_id": str(_evaluation(db, g.cand[1]))}]
     replayed = post("champ-2", cv)  # the same agent call replays (the attached ref is the service's)
     assert replayed.status_code == 201 and replayed.json()["id"] == record["id"]
+    # Follow-up 1: the token's REST responses (create, replay, read, list) carry no holdout key
+    # or scope; the human reading the same record sees the attached ref.
+    token = {"Authorization": f"Bearer {raw}"}
+    for body in (record, replayed.json(), client.get(f"/v1/decisions/{record['id']}", headers=token).json(),
+                 client.get(url, headers=token).json()):
+        assert not _holdout_hits(body), _holdout_hits(body)
+    human = client.get(f"/v1/decisions/{record['id']}", headers=_headers(g.actor, g.ws)).json()
+    assert attached in [{key: ref[key] for key in ("kind", "id", "scope")} for ref in human["evidence_refs"]]
+    assert _holdout_hits(client.get(url, headers=_headers(g.actor, g.ws)).json())  # humans unchanged
     # Agent consumers (MCP / catalog shaping) never see the attached ref or its marker.
     assert not _holdout_hits(mcp_json(decision_summary(drs.record_read(db, stored))))
 

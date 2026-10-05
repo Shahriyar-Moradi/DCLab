@@ -4,7 +4,8 @@ Non-negotiable #3 and ADR 0008 §2b ("no holdout, ever"): agents compare, branch
 propose, so every /v1 response to a service-token principal omits final-holdout
 values: experiment metric summaries and branch diffs, comparisons, model versions
 (``holdout_report_only`` stays null: there is no champion exception), model-build
-stages and events, model cards (final evaluation withheld) and the
+stages and events, model cards (final evaluation withheld), decision records (facts,
+details and evidence refs without holdout keys or scopes) and the
 ``HOLDOUT_METRICS`` literal of exported code. Session humans get every response
 unchanged. Schemas stay valid: holdout fields become empty, never removed. The
 request-free helpers live in ``app/agents/tools/shaping.py`` (shared with the
@@ -54,6 +55,16 @@ def model_card_view(request: Request, body: Any) -> Any:
     that withheld card (the string never carries a final-evaluation value)."""
 
     return _for_agents(request, body, shaping.withhold_model_card)
+
+
+def decision_view(request: Request, body: Any) -> Any:
+    return _for_agents(request, body, shaping.withhold_decision)
+
+
+def decision_page_view(request: Request, page: Any) -> Any:
+    if not is_agent(request):
+        return page
+    return page.model_copy(update={"items": [shaping.withhold_decision(item) for item in page.items]})
 
 
 def model_build_view(request: Request, body: Any) -> Any:
