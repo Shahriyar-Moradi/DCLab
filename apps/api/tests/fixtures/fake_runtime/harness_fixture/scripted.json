@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "agent_key": "harness_fixture",
+  "case": "scripted",
+  "steps": [{"kind": "llm", "max_output_tokens": 300}],
+  "output": {"verdict": "revise", "confidence": 0.4},
+  "message": "scripted fixture answer",
+  "proposal": {
+    "proposal_type": "ExperimentReviewProposal",
+    "decision_point_key": "experiment.review",
+    "payload": {"verdict": "revise"},
+    "rationale": "the scripted case asks for a revision"
+  }
+}

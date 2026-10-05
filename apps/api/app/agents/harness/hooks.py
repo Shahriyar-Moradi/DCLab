@@ -172,8 +172,9 @@ def _shapes(original: Any, modified: Any) -> bool:
 
     if modified is None:
         return True
-    if isinstance(original, Text):
+    if isinstance(original, Text):  # a prefix, a display limit never raised, the same partition
         return isinstance(modified, Text) and original.text.startswith(modified.text) and (
+            modified.limit <= original.limit) and (
             modified.origin, modified.aggregate, modified.sample) == (original.origin, original.aggregate, original.sample)
     if isinstance(original, dict):
         return isinstance(modified, dict) and set(modified) <= set(original) and all(

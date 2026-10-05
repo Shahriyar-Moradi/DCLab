@@ -21,9 +21,12 @@ transition (and stamps ``budget_released_at``); (10) the eval sample is recorded
 
 Caller contract: the harness commits its session before every gateway call and never
 locks the run row. Assistant threads (``kind = 'assistant'``) arrive with P6.3-B and
-are refused here. Wall time is checked before every model call; a hard timeout around
-the runtime is P6.3-A's. The ``agents.run`` job (payload ``{"agent_run_id"}``) calls
-``run`` with the spec rebuilt from the row (``spec_for_job``); ``submit`` queues it.
+are refused here. Wall time is checked before every model call, and an async runtime
+(``arun``: NOOA) runs under an asyncio timeout of the remaining wall time (P6.3-A); a
+runtime that refuses (``RuntimeRefused``) ends the run ``failed`` with its code. The
+built-in runtimes ``fake`` and ``nooa_predict`` are registered here and nowhere else
+(CI rule c). The ``agents.run`` job (payload ``{"agent_run_id"}``) calls ``run`` with
+the spec rebuilt from the row (``spec_for_job``); ``submit`` queues it.
 """
 
 from __future__ import annotations
@@ -56,7 +59,8 @@ from app.agents.harness import hooks as h
 from app.agents.harness.context import build_context, within
 from app.agents.harness.recorder import Recorder, canonical, digest, output_digest, preview
 from app.agents.harness.validation import check_proposal_nodes, draft_reasons, proposal_payload
-from app.agents.runtime.base import RuntimeFactory, ToolOutcome
+from app.agents.runtime import fake_runtime, nooa_runtime
+from app.agents.runtime.base import RuntimeFactory, RuntimeRefused, RuntimeWallTimeout, ToolOutcome, run_coroutine
 from app.agents.tools.catalog import ToolContext, ToolDefinition, ToolError, catalog_digest, get as get_tool, visible
 from app.agents.tools.render import to_context_fields, to_mcp
 from app.agents.tools.shaping import redact
@@ -94,6 +98,10 @@ def register_runtime(name: str, factory: RuntimeFactory) -> None:
 
 def unregister_runtime(name: str) -> None:
     RUNTIMES.pop(name, None)
+
+
+register_runtime("fake", fake_runtime.factory)  # development / tests only (refused elsewhere)
+register_runtime("nooa_predict", nooa_runtime.factory)  # fails closed without the agents extra
 
 
 class AgentRunRefused(Exception):
@@ -437,13 +445,20 @@ class _Execution:
         factory = self.service.runtime_factory(self.spec.runtime)
         if factory is None:
             return self._finish("failed", "runtime_unavailable")
-        runtime = factory(self.spec)
-        output = runtime.run(SimpleNamespace(envelope=self.envelope, limits=self.limits, tools=self.tools,
-                                             complete=self.complete, call_tool=self.call_tool))
+        try:
+            runtime = factory(self.spec)
+            output = self._run_runtime(runtime)
+        except RuntimeRefused as exc:
+            db.rollback()
+            return self._finish("failed", exc.code)
         if self.stop is not None:
             return self._finish(*self.stop)
         effects = self.service.hooks.run("post_run", self.ctx, h.RunOutput(output, runtime))
         notes: dict[str, Any] = {}
+        meta = getattr(output, "meta", None) or {}
+        for key in ("refusal", "error"):  # why a runtime ended without output (codes only)
+            if meta.get(key):
+                notes[f"runtime_{key}"] = _code(str(meta[key]), "runtime_error")
         for effect in effects:
             if isinstance(effect, h.AttachCitation):
                 self.citations.extend(effect.citations)
@@ -457,6 +472,26 @@ class _Execution:
         if rejected:
             return self._finish("rejected_by_validator", rejected, notes)
         return self._finish("completed", None, notes)
+
+    def _run_runtime(self, runtime: Any) -> Any:
+        """Step 6. An async runtime (``arun``) runs under the remaining wall time and ends
+        ``timed_out`` / ``wall_limit`` when it runs out; a sync runtime is bounded by the
+        wall check before each model call (its calls are the only slow part)."""
+
+        session = SimpleNamespace(envelope=self.envelope, limits=self.limits, tools=self.tools,
+                                  complete=self.complete, call_tool=self.call_tool, step=self.step)
+        arun = getattr(runtime, "arun", None)
+        if not callable(arun):
+            return runtime.run(session)
+        remaining = self.limits.wall_s - (time.monotonic() - self.ctx.started)
+        try:
+            if remaining <= 0:
+                raise RuntimeWallTimeout
+            return run_coroutine(lambda: arun(session), timeout_s=remaining)
+        except RuntimeWallTimeout:
+            self.db.rollback()
+            self.stop = self.stop or ("timed_out", "wall_limit")
+            return None
 
     def _finish(self, status: str, error_code: str | None, notes: dict[str, Any] | None = None) -> AgentRunResult:
         if self.finished is not None:
@@ -561,6 +596,14 @@ class _Execution:
         refusal = _DENIAL_REFUSAL.get(reason, "policy_denied")
         self.record("step_rejected", {"call": call, "reason": reason, "refusal": refusal})
         return CompletionResponse(ok=False, refusal=Refusal(code=refusal, message=reason))
+
+    def step(self, *, method: str, strategy: str) -> None:
+        """A runtime's validated strategy step (NOOA ``AfterTurn``; ADR 0009 §5.4)."""
+
+        method, strategy = str(method)[:64], str(strategy)[:64]
+        self.record("step_validated", {"call": self.ctx.usage["calls"],
+                                       "method": method if _KEY.fullmatch(method) else "invalid_method",
+                                       "strategy": strategy if _CODE.fullmatch(strategy) else "invalid_strategy"})
 
     def call_tool(self, name: str, arguments: Mapping[str, Any], *, reason: str = "") -> ToolOutcome:
         self.calls_seen += 1

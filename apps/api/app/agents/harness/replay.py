@@ -100,6 +100,9 @@ class _ReplaySession:
             return CompletionResponse(ok=False, refusal=Refusal(code="invalid_output"))
         return CompletionResponse(ok=True, output=output, invocation_id=UUID(call["invocation_id"]))
 
+    def step(self, *, method: str, strategy: str) -> None:
+        return None  # replay records nothing but replay_checked
+
     def call_tool(self, name: str, arguments: Mapping[str, Any], *, reason: str = "") -> ToolOutcome:
         self.calls += 1
         name = str(name)[:64] if _KEY.fullmatch(str(name)[:64]) else "invalid_tool_name"
@@ -145,7 +148,8 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
     replayed_digest = None
     try:
         output = factory(spec).run(SimpleNamespace(envelope=ContextEnvelope(), limits=spec.limits, tools=tools,
-                                                   complete=session.complete, call_tool=session.call_tool))
+                                                   complete=session.complete, call_tool=session.call_tool,
+                                                   step=session.step))
         replayed_digest = output_digest(output)
     except Exception:  # noqa: BLE001 - a crashing replay is a mismatch, never an error to the viewer
         session.mismatches.append("runtime_error")

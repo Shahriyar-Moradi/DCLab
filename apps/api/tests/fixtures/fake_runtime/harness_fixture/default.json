@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "agent_key": "harness_fixture",
+  "case": "default",
+  "steps": [{"kind": "llm"}]
+}

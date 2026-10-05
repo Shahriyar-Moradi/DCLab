@@ -6,6 +6,8 @@ never retry; the gateway service owns retries, limits, budgets and the ledger.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -62,3 +64,21 @@ def default_providers() -> dict[str, Provider]:
     from app.agents.gateway.providers.openai import OpenAIProvider
 
     return {"openai": OpenAIProvider()}
+
+
+def ambient_provider_keys(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """Names (never values) of provider credentials a third-party library would read on its
+    own: any ``*_API_KEY`` / ``*_AUTH_TOKEN`` / ``*_AD_TOKEN`` outside DCLab's ``DCLAB_``
+    namespace (``OPENAI_API_KEY``, ``ANTHROPIC_AUTH_TOKEN``, ``AZURE_OPENAI_AD_TOKEN`` …),
+    ``HF_TOKEN`` and ``GOOGLE_APPLICATION_CREDENTIALS``. The NOOA runtime refuses to start
+    while one is set (P6.3-A): LiteLLM and NOOA's model registry would pick it up if they
+    were ever called, and DCLab's own keys are only ever ``DCLAB_<PROVIDER>_API_KEY``.
+    ``AWS_*`` credentials are left out on purpose: object storage may use them."""
+
+    names = os.environ if environ is None else environ
+    return tuple(sorted(name for name in names if not name.upper().startswith("DCLAB_") and (
+        name.upper().endswith(_AMBIENT_SUFFIXES) or name.upper() in _AMBIENT_NAMES)))
+
+
+_AMBIENT_SUFFIXES = ("_API_KEY", "_AUTH_TOKEN", "_AD_TOKEN")
+_AMBIENT_NAMES = frozenset({"HF_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS"})

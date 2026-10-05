@@ -272,6 +272,7 @@ def test_hook_chain_enforces_closed_effect_sets():
                 replace(agg, payload={**agg.payload, "moved": 0.81}),  # a new key
                 replace(agg, payload={**agg.payload, "t": workspace_text("tenure")}),  # dataset -> workspace text
                 replace(agg, payload={**agg.payload, "t": data_text("tenure")}),  # drops the aggregate flag
+                replace(agg, payload={**agg.payload, "t": replace(agg.payload["t"], limit=agg.payload["t"].limit + 1)}),
                 replace(agg, payload={**agg.payload, "m": {"cv": {"auc": 0.9}}})):  # a changed number
         with pytest.raises(h.HookViolation):
             h.HookChain((h.Hook("post_tool", "x", lambda c, s, b=bad: h.ModifyResult(b)),)).run(
@@ -581,11 +582,49 @@ def _under(name: str, root: str) -> bool:
     return name == root or name.startswith(root + ".")
 
 
+# CI rule b (ADR 0009 §1; P6.3-A): NOOA's code-executing, tool, tracing and provider surfaces.
+NOOA_BANNED_MODULES = ("nooa.strategies.codeact", "nooa.strategies.codeact_lite", "nooa.strategies.reflexion",
+                       "nooa.strategies.pure_python", "nooa.experimental", "nooa.runtime.sandbox", "nooa.cli",
+                       "nooa.tools", "nooa.mcp", "nooa.viewer", "nooa.trace_explorer", "nooa.tracing",
+                       "nooa.unifiedllm")
+NOOA_BANNED_NAMES = frozenset({"CodeActStrategy", "CodeActLiteStrategy", "ReflexionStrategy", "PurePythonStrategy",
+                               "CodeActConfig", "set_default_strategy", "enable_tracing"})
+
+
+def nooa_violations(tree: ast.Module) -> list[str]:
+    names = _imports(tree)
+    found = [n for n in sorted(names) if any(_under(n, b) for b in NOOA_BANNED_MODULES)
+             or n.rsplit(".", 1)[-1] in NOOA_BANNED_NAMES]
+    for node in ast.walk(tree):  # attribute use (nooa.CodeActStrategy), bare names and getattr strings
+        used = node.attr if isinstance(node, ast.Attribute) else node.id if isinstance(node, ast.Name) else (
+            node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None)
+        if used in NOOA_BANNED_NAMES or (isinstance(used, str) and any(_under(used, b) for b in NOOA_BANNED_MODULES)):
+            found.append(used)
+    return found
+
+
+def test_nooa_boundary_scan_catches_planted_violations():
+    planted = {
+        "from nooa.strategies.codeact import CodeActStrategy": ["nooa.strategies.codeact",
+                                                                "nooa.strategies.codeact.CodeActStrategy"],
+        "from nooa import CodeActStrategy": ["nooa.CodeActStrategy"],
+        "import nooa\nnooa.CodeActStrategy()": ["CodeActStrategy"],
+        "import nooa.cli": ["nooa.cli"],
+        "import importlib\nimportlib.import_module('nooa.runtime.sandbox')": ["nooa.runtime.sandbox"],
+        "import nooa\ngetattr(nooa, 'set_default_strategy')": ["set_default_strategy"],
+        "from nooa.tracing import enable_tracing": ["nooa.tracing", "nooa.tracing.enable_tracing"],
+        "from nooa.strategies import codeact_lite": ["nooa.strategies.codeact_lite"],
+        "from nooa import PredictStrategy, strategy": [],
+    }
+    for source, expected in planted.items():
+        assert sorted(set(nooa_violations(ast.parse(source)))) >= sorted(set(expected)), source
+        assert bool(nooa_violations(ast.parse(source))) == bool(expected), source
+
+
 def test_nooa_and_runtime_imports_follow_the_ci_rules():
     for path, tree in _modules().items():
         names = _imports(tree)
-        banned = [n for n in names if any(_under(n, b) for b in ("nooa.strategies.codeact", "nooa.runtime.sandbox",
-                                                                   "nooa.cli"))]
+        banned = nooa_violations(tree)
         assert not banned, (path, banned)
         if any(_under(n, "nooa") for n in names):
             assert path == "app/agents/runtime/nooa_runtime.py", path
