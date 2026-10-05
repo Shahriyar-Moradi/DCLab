@@ -89,6 +89,9 @@ class RunContext:
         # A branch run (ADR 0006 §4): its parent's split plan and materialized
         # change set (``app.services.auto_train.branch.BranchRun``); None = root.
         self.branch: Any = None
+        # P6.9-A: the AI policy snapshot taken at job claim and the resolved decision
+        # points (``app.services.auto_train.decision_points.RunDecisionPoints``).
+        self.decisions: Any = None
         # P3.1-B2: cleared once the final holdout is touched. A cancel that
         # arrives later is not honoured: the holdout was scored, so the run must
         # finish and lock (record) that single evaluation.

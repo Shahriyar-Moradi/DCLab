@@ -195,6 +195,7 @@ def _candidate_fingerprint(
     holdout_plan=None,
     development_plan=None,
     feature_set_version_digest: str | None = None,
+    ai_policy_digest: str | None = None,
 ) -> str:
     return scientific_candidate_fingerprint(
         task=task,
@@ -208,6 +209,7 @@ def _candidate_fingerprint(
         holdout_plan=holdout_plan,
         development_plan=development_plan,
         feature_set_version_digest=feature_set_version_digest,
+        ai_policy_digest=ai_policy_digest,
     )
 
 
@@ -334,6 +336,7 @@ def _open_ingest_candidates(
                 holdout_plan=holdout_plan,
                 development_plan=development_plan,
                 feature_set_version_digest=feature_set_version_digest,
+                ai_policy_digest=config.ai_policy_digest,
             ),
             metadata=dict(identity),
         )

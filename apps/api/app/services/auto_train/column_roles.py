@@ -29,6 +29,7 @@ from app.services.auto_train.branch import (
     forced_datetime_action,
 )
 from app.services.auto_train.context import RunContext, StageHalt, service_module
+from app.services.auto_train.decision_points import decision_points, resolve_column_points
 from app.services.lab_decision_ledger import record_column_type_decisions
 
 
@@ -113,6 +114,7 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
     evidence_timer = ctx.evidence_start("column_roles_finalization")
     final_roles = infer_column_roles(engineered_train, kept_columns)
     num_cols, cat_cols = split_column_roles(engineered_train, kept_columns)
+    rule_numeric, rule_categorical = list(num_cols), list(cat_cols)  # before the legacy column-type writer
     num_cols, cat_cols = record_column_type_decisions(
         db,
         upload.id,
@@ -128,8 +130,35 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
     ]
     identifier_cols = list(dict.fromkeys(final_roles.identifier + llm_identifier_cols))
     entity_column = infer_entity_column(engineered_train, kept_columns)
+    legacy_numeric, legacy_categorical = list(num_cols), list(cat_cols)
     num_cols = [name for name in num_cols if name in inp.allowed_predictors]
     cat_cols = [name for name in cat_cols if name in inp.allowed_predictors]
+    transformed_datetime = {
+        str(name)
+        for action in fe_transformations
+        for name in (action.get("output_columns") or action.get("columns") or [])
+    }
+    # P6.9-A decision points (precedence: branch override > AI at L2 > rule). Root runs
+    # only ask; the identifier point is L1 (never changes a value); the role point may
+    # move a modeled column between numeric and categorical at L2, validator-accepted.
+    num_cols, cat_cols, ai_roles = resolve_column_points(
+        ctx,
+        engineered_train=engineered_train,
+        kept_columns=kept_columns,
+        rule_numeric=rule_numeric,
+        rule_categorical=rule_categorical,
+        rule_identifiers=final_roles.identifier,
+        legacy_numeric=legacy_numeric,
+        legacy_categorical=legacy_categorical,
+        num_cols=num_cols,
+        cat_cols=cat_cols,
+        identifier_cols=identifier_cols,
+        ignored=final_roles.ignored_free_text,
+        transformed_datetime=transformed_datetime,
+        protected={entity_column, development_plan.group_column, development_plan.time_column},
+        missing_actions={item.column: item.action for item in missing_plan.column_decisions},
+        leakage_excluded={item["column"] for item in development_plan.excluded_features},
+    )
     if branch is not None:
         num_cols, cat_cols = apply_role_overrides(
             branch,
@@ -140,11 +169,6 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
             identifiers=set(identifier_cols),
         )
     ctx.evidence_finish(evidence_timer)
-    transformed_datetime = {
-        str(name)
-        for action in fe_transformations
-        for name in (action.get("output_columns") or action.get("columns") or [])
-    }
     role_decisions = {
         row.column: row
         for row in db.query(LabDecisionRecord)
@@ -203,6 +227,9 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
                 if role_decision is not None
                 else f"Deterministic train-only role inference classified the column as {final_role}."
             )
+            if column in ai_roles and (column in num_cols or column in cat_cols):
+                source = "decision_point:column.semantic_role"
+                reason = "Applied at L2 by the column.semantic_role decision point (validator-accepted; revertible)."
             confidence = (
                 (role_decision.raw_llm_output or {}).get("confidence")
                 if role_decision is not None
@@ -244,6 +271,7 @@ def run_column_roles(ctx: RunContext, inp: ColumnRolesInput) -> ColumnRolesOutpu
         development_plan=development_plan,
         objective=inp.run_objective,
         branch_overrides=None if branch is None else dict(branch.overrides),
+        ai_policy_digest=decision_points(ctx).fingerprint_digest,
     )
     groups_map = {"features": num_cols + cat_cols}
     combos = generate_group_combinations(

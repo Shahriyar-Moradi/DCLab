@@ -36,6 +36,9 @@ def normalize_name(name: str) -> str:
 
 
 MIN_IDENTIFIER_UNIQUE = 10
+# Above this share of distinct values per row a column can be an opaque key (the
+# identifier rule); decision-point validators refuse role overrides above it too.
+IDENTIFIER_UNIQUE_RATIO = 0.95
 
 
 def identifier_likelihood(name: str, series: pd.Series, row_count: int | None = None) -> float:
@@ -53,7 +56,7 @@ def identifier_likelihood(name: str, series: pd.Series, row_count: int | None = 
     n = max(int(row_count if row_count is not None else len(series)), 1)
     observed = series.dropna()
     ratio = float(observed.nunique()) / n
-    if ratio <= 0.95:
+    if ratio <= IDENTIFIER_UNIQUE_RATIO:
         return 0.0
 
     # Compact near-unique strings are commonly opaque keys. Natural-language

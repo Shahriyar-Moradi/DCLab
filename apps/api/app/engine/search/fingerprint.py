@@ -131,6 +131,7 @@ def scientific_candidate_config_payload(
     validation_plan: Any = None,
     metric_plan: Any = None,
     feature_set_version_digest: str | None = None,
+    ai_policy_digest: str | None = None,
 ) -> dict[str, Any]:
     resolved_task_type = task_type or (task.task_type if task is not None else None)
     resolved_target = target if target is not None else (task.target if task is not None else None)
@@ -140,7 +141,7 @@ def scientific_candidate_config_payload(
     development = _as_plan_dict(development_plan)
     library, implementation_class, library_version = implementation_for_family(family)
     applied = applied_hyperparameters(family, seed=int(seed), hyperparameters=hyperparameters)
-    return {
+    payload = {
         "scheme": CANDIDATE_CONFIG_FINGERPRINT_SCHEME,
         "dataset_version": dataset_version or None,
         "dataset_content_digest": dataset_content_digest or None,
@@ -169,6 +170,9 @@ def scientific_candidate_config_payload(
         ),
         "model_development_plan_digest": scientific_plan_digest(development_plan),
     }
+    if ai_policy_digest:  # ADR 0008 §2c; absent (not null) so rule-only fingerprints never change
+        payload["ai_policy_digest"] = str(ai_policy_digest)
+    return payload
 
 
 def scientific_candidate_fingerprint(
@@ -189,6 +193,7 @@ def scientific_candidate_fingerprint(
     validation_plan: Any = None,
     metric_plan: Any = None,
     feature_set_version_digest: str | None = None,
+    ai_policy_digest: str | None = None,
 ) -> str:
     payload = scientific_candidate_config_payload(
         features=features,
@@ -207,5 +212,6 @@ def scientific_candidate_fingerprint(
         validation_plan=validation_plan,
         metric_plan=metric_plan,
         feature_set_version_digest=feature_set_version_digest,
+        ai_policy_digest=ai_policy_digest,
     )
     return candidate_fingerprint(_strip_identity(payload))

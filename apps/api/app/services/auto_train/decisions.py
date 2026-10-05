@@ -22,6 +22,7 @@ from app.engine.modeling.validation_planner import ValidationPlan
 from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.auto_train.branch import apply_missing_value_overrides
 from app.services.auto_train.context import RunContext, StageHalt
+from app.services.auto_train.decision_points import resolve_leakage_point
 from app.services.lab_decision_ledger import leakage_reviewer, record_missing_value_decisions
 
 
@@ -138,6 +139,11 @@ def run_train_only_decisions(
             "decision_count": len(missing_plan.column_decisions),
             "dropped_column_count": len(missing_plan.dropped_columns),
         },
+    )
+    # P6.9-A: Jev cross-check of the leakage plan (L1: a review flag at most; the rule's
+    # exclusions above are final). Evidence: the locked training partition only.
+    resolve_leakage_point(
+        ctx, locked_train=locked_train, target=target, audit=_leakage_audit, development_plan=development_plan
     )
     for decision in missing_plan.column_decisions:
         if decision.action == "domain_fill" and decision.fill_value is not None and decision.column in frame:

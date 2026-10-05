@@ -1079,6 +1079,45 @@ def _verify_split_plan_lineage(add, report: dict[str, Any], db: Session) -> None
         add(check, stage, CHECK_PASS, "Holdout plan, counts and assignment match the run's split plan.", "split", "split_plans")
 
 
+def _verify_decision_point_partitions(add, report: dict[str, Any], db: Session) -> None:
+    """ADR 0008 §2c: every ``decision_point_resolved`` record of the run cites evidence from
+    the locked training partition (``train``) or metadata only. Runs without AI records
+    (AI off) get no check, so their verification is unchanged."""
+
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.db.models import Experiment, ProjectDecisionRecord
+
+    try:
+        experiment_id = UUID(str(_as_dict(report.get("run")).get("experiment_id")))
+    except ValueError:
+        return
+    experiment = db.get(Experiment, experiment_id)
+    if experiment is None:
+        return
+    rows = list(db.scalars(select(ProjectDecisionRecord).where(
+        ProjectDecisionRecord.workspace_id == experiment.workspace_id,
+        ProjectDecisionRecord.experiment_id == experiment.id,
+        ProjectDecisionRecord.decision_type == "decision_point_resolved",
+    )))
+    if not rows:
+        return
+    check, stage = "decision_point_evidence_partition", "decision_points"
+    bad = sorted(
+        str(_as_dict(row.details).get("decision_point") or row.id)
+        for row in rows
+        if _as_dict(row.details).get("evidence_partition") not in ("train", "metadata")
+    )
+    if bad:
+        add(check, stage, CHECK_FAIL, f"Decision points cite evidence outside the training partition: {bad}.",
+            "project_decision_records")
+    else:
+        add(check, stage, CHECK_PASS, "Every decision point record cites train-partition or metadata evidence.",
+            "project_decision_records")
+
+
 def _verify_reproducibility_lineage(add, report: dict[str, Any], db: Session) -> None:
     """DB-backed lineage checks. Skipped when verify() is called without a session."""
 
@@ -1873,6 +1912,7 @@ class PipelineVerifier:
         if db is not None:
             _verify_split_plan_lineage(add, report, db)
             _verify_reproducibility_lineage(add, report, db)
+            _verify_decision_point_partitions(add, report, db)
 
         return {
             "schema_version": 1,

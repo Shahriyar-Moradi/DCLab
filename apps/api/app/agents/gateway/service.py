@@ -322,6 +322,7 @@ class _SemanticSteps:
         if len(cache.canonical_json(state).encode()) > releases.MAX_STATE_BYTES:
             raise GatewayRefusal("policy_denied", "Jev state exceeds 8 KB")
         call.summary = {"effective_data_class": allowed, "questions": len(r.questions), "untrusted_marked": True,
+                        "user_text_present": bool(user),  # audit (P6.7-A security follow-up)
                         "input_evidence_persisted": False, "raw_rows_stored": False, "secrets_stored": False}
         return {"purpose": r.purpose, "state": state, "user_text": [{"untrusted_text": t} for t in user],
                 "questions": [

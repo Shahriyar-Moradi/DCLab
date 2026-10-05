@@ -24,6 +24,7 @@ from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan
 from app.engine.validation.split_assignment import SplitAssignment
 from app.services.auto_train.context import RunContext, StageHalt
+from app.services.auto_train.decision_points import decision_points
 from app.services.evidence_lock_service import (
     lock_scientific_evidence,
     missing_scientific_evidence,
@@ -221,6 +222,10 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
         # P4.10-A trust checks: stored on the result now and as findings rows with the
         # lineage below, both before the evidence lock.
         result["investigation"] = _investigation(inp, result)
+        # P6.9-A: the AI policy digest and decision-point outcomes (AI off: absent).
+        decision_evidence = decision_points(ctx).evidence()
+        if decision_evidence is not None:
+            result["decision_points"] = decision_evidence
     experiment.result = result
     db.commit()
 
