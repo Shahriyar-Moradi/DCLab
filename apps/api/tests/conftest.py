@@ -209,6 +209,21 @@ def db_session(test_engine) -> Generator[Session, None, None]:
         _clear_test_object_store()
 
 
+def refresh_planner_stats(db: Session, *tables: str) -> None:
+    """ANALYZE ``tables`` in the open transaction before an EXPLAIN index check.
+
+    The TRUNCATE above resets row counts but keeps column statistics, so the
+    planner otherwise sees whatever autoanalyze last sampled from an earlier
+    test. On tables this small, competing indexes cost about the same and that
+    leftover snapshot decided which one won: flaky in the full suite, green
+    alone. This ANALYZE samples only the current test's rows, rolls back with
+    the test, and its lock keeps autoanalyze off the tables until then. An
+    empty table keeps its old statistics, so give each table rows first.
+    """
+    for table in tables:
+        db.execute(text(f"ANALYZE {table}"))
+
+
 @pytest.fixture(autouse=True)
 def _reset_login_throttle_state():
     from app.services.login_throttle import reset_login_throttle

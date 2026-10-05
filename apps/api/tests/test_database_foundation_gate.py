@@ -37,6 +37,7 @@ from app.services.lineage_service import (
     create_workflow_run,
 )
 from app.storage.local import LocalStorage
+from conftest import refresh_planner_stats
 from test_data_model_lineage import make_lineage_setup
 
 TRUTH_BASELINE = Path(__file__).resolve().parents[3] / "contracts" / "truth_baseline.json"
@@ -910,6 +911,10 @@ def test_explain_uses_measured_hot_path_indexes(db_session, foundation):
     a = foundation
     s = a.setup
     workspace_id = s["alpha"].id
+    # Tables whose query below has competing indexes and a single-index
+    # assertion; the others have one index on the filtered column or the
+    # assertion accepts either index.
+    refresh_planner_stats(db_session, "projects", "experiments", "ml_jobs")
 
     projects = _plan(
         db_session,
