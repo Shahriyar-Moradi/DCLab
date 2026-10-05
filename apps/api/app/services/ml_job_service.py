@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -631,6 +632,19 @@ def execute_job(
     return current
 
 
+def _end_abandoned_assistant_turns(db: Session) -> None:
+    """Assistant turns run in the API process, not as jobs; the worker's poll also frees the
+    budget holds of turns whose process died (P6.3-B2). Never blocks job processing."""
+
+    from app.agents.harness.service import end_abandoned_turns
+
+    try:
+        end_abandoned_turns(db)
+    except Exception:  # noqa: BLE001 - logged; the next poll retries
+        logging.getLogger("dclab.ml_jobs").exception("could not end abandoned assistant turns")
+        db.rollback()
+
+
 def process_next_job(
     db: Session,
     *,
@@ -648,6 +662,7 @@ def process_next_job(
         db, now=now, heartbeat_timeout_seconds=heartbeat_timeout_seconds
     )
     db.commit()
+    _end_abandoned_assistant_turns(db)
     job = claim_next_queued_job(db, now=now, job_id=job_id, claimed_by=claimed_by)
     if job is None:
         db.commit()

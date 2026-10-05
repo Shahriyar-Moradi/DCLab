@@ -23,6 +23,8 @@ const FORWARD_REQUEST_HEADERS = [
   "idempotency-key",
   "if-match",
   "if-none-match",
+  // Assistant SSE (P6.3-B2): resume position of an event stream.
+  "last-event-id",
 ] as const;
 /** /v1 contract response headers Studio reads (ETag for If-Match, replay marker). */
 const FORWARD_RESPONSE_HEADERS = ["etag", "idempotent-replayed"] as const;
@@ -233,6 +235,12 @@ export async function proxyBackend(
   );
   const contentType = apiResponse.headers.get("content-type");
   if (!bodyless && contentType) headers.set("content-type", contentType);
+  if (contentType?.toLowerCase().startsWith("text/event-stream")) {
+    // The body below is the upstream stream itself (never buffered); no-transform keeps
+    // compression middleware and proxies from holding events back.
+    headers.set("Cache-Control", "no-cache, no-transform");
+    headers.set("X-Accel-Buffering", "no");
+  }
   const disposition = apiResponse.headers.get("content-disposition");
   if (disposition) headers.set("content-disposition", disposition);
   for (const name of FORWARD_RESPONSE_HEADERS) {

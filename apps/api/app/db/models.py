@@ -6659,7 +6659,8 @@ class AgentRun(Base):
             postgresql_where=text("kind = 'assistant'"),
         ),
         # One active run per agent and subject; NULLS NOT DISTINCT so a NULL
-        # subject column still collides (otherwise the index never fires).
+        # subject column still collides (otherwise the index never fires). Assistant
+        # thread turns (lead runs with a parent) are bounded per thread instead (0076).
         Index(
             "uq_agent_runs_active_subject",
             "workspace_id",
@@ -6673,7 +6674,15 @@ class AgentRun(Base):
             "model_version_id",
             unique=True,
             postgresql_nulls_not_distinct=True,
-            postgresql_where=text("status IN ('queued', 'running') AND kind <> 'assistant'"),
+            postgresql_where=text("status IN ('queued', 'running') AND kind <> 'assistant' "
+                                  "AND (kind <> 'lead' OR parent_run_id IS NULL)"),
+        ),
+        Index(
+            "uq_agent_runs_live_turn",
+            "workspace_id",
+            "parent_run_id",
+            unique=True,
+            postgresql_where=text("kind = 'lead' AND parent_run_id IS NOT NULL AND status IN ('queued', 'running')"),
         ),
         Index(
             "uq_agent_runs_workspace_idempotency_key",

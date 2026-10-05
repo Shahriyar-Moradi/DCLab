@@ -149,7 +149,10 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
     if run.status not in AGENT_RUN_TERMINAL_STATUSES:
         raise ReplayRefused("run_not_finished")
     if run.runtime == "lead_loop":
-        raise ReplayRefused("not_replayable")  # P6.3-B: the turn's input is not persisted yet (B2)
+        # P6.3-B2 stores the turn's user text (``user_message``), but a lead replay also needs the
+        # write stubs to answer ``proposed`` (identical writes reuse one proposal) and the surface's
+        # tools for answer-only turns: not yet (P6.10-B).
+        raise ReplayRefused("not_replayable")
     service = service or AgentService()
     spec = spec_from_run(run)
     record = _Record(db, run)

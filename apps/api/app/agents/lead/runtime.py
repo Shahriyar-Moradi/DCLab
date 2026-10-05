@@ -16,8 +16,9 @@ number and no citation. No generated code runs; the runtime never sees a databas
 session, a storage client or a provider key.
 
 ``validate_output`` (on the NFKC-normalised message without zero-width characters): shape
-per kind, an answer cites at least one node (templates exempt), every tool on the run's
-catalog surface, no holdout wording, and the Markdown subset by allowlist: the only link is
+per kind, an answer (or a ``done`` with a message) cites at least one node (templates exempt),
+every tool on the run's catalog surface, no holdout wording ("unseen" too, except the
+preprocessing phrase "unseen categories": categorical levels absent from training), and the Markdown subset by allowlist: the only link is
 ``[label](dclab://<kind>/<id>)`` to a cited node; once those are reduced to their labels, any
 other link construct (``](``, ``]:``, ``][``, ``<…``, ``![``, ``//``, HTML entities,
 ``www.``, link schemes with or without ``//``, host names, e-mail addresses) rejects the
@@ -73,9 +74,9 @@ _LINKISH = re.compile(
     r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|co|ai|app|dev|info|biz|xyz|me|ly|sh|to|gg|link|site"
     r"|online|top|click|ru|cn|uk|de|us|tk)\b")  # a host a linkifier would turn into a link
 _HOLDOUT_WORDS = re.compile(r"(?i)\b(?:hold[\s_-]?out|held[\s_-]?(?:out|back)|final[\s_-]?(?:test|evaluation)"
-                            r"|test[\s_-]?(?:set|split)|unseen)\b")
+                            r"|test[\s_-]?(?:set|split)|unseen(?![\s_-]+categor(?:y|ies)\b))\b")
 _EXP = r"(?:e[+-]?\d+(?![a-z0-9]))?"  # an exponent, never the start of a hex token
-_NUMBER = re.compile(rf"(?i)(?<![\d.,])(\d*[.,]\d+{_EXP}|\d+{_EXP})(\s*(?:%|‰|per\s*cent\b|percent\b|pct\b))?")
+_NUMBER = re.compile(rf"(?i)(?<![\d.,])(\d*[.,]\d+{_EXP}|\d+{_EXP})(\s*(?:%|‰|per\s*cent\b|percent(?:age)?\b|pct\b))?")
 _UUID = re.compile(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
 _THOUSANDS = re.compile(r"[1-9]\d{0,2},\d{3}")
 _INVISIBLE = re.compile("[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]")
@@ -238,7 +239,8 @@ class LeadRuntime:
             return ["step_invalid"]
         if any(call.tool not in self.tools for call in step.tool_calls):
             return ["unknown_tool"]
-        if step.kind == "answer" and not step.citations and not output.meta.get("refusal"):
+        if step.kind in ("answer", "done") and (step.message or "").strip() and not step.citations \
+                and not output.meta.get("refusal"):
             return ["uncited_answer"]  # every claim rests on a node; only DCLab's templates cite none
         if _HOLDOUT_WORDS.search(normalized(step.message or "")):
             return ["holdout_in_output"]
@@ -256,8 +258,9 @@ class LeadRuntime:
 
 def factory(spec: AgentRunSpec) -> LeadRuntime:
     """The registered ``lead_loop`` factory: a ``lead`` run of a signed-in human (ADR 0009
-    §7.2: never a service token) on the assistant surface. The turn is never persisted on
-    the run row, so a lead run is never queued (``submit`` refuses) or replayed."""
+    §7.2: never a service token) on the assistant surface. The turn's user text is stored as
+    the run's first event (``user_message``, P6.3-B2) but the turn still runs only in the API
+    process: never queued (``submit`` refuses), and not replayed yet (see ``replay``)."""
 
     if spec.turn is None:
         raise RuntimeRefused("turn_input_missing")

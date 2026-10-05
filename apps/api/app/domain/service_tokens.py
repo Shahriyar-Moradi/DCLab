@@ -107,6 +107,11 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/projects/{project_id}/refs/{ref_kind}"),
         # P6.9-A: a split confirmation is a person's answer (ADR 0008 §2).
         ("POST", "/v1/execution-requests/{request_id}/split-confirmation"),
+        # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required).
+        ("GET", "/v1/assistant/threads"),
+        ("POST", "/v1/assistant/threads"),
+        ("GET", "/v1/assistant/threads/{thread_id}"),
+        ("POST", "/v1/assistant/threads/{thread_id}/messages"),
     }
 )
 

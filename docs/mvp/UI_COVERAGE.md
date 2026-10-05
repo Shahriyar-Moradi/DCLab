@@ -20,7 +20,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]` | planned P4.1-A |
 | Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1; Data tab | planned P4.1-B |
 | Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard step 2 (target, task, objective, constraints) | planned P4.1-B |
-| Target confirmation | `POST /v1/execution-requests/{id}/target-confirmation` | — | wizard step 2 confirm | planned P4.1-B |
+| Target / split confirmation | `POST /v1/execution-requests/{id}/target-confirmation|split-confirmation` | — | wizard step 2 confirm | planned P4.1-B |
 | Run an experiment | `POST /v1/experiments`, `POST /v1/execution-requests`, `GET …/{id}` | `run_experiment` | wizard "Train" + Experiments tab "New run" | planned P4.1-B |
 | Live run progress | `GET /v1/model-builds/{id}`, `…/events`, `…/artifacts`, `…/visualizations` | — | experiment page progress + charts | exists (legacy `/lab/runs/[run_id]`), moved in P4.1-A |
 | Cancel a run | `POST /v1/experiments/{id}/cancel` | — | experiment page "Cancel" | planned P4.4-A |
@@ -47,7 +47,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Activity feed | `GET /v1/activity` | — | Home "Activity" | planned P4.15-A / P4.15-UI |
 | Inbox | `GET /v1/inbox`, counts | `list_proposals` (P6.6-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |
 | Pipeline evidence | `GET /v1/model-builds/{id}`, `/events`, `/artifacts` | — | `/projects/[id]/pipeline/[experimentId]` | planned P4.17-UI |
-| In-app assistant | `POST /v1/assistant/threads`, `…/messages` (SSE) | — (external agents use MCP itself) | Lab page + assistant panel on every project page | backend P6.3-B; screen planned A3-UI |
+| In-app assistant | `GET/POST /v1/assistant/threads`, `GET /v1/assistant/threads/{id}`, `POST …/messages` (SSE) | — (external agents use MCP itself) | Lab page + assistant panel on every project page | backend P6.3-B; screen planned A3-UI |
 | Assistant and agent proposals | `GET /v1/proposals`, `POST /v1/proposals/{id}/accept|reject|revert` (one proposal model, P6.6-A) | `list_proposals` | confirm cards in the Lab/panel, Inbox | planned A4-A, P4.16-UI |
 
 ## Later phases (screen ships in the same phase as the backend)

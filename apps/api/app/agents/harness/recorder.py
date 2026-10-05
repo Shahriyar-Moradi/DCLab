@@ -69,24 +69,35 @@ class Recorder:
     def __init__(self, bind: Any, *, workspace_id: UUID, run_id: UUID) -> None:
         self.bind, self.workspace_id, self.run_id = bind, workspace_id, run_id
 
-    def record(self, event_type: str, payload: dict[str, Any], *, llm_invocation_id: UUID | None = None) -> int:
+    def record(self, event_type: str, payload: dict[str, Any], *, llm_invocation_id: UUID | None = None,
+               session: Session | None = None) -> int:
+        """Own committed transaction, or (``session``) the caller's: then the event commits or
+        rolls back with the caller's other writes (an assistant template and its key)."""
+
         body = _bounded(payload)
-        session = Session(bind=self.bind)
+        owned = session is None
+        session = Session(bind=self.bind) if owned else session
         try:
-            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            if owned:
+                session.execute(text("SET LOCAL lock_timeout = '5s'"))
             session.execute(text("SELECT pg_advisory_xact_lock(:ns, hashtext(:k))"),
                             {"ns": LOCK_NS_AGENT_EVENTS, "k": str(self.run_id)})
             seq = 1 + int(session.scalar(select(func.coalesce(func.max(AgentEvent.seq), 0)).where(
                 AgentEvent.workspace_id == self.workspace_id, AgentEvent.run_id == self.run_id)) or 0)
             session.add(AgentEvent(workspace_id=self.workspace_id, run_id=self.run_id, seq=seq, type=event_type,
                                    payload=body, payload_digest=digest(body), llm_invocation_id=llm_invocation_id))
-            session.commit()
+            if owned:
+                session.commit()
+            else:
+                session.flush()
             return seq
         except BaseException:
-            session.rollback()
+            if owned:
+                session.rollback()
             raise
         finally:
-            session.close()
+            if owned:
+                session.close()
 
 
 def load_events(db: Session, *, workspace_id: UUID, run_id: UUID) -> list[AgentEvent]:

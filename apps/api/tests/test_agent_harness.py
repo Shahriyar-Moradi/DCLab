@@ -384,20 +384,20 @@ def test_tool_denials_and_rejected_by_validator_proposals(hz):
         ("denied", "unknown_tool"), ("denied", "forbidden_operation"), ("denied", "tool_not_available"),
         ("rejected_by_validator", "holdout_not_allowed"), ("rejected_by_validator", "subject_not_found"),
         ("rejected_by_validator", "invalid_change_set"),
-        ("rejected_by_validator", "champion_evidence_unavailable"),  # exp1 is not evidence-locked yet
+        ("rejected_by_validator", "champion_move_human_only"),  # never from the assistant surface (P6.3-B2)
         ("denied", "invalid_arguments")]
     rows = {row.id: row for row in db.scalars(select(AgentProposal).where(AgentProposal.run_id == result.run_id))}
     assert len(rows) == 4 and all(r.status == "rejected_by_validator" and r.validator_verdict == "rejected"
                                   for r in rows.values())
     holdout_row = rows[hz.log[3].proposal_id]
     assert set(holdout_row.tool_arguments) == {"argument_digest"} and "final_holdout" not in json.dumps(holdout_row.payload)
-    # The champion move proposes once the model is eligible; DCLab, not the agent, attaches the evidence.
+    # Even an eligible model: a champion move is a human's promote decision, never an assistant proposal.
     _force_lock(db, g.exp[1])
     hz.log.clear()
     ok = hz.service(script[6:7] + (("llm",),)).run(db, hz.spec(subject_id=g.exp[1]))
     [row] = db.scalars(select(AgentProposal).where(AgentProposal.run_id == ok.run_id))
-    assert (row.status, row.payload["server_attaches"]) == ("proposed", ["champion_final_evaluation"])
-    assert not HOLDOUT_KEY.search(json.dumps(row.payload))
+    assert (row.status, row.validator_reasons) == ("rejected_by_validator", [{"code": "champion_move_human_only"}])
+    assert set(row.tool_arguments) == {"argument_digest"} and not HOLDOUT_KEY.search(json.dumps(row.payload))
     limited = hz.service((("tool", "inspect_project", {}), ("tool", "inspect_project", {}), ("llm",))).run(
         db, hz.spec(subject_id=g.exp[3], limits=RunLimits(steps=8, tokens=60000, wall_s=120, cost_micros=250_000,
                                                           tool_calls=1)))

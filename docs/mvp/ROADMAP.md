@@ -216,7 +216,7 @@ locked winner's single evaluation.
 
 Prompts keep their P6 identifiers; execution order is
 P6.1 → P6.2-A → P6.2-B → P6.10-A → P6.3-A → P6.7 → P6.9 → P6.4 → P6.3-B → P6.6 →
-P6.10-B → P6.11 → P6.8. P6.5 runs inside Phase 5 (it needs the loop engine).
+P6.10-B → P6.8 → P6.11 (P6.11-A needs P6.8-A's evidence links). P6.5 runs inside Phase 5 (it needs the loop engine).
 Track A's backend is built here, once (A1-A, A2-A and A2-B are absorbed).
 
 | Plan | Outcome |
