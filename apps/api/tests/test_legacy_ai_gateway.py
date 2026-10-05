@@ -304,4 +304,5 @@ def test_user_seed_syncs_the_code_owned_prompt_releases_idempotently(db_session,
 
     jev = {release.agent_key for release in RELEASES.values()}  # and one per pinned Jev purpose (P6.7-A)
     specialists = {"dataset_investigator", "experiment_critic", "experiment_planner"}  # P6.4-A agent classes
-    assert keys == sorted({*CALLS, "pipeline_auditor", *jev, *specialists})  # one release per prompt file, never duplicated
+    # One release per prompt file, never duplicated (+ the P6.3-B lead agent).
+    assert keys == sorted({*CALLS, "pipeline_auditor", *jev, *specialists, "lead"})

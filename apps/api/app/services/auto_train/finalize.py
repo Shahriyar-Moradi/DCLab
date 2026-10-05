@@ -107,12 +107,11 @@ def run_finalize(ctx: RunContext, inp: FinalizeInput) -> FinalizeOutput:
         encoding="utf-8",
     )
     experiment.result = result
-    if inp.workflow_run is not None and inp.workflow_run.problem_spec_id is not None:
-        from app.services.run_plan_service import supersede_plans
+    from app.services.run_plan_service import supersede_for_results
 
-        # ADR 0008 §2: a pending objective plan cannot follow results of its spec.
-        supersede_plans(db, workspace_id=experiment.workspace_id, project_id=experiment.project_id,
-                        reason="results_exist", problem_spec_id=inp.workflow_run.problem_spec_id)
+    # ADR 0008 §2: a pending objective plan cannot follow results of its spec (or, for the
+    # Planner's dataset-subject plans, of its dataset).
+    supersede_for_results(db, experiment, inp.workflow_run)
     ctx.finish_stage()
     store_report_artifacts(db, experiment)
     svc._mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)

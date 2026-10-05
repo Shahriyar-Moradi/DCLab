@@ -20,12 +20,17 @@ transition (and stamps ``budget_released_at``); (10) the eval sample is recorded
 ``run_finished``. Every step is an ``agent_events`` row (``recorder``).
 
 Caller contract: the harness commits its session before every gateway call and never
-locks the run row. Assistant threads (``kind = 'assistant'``) arrive with P6.3-B and
-are refused here. Wall time is checked before every model call, and an async runtime
+locks the run row. Assistant threads (``kind = 'assistant'``) are refused here; the lead
+loop (``lead_loop``, P6.3-B) runs as a human's ``lead`` run whose spec carries the turn
+(never queued: ``submit`` refuses it), checks each step through ``session.check`` (the
+output validator, recorded as ``step_validated`` / ``step_rejected``) and ends with an
+``assistant_message`` event (its answer, or the limit / unavailable template); a step,
+token, wall or tool-call limit records a typed ``budget_exhausted`` event (the first three
+end the run ``over_budget`` / ``timed_out``). Wall time is checked before every model call, and an async runtime
 (``arun``: NOOA) runs under an asyncio timeout of the remaining wall time (P6.3-A); a
 runtime that refuses (``RuntimeRefused``) ends the run ``failed`` with its code. The
-built-in runtimes ``fake`` and ``nooa_predict`` are registered here and nowhere else
-(CI rule c). The ``agents.run`` job (payload ``{"agent_run_id"}``) calls ``run`` with
+built-in runtimes ``fake``, ``nooa_predict`` and ``lead_loop`` are registered here and
+nowhere else (CI rule c). The ``agents.run`` job (payload ``{"agent_run_id"}``) calls ``run`` with
 the spec rebuilt from the row (``spec_for_job``); ``submit`` queues it.
 """
 
@@ -58,8 +63,9 @@ from app.agents.governance.switches import effective_switches
 from app.agents.harness import hooks as h
 from app.agents.harness.context import build_context, within
 from app.agents.harness.recorder import Recorder, canonical, digest, output_digest, preview
-from app.agents.harness.validation import check_proposal_nodes, draft_reasons, proposal_payload
+from app.agents.harness.validation import check_proposal_nodes, draft_reasons, output_reasons, proposal_payload
 from app.agents import classes  # noqa: F401 - registers the specialist classes (P6.4-A)
+from app.agents.lead import runtime as lead_runtime
 from app.agents.runtime import fake_runtime, nooa_runtime
 from app.agents.runtime.base import (
     AGENT_CLASSES,
@@ -94,6 +100,7 @@ _STOP_STATUS = {"step_limit": "over_budget", "token_limit": "over_budget", "budg
                 "wall_limit": "timed_out", "timeout": "timed_out", "kill_switch": "failed"}
 _DENIAL_REFUSAL = {"step_limit": "budget_exhausted", "token_limit": "budget_exhausted",
                    "wall_limit": "timeout", "kill_switch": "kill_switch"}
+_LIMITS = {"step_limit": "steps", "token_limit": "tokens", "wall_limit": "wall_time"}
 _CODE = re.compile(CODE_PATTERN)
 _KEY = re.compile(KEY_PATTERN)
 
@@ -110,6 +117,7 @@ def unregister_runtime(name: str) -> None:
 
 register_runtime("fake", fake_runtime.factory)  # development / tests only (refused elsewhere)
 register_runtime("nooa_predict", nooa_runtime.factory)  # fails closed without the agents extra
+register_runtime("lead_loop", lead_runtime.factory)  # the assistant's bounded loop (needs the spec's turn)
 
 
 class AgentRunRefused(Exception):
@@ -146,6 +154,8 @@ def authorize(db: Session, spec: AgentRunSpec, *, settings: Any) -> Principal:
 
     if spec.kind == "assistant":
         raise AgentRunRefused("assistant_turns_unsupported")  # threads: P6.3-B
+    if spec.runtime == "lead_loop" and spec.service_token_id is not None:
+        raise AgentRunRefused("human_session_required")  # ADR 0009 §7.2: the assistant is human-only
     if spec.service_token_id is not None:
         if not settings.service_tokens_enabled:
             raise AgentRunRefused("service_tokens_disabled")
@@ -230,6 +240,8 @@ class AgentService:
 
         from app.services.ml_job_service import create_ml_job
 
+        if spec.runtime == "lead_loop":
+            raise AgentRunRefused("runtime_not_queueable")  # the turn input is never persisted
         principal = authorize(db, spec, settings=self._settings())
         run = self._create(db, spec, principal)
         create_ml_job(db, workspace_id=spec.workspace_id, project_id=spec.project_id, job_type=JOB_TYPE_AGENT_RUN,
@@ -335,6 +347,8 @@ class _Execution:
     sample_values: int = 0
     provider: str | None = None
     model: str | None = None  # the routed model of the last answered call (levels, run row)
+    runtime: Any = None
+    checks: int = 0
 
     def __post_init__(self) -> None:
         run = self.run
@@ -353,7 +367,7 @@ class _Execution:
             ai_enabled=bool(getattr(self.settings, "ai_enabled", False)),
             usage={"steps": 0, "calls": 0, "tokens_in": 0, "tokens_out": 0, "wall_ms": 0, "tool_calls": 0,
                    "cache_hits": 0},
-            record=self.record,
+            record=self.record, tool_ctx=self.tool_ctx,
         )
 
     # --- recording and bookkeeping ----------------------------------------------------------
@@ -461,6 +475,8 @@ class _Execution:
             db.rollback()
             return self._finish("failed", exc.code)
         if self.stop is not None:
+            if getattr(output, "meta", None) and output.meta.get("refusal"):
+                self._say(output, self.stop[1])  # the lead's static limit / unavailable template
             return self._finish(*self.stop)
         effects = self.service.hooks.run("post_run", self.ctx, h.RunOutput(output, runtime))
         notes: dict[str, Any] = {}
@@ -480,15 +496,27 @@ class _Execution:
         rejected = self._persist_draft(output)
         if rejected:
             return self._finish("rejected_by_validator", rejected, notes)
+        self._say(output, notes.get("runtime_refusal"))
         return self._finish("completed", None, notes)
+
+    def _say(self, output: Any, fallback: str | None) -> None:
+        """The lead's conversation item (redacted, bounded; thread history)."""
+
+        if self.spec.runtime == "lead_loop" and getattr(output, "message", None):
+            self.record("assistant_message", {
+                "kind": getattr(output.output, "kind", None), "message": preview(output.message, 4000),
+                "citations": [item.model_dump(mode="json") for item in output.citations][:32],
+                "llm_used": self.ctx.usage["calls"] > 0, "fallback": _code(fallback) if fallback else None})
 
     def _run_runtime(self, runtime: Any) -> Any:
         """Step 6. An async runtime (``arun``) runs under the remaining wall time and ends
         ``timed_out`` / ``wall_limit`` when it runs out; a sync runtime is bounded by the
         wall check before each model call (its calls are the only slow part)."""
 
+        self.runtime = runtime
         session = SimpleNamespace(envelope=self.envelope, limits=self.limits, tools=self.tools,
-                                  complete=self.complete, call_tool=self.call_tool, step=self.step)
+                                  complete=self.complete, call_tool=self.call_tool, step=self.step,
+                                  check=self.check)
         arun = getattr(runtime, "arun", None)
         if not callable(arun):
             return runtime.run(session)
@@ -554,6 +582,8 @@ class _Execution:
         if denied:
             if denied in _STOP_STATUS:
                 self.stop = (_STOP_STATUS[denied], denied)
+            if denied in _LIMITS:  # the typed reason the turn ends (ADR 0008 §6 bounds)
+                self.record("budget_exhausted", {"call": call, "limit": _LIMITS[denied]})
             return self._step_rejected(call, denied)
         notes = tuple(Untrusted(untrusted_text=f"[harness note] {item.text}")
                       for item in effects if isinstance(item, h.AddSystemNote))
@@ -606,6 +636,36 @@ class _Execution:
         self.record("step_rejected", {"call": call, "reason": reason, "refusal": refusal})
         return CompletionResponse(ok=False, refusal=Refusal(code=refusal, message=reason))
 
+    def check(self, output: Any) -> list[str]:
+        """One intermediate step through the run's output validator (ADR 0009 §7.1: tool
+        names, citations in the run's project, cited CV numbers, Markdown subset, holdout);
+        read-only, never raises (a failing validator rejects the step)."""
+
+        self.checks += 1
+        try:
+            reasons = ["wall_limit"] if self._out_of_time(self.ctx.usage["calls"]) else output_reasons(
+                self.db, output, self.runtime, workspace_id=self.workspace_id, project_id=self.project_id,
+                run_id=self.run_id, tool_ctx=self.tool_ctx)
+            self.db.commit()
+        except Exception:  # noqa: BLE001 - fail closed
+            logger.exception("step validation failed", extra={"agent_run_id": str(self.run_id)})
+            self.db.rollback()
+            reasons = ["validator_failed"]
+        reasons = [_code(str(item), "validator_rejected") for item in reasons][:8]
+        self.record("step_rejected" if reasons else "step_validated", {
+            "check": self.checks, "call": self.ctx.usage["calls"], "reasons": reasons,
+            "kind": getattr(getattr(output, "output", None), "kind", None)})
+        return reasons
+
+    def _out_of_time(self, call: int) -> bool:
+        """Wall time is checked before every model call, tool call and step check: running out
+        stops the run (``timed_out``) with the typed ``budget_exhausted`` event once."""
+
+        if self.stop is None and time.monotonic() - self.ctx.started >= self.limits.wall_s:
+            self.stop = ("timed_out", "wall_limit")
+            self.record("budget_exhausted", {"call": call, "limit": "wall_time"})
+        return self.stop is not None
+
     def step(self, *, method: str, strategy: str) -> None:
         """A runtime's validated strategy step (NOOA ``AfterTurn``; ADR 0009 §5.4)."""
 
@@ -623,10 +683,13 @@ class _Execution:
         definition = get_tool(name)
         self.record("tool_call_requested", {"call": call, "tool": name, "argument_digest": argument_digest,
                                             "reason_digest": digest(reason) if reason else None})
+        self._out_of_time(call)
         if self.stop is not None:
             return self._denied(call, name, "run_stopped", "harness")
         effects = self.service.hooks.run("pre_tool", self.ctx, h.ToolCallInput(call, name, definition, arguments))
         found = next((item for item in effects if isinstance(item, h.Deny)), None)
+        if found is not None and found.reason == "tool_call_limit":
+            self.record("budget_exhausted", {"call": call, "limit": "tool_calls"})
         if found is not None:
             if found.hook == h.VALIDATOR_HOOK and definition is not None and definition.effect == "proposal":
                 return self._rejected(call, definition, found.reason, argument_digest, reason)

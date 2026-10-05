@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "Citation": {
+      "additionalProperties": false,
+      "description": "A graph node a claim rests on (ADR 0009 \u00a77.1); validated against the run's project.",
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "experiment",
+            "dataset_version",
+            "problem_spec",
+            "split_plan",
+            "model_version",
+            "candidate",
+            "finding",
+            "decision",
+            "proposal",
+            "prediction"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
+    "ToolCall": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Reason",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 64,
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "title": "ToolCall",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One lead-agent step (ADR 0009 \u00a77.1): tool calls, or a final answer / clarification /\ndone. ``message`` is the Markdown subset (no raw HTML, images or external links; links\nonly ``dclab://<kind>/<id>`` to cited nodes); every claim cites a node of the project.",
+  "properties": {
+    "citations": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Citation"
+      },
+      "maxItems": 32,
+      "title": "Citations",
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "tool_calls",
+        "answer",
+        "clarify",
+        "done"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message"
+    },
+    "tool_calls": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ToolCall"
+      },
+      "maxItems": 6,
+      "title": "Tool Calls",
+      "type": "array"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "AssistantStep",
+  "type": "object"
+}

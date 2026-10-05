@@ -18,7 +18,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import AgentProposal, AgentRun, ClientLabUpload, ExecutionRequest, Experiment, WorkflowRun
@@ -169,7 +169,11 @@ def supersede_plans(db: Session, *, workspace_id: UUID, project_id: UUID | None,
     answer are superseded (``plan_exists``) once a SplitPlan exists for (source dataset,
     target, task); pending plans carrying a primary metric or a portfolio answer (families,
     time budget; ``results_exist``) once the spec's first experiment completes (a plan made
-    later is refused those answers at job claim, ``load_run_plan``). Not committed."""
+    later is refused those answers at job claim, ``load_run_plan``). The Planner's plans are
+    about the dataset (their one subject column; the subject CHECK leaves ``problem_spec_id``
+    NULL), so ``results_exist`` also matches spec-less plans on the run's source dataset
+    (``dataset_id``) whose target is unset or the run's (``target_column``). Answers are
+    tested as JSON text (a JSON ``null`` is not an answer). Not committed."""
 
     if project_id is None:
         return 0
@@ -186,10 +190,16 @@ def supersede_plans(db: Session, *, workspace_id: UUID, project_id: UUID | None,
             query = query.where(AgentProposal.payload["target_column"].astext.is_(None)
                                 | (AgentProposal.payload["target_column"].astext == target_column))
     elif reason == "results_exist":  # objective and portfolio answers (ADR 0008 §2)
-        query = query.where(AgentProposal.problem_spec_id == problem_spec_id,
-                            AgentProposal.payload["primary_metric"].astext.isnot(None)
-                            | AgentProposal.payload["families"].isnot(None)
-                            | AgentProposal.payload["max_training_seconds"].isnot(None))
+        subjects = [AgentProposal.problem_spec_id == problem_spec_id] if problem_spec_id is not None else []
+        if dataset_id is not None:
+            target = AgentProposal.payload["target_column"].astext
+            on_dataset = AgentProposal.problem_spec_id.is_(None) & (AgentProposal.dataset_id == dataset_id)
+            subjects.append(on_dataset & (target.is_(None) | (target == target_column)) if target_column
+                            else on_dataset)
+        if not subjects:
+            return 0
+        query = query.where(or_(*subjects), or_(*(AgentProposal.payload[name].astext.isnot(None)
+                                                  for name in RESULTS_BOUND_FIELDS)))
     else:
         raise ValueError(reason)
     result = db.execute(query.values(status="superseded", supersede_reason=reason)
@@ -197,4 +207,16 @@ def supersede_plans(db: Session, *, workspace_id: UUID, project_id: UUID | None,
     return int(result.rowcount or 0)
 
 
-__all__ = ["RunPlan", "load_run_plan", "plan_for_request", "supersede_plans"]
+def supersede_for_results(db: Session, experiment: Experiment, workflow_run: WorkflowRun | None) -> int:
+    """``run_finalize``: a completed experiment supersedes the pending objective / portfolio
+    plans of its spec and the Planner's plans on its source dataset (same or no target)."""
+
+    spec_id = workflow_run.problem_spec_id if workflow_run is not None else None
+    if spec_id is None and experiment.source_dataset_id is None:
+        return 0
+    return supersede_plans(db, workspace_id=experiment.workspace_id, project_id=experiment.project_id,
+                           reason=RESULTS_EXIST, problem_spec_id=spec_id, dataset_id=experiment.source_dataset_id,
+                           target_column=workflow_run.resolved_target if workflow_run is not None else None)
+
+
+__all__ = ["RunPlan", "load_run_plan", "plan_for_request", "supersede_for_results", "supersede_plans"]

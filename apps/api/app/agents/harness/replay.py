@@ -65,7 +65,11 @@ class _Record:
             if e.type in ("tool_call_finished", "tool_call_denied"):
                 self.outcomes.setdefault(int(e.payload["call"]), {**e.payload, "event": e.type})
         calls = [e.payload if e.type == "llm_call_finished" else {"ok": False, "refusal": e.payload.get("refusal")}
-                 for e in events if e.type in ("llm_call_finished", "step_rejected")]
+                 for e in events if e.type == "llm_call_finished" or (
+                     e.type == "step_rejected" and "check" not in e.payload)]
+        # Step validator verdicts (the lead loop's ``session.check``), replayed in order.
+        self.checks = [list(e.payload.get("reasons") or []) for e in events
+                       if e.type in ("step_validated", "step_rejected") and "check" in e.payload]
         ids = [UUID(c["invocation_id"]) for c in calls if c.get("invocation_id")]
         outputs = dict(db.execute(select(LlmInvocation.id, LlmInvocation.safe_output).where(
             LlmInvocation.workspace_id == run.workspace_id, LlmInvocation.id.in_(ids))).all()) if ids else {}
@@ -79,7 +83,7 @@ class _Record:
 class _ReplaySession:
     def __init__(self, record: _Record, tools: tuple[str, ...]) -> None:
         self.record, self.tools = record, tools
-        self.llm_index, self.calls = 0, 0
+        self.llm_index, self.calls, self.checks = 0, 0, 0
         self.sequence: list[tuple[str, str]] = []
         self.proposals: list[str] = []
         self.mismatches: list[str] = []
@@ -102,6 +106,13 @@ class _ReplaySession:
 
     def step(self, *, method: str, strategy: str) -> None:
         return None  # replay records nothing but replay_checked
+
+    def check(self, output: Any) -> list[str]:
+        self.checks += 1
+        if self.checks > len(self.record.checks):
+            self.mismatches.append("extra_step_check")
+            return ["not_recorded"]
+        return list(self.record.checks[self.checks - 1])
 
     def call_tool(self, name: str, arguments: Mapping[str, Any], *, reason: str = "") -> ToolOutcome:
         self.calls += 1
@@ -137,6 +148,8 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
         raise ReplayRefused("not_found")
     if run.status not in AGENT_RUN_TERMINAL_STATUSES:
         raise ReplayRefused("run_not_finished")
+    if run.runtime == "lead_loop":
+        raise ReplayRefused("not_replayable")  # P6.3-B: the turn's input is not persisted yet (B2)
     service = service or AgentService()
     spec = spec_from_run(run)
     record = _Record(db, run)
@@ -149,7 +162,7 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
     try:
         output = factory(spec).run(SimpleNamespace(envelope=ContextEnvelope(), limits=spec.limits, tools=tools,
                                                    complete=session.complete, call_tool=session.call_tool,
-                                                   step=session.step))
+                                                   step=session.step, check=session.check))
         replayed_digest = output_digest(output)
     except Exception:  # noqa: BLE001 - a crashing replay is a mismatch, never an error to the viewer
         session.mismatches.append("runtime_error")

@@ -91,6 +91,11 @@ class RuntimeSession(Protocol):
         """A validated strategy step (NOOA ``AfterTurn``) -> ``step_validated``. Optional:
         replay's session makes it a no-op; runtimes call it through ``getattr``."""
 
+    def check(self, output: "RuntimeOutput") -> list[str]:
+        """P6.3-B: the run's output validator over one intermediate step (schema, holdout,
+        citations, the runtime's own checks) -> reason codes, recorded as ``step_validated`` /
+        ``step_rejected``; replay returns the recorded verdicts. Optional (``getattr``)."""
+
 
 class Runtime(Protocol):
     name: str  # agent_runs.runtime
@@ -171,13 +176,15 @@ class ContextRequest:
 @dataclass(frozen=True)
 class OutputCheck:
     """What an agent class's database-backed validator gets (P6.4-A): a read-only session
-    and the run's workspace, project and subject."""
+    and the run's workspace, project and subject; P6.3-B adds the run's consumer-mode tool
+    context (the acting human; holdout-free reads, e.g. a cited experiment's CV metrics)."""
 
     db: Any
     workspace_id: UUID
     project_id: UUID | None
     subject_kind: str | None
     subject_id: UUID | None
+    tool_ctx: Any = None  # app.agents.tools.catalog.ToolContext
 
 
 @dataclass(frozen=True)

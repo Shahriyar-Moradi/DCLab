@@ -628,10 +628,11 @@ def test_nooa_and_runtime_imports_follow_the_ci_rules():
         assert not banned, (path, banned)
         if any(_under(n, "nooa") for n in names):
             assert path == "app/agents/runtime/nooa_runtime.py", path
-        inside = path.startswith("app/agents/harness/") or path.startswith("app/agents/runtime/") or \
-            path.startswith("app/agents/classes/")
+        inside = path.startswith(("app/agents/harness/", "app/agents/runtime/", "app/agents/classes/",
+                                  "app/agents/lead/"))  # P6.3-B: the lead loop is a runtime too
         if not inside:
-            assert not [n for n in names if _under(n, "app.agents.runtime") or _under(n, "app.agents.classes")], path
+            assert not [n for n in names if _under(n, "app.agents.runtime") or _under(n, "app.agents.classes")
+                        or _under(n, "app.agents.lead")], path
 
 
 ALLOWED_AGENT_SERVICE = {"app/agents/harness/service.py", "app/agents/harness/replay.py",
