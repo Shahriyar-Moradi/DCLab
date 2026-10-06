@@ -21,7 +21,7 @@ import { Pill } from "@/components/studio/Pill";
 import { safeInternalHref } from "@/components/studio/safe-href";
 import { SectionTabs } from "@/components/studio/SectionTabs";
 import { Term } from "@/components/studio/Term";
-import { plainText } from "@/lib/application/command-search";
+import { plainText, projectHref } from "@/lib/application/command-search";
 import { useModelBuild } from "@/lib/application/hooks";
 import { percent } from "@/lib/application/studio-data";
 import { useDatasetProfile, useDatasetVersion, useExperimentFindings, useProjectGraph, type StudioGraph, type StudioGraphNode } from "@/lib/application/studio-data-hooks";
@@ -563,6 +563,7 @@ export function NodeInspectorBody({ projectId, node, graph }: { projectId: strin
   const dataset = useDatasetVersion(kind === "dataset_version" ? node.id : null);
   const model = useModelVersionRead(kind === "model_version" ? node.id : null);
   const href = inspectorPath(projectId, kind, node.id);
+  const experimentsHref = projectHref(projectId, "experiments");
   let reason: ReactNode = null;
   if (kind === "experiment") reason = experiment.data?.intent ? plainText(experiment.data.intent, 300) : "A run: it trained candidates on a split plan and locked a winner on CV.";
   else if (kind === "split_plan") reason = splitFacts(build.data).reason ?? "Fixes the holdout and folds before any modelling.";
@@ -583,7 +584,12 @@ export function NodeInspectorBody({ projectId, node, graph }: { projectId: strin
       {kind === "feature_recipe" && build.data ? <p>{featureRows(build.data).length} features recorded in the run that used this recipe.</p> : null}
       {kind === "split_plan" && build.data ? <p>Strategy {splitFacts(build.data).strategy ?? "—"}; {splitFacts(build.data).locked ? "locked" : "lock not recorded"}.</p> : null}
       {experiment.isError && expId ? <p className="muted">The run behind this node could not be read.</p> : null}
-      {href ? <p><Link className="btn" href={href}>Open full inspector</Link></p> : null}
+      {href ? (
+        <p className="toolbar">
+          <Link className="btn" href={href}>Open full inspector</Link>
+          {experimentKind && experiment.data?.status === "completed" && experimentsHref ? <Link className="btn" href={`${experimentsHref}?select=${node.id}`}>Compare with another run</Link> : null}
+        </p>
+      ) : null}
     </section>
   );
 }

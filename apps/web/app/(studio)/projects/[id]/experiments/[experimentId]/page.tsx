@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { BranchPanel, CancelPanel, ChampionPanel } from "@/app/components/studio-app/CompareBranch";
+import { compareHref } from "@/lib/application/studio-compare";
 import { ExperimentInspector } from "@/app/components/studio-app/Inspectors";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
@@ -34,13 +36,21 @@ export default function ExperimentPage() {
       </Banner>
     );
   }
+  const parentCompare = experiment.lineage.parent_experiment_id && experiment.status === "completed" ? compareHref(id, [experiment.lineage.parent_experiment_id, experiment.id]) : null;
+  const live = experiment.status === "queued" || experiment.status === "running";
   return (
     <>
       <PageHead
         title={experiment.intent || `Experiment ${experiment.id.slice(0, 8)}`}
         badges={<Pill tone={STATUS_TONE[experiment.status] ?? "gray"}>{experiment.status.replaceAll("_", " ")}</Pill>}
         subtitle="Stages update live while the run is in progress. Reason, candidates, folds, importance, code and evidence are in the inspector below."
-        actions={<Link className="btn" href={`/projects/${id}/experiments`}>All experiments</Link>}
+        actions={(
+          <>
+            {parentCompare ? <Link className="btn" href={parentCompare}>Compare with parent</Link> : null}
+            {experiment.status === "completed" ? <Link className="btn" href={`/projects/${id}/experiments?select=${experiment.id}`}>Compare with…</Link> : null}
+            <Link className="btn" href={`/projects/${id}/experiments`}>All experiments</Link>
+          </>
+        )}
       />
       <PageGuide
         purpose="Understand one run: why it exists, what it tried, how it scored and how to reproduce it."
@@ -66,6 +76,13 @@ export default function ExperimentPage() {
           ]}
         />
       </Card>
+      {live ? <Card title="Stop this run"><CancelPanel experimentId={experiment.id} /></Card> : null}
+      {experiment.status === "completed" ? (
+        <>
+          <Card title="Champion"><ChampionPanel projectId={id} experimentId={experiment.id} /></Card>
+          <BranchPanel projectId={id} experimentId={experiment.id} />
+        </>
+      ) : null}
       <ExperimentInspector projectId={id} experimentId={experiment.id} workspaceId={experiment.workspace_id} lineage={experiment.lineage} graph={graph.data} />
     </>
   );

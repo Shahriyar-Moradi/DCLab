@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { DataTable, type Column } from "@/components/studio/DataTable";
 import { PageGuide } from "@/components/studio/PageGuide";
 import { PageHead } from "@/components/studio/PageHead";
@@ -9,13 +10,27 @@ import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { useProjectExperiments, type StudioExperimentItem } from "@/lib/application";
+import { COMPARE_MAX, COMPARE_MIN, compareHref } from "@/lib/application/studio-compare";
+import { isUuid } from "@/lib/application/command-search";
 
 const short = (id: string | null | undefined) => (id ? id.slice(0, 8) : "—");
 
-export default function ExperimentsPage() {
+function ExperimentsPageInner() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const preselect = useSearchParams().get("select");
+  const [selected, setSelected] = useState<string[]>(() => (isUuid(preselect) ? [preselect.toLowerCase()] : []));
   const experiments = useProjectExperiments(id);
+  const toggle = (experimentId: string) => setSelected((all) => (all.includes(experimentId) ? all.filter((x) => x !== experimentId) : all.length < COMPARE_MAX ? [...all, experimentId] : all));
+  const href = compareHref(id, selected);
   const columns: Column<StudioExperimentItem>[] = [
+    {
+      key: "pick", header: "Compare",
+      render: (e) => (
+        <input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggle(e.id)}
+          aria-label={`Select ${e.intent || `experiment ${short(e.id)}`} to compare`} disabled={e.status !== "completed"} />
+      ),
+    },
     {
       key: "experiment", header: "Experiment", sortValue: (e) => e.intent ?? e.id,
       render: (e) => <Link href={`/projects/${id}/experiments/${e.id}`}>{e.intent || `Experiment ${short(e.id)}`}</Link>,
@@ -33,13 +48,18 @@ export default function ExperimentsPage() {
     <>
       <PageHead
         title="Experiments"
-        actions={<Link className="btn primary" href={`/projects/${id}/experiments/new`}>New run</Link>}
+        actions={(
+          <>
+            <button type="button" className="btn" disabled={selected.length < COMPARE_MIN || !href} onClick={() => href && router.push(href)}>Compare selected ({selected.length})</button>
+            <Link className="btn primary" href={`/projects/${id}/experiments/new`}>New run</Link>
+          </>
+        )}
         subtitle="Every run is an experiment. Branches share the parent's split plan, so they are comparable. Selection follows a fixed rule on cross-validation; the final holdout is scored once per experiment."
       />
       <PageGuide
         purpose="See every run of this project and how runs relate to each other."
         howTo={<>Open an experiment to follow its stages live. A <Term definition="A typed list of changes (for example a different feature recipe) applied on top of a parent experiment.">change set</Term> marks a branch; the <Term definition="The fixed assignment of rows to folds and the final holdout. Experiments with the same split plan can be compared.">split plan</Term> says which experiments are comparable.</>}
-        youGet="Status, lineage and timing of each experiment. Start a new run with the button above. Compare, branch and cancel arrive with P4.4-A."
+        youGet="Status, lineage and timing of each experiment. Tick two or more completed runs and press Compare selected; open a run to branch it, cancel it or make it the champion. Start a new run with New run."
       />
       {experiments.isError ? <QueryNotice error={experiments.error} what="experiment list" /> : null}
       {experiments.isPending ? <p role="status">Loading experiments…</p> : null}
@@ -51,4 +71,8 @@ export default function ExperimentsPage() {
       ) : null}
     </>
   );
+}
+
+export default function ExperimentsPage() {
+  return <Suspense fallback={<p role="status">Loading experiments…</p>}><ExperimentsPageInner /></Suspense>;
 }

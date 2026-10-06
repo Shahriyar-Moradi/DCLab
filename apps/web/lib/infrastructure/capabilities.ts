@@ -29,7 +29,7 @@ export function isStudioPath(pathname: string): boolean {
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const PROJECT_SECTIONS = "lab|pipeline|graph|data|experiments|improve|models|monitoring|decisions";
 const STUDIO_ROUTE = new RegExp(
-  `^/(?:home|inbox|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new)|/(?:data|splits|features|models)/${UUID})?)?)$`,
+  `^/(?:home|inbox|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models)/${UUID})?)?)$`,
 );
 
 /**

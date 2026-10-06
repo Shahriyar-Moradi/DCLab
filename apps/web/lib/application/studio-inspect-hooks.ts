@@ -18,6 +18,8 @@ export const ExperimentDetailSchema = z.object({
   status: z.string(),
   intent: nullableString,
   created_at: z.string(),
+  started_at: nullableString,
+  ended_at: nullableString,
   target_column: nullableString,
   task_type: nullableString,
   change_set: anyRecord.nullable().optional(),

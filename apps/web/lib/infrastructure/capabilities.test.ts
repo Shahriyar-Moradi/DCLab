@@ -59,7 +59,7 @@ test("Studio routes need the development workspace role", () => {
 
 test("Studio paths: known sections and UUID ids only; a project opens on Experiments", () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  for (const ok of ["/home", "/inbox", "/projects", "/projects/new", `/projects/${id}/experiments/new`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
+  for (const ok of ["/home", "/inbox", "/projects", "/projects/new", `/projects/${id}/experiments/new`, `/projects/${id}/experiments/compare`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
     ...["data", "splits", "features", "models"].map((section) => `/projects/${id}/${section}/${id}`)]) {
     assert.equal(studioRoute(ok), "ok", ok);
   }
