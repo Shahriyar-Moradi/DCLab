@@ -1,4 +1,4 @@
-.PHONY: db migrate train seed test run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock lock-mcp lock-agents benchmark benchmark-quick test-db-clean
+.PHONY: db migrate train seed test test-ai run worker web up down sim users truth-check truth-drift truth-generate truth-idempotence lock lock-mcp lock-agents benchmark benchmark-quick test-db-clean
 
 # Local toolchain (no Docker). Uses the project venv when present.
 PYTHON ?= $(wildcard .venv/bin/python)
@@ -60,6 +60,11 @@ seed:
 PYTEST_WORKERS ?= auto
 test:
 	$(PYTEST) -n $(PYTEST_WORKERS) --cov=app --cov-report=term-missing
+
+# P6.10-B: the offline AI test harness (fake providers, recorded fixtures, goldens, property
+# and chaos tests; no network). Regenerate fixtures + goldens: DCLAB_RECORD_AI=1 DCLAB_UPDATE_GOLDEN=1 make test-ai
+test-ai:
+	$(PYTEST) apps/api/tests/ai_harness -m ai_harness -n $(PYTEST_WORKERS) -q -p no:cacheprovider
 
 truth-check:
 	$(PYTHON) -m scripts.check_truth_drift

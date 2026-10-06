@@ -31,7 +31,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -637,8 +637,9 @@ class GatewayService:
         # 8 (prelude). The pending row is durable before anything leaves the process.
         pending = ledger.insert_pending(db, call.entry(llm_used=True, provider=call.adapter.name),
                                         worst_case_micros=worst)
-        return _Prepared(pending_id=pending.id, provider_call=steps.provider_call(call, instructions, input_json),
-                         worst_micros=worst)
+        provider_call = replace(steps.provider_call(call, instructions, input_json), input_digest=call.digest,
+                                invocation_id=pending.id)
+        return _Prepared(pending_id=pending.id, provider_call=provider_call, worst_micros=worst)
 
     @staticmethod
     def _parse_cached(steps: Any, hit: Any) -> BaseModel | None:

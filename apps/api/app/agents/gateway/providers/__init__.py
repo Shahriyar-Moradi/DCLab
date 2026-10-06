@@ -10,6 +10,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -41,6 +42,10 @@ class ProviderCall:
     timeout_s: float
     purpose: str
     agent_key: str | None
+    # The call's ledger row and cache key (``llm_invocations.id`` / ``input_evidence_digest``);
+    # adapters never send them. The offline AI harness (P6.10-B) joins calls to rows with them.
+    input_digest: str | None = None
+    invocation_id: UUID | None = None
 
 
 @dataclass(frozen=True)

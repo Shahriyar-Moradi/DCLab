@@ -112,7 +112,7 @@ class ImpactInput(BaseModel):
 def map_service_errors() -> Iterator[None]:
     """Domain errors as typed tool errors (generic messages; nothing internal leaks)."""
 
-    from app.domain.errors import IdentityError, InvalidCursorError
+    from app.domain.errors import ExperimentComparisonError, IdentityError, InvalidCursorError
 
     try:
         yield
@@ -126,6 +126,8 @@ def map_service_errors() -> Iterator[None]:
         raise ToolError("not_found", "not found", status=404) from None
     except InvalidCursorError:
         raise ToolError("invalid_cursor", "cursor is not valid for this request", status=400) from None
+    except ExperimentComparisonError as exc:  # as /v1 compare: 409 with the comparison code
+        raise ToolError(exc.code, str(exc).split(": ", 1)[-1][:300], status=409) from None
     except Exception as exc:  # typed domain refusals carry a stable code and status
         status = getattr(exc, "status_code", None)
         if isinstance(status, int) and isinstance(getattr(exc, "code", None), str):

@@ -1,0 +1,120 @@
+{
+  "agent": "jev",
+  "case": "wrong_at_l0",
+  "exchanges": [
+    {
+      "input_digest": "74f1dd88ade121665bbcb0655bf53a0a7b97406054170bcb3f80b165e423811e",
+      "instructions_digest": "6caad87182c9abd8bcbeb0bb4036adfa7320a216648eb730488aaf7079c6c740",
+      "model": "jev-1.13.0",
+      "output": {
+        "answers": [
+          {
+            "answer": {
+              "value": 0.99
+            },
+            "confidence": null,
+            "question_key": "feature"
+          }
+        ]
+      },
+      "output_schema_digest": "967ecd25d1cd0eded1eda1f8f4d830e0704b741df8ec66dc45e6b133fec13227",
+      "payload_digest": "5eb6b30b9a2cf8b35fd817eaa50a38aa6171a97a1eafbbd2204688bb1a674887",
+      "payload_keys": [
+        "$.purpose",
+        "$.questions",
+        "$.questions[].choices",
+        "$.questions[].primitive",
+        "$.questions[].question_key",
+        "$.questions[].question_key.untrusted_text",
+        "$.questions[].subject",
+        "$.state",
+        "$.state.c0",
+        "$.state.c0.column",
+        "$.state.c0.column.untrusted_text",
+        "$.state.c0.dtype",
+        "$.state.c0.name_tokens",
+        "$.state.c0.name_tokens[].untrusted_text",
+        "$.state.c0.nulls",
+        "$.state.c0.uniqueness",
+        "$.user_text"
+      ],
+      "purpose": "column.is_identifier"
+    },
+    {
+      "input_digest": "9d406bd27ee530814ce2128ff3c36bc33f4702b989663a2d92868d5c1f07ac1f",
+      "instructions_digest": "063d550d43de4db76cda7305f34e5df03d9e060255f25341ac3af13e622c2071",
+      "model": "jev-1.13.0",
+      "output": {
+        "answers": [
+          {
+            "answer": {
+              "value": "categorical_code"
+            },
+            "confidence": 0.9,
+            "question_key": "feature"
+          }
+        ]
+      },
+      "output_schema_digest": "967ecd25d1cd0eded1eda1f8f4d830e0704b741df8ec66dc45e6b133fec13227",
+      "payload_digest": "62cc4886a1ab6bce0075a8f626bdc4610390bf5d95f7939e8253dbbf704bfeea",
+      "payload_keys": [
+        "$.purpose",
+        "$.questions",
+        "$.questions[].choices",
+        "$.questions[].primitive",
+        "$.questions[].question_key",
+        "$.questions[].question_key.untrusted_text",
+        "$.questions[].subject",
+        "$.state",
+        "$.state.c0",
+        "$.state.c0.cardinality",
+        "$.state.c0.column",
+        "$.state.c0.column.untrusted_text",
+        "$.state.c0.dtype",
+        "$.state.c0.nulls",
+        "$.state.c0.value_pattern",
+        "$.user_text"
+      ],
+      "purpose": "column.semantic_role"
+    },
+    {
+      "input_digest": "86ac348f652cadd0297dd09a90fb21f0ad6b8700801e7a09f299e645f368d3f6",
+      "instructions_digest": "4b3af93cd08c93765a1e9c1476d36c739f7827cd96a1da8b97dae30488467e8d",
+      "model": "jev-1.13.0",
+      "output": {
+        "answers": [
+          {
+            "answer": {
+              "value": 0.97
+            },
+            "confidence": null,
+            "question_key": "feature"
+          }
+        ]
+      },
+      "output_schema_digest": "967ecd25d1cd0eded1eda1f8f4d830e0704b741df8ec66dc45e6b133fec13227",
+      "payload_digest": "fb4922d18029b362f8a9b722f0ce571b5cae7a21dda21c6b8db1c770d006fa5d",
+      "payload_keys": [
+        "$.purpose",
+        "$.questions",
+        "$.questions[].choices",
+        "$.questions[].primitive",
+        "$.questions[].question_key",
+        "$.questions[].question_key.untrusted_text",
+        "$.questions[].subject",
+        "$.state",
+        "$.state.c0",
+        "$.state.c0.availability",
+        "$.state.c0.column",
+        "$.state.c0.column.untrusted_text",
+        "$.state.c0.dtype",
+        "$.state.target",
+        "$.state.target.untrusted_text",
+        "$.state.task",
+        "$.user_text"
+      ],
+      "purpose": "feature.leakage_suspect"
+    }
+  ],
+  "schema_version": 1
+}
