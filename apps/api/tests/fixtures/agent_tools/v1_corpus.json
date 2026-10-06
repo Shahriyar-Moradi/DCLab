@@ -2749,6 +2749,99 @@
    "stale_counts_by_kind": {},
    "truncated": false,
    "truncated_kinds": []
+  },
+  "GET /v1/proposals": {
+   "items": [
+    {
+     "answer_ceiling": 1,
+     "applied_decision_record_id": null,
+     "citations": [],
+     "created_at": "2026-10-05T05:10:00+04:00",
+     "decided_at": null,
+     "decided_by_user_id": null,
+     "decision_point_key": "spec.objective",
+     "decision_record_id": null,
+     "estimated_cost_micros": null,
+     "estimated_duration_s": null,
+     "expires_at": null,
+     "id": "6d1a0b52-3f0e-4c58-9a6e-1f6f6c0a1001",
+     "level_at_proposal": 1,
+     "open": true,
+     "payload": {
+      "primary_metric": "average_precision"
+     },
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "proposal_type": "ExperimentPlanProposal",
+     "proposed_by": "agent",
+     "proposed_rationale": "Positive class is rare; average precision tracks it better than accuracy.",
+     "proposed_rationale_label": "unverified agent rationale",
+     "rule_answer": null,
+     "run_id": "7a2b1c63-4a1f-4d69-8b7f-2a7a7d1b2002",
+     "schema_version": 1,
+     "semantic_answer_id": null,
+     "source": "agent_run",
+     "status": "proposed",
+     "subject": {
+      "id": null,
+      "kind": "project"
+     },
+     "supersede_reason": null,
+     "tool_arguments": null,
+     "tool_name": null,
+     "validator_reasons": [],
+     "validator_verdict": "accepted"
+    },
+    {
+     "answer_ceiling": 1,
+     "applied_decision_record_id": null,
+     "citations": [],
+     "created_at": "2026-10-05T05:11:00+04:00",
+     "decided_at": "2026-10-05T05:12:00+04:00",
+     "decided_by_user_id": "0b1c2d3e-4f50-4a61-8b72-93a4b5c6d7e8",
+     "decision_point_key": "lead.branch_experiment",
+     "decision_record_id": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8",
+     "estimated_cost_micros": null,
+     "estimated_duration_s": null,
+     "expires_at": null,
+     "id": "6d1a0b52-3f0e-4c58-9a6e-1f6f6c0a1002",
+     "level_at_proposal": 1,
+     "open": false,
+     "payload": {
+      "tool": "branch_experiment"
+     },
+     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+     "proposal_type": "ToolCallProposal",
+     "proposed_by": "assistant",
+     "proposed_rationale": null,
+     "proposed_rationale_label": null,
+     "rule_answer": null,
+     "run_id": "7a2b1c63-4a1f-4d69-8b7f-2a7a7d1b2003",
+     "schema_version": 1,
+     "semantic_answer_id": null,
+     "source": "agent_run",
+     "status": "applied",
+     "subject": {
+      "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "kind": "experiment"
+     },
+     "supersede_reason": null,
+     "tool_arguments": {
+      "changes": [
+       {
+        "family": "xgboost",
+        "kind": "family_exclude"
+       }
+      ],
+      "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+      "intent": "drop the boosted family"
+     },
+     "tool_name": "branch_experiment",
+     "validator_reasons": [],
+     "validator_verdict": "accepted"
+    }
+   ],
+   "limit": 20,
+   "next_cursor": null
   }
  },
  "scenarios": [
@@ -2853,6 +2946,12 @@
     "proposal_id": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8"
    },
    "tool": "accept_proposal"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "list_proposals"
   }
  ]
 }

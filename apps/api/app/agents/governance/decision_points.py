@@ -80,6 +80,7 @@ _LEAD_TOOLS = (
     "create_problem_spec",
     "propose_problem_spec",
     "record_decision",
+    "request_agent_review",
     "move_ref",
     "run_experiment",
     "branch_experiment",

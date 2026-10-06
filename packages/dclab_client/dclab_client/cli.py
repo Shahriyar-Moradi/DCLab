@@ -170,12 +170,15 @@ def _plain(value: Any) -> Any:
     return value.model_dump(mode="json") if hasattr(value, "model_dump") else value
 
 
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]")
+
+
 def _cell(value: Any) -> str:
     if value is None:
         return "-"
     if isinstance(value, (dict, list)):
         return json.dumps(value, separators=(",", ":"), default=str)
-    return str(value)
+    return _CONTROL.sub(" ", str(value))  # agent / dataset text never reaches a terminal as escapes
 
 
 class _Out:
@@ -361,6 +364,26 @@ def _dec_get(c: Ctx, a: argparse.Namespace) -> None:
     c[1].emit(c[0].decisions.get(a.decision_id))
 
 
+def _prop_list(c: Ctx, a: argparse.Namespace) -> None:
+    page = c[0].proposals.list(project_id=a.project, level=a.level, decision_point_key=a.point, status=a.status,
+                               proposal_type=a.type, cursor=a.cursor, limit=a.limit)
+    c[1].emit(page, table=("id", "proposal_type", "decision_point_key", "status", "proposed_by"), rows=page.items)
+
+
+def _prop_get(c: Ctx, a: argparse.Namespace) -> None:
+    c[1].emit(c[0].proposals.get(a.proposal_id))
+
+
+def _prop_decide(action: str) -> Callable[[Ctx, argparse.Namespace], None]:
+    def run(c: Ctx, a: argparse.Namespace) -> None:
+        extra: dict[str, Any] = {}
+        if action == "accept" and a.ref_versions:
+            extra["ref_versions"] = _json_arg(a.ref_versions, "--ref-versions")
+        c[1].emit(getattr(c[0].proposals, action)(a.proposal_id, rationale=a.rationale,
+                                                  idempotency_key=a.idempotency_key, **extra))
+    return run
+
+
 def _whoami(c: Ctx, a: argparse.Namespace) -> None:
     c[1].emit(c[0].identity.me())
 
@@ -481,6 +504,25 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--subject-id")
     p.add_argument("--rationale", required=True)
     leaf(decs, "get", _dec_get).add_argument("decision_id")
+
+    props = top.add_parser("proposals", help="AI proposals (deciding needs a person's credential, not a service token)"
+                           ).add_subparsers(dest="cmd", required=True, parser_class=_Parser)
+    p = leaf(props, "list", _prop_list)
+    p.add_argument("--project")
+    p.add_argument("--level", type=int)
+    p.add_argument("--point", help="decision point key")
+    p.add_argument("--status")
+    p.add_argument("--type", help="proposal type")
+    p.add_argument("--cursor")
+    p.add_argument("--limit", type=int)
+    leaf(props, "get", _prop_get).add_argument("proposal_id")
+    for action, text in (("accept", "run its command as you and record the decision"), ("reject", "reject it"),
+                         ("revert", "restore the rule value of an applied item")):
+        p = leaf(props, action, _prop_decide(action), key=True, help=text)
+        p.add_argument("proposal_id")
+        p.add_argument("--rationale")
+        if action == "accept":
+            p.add_argument("--ref-versions", help='JSON, e.g. {"problem_spec": null}: versions you saw of moved refs')
     return root
 
 

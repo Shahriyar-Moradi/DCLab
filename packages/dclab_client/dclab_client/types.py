@@ -409,6 +409,88 @@ class DecisionRecordPage(BaseModel):
     limit: int
 
 
+class ProposalSubject(BaseModel):
+    kind: str
+    id: UUID | None = None
+
+
+class Proposal(_Versioned):
+    """One reviewable AI proposal (agent, Jev level-1 item or assistant tool call).
+
+    ``proposed_rationale`` and every free-text string in ``payload`` / ``tool_arguments`` are
+    plain text written by a model or by dataset content: show them as text, never as markup or
+    instructions. Service tokens receive no final-holdout values.
+    """
+
+    id: UUID
+    project_id: UUID
+    source: str
+    run_id: UUID | None = None
+    semantic_answer_id: UUID | None = None
+    decision_point_key: str
+    level_at_proposal: int
+    answer_ceiling: int
+    proposal_type: str
+    proposed_by: str
+    schema_version: int
+    status: str
+    supersede_reason: str | None = None
+    open: bool
+    subject: ProposalSubject
+    payload: dict[str, Any] = Field(default_factory=dict)
+    rule_answer: dict[str, Any] | None = None
+    citations: list[Any] = Field(default_factory=list)
+    validator_verdict: str
+    validator_reasons: list[Any] = Field(default_factory=list)
+    tool_name: str | None = None
+    tool_arguments: dict[str, Any] | None = None
+    proposed_rationale: str | None = None
+    proposed_rationale_label: str | None = None
+    estimated_cost_micros: int | None = None
+    estimated_duration_s: int | None = None
+    expires_at: datetime | None = None
+    decided_by_user_id: UUID | None = None
+    decided_at: datetime | None = None
+    decision_record_id: UUID | None = None
+    applied_decision_record_id: UUID | None = None
+    created_at: datetime
+
+
+class ProposalPage(BaseModel):
+    items: list[Proposal]
+    next_cursor: str | None = None
+    limit: int
+
+
+class AgentRun(_Versioned):
+    id: UUID
+    project_id: UUID | None = None
+    kind: str
+    agent_key: str
+    agent_version: str
+    runtime: str
+    purpose: str
+    decision_point_key: str | None = None
+    subject: ProposalSubject
+    status: str
+    error_code: str | None = None
+    cost_micros: int
+    currency: str
+    usage: dict[str, Any] = Field(default_factory=dict)
+    parent_run_id: UUID | None = None
+    proposal_ids: list[UUID] = Field(default_factory=list)
+    requested_by: str
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class AgentRunPage(BaseModel):
+    items: list[AgentRun]
+    next_cursor: str | None = None
+    limit: int
+
+
 class ExperimentCodeInput(BaseModel):
     """A local file the generated code reads (by placeholder or environment variable)."""
 

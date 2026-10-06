@@ -42,6 +42,7 @@ from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.model_card import ModelCardRead
 from app.domain.project_graph import NodeImpactRead, ProjectGraphRead
+from app.domain.proposal_reviews import ProposalPage
 from app.domain.reproducibility import ArtifactRead
 from app.domain.technical_explorer import DatasetListItem
 from app.domain.workspace_identity import ProjectRead
@@ -118,6 +119,9 @@ class CorpusReads:
 
     def decision(self, did):
         return self._get(f"/v1/decisions/{did}", DecisionRecordRead)
+
+    def proposals(self, pid, **filters):
+        return self._get("/v1/proposals", ProposalPage)
 
     def model_version(self, mid):
         return self._get(f"/v1/model-versions/{mid}", ModelVersionResourceRead)
@@ -206,6 +210,11 @@ def _adversarial(corpus: dict) -> dict:
         record["evidence_refs"] = [*record.get("evidence_refs", []),
                                    {"kind": "model_version", "id": ids["model_version"],
                                     "key": f"model_version:{ids['model_version']}", "scope": "final_holdout"}]
+    for item in r["GET /v1/proposals"]["items"]:  # an agent's payload / arguments / text are data
+        item["payload"] = {**item["payload"], **leak}
+        item["tool_arguments"] = None if item["tool_arguments"] is None else {**item["tool_arguments"], **leak}
+        item["proposed_rationale"] = None if item["proposed_rationale"] is None else (
+            f"{INJECTION} {SECRET} " + item["proposed_rationale"])
     return r
 
 

@@ -162,6 +162,14 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/assistant/threads",
         "GET /v1/assistant/threads/{thread_id}",
         "POST /v1/assistant/threads/{thread_id}/messages",
+        "GET /v1/agent-runs",
+        "GET /v1/agent-runs/{run_id}",
+        "GET /v1/proposals",
+        "GET /v1/proposals/{proposal_id}",
+        "POST /v1/proposals/{proposal_id}/accept",
+        "POST /v1/proposals/{proposal_id}/reject",
+        "POST /v1/proposals/{proposal_id}/revert",
+        "POST /v1/agent-reviews",
     }
 
 

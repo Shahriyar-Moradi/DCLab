@@ -13,6 +13,8 @@ from dclab_client._http import DEFAULT_TIMEOUT_SECONDS, V1Transport
 from dclab_client._version import __version__
 from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
+    AgentRun,
+    AgentRunPage,
     Artifact,
     BatchPrediction,
     Dataset,
@@ -36,6 +38,8 @@ from dclab_client.types import (
     ProjectGraph,
     ProjectRef,
     ProjectRefList,
+    Proposal,
+    ProposalPage,
     RefMoveResult,
     Visualization,
     Workspace,
@@ -443,6 +447,177 @@ class DecisionsClient:
         if evidence_refs is not None:
             body["evidence_refs"] = _evidence(evidence_refs)
         return self._transition(f"/v1/decisions/{_id(decision_id)}/supersede", body, idempotency_key, request_id)
+
+
+class ProposalsClient:
+    """The review flow of AI proposals. Deciding is a person's act: ``accept`` / ``reject`` /
+    ``revert`` need a signed-in user's credential; a service token is refused (403)."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(
+        self,
+        *,
+        project_id: UUID | str | None = None,
+        run_id: UUID | str | None = None,
+        level: int | None = None,
+        decision_point_key: str | None = None,
+        status: str | None = None,
+        proposal_type: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ProposalPage:
+        payload = self._transport.request(
+            "GET",
+            "/v1/proposals",
+            params={
+                "project_id": _id(project_id) if project_id is not None else None,
+                "run_id": _id(run_id) if run_id is not None else None,
+                "level": level,
+                "decision_point_key": decision_point_key,
+                "status": status,
+                "proposal_type": proposal_type,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return ProposalPage.model_validate(payload)
+
+    def get(self, proposal_id: UUID | str, *, request_id: str | None = None) -> Proposal:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/proposals/{_id(proposal_id)}", request_id=request_id
+        )
+        return _versioned(Proposal, payload, headers)
+
+    def _decide(
+        self,
+        path: str,
+        proposal_id: UUID | str,
+        rationale: str | None,
+        ref_versions: dict[str, int | None] | None,
+        idempotency_key: str | None,
+        request_id: str | None,
+    ) -> Proposal:
+        body: dict[str, Any] = {}
+        if rationale is not None:
+            body["rationale"] = rationale
+        if ref_versions is not None:
+            body["ref_versions"] = dict(ref_versions)
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            path,
+            json=body,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(Proposal, payload, headers)
+
+    def accept(
+        self,
+        proposal_id: UUID | str,
+        *,
+        rationale: str | None = None,
+        ref_versions: dict[str, int | None] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> Proposal:
+        """Run the proposal's normal command as you and record the decision (``ref_versions``: the
+        version you saw of each ref a ref move changes; ``None`` = the kind does not exist yet)."""
+
+        return self._decide(f"/v1/proposals/{_id(proposal_id)}/accept", proposal_id, rationale, ref_versions, idempotency_key, request_id)
+
+    def reject(
+        self,
+        proposal_id: UUID | str,
+        *,
+        rationale: str | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> Proposal:
+        return self._decide(f"/v1/proposals/{_id(proposal_id)}/reject", proposal_id, rationale, None, idempotency_key, request_id)
+
+    def revert(
+        self,
+        proposal_id: UUID | str,
+        *,
+        rationale: str | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> Proposal:
+        """Restore the rule value of an applied L2 plan or Jev item through a branch."""
+
+        return self._decide(f"/v1/proposals/{_id(proposal_id)}/revert", proposal_id, rationale, None, idempotency_key, request_id)
+
+
+class AgentRunsClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(
+        self,
+        *,
+        project_id: UUID | str | None = None,
+        agent_key: str | None = None,
+        status: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> AgentRunPage:
+        payload = self._transport.request(
+            "GET",
+            "/v1/agent-runs",
+            params={
+                "project_id": _id(project_id) if project_id is not None else None,
+                "agent_key": agent_key,
+                "status": status,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return AgentRunPage.model_validate(payload)
+
+    def get(self, run_id: UUID | str, *, request_id: str | None = None) -> AgentRun:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/agent-runs/{_id(run_id)}", request_id=request_id
+        )
+        return _versioned(AgentRun, payload, headers)
+
+
+REVIEW_AGENTS = frozenset({"experiment_critic", "dataset_investigator", "experiment_planner"})
+
+
+class AgentReviewsClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def request(
+        self,
+        *,
+        project_id: UUID | str,
+        agent: str,
+        experiment_id: UUID | str | None = None,
+        dataset_id: UUID | str | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> AgentRun:
+        """Queue a Critic (``experiment_id``) / Investigator / Planner (``dataset_id``) run; it only proposes."""
+
+        if agent not in REVIEW_AGENTS:
+            raise DCLabClientError("agent must be one of: " + ", ".join(sorted(REVIEW_AGENTS)))
+        body = {
+            "project_id": _id(project_id),
+            "agent": agent,
+            "experiment_id": _id(experiment_id) if experiment_id is not None else None,
+            "dataset_id": _id(dataset_id) if dataset_id is not None else None,
+        }
+        payload, headers = self._transport.request_with_headers(
+            "POST", "/v1/agent-reviews", json=body, request_id=request_id, idempotency_key=idempotency_key
+        )
+        return _versioned(AgentRun, payload, headers)
 
 
 class ModelVersionsClient:
@@ -962,6 +1137,9 @@ class DCLabClient:
         self.model_builds = ModelBuildsClient(self._transport)
         self.experiments = ExperimentsClient(self._transport)
         self.decisions = DecisionsClient(self._transport)
+        self.proposals = ProposalsClient(self._transport)
+        self.agent_runs = AgentRunsClient(self._transport)
+        self.agent_reviews = AgentReviewsClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)

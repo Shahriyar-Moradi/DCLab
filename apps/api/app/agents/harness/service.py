@@ -250,20 +250,24 @@ class AgentService:
     def runtime_factory(self, name: str) -> RuntimeFactory | None:
         return (self._runtimes if self._runtimes is not None else RUNTIMES).get(name)
 
-    def submit(self, db: Session, spec: AgentRunSpec) -> UUID:
-        """Create a queued run and its ``agents.run`` job (payload: the run id only)."""
+    def submit(self, db: Session, spec: AgentRunSpec, *, bind: Callable[[UUID], None] | None = None) -> UUID:
+        """Create a queued run, its ``agents.run`` job (payload: the run id only) and the caller's
+        idempotency binding in ONE transaction: no queued run without a job, none without its key."""
 
         from app.services.ml_job_service import create_ml_job
 
         if spec.runtime == "lead_loop":
             raise AgentRunRefused("runtime_not_queueable")  # the turn input is never persisted
         principal = authorize(db, spec, settings=self._settings())
-        run = self._create(db, spec, principal)
-        create_ml_job(db, workspace_id=spec.workspace_id, project_id=spec.project_id, job_type=JOB_TYPE_AGENT_RUN,
-                      handler_key=HANDLER_AGENTS_RUN, handler_version=HANDLER_VERSION_AGENTS_RUN,
-                      target_id=run.id, payload={"agent_run_id": str(run.id)}, max_attempts=1)
-        db.commit()
-        return run.id
+
+        def with_job(run_id: UUID) -> None:
+            create_ml_job(db, workspace_id=spec.workspace_id, project_id=spec.project_id, job_type=JOB_TYPE_AGENT_RUN,
+                          handler_key=HANDLER_AGENTS_RUN, handler_version=HANDLER_VERSION_AGENTS_RUN,
+                          target_id=run_id, payload={"agent_run_id": str(run_id)}, max_attempts=1)
+            if bind is not None:
+                bind(run_id)
+
+        return self._create(db, spec, principal, bind=with_job).id
 
     def open_thread(self, db: Session, spec: AgentRunSpec, *, title: str | None = None,
                     bind: Callable[[UUID], None] | None = None) -> AgentRun:
@@ -1016,6 +1020,14 @@ def lead_spec(db: Session, *, workspace_id: UUID, project_id: UUID, user_id: UUI
         purpose=lead_runtime.PURPOSE, subject_kind="project" if turn is not None else "thread",
         prompt_release_id=release, user_id=user_id, outcome_scope="cv", tool_surface="assistant",
         may_propose=may_propose, parent_run_id=parent_run_id, limits=limits, turn=turn)
+
+
+def submit_review(db: Session, spec: AgentRunSpec, *, settings: Any = None,
+                  bind: Callable[[UUID], None] | None = None) -> UUID:
+    """Queue a specialist run a person asked for (``POST /v1/agent-reviews``); raises ``AgentRunRefused``."""
+
+    settings = settings or get_settings()
+    return AgentService(settings=lambda: settings).submit(db, spec, bind=bind)
 
 
 def enqueue_experiment_review(db: Session, *, experiment_id: UUID, user_id: UUID | None,

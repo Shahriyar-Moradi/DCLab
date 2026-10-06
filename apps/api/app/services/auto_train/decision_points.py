@@ -688,6 +688,10 @@ def resolve_column_points(
                     a = replace(a, used=plan_roles[name], source="upstream", refusal="set_by_" + MISSING)
             elif a in resolution.applied() and (bad := validator.check(name, a.used)):
                 a = replace(a, used=a.rule, source="rule", refusal="recheck_failed", validator_reasons=tuple(bad))
+            elif (a in resolution.reviews() and a.ai == "categorical_code"
+                  and "above_one_hot_cardinality_cap" in validator.check(name, a.ai)):
+                # an L1 item a person could accept would fail the run: the proposal carries the real verdict
+                a = replace(a, validator_reasons=("above_one_hot_cardinality_cap",))
             out.append(a)
         return replace(resolution, answers=tuple(out))
 

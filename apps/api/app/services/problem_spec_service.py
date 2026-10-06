@@ -140,8 +140,13 @@ def _plan_answers(db: Session, project: Project, plan: UUID, *, task_type: str, 
     from app.engine.modeling.objective import parse_objective
     from app.services.run_plan_service import plan_spec_answers
 
+    from app.services.run_plan_service import plan_spec_refusals
+
     answers = plan_spec_answers(db, workspace_id=project.workspace_id, project_id=project.id, plan_id=plan)
     given = {"target_column": target_column, "primary_metric": primary_metric}
+    refused = plan_spec_refusals(db, workspace_id=project.workspace_id, project_id=project.id, plan_id=plan)
+    if any(given.get(name) is not None for name in refused):  # the request may not carry what the plan may not
+        raise PlanRefusedError(next(iter(refused.values())))
     if any(given[name] is not None and given[name] != value for name, value in answers.items()):
         raise PlanRefusedError("plan_conflicts_with_request")
     merged = {**given, **answers}

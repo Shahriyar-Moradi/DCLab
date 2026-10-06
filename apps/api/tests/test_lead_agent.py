@@ -134,7 +134,7 @@ def test_scripted_session_proposes_spec_and_run_compares_within_bounds(lead):
     # One registry, two transports: the lead's tools are the catalog's assistant surface = MCP minus the hand-off.
     surface = events[0].payload["tools"]
     assert set(surface) == {t.name for t in visible("assistant")} == {
-        t["name"] for t in export_payload()["tools"]} - {"accept_proposal"}
+        t["name"] for t in export_payload()["tools"]} - {"accept_proposal", "list_proposals", "request_agent_review"}
     assert not [n for n in surface if any(op in n for op in FORBIDDEN_OPERATIONS)
                 or re.search(r"holdout|final_test|winner|select|promote|metric|split|rows|sql|code_exec", n)]
     assert all(name in prompt_text("lead", 1) for name in surface)  # the released prompt lists every tool

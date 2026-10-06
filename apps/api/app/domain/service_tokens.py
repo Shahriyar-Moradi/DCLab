@@ -80,6 +80,11 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/model-versions/{model_version_id}/card",
             "/v1/predictions/{prediction_id}",
             "/v1/predictions/{prediction_id}/download",
+            # P6.6-A: proposals and agent runs, read with holdout-free output.
+            "/v1/agent-runs",
+            "/v1/agent-runs/{run_id}",
+            "/v1/proposals",
+            "/v1/proposals/{proposal_id}",
         )
     },
     ("POST", "/v1/projects"): SCOPE_PROJECTS_WRITE,
@@ -92,6 +97,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/v1/experiments/{experiment_id}/cancel"): SCOPE_EXPERIMENTS_WRITE,
     # Scoring runs a worker job like a run; it never changes the model or a ref.
     ("POST", "/v1/model-versions/{model_version_id}/predictions"): SCOPE_EXPERIMENTS_WRITE,
+    # P6.6-A: queues a specialist run that only proposes (the harness authorizes the token again).
+    ("POST", "/v1/agent-reviews"): SCOPE_EXPERIMENTS_WRITE,
     # The token acts as an agent: the decision service lets agents only propose.
     ("POST", "/v1/projects/{project_id}/decisions"): SCOPE_DECISIONS_PROPOSE,
 }
@@ -107,6 +114,10 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/projects/{project_id}/refs/{ref_kind}"),
         # P6.9-A: a split confirmation is a person's answer (ADR 0008 §2).
         ("POST", "/v1/execution-requests/{request_id}/split-confirmation"),
+        # P6.6-A: deciding a proposal is a person's act (403 human_session_required for any bearer).
+        ("POST", "/v1/proposals/{proposal_id}/accept"),
+        ("POST", "/v1/proposals/{proposal_id}/reject"),
+        ("POST", "/v1/proposals/{proposal_id}/revert"),
         # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required).
         ("GET", "/v1/assistant/threads"),
         ("POST", "/v1/assistant/threads"),

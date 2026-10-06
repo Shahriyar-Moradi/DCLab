@@ -48,7 +48,8 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Inbox | `GET /v1/inbox`, counts | `list_proposals` (P6.6-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |
 | Pipeline evidence | `GET /v1/model-builds/{id}`, `/events`, `/artifacts` | — | `/projects/[id]/pipeline/[experimentId]` | planned P4.17-UI |
 | In-app assistant | `GET/POST /v1/assistant/threads`, `GET /v1/assistant/threads/{id}`, `POST …/messages` (SSE) | — (external agents use MCP itself) | Lab page + assistant panel on every project page | backend P6.3-B; screen planned A3-UI |
-| Assistant and agent proposals | `GET /v1/proposals`, `POST /v1/proposals/{id}/accept|reject|revert` (one proposal model, P6.6-A) | `list_proposals` | confirm cards in the Lab/panel, Inbox | planned A4-A, P4.16-UI |
+| Assistant and agent proposals | `GET /v1/proposals[/{id}]`, `POST /v1/proposals/{id}/accept|reject|revert` (human only; one proposal model) | `list_proposals` | confirm cards in the Lab/panel, Inbox | backend P6.6-A; screens planned A4-A, P4.16-UI |
+| Agent runs and review requests | `GET /v1/agent-runs[/{id}]`, `POST /v1/agent-reviews` | `request_agent_review` | Inbox "Ask for a review", agent run detail | backend P6.6-A; screens planned P4.16-UI |
 
 ## Later phases (screen ships in the same phase as the backend)
 

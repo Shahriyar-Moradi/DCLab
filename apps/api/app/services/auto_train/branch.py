@@ -15,12 +15,17 @@ from typing import Any
 from uuid import UUID
 
 import pandas as pd
+
 from sqlalchemy.orm import Session
 
 from app.db.models import ClientLabUpload, Experiment, SplitPlan
 from app.domain.errors import InvalidChangeSetError, SplitPlanLineageError
 from app.engine.features.encode import infer_datetime_format
-from app.engine.lab.auto_prepare import MissingValuePlan, apply_feature_engineering_actions
+from app.engine.lab.auto_prepare import (
+    MAX_CATEGORICAL_CARDINALITY,
+    MissingValuePlan,
+    apply_feature_engineering_actions,
+)
 from app.services.experiment_branch_service import INCLUDING_TREATMENTS
 
 # ``encode_datetime_columns`` converts a date-named column at >= 80% parsed values.
@@ -208,6 +213,12 @@ def apply_role_overrides(
         if treatment == "keep" and (column in num or column in cat):
             continue
         role = "categorical" if treatment == "categorical" or (treatment == "keep" and not numeric) else "numeric"
+        if role == "categorical" and column not in cat and int(
+                engineered_train[column].nunique(dropna=True)) > MAX_CATEGORICAL_CARDINALITY:
+            raise InvalidChangeSetError(  # the engine's one-hot cap (ADR 0008 §1b), as the L2 RoleValidator
+                "categorical_cardinality_above_cap",
+                f"{column!r} has more than {MAX_CATEGORICAL_CARDINALITY} distinct values in the training rows",
+                path=_columns_path(column))
         num = [name for name in num if name != column]
         cat = [name for name in cat if name != column]
         (num if role == "numeric" else cat).append(column)

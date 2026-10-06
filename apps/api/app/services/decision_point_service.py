@@ -384,7 +384,9 @@ def _review_proposals(db: Session, resolution: PointResolution, *, workspace_id:
             proposal_type="SemanticReviewProposal", schema_version=1, payload=payload,
             payload_digest=hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest(),
             rule_answer={"value": _value(answer.rule)}, citations=[{"kind": "experiment", "id": str(experiment_id)}],
-            validator_verdict="accepted", validator_reasons=[], status="proposed", subject_kind="experiment",
+            validator_verdict="rejected" if answer.validator_reasons else "accepted",
+            validator_reasons=list(answer.validator_reasons)[:8],
+            status="rejected_by_validator" if answer.validator_reasons else "proposed", subject_kind="experiment",
             experiment_id=experiment_id,
         )
         db.add(row)

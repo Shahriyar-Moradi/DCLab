@@ -88,6 +88,14 @@ class RecordDecisionInput(BaseModel):
     facts: Obj = None
 
 
+class RequestAgentReviewInput(BaseModel):
+    project_id: Id
+    agent: Literal["experiment_critic", "dataset_investigator", "experiment_planner"] = Field(
+        description="experiment_critic reviews a completed experiment; the others a dataset version.")
+    experiment_id: UUID | None = Field(default=None, description="experiment_critic: the completed experiment.")
+    dataset_id: UUID | None = Field(default=None, description="dataset_investigator / experiment_planner: the dataset.")
+
+
 def _no_holdout(value: Any, where: str) -> None:
     """No key, scope or string value naming the holdout anywhere in an agent's structured
     arguments (rejected, never stripped)."""
@@ -102,6 +110,13 @@ def _no_holdout(value: Any, where: str) -> None:
             _no_holdout(item, where)
     elif isinstance(value, str) and HOLDOUT_KEY.search(value):
         raise ToolError("holdout_not_allowed", f"{where} may not cite or carry the final holdout")
+
+
+def _review_validator(args: RequestAgentReviewInput) -> RequestAgentReviewInput:
+    critic = args.agent == "experiment_critic"
+    if (args.experiment_id is None) == (args.dataset_id is None) or (args.experiment_id is not None) != critic:
+        raise ToolError("invalid_arguments", "experiment_critic takes experiment_id; the others take dataset_id")
+    return args
 
 
 def _branch_validator(args: BranchExperimentInput) -> BranchExperimentInput:

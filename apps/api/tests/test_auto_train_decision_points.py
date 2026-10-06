@@ -674,3 +674,19 @@ def test_l2_role_value_reaches_the_fold_pipeline_with_its_record_and_fingerprint
     assert details["revert"]["changes"] == [
         {"kind": "feature_transform_add", "column": "visits", "transform": "impute_median"}]
     assert run["checks"]["decision_point_evidence_partition"] == "PASS"
+
+
+def test_an_l1_item_above_the_one_hot_cap_carries_the_real_verdict(hk):
+    wide = pd.DataFrame({"feature": list(range(60)) * 2, "target": [0, 1] * 60, SOURCE_ROW_COLUMN: range(120)})
+    ctx = hk.ctx(jev({dp.ROLE: {"feature": ("categorical_code", 0.9)}, dp.IDENTIFIER: {"*": (0.05, None)}}), 1)
+    dp.resolve_column_points(
+        ctx, engineered_train=wide, kept_columns=["feature"], rule_numeric=["feature"], rule_categorical=[],
+        rule_identifiers=[], legacy_numeric=["feature"], legacy_categorical=[], num_cols=["feature"], cat_cols=[],
+        identifier_cols=[], ignored=[], transformed_datetime=set(), protected=set(), missing_actions={"feature": "keep"},
+        train_rows=list(range(200)))
+    (item,) = ctx.decisions.resolved[dp.ROLE].answers
+    assert item.source == "human_pending" and list(item.validator_reasons) == ["above_one_hot_cardinality_cap"]
+    details = records(hk.db, hk.alpha.pipeline.id)[dp.ROLE].details
+    proposal = hk.db.get(AgentProposal, UUID(details["proposal_id"]))
+    assert (proposal.status, proposal.validator_verdict, proposal.validator_reasons) == (
+        "rejected_by_validator", "rejected", ["above_one_hot_cardinality_cap"])  # never offered for acceptance

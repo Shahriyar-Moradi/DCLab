@@ -83,11 +83,28 @@ def plan_for_request(db: Session, *, workspace_id: UUID, project_id: UUID, plan_
 SPEC_PLAN_FIELDS = ("target_column", "primary_metric")  # target.column, spec.objective (both L1)
 
 
+def plan_spec_refusals(db: Session, *, workspace_id: UUID, project_id: UUID, plan_id: UUID) -> dict[str, str]:
+    """Plan answers a ProblemSpec may not take: an objective answer made after results exist
+    (``results_exist``; the same rule ``load_run_plan`` applies to a run)."""
+
+    row = db.scalar(select(AgentProposal).where(AgentProposal.id == plan_id, AgentProposal.workspace_id == workspace_id))
+    if row is None or row.project_id != project_id or not (row.payload or {}).get("primary_metric"):
+        return {}
+    # a spec governs the whole project: any completed experiment of it is a result
+    query = select(func.min(Experiment.ended_at)).where(
+        Experiment.workspace_id == workspace_id, Experiment.project_id == project_id, Experiment.status == "COMPLETED")
+    results_at = db.scalar(query)
+    if results_at is not None and row.created_at is not None and row.created_at > results_at:
+        return {"primary_metric": RESULTS_EXIST}
+    return {}
+
+
 def plan_spec_answers(db: Session, *, workspace_id: UUID, project_id: UUID, plan_id: UUID) -> dict[str, str]:
     """A ProblemSpec's answers from a run plan (P6.9-A): the same checks as a run's ``plan``
     (``plan_for_request``), then its target and metric. Both points are L1: the spec is a
-    draft, or a proposal a person accepts. A spec does not consume the plan (single use binds
-    runs; a spec-side binding would need a migration). Raises ``PlanRefusedError``."""
+    draft, or a proposal a person accepts. A metric chosen after results exist is refused
+    (``plan_spec_refusals``). A spec does not consume the plan (single use binds runs; a
+    spec-side binding would need a migration). Raises ``PlanRefusedError``."""
 
     from app.domain.errors import PlanRefusedError
 
@@ -96,9 +113,11 @@ def plan_spec_answers(db: Session, *, workspace_id: UUID, project_id: UUID, plan
         raise PlanRefusedError(str(refusal["code"]))
     row = db.get(AgentProposal, plan_id)
     plan = ExperimentPlan.model_validate(row.payload)
-    answers = {name: getattr(plan, name) for name in SPEC_PLAN_FIELDS if getattr(plan, name) is not None}
+    refused = plan_spec_refusals(db, workspace_id=workspace_id, project_id=project_id, plan_id=plan_id)
+    answers = {name: getattr(plan, name) for name in SPEC_PLAN_FIELDS
+               if getattr(plan, name) is not None and name not in refused}
     if not answers:
-        raise PlanRefusedError("plan_has_no_spec_answers")
+        raise PlanRefusedError(RESULTS_EXIST if refused else "plan_has_no_spec_answers")
     return answers
 
 
@@ -219,4 +238,4 @@ def supersede_for_results(db: Session, experiment: Experiment, workflow_run: Wor
                            target_column=workflow_run.resolved_target if workflow_run is not None else None)
 
 
-__all__ = ["RunPlan", "load_run_plan", "plan_for_request", "supersede_for_results", "supersede_plans"]
+__all__ = ["RunPlan", "load_run_plan", "plan_for_request", "plan_spec_refusals", "supersede_for_results", "supersede_plans"]
