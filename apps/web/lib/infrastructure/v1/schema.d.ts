@@ -4,6 +4,164 @@
  */
 
 export interface paths {
+    "/v1/agent-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Agent Review
+         * @description Queue a Critic (`experiment_id`), Investigator or Planner (`dataset_id`) run for a node you can read.
+         *     The run only proposes: proposals appear under ``GET /v1/proposals?run_id=`` for a person to decide.
+         *     Requires ``Idempotency-Key``; ``409 agent_unavailable`` when AI is off or the agent has no release.
+         */
+        post: operations["request_agent_review_v1_agent_reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Runs
+         * @description Specialist and ops agent runs of the workspace, newest first (assistant threads are not listed).
+         */
+        get: operations["list_agent_runs_v1_agent_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Agent Run */
+        get: operations["read_agent_run_v1_agent_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-runs/{run_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay Agent Run
+         * @description Re-run a recorded specialist / ops run with the fake provider fed from its record (tools stubbed): the
+         *     tool sequence, output digest and proposal payloads must equal the record. A mismatch opens one
+         *     ``replay_mismatch`` incident (not when the run failed with the same code: ``same_failure``). Lead and
+         *     assistant runs are ``409 not_replayable`` (typed refusal, never faked); a run still live is
+         *     ``409 run_not_finished``. Human session only (CSRF); needs workspace read plus platform read or ML-write;
+         *     requires ``Idempotency-Key`` (a replayed key returns the stored result).
+         */
+        post: operations["replay_agent_run_v1_agent_runs__run_id__replay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assistant/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Threads
+         * @description The caller's own threads in the selected workspace, most recently active first.
+         */
+        get: operations["list_threads_v1_assistant_threads_get"];
+        put?: never;
+        /**
+         * Create Thread
+         * @description Open an assistant thread on a project of the selected workspace. Requires ``Idempotency-Key``.
+         */
+        post: operations["create_thread_v1_assistant_threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assistant/threads/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Thread
+         * @description The caller's thread: limits, usage over its turns, whether the model is on, and its history
+         *     (the public events of every turn, oldest first; at most the last 400).
+         */
+        get: operations["read_thread_v1_assistant_threads__thread_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assistant/threads/{thread_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Message
+         * @description Run one turn and stream it as Server-Sent Events: ``turn_started``, ``tool_call``, ``tool_result``
+         *     (shaped, holdout-free preview), ``step_rejected`` (the model's step failed validation),
+         *     ``call_refused`` (a tool or model call refused by capability, limit or policy), ``proposal_created``
+         *     (pending your confirmation), ``assistant_message``, ``budget_exhausted`` and ``turn_done``. Requires
+         *     ``Idempotency-Key``: the same key replays the stored turn (never a second turn or proposal); a turn
+         *     already running on the thread is ``409 turn_in_progress``; an exhausted thread or user limit is ``429``.
+         *     With AI off the turn is a deterministic template (``templated: true``, ``llm_used: false``). Replies
+         *     follow the rendering contract above: plain text, ``dclab://`` references only, linkify off. A dropped
+         *     stream never stops the turn: resend the same request and key to replay it (``Last-Event-ID`` is
+         *     not read yet).
+         */
+        post: operations["post_message_v1_assistant_threads__thread_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/datasets": {
         parameters: {
             query?: never;
@@ -376,6 +534,95 @@ export interface paths {
         get: operations["read_experiment_findings_v1_experiments__experiment_id__findings_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/governance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Governance
+         * @description The effective AI policy (platform narrowed by the workspace), model allowlist, data classes, switches,
+         *     decision-point levels with links to the stored R3 runs, spend vs budget, open incidents and recent changes
+         *     of this workspace. Plain text throughout; no R3 report body or tenant evidence.
+         */
+        get: operations["read_governance_v1_governance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/governance/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Governance Policy
+         * @description Propose a change of the workspace AI policy as a ``proposed`` ``ai_policies`` row (the decision record of
+         *     ADR 0009 §2.5): the document is validated and checked against the platform caps (it may only narrow them)
+         *     and applies only when an owner/admin accepts it. ML-write membership required; ``Idempotency-Key`` required.
+         */
+        post: operations["propose_governance_policy_v1_governance_policy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/governance/policy/{proposal_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Governance Policy
+         * @description Accept an open policy proposal: only a workspace owner/admin (platform staff never), the proposal's base
+         *     must still be the accepted head (409 otherwise), the body's ``policy_digest`` must be the proposal's and
+         *     the caps are checked again. A proposer cannot accept their
+         *     own proposal unless they are the workspace's only approver (then ``self_approved`` is recorded).
+         */
+        post: operations["accept_governance_policy_v1_governance_policy__proposal_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/governance/switches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Governance Switch
+         * @description Flip a workspace kill switch (append-only, audited with actor, reason and time). ``off`` always succeeds
+         *     for owners/admins and platform staff and stops the NEXT gateway call; ``on`` needs an owner/admin and is
+         *     ``409 switch_held_by_incident`` while an open incident holds the key.
+         */
+        post: operations["change_governance_switch_v1_governance_switches_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -778,6 +1025,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Proposals
+         * @description Proposals of the workspace, newest first. Service tokens get holdout-free payloads. Free text is
+         *     plain text (see the module note).
+         */
+        get: operations["list_proposals_v1_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Proposal */
+        get: operations["read_proposal_v1_proposals__proposal_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/proposals/{proposal_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Proposal
+         * @description Accept an open proposal as the signed-in person: the normal command of its type runs as you, a
+         *     ``proposal_accepted`` decision record is written, and the proposal becomes ``accepted`` (a plan or
+         *     advice) or ``applied`` (a command ran). Human session only; ML-write; requires ``Idempotency-Key``.
+         */
+        post: operations["accept_proposal_v1_proposals__proposal_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/proposals/{proposal_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Proposal
+         * @description Reject an open proposal (terminal) and record it. Human session only; ML-write.
+         */
+        post: operations["reject_proposal_v1_proposals__proposal_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/proposals/{proposal_id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Proposal
+         * @description Revert an applied L2 plan or an applied Jev review item: the rule value is restored by a branch of
+         *     the experiment that used the AI value, under a ``proposal_reverted`` record that supersedes the record
+         *     of the applied value. Anything without a recorded in-place revert is ``409 not_revertible_in_place``.
+         */
+        post: operations["revert_proposal_v1_proposals__proposal_id__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/service-tokens": {
         parameters: {
             query?: never;
@@ -848,6 +1197,86 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentReviewRequest */
+        AgentReviewRequest: {
+            /**
+             * Agent
+             * @description experiment_critic needs `experiment_id`; the others need `dataset_id`.
+             * @enum {string}
+             */
+            agent: "experiment_critic" | "dataset_investigator" | "experiment_planner";
+            /** Dataset Id */
+            dataset_id?: string | null;
+            /** Experiment Id */
+            experiment_id?: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+        };
+        /** AgentRunPage */
+        AgentRunPage: {
+            /** Items */
+            items: components["schemas"]["AgentRunRead"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** AgentRunRead */
+        AgentRunRead: {
+            /** Agent Key */
+            agent_key: string;
+            /** Agent Version */
+            agent_version: string;
+            /** Cost Micros */
+            cost_micros: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Currency */
+            currency: string;
+            /** Decision Point Key */
+            decision_point_key?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Parent Run Id */
+            parent_run_id?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Proposal Ids */
+            proposal_ids?: string[];
+            /** Purpose */
+            purpose: string;
+            /**
+             * Requested By
+             * @enum {string}
+             */
+            requested_by: "user" | "service_token";
+            /** Runtime */
+            runtime: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Status */
+            status: string;
+            subject: components["schemas"]["SubjectRead"];
+            /** Usage */
+            usage?: {
+                [key: string]: unknown;
+            };
+        };
         /** ArtifactRead */
         ArtifactRead: {
             /** Artifact Type */
@@ -879,6 +1308,116 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /** AssistantEventRead */
+        AssistantEventRead: {
+            /** Created At */
+            created_at?: string | null;
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /** Seq */
+            seq: number;
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            turn_id: string;
+            /**
+             * Type
+             * @description user_message, turn_started, tool_call, tool_result, step_rejected, call_refused, proposal_created, assistant_message, budget_exhausted or turn_done.
+             */
+            type: string;
+        };
+        /** AssistantMessageCreate */
+        AssistantMessageCreate: {
+            /**
+             * Text
+             * @description The new user message only; the server rebuilds the conversation from its record.
+             */
+            text: string;
+        };
+        /** AssistantThreadCreate */
+        AssistantThreadCreate: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Title
+             * @description Plain text (never rendered as markup).
+             */
+            title?: string | null;
+        };
+        /** AssistantThreadDetail */
+        AssistantThreadDetail: {
+            /** Ai Available */
+            ai_available: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Events */
+            events: components["schemas"]["AssistantEventRead"][];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Limits */
+            limits: {
+                [key: string]: number;
+            };
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Quick Actions */
+            quick_actions: string[];
+            /** Status */
+            status: string;
+            /** Title */
+            title: string | null;
+            /** Usage */
+            usage: {
+                [key: string]: number;
+            };
+        };
+        /** AssistantThreadRead */
+        AssistantThreadRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string | null;
         };
         /** BatchPredictionCreateRequest */
         BatchPredictionCreateRequest: {
@@ -981,6 +1520,45 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /** BudgetPeriodRead */
+        BudgetPeriodRead: {
+            /** Alert Fraction */
+            alert_fraction: number;
+            /** Calls */
+            calls: number;
+            /** Currency */
+            currency: string;
+            /** Hard Stop */
+            hard_stop: boolean;
+            /**
+             * Limit Micros
+             * @description min(counter limit, effective policy limit).
+             */
+            limit_micros: number;
+            /** Period */
+            period: string;
+            /** Period Start */
+            period_start?: string | null;
+            /** Reserved Micros */
+            reserved_micros: number;
+            /** Scope */
+            scope: string;
+            /** Spent Micros */
+            spent_micros: number;
+        };
+        /** DataClassesRead */
+        DataClassesRead: {
+            /** Max Class */
+            max_class: string;
+            /** Order */
+            order: string[];
+            /** Sample Values Per Column */
+            sample_values_per_column: number;
+            /** Share R3 Aggregates */
+            share_r3_aggregates: boolean;
+            /** User Text To Jev */
+            user_text_to_jev: boolean;
         };
         /**
          * DatasetIngestionRead
@@ -1147,6 +1725,43 @@ export interface components {
             /** Rationale */
             rationale: string;
             subject: components["schemas"]["DecisionSubjectInput"];
+        };
+        /** DecisionPointLevelRead */
+        DecisionPointLevelRead: {
+            /** Ai Kind */
+            ai_kind: string;
+            /** Cap */
+            cap: number;
+            /**
+             * Effective Level
+             * @description min(workspace, platform, cap, release max) for the current (release, model) pair at the strictest answer ceiling (mixed points: L1); ADR 0008 §1b ceilings per answer kind are applied at decision time.
+             */
+            effective_level: number;
+            /** Key */
+            key: string;
+            /** Model Id */
+            model_id?: string | null;
+            /** Open Incidents */
+            open_incidents?: {
+                [key: string]: number;
+            };
+            /**
+             * Pair Current
+             * @description The platform head's (release, model) pair AND the cited run's own pair are the current ones; false for a Jev point whose code-pinned release is not yet released.
+             * @default true
+             */
+            pair_current: boolean;
+            /** Pattern */
+            pattern: string;
+            /** Platform Level */
+            platform_level: number;
+            /** Prompt Release Id */
+            prompt_release_id?: string | null;
+            r3_evidence?: components["schemas"]["R3EvidenceRead"] | null;
+            /** Stage */
+            stage: string;
+            /** Workspace Level */
+            workspace_level: number;
         };
         /** DecisionRecordPage */
         DecisionRecordPage: {
@@ -1320,6 +1935,22 @@ export interface components {
             } | null;
             /** Rationale */
             rationale: string;
+        };
+        /** EffectivePolicyRead */
+        EffectivePolicyRead: {
+            /** Digest */
+            digest: string;
+            /**
+             * Document
+             * @description The merged AiPolicyV1 (platform narrowed by the workspace head).
+             */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Platform Version */
+            platform_version: number;
+            /** Workspace Version */
+            workspace_version?: number | null;
         };
         /** EventPage */
         EventPage: {
@@ -1927,6 +2558,54 @@ export interface components {
             /** Selection Metric */
             selection_metric?: string | null;
         };
+        /** GovernanceRead */
+        GovernanceRead: {
+            /** Ai Enabled Setting */
+            ai_enabled_setting: boolean;
+            data_classes?: components["schemas"]["DataClassesRead"] | null;
+            /** Levels */
+            levels: components["schemas"]["DecisionPointLevelRead"][];
+            /** Model Allowlist */
+            model_allowlist?: components["schemas"]["ModelRoleRead"][];
+            /** Open Incidents */
+            open_incidents: components["schemas"]["IncidentRead"][];
+            policy?: components["schemas"]["EffectivePolicyRead"] | null;
+            /** Policy Changes */
+            policy_changes: components["schemas"]["PolicyChangeRead"][];
+            /**
+             * Policy Unavailable
+             * @description Set when the policy cannot load: AI is refused.
+             */
+            policy_unavailable?: string | null;
+            /** Recent Changes */
+            recent_changes: components["schemas"]["RecentChangeRead"][];
+            spend?: components["schemas"]["SpendRead"] | null;
+            switches: components["schemas"]["SwitchesRead"];
+            viewer: components["schemas"]["GovernanceViewer"];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** GovernanceViewer */
+        GovernanceViewer: {
+            /**
+             * Can Approve
+             * @description Workspace owner/admin: may accept policy proposals and re-enable switches.
+             */
+            can_approve: boolean;
+            /**
+             * Can Propose
+             * @description ML-write member: may propose a policy change.
+             */
+            can_propose: boolean;
+            /**
+             * Can Switch Off
+             * @description May switch a workspace key off (approvers, and platform staff).
+             */
+            can_switch_off: boolean;
+        };
         /** GraphEdge */
         GraphEdge: {
             /**
@@ -2063,6 +2742,36 @@ export interface components {
             target_in_graph: boolean;
             /** Version */
             version: number;
+        };
+        /** IncidentRead */
+        IncidentRead: {
+            /** Action */
+            action: string;
+            /**
+             * Evidence
+             * @description Ids, codes, counts, digests only (scalars, capped).
+             */
+            evidence: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Status */
+            status: string;
+            /** Subject Key */
+            subject_key: string;
+            /** Subject Kind */
+            subject_kind: string;
         };
         /** MlRunEventRead */
         MlRunEventRead: {
@@ -2565,6 +3274,17 @@ export interface components {
             /** Task Type */
             task_type?: string | null;
         };
+        /** ModelRoleRead */
+        ModelRoleRead: {
+            /** Allowed */
+            allowed: string[];
+            /** Default */
+            default: string;
+            /** Fallback */
+            fallback: string;
+            /** Role */
+            role: string;
+        };
         /**
          * ModelVersionArtifactRef
          * @description An artifact by id + digest; storage keys and paths are never exposed.
@@ -2731,6 +3451,105 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /** PolicyAcceptRequest */
+        PolicyAcceptRequest: {
+            /**
+             * Acknowledge Consent Change
+             * @description Required when the proposal changes R3 sharing.
+             * @default false
+             */
+            acknowledge_consent_change: boolean;
+            /**
+             * Policy Digest
+             * @description The policy_digest of the proposal you reviewed.
+             */
+            policy_digest: string;
+        };
+        /** PolicyChangeRead */
+        PolicyChangeRead: {
+            /** Base Version */
+            base_version?: number | null;
+            /** Change Kind */
+            change_kind: string;
+            /**
+             * Consent Change
+             * @description Flips data.share_r3_aggregates (the R3 sharing consent).
+             * @default false
+             */
+            consent_change: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided By */
+            decided_by?: string | null;
+            /**
+             * Diff Vs Effective
+             * @description Changes against the effective policy.
+             */
+            diff_vs_effective?: components["schemas"]["PolicyFieldChange"][] | null;
+            /**
+             * Diff Vs Head
+             * @description Changes against the workspace head.
+             */
+            diff_vs_head?: components["schemas"]["PolicyFieldChange"][] | null;
+            /**
+             * Document
+             * @description The proposed AiPolicyV1 document.
+             */
+            document?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Open
+             * @description A proposal nobody has decided yet.
+             */
+            open: boolean;
+            /** Policy Digest */
+            policy_digest: string;
+            /** Proposed By */
+            proposed_by?: string | null;
+            /** Rationale */
+            rationale: string;
+            /** Self Approved */
+            self_approved: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "proposed" | "accepted" | "rejected";
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Version */
+            version: number;
+        };
+        /** PolicyFieldChange */
+        PolicyFieldChange: {
+            /** After */
+            after?: unknown;
+            /** Before */
+            before?: unknown;
+            /** Path */
+            path: string;
+        };
+        /** PolicyProposalRequest */
+        PolicyProposalRequest: {
+            /**
+             * Policy
+             * @description A full AiPolicyV1 document; it may only narrow the platform policy.
+             */
+            policy: {
+                [key: string]: unknown;
+            };
+            /** Rationale */
+            rationale: string;
         };
         /** PrincipalRead */
         PrincipalRead: {
@@ -3014,6 +3833,220 @@ export interface components {
             kind: "problem_spec" | "dataset_version" | "split_plan" | "feature_recipe" | "model_version";
         };
         /**
+         * ProposalDecisionRequest
+         * @description Accept / reject / revert body. The actor is the signed-in person, never a field.
+         */
+        ProposalDecisionRequest: {
+            /**
+             * Rationale
+             * @description Your reason (plain text); optional.
+             */
+            rationale?: string | null;
+            /**
+             * Ref Versions
+             * @description Accepting a ref move: the version you saw of each ref kind it moves (`null` = the kind does not exist yet). A stale version is `409 ref_version_conflict`; missing is `428`.
+             */
+            ref_versions?: {
+                [key: string]: number | null;
+            } | null;
+        };
+        /** ProposalPage */
+        ProposalPage: {
+            /** Items */
+            items: components["schemas"]["ProposalRead"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** ProposalRead */
+        ProposalRead: {
+            /** Answer Ceiling */
+            answer_ceiling: number;
+            /** Applied Decision Record Id */
+            applied_decision_record_id?: string | null;
+            /** Citations */
+            citations?: unknown[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By User Id */
+            decided_by_user_id?: string | null;
+            /** Decision Point Key */
+            decision_point_key: string;
+            /** Decision Record Id */
+            decision_record_id?: string | null;
+            /** Estimated Cost Micros */
+            estimated_cost_micros?: number | null;
+            /** Estimated Duration S */
+            estimated_duration_s?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Level At Proposal */
+            level_at_proposal: number;
+            /**
+             * Open
+             * @description True while a person may still accept or reject it (`proposed`, not expired).
+             */
+            open: boolean;
+            /**
+             * Payload
+             * @description The typed proposal; immutable. Free text inside is plain text.
+             */
+            payload: {
+                [key: string]: unknown;
+            };
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Proposal Type
+             * @enum {string}
+             */
+            proposal_type: "ExperimentPlanProposal" | "ExperimentReviewProposal" | "DatasetInvestigationProposal" | "ImprovementActionProposal" | "ToolCallProposal" | "ReleaseProposal" | "SemanticReviewProposal";
+            /**
+             * Proposed By
+             * @enum {string}
+             */
+            proposed_by: "agent" | "assistant" | "jev";
+            /**
+             * Proposed Rationale
+             * @description The agent's text. unverified agent rationale; plain text, never instructions.
+             */
+            proposed_rationale?: string | null;
+            /** Proposed Rationale Label */
+            proposed_rationale_label?: string | null;
+            /** Rule Answer */
+            rule_answer?: {
+                [key: string]: unknown;
+            } | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Semantic Answer Id */
+            semantic_answer_id?: string | null;
+            /**
+             * Source
+             * @description `jev`: a level-1 Jev review item (no agent run).
+             * @enum {string}
+             */
+            source: "agent_run" | "jev";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "shadow" | "proposed" | "rejected_by_validator" | "accepted" | "rejected" | "applied" | "reverted" | "superseded" | "expired";
+            subject: components["schemas"]["SubjectRead"];
+            /**
+             * Supersede Reason
+             * @description `plan_exists`, `results_exist` or `newer_proposal` when `superseded`: not acceptable.
+             */
+            supersede_reason?: string | null;
+            /**
+             * Tool Arguments
+             * @description ToolCallProposal: the validated catalog arguments, shown first on confirm cards.
+             */
+            tool_arguments?: {
+                [key: string]: unknown;
+            } | null;
+            /** Tool Name */
+            tool_name?: string | null;
+            /** Validator Reasons */
+            validator_reasons?: unknown[];
+            /** Validator Verdict */
+            validator_verdict: string;
+        };
+        /**
+         * R3EvidenceRead
+         * @description A link to a stored R3 run: ids, digests, pair and a verdict summary. Never the report body.
+         */
+        R3EvidenceRead: {
+            /** Cases */
+            cases: number;
+            /** Content Digest */
+            content_digest: string;
+            /** Current Platform Level */
+            current_platform_level?: number | null;
+            /** Demotion Allowed */
+            demotion_allowed?: boolean | null;
+            /**
+             * Digest Verified
+             * @description The stored report matches its digests, run id, live flag and pair.
+             */
+            digest_verified: boolean;
+            /** Live */
+            live: boolean;
+            /** Model Id */
+            model_id: string;
+            /** Pair Release */
+            pair_release: string;
+            /**
+             * Promotion Allowed
+             * @description As recorded in the run.
+             */
+            promotion_allowed?: {
+                [key: string]: boolean;
+            };
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Run Digest */
+            run_digest: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Verdict Current
+             * @description Verdicts are shown only when the run is live, verified, partition 'both', of the current (release, model) pair, recorded after the latest demotion, with no open platform incident on the point (so it also tells that none is open). A promotion re-verifies: ledger backing and the stored previous run's stability are checked only then.
+             * @default false
+             */
+            verdict_current: boolean;
+        };
+        /** RecentChangeRead */
+        RecentChangeRead: {
+            /** Actor */
+            actor?: string | null;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Detail */
+            detail: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "policy" | "level" | "switch";
+            /** Rationale */
+            rationale: string;
+            /** State */
+            state: string;
+            /** Subject */
+            subject: string;
+        };
+        /**
          * RefCompanionMove
          * @description Another ref moved by the same decision (e.g. ``feature_recipe`` with ``champion_model``).
          */
@@ -3107,6 +4140,49 @@ export interface components {
              * Format: uuid
              */
             target_id: string;
+        };
+        /** ReplayRead */
+        ReplayRead: {
+            /**
+             * Equal
+             * @description The replay reproduced the recorded tool sequence, output and proposals.
+             */
+            equal: boolean;
+            /**
+             * Incident Id
+             * @description The replay_mismatch incident, when not equal.
+             */
+            incident_id?: string | null;
+            /** Mismatches */
+            mismatches: string[];
+            /**
+             * Not Comparable
+             * @description The record lacks its final digest; output not compared.
+             * @default false
+             */
+            not_comparable: boolean;
+            /** Output Digest */
+            output_digest?: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Same Failure
+             * @description The recorded run failed with the same code: not a mismatch.
+             * @default false
+             */
+            same_failure: boolean;
+            /** Tool Sequence */
+            tool_sequence: components["schemas"]["ReplayToolRead"][];
+        };
+        /** ReplayToolRead */
+        ReplayToolRead: {
+            /** Argument Digest */
+            argument_digest: string;
+            /** Tool */
+            tool: string;
         };
         /** ServiceTokenCreateRequest */
         ServiceTokenCreateRequest: {
@@ -3256,6 +4332,17 @@ export interface components {
              */
             workspace_id: string;
         };
+        /** SpendRead */
+        SpendRead: {
+            /** Currency */
+            currency: string;
+            /** Per Run Limits Micros */
+            per_run_limits_micros: {
+                [key: string]: number;
+            };
+            /** Workspace */
+            workspace: components["schemas"]["BudgetPeriodRead"][];
+        };
         /**
          * StaleReason
          * @description Ref ``ref_kind`` points at ``expected``; the node was built from ``actual``.
@@ -3268,6 +4355,67 @@ export interface components {
              * @enum {string}
              */
             ref_kind: "problem_spec" | "dataset" | "split_plan" | "feature_recipe" | "champion_model";
+        };
+        /** SubjectRead */
+        SubjectRead: {
+            /** Id */
+            id?: string | null;
+            /** Kind */
+            kind: string;
+        };
+        /** SwitchChangeRequest */
+        SwitchChangeRequest: {
+            /** Reason */
+            reason: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "on" | "off";
+            /**
+             * Switch Key
+             * @description all_ai | agent:<key> | provider:<name> | purpose:<key> (never global_ai).
+             */
+            switch_key: string;
+        };
+        /** SwitchRead */
+        SwitchRead: {
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+            /** Changed By */
+            changed_by: string;
+            /**
+             * Held By Incident
+             * @description An open incident keeps this key off whatever its head says.
+             */
+            held_by_incident: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reason */
+            reason: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "on" | "off";
+            /** Switch Key */
+            switch_key: string;
+        };
+        /** SwitchesRead */
+        SwitchesRead: {
+            /**
+             * Platform Ai Blocking
+             * @description First platform-level reason AI is off for every workspace (setting / global_ai), else null.
+             */
+            platform_ai_blocking: string | null;
+            /** Workspace */
+            workspace: components["schemas"]["SwitchRead"][];
         };
         /** V1Error */
         V1Error: {
@@ -3382,6 +4530,728 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    request_agent_review_v1_agent_reviews_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_agent_runs_v1_agent_runs_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                agent_key?: string | null;
+                status?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunPage"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_agent_run_v1_agent_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    replay_agent_run_v1_agent_runs__run_id__replay_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplayRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (error envelope) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Gateway timeout (error envelope) */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_threads_v1_assistant_threads_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantThreadRead"][];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_thread_v1_assistant_threads_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantThreadCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantThreadRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Service unavailable (error envelope) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_thread_v1_assistant_threads__thread_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantThreadDetail"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_message_v1_assistant_threads__thread_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description `text/event-stream`: one event per step (`id` = the event's sequence in the turn, `event` = its type, `data` = JSON), ending with `turn_done`. */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (error envelope) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Service unavailable (error envelope) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_datasets_v1_datasets_get: {
         parameters: {
             query?: {
@@ -5128,6 +6998,385 @@ export interface operations {
             };
             /** @description Unprocessable entity (error envelope) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_governance_v1_governance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GovernanceRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    propose_governance_policy_v1_governance_policy_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    accept_governance_policy_v1_governance_policy__proposal_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChangeRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    change_governance_switch_v1_governance_switches_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwitchRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6898,6 +9147,475 @@ export interface operations {
             };
             /** @description Precondition failed (error envelope) */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_proposals_v1_proposals_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                run_id?: string | null;
+                /** @description Trust level at proposal time. */
+                level?: number | null;
+                decision_point_key?: string | null;
+                status?: ("shadow" | "proposed" | "rejected_by_validator" | "accepted" | "rejected" | "applied" | "reverted" | "superseded" | "expired") | null;
+                proposal_type?: ("ExperimentPlanProposal" | "ExperimentReviewProposal" | "DatasetInvestigationProposal" | "ImprovementActionProposal" | "ToolCallProposal" | "ReleaseProposal" | "SemanticReviewProposal") | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalPage"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_proposal_v1_proposals__proposal_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    accept_proposal_v1_proposals__proposal_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    reject_proposal_v1_proposals__proposal_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    revert_proposal_v1_proposals__proposal_id__revert_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
