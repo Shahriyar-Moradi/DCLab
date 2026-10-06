@@ -40,7 +40,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 
 | Capability | `/v1` operation(s) | MCP tool | Studio screen | Status |
 | --- | --- | --- | --- | --- |
-| Score new data with a model | `POST /v1/model-versions/{id}/predictions`, `GET /v1/predictions/{id}`, `…/download` | `predict` | model page "Score new data" + download | planned P4.9-A / P4.9-UI |
+| Score new data with a model | `POST /v1/model-versions/{id}/predictions`, `GET /v1/predictions/{id}`, `…/download` | `predict` | model page "Score new data" + download | shipped P4.9-A, P4.9-UI |
 | Core trust checks (5) | `GET /v1/experiments/{id}/findings` | `get_findings` | findings panel on every experiment | planned P4.10-A / P4.10-UI |
 | Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-UI (API + MCP shipped in P4.11-A) |
 | Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page `/projects/[id]/data`: Columns & roles (rule role vs role used, training-row statistics), Leakage audit (with `GET /v1/experiments/{id}/findings`); New run target dropdown | done P4.1-C |

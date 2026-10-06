@@ -87,6 +87,8 @@ P4.5-A (2026-10-07): Client run page cleanup. On the Labs run page (`/lab/runs/[
 
 P4.8-UI (2026-10-07): Agents and tools page. New Studio route `/agents` (development role; sidebar item on) with Connect (`.mcp.json`, Python SDK, CLI and `/v1` conventions as copyable plain text, token shown only as a placeholder) and Service tokens (the existing panel moved to `app/components/studio-app/ServiceTokensPanel.tsx`: create with the secret shown once and cleared on Done or leaving the page, list, revoke). Tool registry, Agent runs and Agent catalog tabs are empty states naming A2-UI and P6.8-UI. Web only; no API change.
 
+P4.9-UI (2026-10-07): Score new data. The model page (`/projects/[id]/models/[modelId]`) gains a Score new data tab: upload a scoring file (`POST /v1/datasets` with purpose scoring), start `POST /v1/model-versions/{id}/predictions`, read the column check in plain words from `contract_check` (missing columns listed; extra and target columns ignored), follow progress with a backed-off poll of `GET /v1/predictions/{id}` and download through the authorised BFF download as a Blob. Refusals (training file, missing columns, model not scoreable) show as plain sentences. The API has no list read for scorings, so history is the scorings started in this browser session (recorded as a follow-up). Web only; no API change.
+
 This is the replaceable CURRENT truth package. Older evidence keeps its
 original measurements and is labeled HISTORICAL in the [status
 ledger](README.md). Instructions quoted by older documents are not execution

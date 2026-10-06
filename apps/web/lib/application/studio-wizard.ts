@@ -123,7 +123,7 @@ export class WizardInputError extends Error {}
 
 export type PlainError = { title: string; detail: string; fixable: boolean };
 
-function envelope(body: unknown): { code: string; message: string; details: Record<string, unknown> } {
+export function envelope(body: unknown): { code: string; message: string; details: Record<string, unknown> } {
   const error = (body as { error?: Record<string, unknown> } | null)?.error;
   const code = typeof error?.code === "string" ? error.code.toLowerCase() : "";
   const message = typeof error?.message === "string" ? error.message : "";
