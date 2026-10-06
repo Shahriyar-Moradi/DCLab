@@ -66,8 +66,8 @@ export function CommandBar({ results = [], query, onQueryChange, onSelect, place
         <div className="cmd-in">
           <input
             role="combobox"
-            aria-expanded="true"
-            aria-controls={listId}
+            aria-expanded={results.length > 0}
+            aria-controls={results.length > 0 ? listId : undefined}
             aria-activedescendant={results[index] ? `${listId}-${results[index].id}` : undefined}
             aria-label="Search"
             placeholder={placeholder}

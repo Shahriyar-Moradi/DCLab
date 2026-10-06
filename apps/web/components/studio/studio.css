@@ -45,6 +45,7 @@
 
 /* shell */
 .studio.shell { display: grid; grid-template-columns: var(--nav-w) minmax(0, 1fr); min-height: 100vh; }
+.studio.shell:has(> .assistant) { grid-template-columns: var(--nav-w) minmax(0, 1fr) 360px; }
 .studio.shell.embedded { min-height: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .studio .nav { background: var(--glass); border-right: 1px solid var(--line); padding: 22px 16px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 .studio.embedded .nav { position: static; height: auto; }
@@ -207,3 +208,10 @@
 .studio-cmd-dialog .cmd-empty { padding: 20px; }
 
 @media (prefers-reduced-motion: reduce) { .studio * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+.studio .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 1rem; }
+/* Reused light-only app components inside Studio (P4.1-A, e.g. the model build inspector):
+   always on a light surface with the light-theme tokens, so contrast holds in dark mode too. */
+.studio .legacy-surface { background: #FFFFFF; color: #182320; border-radius: var(--r); color-scheme: light; }
+.studio .legacy-surface .text-green { color: #176C33; }
+.studio .app-workspace-selector-label { color: var(--muted); }
+.studio .app-workspace-select { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 9px; }

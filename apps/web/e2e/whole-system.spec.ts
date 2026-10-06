@@ -948,7 +948,12 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       "revenue",
     );
     businessUploadId = String(upload.id);
-    await expect(page).toHaveURL(new RegExp(`/lab/runs/${String(upload.run_id)}`));
+    // P4.1-A: development roles are redirected to the project experiment page; the Labs
+    // results view (download) stays reachable with ?view=labs.
+    await expect(page).toHaveURL(
+      new RegExp(`/lab/runs/${String(upload.run_id)}|/projects/[0-9a-f-]{36}/experiments/`),
+    );
+    await page.goto(`/lab/runs/${String(upload.run_id)}?view=labs`);
     const completed = await waitForUpload(
       page,
       `/app/labs/uploads/${String(upload.run_id)}`,
@@ -1054,7 +1059,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
           backend(`/app/labs/uploads/${businessUploadId}/predictions.csv`),
         );
         expect(deniedLabs.status()).toBe(403);
-        await page.goto(`/lab/runs/${businessUploadId}`);
+        await page.goto(`/lab/runs/${businessUploadId}?view=labs`);
         await expect(page.getByRole("button", { name: "Download results" })).toBeVisible();
         const [deniedClick] = await Promise.all([
           page.waitForResponse(isPredictionCsvGet),

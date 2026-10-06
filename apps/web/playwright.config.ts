@@ -45,6 +45,8 @@ export default defineConfig({
         JWT_SECRET: "e2e-verification-only-secret",
         CORS_ORIGINS: webUrl,
         AI_ENABLED: "false",
+        // The existing specs cover the frozen Decision.ai pages (hidden by default since P4.1-A).
+        LEGACY_DECISION_LAYER_ENABLED: "true",
         ML_JOB_DISPATCHER: "thread",
       },
     },

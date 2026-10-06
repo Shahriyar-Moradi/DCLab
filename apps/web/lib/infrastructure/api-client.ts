@@ -159,8 +159,9 @@ export function apiGet<T>(
   path: string,
   schema: ZodType<T>,
   params?: Record<string, string | number | boolean | undefined>,
+  options?: { signal?: AbortSignal },
 ): Promise<T> {
-  return request(path, schema, { method: "GET" }, params);
+  return request(path, schema, { method: "GET", signal: options?.signal }, params);
 }
 
 export async function apiDownload(

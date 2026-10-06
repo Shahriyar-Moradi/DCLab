@@ -171,3 +171,27 @@ def test_suspension_removes_navigation_hints_and_direct_api_access(client, db_se
     assert me.json()["capabilities"][WORKSPACE_WRITE] is False
     assert client.get("/v1/projects", headers=headers).status_code == 403
     assert client.get("/business/workspaces", headers=headers).status_code == 403
+
+
+def test_legacy_decision_layer_is_a_presentation_flag_off_by_default(
+    client, db_session, monkeypatch
+):
+    """P4.1-A: Decision.ai vertical pages are hidden unless the platform flag is on."""
+
+    from app.config import get_settings
+    from app.services.workspace_capability_service import (
+        APPLICATION_ACCESS,
+        LEGACY_DECISION_LAYER,
+        invalidate_capability_cache,
+    )
+
+    owner, workspace = _workspace_with_owner(db_session)
+    body = client.get("/v1/me", headers=_headers(owner, workspace.id)).json()
+    assert body["capabilities"][APPLICATION_ACCESS] is True
+    assert body["capabilities"][LEGACY_DECISION_LAYER] is False
+
+    monkeypatch.setattr(get_settings(), "legacy_decision_layer_enabled", True)
+    invalidate_capability_cache(db_session)  # the test client shares one transaction
+    body = client.get("/v1/me", headers=_headers(owner, workspace.id)).json()
+    assert body["capabilities"][LEGACY_DECISION_LAYER] is True
+    assert effective_capability_matrix(db_session, owner, None)[LEGACY_DECISION_LAYER] is False

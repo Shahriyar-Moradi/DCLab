@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   CAPABILITIES,
   canAccessProductRoute,
+  studioRoute,
   defaultProductRoute,
   safeWorkspaceSwitchDestination,
 } from "./capabilities.ts";
@@ -42,6 +43,36 @@ test("navigation follows server capabilities rather than the display role", () =
   const noWorkspace = user({ [CAPABILITIES.accountAccess]: true });
   assert.equal(defaultProductRoute(noWorkspace), "/app/settings");
   assert.equal(canAccessProductRoute(noWorkspace, "/app/dashboards"), false);
+});
+
+test("Studio routes need the development workspace role", () => {
+  const developer = user({ [CAPABILITIES.developmentAccess]: true });
+  const client = user({ [CAPABILITIES.applicationAccess]: true });
+  for (const path of ["/home", "/inbox", "/projects", "/projects/p1/experiments/e1"]) {
+    assert.equal(canAccessProductRoute(developer, path), true, path);
+    assert.equal(canAccessProductRoute(client, path), false, path);
+  }
+  assert.equal(canAccessProductRoute(developer, "/projectsx"), false);
+  assert.equal(safeWorkspaceSwitchDestination(developer, "/projects"), "/projects");
+  assert.equal(safeWorkspaceSwitchDestination(developer, "/projects/p1/graph"), "/development");
+});
+
+test("Studio paths: known sections and UUID ids only; a project opens on Experiments", () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  for (const ok of ["/home", "/inbox", "/projects", `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`]) {
+    assert.equal(studioRoute(ok), "ok", ok);
+  }
+  assert.deepEqual(studioRoute(`/projects/${id}`), { redirect: `/projects/${id}/experiments` });
+  for (const bad of ["/projects/x/graph", `/projects/${id}/nope`, `/projects/${id}/constructor`, `/projects/${id}/graph/x`,
+    `/projects/${id}/experiments/x`, "/home/x", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example"]) {
+    assert.equal(studioRoute(bad), "not_found", bad);
+  }
+});
+
+test("the Decision.ai landing page needs the legacy decision layer flag", () => {
+  const app = { [CAPABILITIES.accountAccess]: true, [CAPABILITIES.applicationAccess]: true };
+  assert.equal(defaultProductRoute(user(app)), "/app/labs");
+  assert.equal(defaultProductRoute(user({ ...app, [CAPABILITIES.legacyDecisionLayer]: true })), "/app/dashboards");
 });
 
 test("workspace switches preserve only capability-safe collection routes", () => {

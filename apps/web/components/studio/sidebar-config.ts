@@ -9,7 +9,7 @@ import { safeInternalHref } from "./safe-href.ts";
 export type StudioRole = "developer" | "admin" | "client" | "operator";
 
 export type StudioFeature =
-  | "home" | "inbox" | "governance" | "agents" | "settings"
+  | "home" | "projects" | "inbox" | "governance" | "agents" | "settings" | "assistant"
   | "lab" | "pipeline" | "graph" | "data" | "experiments" | "improve" | "models" | "monitoring" | "decisions"
   | "client_outcomes" | "client_predictions" | "client_questions"
   | "operator_overview" | "operator_jobs" | "operator_quarantine" | "operator_caps" | "operator_gates";
@@ -41,9 +41,10 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
     label: "Workspace",
     items: [
       { id: "home", label: "Home", href: "/home", icon: "⌂", roles: WORK, feature: "home", phase: "P4.15" },
+      { id: "projects", label: "Projects", href: "/projects", icon: "▦", roles: WORK, feature: "projects", phase: "P4.1-A" },
       { id: "inbox", label: "Inbox", href: "/inbox", icon: "✉", roles: WORK, feature: "inbox", phase: "P4.16" },
-      { id: "governance", label: "Governance", href: "/governance", icon: "⚖", roles: WORK, feature: "governance", phase: "P6.11" },
-      { id: "agents", label: "Agents & tools", href: "/agents", icon: "⚙", roles: WORK, feature: "agents", phase: "P4.12" },
+      { id: "governance", label: "Governance", href: "/governance", icon: "⚖", roles: WORK, feature: "governance", phase: "P6.11-UI" },
+      { id: "agents", label: "Agents & tools", href: "/agents", icon: "⚙", roles: WORK, feature: "agents", phase: "P4.8-UI" },
       { id: "settings", label: "Settings", href: "/settings", icon: "≡", roles: WORK, feature: "settings", phase: "P4.14" },
     ],
   },
@@ -51,14 +52,14 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
     id: "project",
     label: "Project",
     items: [
-      { id: "lab", label: "Lab (chat)", href: "lab", icon: "◎", roles: WORK, feature: "lab", phase: "P4.5" },
-      { id: "pipeline", label: "Pipeline", href: "pipeline", icon: "⇶", roles: WORK, feature: "pipeline", phase: "P4.1-A" },
+      { id: "lab", label: "Lab (chat)", href: "lab", icon: "◎", roles: WORK, feature: "lab", phase: "A3-UI" },
+      { id: "pipeline", label: "Pipeline", href: "pipeline", icon: "⇶", roles: WORK, feature: "pipeline", phase: "P4.17-UI" },
       { id: "graph", label: "Graph", href: "graph", icon: "⬡", roles: WORK, feature: "graph", phase: "P4.2-A" },
       { id: "data", label: "Data", href: "data", icon: "▤", roles: WORK, feature: "data", phase: "P4.1-C" },
-      { id: "experiments", label: "Experiments", href: "experiments", icon: "⚗", roles: WORK, feature: "experiments", phase: "P4.3-A" },
-      { id: "improve", label: "Improve", href: "improve", icon: "↗", roles: WORK, feature: "improve", phase: "P4.6" },
-      { id: "models", label: "Models", href: "models", icon: "◆", roles: WORK, feature: "models", phase: "P4.7" },
-      { id: "monitoring", label: "Monitoring", href: "monitoring", icon: "∿", roles: WORK, feature: "monitoring", phase: "P4.8" },
+      { id: "experiments", label: "Experiments", href: "experiments", icon: "⚗", roles: WORK, feature: "experiments", phase: "P4.1-A" },
+      { id: "improve", label: "Improve", href: "improve", icon: "↗", roles: WORK, feature: "improve", phase: "P5.5-A" },
+      { id: "models", label: "Models", href: "models", icon: "◆", roles: WORK, feature: "models", phase: "P4.11-UI" },
+      { id: "monitoring", label: "Monitoring", href: "monitoring", icon: "∿", roles: WORK, feature: "monitoring", phase: "P7.5-A" },
       { id: "decisions", label: "Decisions", href: "decisions", icon: "✓", roles: WORK, feature: "decisions", phase: "P4.4-A" },
     ],
   },

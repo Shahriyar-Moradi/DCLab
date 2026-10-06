@@ -12,7 +12,7 @@ import {
   Scale,
   Upload,
 } from "lucide-react";
-import { CAPABILITIES, defaultProductRoute, hasCapability } from "@/lib/infrastructure/capabilities";
+import { CAPABILITIES, defaultProductRoute, hasCapability, isStudioPath } from "@/lib/infrastructure/capabilities";
 import type { SessionUser } from "@/lib/infrastructure/session";
 
 type NavAudience = "all" | "platform" | "business" | "development";
@@ -23,6 +23,8 @@ export type AppNavigationItem = {
   href: string;
   icon: LucideIcon;
   audience: NavAudience;
+  /** Frozen Decision.ai vertical page: shown only with `legacy_decision_layer_enabled`. */
+  legacy?: boolean;
   isActive: (pathname: string) => boolean;
 };
 
@@ -46,6 +48,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
         id: "dashboard",
         label: "Dashboard",
         href: "/app/dashboards",
+        legacy: true,
         icon: LayoutDashboard,
         audience: "all",
         isActive: (pathname) => prefixMatch(pathname, "/app/dashboards"),
@@ -54,6 +57,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
         id: "insights",
         label: "Insights",
         href: "/app/insights",
+        legacy: true,
         icon: Lightbulb,
         audience: "all",
         isActive: (pathname) => prefixMatch(pathname, "/app/insights"),
@@ -62,6 +66,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
         id: "opportunities",
         label: "Opportunities",
         href: "/app/opportunities",
+        legacy: true,
         icon: BarChart3,
         audience: "all",
         isActive: (pathname) =>
@@ -72,6 +77,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
         id: "decisions",
         label: "Decisions",
         href: "/app/decisions",
+        legacy: true,
         icon: ClipboardList,
         audience: "all",
         isActive: (pathname) => prefixMatch(pathname, "/app/decisions"),
@@ -87,6 +93,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
         id: "upload",
         label: "Upload",
         href: "/app/opportunities/upload",
+        legacy: true,
         icon: Upload,
         audience: "all",
         isActive: (pathname) => prefixMatch(pathname, "/app/opportunities/upload"),
@@ -147,7 +154,11 @@ export function navigationForUser(user: SessionUser | null) {
   return APP_NAVIGATION.filter((section) => isVisible(section.audience, user))
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => isVisible(item.audience, user)),
+      items: section.items.filter(
+        (item) =>
+          isVisible(item.audience, user) &&
+          (!item.legacy || hasCapability(user, CAPABILITIES.legacyDecisionLayer)),
+      ),
     }))
     .filter((section) => section.items.length > 0);
 }
@@ -191,10 +202,12 @@ export function isProductRoute(pathname: string) {
   );
 }
 
-/** Studio design kit: renders its own shell, outside marketing and product chrome. */
+/** Studio design kit and Developer Studio routes render their own shell, outside marketing and product chrome. */
 export function isStudioRoute(pathname: string) {
-  return pathname === "/dev" || pathname.startsWith("/dev/");
+  return pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname);
 }
+
+export { STUDIO_BACKEND_FEATURES, studioNavigationForUser, studioRoleForUser } from "@/lib/application/studio-navigation";
 
 export function isAuthRoute(pathname: string) {
   return pathname === "/login" || pathname.startsWith("/login/");

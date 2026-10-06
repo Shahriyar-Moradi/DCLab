@@ -15,7 +15,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { SectionHeader } from "@/app/components/ui/SectionHeader";
 import { Select } from "@/app/components/ui/Select";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { downloadLabPredictions, useConfirmLabTarget, useLabUpload, useSession } from "@/lib/application";
+import { downloadLabPredictions, useConfirmLabTarget, useExperimentProjectHref, useLabUpload, useSession } from "@/lib/application";
 import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { ApiError } from "@/lib/infrastructure/api-client";
 import {
@@ -28,8 +28,8 @@ import {
 } from "@/lib/domain";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 
 type DetailFact = { label: string; value: string; mono?: boolean };
 
@@ -138,6 +138,18 @@ export default function LabRunPage() {
   const [selectedTarget, setSelectedTarget] = useState("");
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const isPlatformMember = hasCapability(user, CAPABILITIES.platformRead);
+  // P4.1-A: developers follow the run on its project experiment page (same live stages).
+  // Only once the run is an experiment of a project readable in this workspace; target
+  // confirmation, every client view and `?view=labs` (results download) stay here.
+  const router = useRouter();
+  const stay = useSearchParams().get("view") === "labs";
+  const loaded = query.data;
+  const studioHref = useExperimentProjectHref(
+    !stay && hasCapability(user, CAPABILITIES.developmentAccess) && loaded && loaded.status !== "needs_input" ? loaded.pipeline_run_id : null,
+  );
+  useEffect(() => {
+    if (studioHref) router.replace(studioHref);
+  }, [router, studioHref]);
 
   async function onDownload(runId: string) {
     setDownloadError(null);

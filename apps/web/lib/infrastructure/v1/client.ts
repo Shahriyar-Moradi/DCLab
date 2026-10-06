@@ -111,9 +111,9 @@ function queryParams(query?: QueryArg): Record<string, string | number | boolean
 export function v1Get<P extends V1Path<"get">, T>(
   path: P,
   schema: ZodType<T> & ZodType<ReadableAs<V1Response<P, "get">, T>>,
-  ...[options]: OptionsArg<P, { query?: V1Query<P, "get"> & QueryArg }>
+  ...[options]: OptionsArg<P, { query?: V1Query<P, "get"> & QueryArg; signal?: AbortSignal }>
 ): Promise<T> {
-  return apiGet(v1Path(path, options?.params), schema, queryParams(options?.query));
+  return apiGet(v1Path(path, options?.params), schema, queryParams(options?.query), { signal: options?.signal });
 }
 
 type CommandOptions = {

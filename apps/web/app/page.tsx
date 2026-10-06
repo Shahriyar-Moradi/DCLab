@@ -22,7 +22,10 @@ export default function HomePage() {
 
 function Hero() {
   const { user, loaded } = useSession();
-  const snapshot = useOverviewSnapshot(loaded && hasCapability(user, CAPABILITIES.applicationAccess));
+  // Opportunity totals belong to the frozen Decision.ai layer (P4.1-A): read only when it is enabled.
+  const snapshot = useOverviewSnapshot(
+    loaded && hasCapability(user, CAPABILITIES.applicationAccess) && hasCapability(user, CAPABILITIES.legacyDecisionLayer),
+  );
   const data = snapshot.data;
   const showWorkspace = Boolean(user && snapshot.isSuccess && data);
 

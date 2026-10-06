@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { CAPABILITY_MATRIX_VERSION, canAccessProductRoute } from "@/lib/infrastructure/capabilities";
+import { CAPABILITY_MATRIX_VERSION, canAccessProductRoute, isStudioPath, studioRoute } from "@/lib/infrastructure/capabilities";
 
 const SESSION_COOKIE = process.env.DCLAB_SESSION_COOKIE || "dclab_session";
 
@@ -84,10 +84,17 @@ export async function middleware(request: NextRequest) {
       ? "the admin area"
       : pathname.startsWith("/business")
         ? "the business administration area"
-        : pathname.startsWith("/development") || pathname === "/dev" || pathname.startsWith("/dev/")
+        : pathname.startsWith("/development") || pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname)
           ? "the Development workspace"
           : "the Business client area";
     return forbidden(area);
+  }
+
+  if (isStudioPath(pathname)) {
+    const route = studioRoute(pathname);
+    // Unknown section or non-UUID id: render the app's not-found page with a real 404.
+    if (route === "not_found") return NextResponse.rewrite(new URL("/_studio-not-found", request.url));
+    if (route !== "ok") return NextResponse.redirect(new URL(route.redirect, request.url));
   }
 
   return NextResponse.next();
@@ -101,5 +108,9 @@ export const config = {
     "/dev/:path*",
     "/app/:path*",
     "/lab/:path*",
+    // Developer Studio (P4.1-A).
+    "/home/:path*",
+    "/inbox/:path*",
+    "/projects/:path*",
   ],
 };

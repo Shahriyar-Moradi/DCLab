@@ -20,6 +20,8 @@ export type ShellProps = {
   guide?: ReactNode;
   /** Force a theme; omit to follow the system. */
   theme?: "light" | "dark";
+  /** Assistant panel slot (A3-UI). Rendered only when given; Studio passes nothing until the capability is on. */
+  assistant?: ReactNode;
   /** Preview mode (design kit): no viewport-height layout and no duplicate landmarks. */
   embedded?: boolean;
   mainId?: string;
@@ -27,7 +29,7 @@ export type ShellProps = {
 };
 
 /** Sidebar (264 px) plus sticky glass top bar. Landmarks: nav, header, main (div in embedded mode). */
-export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, topbarRight, steps, guide, theme, embedded, mainId = "main", children }: ShellProps) {
+export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, topbarRight, steps, guide, assistant, theme, embedded, mainId = "main", children }: ShellProps) {
   const Aside = embedded ? "div" : "aside";
   const Side = embedded ? "div" : "nav";
   const Top = embedded ? "div" : "header";
@@ -91,6 +93,7 @@ export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, t
           {children}
         </Main>
       </div>
+      {assistant ? <aside className="assistant" aria-label="Assistant">{assistant}</aside> : null}
     </div>
   );
 }
