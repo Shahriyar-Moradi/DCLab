@@ -27,6 +27,22 @@ const config: Config = {
         success: "var(--color-green)",
         warning: "var(--color-amber)",
         danger: "var(--color-oxblood)",
+        // Studio design system (components/studio/studio.css); values only exist under `.studio`.
+        studio: {
+          bg: "var(--bg)",
+          surface: "var(--surface)",
+          "surface-2": "var(--surface-2)",
+          "surface-3": "var(--surface-3)",
+          ink: "var(--ink)",
+          muted: "var(--muted)",
+          line: "var(--line)",
+          "line-strong": "var(--line-strong)",
+          accent: "var(--accent)",
+          ai: "var(--ai)",
+          ok: "var(--ok)",
+          warn: "var(--warn)",
+          crit: "var(--crit)",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
@@ -150,6 +166,8 @@ const config: Config = {
         "2xl": "var(--radius-panel)",
         "3xl": "var(--radius-panel)",
         full: "var(--radius-pill)",
+        studio: "14px",
+        "studio-sm": "9px",
       },
       boxShadow: {
         none: "none",
@@ -166,6 +184,7 @@ const config: Config = {
       },
       width: {
         sidebar: "var(--sidebar-width)",
+        "studio-nav": "264px",
       },
       spacing: {
         "page-x": "var(--page-pad-x)",

@@ -93,3 +93,12 @@ test("workspace context keys caches and aborts the preceding request generation"
   abortWorkspaceRequests();
   assert.equal(current.aborted, true);
 });
+
+test("the Studio design kit route needs the development capability, not a prefix match", () => {
+  const dev = user({ [CAPABILITIES.developmentAccess]: true });
+  const client = user({ [CAPABILITIES.applicationAccess]: true, [CAPABILITIES.businessAccess]: true });
+  assert.equal(canAccessProductRoute(dev, "/dev/studio-kit"), true);
+  assert.equal(canAccessProductRoute(client, "/dev/studio-kit"), false);
+  assert.equal(canAccessProductRoute(null, "/dev/studio-kit"), false);
+  assert.equal(canAccessProductRoute(client, "/device"), false);
+});

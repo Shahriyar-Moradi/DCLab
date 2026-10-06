@@ -191,6 +191,11 @@ export function isProductRoute(pathname: string) {
   );
 }
 
+/** Studio design kit: renders its own shell, outside marketing and product chrome. */
+export function isStudioRoute(pathname: string) {
+  return pathname === "/dev" || pathname.startsWith("/dev/");
+}
+
 export function isAuthRoute(pathname: string) {
   return pathname === "/login" || pathname.startsWith("/login/");
 }

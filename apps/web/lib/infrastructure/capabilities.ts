@@ -43,6 +43,10 @@ export function canAccessProductRoute(
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     return hasCapability(user, CAPABILITIES.platformRead);
   }
+  // Studio design kit: development workspace role only (the page also 404s in production).
+  if (pathname === "/dev" || pathname.startsWith("/dev/")) {
+    return hasCapability(user, CAPABILITIES.developmentAccess);
+  }
   if (pathname === "/business" || pathname.startsWith("/business/")) {
     return hasCapability(user, CAPABILITIES.businessAccess);
   }

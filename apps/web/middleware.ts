@@ -84,7 +84,7 @@ export async function middleware(request: NextRequest) {
       ? "the admin area"
       : pathname.startsWith("/business")
         ? "the business administration area"
-        : pathname.startsWith("/development")
+        : pathname.startsWith("/development") || pathname === "/dev" || pathname.startsWith("/dev/")
           ? "the Development workspace"
           : "the Business client area";
     return forbidden(area);
@@ -98,6 +98,7 @@ export const config = {
     "/admin/:path*",
     "/business/:path*",
     "/development/:path*",
+    "/dev/:path*",
     "/app/:path*",
     "/lab/:path*",
   ],
