@@ -29,8 +29,8 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Reproducible code | `GET /v1/experiments/{id}/code` | `get_experiment_code` | experiment inspector "Code" (copy/download) | planned P4.3-A |
 | Compare experiments | `GET /v1/experiments/compare` | `compare_experiments` | compare view | planned P4.4-A |
 | Branch with a change set | `POST /v1/experiments/{id}/branches` | `branch_experiment` | "Branch" form on experiment | planned P4.4-A |
-| Lineage graph + staleness | `GET /v1/projects/{id}/graph` | `inspect_project` | Graph tab | planned P4.2-A |
-| Impact of changing a node | `GET /v1/nodes/{kind}/{id}/impact` | — | node inspector "What becomes stale" | planned P4.2-A |
+| Lineage graph + staleness | `GET /v1/projects/{id}/graph` | `inspect_project` | Graph page `/projects/[id]/graph`: layered lineage (★ refs, stale marked orange + "stale", AI decision-point markers from `GET /v1/projects/{id}/decisions?decision_type=decision_point_resolved`), "As a list" fallback, older experiment windows via `cursor` | done P4.2-A |
+| Impact of changing a node | `GET /v1/nodes/{kind}/{id}/impact` | — | Graph page node drawer "What becomes stale" | done P4.2-A |
 | Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `GET/POST /v1/projects/{id}/refs/{kind}` (POST = If-Match move) | — | project header ref badges; Data page "Make current" (dataset ref); "Make champion" | dataset ref move done P4.1-C; champion planned P4.4-A |
 | Decisions timeline | `GET/POST /v1/projects/{id}/decisions`, `GET /v1/decisions/{id}` | `list_decisions`, `record_decision` | Decisions tab | planned P4.4-A |
 | Accept / reject / supersede | `POST /v1/decisions/{id}/accept|reject|supersede` | `accept_proposal` | decision card actions | planned P4.4-A |

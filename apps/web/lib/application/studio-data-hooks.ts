@@ -64,12 +64,70 @@ export const DatasetProfileSchema = z.object({
 });
 export type StudioDatasetProfile = z.infer<typeof DatasetProfileSchema>;
 
-const NodeRef = z.object({ kind: z.string(), id: z.string() });
+const NodeRef = z.object({ kind: z.string(), id: z.string(), key: z.string() });
+const StaleReason = z.object({ ref_kind: z.string(), expected: NodeRef, actual: NodeRef });
+const GraphNodeSchema = NodeRef.extend({
+  label: z.string(),
+  status: nullableString,
+  created_at: nullableString,
+  version: nullableString,
+  digest: nullableString,
+  stale: z.boolean(),
+  stale_reasons: z.array(StaleReason).optional(),
+  ref_kinds: z.array(z.string()).optional(),
+  intent: nullableString,
+  outside_window: z.boolean(),
+  lineage_incomplete: z.boolean(),
+  derived: z.boolean(),
+  notes: z.array(z.string()).optional(),
+});
+export type StudioGraphNode = z.infer<typeof GraphNodeSchema>;
+const GraphRefSchema = z.object({
+  ref_kind: z.string(),
+  target: NodeRef,
+  version: z.number(),
+  moved_at: z.string(),
+  target_in_graph: z.boolean(),
+  staleness_bearing: z.boolean(),
+  stale: z.boolean(),
+});
+/** `GET /v1/projects/{id}/graph` (P2.3-A): one schema for the Data page and the Graph page (shared cache). */
 const GraphSchema = z.object({
+  project: z.object({ id: z.string(), name: z.string() }),
+  refs_initialized: z.boolean(),
+  refs: z.array(GraphRefSchema),
+  nodes: z.array(GraphNodeSchema),
   edges: z.array(z.object({ from: NodeRef, to: NodeRef, relation: z.string(), attribute: z.boolean() })),
+  counts_by_kind: z.record(z.string(), z.number()),
+  stale_counts_by_kind: z.record(z.string(), z.number()),
+  experiment_limit: z.number(),
   truncated: z.boolean(),
+  truncated_kinds: z.array(z.string()).optional(),
+  next_cursor: nullableString,
 });
 export type StudioGraph = z.infer<typeof GraphSchema>;
+
+const ImpactSchema = z.object({
+  node: NodeRef,
+  items: z.array(NodeRef),
+  counts_by_kind: z.record(z.string(), z.number()),
+  total: z.number(),
+  truncated: z.boolean(),
+  graph_truncated: z.boolean(),
+});
+export type StudioImpact = z.infer<typeof ImpactSchema>;
+
+const DecisionPointSchema = z.object({
+  id: z.string(),
+  decision_type: z.string(),
+  effective_state: z.string(),
+  recorded_at: z.string(),
+  subject: z.object({ kind: z.string(), id: z.string() }),
+  actor: z.object({ kind: z.string(), rule: nullableString }),
+  details: z.record(z.string(), z.unknown()).optional(),
+  details_truncated: z.boolean(),
+});
+const DecisionPointPageSchema = z.object({ items: z.array(DecisionPointSchema), limit: z.number(), next_cursor: nullableString });
 
 const FindingsSchema = z.object({
   experiment_id: z.string(),
@@ -98,10 +156,36 @@ export function useDatasetProfile(datasetId: string | null | undefined) {
   });
 }
 
-export function useProjectGraph(projectId: string | undefined) {
+/** `cursor` = the previous page's `next_cursor` (older experiment window); none = the newest window. */
+export function useProjectGraph(projectId: string | undefined, cursor?: string | null) {
   return useQuery({
-    queryKey: workspaceQueryKey("v1", "graph", projectId),
-    queryFn: ({ signal }) => v1Get("/v1/projects/{project_id}/graph", GraphSchema, { params: { project_id: projectId! }, signal }),
+    queryKey: workspaceQueryKey("v1", "graph", projectId, ...(cursor ? [cursor] : [])),
+    queryFn: ({ signal }) => v1Get("/v1/projects/{project_id}/graph", GraphSchema, { params: { project_id: projectId! }, query: cursor ? { cursor } : undefined, signal }),
+    enabled: isUuid(projectId),
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** "What becomes stale": the downstream closure of one node (`GET /v1/nodes/{kind}/{id}/impact`). */
+export function useNodeImpact(kind: string | null | undefined, nodeId: string | null | undefined) {
+  const valid = !!kind && IMPACT_KINDS.has(kind) && isUuid(nodeId);
+  return useQuery({
+    queryKey: workspaceQueryKey("v1", "impact", kind, nodeId),
+    queryFn: ({ signal }) => v1Get("/v1/nodes/{kind}/{node_id}/impact", ImpactSchema, { params: { kind: kind as ImpactKind, node_id: nodeId! }, signal }),
+    enabled: valid,
+    retry: false,
+  });
+}
+const IMPACT_KINDS = new Set(["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"]);
+type ImpactKind = "problem_spec" | "dataset_version" | "split_plan" | "feature_recipe" | "experiment" | "model_version";
+
+/** P6.9 decision-point records of a project (newest 100); AI off → none, so no marker. */
+export function useDecisionPoints(projectId: string | undefined) {
+  return useQuery({
+    queryKey: workspaceQueryKey("v1", "decisions", projectId, "decision_point_resolved"),
+    queryFn: ({ signal }) => v1Get("/v1/projects/{project_id}/decisions", DecisionPointPageSchema, {
+      params: { project_id: projectId! }, query: { decision_type: "decision_point_resolved", limit: 100 }, signal,
+    }),
     enabled: isUuid(projectId),
   });
 }

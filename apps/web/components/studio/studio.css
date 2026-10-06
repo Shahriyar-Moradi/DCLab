@@ -224,3 +224,49 @@
 .studio .field input:focus-visible, .studio .field select:focus-visible, .studio .field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .studio .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
 .studio .btn:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Graph view (P4.2-A): HTML node buttons over an SVG edge layer; stale = orange + "stale" text */
+.studio .graph-tools { justify-content: space-between; }
+.studio .graph-side { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.studio .graph-side.open { grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); }
+@media (max-width: 1100px) { .studio .graph-side.open { grid-template-columns: minmax(0, 1fr); } }
+.studio .graph-main { min-width: 0; }
+.studio .graph-scroll { overflow: auto; max-height: 72vh; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.studio .graph-plane { position: relative; transform-origin: 0 0; }
+.studio .graph-plane svg { position: absolute; inset: 0; overflow: visible; }
+.studio .gedge { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
+.studio .gedge.attr { stroke-dasharray: 5 5; }
+.studio .gedge.near { stroke: var(--accent); stroke-width: 2.4; }
+.studio .graph-arrow { fill: var(--line-strong); }
+.studio .gnode { position: absolute; display: grid; align-content: start; gap: 4px; padding: 9px 12px; text-align: left; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; cursor: pointer; overflow: hidden; box-shadow: var(--shadow); }
+.studio .gnode:hover { border-color: var(--accent); }
+.studio .gnode[aria-pressed="true"] { border-color: var(--accent-strong); box-shadow: 0 0 0 2px var(--accent); }
+.studio .gnode.ref { border-left: 4px solid var(--ok); }
+.studio .gnode.stale { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
+.studio .gnode.ai { box-shadow: inset 0 -3px 0 var(--ai), var(--shadow); }
+.studio .gn-kind { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.studio .gn-label { font-weight: 650; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.studio .gn-meta { display: flex; gap: 4px; flex-wrap: wrap; overflow: hidden; max-height: 26px; }
+.studio .gn-meta .pill { font-size: .64rem; padding: 2px 7px; }
+.studio .graph-drawer { position: sticky; top: 84px; max-height: calc(100vh - 110px); overflow-y: auto; }
+.studio .graph-drawer h2 { display: flex; gap: 10px; align-items: center; }
+.studio .graph-drawer h2 .sp { margin-left: auto; }
+.studio .graph-drawer .block { display: block; }
+.studio .graph-point { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.studio .graph-answers { font-size: .88rem; }
+.studio .graph-answers th, .studio .graph-answers td { padding: 6px 8px; }
+.studio .graph-list { display: grid; gap: 22px; }
+.studio .graph-list h3 { margin-bottom: 8px; }
+.studio .plain-list.tight { gap: 2px; font-size: .92rem; }
+.studio .linkish { all: unset; cursor: pointer; color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.studio .linkish:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.studio .linkish[aria-pressed="true"] { font-weight: 700; }
+.studio .graph-legend { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: var(--r); padding: 18px 22px; background: var(--surface); }
+.studio .graph-legend h2 { font-size: 1rem; }
+.studio .graph-legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: .95rem; }
+.studio .graph-legend li > * { vertical-align: middle; margin-right: 6px; }
+.studio .graph-legend svg { display: inline-block; }
+.studio .gnode-sample { display: inline-block; width: 34px; height: 20px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); }
+.studio .gnode-sample.ref { border-left: 4px solid var(--ok); }
+.studio .gnode-sample.stale { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
+.studio .gnode-sample.ai { box-shadow: inset 0 -3px 0 var(--ai); }
