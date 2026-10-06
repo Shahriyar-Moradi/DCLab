@@ -90,6 +90,37 @@
         "successSchema": "AgentRunRead"
       }
     },
+    "/v1/agent-runs/{run_id}/replay": {
+      "POST": {
+        "operationId": "replay_agent_run_v1_agent_runs__run_id__replay_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500",
+          "504"
+        ],
+        "successSchema": "ReplayRead"
+      }
+    },
     "/v1/assistant/threads": {
       "GET": {
         "operationId": "list_threads_v1_assistant_threads_get",
@@ -735,6 +766,103 @@
           "500"
         ],
         "successSchema": "ExperimentFindingsRead"
+      }
+    },
+    "/v1/governance": {
+      "GET": {
+        "operationId": "read_governance_v1_governance_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "GovernanceRead"
+      }
+    },
+    "/v1/governance/policy": {
+      "POST": {
+        "operationId": "propose_governance_policy_v1_governance_policy_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "PolicyProposalRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "PolicyChangeRead"
+      }
+    },
+    "/v1/governance/policy/{proposal_id}/accept": {
+      "POST": {
+        "operationId": "accept_governance_policy_v1_governance_policy__proposal_id__accept_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "PolicyAcceptRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "PolicyChangeRead"
+      }
+    },
+    "/v1/governance/switches": {
+      "POST": {
+        "operationId": "change_governance_switch_v1_governance_switches_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "SwitchChangeRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "SwitchRead"
       }
     },
     "/v1/me": {

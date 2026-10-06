@@ -74,6 +74,8 @@ def _call(client, method: str, path: str, **kwargs):
         elif path.endswith("/decisions"):
             body = {"action": "propose", "decision_type": "experiment_accepted",
                     "subject": {"kind": "project"}, "rationale": "x"}
+        elif "/governance/policy/" in path:
+            body = {"policy_digest": "0" * 64}
         elif path.endswith(("/accept", "/reject", "/supersede")):
             body = {"rationale": "x"}
         elif "/refs/" in path:
@@ -170,6 +172,11 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/proposals/{proposal_id}/reject",
         "POST /v1/proposals/{proposal_id}/revert",
         "POST /v1/agent-reviews",
+        "GET /v1/governance",
+        "POST /v1/governance/policy",
+        "POST /v1/governance/policy/{proposal_id}/accept",
+        "POST /v1/governance/switches",
+        "POST /v1/agent-runs/{run_id}/replay",
     }
 
 

@@ -85,6 +85,9 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/agent-runs/{run_id}",
             "/v1/proposals",
             "/v1/proposals/{proposal_id}",
+            # P6.11-A: the governance console is read-only metadata of the token creator's own workspace
+            # (the creator's ML-write / owner / platform authority is re-checked on every request).
+            "/v1/governance",
         )
     },
     ("POST", "/v1/projects"): SCOPE_PROJECTS_WRITE,
@@ -118,6 +121,12 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/proposals/{proposal_id}/accept"),
         ("POST", "/v1/proposals/{proposal_id}/reject"),
         ("POST", "/v1/proposals/{proposal_id}/revert"),
+        # P6.11-A: policy, switches and replay are people's acts (policy needs an approver; replay reads
+        # recorded runs and may open an incident); agents only read the shaped GET /v1/governance.
+        ("POST", "/v1/governance/policy"),
+        ("POST", "/v1/governance/policy/{proposal_id}/accept"),
+        ("POST", "/v1/governance/switches"),
+        ("POST", "/v1/agent-runs/{run_id}/replay"),
         # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required).
         ("GET", "/v1/assistant/threads"),
         ("POST", "/v1/assistant/threads"),

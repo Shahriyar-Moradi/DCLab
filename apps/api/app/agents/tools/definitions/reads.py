@@ -88,6 +88,10 @@ class ListProposalsInput(BaseModel):
     cursor: str | None = Field(default=None, max_length=256)
 
 
+class InspectGovernanceInput(BaseModel):  # no arguments (no docstring: it would become a schema description)
+    pass
+
+
 class ModelInput(BaseModel):
     model_version_id: Id
 
@@ -246,6 +250,11 @@ class ServiceReads:
         rows, cursor, limit = prs.list_proposals(self.db, workspace_id=self.ws, project_id=project_id, viewer=self.actor,
                                                  agent=True, **filters)  # no assistant tool calls for agents
         return ProposalPage(items=[prs.proposal_read(row, agent=True) for row in rows], next_cursor=cursor, limit=limit)
+
+    def governance(self) -> Any:
+        from app.agents.governance.console import console_read
+
+        return console_read(self.db, actor=self.actor, workspace_id=self.ws, agent=True)  # authorizes like GET /v1/governance
 
     def model_version(self, model_version_id: UUID) -> Any:
         from app.services.experiment_service import model_version_read
@@ -525,6 +534,45 @@ def _proposals_shape(raw: dict[str, Any]) -> Shaped:
     page = raw["page"]
     return Shaped({"proposals": [proposal_summary(p) for p in page.items], "next_cursor": page.next_cursor},
                   data_class="aggregates", outcome_scope="cv", source_datasets=raw["datasets"])
+
+
+def _governance_fetch(reads: Any, _a: InspectGovernanceInput) -> Any:
+    return reads.governance()
+
+
+def _governance_shape(g: Any) -> Shaped:
+    """Read-only governance of the caller's workspace: policy identity, allowlist, data classes, switch states,
+    levels with R3 run links (ids and digests), spend and incident / proposal counts. No free text (rationales,
+    reasons, incident evidence), no R3 report body, no tenant evidence."""
+
+    payload: dict[str, Any] = {"governance": {
+        "workspace_id": g.workspace_id, "ai_enabled_setting": g.ai_enabled_setting,
+        "policy_unavailable": code(g.policy_unavailable),
+        "policy": None if g.policy is None else {
+            "digest": g.policy.digest, "platform_version": g.policy.platform_version,
+            "workspace_version": g.policy.workspace_version},
+        "model_allowlist": [{"role": code(m.role), "default": m.default, "allowed": list(m.allowed),
+                             "fallback": code(m.fallback)} for m in g.model_allowlist],
+        "data_classes": None if g.data_classes is None else {
+            "max_class": code(g.data_classes.max_class), "sample_values_per_column": g.data_classes.sample_values_per_column,
+            "user_text_to_jev": g.data_classes.user_text_to_jev, "share_r3_aggregates": g.data_classes.share_r3_aggregates},
+        "platform_ai_blocking": g.switches.platform_ai_blocking,
+        "switches": [{"switch_key": s.switch_key, "state": code(s.state), "held_by_incident": s.held_by_incident}
+                     for s in g.switches.workspace],
+        "levels": [{"key": code(lv.key), "ai_kind": code(lv.ai_kind), "cap": lv.cap, "workspace_level": lv.workspace_level,
+                    "platform_level": lv.platform_level, "effective_level": lv.effective_level,
+                    "open_incidents": sum(lv.open_incidents.values()),
+                    "r3_run_id": lv.r3_evidence.run_id if lv.r3_evidence else None,
+                    "r3_content_digest": lv.r3_evidence.content_digest if lv.r3_evidence else None}
+                   for lv in g.levels],
+        "spend": [{"period": code(b.period), "limit_micros": b.limit_micros, "spent_micros": b.spent_micros,
+                   "reserved_micros": b.reserved_micros, "calls": b.calls, "hard_stop": b.hard_stop}
+                  for b in (g.spend.workspace if g.spend else [])],
+        "open_incidents": [{"id": i.id, "kind": code(i.kind), "subject_kind": code(i.subject_kind),
+                            "action": code(i.action), "opened_at": i.opened_at} for i in g.open_incidents],
+        "open_policy_proposals": sum(1 for c in g.policy_changes if c.open),
+    }}
+    return Shaped(payload, data_class="metadata", outcome_scope="none")
 
 
 def _model_fetch(reads: Any, a: ModelInput) -> Any:

@@ -25,7 +25,7 @@ python -m dclab_mcp                    # same
 
 Read (default on): `inspect_project`, `inspect_dataset`, `get_experiment`,
 `compare_experiments`, `get_experiment_code`, `get_evidence`, `get_findings`,
-`list_decisions`, `list_proposals`, `get_model`, `get_model_card`, `get_prediction`,
+`list_decisions`, `list_proposals`, `inspect_governance` (read-only governance of the workspace: no free text), `get_model`, `get_model_card`, `get_prediction`,
 `get_impact`, `accept_proposal`. `get_model_card` never carries the final evaluation (withheld for
 agents). The tool names, read/write flags and input schemas equal the shared catalog
 export `contracts/agent_tools.json` (contract-tested), which the in-app assistant uses too.

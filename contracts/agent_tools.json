@@ -730,6 +730,36 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
+      "description": "Governance of this workspace, read-only: effective AI policy identity, model allowlist, data classes, kill-switch states, decision-point trust levels with the R3 run each cites, spend vs budget, open incidents. No free text and no evidence; changes are made by people in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {},
+        "title": "InspectGovernanceInput",
+        "type": "object"
+      },
+      "name": "inspect_governance",
+      "notes": [],
+      "operations": [
+        "GET /v1/governance"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.agents.governance.console.console_read"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
       "description": "Project summary: refs, graph node counts, stale flags, recent experiments (omit project_id to list projects).",
       "effect": "read",
       "input_schema": {

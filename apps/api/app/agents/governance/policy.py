@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -84,6 +85,11 @@ class PolicyCapViolation(GovernanceError):
 class PolicyConflict(GovernanceError):
     code = "policy_conflict"
     status_code = 409
+
+
+class PolicyProposalLimit(GovernanceError):
+    code = "too_many_open_proposals"
+    status_code = 429
 
 
 class GovernanceNotFound(GovernanceError):
@@ -236,6 +242,37 @@ def effective_policy(db: Session, workspace_id: UUID) -> EffectivePolicy:
     return EffectivePolicy(policy, digest, platform_version, workspace_version)
 
 
+OPEN_PROPOSALS_MAX = 20  # per workspace (unexpired, undecided)
+
+
+@dataclass(frozen=True)
+class PolicyReview:
+    """What an approver reviewed (the HTTP accept path): the proposal's digest, and whether they acknowledged a
+    change of the workspace's R3 aggregate-sharing consent."""
+
+    policy_digest: str
+    acknowledge_consent_change: bool = False
+
+
+def policy_diff(candidate: dict[str, Any], base: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Field-level changes ``base -> candidate`` as ``{path, before, after}`` (at most 60)."""
+
+    before, after = _flatten(base or {}), _flatten(candidate)
+    paths = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
+    return [{"path": path, "before": before.get(path), "after": after.get(path)} for path in paths[:60]]
+
+
+def consent_changed(candidate: AiPolicyV1 | dict, effective: AiPolicyV1) -> bool:
+    """The proposal flips the workspace's opt-in to share R3 aggregates with the platform."""
+
+    doc = candidate if isinstance(candidate, AiPolicyV1) else AiPolicyV1.model_validate(candidate)
+    return doc.data.share_r3_aggregates != effective.data.share_r3_aggregates
+
+
+def _proposal_ttl(db: Session) -> timedelta:
+    return timedelta(days=_platform_bound(db)[0].proposals.ttl_days)
+
+
 def _lock_workspace(db: Session, workspace_id: UUID) -> None:
     if db.scalar(select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()) is None:
         raise GovernanceNotFound(detail="workspace")
@@ -267,6 +304,13 @@ def propose_policy(
     if violations:
         raise PolicyCapViolation(violations)
     _lock_workspace(db, workspace_id)
+    successor = aliased(AiPolicy)
+    open_count = db.scalar(select(func.count()).select_from(AiPolicy).where(
+        AiPolicy.workspace_id == workspace_id, AiPolicy.state == "proposed",
+        AiPolicy.created_at > datetime.now(UTC) - _proposal_ttl(db),
+        ~exists().where(successor.supersedes_id == AiPolicy.id))) or 0
+    if open_count >= OPEN_PROPOSALS_MAX:
+        raise PolicyProposalLimit(detail=f"at most {OPEN_PROPOSALS_MAX} open policy proposals per workspace")
     head = _accepted_head(db, workspace_id)
     row = AiPolicy(
         workspace_id=workspace_id,
@@ -286,8 +330,11 @@ def propose_policy(
     return row
 
 
-def accept_policy(db: Session, *, approver: User, workspace_id: UUID, proposal_id: UUID) -> AiPolicy:
-    """Accept a proposal if the head has not moved (else ``PolicyConflict``, 409)."""
+def accept_policy(db: Session, *, approver: User, workspace_id: UUID, proposal_id: UUID,
+                  review: PolicyReview | None = None) -> AiPolicy:
+    """Accept a proposal if the head has not moved (else ``PolicyConflict``, 409) and it has not expired
+    (``proposals.ttl_days``). With ``review`` (the HTTP path) the digest the approver saw must equal the
+    proposal's (``policy_digest_mismatch``) and a consent change needs the explicit acknowledgement."""
 
     if not can_approve_ai_policy(db, approver, workspace_id):
         raise GovernanceNotPermitted(detail="approving needs workspace owner/admin")
@@ -304,10 +351,18 @@ def accept_policy(db: Session, *, approver: User, workspace_id: UUID, proposal_i
     head = _accepted_head(db, workspace_id)
     if (head.version if head is not None else None) != proposal.base_version:
         raise PolicyConflict(detail="the accepted head moved since the proposal")
+    if proposal.created_at < datetime.now(UTC) - _proposal_ttl(db):
+        raise PolicyConflict("proposal_expired", "propose the change again")
     candidate = AiPolicyV1.model_validate(proposal.policy)
     violations = cap_violations(candidate, _platform_bound(db)[0])
     if violations:
         raise PolicyCapViolation(violations)
+    if review is not None:
+        if review.policy_digest != proposal.policy_digest.strip():
+            raise PolicyConflict("policy_digest_mismatch", "the proposal changed since you reviewed it")
+        if consent_changed(candidate, effective_policy(db, workspace_id).policy) and not review.acknowledge_consent_change:
+            raise PolicyConflict("consent_change_unacknowledged",
+                                 "this proposal changes R3 aggregate sharing: acknowledge it to accept")
     self_approved = proposal.proposed_by_user_id == approver.id
     if self_approved and count_ai_policy_approvers(db, workspace_id) != 1:
         raise GovernanceNotPermitted("self_approval_not_allowed", "another approver must decide")

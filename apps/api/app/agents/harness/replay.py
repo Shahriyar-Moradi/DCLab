@@ -16,14 +16,16 @@ write (the development roles).
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agents.contracts import ContextEnvelope
@@ -33,16 +35,27 @@ from app.agents.harness.service import AgentService, spec_from_run
 from app.agents.harness.validation import parse_tool_arguments, proposal_payload
 from app.agents.runtime.base import ToolOutcome
 from app.agents.tools.catalog import ToolError, get as get_tool
-from app.db.models import AgentRun, AiIncident, LlmInvocation, User
+from app.agents.governance.policy import advisory_lock
+from app.db.models import AgentEvent, AgentRun, AiIncident, LlmInvocation, User
 from app.domain.agent_records import AGENT_RUN_TERMINAL_STATUSES, KEY_PATTERN
 
 _KEY = re.compile(KEY_PATTERN)
+LOCK_NS_REPLAY = 72065  # next to the event sequence lock 72064: one replay of a run at a time
+REPLAY_WALL_S = 30.0  # cooperative wall limit: checked at every model call, tool call and step check
+REPLAYS_PER_RUN = 5  # per 10 minutes
+REPLAYS_PER_VIEWER = 20  # per 10 minutes and workspace (platform users share one bucket); no global per-user limit
+RATE_WINDOW_S = 600
+TOOL_SEQUENCE_EVENT_MAX = 40
 
 
 class ReplayRefused(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+class ReplayTimeout(Exception):
+    pass
 
 
 @dataclass(frozen=True)
@@ -53,6 +66,9 @@ class ReplayResult:
     tool_sequence: tuple[tuple[str, str], ...]
     output_digest: str | None
     incident_id: UUID | None = None
+    same_failure: bool = False  # the recorded run failed with the code the replay fails with: not a mismatch
+    not_comparable: bool = False  # the record lacks its final digest (a lost best-effort event)
+    event_id: UUID | None = None
 
 
 class _Record:
@@ -76,20 +92,29 @@ class _Record:
         self.llm = [(c, outputs.get(UUID(c["invocation_id"])) if c.get("invocation_id") else None) for c in calls]
         self.proposals = [e.payload["payload_digest"] for e in events
                           if e.type == "proposal_created" and e.payload.get("status") == "proposed"]
-        final = next((e.payload for e in reversed(events) if e.type in ("run_finished", "run_failed")), {})
+        last = next((e for e in reversed(events) if e.type in ("run_finished", "run_failed")), None)
+        final = last.payload if last is not None else {}
+        self.final_type = last.type if last is not None else None
+        self.error_code = final.get("error_code")
         self.output_digest = final.get("output_digest")
 
 
 class _ReplaySession:
     def __init__(self, record: _Record, tools: tuple[str, ...]) -> None:
         self.record, self.tools = record, tools
+        self.deadline = time.monotonic() + REPLAY_WALL_S
         self.llm_index, self.calls, self.checks = 0, 0, 0
         self.sequence: list[tuple[str, str]] = []
         self.proposals: list[str] = []
         self.mismatches: list[str] = []
 
+    def _tick(self) -> None:
+        if time.monotonic() > self.deadline:
+            raise ReplayTimeout
+
     def complete(self, *, output_schema: type[BaseModel], max_output_tokens: int, transcript: tuple = (),
                  user_text: tuple = ()) -> CompletionResponse:
+        self._tick()
         if self.llm_index >= len(self.record.llm):
             self.mismatches.append("extra_llm_call")
             return CompletionResponse(ok=False, refusal=Refusal(code="provider_error", message="not recorded"))
@@ -105,9 +130,11 @@ class _ReplaySession:
         return CompletionResponse(ok=True, output=output, invocation_id=UUID(call["invocation_id"]))
 
     def step(self, *, method: str, strategy: str) -> None:
+        self._tick()
         return None  # replay records nothing but replay_checked
 
     def check(self, output: Any) -> list[str]:
+        self._tick()
         self.checks += 1
         if self.checks > len(self.record.checks):
             self.mismatches.append("extra_step_check")
@@ -115,6 +142,7 @@ class _ReplaySession:
         return list(self.record.checks[self.checks - 1])
 
     def call_tool(self, name: str, arguments: Mapping[str, Any], *, reason: str = "") -> ToolOutcome:
+        self._tick()
         self.calls += 1
         name = str(name)[:64] if _KEY.fullmatch(str(name)[:64]) else "invalid_tool_name"
         self.sequence.append((name, digest(dict(arguments) if isinstance(arguments, Mapping) else repr(arguments))))
@@ -148,6 +176,16 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
         raise ReplayRefused("not_found")
     if run.status not in AGENT_RUN_TERMINAL_STATUSES:
         raise ReplayRefused("run_not_finished")
+    from app.services.authorization_service import platform_role_for
+
+    advisory_lock(db, LOCK_NS_REPLAY, str(run.id))  # concurrent replays of one run serialize (one incident)
+    since = datetime.now(UTC) - timedelta(seconds=RATE_WINDOW_S)
+    viewer_ref = "platform_staff" if platform_role_for(db, actor) is not None else str(actor.id)  # tenant event log
+    recent = AgentEvent.type == "replay_checked", AgentEvent.workspace_id == workspace_id, AgentEvent.created_at > since
+    if (db.scalar(select(func.count()).where(*recent, AgentEvent.run_id == run.id)) or 0) >= REPLAYS_PER_RUN or (
+            db.scalar(select(func.count()).where(*recent, AgentEvent.payload["replayed_by"].astext == viewer_ref))
+            or 0) >= REPLAYS_PER_VIEWER:
+        raise ReplayRefused("rate_limited")
     if run.runtime == "lead_loop":
         # P6.3-B2 stores the turn's user text (``user_message``), but a lead replay also needs the
         # write stubs to answer ``proposed`` (identical writes reuse one proposal) and the surface's
@@ -162,20 +200,37 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
     tools = tuple(record_tool for record_tool, _ in record.tools)
     session = _ReplaySession(record, tools)
     replayed_digest = None
+    same_failure = False
     try:
         output = factory(spec).run(SimpleNamespace(envelope=ContextEnvelope(), limits=spec.limits, tools=tools,
                                                    complete=session.complete, call_tool=session.call_tool,
                                                    step=session.step, check=session.check))
         replayed_digest = output_digest(output)
-    except Exception:  # noqa: BLE001 - a crashing replay is a mismatch, never an error to the viewer
-        session.mismatches.append("runtime_error")
+    except ReplayTimeout:  # the attempt still counts toward the rate limits
+        Recorder(db.get_bind(), workspace_id=workspace_id, run_id=run.id).record("replay_checked", {
+            "equal": False, "mismatches": ["replay_timeout"], "tool_calls": len(session.sequence),
+            "output_digest": None, "incident_id": None, "replayed_by": viewer_ref, "timeout": True})
+        db.commit()
+        raise ReplayRefused("replay_timeout") from None
+    except Exception as exc:  # noqa: BLE001 - a crashing replay is a mismatch, never an error to the viewer
+        code = getattr(exc, "code", None) or "internal_error"
+        if record.final_type == "run_failed" and record.error_code == code:
+            # Faithful replay of a run that failed with this code. Weakness (recorded): a generic code such as
+            # internal_error cannot tell two different exceptions apart.
+            same_failure = True
+        else:
+            session.mismatches.append("runtime_error")
     mismatches = list(session.mismatches)
     if session.sequence != record.tools:
         mismatches.append("tool_sequence")
     if session.llm_index != len(record.llm):
         mismatches.append("llm_call_count")
-    if replayed_digest != record.output_digest and run.status in ("completed", "rejected_by_validator"):
-        mismatches.append("output_digest")
+    not_comparable = False
+    if not same_failure and run.status in ("completed", "rejected_by_validator"):
+        if record.output_digest is None:
+            not_comparable = True  # the best-effort final event is missing: nothing to compare with
+        elif replayed_digest != record.output_digest:
+            mismatches.append("output_digest")
     if session.proposals != record.proposals:
         mismatches.append("proposal_payloads")
     incident_id = None
@@ -188,13 +243,16 @@ def replay(db: Session, *, workspace_id: UUID, run_id: UUID, actor: User,
                                   subject_key=run.agent_key, action="none", status="open",
                                   evidence={"agent_run_id": str(run.id), "mismatches": mismatches[:20]})
             db.add(incident)
-            db.commit()
+            db.flush()  # the advisory lock (xact) is held until the event below is recorded and we commit
             incident_id = incident.id
-    db.commit()
-    Recorder(db.get_bind(), workspace_id=workspace_id, run_id=run.id).record("replay_checked", {
+    seq = Recorder(db.get_bind(), workspace_id=workspace_id, run_id=run.id).record("replay_checked", {
         "equal": not mismatches, "mismatches": mismatches[:20], "tool_calls": len(session.sequence),
         "output_digest": replayed_digest, "incident_id": str(incident_id) if incident_id else None,
-        "replayed_by": str(actor.id),
+        "replayed_by": viewer_ref, "same_failure": same_failure, "not_comparable": not_comparable,
+        "tool_sequence": [list(item) for item in session.sequence[:TOOL_SEQUENCE_EVENT_MAX]],
     })
+    db.commit()
+    event_id = db.scalar(select(AgentEvent.id).where(AgentEvent.run_id == run.id, AgentEvent.seq == seq))
     return ReplayResult(run_id=run.id, equal=not mismatches, mismatches=tuple(mismatches),
-                        tool_sequence=tuple(session.sequence), output_digest=replayed_digest, incident_id=incident_id)
+                        tool_sequence=tuple(session.sequence), output_digest=replayed_digest, incident_id=incident_id,
+                        same_failure=same_failure, not_comparable=not_comparable, event_id=event_id)

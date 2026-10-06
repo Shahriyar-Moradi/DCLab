@@ -870,3 +870,40 @@ def test_model_card_uses_v1_path_and_parses_sections():
     with pytest.raises(DCLabClientError, match="UUID"):
         api.model_versions.card("../x")
     assert len(recorded) == 1
+
+
+def test_governance_routes_methods_bodies_and_idempotency():
+    seen: list[httpx.Request] = []
+    run_id = "5d1c3f0e-8a2b-4c6d-9e1f-0a1b2c3d4e5f"
+    row = {"id": run_id, "version": 2, "state": "proposed", "change_kind": "policy", "open": True, "rationale": "r",
+           "policy_digest": "d" * 64, "self_approved": False, "created_at": "2026-10-06T09:00:00+00:00"}
+    switch = {"id": run_id, "switch_key": "all_ai", "state": "off", "held_by_incident": False, "reason": "x",
+              "changed_by": "user:u", "changed_at": "2026-10-06T09:00:00+00:00"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/replay"):
+            return httpx.Response(200, json={"run_id": run_id, "equal": True, "mismatches": [], "tool_sequence": [],
+                                             "output_digest": None, "incident_id": None})
+        if request.url.path == "/v1/governance/switches":
+            return httpx.Response(200, json=switch, headers={"Idempotent-Replayed": "true"})
+        return httpx.Response(200, json=row)
+
+    api = _client(handler, token="secret-token", workspace_id="11111111-1111-1111-1111-111111111111")
+    proposal = api.governance.propose_policy({"schema_version": 1}, rationale="r", idempotency_key="k1")
+    assert proposal.open and proposal.state == "proposed"
+    api.governance.accept_policy(run_id, policy_digest="d" * 64, acknowledge_consent_change=True, idempotency_key="k2")
+    flipped = api.governance.set_switch("all_ai", "off", reason="x", idempotency_key="k3")
+    assert flipped.idempotent_replay and flipped.state == "off"
+    assert api.agent_runs.replay(run_id, idempotency_key="k4").equal is True
+    methods = [(r.method, r.url.path) for r in seen]
+    assert methods == [("POST", "/v1/governance/policy"), ("POST", f"/v1/governance/policy/{run_id}/accept"),
+                       ("POST", "/v1/governance/switches"), ("POST", f"/v1/agent-runs/{run_id}/replay")]
+    assert json.loads(seen[0].content) == {"policy": {"schema_version": 1}, "rationale": "r"}
+    assert json.loads(seen[2].content) == {"switch_key": "all_ai", "state": "off", "reason": "x"}
+    assert json.loads(seen[1].content) == {"policy_digest": "d" * 64, "acknowledge_consent_change": True}
+    assert [r.headers.get("idempotency-key") for r in seen] == ["k1", "k2", "k3", "k4"]
+    with pytest.raises(DCLabClientError, match="state"):
+        api.governance.set_switch("all_ai", "maybe", reason="x")
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.governance.accept_policy("../x", policy_digest="d" * 64)

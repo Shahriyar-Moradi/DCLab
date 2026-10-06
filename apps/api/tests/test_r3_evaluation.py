@@ -17,7 +17,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.agents.governance import incidents as inc
 from app.agents.governance import policy as policy_module
@@ -34,7 +34,7 @@ from app.agents.governance.policy import GovernanceError, GovernanceNotFound, ac
 from app.agents.governance.switches import SwitchHeldByIncident, effective_switches, re_enable
 from app.agents.semantic.policy import apply
 from app.agents.semantic.releases import RELEASES, sync_jev_releases
-from app.db.models import UserRole
+from app.db.models import User, UserRole
 from app.services import r3_evaluation_service as r3
 from app.services.auth_service import create_user
 from test_ai_governance import _level_row as _platform_row
@@ -322,7 +322,7 @@ def _store_live(db, corpus, key, *, when: str, passing: bool = True, salt: str =
         report["holm_adjusted_p_values"].update({f"{key}:sealed": 0.01, f"{key}:blind": 0.01})
     report["digest"] = r3.report_digest(report)
     report["run_digest"] = r3.run_digest(report)
-    r3.store_run(db, report)
+    r3.store_run(db, report, admin=db.scalar(select(User).where(User.role == "dclab_admin").limit(1)))
     db.commit()
     return report
 
@@ -353,14 +353,16 @@ def test_first_levels_cover_every_registry_key_in_the_database_and_in_status_md(
 
 def test_a_run_is_stored_as_it_happens_and_a_tampered_or_unknown_run_is_refused(db_session, gov, corpus):
     db = db_session
-    report = r3.run_r3(corpus, r3.ScriptedAnswerer(), candidate="fake", db=db)
+    report = r3.run_r3(corpus, r3.ScriptedAnswerer(), candidate="fake", db=db, actor=gov.platform_admin)
     db.commit()
     stored = r3.load_run(db, UUID(report["run_id"]))
     assert stored["digest"] == report["digest"] and "workspace_evidence" not in stored and stored["live"] is False
     with pytest.raises(GovernanceNotFound):
         r3.load_run(db, uuid4())  # a made-up run id
     forged = {**stored, "points": {**stored["points"], IDENT: _entry(IDENT)}}  # edited content, old digests
-    row = r3.store_run(db, {**forged, "run_id": str(uuid4())})
+    with pytest.raises(GovernanceNotPermitted, match="platform_levels_need_admin"):  # P6.11-A: a tenant cannot store
+        r3.store_run(db, {**forged, "run_id": str(uuid4())}, admin=gov.owner)
+    row = r3.store_run(db, {**forged, "run_id": str(uuid4())}, admin=gov.platform_admin)
     db.commit()
     with pytest.raises(GovernanceNotPermitted, match="r3_report_tampered"):
         r3.load_run(db, row.id)
@@ -370,7 +372,8 @@ def test_a_run_is_stored_as_it_happens_and_a_tampered_or_unknown_run_is_refused(
             db.commit()
         db.rollback()
     with pytest.raises(Exception, match="ck_r3_runs_created_at"):  # an operator clock far ahead is refused
-        r3.store_run(db, {**stored, "run_id": str(uuid4()), "created_at": "2099-01-01T00:00:00+00:00"})
+        r3.store_run(db, {**stored, "run_id": str(uuid4()), "created_at": "2099-01-01T00:00:00+00:00"},
+                     admin=gov.platform_admin)
         db.commit()
     db.rollback()
 
@@ -379,7 +382,8 @@ def test_platform_promotion_needs_a_stored_live_run_the_rule_engine_and_two_admi
     db = db_session
     sync_jev_releases(db)
     db.commit()
-    fake = r3.run_r3(corpus, r3.ScriptedAnswerer(), candidate="fake", db=db)  # offline evidence: never promotes
+    fake = r3.run_r3(corpus, r3.ScriptedAnswerer(), candidate="fake", db=db,
+                     actor=gov.platform_admin)  # offline evidence: never promotes
     db.commit()
     with pytest.raises(GovernanceNotPermitted, match="r3_candidate_not_live"):
         r3.propose_promotion(db, run_id=UUID(fake["run_id"]), key=IDENT, level=1, admin=gov.platform_admin)

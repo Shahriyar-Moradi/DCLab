@@ -1,4 +1,4 @@
-"""The catalog's tool definitions: the 14 read tools MCP registers (incl. ``get_impact``, ``list_proposals``
+"""The catalog's tool definitions: the 15 read tools MCP registers (incl. ``get_impact``, ``list_proposals``
 and the MCP-only ``accept_proposal`` hand-off) and the 7 write tools (proposals)."""
 
 from __future__ import annotations
@@ -79,6 +79,11 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           ("GET /v1/proposals",), ("app.services.proposal_review_service.list_proposals",
                                    "app.services.graph_service.project_graph"),
           r._proposals_fetch, r._proposals_shape, surfaces=frozenset({"mcp"}), aggregates=True),
+    _read("inspect_governance", "Governance of this workspace, read-only: effective AI policy identity, model "
+          "allowlist, data classes, kill-switch states, decision-point trust levels with the R3 run each cites, "
+          "spend vs budget, open incidents. No free text and no evidence; changes are made by people in DCLab "
+          "Studio.", r.InspectGovernanceInput, ("GET /v1/governance",), ("app.agents.governance.console.console_read",),
+          r._governance_fetch, r._governance_shape, surfaces=frozenset({"mcp"})),
     _read("get_model", "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + "
           "digest; never final-holdout values.", r.ModelInput, ("GET /v1/model-versions/{model_version_id}",),
           (f"{_EXP}.model_version_read",), r._model_fetch, r._model_shape, aggregates=True),

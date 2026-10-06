@@ -1,6 +1,6 @@
 """P6.10-A: the shared agent tool catalog (ADR 0009 §6; ADR 0008 §2b, §6).
 
-The catalog is the 14 read + 7 write tools MCP registers (``get_impact`` included,
+The catalog is the 15 read + 7 write tools MCP registers (``get_impact`` included,
 ``accept_proposal`` MCP-only); no tool is a forbidden operation by name or effect; write
 tools are L1 ``lead.*`` proposals; capabilities follow the token route scopes; the
 export is ``contracts/agent_tools.json`` and its digest is computed from code. Property
@@ -99,13 +99,13 @@ def test_catalog_is_the_mcp_tool_set_with_get_impact():
     tools = catalog()
     reads = {name for name, item in tools.items() if item.effect == "read"}
     writes = {name for name, item in tools.items() if item.effect == "proposal"}
-    assert len(tools) == 21 and len(reads) == 14 and len(writes) == 7 and "get_impact" in reads
+    assert len(tools) == 22 and len(reads) == 15 and len(writes) == 7 and "get_impact" in reads
     assert writes == {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
                       "predict", "record_decision", "request_agent_review"}
     assert {item.name for item in visible("mcp")} == set(tools)
     # P6.6-A: the assistant surface is unchanged (no accept, no proposal listing, no review request).
     assert {item.name for item in visible("assistant")} == set(tools) - {
-        "accept_proposal", "list_proposals", "request_agent_review"}
+        "accept_proposal", "list_proposals", "request_agent_review", "inspect_governance"}
     assert tools["accept_proposal"].surfaces == {"mcp"}  # a hand-off; the lead agent never gets it
     assert tools["list_proposals"].surfaces == {"mcp"} and "accept_proposal" not in {
         item.name for item in visible("studio_forms")}
@@ -324,7 +324,7 @@ def _read_calls(t: SimpleNamespace) -> list[tuple[str, dict]]:
         ("list_decisions", {"project_id": t.project}), ("get_model", {"model_version_id": t.root_mv}),
         ("get_model_card", {"model_version_id": t.root_mv}), ("get_prediction", {"prediction_id": t.prediction}),
         ("get_impact", {"kind": "experiment", "node_id": t.root}), ("accept_proposal", {"proposal_id": t.decision}),
-        ("list_proposals", {"project_id": t.project}),
+        ("list_proposals", {"project_id": t.project}), ("inspect_governance", {}),
     ]
 
 

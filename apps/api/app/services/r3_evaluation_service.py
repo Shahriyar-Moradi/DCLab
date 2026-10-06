@@ -713,7 +713,9 @@ def run_r3(corpus: list[Case], answerer: Answerer, *, candidate: str, db: Sessio
     report["digest"] = report_digest(report)  # content (deterministic across runs of the same inputs)
     report["run_digest"] = run_digest(report)  # identity: content + run id + time (a copy is not a second run)
     if db is not None:
-        store_run(db, report)
+        if actor is None:
+            raise GovernanceNotPermitted("r3_store_needs_admin", "a run is stored only for an active dclab_admin")
+        store_run(db, report, admin=actor)
     if db is not None and apply_demotions:  # ADR 0008 §4: an R3 demotion verdict is an eval_failure incident
         from app.agents.governance.incidents import open_incident
 
@@ -739,9 +741,12 @@ def stored_content(report: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in report.items() if k != "workspace_evidence"}
 
 
-def store_run(db: Session, report: dict[str, Any]) -> R3Run:
-    """Persist the run as it happens (append-only ``r3_runs``); the row is what promotions cite."""
+def store_run(db: Session, report: dict[str, Any], *, admin: User) -> R3Run:
+    """Persist the run as it happens (append-only ``r3_runs``); the row is what promotions cite.
+    Only a named active ``dclab_admin`` stores evidence (P6.11-A: no tenant path reaches this)."""
 
+    if not is_platform_admin(db, admin):
+        raise GovernanceNotPermitted("platform_levels_need_admin", "storing R3 evidence needs a dclab_admin")
     if len(report["candidate"]) > 128 or len(report["pair"]["release"]) > 512:
         raise ValueError("r3 run identity too long for r3_runs (candidate 128 / pair release 512)")  # never slice
     row = R3Run(id=UUID(report["run_id"]), candidate=report["candidate"], live=bool(report["live"]),
@@ -822,6 +827,8 @@ def _platform_level(db: Session, key: str) -> int:
     if head is None or head.level == 0:
         return 0
     release_id, model_id = current_pair(db, key)
+    if key in RELEASES and release_id is None:  # the code pins a Jev release the database has not released yet
+        return 0  # fail closed, as the runtime snapshot does
     if release_id is not None and (head.prompt_release_id, head.model_id) != (release_id, model_id):
         return 0
     if release_id is None:  # agent points: the cited prompt release must still be released

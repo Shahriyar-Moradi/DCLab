@@ -28,10 +28,13 @@ from dclab_client.types import (
     ExperimentComparison,
     ExperimentFindings,
     ExperimentPage,
+    Governance,
+    GovernanceSwitch,
     ModelBuild,
     ModelCard,
     ModelVersion,
     NodeImpact,
+    PolicyChange,
     Principal,
     ProblemSpec,
     Project,
@@ -41,6 +44,7 @@ from dclab_client.types import (
     Proposal,
     ProposalPage,
     RefMoveResult,
+    Replay,
     Visualization,
     Workspace,
     _Versioned,
@@ -585,6 +589,59 @@ class AgentRunsClient:
             "GET", f"/v1/agent-runs/{_id(run_id)}", request_id=request_id
         )
         return _versioned(AgentRun, payload, headers)
+
+    def replay(self, run_id: UUID | str, *, idempotency_key: str | None = None,
+               request_id: str | None = None) -> Replay:
+        """Replay a recorded specialist / ops run against its record (a person's act: POST, CSRF for cookies,
+        ``Idempotency-Key``). Lead and assistant runs are refused (409 ``not_replayable``). A mismatch opens
+        one ``replay_mismatch`` incident; a run that failed the same way replays as ``same_failure``."""
+
+        payload = self._transport.request("POST", f"/v1/agent-runs/{_id(run_id)}/replay", json={},
+                                          request_id=request_id, idempotency_key=idempotency_key)
+        return Replay.model_validate(payload)
+
+
+class GovernanceClient:
+    """The governance console. Reading needs ML-write, owner/admin or platform access; changing is a person's
+    act (a service token is refused): propose a policy, an owner/admin accepts it, switches flip at once."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def get(self, *, request_id: str | None = None) -> Governance:
+        return Governance.model_validate(self._transport.request("GET", "/v1/governance", request_id=request_id))
+
+    def propose_policy(self, policy: dict[str, Any], *, rationale: str, idempotency_key: str | None = None,
+                       request_id: str | None = None) -> PolicyChange:
+        """Propose a full ``AiPolicyV1`` document (it may only narrow the platform policy: 422 otherwise)."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST", "/v1/governance/policy", json={"policy": policy, "rationale": rationale}, request_id=request_id,
+            idempotency_key=idempotency_key)
+        return _versioned(PolicyChange, payload, headers)
+
+    def accept_policy(self, proposal_id: UUID | str, *, policy_digest: str, acknowledge_consent_change: bool = False,
+                      idempotency_key: str | None = None, request_id: str | None = None) -> PolicyChange:
+        """Accept an open proposal (workspace owner/admin only; platform staff never). ``policy_digest`` is the
+        digest of the proposal you reviewed (409 ``policy_digest_mismatch`` otherwise); a proposal that changes
+        R3 sharing (``consent_change``) needs ``acknowledge_consent_change=True``."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/governance/policy/{_id(proposal_id)}/accept",
+            json={"policy_digest": policy_digest, "acknowledge_consent_change": acknowledge_consent_change},
+            request_id=request_id, idempotency_key=idempotency_key)
+        return _versioned(PolicyChange, payload, headers)
+
+    def set_switch(self, switch_key: str, state: str, *, reason: str, idempotency_key: str | None = None,
+                   request_id: str | None = None) -> GovernanceSwitch:
+        """Flip a workspace kill switch (``all_ai``, ``agent:<key>``, ``provider:<name>``, ``purpose:<key>``)."""
+
+        if state not in ("on", "off"):
+            raise DCLabClientError("state must be 'on' or 'off'")
+        payload, headers = self._transport.request_with_headers(
+            "POST", "/v1/governance/switches", json={"switch_key": switch_key, "state": state, "reason": reason},
+            request_id=request_id, idempotency_key=idempotency_key)
+        return _versioned(GovernanceSwitch, payload, headers)
 
 
 REVIEW_AGENTS = frozenset({"experiment_critic", "dataset_investigator", "experiment_planner"})
@@ -1140,6 +1197,7 @@ class DCLabClient:
         self.proposals = ProposalsClient(self._transport)
         self.agent_runs = AgentRunsClient(self._transport)
         self.agent_reviews = AgentReviewsClient(self._transport)
+        self.governance = GovernanceClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)

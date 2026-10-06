@@ -491,6 +491,189 @@ class AgentRunPage(BaseModel):
     limit: int
 
 
+class GovernanceViewer(BaseModel):
+    can_approve: bool
+    can_propose: bool
+    can_switch_off: bool
+
+
+class EffectivePolicy(BaseModel):
+    digest: str
+    platform_version: int
+    workspace_version: int | None = None
+    document: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelRole(BaseModel):
+    role: str
+    default: str
+    allowed: list[str]
+    fallback: str
+
+
+class DataClasses(BaseModel):
+    order: list[str]
+    max_class: str
+    sample_values_per_column: int
+    user_text_to_jev: bool
+    share_r3_aggregates: bool
+
+
+class GovernanceSwitch(_Versioned):
+    """A workspace kill switch head. ``reason`` is plain text: show it as text, never as markup."""
+
+    id: UUID
+    switch_key: str
+    state: str
+    held_by_incident: bool
+    reason: str
+    changed_by: str
+    changed_at: datetime
+
+
+class GovernanceSwitches(BaseModel):
+    platform_ai_blocking: str | None = None
+    workspace: list[GovernanceSwitch] = Field(default_factory=list)
+
+
+class R3Evidence(BaseModel):
+    """A link to a stored R3 run (ids, digests, pair, verdict summary): never the report body."""
+
+    run_id: UUID
+    content_digest: str
+    run_digest: str
+    live: bool
+    digest_verified: bool
+    verdict_current: bool = False
+    pair_release: str
+    model_id: str
+    cases: int
+    recorded_at: datetime
+    current_platform_level: int | None = None
+    promotion_allowed: dict[str, bool] = Field(default_factory=dict)
+    demotion_allowed: bool | None = None
+
+
+class DecisionPointLevel(BaseModel):
+    key: str
+    stage: str
+    pattern: str
+    ai_kind: str
+    cap: int
+    workspace_level: int
+    platform_level: int
+    effective_level: int
+    pair_current: bool = True
+    prompt_release_id: UUID | None = None
+    model_id: str | None = None
+    open_incidents: dict[str, int] = Field(default_factory=dict)
+    r3_evidence: R3Evidence | None = None
+
+
+class BudgetPeriod(BaseModel):
+    scope: str
+    period: str
+    period_start: str | None = None
+    limit_micros: int
+    spent_micros: int
+    reserved_micros: int
+    calls: int
+    hard_stop: bool
+    alert_fraction: float
+    currency: str
+
+
+class Spend(BaseModel):
+    currency: str
+    workspace: list[BudgetPeriod] = Field(default_factory=list)
+    per_run_limits_micros: dict[str, int] = Field(default_factory=dict)
+
+
+class GovernanceIncident(BaseModel):
+    id: UUID
+    kind: str
+    subject_kind: str
+    subject_key: str
+    action: str
+    status: str
+    opened_at: datetime
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class PolicyFieldChange(BaseModel):
+    path: str
+    before: Any = None
+    after: Any = None
+
+
+class PolicyChange(_Versioned):
+    """A policy proposal or decision row; ``rationale`` is plain text. Open proposals carry the proposed
+    ``document`` and the diffs for owners/admins and the proposer (never for a service token)."""
+
+    id: UUID
+    version: int
+    base_version: int | None = None
+    state: str
+    change_kind: str
+    open: bool
+    rationale: str
+    policy_digest: str
+    proposed_by: str | None = None
+    decided_by: str | None = None
+    self_approved: bool
+    supersedes_id: UUID | None = None
+    created_at: datetime
+    document: dict[str, Any] | None = None
+    diff_vs_head: list[PolicyFieldChange] | None = None
+    diff_vs_effective: list[PolicyFieldChange] | None = None
+    consent_change: bool = False
+
+
+class RecentChange(BaseModel):
+    kind: str
+    id: UUID
+    at: datetime
+    subject: str
+    state: str
+    detail: str
+    rationale: str
+    actor: str | None = None
+
+
+class Governance(BaseModel):
+    """``GET /v1/governance``: every free-text field (rationales, reasons, incident evidence) is plain text."""
+
+    workspace_id: UUID
+    viewer: GovernanceViewer
+    ai_enabled_setting: bool
+    policy_unavailable: str | None = None
+    policy: EffectivePolicy | None = None
+    model_allowlist: list[ModelRole] = Field(default_factory=list)
+    data_classes: DataClasses | None = None
+    switches: GovernanceSwitches
+    levels: list[DecisionPointLevel] = Field(default_factory=list)
+    spend: Spend | None = None
+    open_incidents: list[GovernanceIncident] = Field(default_factory=list)
+    policy_changes: list[PolicyChange] = Field(default_factory=list)
+    recent_changes: list[RecentChange] = Field(default_factory=list)
+
+
+class ReplayTool(BaseModel):
+    tool: str
+    argument_digest: str
+
+
+class Replay(BaseModel):
+    run_id: UUID
+    equal: bool
+    mismatches: list[str] = Field(default_factory=list)
+    tool_sequence: list[ReplayTool] = Field(default_factory=list)
+    output_digest: str | None = None
+    incident_id: UUID | None = None
+    same_failure: bool = False
+    not_comparable: bool = False
+
+
 class ExperimentCodeInput(BaseModel):
     """A local file the generated code reads (by placeholder or environment variable)."""
 
