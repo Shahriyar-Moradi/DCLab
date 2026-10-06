@@ -215,6 +215,7 @@ class SemanticDecisionRequest(_Attributed):
     source_columns: tuple[UUID, ...] = Field(default=(), max_length=512)
     budget: BudgetReservation
     timeout_ms: int = Field(default=1000, ge=1, le=60_000)
+    cache: bool = True  # False: an R3 evaluation ask (ADR 0008 §4 bypasses the answer cache)
 
     @model_validator(mode="after")
     def _question_columns(self) -> "SemanticDecisionRequest":

@@ -146,7 +146,7 @@ class JevSemanticPort:
                                 for key, primitive, choices, column in batch.questions),
                 source_datasets=ask.source_datasets,
                 source_columns=tuple(dict.fromkeys([*ask.source_columns, *batch.column_keys.values()])),
-                budget=reservation, timeout_ms=TIMEOUT_MS,
+                budget=reservation, timeout_ms=TIMEOUT_MS, cache=ask.cache,
             )
         except ValueError:  # pydantic ValidationError: an illegal question never leaves the process
             logger.warning("semantic ask refused before the gateway", extra={"purpose": release.purpose})

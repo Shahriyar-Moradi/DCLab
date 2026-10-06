@@ -63,6 +63,10 @@ class SemanticAsk(_Frozen):
     # ``train`` (ADR 0008 §2c); None takes the registry's.
     levels: dict[str, int] | None = None
     evidence_partition: Literal["metadata", "train"] | None = None
+    # False only for R3 evaluation asks: the gateway skips the cache lookup, so every ask reaches
+    # the provider; the answer rows are still written (ledger + evaluation samples) and may serve
+    # later cached asks inside the evaluation workspace.
+    cache: bool = True
 
 
 @dataclass(frozen=True)

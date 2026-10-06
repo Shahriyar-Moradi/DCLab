@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from uuid import UUID
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -83,6 +84,9 @@ class Settings(BaseSettings):
     # decision agent and the advisory auditor run whenever AI_ENABLED is on, governed by
     # kill switches (``agent:<key>`` / ``purpose:<key>`` rows) and decision-point levels.
     ai_enabled: bool = False
+    # P6.8-A: the one platform evaluation workspace a live R3 run may ask Jev inside
+    # (benchmark datasets registered there); unset = no live R3 run anywhere.
+    r3_eval_workspace_id: UUID | None = None
     pipeline_llm_timeout_seconds: float = 30.0
     # Application-level object storage. Default is local disk for tests/dev.
     # S3/GCS adapters live behind ObjectStorage; core services never import SDKs.

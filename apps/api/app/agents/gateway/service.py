@@ -243,6 +243,7 @@ class _SemanticSteps:
 
     def __init__(self, service: "GatewayService", request: SemanticDecisionRequest) -> None:
         self.service, self.request = service, request
+        self.use_cache = request.cache
         self.release = release_for(request.purpose, request.release_version)
         self.question_keys: list[str] = []
 

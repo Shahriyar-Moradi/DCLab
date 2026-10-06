@@ -190,6 +190,11 @@ from app.domain.ai_governance import (
     CK_SWITCHES_CHAIN,
     CK_SWITCHES_KEY,
     CK_SWITCHES_REASON,
+    CK_R3_RUNS_CANDIDATE,
+    CK_R3_RUNS_CREATED_AT,
+    CK_R3_RUNS_DIGESTS,
+    CK_R3_RUNS_LIVE,
+    CK_R3_RUNS_REPORT,
     CK_SWITCHES_RULE_OFF,
     CK_SWITCHES_STATE,
 )
@@ -7344,6 +7349,37 @@ class AiSwitch(Base):
         UUID(as_uuid=True), ForeignKey("ai_switches.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class R3Run(Base):
+    """One stored R3 evaluation run (P6.8-A; ADR 0008 §4). Platform rows, append-only
+    (``r3_runs_append_only`` trigger): the only promotion evidence a platform level may cite.
+    ``report`` is the digest-covered content (tenant-derived aggregates only, never tenant rows;
+    bounded, see 0077); ``live`` = a real-provider run; ``recorded_at`` is the database clock."""
+
+    __tablename__ = "r3_runs"
+    __table_args__ = (
+        CheckConstraint(CK_R3_RUNS_CANDIDATE, name="ck_r3_runs_candidate"),
+        CheckConstraint(CK_R3_RUNS_DIGESTS, name="ck_r3_runs_digests"),
+        CheckConstraint(CK_R3_RUNS_REPORT, name="ck_r3_runs_report"),
+        CheckConstraint(CK_R3_RUNS_LIVE, name="ck_r3_runs_live"),
+        CheckConstraint(CK_R3_RUNS_CREATED_AT, name="ck_r3_runs_created_at"),
+        Index("ix_r3_runs_pair_recorded_at", "pair_release", "model_id", desc("recorded_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    candidate: Mapped[str] = mapped_column(String(128), nullable=False)
+    live: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    pair_release: Mapped[str] = mapped_column(String(512), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    run_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    cases: Mapped[int] = mapped_column(Integer, nullable=False)
+    report: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
