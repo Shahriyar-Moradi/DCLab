@@ -915,6 +915,30 @@
         "title": "DataClassesRead",
         "type": "object"
       },
+      "DatasetColumnSummaryRead": {
+        "description": "One column of an uploaded dataset: schema facts only (no values, no row-level data).",
+        "properties": {
+          "dtype": {
+            "title": "Dtype",
+            "type": "string"
+          },
+          "missing_fraction": {
+            "title": "Missing Fraction",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dtype",
+          "missing_fraction"
+        ],
+        "title": "DatasetColumnSummaryRead",
+        "type": "object"
+      },
       "DatasetIngestionRead": {
         "description": "The ingestion run that produced a dataset and its ADR 0005 publication state.",
         "properties": {
@@ -1051,6 +1075,14 @@
           "column_count": {
             "title": "Column Count",
             "type": "integer"
+          },
+          "columns": {
+            "description": "Name, physical type and missing fraction per column, in file order. Column names are user data.",
+            "items": {
+              "$ref": "#/components/schemas/DatasetColumnSummaryRead"
+            },
+            "title": "Columns",
+            "type": "array"
           },
           "content_digest": {
             "anyOf": [

@@ -8,6 +8,7 @@ import { Card } from "@/components/studio/Card";
 import { KeyValue } from "@/components/studio/KeyValue";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill } from "@/components/studio/Pill";
+import { WaitingPanel } from "@/app/components/studio-app/WaitingPanel";
 import { QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { useStudioExperiment } from "@/lib/application";
 import { projectHref } from "@/lib/application/command-search";
@@ -38,6 +39,7 @@ export default function ExperimentPage() {
         actions={<Link className="btn" href={`/projects/${id}/experiments`}>All experiments</Link>}
       />
       {experiment.failure_reason ? <Banner tone="crit">{experiment.failure_reason}</Banner> : null}
+      {experiment.status === "needs_input" ? <WaitingPanel requestId={experiment.lineage.execution_request_id} projectId={id} experimentId={experiment.id} /> : null}
       <Card title="Facts">
         <KeyValue
           items={[

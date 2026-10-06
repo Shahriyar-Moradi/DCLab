@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
@@ -33,7 +34,7 @@ from app.api.deps import (
     require_workspace_read,
 )
 from app.config import get_settings
-from app.db.models import Dataset, IngestionRun, Project, User
+from app.db.models import Dataset, DatasetColumn, IngestionRun, Project, User
 from app.db.session import get_db
 from app.domain.application_api import (
     DatasetIngestionRead,
@@ -683,10 +684,18 @@ def _sha256(stream: Any) -> str:
 
 def _dataset_upload_read(db: Session, dataset: Any) -> DatasetUploadRead:
     run = db.get(IngestionRun, dataset.ingestion_run_id)
+    columns = db.scalars(
+        select(DatasetColumn)
+        .where(DatasetColumn.workspace_id == dataset.workspace_id, DatasetColumn.dataset_id == dataset.id)
+        .order_by(DatasetColumn.ordinal_position)
+    ).all()
     return DatasetUploadRead.model_validate(
         {
-            **{key: getattr(dataset, key) for key in DatasetUploadRead.model_fields if key != "ingestion"},
+            **{key: getattr(dataset, key) for key in DatasetUploadRead.model_fields if key not in ("ingestion", "columns")},
             "ingestion": DatasetIngestionRead.model_validate(run, from_attributes=True),
+            "columns": [
+                {"name": c.name, "dtype": c.physical_dtype, "missing_fraction": c.missing_fraction} for c in columns
+            ],
         }
     )
 

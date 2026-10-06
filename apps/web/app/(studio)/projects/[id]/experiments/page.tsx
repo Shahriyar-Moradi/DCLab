@@ -33,19 +33,20 @@ export default function ExperimentsPage() {
     <>
       <PageHead
         title="Experiments"
+        actions={<Link className="btn primary" href={`/projects/${id}/experiments/new`}>New run</Link>}
         subtitle="Every run is an experiment. Branches share the parent's split plan, so they are comparable. Selection follows a fixed rule on cross-validation; the final holdout is scored once per experiment."
       />
       <PageGuide
         purpose="See every run of this project and how runs relate to each other."
         howTo={<>Open an experiment to follow its stages live. A <Term definition="A typed list of changes (for example a different feature recipe) applied on top of a parent experiment.">change set</Term> marks a branch; the <Term definition="The fixed assignment of rows to folds and the final holdout. Experiments with the same split plan can be compared.">split plan</Term> says which experiments are comparable.</>}
-        youGet="Status, lineage and timing of each experiment. Compare, branch and cancel arrive with P4.4-A."
+        youGet="Status, lineage and timing of each experiment. Start a new run with the button above. Compare, branch and cancel arrive with P4.4-A."
       />
       {experiments.isError ? <QueryNotice error={experiments.error} what="experiment list" /> : null}
       {experiments.isPending ? <p role="status">Loading experiments…</p> : null}
       {experiments.data ? (
         <>
           <p className="muted" role="status">{items.length} experiments{live ? ` · ${live} in progress` : ""}{experiments.data.next_cursor ? " · showing the newest 100" : ""}</p>
-          <DataTable caption="Experiments" columns={columns} rows={items} rowKey={(e) => e.id} emptyMessage="No experiments yet. Upload data in Labs to start the first run." />
+          <DataTable caption="Experiments" columns={columns} rows={items} rowKey={(e) => e.id} emptyMessage="No experiments yet. Start the first run with New run." />
         </>
       ) : null}
     </>

@@ -18,10 +18,10 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/app/settings` → tokens panel | exists |
 | Connect an agent (MCP/CLI) | — | — | Settings → "Connect Claude Code" (copy `.mcp.json`, CLI login) | planned P4.8-UI |
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]` | planned P4.1-A |
-| Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1; Data tab | planned P4.1-B |
-| Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard step 2 (target, task, objective, constraints) | planned P4.1-B |
-| Target / split confirmation | `POST /v1/execution-requests/{id}/target-confirmation|split-confirmation` | — | wizard step 2 confirm | planned P4.1-B |
-| Run an experiment | `POST /v1/experiments`, `POST /v1/execution-requests`, `GET …/{id}` | `run_experiment` | wizard "Train" + Experiments tab "New run" | planned P4.1-B |
+| Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1 (upload response carries the column profile); Data tab | wizard step: done P4.1-B; Data tab planned P4.1-C |
+| Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard steps 2–3 (target, task, objective, constraints) | done P4.1-B |
+| Target / split confirmation | `POST /v1/execution-requests/{id}/target-confirmation|split-confirmation` | — | experiment page "needs your answer" panel (rule beside AI suggestion) | done P4.1-B |
+| Run an experiment | `POST /v1/experiments`, `POST /v1/execution-requests`, `GET …/{id}` | `run_experiment` | wizard "Train" + Experiments tab "New run" | done P4.1-B |
 | Live run progress | `GET /v1/model-builds/{id}`, `…/events`, `…/artifacts`, `…/visualizations` | — | experiment page progress + charts | exists (legacy `/lab/runs/[run_id]`), moved in P4.1-A |
 | Cancel a run | `POST /v1/experiments/{id}/cancel` | — | experiment page "Cancel" | planned P4.4-A |
 | Experiments list / detail | `GET /v1/experiments`, `GET /v1/experiments/{id}` | `get_experiment` | Experiments tab, experiment page | planned P4.1-A, P4.3-A |

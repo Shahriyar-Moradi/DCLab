@@ -1561,6 +1561,18 @@ export interface components {
             user_text_to_jev: boolean;
         };
         /**
+         * DatasetColumnSummaryRead
+         * @description One column of an uploaded dataset: schema facts only (no values, no row-level data).
+         */
+        DatasetColumnSummaryRead: {
+            /** Dtype */
+            dtype: string;
+            /** Missing Fraction */
+            missing_fraction: number;
+            /** Name */
+            name: string;
+        };
+        /**
          * DatasetIngestionRead
          * @description The ingestion run that produced a dataset and its ADR 0005 publication state.
          */
@@ -1628,6 +1640,11 @@ export interface components {
         DatasetUploadRead: {
             /** Column Count */
             column_count: number;
+            /**
+             * Columns
+             * @description Name, physical type and missing fraction per column, in file order. Column names are user data.
+             */
+            columns?: components["schemas"]["DatasetColumnSummaryRead"][];
             /** Content Digest */
             content_digest: string | null;
             /**

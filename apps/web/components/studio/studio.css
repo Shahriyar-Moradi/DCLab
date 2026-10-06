@@ -215,3 +215,12 @@
 .studio .legacy-surface .text-green { color: #176C33; }
 .studio .app-workspace-selector-label { color: var(--muted); }
 .studio .app-workspace-select { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 9px; }
+
+/* Wizard forms (P4.1-B) */
+.studio .form { display: grid; gap: 20px; max-width: 640px; }
+.studio .field { display: grid; gap: 6px; font-size: 1rem; }
+.studio .field > span { font-weight: 600; }
+.studio .field input, .studio .field select, .studio .field textarea { font: inherit; font-size: 1rem; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink); min-width: 0; }
+.studio .field input:focus-visible, .studio .field select:focus-visible, .studio .field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.studio .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
+.studio .btn:disabled { opacity: .6; cursor: not-allowed; }

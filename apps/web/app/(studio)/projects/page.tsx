@@ -19,7 +19,7 @@ export default function ProjectsPage() {
   const projects = useStudioProjects();
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Projects" subtitle="A project is one prediction goal with its data, experiments, models and decisions." />
+      <PageHead eyebrow="Workspace" title="Projects" subtitle="A project is one prediction goal with its data, experiments, models and decisions." actions={<Link className="btn primary" href="/projects/new">New project</Link>} />
       <PageGuide
         purpose="Find the project you want to work on."
         howTo="Pick a project to open its experiments. Sort by name or last change."
@@ -28,7 +28,7 @@ export default function ProjectsPage() {
       {projects.isError ? <QueryNotice error={projects.error} what="project list" /> : null}
       {projects.isPending ? <p role="status">Loading projects…</p> : null}
       {projects.data ? (
-        <DataTable caption="Projects" columns={COLUMNS} rows={projects.data} rowKey={(p) => p.id} emptyMessage="No projects yet. A project is created when you upload data in Labs." />
+        <DataTable caption="Projects" columns={COLUMNS} rows={projects.data} rowKey={(p) => p.id} emptyMessage="No projects yet. Create one with New project." />
       ) : null}
     </>
   );

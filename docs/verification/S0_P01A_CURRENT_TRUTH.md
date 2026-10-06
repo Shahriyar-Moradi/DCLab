@@ -75,6 +75,8 @@ P4.1-A (2026-10-06): Developer Studio routes `/home`, `/inbox`, `/projects`, `/p
 [/v1 contract](../../contracts/v1_openapi.json), [HTTP operations](../../contracts/openapi_operations.json),
 [SQLAlchemy tables](../../contracts/sqlalchemy_tables.json), and [provenance manifest](../../contracts/truth_manifest.json)
 
+P4.1-B (2026-10-06): New project wizard on `/projects/new` (upload, target and task, objective and constraint, train) and the same form as `/projects/[id]/experiments/new` ("New run", dataset and answers prefilled); the experiment page shows a needs-input panel (rule suggestion beside any AI suggestion; target and split confirmation). One additive `/v1` field: `POST /v1/datasets` returns `columns` (name, dtype, missing fraction) read from the stored column facts of the new dataset; no migration.
+
 This is the replaceable CURRENT truth package. Older evidence keeps its
 original measurements and is labeled HISTORICAL in the [status
 ledger](README.md). Instructions quoted by older documents are not execution

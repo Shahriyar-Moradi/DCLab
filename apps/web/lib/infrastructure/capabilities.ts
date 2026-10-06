@@ -29,7 +29,7 @@ export function isStudioPath(pathname: string): boolean {
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const PROJECT_SECTIONS = "lab|pipeline|graph|data|experiments|improve|models|monitoring|decisions";
 const STUDIO_ROUTE = new RegExp(
-  `^/(?:home|inbox|projects(?:/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/${UUID})?)?)$`,
+  `^/(?:home|inbox|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new))?)?)$`,
 );
 
 /**
@@ -39,7 +39,7 @@ const STUDIO_ROUTE = new RegExp(
 export function studioRoute(pathname: string): "ok" | "not_found" | { redirect: string } {
   if (!STUDIO_ROUTE.test(pathname)) return "not_found";
   const parts = pathname.split("/");
-  return parts.length === 3 && parts[1] === "projects" ? { redirect: `${pathname}/experiments` } : "ok";
+  return parts.length === 3 && parts[1] === "projects" && parts[2] !== "new" ? { redirect: `${pathname}/experiments` } : "ok";
 }
 
 export function hasCapability(

@@ -1846,6 +1846,7 @@
     "DatasetUploadRead": {
       "properties": [
         "column_count",
+        "columns",
         "content_digest",
         "created_at",
         "dataset_asset_id",

@@ -62,7 +62,7 @@ export const StudioExperimentSchema = z.object({
   failure_reason: nullableString,
   target_column: nullableString,
   task_type: nullableString,
-  lineage: z.object({ parent_experiment_id: nullableString, split_plan_id: nullableString, problem_spec_id: nullableString, source_dataset_id: nullableString }),
+  lineage: z.object({ parent_experiment_id: nullableString, split_plan_id: nullableString, problem_spec_id: nullableString, source_dataset_id: nullableString, execution_request_id: nullableString }),
 });
 export type StudioExperiment = z.infer<typeof StudioExperimentSchema>;
 
