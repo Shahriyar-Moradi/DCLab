@@ -20,7 +20,7 @@ export const CAPABILITIES = {
 } as const;
 
 /** Developer Studio routes (STUDIO_DESIGN section 3): development workspace role only. */
-const STUDIO_PREFIXES = ["/home", "/inbox", "/projects"] as const;
+const STUDIO_PREFIXES = ["/home", "/inbox", "/agents", "/projects"] as const;
 
 export function isStudioPath(pathname: string): boolean {
   return STUDIO_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -29,7 +29,7 @@ export function isStudioPath(pathname: string): boolean {
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const PROJECT_SECTIONS = "lab|pipeline|graph|data|experiments|improve|models|monitoring|decisions";
 const STUDIO_ROUTE = new RegExp(
-  `^/(?:home|inbox|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models)/${UUID})?)?)$`,
+  `^/(?:home|inbox|agents|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models)/${UUID})?)?)$`,
 );
 
 /**
@@ -106,6 +106,7 @@ const WORKSPACE_SWITCH_STABLE_ROUTES = new Set([
   "/admin/businesses",
   "/home",
   "/inbox",
+  "/agents",
   "/projects",
 ]);
 

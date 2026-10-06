@@ -15,8 +15,8 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Capability | `/v1` operation(s) | MCP tool | Studio screen | Status |
 | --- | --- | --- | --- | --- |
 | Who am I, workspaces | `GET /v1/me`, `GET /v1/workspaces` | — | header workspace switcher | exists |
-| Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/app/settings` → tokens panel | exists |
-| Connect an agent (MCP/CLI) | — | — | Settings → "Connect Claude Code" (copy `.mcp.json`, CLI login) | planned P4.8-UI |
+| Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/agents` → Service tokens tab (also `/app/settings`) | exists |
+| Connect an agent (MCP/CLI) | — | — | `/agents` → Connect tab (copy `.mcp.json`, SDK, CLI, `/v1` conventions) | exists |
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]` | planned P4.1-A |
 | Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1 (upload response carries the column profile); Data page `/projects/[id]/data` Versions tab (list, digest, used by) and Policy & access tab (`GET /v1/datasets/{id}` `policy`) | wizard step: done P4.1-B; Data page done P4.1-C |
 | Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard steps 2–3 (target, task, objective, constraints) | done P4.1-B |

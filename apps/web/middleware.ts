@@ -111,6 +111,7 @@ export const config = {
     // Developer Studio (P4.1-A).
     "/home/:path*",
     "/inbox/:path*",
+    "/agents/:path*",
     "/projects/:path*",
   ],
 };

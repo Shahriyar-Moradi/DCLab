@@ -9,7 +9,7 @@ export function GlassPanel({
 }: {
   title?: string;
   description?: string;
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
 }) {
   return (
