@@ -5,7 +5,7 @@
  * (ref badges, stale text, AI decision-point markers from decision records).
  * Every value shown comes from an API field; nothing is invented here.
  */
-import { isUuid, projectHref } from "./command-search.ts";
+import { projectHref } from "./command-search.ts";
 import type { GraphEdgeLike } from "./studio-data.ts";
 
 export type NodeRefLike = { kind: string; id: string; key?: string };
@@ -209,18 +209,15 @@ export function groupByKind<T extends GraphNodeLike>(nodes: T[]): Array<{ kind: 
   return [...groups].map(([kind, items]) => ({ kind, nodes: items }));
 }
 
-/** Drawer links: the experiment page, or the Data page for a dataset version. Ids must be UUIDs. */
+/** Drawer links: the full inspector of the node (experiment, dataset, split, features, model). Ids must be UUIDs. */
 export function nodeLink(projectId: string, node: NodeRefLike): { href: string; label: string } | null {
-  if (!isUuid(node.id)) return null;
-  if (node.kind === "experiment") {
-    const href = projectHref(projectId, "experiments", node.id);
-    return href ? { href, label: "Open the experiment" } : null;
-  }
-  if (node.kind === "dataset_version") {
-    const href = projectHref(projectId, "data");
-    return href ? { href, label: "Open the Data page" } : null;
-  }
-  return null;
+  const sections: Record<string, [string, string]> = {
+    experiment: ["experiments", "Open the experiment"], dataset_version: ["data", "Open the dataset version"],
+    split_plan: ["splits", "Open the split plan"], feature_recipe: ["features", "Open the feature recipe"], model_version: ["models", "Open the model version"],
+  };
+  const entry = Object.hasOwn(sections, node.kind) ? sections[node.kind] : null;
+  const href = entry ? projectHref(projectId, entry[0], node.id) : null;
+  return entry && href ? { href, label: entry[1] } : null;
 }
 
 // --- AI decision-point markers (P6.9 records) -------------------------------------

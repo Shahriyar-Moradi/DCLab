@@ -114,10 +114,12 @@ test("ref badges, stale lines and built-from read the API fields", () => {
   ]);
 });
 
-test("drawer links only for UUID experiment and dataset nodes", () => {
+test("drawer links only for UUID nodes of a kind with an inspector", () => {
   assert.deepEqual(nodeLink(P, e1), { href: `/projects/${P}/experiments/${e1.id}`, label: "Open the experiment" });
-  assert.deepEqual(nodeLink(P, ds), { href: `/projects/${P}/data`, label: "Open the Data page" });
-  assert.equal(nodeLink(P, mv), null);
+  assert.deepEqual(nodeLink(P, ds), { href: `/projects/${P}/data/${ds.id}`, label: "Open the dataset version" });
+  assert.deepEqual(nodeLink(P, mv), { href: `/projects/${P}/models/${mv.id}`, label: "Open the model version" });
+  assert.equal(nodeLink(P, spec), null);
+  assert.equal(nodeLink(P, { kind: "constructor", id: e1.id }), null);
   assert.equal(nodeLink(P, { kind: "experiment", id: "../../admin" }), null);
   assert.equal(nodeLink("not-a-uuid", e1), null);
 });

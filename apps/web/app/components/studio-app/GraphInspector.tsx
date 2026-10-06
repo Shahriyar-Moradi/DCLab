@@ -7,14 +7,14 @@ import { Level } from "@/components/studio/Level";
 import { Pill } from "@/components/studio/Pill";
 import { safeInternalHref } from "@/components/studio/safe-href";
 import { Term } from "@/components/studio/Term";
-import { PhaseEmpty, QueryNotice, formatWhen } from "@/app/components/studio-app/StudioParts";
+import { QueryNotice, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { plainText } from "@/lib/application/command-search";
 import { useNodeImpact, type StudioGraph, type StudioGraphNode } from "@/lib/application/studio-data-hooks";
 import {
   REF_BADGE, RELATION_LABEL, builtFrom, groupByKind, kindLabel, nodeLink, shortId, staleLines, type DecisionMarker,
 } from "@/lib/application/studio-graph";
 
-/** Typed slot for the full per-kind inspectors (reason, evidence, code) that P4.3-A adds. */
+/** Typed slot for the compact per-kind inspector (reason, facts, link to the full inspector). */
 export type NodeInspectorSlot = (node: StudioGraphNode) => ReactNode;
 
 const IMPACT_TERM = "The nodes downstream of this one along lineage edges. If this node were replaced (for example a ref moved off it), these are the nodes that would be built from an old version, so the graph would mark them stale. Nothing is retrained automatically.";
@@ -133,10 +133,11 @@ export function GraphInspector({ projectId, graph, node, markers, known, onSelec
       <h3><Term definition={IMPACT_TERM}>What becomes stale</Term></h3>
       <Impact node={node} known={known} onSelect={onSelect} />
       {node.kind === "experiment" ? (<><h3>AI decision points</h3><DecisionPoints markers={markers} /></>) : null}
-      <div className="toolbar">
-        {href && link ? <Link className="btn" href={href}>{link.label}</Link> : null}
-      </div>
-      {slot ? slot(node) : <PhaseEmpty title="The full inspector (reason, evidence and code) for this node" phase="P4.3-A" />}
+      {slot ? slot(node) : (
+        <div className="toolbar">
+          {href && link ? <Link className="btn" href={href}>{link.label}</Link> : null}
+        </div>
+      )}
     </aside>
   );
 }

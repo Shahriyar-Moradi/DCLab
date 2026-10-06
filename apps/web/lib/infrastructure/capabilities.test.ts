@@ -59,12 +59,14 @@ test("Studio routes need the development workspace role", () => {
 
 test("Studio paths: known sections and UUID ids only; a project opens on Experiments", () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  for (const ok of ["/home", "/inbox", "/projects", "/projects/new", `/projects/${id}/experiments/new`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`]) {
+  for (const ok of ["/home", "/inbox", "/projects", "/projects/new", `/projects/${id}/experiments/new`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
+    ...["data", "splits", "features", "models"].map((section) => `/projects/${id}/${section}/${id}`)]) {
     assert.equal(studioRoute(ok), "ok", ok);
   }
   assert.deepEqual(studioRoute(`/projects/${id}`), { redirect: `/projects/${id}/experiments` });
   for (const bad of ["/projects/x/graph", `/projects/${id}/nope`, `/projects/${id}/constructor`, `/projects/${id}/graph/x`,
-    `/projects/${id}/experiments/x`, "/home/x", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`]) {
+    `/projects/${id}/experiments/x`, "/home/x", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`,
+    `/projects/${id}/data/x`, `/projects/${id}/splits/${id}/x`, `/projects/${id}/features`, `/projects/${id}/graph/${id}`]) {
     assert.equal(studioRoute(bad), "not_found", bad);
   }
 });

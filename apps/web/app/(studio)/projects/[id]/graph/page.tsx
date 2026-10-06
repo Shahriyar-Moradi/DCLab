@@ -12,6 +12,7 @@ import { TabPanel, Tabs } from "@/components/studio/Tabs";
 import { Term } from "@/components/studio/Term";
 import { GraphCanvas, GraphLegend, GraphList, nodeDomId } from "@/app/components/studio-app/GraphCanvas";
 import { GraphInspector } from "@/app/components/studio-app/GraphInspector";
+import { NodeInspectorBody } from "@/app/components/studio-app/Inspectors";
 import { QueryNotice } from "@/app/components/studio-app/StudioParts";
 import { projectHref } from "@/lib/application/command-search";
 import { useDecisionPoints, useProjectGraph } from "@/lib/application/studio-data-hooks";
@@ -124,7 +125,7 @@ export default function GraphPage() {
                     {view === "list" ? <GraphList graph={data} markers={markers} selected={selected} onSelect={select} /> : null}
                   </TabPanel>
                 </div>
-                {node ? <GraphInspector projectId={id} graph={data} node={node} markers={markersFor(markers, node)} known={known} onSelect={select} onClose={close} /> : null}
+                {node ? <GraphInspector projectId={id} graph={data} node={node} markers={markersFor(markers, node)} known={known} onSelect={select} onClose={close} slot={(selectedNode) => <NodeInspectorBody projectId={id} node={selectedNode} graph={data} />} /> : null}
               </div>
             </>
           )}

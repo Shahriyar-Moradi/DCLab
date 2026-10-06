@@ -2,22 +2,26 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ModelBuildInspector } from "@/app/components/model-build/ModelBuildInspector";
+import { ExperimentInspector } from "@/app/components/studio-app/Inspectors";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
 import { KeyValue } from "@/components/studio/KeyValue";
+import { PageGuide } from "@/components/studio/PageGuide";
 import { PageHead } from "@/components/studio/PageHead";
+import { Term } from "@/components/studio/Term";
 import { Pill } from "@/components/studio/Pill";
 import { WaitingPanel } from "@/app/components/studio-app/WaitingPanel";
 import { QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { useStudioExperiment } from "@/lib/application";
 import { projectHref } from "@/lib/application/command-search";
+import { useProjectGraph } from "@/lib/application/studio-data-hooks";
 
 const mono = (value: string | null | undefined) => (value ? <span className="mono">{value}</span> : "—");
 
 export default function ExperimentPage() {
   const { id, experimentId } = useParams<{ id: string; experimentId: string }>();
   const query = useStudioExperiment(experimentId);
+  const graph = useProjectGraph(id);
   if (query.isPending) return <p role="status">Loading experiment…</p>;
   if (query.isError) return <QueryNotice error={query.error} what="experiment" />;
   const experiment = query.data;
@@ -35,8 +39,14 @@ export default function ExperimentPage() {
       <PageHead
         title={experiment.intent || `Experiment ${experiment.id.slice(0, 8)}`}
         badges={<Pill tone={STATUS_TONE[experiment.status] ?? "gray"}>{experiment.status.replaceAll("_", " ")}</Pill>}
-        subtitle="Stages update live while the run is in progress."
+        subtitle="Stages update live while the run is in progress. Reason, candidates, folds, importance, code and evidence are in the inspector below."
         actions={<Link className="btn" href={`/projects/${id}/experiments`}>All experiments</Link>}
+      />
+      <PageGuide
+        purpose="Understand one run: why it exists, what it tried, how it scored and how to reproduce it."
+        howTo={<>Use the inspector tabs: Candidates and Per-fold show the <Term definition="Cross-validation: the training rows are split into folds and each is held out once. Models are compared on these scores only.">cross-validation</Term> evidence, Code is a plain-text script you can copy or download.</>}
+        youGet="Config, change set, CV metrics, per-fold results, feature importance, generated code and the stage evidence. An AI Critic review appears only when one exists."
+        attention="The final holdout is scored once for the locked winner and is not shown in this inspector."
       />
       {experiment.failure_reason ? <Banner tone="crit">{experiment.failure_reason}</Banner> : null}
       {experiment.status === "needs_input" ? <WaitingPanel requestId={experiment.lineage.execution_request_id} projectId={id} experimentId={experiment.id} /> : null}
@@ -56,9 +66,7 @@ export default function ExperimentPage() {
           ]}
         />
       </Card>
-      <div className="legacy-surface">
-        <ModelBuildInspector workspaceId={experiment.workspace_id} pipelineRunId={experiment.id} />
-      </div>
+      <ExperimentInspector projectId={id} experimentId={experiment.id} workspaceId={experiment.workspace_id} lineage={experiment.lineage} graph={graph.data} />
     </>
   );
 }
