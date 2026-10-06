@@ -293,7 +293,30 @@
           "422",
           "500"
         ],
-        "successSchema": "DatasetListItem"
+        "successSchema": "DatasetVersionRead"
+      }
+    },
+    "/v1/datasets/{dataset_id}/profile": {
+      "GET": {
+        "operationId": "read_dataset_profile_v1_datasets__dataset_id__profile_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "DatasetProfileRead"
       }
     },
     "/v1/decisions/{decision_id}": {
@@ -1843,6 +1866,92 @@
         "workspace_id"
       ]
     },
+    "DatasetPolicyRead": {
+      "properties": [
+        "ai_data_class",
+        "llm_exposure_policy",
+        "policy_complete",
+        "policy_revision",
+        "publication_state",
+        "residency_class",
+        "retention_class",
+        "sensitivity_class",
+        "upload_policy",
+        "workspace_ai_max_class"
+      ],
+      "required": [
+        "ai_data_class",
+        "llm_exposure_policy",
+        "policy_complete",
+        "policy_revision",
+        "publication_state",
+        "residency_class",
+        "retention_class",
+        "sensitivity_class",
+        "upload_policy",
+        "workspace_ai_max_class"
+      ]
+    },
+    "DatasetProfileColumnRead": {
+      "properties": [
+        "importance",
+        "leakage_excluded",
+        "leakage_reason",
+        "leakage_risk",
+        "missing_count",
+        "missing_fraction",
+        "name",
+        "ordinal_position",
+        "physical_dtype",
+        "role_reason",
+        "role_source",
+        "role_used",
+        "rule_role",
+        "transforms",
+        "unique_count",
+        "unique_fraction"
+      ],
+      "required": [
+        "importance",
+        "leakage_excluded",
+        "leakage_reason",
+        "leakage_risk",
+        "missing_count",
+        "missing_fraction",
+        "name",
+        "ordinal_position",
+        "physical_dtype",
+        "role_reason",
+        "role_source",
+        "role_used",
+        "rule_role",
+        "transforms",
+        "unique_count",
+        "unique_fraction"
+      ]
+    },
+    "DatasetProfileRead": {
+      "properties": [
+        "columns",
+        "dataset_id",
+        "experiment",
+        "importance_method",
+        "project_id",
+        "scope",
+        "split_plan",
+        "statistics_status"
+      ],
+      "required": [
+        "columns",
+        "dataset_id",
+        "experiment",
+        "importance_method",
+        "project_id",
+        "scope",
+        "split_plan",
+        "statistics_status"
+      ]
+    },
     "DatasetUploadRead": {
       "properties": [
         "column_count",
@@ -1875,6 +1984,35 @@
         "schema_digest",
         "size_bytes",
         "source_type",
+        "version",
+        "workspace_id"
+      ]
+    },
+    "DatasetVersionRead": {
+      "properties": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "name",
+        "policy",
+        "project_id",
+        "purpose",
+        "row_count",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "name",
+        "policy",
+        "project_id",
+        "row_count",
         "version",
         "workspace_id"
       ]

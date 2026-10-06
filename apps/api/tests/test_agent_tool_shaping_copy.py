@@ -30,6 +30,7 @@ from app.agents.tools import shaping
 from app.agents.tools.catalog import ToolError, catalog
 from app.agents.tools.render import to_mcp
 from app.domain.batch_predictions import BatchPredictionRead
+from app.domain.dataset_profile import DatasetProfileRead, DatasetVersionRead
 from app.domain.decision_records import DecisionRecordPage, DecisionRecordRead
 from app.domain.experiment_resources import (
     ExperimentComparisonRead,
@@ -95,7 +96,10 @@ class CorpusReads:
         return self._get("/v1/datasets", DatasetListItem, many=True)
 
     def dataset(self, did):
-        return self._get(f"/v1/datasets/{did}", DatasetListItem)
+        return self._get(f"/v1/datasets/{did}", DatasetVersionRead)
+
+    def dataset_profile(self, did):
+        return self._get(f"/v1/datasets/{did}/profile", DatasetProfileRead)
 
     def experiment(self, eid):
         return self._get(f"/v1/experiments/{eid}", ExperimentDetailRead)
@@ -206,6 +210,9 @@ def _adversarial(corpus: dict) -> dict:
         experiment["diff_vs_parent"] = {**(experiment.get("diff_vs_parent") or {}), **leak}
         experiment["metrics"]["baseline_comparison"] = {**(experiment["metrics"].get("baseline_comparison") or {}),
                                                         **leak}
+    for key in [k for k in r if k.endswith("/profile")]:  # column names and recorded reasons are dataset text
+        for column in r[key]["columns"]:
+            column.update(name=f"{column['name']} {INJECTION}", role_reason=f"{INJECTION} {SECRET}")
     for check in r[f"GET /v1/experiments/{ids['branch']}/findings"]["checks"]:
         check["evidence"] = {**check["evidence"], **leak}
     page = r[f"GET /v1/projects/{ids['project']}/decisions"]
@@ -314,7 +321,7 @@ def test_record_corpus(client, db_session, st, tmp_path):  # noqa: F811
     paths = {  # corpus key -> request (query only where it changes the response)
         "/v1/projects": None, f"/v1/projects/{pid}": None, f"/v1/projects/{pid}/graph": "?limit=40",
         "/v1/experiments": f"?project_id={pid}&limit=10", "/v1/datasets": "?limit=50",
-        f"/v1/datasets/{t.dataset}": None, f"/v1/experiments/{r}": None, f"/v1/experiments/{b}": None,
+        f"/v1/datasets/{t.dataset}": None, f"/v1/datasets/{t.dataset}/profile": None, f"/v1/experiments/{r}": None, f"/v1/experiments/{b}": None,
         "/v1/experiments/compare": f"?ids={r},{b}", f"/v1/experiments/{b}/code": None,
         f"/v1/model-builds/{b}": None, f"/v1/model-builds/{b}/artifacts": None, f"/v1/experiments/{b}/findings": None,
         f"/v1/projects/{pid}/decisions": "?limit=20", f"/v1/decisions/{t.decision}": None,

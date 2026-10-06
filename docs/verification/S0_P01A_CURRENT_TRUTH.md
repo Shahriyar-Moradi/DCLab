@@ -77,6 +77,8 @@ P4.1-A (2026-10-06): Developer Studio routes `/home`, `/inbox`, `/projects`, `/p
 
 P4.1-B (2026-10-06): New project wizard on `/projects/new` (upload, target and task, objective and constraint, train) and the same form as `/projects/[id]/experiments/new` ("New run", dataset and answers prefilled); the experiment page shows a needs-input panel (rule suggestion beside any AI suggestion; target and split confirmation). One additive `/v1` field: `POST /v1/datasets` returns `columns` (name, dtype, missing fraction) read from the stored column facts of the new dataset; no migration.
 
+P4.1-C (2026-10-06): Project Data page `/projects/[id]/data` (Versions, Columns & roles, Leakage audit, Findings slot, Policy & access) and a target dropdown on New run. New `GET /v1/datasets/{id}/profile` (token scope `read`): per column type, deterministic rule role, role used by the champion's (else the newest completed) run on the current SplitPlan, missing and unique counts over that plan's training rows only (holdout rows never counted; no plan: names and types only), transforms, CV importance. `GET /v1/datasets/{id}` gains read-only `policy` (ADR 0005 upload policy, labels, AI data class). MCP/catalog `inspect_dataset` and SDK `datasets.profile` return the profile. No migration; Alembic head unchanged.
+
 This is the replaceable CURRENT truth package. Older evidence keeps its
 original measurements and is labeled HISTORICAL in the [status
 ledger](README.md). Instructions quoted by older documents are not execution

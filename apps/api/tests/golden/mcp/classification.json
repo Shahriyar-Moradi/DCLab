@@ -49,7 +49,109 @@
         "row_count": 240,
         "version": "v1"
       },
-      "note": "Row and column counts only; dataset rows are never returned."
+      "note": "Never rows. Profile statistics are counts over the training rows of the current split plan only (scope training_rows); without one they are null (scope upload). Importance is CV-only.",
+      "policy": {
+        "ai_data_class": "none",
+        "llm_exposure_policy": "deny",
+        "policy_complete": true,
+        "policy_revision": 1,
+        "publication_state": "published",
+        "residency_class": "home_cloud_only",
+        "retention_class": "standard",
+        "sensitivity_class": "restricted",
+        "upload_policy": "internal_training",
+        "workspace_ai_max_class": null
+      },
+      "profile": {
+        "columns": [
+          {
+            "importance": null,
+            "leakage_excluded": false,
+            "leakage_reason": null,
+            "leakage_risk": null,
+            "missing_count": null,
+            "missing_fraction": null,
+            "name": {
+              "untrusted_text": "tenure"
+            },
+            "ordinal_position": 1,
+            "physical_dtype": "float64",
+            "role_reason": null,
+            "role_source": null,
+            "role_used": null,
+            "rule_role": null,
+            "transforms": [],
+            "unique_count": null,
+            "unique_fraction": null
+          },
+          {
+            "importance": null,
+            "leakage_excluded": false,
+            "leakage_reason": null,
+            "leakage_risk": null,
+            "missing_count": null,
+            "missing_fraction": null,
+            "name": {
+              "untrusted_text": "spend"
+            },
+            "ordinal_position": 2,
+            "physical_dtype": "float64",
+            "role_reason": null,
+            "role_source": null,
+            "role_used": null,
+            "rule_role": null,
+            "transforms": [],
+            "unique_count": null,
+            "unique_fraction": null
+          },
+          {
+            "importance": null,
+            "leakage_excluded": false,
+            "leakage_reason": null,
+            "leakage_risk": null,
+            "missing_count": null,
+            "missing_fraction": null,
+            "name": {
+              "untrusted_text": "plan"
+            },
+            "ordinal_position": 3,
+            "physical_dtype": "str",
+            "role_reason": null,
+            "role_source": null,
+            "role_used": null,
+            "rule_role": null,
+            "transforms": [],
+            "unique_count": null,
+            "unique_fraction": null
+          },
+          {
+            "importance": null,
+            "leakage_excluded": false,
+            "leakage_reason": null,
+            "leakage_risk": null,
+            "missing_count": null,
+            "missing_fraction": null,
+            "name": {
+              "untrusted_text": "churned"
+            },
+            "ordinal_position": 4,
+            "physical_dtype": "str",
+            "role_reason": null,
+            "role_source": null,
+            "role_used": null,
+            "rule_role": null,
+            "transforms": [],
+            "unique_count": null,
+            "unique_fraction": null
+          }
+        ],
+        "columns_omitted": 0,
+        "experiment": null,
+        "importance_method": null,
+        "scope": "upload",
+        "split_plan": null,
+        "statistics_status": "no_split_plan"
+      }
     },
     "tool": "inspect_dataset"
   },

@@ -40,11 +40,15 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           ("app.services.project_service.list_projects", "app.services.project_service.get_project",
            "app.services.graph_service.project_graph", f"{_EXP}.list_experiments"),
           r._inspect_project_fetch, r._inspect_project_shape),
-    _read("inspect_dataset", "Dataset version summary (row/column counts, digest); never rows. Omit dataset_id "
-          "to list datasets.", r.InspectDatasetInput, ("GET /v1/datasets", "GET /v1/datasets/{dataset_id}"),
+    _read("inspect_dataset", "Dataset version summary (row/column counts, digest); never rows. With dataset_id: "
+          "its upload policy and AI data class, and the column profile (type, rule role vs role used, missing and "
+          "unique counts over the training rows of the current split plan only, transforms, CV importance). "
+          "Omit dataset_id to list datasets.", r.InspectDatasetInput,
+          ("GET /v1/datasets", "GET /v1/datasets/{dataset_id}", "GET /v1/datasets/{dataset_id}/profile"),
           ("app.services.technical_explorer_service.list_datasets",
-           "app.services.technical_explorer_service.get_dataset"),
-          r._inspect_dataset_fetch, r._inspect_dataset_shape),
+           "app.services.dataset_profile_service.dataset_read",
+           "app.services.dataset_profile_service.dataset_profile"),
+          r._inspect_dataset_fetch, r._inspect_dataset_shape, aggregates=True),
     _read("get_experiment", "One experiment: status, lineage, change set, locked winner CV metrics (never "
           "final-holdout values), diff vs parent.", r.ExperimentInput, ("GET /v1/experiments/{experiment_id}",),
           (f"{_EXP}.experiment_read",), r._experiment_fetch, r._get_experiment_shape, aggregates=True),

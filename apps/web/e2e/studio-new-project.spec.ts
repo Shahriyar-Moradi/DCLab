@@ -91,7 +91,7 @@ test("New project wizard: CSV to a trained experiment", async ({ page }) => {
   await page.getByRole("link", { name: "New run" }).click();
   await expect(page.getByLabel("Dataset in this project")).not.toHaveValue("");
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByLabel("Target column (leave empty to let DCLab choose)")).toHaveValue("churn");
+  await expect(page.getByLabel("Target column")).toHaveValue("churn"); // P4.1-C: a dropdown from the dataset profile
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "6-new-run");
 });

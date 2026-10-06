@@ -68,11 +68,125 @@
    "dataset_asset_id": "1b872171-e3e0-4b50-ac1c-c805b1142c3b",
    "id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
    "name": "rows",
+   "policy": {
+    "ai_data_class": "none",
+    "llm_exposure_policy": "deny",
+    "policy_complete": true,
+    "policy_revision": 1,
+    "publication_state": "published",
+    "residency_class": "home_cloud_only",
+    "retention_class": "standard",
+    "sensitivity_class": "restricted",
+    "upload_policy": "internal_training",
+    "workspace_ai_max_class": null
+   },
    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
    "purpose": "training",
    "row_count": 240,
    "version": "v1",
    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
+  },
+  "GET /v1/datasets/325430e9-837c-43b4-91d3-96cefe3f9aed/profile": {
+   "columns": [
+    {
+     "importance": 0.05267366675717714,
+     "leakage_excluded": false,
+     "leakage_reason": null,
+     "leakage_risk": null,
+     "missing_count": 0,
+     "missing_fraction": 0.0,
+     "name": "tenure",
+     "ordinal_position": 1,
+     "physical_dtype": "float64",
+     "role_reason": "Deterministic train-only role inference classified the column as numerical.",
+     "role_source": "rule",
+     "role_used": "numerical",
+     "rule_role": "numerical",
+     "transforms": [
+      "imputer:median",
+      "scaler:standard"
+     ],
+     "unique_count": 67,
+     "unique_fraction": 0.3489583333333333
+    },
+    {
+     "importance": 0.09023716640291544,
+     "leakage_excluded": false,
+     "leakage_reason": null,
+     "leakage_risk": null,
+     "missing_count": 0,
+     "missing_fraction": 0.0,
+     "name": "spend",
+     "ordinal_position": 2,
+     "physical_dtype": "float64",
+     "role_reason": "Deterministic train-only role inference classified the column as numerical.",
+     "role_source": "rule",
+     "role_used": "numerical",
+     "rule_role": "numerical",
+     "transforms": [
+      "imputer:median",
+      "scaler:standard"
+     ],
+     "unique_count": 192,
+     "unique_fraction": 1.0
+    },
+    {
+     "importance": -0.010060991396111293,
+     "leakage_excluded": false,
+     "leakage_reason": null,
+     "leakage_risk": null,
+     "missing_count": 0,
+     "missing_fraction": 0.0,
+     "name": "plan",
+     "ordinal_position": 3,
+     "physical_dtype": "str",
+     "role_reason": "Deterministic train-only role inference classified the column as categorical.",
+     "role_source": "rule",
+     "role_used": "categorical",
+     "rule_role": "categorical",
+     "transforms": [
+      "imputer:most_frequent",
+      "onehot:all_categories"
+     ],
+     "unique_count": 2,
+     "unique_fraction": 0.010416666666666666
+    },
+    {
+     "importance": null,
+     "leakage_excluded": false,
+     "leakage_reason": null,
+     "leakage_risk": null,
+     "missing_count": 0,
+     "missing_fraction": 0.0,
+     "name": "label",
+     "ordinal_position": 4,
+     "physical_dtype": "str",
+     "role_reason": "canonical ProblemSpec target",
+     "role_source": "explicit",
+     "role_used": "target",
+     "rule_role": "target",
+     "transforms": [],
+     "unique_count": 2,
+     "unique_fraction": 0.010416666666666666
+    }
+   ],
+   "dataset_id": "325430e9-837c-43b4-91d3-96cefe3f9aed",
+   "experiment": {
+    "created_at": "2026-10-06T23:23:19.435233+04:00",
+    "id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+    "selection": "champion"
+   },
+   "importance_method": "permutation_validation_folds",
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "scope": "training_rows",
+   "split_plan": {
+    "id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+    "source": "project_ref",
+    "target_column": "label",
+    "training_row_count": 192,
+    "version": 1
+   },
+   "statistics_status": "computed"
   },
   "GET /v1/decisions/a0ff9dca-afe0-41d4-b032-0a77c0789cf8": {
    "actor": {

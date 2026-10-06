@@ -18,7 +18,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/app/settings` → tokens panel | exists |
 | Connect an agent (MCP/CLI) | — | — | Settings → "Connect Claude Code" (copy `.mcp.json`, CLI login) | planned P4.8-UI |
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]` | planned P4.1-A |
-| Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1 (upload response carries the column profile); Data tab | wizard step: done P4.1-B; Data tab planned P4.1-C |
+| Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1 (upload response carries the column profile); Data page `/projects/[id]/data` Versions tab (list, digest, used by) and Policy & access tab (`GET /v1/datasets/{id}` `policy`) | wizard step: done P4.1-B; Data page done P4.1-C |
 | Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard steps 2–3 (target, task, objective, constraints) | done P4.1-B |
 | Target / split confirmation | `POST /v1/execution-requests/{id}/target-confirmation|split-confirmation` | — | experiment page "needs your answer" panel (rule beside AI suggestion) | done P4.1-B |
 | Run an experiment | `POST /v1/experiments`, `POST /v1/execution-requests`, `GET …/{id}` | `run_experiment` | wizard "Train" + Experiments tab "New run" | done P4.1-B |
@@ -31,7 +31,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Branch with a change set | `POST /v1/experiments/{id}/branches` | `branch_experiment` | "Branch" form on experiment | planned P4.4-A |
 | Lineage graph + staleness | `GET /v1/projects/{id}/graph` | `inspect_project` | Graph tab | planned P4.2-A |
 | Impact of changing a node | `GET /v1/nodes/{kind}/{id}/impact` | — | node inspector "What becomes stale" | planned P4.2-A |
-| Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `GET/POST …/refs/{kind}` (POST = If-Match move) | — | project header ref badges; "Make champion" | planned P4.4-A |
+| Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `GET/POST /v1/projects/{id}/refs/{kind}` (POST = If-Match move) | — | project header ref badges; Data page "Make current" (dataset ref); "Make champion" | dataset ref move done P4.1-C; champion planned P4.4-A |
 | Decisions timeline | `GET/POST /v1/projects/{id}/decisions`, `GET /v1/decisions/{id}` | `list_decisions`, `record_decision` | Decisions tab | planned P4.4-A |
 | Accept / reject / supersede | `POST /v1/decisions/{id}/accept|reject|supersede` | `accept_proposal` | decision card actions | planned P4.4-A |
 | Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI |
@@ -43,7 +43,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Score new data with a model | `POST /v1/model-versions/{id}/predictions`, `GET /v1/predictions/{id}`, `…/download` | `predict` | model page "Score new data" + download | planned P4.9-A / P4.9-UI |
 | Core trust checks (5) | `GET /v1/experiments/{id}/findings` | `get_findings` | findings panel on every experiment | planned P4.10-A / P4.10-UI |
 | Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-UI (API + MCP shipped in P4.11-A) |
-| Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page: Columns & roles, Policy | planned P4.1-C |
+| Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page `/projects/[id]/data`: Columns & roles (rule role vs role used, training-row statistics), Leakage audit (with `GET /v1/experiments/{id}/findings`); New run target dropdown | done P4.1-C |
 | Activity feed | `GET /v1/activity` | — | Home "Activity" | planned P4.15-A / P4.15-UI |
 | Inbox | `GET /v1/inbox`, counts | `list_proposals` (P6.6-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |
 | Pipeline evidence | `GET /v1/model-builds/{id}`, `/events`, `/artifacts` | — | `/projects/[id]/pipeline/[experimentId]` | planned P4.17-UI |

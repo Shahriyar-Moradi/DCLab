@@ -65,6 +65,7 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/nodes/{kind}/{node_id}/impact",
             "/v1/datasets",
             "/v1/datasets/{dataset_id}",
+            "/v1/datasets/{dataset_id}/profile",  # P4.1-C: training-row statistics, holdout-free
             "/v1/execution-requests/{request_id}",
             "/v1/model-builds/{pipeline_run_id}",
             "/v1/model-builds/{pipeline_run_id}/events",

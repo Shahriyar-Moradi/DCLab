@@ -77,10 +77,10 @@
         "context_digest": "<digest>",
         "dropped": {
           "capped": 0,
-          "class_or_scope": 0,
+          "class_or_scope": 2,
           "unavailable": 0
         },
-        "fields": 13,
+        "fields": 14,
         "reads": [
           "inspect_project",
           "inspect_dataset",
@@ -95,7 +95,7 @@
             "sample_values": 0
           },
           "effective_data_class": "metadata",
-          "fields_kept": 8
+          "fields_kept": 9
         }
       },
       "type": "context_built"
@@ -111,7 +111,7 @@
     {
       "payload": {
         "call": 1,
-        "fields": 13,
+        "fields": 14,
         "notes": 0,
         "request_digest": "<digest>",
         "transcript_items": 0
@@ -122,13 +122,13 @@
       "payload": {
         "cache_hit": false,
         "call": 1,
-        "cost_micros": 176,
+        "cost_micros": 185,
         "invocation_id": "<id:1>",
         "ok": true,
         "output_digest": "<digest>",
         "refusal": null,
         "usage": {
-          "input": 1401,
+          "input": 1492,
           "output": 70
         }
       },
@@ -146,8 +146,8 @@
     },
     {
       "payload": {
-        "cost_micros": 176,
-        "freed_micros": 99824
+        "cost_micros": 185,
+        "freed_micros": 99815
       },
       "type": "budget_settled"
     },
@@ -168,7 +168,7 @@
           "cache_hits": 0,
           "calls": 1,
           "steps": 1,
-          "tokens_in": 1401,
+          "tokens_in": 1492,
           "tokens_out": 70,
           "tool_calls": 0,
           "wall_ms": "<volatile>"
@@ -181,7 +181,7 @@
     {
       "cache_hit": false,
       "data_class": "metadata",
-      "input_tokens": 1401,
+      "input_tokens": 1492,
       "llm_used": true,
       "model": "gpt-6-luna",
       "outcome_scope": "none",

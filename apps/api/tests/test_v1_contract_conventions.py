@@ -128,6 +128,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/datasets",
         "POST /v1/datasets",
         "GET /v1/datasets/{dataset_id}",
+        "GET /v1/datasets/{dataset_id}/profile",
         "POST /v1/execution-requests",
         "POST /v1/execution-requests/{request_id}/target-confirmation",
         "POST /v1/execution-requests/{request_id}/split-confirmation",

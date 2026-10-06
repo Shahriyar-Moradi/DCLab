@@ -668,7 +668,7 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
-      "description": "Dataset version summary (row/column counts, digest); never rows. Omit dataset_id to list datasets.",
+      "description": "Dataset version summary (row/column counts, digest); never rows. With dataset_id: its upload policy and AI data class, and the column profile (type, rule role vs role used, missing and unique counts over the training rows of the current split plan only, transforms, CV importance). Omit dataset_id to list datasets.",
       "effect": "read",
       "input_schema": {
         "properties": {
@@ -708,16 +708,18 @@
       "notes": [],
       "operations": [
         "GET /v1/datasets",
-        "GET /v1/datasets/{dataset_id}"
+        "GET /v1/datasets/{dataset_id}",
+        "GET /v1/datasets/{dataset_id}/profile"
       ],
       "read_only": true,
       "result": {
-        "data_class": "metadata",
-        "outcome_scope": "none"
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
       },
       "services": [
         "app.services.technical_explorer_service.list_datasets",
-        "app.services.technical_explorer_service.get_dataset"
+        "app.services.dataset_profile_service.dataset_read",
+        "app.services.dataset_profile_service.dataset_profile"
       ],
       "surfaces": [
         "assistant",

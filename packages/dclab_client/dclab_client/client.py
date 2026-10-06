@@ -18,7 +18,9 @@ from dclab_client.types import (
     Artifact,
     BatchPrediction,
     Dataset,
+    DatasetProfile,
     DatasetUpload,
+    DatasetVersion,
     DecisionRecord,
     DecisionRecordPage,
     EventPage,
@@ -731,11 +733,20 @@ class DatasetsClient:
         )
         return [Dataset.model_validate(row) for row in payload]
 
-    def get(self, dataset_id: UUID | str, *, request_id: str | None = None) -> Dataset:
+    def get(self, dataset_id: UUID | str, *, request_id: str | None = None) -> DatasetVersion:
         payload = self._transport.request(
             "GET", f"/v1/datasets/{_id(dataset_id)}", request_id=request_id
         )
-        return Dataset.model_validate(payload)
+        return DatasetVersion.model_validate(payload)
+
+    def profile(self, dataset_id: UUID | str, *, request_id: str | None = None) -> DatasetProfile:
+        """Column profile: type, rule role vs role used, missing / unique counts over the
+        training rows of the current split plan only (never holdout rows), transforms, CV importance."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/datasets/{_id(dataset_id)}/profile", request_id=request_id
+        )
+        return DatasetProfile.model_validate(payload)
 
     def upload(
         self,

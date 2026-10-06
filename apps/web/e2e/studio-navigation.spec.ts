@@ -71,6 +71,8 @@ test("Studio: sidebar, project pages, empty states, command bar and access", asy
   expect((await page.goto(`/projects/${projectId}/nope`))?.status()).toBe(404);
   expect((await page.goto("/projects/not-a-uuid/experiments"))?.status()).toBe(404);
 
+  // The 404 pages have no command bar: search from a real Studio page.
+  await page.goto("/projects");
   await page.keyboard.press("ControlOrMeta+K");
   const search = page.getByRole("combobox", { name: "Search" });
   await search.fill(name.slice(0, 14));

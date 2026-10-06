@@ -18,6 +18,7 @@ import {
   type UploadedDataset, type WizardStepId,
 } from "@/lib/application";
 import { projectHref } from "@/lib/application/command-search";
+import { useDatasetProfile } from "@/lib/application/studio-data-hooks";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 type ProfileRow = NonNullable<UploadedDataset["columns"]>[number];
@@ -77,6 +78,9 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
   }, [projectId, datasets.data, experiments.isPending, experiments.data, latest.isPending, latest.data]);
 
   const columns = uploaded?.columns ?? [];
+  // New run on an existing dataset: the target choices are the profile's column names (P4.1-C).
+  const profile = useDatasetProfile(uploaded ? null : datasetId);
+  const columnNames = uploaded?.columns?.map((c) => c.name) ?? profile.data?.columns.map((c) => c.name) ?? [];
   const objective = { primaryMetric, constraint, businessObjective };
   const chosen = datasets.data?.find((d) => d.id === datasetId) ?? null;
   const stepState = (id: WizardStepId): Step["state"] => {
@@ -230,11 +234,11 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
                   {TASK_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
-              {columns.length ? (
+              {columnNames.length ? (
                 <label className="field"><span>Target column</span>
-                  <select value={columns.some((c) => c.name === target) ? target : ""} onChange={(e) => setTarget(e.target.value)}>
+                  <select value={columnNames.includes(target) ? target : ""} onChange={(e) => setTarget(e.target.value)}>
                     <option value="">Let DCLab choose (I confirm if unclear)</option>
-                    {columns.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    {columnNames.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
                 </label>
               ) : (

@@ -45,6 +45,11 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     ("Workspace", "WorkspaceRead"),
     ("Project", "ProjectRead"),
     ("Dataset", "DatasetListItem"),
+    # P4.1-C dataset read with policy, and the column profile.
+    ("DatasetVersion", "DatasetVersionRead"),
+    ("DatasetPolicy", "DatasetPolicyRead"),
+    ("DatasetProfile", "DatasetProfileRead"),
+    ("DatasetProfileColumn", "DatasetProfileColumnRead"),
     ("DatasetUpload", "DatasetUploadRead"),
     ("DatasetIngestion", "DatasetIngestionRead"),
     ("ProblemSpec", "ProblemSpecRead"),

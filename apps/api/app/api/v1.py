@@ -107,6 +107,7 @@ from app.domain.observability import MlRunEventRead
 from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead
 from app.domain.state_graph import GRAPH_EXPERIMENT_WINDOW
 from app.domain.reproducibility import ArtifactRead
+from app.domain.dataset_profile import DatasetProfileRead, DatasetVersionRead
 from app.domain.technical_explorer import DatasetListItem
 from app.domain.workspace_identity import (
     ProblemSpecCreateRequest,
@@ -138,7 +139,8 @@ from app.services.client_lab_upload_service import ingest_dataset
 from app.services.idempotency_service import IdempotencyKeyRaceError, KeyScope
 from app.services.problem_spec_service import create_problem_spec, get_problem_spec
 from app.services.project_service import create_project, get_project, list_projects
-from app.services.technical_explorer_service import get_dataset, list_datasets
+from app.services.dataset_profile_service import DatasetNotFoundError, dataset_profile, dataset_read
+from app.services.technical_explorer_service import list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
 from app.services.workspace_service import list_workspaces_for_actor
 from app.services.workspace_selection_service import principal_read, service_token_principal_read
@@ -617,21 +619,43 @@ def read_datasets(
         raise _identity_http(exc) from exc
 
 
-@router.get("/datasets/{dataset_id}", response_model=DatasetListItem)
+@router.get("/datasets/{dataset_id}", response_model=DatasetVersionRead)
 def read_dataset(
     dataset_id: UUID,
     request: Request,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
-) -> DatasetListItem:
-    workspace_id = request_workspace_id(request)
+) -> DatasetVersionRead:
+    """One DatasetVersion with its ADR 0005 upload policy and AI data class (read-only)."""
+
     try:
-        row = get_dataset(db, user, dataset_id, workspace_id=workspace_id)
+        return dataset_read(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id)
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    if row is None:
-        raise _not_found()
-    return row
+    except DatasetNotFoundError as exc:
+        raise _not_found() from exc
+
+
+@router.get("/datasets/{dataset_id}/profile", response_model=DatasetProfileRead)
+def read_dataset_profile(
+    dataset_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> DatasetProfileRead:
+    """Per-column type, rule role, role used, missing / unique, transforms and CV importance.
+
+    Statistics come from the TRAINING rows of the dataset's current SplitPlan only
+    (``scope: "training_rows"``); holdout rows are never counted. Without a verified
+    plan the profile is whole-upload metadata (``scope: "upload"``) and statistics are null.
+    """
+
+    try:
+        return dataset_profile(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except DatasetNotFoundError as exc:
+        raise _not_found() from exc
 
 
 _CREATE_DATASET = "POST /v1/datasets"

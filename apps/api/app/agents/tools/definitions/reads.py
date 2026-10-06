@@ -187,9 +187,14 @@ class ServiceReads:
         return list_datasets(self.db, self.actor, workspace_id=self.ws, limit=limit)
 
     def dataset(self, dataset_id: UUID) -> Any:
-        from app.services.technical_explorer_service import get_dataset
+        from app.services.dataset_profile_service import dataset_read
 
-        return _found(get_dataset(self.db, self.actor, dataset_id, workspace_id=self.ws))
+        return dataset_read(self.db, **self._who, dataset_id=dataset_id)
+
+    def dataset_profile(self, dataset_id: UUID) -> Any:
+        from app.services.dataset_profile_service import dataset_profile
+
+        return dataset_profile(self.db, **self._who, dataset_id=dataset_id)
 
     def experiment(self, experiment_id: UUID) -> Any:
         from app.services.experiment_service import experiment_read
@@ -381,17 +386,52 @@ def _inspect_project_shape(raw: dict[str, Any]) -> Shaped:
 
 
 _DATASET_NOTE = "Row and column counts only; dataset rows are never returned."
+_PROFILE_NOTE = ("Never rows. Profile statistics are counts over the training rows of the current split plan only "
+                 "(scope training_rows); without one they are null (scope upload). Importance is CV-only.")
+PROFILE_COLUMN_LIMIT = 100
+
+
+def _policy(p: Any) -> dict[str, Any]:
+    return {key: code(getattr(p, key)) for key in (
+        "upload_policy", "publication_state", "sensitivity_class", "llm_exposure_policy", "retention_class",
+        "residency_class", "ai_data_class", "workspace_ai_max_class")} | {
+        "policy_revision": p.policy_revision, "policy_complete": p.policy_complete}
+
+
+def profile_summary(p: Any) -> dict[str, Any]:
+    plan, run = p.split_plan, p.experiment
+    columns = [{
+        "name": data_text(c.name, 200), "ordinal_position": c.ordinal_position, "physical_dtype": code(c.physical_dtype),
+        "rule_role": code(c.rule_role), "role_used": code(c.role_used), "role_source": code(c.role_source),
+        "role_reason": data_text(c.role_reason, 300), "missing_count": c.missing_count,
+        "missing_fraction": c.missing_fraction, "unique_count": c.unique_count, "unique_fraction": c.unique_fraction,
+        "transforms": [code(t) for t in c.transforms[:10]], "importance": c.importance,
+        "leakage_excluded": c.leakage_excluded, "leakage_risk": code(c.leakage_risk),
+        "leakage_reason": data_text(c.leakage_reason, 300),
+    } for c in p.columns[:PROFILE_COLUMN_LIMIT]]
+    return {
+        "scope": code(p.scope), "statistics_status": code(p.statistics_status),
+        "split_plan": plan and {"id": plan.id, "version": plan.version, "source": code(plan.source),
+                                "target_column": data_text(plan.target_column, 200),
+                                "training_row_count": plan.training_row_count},
+        "experiment": run and {"id": run.id, "selection": code(run.selection), "created_at": run.created_at},
+        "importance_method": code(p.importance_method), "columns": columns,
+        "columns_omitted": max(0, len(p.columns) - PROFILE_COLUMN_LIMIT),
+    }
 
 
 def _inspect_dataset_fetch(reads: Any, a: InspectDatasetInput) -> dict[str, Any]:
     if a.dataset_id is not None:
-        return {"dataset": reads.dataset(a.dataset_id)}
+        return {"dataset": reads.dataset(a.dataset_id), "profile": reads.dataset_profile(a.dataset_id)}
     return {"datasets": [d for d in reads.datasets(LIST_LIMIT) if a.project_id is None or d.project_id == a.project_id]}
 
 
 def _inspect_dataset_shape(raw: dict[str, Any]) -> Shaped:
     if "dataset" in raw:
-        return Shaped({"dataset": _dataset(raw["dataset"]), "note": _DATASET_NOTE}, source_datasets=_ids(raw["dataset"].id))
+        d = raw["dataset"]
+        return Shaped({"dataset": _dataset(d), "policy": _policy(d.policy), "profile": profile_summary(raw["profile"]),
+                       "note": _PROFILE_NOTE}, data_class="aggregates", outcome_scope="cv",
+                      source_datasets=_ids(d.id), aggregates=("profile",))
     rows = raw["datasets"]
     return Shaped({"datasets": [_dataset(d) for d in rows], "note": _DATASET_NOTE},
                   source_datasets=_ids(*(d.id for d in rows)))

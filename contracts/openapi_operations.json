@@ -133,6 +133,7 @@
   "GET /v1/datasets",
   "POST /v1/datasets",
   "GET /v1/datasets/{dataset_id}",
+  "GET /v1/datasets/{dataset_id}/profile",
   "GET /v1/decisions/{decision_id}",
   "POST /v1/decisions/{decision_id}/accept",
   "POST /v1/decisions/{decision_id}/reject",

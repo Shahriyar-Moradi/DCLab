@@ -98,6 +98,21 @@ class Project(_Versioned):
     archived_at: datetime | None = None
 
 
+class DatasetPolicy(BaseModel):
+    """ADR 0005 upload policy and the AI data class of one dataset (``GET /v1/datasets/{id}``)."""
+
+    upload_policy: str | None = None
+    publication_state: str | None = None
+    policy_revision: int | None = None
+    policy_complete: bool
+    sensitivity_class: str | None = None
+    llm_exposure_policy: str
+    retention_class: str | None = None
+    residency_class: str | None = None
+    ai_data_class: str
+    workspace_ai_max_class: str | None = None
+
+
 class Dataset(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -110,6 +125,59 @@ class Dataset(BaseModel):
     column_count: int
     purpose: str = "training"
     created_at: datetime
+
+
+class DatasetVersion(Dataset):
+    """``GET /v1/datasets/{id}``: the dataset plus its read-only policy."""
+
+    policy: DatasetPolicy
+
+
+class DatasetProfileSplitPlan(BaseModel):
+    id: UUID
+    version: int
+    source: str
+    target_column: str
+    training_row_count: int
+
+
+class DatasetProfileExperiment(BaseModel):
+    id: UUID
+    selection: str
+    created_at: datetime
+
+
+class DatasetProfileColumn(BaseModel):
+    name: str
+    ordinal_position: int
+    physical_dtype: str
+    rule_role: str | None = None
+    role_used: str | None = None
+    role_source: str | None = None
+    role_reason: str | None = None
+    missing_count: int | None = None
+    missing_fraction: float | None = None
+    unique_count: int | None = None
+    unique_fraction: float | None = None
+    transforms: list[str] = Field(default_factory=list)
+    importance: float | None = None
+    leakage_excluded: bool = False
+    leakage_risk: str | None = None
+    leakage_reason: str | None = None
+
+
+class DatasetProfile(BaseModel):
+    """``GET /v1/datasets/{id}/profile``: statistics over the current split plan's training rows only
+    (``scope == "training_rows"``); ``scope == "upload"`` carries names and types without statistics."""
+
+    dataset_id: UUID
+    project_id: UUID | None = None
+    scope: str
+    statistics_status: str
+    split_plan: DatasetProfileSplitPlan | None = None
+    experiment: DatasetProfileExperiment | None = None
+    importance_method: str | None = None
+    columns: list[DatasetProfileColumn]
 
 
 class ProblemSpec(_Versioned):
