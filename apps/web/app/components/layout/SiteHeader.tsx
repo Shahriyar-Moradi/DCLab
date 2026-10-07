@@ -3,7 +3,8 @@
 import { BrandLogo } from "@/app/components/brand/BrandLogo";
 import { useSession } from "@/lib/application";
 import { defaultProductRoute } from "@/app/components/layout/app-navigation";
-import { BOOK_A_DEMO_HREF, MARKETING_NAV } from "@/app/components/marketing/links";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
+import { BOOK_A_DEMO_HREF, MARKETING_NAV as LEGACY_MARKETING_NAV } from "@/app/components/marketing/links";
 import { buttonClassName } from "@/app/components/ui/Button";
 import { useBodyScrollLock, useEscape, useFocusTrap } from "@/app/components/ui/overlay";
 import { cn } from "@/lib/cn";
@@ -22,8 +23,11 @@ export function SiteHeader() {
   const { user, loaded } = useSession();
   const menuId = useId();
   const headerRef = useRef<HTMLElement>(null);
+  // P4.12-A: the frozen marketing pages leave navigation unless the platform flag is on.
+  const legacyPages = loaded && hasCapability(user, CAPABILITIES.legacyMarketingPages);
+  const MARKETING_NAV = legacyPages ? LEGACY_MARKETING_NAV : [];
   const sessionHref = loaded && user ? defaultProductRoute(user) : "/login";
-  const sessionLabel = loaded && user ? "Open workspace" : "Sign In";
+  const sessionLabel = loaded && user ? "Open workspace" : "Sign in";
   const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
@@ -56,9 +60,11 @@ export function SiteHeader() {
           <Link href={sessionHref} className="text-[14px] font-medium text-ink-muted transition-ui hover:text-ink">
             {sessionLabel}
           </Link>
-          <Link href={BOOK_A_DEMO_HREF} className={buttonClassName({ size: "md", className: "rounded-full" })}>
-            Book a Demo
-          </Link>
+          {legacyPages ? (
+            <Link href={BOOK_A_DEMO_HREF} className={buttonClassName({ size: "md", className: "rounded-full" })}>
+              Book a Demo
+            </Link>
+          ) : null}
         </div>
         <button
           type="button"
@@ -89,9 +95,11 @@ export function SiteHeader() {
             <Link href={sessionHref} className="text-[14px] font-medium text-ink-muted">
               {sessionLabel}
             </Link>
-            <Link href={BOOK_A_DEMO_HREF} className={buttonClassName({ size: "md", className: "mt-1 w-full rounded-full" })}>
-              Book a Demo
-            </Link>
+            {legacyPages ? (
+              <Link href={BOOK_A_DEMO_HREF} className={buttonClassName({ size: "md", className: "mt-1 w-full rounded-full" })}>
+                Book a Demo
+              </Link>
+            ) : null}
           </nav>
         </div>
       ) : null}

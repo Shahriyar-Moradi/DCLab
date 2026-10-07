@@ -1,9 +1,24 @@
+"use client";
+
 import { BrandLogo } from "@/app/components/brand/BrandLogo";
 import { HealthPill } from "@/app/components/layout/HealthPill";
 import { BOOK_A_DEMO_HREF } from "@/app/components/marketing/links";
+import { useSession } from "@/lib/application";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
 
 export function SiteFooter() {
+  const { user, loaded } = useSession();
+  if (!(loaded && hasCapability(user, CAPABILITIES.legacyMarketingPages))) {
+    return (
+      <footer className="border-t border-hairline bg-paper">
+        <div className="marketing-wrap flex flex-col gap-3 py-8 sm:flex-row sm:items-center sm:justify-between">
+          <BrandLogo />
+          <HealthPill />
+        </div>
+      </footer>
+    );
+  }
   return (
     <footer className="border-t border-white/10 bg-midnight text-white">
       <div className="marketing-wrap grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">

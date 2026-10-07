@@ -6,6 +6,8 @@ import {
   canAccessProductRoute,
   studioRoute,
   defaultProductRoute,
+  isLegacyMarketingPath,
+  safeNextPath,
   safeWorkspaceSwitchDestination,
 } from "./capabilities.ts";
 import {
@@ -36,7 +38,7 @@ test("navigation follows server capabilities rather than the display role", () =
     [CAPABILITIES.accountAccess]: true,
     [CAPABILITIES.platformRead]: true,
   });
-  assert.equal(defaultProductRoute(platform), "/admin/businesses");
+  assert.equal(defaultProductRoute(platform), "/admin/monitoring");
   assert.equal(canAccessProductRoute(platform, "/admin/organizations"), true);
   assert.equal(canAccessProductRoute(platform, "/business"), false);
 
@@ -54,7 +56,7 @@ test("Studio routes need the development workspace role", () => {
   }
   assert.equal(canAccessProductRoute(developer, "/projectsx"), false);
   assert.equal(safeWorkspaceSwitchDestination(developer, "/projects"), "/projects");
-  assert.equal(safeWorkspaceSwitchDestination(developer, "/projects/p1/graph"), "/development");
+  assert.equal(safeWorkspaceSwitchDestination(developer, "/projects/p1/graph"), "/projects");
 });
 
 test("Studio paths: known sections and UUID ids only; a project opens on Experiments", () => {
@@ -134,4 +136,47 @@ test("the Studio design kit route needs the development capability, not a prefix
   assert.equal(canAccessProductRoute(client, "/dev/studio-kit"), false);
   assert.equal(canAccessProductRoute(null, "/dev/studio-kit"), false);
   assert.equal(canAccessProductRoute(client, "/device"), false);
+});
+
+test("every role lands in its workspace after login", () => {
+  const base = { [CAPABILITIES.accountAccess]: true };
+  const admin = user({ ...base, [CAPABILITIES.platformRead]: true, [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  const developer = user({ ...base, [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  const operator = user({ ...base, [CAPABILITIES.platformRead]: true });
+  const client = user({ ...base, [CAPABILITIES.applicationAccess]: true });
+  const businessAdmin = user({ ...base, [CAPABILITIES.businessAccess]: true, [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  assert.equal(defaultProductRoute(admin), "/projects");
+  assert.equal(defaultProductRoute(developer), "/projects");
+  assert.equal(defaultProductRoute(operator), "/admin/monitoring");
+  assert.equal(defaultProductRoute(client), "/app/labs");
+  assert.equal(defaultProductRoute(businessAdmin), "/projects");
+  assert.equal(defaultProductRoute(user({ ...base, [CAPABILITIES.businessAccess]: true, [CAPABILITIES.applicationAccess]: true })), "/business");
+  assert.equal(defaultProductRoute(user(base)), "/app/settings");
+  assert.equal(defaultProductRoute(null), "/app/settings");
+  for (const [who, route] of [[admin, "/projects"], [developer, "/projects"], [operator, "/admin/monitoring"], [client, "/app/labs"]] as const) {
+    assert.equal(canAccessProductRoute(who, route), true, route);
+  }
+});
+
+test("next= is honored only for same-origin product routes the user may open", () => {
+  const developer = user({ [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  assert.equal(safeNextPath(developer, "/projects"), "/projects");
+  assert.equal(safeNextPath(developer, "/projects/new?x=1"), "/projects/new?x=1");
+  assert.equal(safeNextPath(developer, "/app/labs"), "/app/labs");
+  for (const bad of [
+    null, undefined, "", "https://evil.example/projects", "//evil.example", "///evil.example", "/\\evil.example",
+    "/app/..//evil.example", "/app/../admin", "/projects/%2e%2e/x", "javascript:alert(1)", "projects", "/login", "/", "/admin/monitoring",
+    "/app/labs\nSet-Cookie: x=1", "/app/labs#//evil.example", "/home@evil.example", "/app/" + "a".repeat(600),
+  ]) {
+    assert.equal(safeNextPath(developer, bad as string | null | undefined), null, String(bad));
+  }
+});
+
+test("only the frozen marketing paths are gated by the marketing flag", () => {
+  for (const path of ["/industries", "/solutions", "/pricing", "/showcase", "/platform", "/company", "/resources", "/pricing/x"]) {
+    assert.equal(isLegacyMarketingPath(path), true, path);
+  }
+  for (const path of ["/", "/login", "/business", "/projects", "/platformx", "/app/labs"]) {
+    assert.equal(isLegacyMarketingPath(path), false, path);
+  }
 });

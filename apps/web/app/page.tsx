@@ -1,109 +1,63 @@
 "use client";
 
-import { BOOK_A_DEMO_HREF } from "@/app/components/marketing/links";
-import { Eyebrow, MarketingButton, MarketingSection } from "@/app/components/marketing/primitives";
-import { GetStartedCTA, ProductPathSection, WhyUsSection } from "@/app/components/marketing/sections";
-import { MetricCard } from "@/app/components/ui/MetricCard";
-import { useOverviewSnapshot, useSession } from "@/lib/application";
-import { formatMoney, formatPercent } from "@/lib/domain";
-import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { useSession } from "@/lib/application";
+import { defaultProductRoute } from "@/lib/infrastructure/capabilities";
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
+
+const STORY = [
+  {
+    title: "Your agent drives",
+    body: "Claude Code, Codex or any MCP client connects with a scoped token and works the lab: data, splits, features, experiments.",
+  },
+  {
+    title: "The lab proves",
+    body: "Every model is checked for leakage, scored on a final holdout it never trained on, and logged with its evidence.",
+  },
+  {
+    title: "You decide",
+    body: "Each choice is a record with a rule answer beside any AI answer. Nothing changes without a trail you can read.",
+  },
+] as const;
 
 export default function HomePage() {
-  return (
-    <div>
-      <Hero />
-      <ProductPathSection />
-      <WhyUsSection />
-      <GetStartedCTA />
-    </div>
-  );
-}
-
-function Hero() {
   const { user, loaded } = useSession();
-  // Opportunity totals belong to the frozen Decision.ai layer (P4.1-A): read only when it is enabled.
-  const snapshot = useOverviewSnapshot(
-    loaded && hasCapability(user, CAPABILITIES.applicationAccess) && hasCapability(user, CAPABILITIES.legacyDecisionLayer),
-  );
-  const data = snapshot.data;
-  const showWorkspace = Boolean(user && snapshot.isSuccess && data);
-
-  const topAction = (() => {
-    if (!data) return "";
-    const counts: Record<string, number> = {};
-    for (const row of data.decisions) counts[row.recommended_action] = (counts[row.recommended_action] ?? 0) + 1;
-    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]?.replaceAll("_", " ") ?? "";
-  })();
-  const highConfidenceShare =
-    data && data.decisions.length > 0
-      ? data.decisions.filter((row) => row.confidence_band === "High").length / data.decisions.length
-      : 0;
-  const expectedSum = data ? data.decisions.reduce((sum, row) => sum + row.expected_revenue, 0) : 0;
+  const signedIn = loaded && Boolean(user);
+  const href = signedIn ? defaultProductRoute(user) : "/login";
+  const label = signedIn ? "Open your workspace" : "Sign in";
 
   return (
-    <MarketingSection>
-      <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-        <div>
-          <Eyebrow className="inline-flex items-center gap-1.5">
-            <Sparkles size={14} /> The DCLab decision platform
-          </Eyebrow>
-          <h1 className="mt-4 text-display text-ink">
-            We Build AI That <span className="text-brand-gradient">Grows Businesses.</span>
+    <section className="bg-transparent">
+      <div className="marketing-wrap py-20 lg:py-32">
+        <div className="mx-auto max-w-3xl">
+          <p className="text-eyebrow uppercase tracking-[0.18em] text-teal-700">DCLab</p>
+          <h1 className="mt-5 text-[2.5rem] font-semibold leading-[1.1] tracking-tight text-ink sm:text-6xl">
+            An ML lab your AI agent can drive, which proves every model is correct.
           </h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-ink-muted">
-            We build an autonomous decision layer that continuously scores opportunities, recommends the next
-            action, and keeps searching for a model that beats the one you have.
+          <p className="mt-6 max-w-2xl text-xl leading-8 text-ink-muted">
+            Agents and people work on the same versioned record of the problem, the data, the experiments and the models.
+            The lab runs the checks. You see the evidence.
           </p>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-ink-muted">
-            Instead of replacing your team, our AI becomes a decision-making partner that learns from your business
-            every day.
-          </p>
-          <div className="mt-8 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <MarketingButton href={BOOK_A_DEMO_HREF}>
-              Book a Demo <ArrowRight size={16} />
-            </MarketingButton>
-            <MarketingButton href="/platform" variant="secondary">
-              See Platform
-            </MarketingButton>
+          <div className="mt-10">
+            <Link
+              href={href}
+              data-testid="home-cta"
+              className="inline-flex items-center gap-2 rounded-full bg-teal-700 px-7 py-3.5 text-lg font-medium text-white transition-colors hover:bg-teal-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+            >
+              {label} <ArrowRight size={20} aria-hidden />
+            </Link>
           </div>
         </div>
-        <div className="surface-glass rounded-2xl p-5 sm:p-6">
-          {showWorkspace && data ? (
-            <>
-              <p className="text-eyebrow uppercase tracking-[0.18em] text-ink-muted">Your workspace</p>
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <MetricCard label="Opportunities" value={String(data.opportunityTotal)} />
-                <MetricCard label="Decisions" value={String(data.decisionTotal)} />
-              </div>
-              {topAction ? (
-                <p className="mt-4 text-body text-ink">
-                  Top action <span className="font-medium">{topAction}</span>
-                </p>
-              ) : null}
-              {data.decisions.length > 0 ? (
-                <p className="mt-2 text-helper text-ink-muted">
-                  High-confidence share {formatPercent(highConfidenceShare)} · expected value in view{" "}
-                  {formatMoney(expectedSum)}
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <p className="text-eyebrow uppercase tracking-[0.18em] text-ink-muted">Product surfaces</p>
-              <h2 className="mt-2 text-section text-ink">Opportunity ledger, decisions, and Labs</h2>
-              <ul className="mt-5 space-y-3 text-body text-ink-muted">
-                <li>Upload historical opportunities as CSV</li>
-                <li>Record an audited recommended action</li>
-                <li>Compare models in the Experimentation Lab</li>
-              </ul>
-              <p className="mt-6 text-helper text-ink-muted">
-                Sign in to see live totals from your workspace. This panel does not invent customer metrics.
-              </p>
-            </>
-          )}
-        </div>
+        <ol className="mx-auto mt-20 grid max-w-5xl gap-10 border-t border-hairline pt-12 md:grid-cols-3">
+          {STORY.map((step, index) => (
+            <li key={step.title}>
+              <p className="text-sm font-medium text-teal-700">Step {index + 1}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-ink">{step.title}</h2>
+              <p className="mt-3 text-lg leading-7 text-ink-muted">{step.body}</p>
+            </li>
+          ))}
+        </ol>
       </div>
-    </MarketingSection>
+    </section>
   );
 }

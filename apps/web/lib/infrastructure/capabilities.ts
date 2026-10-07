@@ -17,6 +17,8 @@ export const CAPABILITIES = {
   deepAudit: "deep_audit",
   /** P4.1-A: frozen Decision.ai vertical pages (presentation only; off by default). */
   legacyDecisionLayer: "legacy_decision_layer_enabled",
+  /** P4.12-A: frozen Decision.ai marketing pages (presentation only; off by default). */
+  legacyMarketingPages: "legacy_marketing_pages_enabled",
 } as const;
 
 /** Developer Studio routes (STUDIO_DESIGN section 3): development workspace role only. */
@@ -49,14 +51,53 @@ export function hasCapability(
   return user?.capabilities[capability] === true;
 }
 
+/**
+ * Where each role lands after login (STUDIO_DESIGN section 3). Developers and admins with a
+ * workspace open the project list (`/home` stays a placeholder until P4.15); a platform operator
+ * with no workspace opens monitoring until `/operator` (P8.5-UI); a business-only administrator keeps
+ * `/business`; clients keep their existing pages until `/outcomes` (P7.6).
+ */
 export function defaultProductRoute(user: CapabilityPrincipal | null | undefined): string {
-  if (hasCapability(user, CAPABILITIES.platformRead)) return "/admin/businesses";
+  const platform = hasCapability(user, CAPABILITIES.platformRead);
+  const development = hasCapability(user, CAPABILITIES.developmentAccess);
+  if (development) return "/projects";
+  if (platform) return "/admin/monitoring";
   if (hasCapability(user, CAPABILITIES.businessAccess)) return "/business";
-  if (hasCapability(user, CAPABILITIES.developmentAccess)) return "/development";
   if (hasCapability(user, CAPABILITIES.applicationAccess)) {
     return hasCapability(user, CAPABILITIES.legacyDecisionLayer) ? "/app/dashboards" : "/app/labs";
   }
   return "/app/settings";
+}
+
+/**
+ * A post-login `next=` target is honored only when it is a plain same-origin path: one leading
+ * slash, no scheme, authority, backslash, control character, dot segment or percent-encoding,
+ * and it must be a product route this user may open. Anything else returns null.
+ */
+export function safeNextPath(
+  user: CapabilityPrincipal | null | undefined,
+  requested: string | null | undefined,
+): string | null {
+  if (!requested || requested.length > 512) return null;
+  if (!/^\/(?!\/)[A-Za-z0-9\-._~/?=&]*$/.test(requested)) return null;
+  const path = requested.split(/[?#]/)[0];
+  if (path.split("/").some((segment) => segment === "." || segment === "..")) return null;
+  return canAccessProductRoute(user, path) ? requested : null;
+}
+
+/** Frozen Decision.ai marketing pages: redirected to `/` unless `legacy_marketing_pages_enabled`. */
+export const LEGACY_MARKETING_PREFIXES = [
+  "/industries",
+  "/solutions",
+  "/pricing",
+  "/showcase",
+  "/platform",
+  "/company",
+  "/resources",
+] as const;
+
+export function isLegacyMarketingPath(pathname: string): boolean {
+  return LEGACY_MARKETING_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 export function canAccessProductRoute(

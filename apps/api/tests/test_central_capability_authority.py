@@ -195,3 +195,24 @@ def test_legacy_decision_layer_is_a_presentation_flag_off_by_default(
     body = client.get("/v1/me", headers=_headers(owner, workspace.id)).json()
     assert body["capabilities"][LEGACY_DECISION_LAYER] is True
     assert effective_capability_matrix(db_session, owner, None)[LEGACY_DECISION_LAYER] is False
+
+
+def test_legacy_marketing_pages_is_a_presentation_flag_off_by_default(
+    client, db_session, monkeypatch
+):
+    """P4.12-A: the web tier redirects the frozen marketing pages unless this flag is on."""
+
+    from app.config import get_settings
+    from app.services.workspace_capability_service import (
+        LEGACY_MARKETING_PAGES,
+        invalidate_capability_cache,
+    )
+
+    owner, workspace = _workspace_with_owner(db_session)
+    body = client.get("/v1/me", headers=_headers(owner, workspace.id)).json()
+    assert body["capabilities"][LEGACY_MARKETING_PAGES] is False
+
+    monkeypatch.setattr(get_settings(), "legacy_marketing_pages_enabled", True)
+    invalidate_capability_cache(db_session)
+    body = client.get("/v1/me", headers=_headers(owner, workspace.id)).json()
+    assert body["capabilities"][LEGACY_MARKETING_PAGES] is True
