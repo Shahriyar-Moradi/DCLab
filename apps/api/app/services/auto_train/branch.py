@@ -128,7 +128,9 @@ def datetime_overrides(branch: BranchRun) -> tuple[set[str], list[str]]:
 def forced_datetime_action(
     engineered_train: pd.DataFrame, columns: list[str], already: set[str]
 ) -> tuple[pd.DataFrame, dict[str, Any] | None]:
-    """The same stateless epoch transform ``engineer_features`` applies, for named columns."""
+    """The same ``partition_structural`` epoch transform ``engineer_features`` applies, for
+    named columns: the parse decision and format come from the training partition only
+    (``engine/features/contract.py``)."""
 
     todo = [column for column in columns if column not in already]
     for column in todo:

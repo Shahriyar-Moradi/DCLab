@@ -13,6 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.engine.features.contract import MISSING_VALUE_TRANSFORMS
+
 PLAN_PROPOSAL_TYPE = "ExperimentPlanProposal"
 PLAN_STATUSES = ("accepted", "applied")
 # The rule's time budget (auto_train_service._search_config); a plan may only lower it.
@@ -47,7 +49,8 @@ class ExperimentPlan(_Frozen):
     split: PlanSplit | None = None
     families: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=16)
     max_training_seconds: float | None = Field(default=None, gt=0, le=RULE_TRAINING_SECONDS)
-    missing_values: dict[str, Literal["impute_median", "impute_most_frequent", "drop_column"]] | None = Field(
+    # The registry's missing-value transforms (engine/features/contract.py), not a second list.
+    missing_values: dict[str, Literal[MISSING_VALUE_TRANSFORMS]] | None = Field(  # type: ignore[valid-type]
         default=None, max_length=256)
 
     @field_validator("families")

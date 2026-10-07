@@ -1,4 +1,20 @@
-"""Feature-group combination search. Not brute-force feature-level 2^n."""
+"""Feature-group combination enumeration. Not brute-force feature-level 2^n.
+
+This module reads no data and no scores: it enumerates candidate group subsets
+from the group NAMES only (P5.0-A review), so there is no data-dependent choice
+AMONG groups here. The open-ingest training path builds exactly one group
+(``{"features": modeled_cols}``, ``services/auto_train/column_roles.py``) and
+takes ``combos[0]``. That single group's MEMBERSHIP is fixed on the locked
+training partition before CV: identifier/constant/free-text removal and the
+leakage auditor's target-aware EXCLUSION of suspiciously predictive columns,
+which ``engine/features/contract.py`` registers as the exclusion-only
+``partition_structural`` step ``leakage_exclusion`` (per column, fixed
+thresholds, it drops only the columns most associated with the target, so in
+expectation it makes CV more pessimistic; the holdout is never read). Any
+selection that ranks, counts or picks features for INCLUSION on data is a
+``fold_fitted`` step and belongs inside the Pipeline. In the paused legacy
+generator each combination is a separate candidate ranked by CV like any other.
+"""
 
 from __future__ import annotations
 

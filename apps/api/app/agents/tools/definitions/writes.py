@@ -13,13 +13,14 @@ MCP-only ``idempotency_key`` salt is not part of these schemas (the proposal id 
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.tools.catalog import ToolError
-from app.agents.tools.shaping import HOLDOUT_KEY
+from app.agents.tools.shaping import names_holdout
 
 Id = Annotated[UUID, Field(description="Resource UUID.")]
 Text = Annotated[str, Field(min_length=1, max_length=1000)]
@@ -97,19 +98,42 @@ class RequestAgentReviewInput(BaseModel):
 
 
 def _no_holdout(value: Any, where: str) -> None:
-    """No key, scope or string value naming the holdout anywhere in an agent's structured
-    arguments (rejected, never stripped)."""
+    """No key, scope or string value naming the holdout (any spelling: Unicode-folded,
+    format/mark characters stripped, homoglyphs and spaced letters folded) anywhere in an
+    agent's structured arguments or free text (rejected, never stripped)."""
 
     if isinstance(value, dict):
-        if any(HOLDOUT_KEY.search(str(key)) for key in value):
+        if any(names_holdout(str(key)) for key in value):
             raise ToolError("holdout_not_allowed", f"{where} may not cite or carry the final holdout")
         for item in value.values():
             _no_holdout(item, where)
     elif isinstance(value, list):
         for item in value:
             _no_holdout(item, where)
-    elif isinstance(value, str) and HOLDOUT_KEY.search(value):
+    elif isinstance(value, str) and names_holdout(value):
         raise ToolError("holdout_not_allowed", f"{where} may not cite or carry the final holdout")
+
+
+# A dataset column name: one token, no whitespace. A feature change's ``column`` may be
+# called anything (``holdout_flag``); a sentence in that slot is free text and is scanned.
+_COLUMN_TOKEN = re.compile(r"^\S{1,256}$")
+
+
+def _branch_changes_to_scan(changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from app.domain.experiment_changes import FEATURE_CHANGE_KINDS
+
+    scan: list[dict[str, Any]] = []
+    for change in changes:
+        if (
+            isinstance(change, dict)
+            and change.get("kind") in FEATURE_CHANGE_KINDS
+            and isinstance(change.get("column"), str)
+            and _COLUMN_TOKEN.match(change["column"])
+        ):
+            scan.append({key: item for key, item in change.items() if key != "column"})
+        else:
+            scan.append(change)
+    return scan
 
 
 def _review_validator(args: RequestAgentReviewInput) -> RequestAgentReviewInput:
@@ -120,12 +144,26 @@ def _review_validator(args: RequestAgentReviewInput) -> RequestAgentReviewInput:
 
 
 def _branch_validator(args: BranchExperimentInput) -> BranchExperimentInput:
-    from app.domain.experiment_changes import ExperimentChangeSet
+    from app.domain.experiment_changes import FEATURE_CHANGE_KINDS, ExperimentChangeSet
+    from app.engine.features.contract import FeaturePlan, spec_for_transform, validate_feature_plan
 
+    # An agent's branch is proposed on CV evidence only: no argument may cite the holdout
+    # (only a feature change's single-token column NAME is exempt; everything else is scanned).
+    _no_holdout(_branch_changes_to_scan(args.changes), "changes")
+    _no_holdout(args.intent, "intent")
     try:
-        ExperimentChangeSet.model_validate({"changes": args.changes})
+        change_set = ExperimentChangeSet.model_validate({"changes": args.changes})
     except ValidationError as exc:
         raise ToolError("invalid_change_set", exc.errors(include_url=False)[0]["msg"][:300]) from None
+    # P5.0-A: the feature transforms an agent asks for must satisfy the feature contract
+    # (a tripwire against a drifting declaration; the branch service checks it again).
+    specs = tuple(
+        spec_for_transform(change.transform, change.column)
+        for change in change_set.changes
+        if change.kind in FEATURE_CHANGE_KINDS
+    )
+    for violation in validate_feature_plan(FeaturePlan(transforms=specs, proposed_by="agent")):
+        raise ToolError("invalid_change_set", f"{violation.code}: {violation.message}"[:300])
     return args
 
 

@@ -19,20 +19,19 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.execution_requests import FORBIDDEN_REQUEST_PAYLOAD_KEYS
 from app.domain.state_graph import STATE_GRAPH_JSON_MAX_BYTES, sql_no_forbidden_keys
+from app.engine.features.contract import FEATURE_TRANSFORM_NAMES
 
 CHANGE_SET_SCHEMA_VERSION = 1
 CHANGE_SET_MAX_CHANGES = 32
 CHANGE_SET_MAX_BYTES = STATE_GRAPH_JSON_MAX_BYTES
 INTENT_MAX_CHARS = 2000
 
-# Exactly what the engine executes and codegen reproduces today (§4).
-FEATURE_TRANSFORM_ALLOWLIST = (
-    "drop_column",
-    "keep",
-    "impute_median",
-    "impute_most_frequent",
-    "datetime_extract",
-)
+# Exactly what the engine executes and codegen reproduces today (§4): the names of
+# the feature-engineering contract registry (P5.0-A), which also declares each
+# transform's inputs and fit scope. Not a second list.
+FEATURE_TRANSFORM_ALLOWLIST = FEATURE_TRANSFORM_NAMES
+# The change kinds the feature contract validates (``validate_feature_plan``).
+FEATURE_CHANGE_KINDS = ("feature_transform_add", "feature_transform_remove")
 # Dummy baselines are always evaluated (P1.4-A1) and can never be excluded.
 # Mirrors ``app.engine.search.generator.DUMMY_FAMILIES``.
 NON_EXCLUDABLE_FAMILIES = ("majority", "mean", "median")
