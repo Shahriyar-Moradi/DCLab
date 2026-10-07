@@ -112,7 +112,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await expect(page.getByRole("table", { name: "Per-fold CV metrics" })).toBeVisible();
   await page.getByRole("tab", { name: /^Overview/ }).click();
   await expect(page.getByText("No Critic review for this run")).toBeVisible();
-  await expect(page.getByText("The findings panel with severity")).toBeVisible();
+  await expect(page.getByTestId("findings-summary")).toContainText(/trust checks/);
 
   // Code: copy and download are plain text, nothing runs.
   await page.getByRole("tab", { name: /^Code/ }).click();

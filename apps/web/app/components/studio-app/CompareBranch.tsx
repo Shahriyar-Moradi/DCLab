@@ -24,6 +24,7 @@ import {
   CHANGE_KINDS, TRANSFORMS, branchProblem, buildBranchBody, emptyDraft, mapActionError, type ChangeDraft, type ChangeKind,
 } from "@/lib/application/studio-compare";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
+import type { BranchPrefill } from "@/lib/application/studio-findings";
 
 function Problem({ error }: { error: PlainError }) {
   return <Banner tone="crit"><b>{error.title}.</b> {error.detail}</Banner>;
@@ -92,13 +93,13 @@ function ChangeFields({ draft, onChange }: { draft: ChangeDraft; onChange: (patc
   }
 }
 
-export function BranchPanel({ projectId, experimentId }: { projectId: string; experimentId: string }) {
+export function BranchPanel({ projectId, experimentId, initial }: { projectId: string; experimentId: string; initial?: BranchPrefill | null }) {
   const router = useRouter();
   const invalidate = useWriteInvalidation();
   const keys = useRef(new ActionKeys(newIdempotencyKey)).current;
   const nextId = useRef(1);
-  const [intent, setIntent] = useState("");
-  const [drafts, setDrafts] = useState<ChangeDraft[]>(() => [emptyDraft(0)]);
+  const [intent, setIntent] = useState(initial?.intent ?? "");
+  const [drafts, setDrafts] = useState<ChangeDraft[]>(() => [initial?.draft ?? emptyDraft(0)]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<PlainError | null>(null);
   const body = buildBranchBody(intent, drafts);
@@ -125,6 +126,7 @@ export function BranchPanel({ projectId, experimentId }: { projectId: string; ex
   };
   return (
     <Card title="Branch this experiment" aside={<Pill tone="det">typed change set</Pill>}>
+      {initial ? <Banner tone="info">Pre-filled from a finding. Review the change, add your reason if you want to change it, then start the branch; nothing runs until you do.</Banner> : null}
       <p className="muted">
         A branch re-runs this experiment with a <Term definition="A typed list of changes applied on top of a parent experiment. The split plan and source dataset stay the same, so the branch is comparable with its parent.">change set</Term>.
         Pick the changes below; the API validates them when you start the branch and its answer is shown here unchanged.

@@ -1,7 +1,7 @@
 "use client";
 
 /** Data page reads and the "make current" ref move (P4.1-C). Every value comes from a /v1 field. */
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { ifMatch, v1Get, v1Post } from "@/lib/infrastructure/v1/client";
@@ -132,7 +132,12 @@ const DecisionPointPageSchema = z.object({ items: z.array(DecisionPointSchema), 
 const FindingsSchema = z.object({
   experiment_id: z.string(),
   investigated: z.boolean(),
-  checks: z.array(z.object({ check: z.string(), status: z.string(), severity: z.string(), message: z.string() })).optional(),
+  version: z.string().nullable().optional(),
+  checks: z.array(z.object({
+    check: z.string(), status: z.string(), severity: z.string(), message: z.string(),
+    evidence: z.record(z.string(), z.unknown()).optional(), recommendation_kind: z.string().nullable().optional(),
+  })).optional(),
+  summary: z.object({ passed: z.number().optional(), warnings: z.number().optional(), failures: z.number().optional(), not_evaluated: z.number().optional() }).optional(),
 });
 export type StudioFindings = z.infer<typeof FindingsSchema>;
 
@@ -197,6 +202,22 @@ export function useExperimentFindings(experimentId: string | null | undefined) {
     enabled: isUuid(experimentId),
     retry: false,
   });
+}
+
+/** Badge reads for a list: one findings read per completed run, capped (default 25), cached 60 s, never refetched on focus. */
+export const FINDINGS_BADGE_CAP = 25;
+export function useFindingsBadges(experimentIds: string[], cap = FINDINGS_BADGE_CAP) {
+  const ids = experimentIds.filter((id) => isUuid(id)).slice(0, cap);
+  const results = useQueries({
+    queries: ids.map((experimentId) => ({
+      queryKey: workspaceQueryKey("v1", "findings", experimentId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => v1Get("/v1/experiments/{experiment_id}/findings", FindingsSchema, { params: { experiment_id: experimentId }, signal }),
+      staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
+    })),
+  });
+  const byId = new Map<string, (typeof results)[number]>();
+  ids.forEach((experimentId, index) => byId.set(experimentId, results[index]));
+  return byId;
 }
 
 /**

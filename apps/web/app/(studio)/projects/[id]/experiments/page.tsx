@@ -12,6 +12,8 @@ import { QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-ap
 import { useProjectExperiments, type StudioExperimentItem } from "@/lib/application";
 import { COMPARE_MAX, COMPARE_MIN, compareHref } from "@/lib/application/studio-compare";
 import { isUuid } from "@/lib/application/command-search";
+import { FINDINGS_BADGE_CAP, useFindingsBadges } from "@/lib/application/studio-data-hooks";
+import { attentionCount, findingsState } from "@/lib/application/studio-findings";
 
 const short = (id: string | null | undefined) => (id ? id.slice(0, 8) : "—");
 
@@ -21,6 +23,8 @@ function ExperimentsPageInner() {
   const preselect = useSearchParams().get("select");
   const [selected, setSelected] = useState<string[]>(() => (isUuid(preselect) ? [preselect.toLowerCase()] : []));
   const experiments = useProjectExperiments(id);
+  const completedIds = (experiments.data?.items ?? []).filter((e) => e.status === "completed").map((e) => e.id);
+  const badges = useFindingsBadges(completedIds);
   const toggle = (experimentId: string) => setSelected((all) => (all.includes(experimentId) ? all.filter((x) => x !== experimentId) : all.length < COMPARE_MAX ? [...all, experimentId] : all));
   const href = compareHref(id, selected);
   const columns: Column<StudioExperimentItem>[] = [
@@ -37,6 +41,20 @@ function ExperimentsPageInner() {
     },
     { key: "status", header: "Status", sortValue: (e) => e.status, render: (e) => <Pill tone={STATUS_TONE[e.status] ?? "gray"}>{e.status.replaceAll("_", " ")}</Pill> },
     { key: "parent", header: "Parent", render: (e) => <span className="mono">{e.parent_experiment_id ? short(e.parent_experiment_id) : "root"}</span> },
+    {
+      key: "findings", header: "Findings",
+      render: (e) => {
+        if (e.status !== "completed") return "—";
+        const result = badges.get(e.id);
+        if (!result) return <span className="muted" title={`Findings are loaded for the first ${FINDINGS_BADGE_CAP} completed runs; open the run to see them.`}>open run</span>;
+        if (result.isPending) return <span className="muted">…</span>;
+        if (result.isError) return <span className="muted">unavailable</span>;
+        const state = findingsState(result.data);
+        const n = attentionCount(result.data);
+        if (state === "not_computed") return <span className="muted">not computed</span>;
+        return n ? <Link href={`/projects/${id}/experiments/${e.id}#findings`}><Pill tone="warn">{n} to review</Pill></Link> : <Pill tone="ok">all passed</Pill>;
+      },
+    },
     { key: "change", header: "Change set", render: (e) => (e.has_change_set ? <Pill tone="det">typed change</Pill> : "—") },
     { key: "split", header: "Split plan", render: (e) => <span className="mono">{short(e.split_plan_id)}</span> },
     { key: "created", header: "Started", sortValue: (e) => e.created_at, render: (e) => formatWhen(e.created_at) },

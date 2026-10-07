@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { ModelBuildInspector } from "@/app/components/model-build/ModelBuildInspector";
-import { PhaseEmpty, QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
+import { QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
 import { CodeBlock } from "@/components/studio/CodeBlock";
@@ -24,6 +24,7 @@ import { Term } from "@/components/studio/Term";
 import { plainText, projectHref } from "@/lib/application/command-search";
 import { useModelBuild } from "@/lib/application/hooks";
 import { percent } from "@/lib/application/studio-data";
+import { attentionCount, findingsState } from "@/lib/application/studio-findings";
 import { useDatasetProfile, useDatasetVersion, useExperimentFindings, useProjectGraph, type StudioGraph, type StudioGraphNode } from "@/lib/application/studio-data-hooks";
 import {
   candidateRows, featureReason, featureRows, foldRows, foldSizes, formatNumber, experimentUsing, inspectorPath, investigationView, metricNames,
@@ -182,9 +183,13 @@ function FindingsAndReview({ projectId, experimentId }: { projectId: string; exp
   return (
     <>
       <h3>Findings</h3>
-      <PhaseEmpty title="The findings panel with severity, numbers and what to do" phase="P4.10-UI">
-        {findings.data?.investigated ? <>The service has recorded {findingsTotal} trust check{findingsTotal === 1 ? "" : "s"} for this run.</> : "No trust checks are recorded for this run yet."}
-      </PhaseEmpty>
+      {findings.isError ? <QueryNotice error={findings.error} what="findings" /> : null}
+      <p className="muted" data-testid="findings-summary">
+        {findingsState(findings.data) === "pending" ? "Loading findings…"
+          : findingsState(findings.data) === "not_computed" ? "No trust checks are recorded for this run yet (not the same as passing)."
+            : attentionCount(findings.data) ? `${attentionCount(findings.data)} of ${findingsTotal} trust checks need attention.` : `All ${findingsTotal} trust checks passed.`}
+        {" "}Severity, numbers and what to do are in the Findings card above.
+      </p>
       <h3><Term definition={TERMS.level}>Critic review</Term> <span className="muted">(advisory)</span></h3>
       {proposals.isError ? <QueryNotice error={proposals.error} what="review proposals" /> : null}
       {proposals.isPending ? <p role="status">Loading the review…</p> : null}

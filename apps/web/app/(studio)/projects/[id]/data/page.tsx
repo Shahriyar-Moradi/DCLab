@@ -13,6 +13,7 @@ import { Pill, type PillTone } from "@/components/studio/Pill";
 import { SectionTabs } from "@/components/studio/SectionTabs";
 import { safeInternalHref } from "@/components/studio/safe-href";
 import { Term } from "@/components/studio/Term";
+import { FindingsPanel } from "@/app/components/studio-app/FindingsPanel";
 import { PhaseEmpty, QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { ActionKeys, mapWizardError, useProjectDatasets, useProjectRefs, type PlainError, type StudioDatasetItem } from "@/lib/application";
 import { projectHref } from "@/lib/application/command-search";
@@ -192,6 +193,23 @@ function LeakageTab({ projectId, profile }: { projectId: string; profile: Studio
   );
 }
 
+function DataFindingsTab({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
+  const experiment = profile.experiment;
+  if (!experiment) return <div className="empty">The trust checks run inside each experiment. No completed run on this version&apos;s split plan yet, so there are no findings to show.</div>;
+  const href = projectHref(projectId, "experiments", experiment.id);
+  const label = <span className="mono">{experiment.id.slice(0, 8)}</span>;
+  return (
+    <>
+      <p className="muted">
+        From experiment {href ? <Link href={href}>{label}</Link> : label}
+        {experiment.selection === "champion" ? ", the champion's run on this plan." : ", the newest completed run on this plan."}
+      </p>
+      <FindingsPanel projectId={projectId} experimentId={experiment.id} />
+      <PhaseEmpty title="Open data questions arrive with the questions inbox." phase="P4.16-UI" />
+    </>
+  );
+}
+
 function PolicyTab({ datasetId }: { datasetId: string }) {
   const version = useDatasetVersion(datasetId);
   if (version.isError) return <QueryNotice error={version.error} what="dataset" />;
@@ -265,7 +283,7 @@ export default function DataPage() {
               ),
             },
             { id: "leakage", label: "Leakage audit", content: profile.data ? <LeakageTab projectId={id} profile={profile.data} /> : <p role="status">Loading profile…</p> },
-            { id: "findings", label: "Findings & questions", content: <PhaseEmpty title="Data findings and open questions arrive with the findings panel." phase="P4.10-UI" /> },
+            { id: "findings", label: "Findings & questions", content: profile.data ? <DataFindingsTab projectId={id} profile={profile.data} /> : <p role="status">Loading profile…</p> },
             { id: "policy", label: "Policy & access", content: <PolicyTab datasetId={selected} /> },
           ]}
         />
