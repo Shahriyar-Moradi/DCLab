@@ -91,14 +91,14 @@ _RUN_FINISHED = {
 _RULE_INITIATORS = frozenset({"system", "schedule"})
 
 
-def _decision_summary(decision_type: str, state: str) -> str:
+def decision_summary(decision_type: str, state: str) -> str:
     label = _DECISION_LABELS.get(decision_type, "Decision")
     if decision_type in _SELF_DESCRIBING and state == "accepted":
         return label
     return f"{label} {state}" if state in ("proposed", "accepted", "rejected") else label
 
 
-def _run_label(run_number: int | None, branch: bool) -> str:
+def run_label(run_number: int | None, branch: bool) -> str:
     noun = "Branch run" if branch else "Run"
     return f"{noun} #{run_number}" if isinstance(run_number, int) and run_number > 0 else noun
 
@@ -134,13 +134,15 @@ def _open(cursor: str | None, scope: str) -> _Key | None:
         raise InvalidCursorError(message) from exc
 
 
-def _before(after: _Key | None, kind: str, at_column: Any, id_column: Any) -> Any:
-    """Rows of one source strictly after the cursor in ``(occurred_at, rank, id)`` DESC order."""
+def keyset_before(after: _Key | None, kind: str, at_column: Any, id_column: Any,
+                  ranks: dict[str, int] = ACTIVITY_KIND_RANK) -> Any:
+    """Rows of one source strictly after the cursor in ``(occurred_at, rank, id)`` DESC order
+    (also the inbox's merge order, P4.16-A)."""
 
     if after is None:
         return None
     at, rank, ident = after
-    mine = ACTIVITY_KIND_RANK[kind]
+    mine = ranks[kind]
     if mine < rank:
         return at_column <= at
     if mine > rank:
@@ -162,7 +164,7 @@ def _decision_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key 
     )
     if project_id is not None:
         stmt = stmt.where(pdr.project_id == project_id)
-    cut = _before(after, "decision", pdr.recorded_at, pdr.id)
+    cut = keyset_before(after, "decision", pdr.recorded_at, pdr.id)
     if cut is not None:
         stmt = stmt.where(cut)
     items = []
@@ -179,7 +181,7 @@ def _decision_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key 
         items.append(ActivityItemRead(
             id=f"decision:{row.id}", kind="decision", occurred_at=row.recorded_at, project_id=row.project_id,
             actor=actor, subject=_subject(row.subject_kind, subject_id),
-            summary=_decision_summary(row.decision_type, row.state), status=row.state,
+            summary=decision_summary(row.decision_type, row.state), status=row.state,
             decision_type=row.decision_type, link=ActivityLinkRead(kind="decision_record", id=row.id),
         ))
     return items
@@ -206,7 +208,7 @@ def _run_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | Non
         stmt = stmt.where(Experiment.ended_at.is_not(None))
     if project_id is not None:
         stmt = stmt.where(Experiment.project_id == project_id)
-    cut = _before(after, kind, at_column, Experiment.id)
+    cut = keyset_before(after, kind, at_column, Experiment.id)
     if cut is not None:
         stmt = stmt.where(cut)
     items = []
@@ -219,7 +221,7 @@ def _run_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | Non
             actor = ActivityActorRead(kind="rule")
         else:
             actor = ActivityActorRead(kind="person", is_you=viewer_id is not None and requester == viewer_id)
-        label = _run_label(number, parent is not None)
+        label = run_label(number, parent is not None)
         public = _RUN_FINISHED.get(str(status), "ended") if finished else None
         items.append(ActivityItemRead(
             id=f"{kind}:{exp_id}", kind=kind, occurred_at=at, project_id=proj, actor=actor,
@@ -239,7 +241,7 @@ def _agent_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | N
         stmt = stmt.where(AgentRun.finished_at.is_not(None))
     if project_id is not None:
         stmt = stmt.where(AgentRun.project_id == project_id)
-    cut = _before(after, kind, at_column, AgentRun.id)
+    cut = keyset_before(after, kind, at_column, AgentRun.id)
     if cut is not None:
         stmt = stmt.where(cut)
     items = []

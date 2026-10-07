@@ -4,8 +4,8 @@
   ],
   "alembic_revision_count": 77,
   "inventory": {
-    "backend_python_file_count": 634,
-    "backend_test_file_count": 173,
+    "backend_python_file_count": 637,
+    "backend_test_file_count": 174,
     "extension_counts": {
       ".api": 1,
       ".css": 7,
@@ -23,7 +23,7 @@
       ".mdc": 1,
       ".mjs": 3,
       ".pdf": 2,
-      ".py": 694,
+      ".py": 697,
       ".toml": 3,
       ".ts": 94,
       ".tsx": 192,
@@ -39,17 +39,17 @@
       "dclab_client",
       "dclab_mcp"
     ],
-    "python_file_count": 694,
-    "python_line_count": 186846,
-    "repository_file_count": 1428,
+    "python_file_count": 697,
+    "python_line_count": 188016,
+    "repository_file_count": 1431,
     "sdk_test_file_count": 3,
-    "test_file_count": 193,
+    "test_file_count": 194,
     "ts_tsx_file_count": 286,
-    "ts_tsx_line_count": 39595,
+    "ts_tsx_line_count": 39995,
     "web_e2e_file_count": 16
   },
-  "openapi_operation_count": 217,
-  "openapi_path_count": 203,
+  "openapi_operation_count": 219,
+  "openapi_path_count": 205,
   "sqlalchemy_table_count": 85,
-  "v1_operation_count": 63
+  "v1_operation_count": 65
 }

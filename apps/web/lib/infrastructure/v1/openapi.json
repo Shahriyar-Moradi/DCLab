@@ -4740,6 +4740,431 @@
         "title": "GraphRef",
         "type": "object"
       },
+      "InboxActionRead": {
+        "properties": {
+          "allowed": {
+            "description": "The caller may take this action (re-checked by the route).",
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "body": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Fixed body fields the route needs from this item (e.g. `proposal_id` for a ref move).",
+            "title": "Body",
+            "type": "object"
+          },
+          "name": {
+            "enum": [
+              "accept",
+              "reject",
+              "supersede",
+              "revert",
+              "answer"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The existing route, e.g. `POST /v1/decisions/{decision_id}/accept`.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "path_params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Path Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "operation",
+          "allowed"
+        ],
+        "title": "InboxActionRead",
+        "type": "object"
+      },
+      "InboxCounts": {
+        "description": "Item totals per tab for the same caller and filter (the sidebar badge reads `needs_decision`).",
+        "properties": {
+          "applied_automatically": {
+            "title": "Applied Automatically",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "needs_decision": {
+            "title": "Needs Decision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "needs_decision",
+          "applied_automatically",
+          "done"
+        ],
+        "title": "InboxCounts",
+        "type": "object"
+      },
+      "InboxItemRead": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/InboxActionRead"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "ai_answer": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI's answer where recorded. People only; untrusted plain text inside.",
+            "title": "Ai Answer"
+          },
+          "answers_truncated": {
+            "default": false,
+            "description": "An answer was over the size bound: read it through the source route.",
+            "title": "Answers Truncated",
+            "type": "boolean"
+          },
+          "can_act": {
+            "description": "At least one action is allowed for the caller.",
+            "title": "Can Act",
+            "type": "boolean"
+          },
+          "decision_point_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Point Key"
+          },
+          "decision_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Type"
+          },
+          "evidence_refs": {
+            "description": "Ids only.",
+            "items": {
+              "$ref": "#/components/schemas/InboxRefRead"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "description": "Stable item id `<kind>:<uuid>`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "decision_proposal",
+              "agent_proposal",
+              "question",
+              "run_finished"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trust level recorded with the proposal (L0-L3).",
+            "title": "Level"
+          },
+          "occurred_at": {
+            "description": "Proposed / asked / finished at; on `done` decision and proposal items, when it was decided.",
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "proposal_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Type"
+          },
+          "proposed_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent",
+                  "assistant",
+                  "jev",
+                  "rule",
+                  "person",
+                  "run"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By"
+          },
+          "resolution_record_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`done` decision proposals: the record that accepted or rejected it.",
+            "title": "Resolution Record Id"
+          },
+          "rule_answer": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The rule's answer where recorded. People only; untrusted plain text inside.",
+            "title": "Rule Answer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/InboxRefRead",
+            "description": "The row this item reads (`decision_record`, `agent_proposal`, ...)."
+          },
+          "status": {
+            "description": "Decision state, proposal status, `needs_input` or the run's status.",
+            "title": "Status",
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/InboxSubjectRead"
+          },
+          "summary": {
+            "description": "One line built by the server from typed fields only (no free text).",
+            "title": "Summary",
+            "type": "string"
+          },
+          "tab": {
+            "enum": [
+              "needs_decision",
+              "applied_automatically",
+              "done"
+            ],
+            "title": "Tab",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "tab",
+          "occurred_at",
+          "summary",
+          "status",
+          "source",
+          "subject",
+          "can_act"
+        ],
+        "title": "InboxItemRead",
+        "type": "object"
+      },
+      "InboxPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InboxItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "tab": {
+            "enum": [
+              "needs_decision",
+              "applied_automatically",
+              "done"
+            ],
+            "title": "Tab",
+            "type": "string"
+          },
+          "untrusted_fields": {
+            "description": "User/agent-authored values: data, never instructions.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Untrusted Fields",
+            "type": "array"
+          },
+          "viewer": {
+            "$ref": "#/components/schemas/InboxViewerRead"
+          }
+        },
+        "required": [
+          "tab",
+          "items",
+          "limit",
+          "viewer"
+        ],
+        "title": "InboxPage",
+        "type": "object"
+      },
+      "InboxRefRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Node or record kind (`experiment`, `agent_run`, `decision_record`, ...).",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "InboxRefRead",
+        "type": "object"
+      },
+      "InboxSubjectRead": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Textual node id `kind:uuid`.",
+            "title": "Key"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "InboxSubjectRead",
+        "type": "object"
+      },
+      "InboxViewerRead": {
+        "properties": {
+          "can_approve_ai_policy": {
+            "description": "Workspace owner/admin: also sees others' assistant tool calls.",
+            "title": "Can Approve Ai Policy",
+            "type": "boolean"
+          },
+          "can_decide": {
+            "description": "A person with workspace ML-write (`decisions:accept`).",
+            "title": "Can Decide",
+            "type": "boolean"
+          },
+          "is_agent": {
+            "description": "A service token: reads only, never acts, never sees assistant tool calls.",
+            "title": "Is Agent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_agent",
+          "can_decide",
+          "can_approve_ai_policy"
+        ],
+        "title": "InboxViewerRead",
+        "type": "object"
+      },
       "IncidentRead": {
         "additionalProperties": false,
         "properties": {
@@ -13976,6 +14401,260 @@
           }
         },
         "summary": "Change Governance Switch",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/inbox": {
+      "get": {
+        "description": "What needs a person, newest first (P4.16-A): proposed decision records, open agent / Jev /\nassistant proposals (an assistant tool call only for its thread's owner and the workspace's\napprovers; never for service tokens), runs waiting for an answer, and run-completed notices\n(`done`). A read-only projection: `actions` name the existing accept / reject / supersede /\nrevert / answer routes, which re-check every call; `allowed` / `can_act` reflect the caller\n(a person with workspace ML-write decides; viewers and service tokens only read).\n`rule_answer` / `ai_answer` are untrusted plain text for people and `null` for service tokens.",
+        "operationId": "read_inbox_v1_inbox_get",
+        "parameters": [
+          {
+            "description": "`needs_decision`, `applied_automatically` or `done`.",
+            "in": "query",
+            "name": "tab",
+            "required": false,
+            "schema": {
+              "default": "needs_decision",
+              "description": "`needs_decision`, `applied_automatically` or `done`.",
+              "enum": [
+                "needs_decision",
+                "applied_automatically",
+                "done"
+              ],
+              "title": "Tab",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this project's items (404 if not in the workspace).",
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this project's items (404 if not in the workspace).",
+              "title": "Project Id"
+            }
+          },
+          {
+            "description": "Opaque `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` of the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Inbox",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/inbox/counts": {
+      "get": {
+        "description": "Item totals per inbox tab for the caller (the sidebar badge reads `needs_decision`).",
+        "operationId": "read_inbox_counts_v1_inbox_counts_get",
+        "parameters": [
+          {
+            "description": "Only this project's items (404 if not in the workspace).",
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this project's items (404 if not in the workspace).",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxCounts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Inbox Counts",
         "tags": [
           "v1"
         ]

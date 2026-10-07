@@ -155,6 +155,8 @@
   "POST /v1/governance/policy",
   "POST /v1/governance/policy/{proposal_id}/accept",
   "POST /v1/governance/switches",
+  "GET /v1/inbox",
+  "GET /v1/inbox/counts",
   "GET /v1/me",
   "GET /v1/model-builds/{pipeline_run_id}",
   "GET /v1/model-builds/{pipeline_run_id}/artifacts",

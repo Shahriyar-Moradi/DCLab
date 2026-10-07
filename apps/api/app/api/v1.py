@@ -109,6 +109,7 @@ from app.domain.idempotency import (
     RESOURCE_PROJECT,
 )
 from app.domain.home_reads import ACTIVITY_PAGE_DEFAULT, ACTIVITY_PAGE_MAX, ActivityPage, ProjectWithSummaryRead
+from app.domain.inbox_reads import INBOX_PAGE_DEFAULT, INBOX_PAGE_MAX, InboxCounts, InboxPage, InboxTab
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.observability import MlRunEventRead
@@ -135,6 +136,7 @@ from app.services.execution_request_service import (
 )
 from app.services.decision_record_service import list_decisions, unique_violation
 from app.services.home_read_service import list_activity, project_summaries
+from app.services.inbox_read_service import inbox_counts, list_inbox
 from app.services.graph_service import impact, project_graph
 from app.services.model_build_reproduction_service import (
     get_experiment_code,
@@ -294,6 +296,56 @@ def read_activity(
         raise _not_found(str(exc)) from exc
     except InvalidCursorError as exc:
         raise _bad_cursor(exc) from exc
+
+
+@router.get("/inbox", response_model=InboxPage)
+def read_inbox(
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    tab: InboxTab = Query("needs_decision", description="`needs_decision`, `applied_automatically` or `done`."),
+    project_id: UUID | None = Query(None, description="Only this project's items (404 if not in the workspace)."),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
+    limit: int = Query(INBOX_PAGE_DEFAULT, ge=1, le=INBOX_PAGE_MAX),
+) -> InboxPage:
+    """What needs a person, newest first (P4.16-A): proposed decision records, open agent / Jev /
+    assistant proposals (an assistant tool call only for its thread's owner and the workspace's
+    approvers; never for service tokens), runs waiting for an answer, and run-completed notices
+    (`done`). A read-only projection: `actions` name the existing accept / reject / supersede /
+    revert / answer routes, which re-check every call; `allowed` / `can_act` reflect the caller
+    (a person with workspace ML-write decides; viewers and service tokens only read).
+    `rule_answer` / `ai_answer` are untrusted plain text for people and `null` for service tokens.
+    """
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return list_inbox(db, actor=user, workspace_id=workspace_id, tab=tab, project_id=project_id,
+                          cursor=cursor, limit=limit, viewer_is_agent=is_agent(request))
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except InvalidCursorError as exc:
+        raise _bad_cursor(exc) from exc
+
+
+@router.get("/inbox/counts", response_model=InboxCounts)
+def read_inbox_counts(
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    project_id: UUID | None = Query(None, description="Only this project's items (404 if not in the workspace)."),
+) -> InboxCounts:
+    """Item totals per inbox tab for the caller (the sidebar badge reads `needs_decision`)."""
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return inbox_counts(db, actor=user, workspace_id=workspace_id, project_id=project_id,
+                            viewer_is_agent=is_agent(request))
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
 
 
 @router.get(

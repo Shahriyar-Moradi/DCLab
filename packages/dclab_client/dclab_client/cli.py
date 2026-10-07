@@ -415,6 +415,15 @@ def _activity(c: Ctx, a: argparse.Namespace) -> None:
     c[1].emit(page, table=("occurred_at", "kind", "summary"), rows=page.items)
 
 
+def _inbox_list(c: Ctx, a: argparse.Namespace) -> None:
+    page = c[0].inbox.list(tab=a.tab, project_id=a.project, cursor=a.cursor, limit=a.limit)
+    c[1].emit(page, table=("occurred_at", "kind", "summary", "can_act"), rows=page.items)
+
+
+def _inbox_counts(c: Ctx, a: argparse.Namespace) -> None:
+    c[1].emit(c[0].inbox.counts(project_id=a.project))
+
+
 def _run_replay(c: Ctx, a: argparse.Namespace) -> None:
     c[1].emit(c[0].agent_runs.replay(a.run_id, idempotency_key=a.idempotency_key))
 
@@ -576,6 +585,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--project")
     p.add_argument("--cursor")
     p.add_argument("--limit", type=int)
+    inbox = top.add_parser("inbox", help="what needs a person").add_subparsers(dest="cmd", required=True,
+                                                                                parser_class=_Parser)
+    p = leaf(inbox, "list", _inbox_list, help="one inbox tab, newest first")
+    p.add_argument("--tab", default="needs_decision", choices=("needs_decision", "applied_automatically", "done"))
+    p.add_argument("--project")
+    p.add_argument("--cursor")
+    p.add_argument("--limit", type=int)
+    leaf(inbox, "counts", _inbox_counts, help="item totals per tab").add_argument("--project")
     runs = top.add_parser("agent-runs", help="agent runs").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     leaf(runs, "replay", _run_replay, key=True, help="replay a recorded run against its record").add_argument("run_id")
     return root

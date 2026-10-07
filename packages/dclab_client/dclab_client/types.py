@@ -599,6 +599,68 @@ class ActivityPage(BaseModel):
     limit: int
 
 
+class InboxRef(BaseModel):
+    kind: str
+    id: UUID
+
+
+class InboxAction(BaseModel):
+    """An existing route this item can be acted on with (``allowed`` is re-checked by the route)."""
+
+    name: str  # accept | reject | supersede | revert | answer
+    operation: str  # e.g. "POST /v1/decisions/{decision_id}/accept"
+    path_params: dict[str, str] = Field(default_factory=dict)
+    body: dict[str, str] = Field(default_factory=dict)
+    allowed: bool
+
+
+class InboxItem(BaseModel):
+    """One ``GET /v1/inbox`` item. ``rule_answer`` / ``ai_answer`` are untrusted data (``None`` for tokens)."""
+
+    id: str
+    kind: str  # decision_proposal | agent_proposal | question | run_finished
+    tab: str
+    occurred_at: datetime
+    project_id: UUID | None = None
+    summary: str
+    status: str
+    source: InboxRef
+    subject: ActivitySubject
+    proposed_by: str | None = None
+    decision_type: str | None = None
+    proposal_type: str | None = None
+    decision_point_key: str | None = None
+    level: int | None = None
+    resolution_record_id: UUID | None = None
+    expires_at: datetime | None = None
+    rule_answer: dict[str, Any] | None = None
+    ai_answer: dict[str, Any] | None = None
+    answers_truncated: bool = False
+    evidence_refs: list[InboxRef] = Field(default_factory=list)
+    actions: list[InboxAction] = Field(default_factory=list)
+    can_act: bool
+
+
+class InboxViewer(BaseModel):
+    is_agent: bool
+    can_decide: bool
+    can_approve_ai_policy: bool
+
+
+class InboxPage(BaseModel):
+    tab: str
+    items: list[InboxItem]
+    next_cursor: str | None = None
+    limit: int
+    viewer: InboxViewer
+
+
+class InboxCounts(BaseModel):
+    needs_decision: int
+    applied_automatically: int
+    done: int
+
+
 class GovernanceViewer(BaseModel):
     can_approve: bool
     can_propose: bool

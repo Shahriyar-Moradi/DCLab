@@ -929,3 +929,32 @@ def test_activity_uses_v1_path_filters_and_parses_items():
     with pytest.raises(DCLabClientError, match="UUID"):
         api.activity.list(project_id="../x")
     assert len(recorded) == 1
+
+
+def test_inbox_uses_v1_paths_filters_and_parses_items():
+    recorded: list[httpx.Request] = []
+    project = "55555555-5555-5555-5555-555555555555"
+    item = {"id": f"question:{project}", "kind": "question", "tab": "needs_decision",
+            "occurred_at": "2026-10-07T09:12:00Z", "project_id": project, "summary": "Run needs a target column",
+            "status": "needs_input", "source": {"kind": "execution_request", "id": project},
+            "subject": {"kind": "project", "id": project}, "ai_answer": {"value": "churned"}, "can_act": True,
+            "actions": [{"name": "answer", "operation": "POST /v1/execution-requests/{request_id}/target-confirmation",
+                         "path_params": {"request_id": project}, "allowed": True}]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path == "/v1/inbox/counts":
+            return httpx.Response(200, json={"needs_decision": 3, "applied_automatically": 0, "done": 2})
+        return httpx.Response(200, json={"tab": "done", "items": [item], "next_cursor": "c1.x.y", "limit": 1,
+                                         "viewer": {"is_agent": False, "can_decide": True,
+                                                    "can_approve_ai_policy": True}})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    page = api.inbox.list(tab="done", project_id=project, limit=1, cursor="c1.a.b")
+    assert page.next_cursor == "c1.x.y" and page.items[0].actions[0].allowed and page.viewer.can_decide
+    assert recorded[0].method == "GET" and recorded[0].url.path == "/v1/inbox"
+    assert dict(recorded[0].url.params) == {"tab": "done", "project_id": project, "cursor": "c1.a.b", "limit": "1"}
+    assert api.inbox.counts().needs_decision == 3 and recorded[1].url.path == "/v1/inbox/counts"
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.inbox.list(project_id="../x")
+    assert len(recorded) == 2

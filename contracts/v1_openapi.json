@@ -921,6 +921,67 @@
         "successSchema": "SwitchRead"
       }
     },
+    "/v1/inbox": {
+      "GET": {
+        "operationId": "read_inbox_v1_inbox_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "tab",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "InboxPage"
+      }
+    },
+    "/v1/inbox/counts": {
+      "GET": {
+        "operationId": "read_inbox_counts_v1_inbox_counts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "InboxCounts"
+      }
+    },
     "/v1/me": {
       "GET": {
         "operationId": "read_principal_v1_me_get",

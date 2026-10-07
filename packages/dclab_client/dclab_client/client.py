@@ -33,6 +33,8 @@ from dclab_client.types import (
     ExperimentPage,
     Governance,
     GovernanceSwitch,
+    InboxCounts,
+    InboxPage,
     ModelBuild,
     ModelCard,
     ModelVersion,
@@ -629,6 +631,48 @@ class ActivityClient:
             request_id=request_id,
         )
         return ActivityPage.model_validate(payload)
+
+
+class InboxClient:
+    """What needs a person (read-only). Act through the routes each item's ``actions`` name."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(
+        self,
+        *,
+        tab: str = "needs_decision",
+        project_id: UUID | str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> InboxPage:
+        """One tab (``needs_decision`` | ``applied_automatically`` | ``done``), newest first."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/inbox",
+            params={
+                "tab": tab,
+                "project_id": _id(project_id) if project_id is not None else None,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return InboxPage.model_validate(payload)
+
+    def counts(self, *, project_id: UUID | str | None = None, request_id: str | None = None) -> InboxCounts:
+        """Item totals per tab (the badge number is ``needs_decision``)."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/inbox/counts",
+            params={"project_id": _id(project_id) if project_id is not None else None},
+            request_id=request_id,
+        )
+        return InboxCounts.model_validate(payload)
 
 
 class GovernanceClient:
@@ -1236,6 +1280,7 @@ class DCLabClient:
         self.proposals = ProposalsClient(self._transport)
         self.agent_runs = AgentRunsClient(self._transport)
         self.activity = ActivityClient(self._transport)
+        self.inbox = InboxClient(self._transport)
         self.agent_reviews = AgentReviewsClient(self._transport)
         self.governance = GovernanceClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)

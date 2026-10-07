@@ -91,6 +91,10 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/governance",
             # P4.15-A: typed activity projection (no free text, no user ids, no holdout values).
             "/v1/activity",
+            # P4.16-A: inbox projection; tokens get no answers or free text and never an assistant
+            # tool call, and every action is `allowed: false` (deciding stays with people).
+            "/v1/inbox",
+            "/v1/inbox/counts",
         )
     },
     ("POST", "/v1/projects"): SCOPE_PROJECTS_WRITE,

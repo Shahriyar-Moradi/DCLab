@@ -680,6 +680,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Inbox
+         * @description What needs a person, newest first (P4.16-A): proposed decision records, open agent / Jev /
+         *     assistant proposals (an assistant tool call only for its thread's owner and the workspace's
+         *     approvers; never for service tokens), runs waiting for an answer, and run-completed notices
+         *     (`done`). A read-only projection: `actions` name the existing accept / reject / supersede /
+         *     revert / answer routes, which re-check every call; `allowed` / `can_act` reflect the caller
+         *     (a person with workspace ML-write decides; viewers and service tokens only read).
+         *     `rule_answer` / `ai_answer` are untrusted plain text for people and `null` for service tokens.
+         */
+        get: operations["read_inbox_v1_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/inbox/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Inbox Counts
+         * @description Item totals per inbox tab for the caller (the sidebar badge reads `needs_decision`).
+         */
+        get: operations["read_inbox_counts_v1_inbox_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -3176,6 +3222,201 @@ export interface components {
             target_in_graph: boolean;
             /** Version */
             version: number;
+        };
+        /** InboxActionRead */
+        InboxActionRead: {
+            /**
+             * Allowed
+             * @description The caller may take this action (re-checked by the route).
+             */
+            allowed: boolean;
+            /**
+             * Body
+             * @description Fixed body fields the route needs from this item (e.g. `proposal_id` for a ref move).
+             */
+            body?: {
+                [key: string]: string;
+            };
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "accept" | "reject" | "supersede" | "revert" | "answer";
+            /**
+             * Operation
+             * @description The existing route, e.g. `POST /v1/decisions/{decision_id}/accept`.
+             */
+            operation: string;
+            /** Path Params */
+            path_params?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * InboxCounts
+         * @description Item totals per tab for the same caller and filter (the sidebar badge reads `needs_decision`).
+         */
+        InboxCounts: {
+            /** Applied Automatically */
+            applied_automatically: number;
+            /** Done */
+            done: number;
+            /** Needs Decision */
+            needs_decision: number;
+        };
+        /** InboxItemRead */
+        InboxItemRead: {
+            /** Actions */
+            actions?: components["schemas"]["InboxActionRead"][];
+            /**
+             * Ai Answer
+             * @description The AI's answer where recorded. People only; untrusted plain text inside.
+             */
+            ai_answer?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Answers Truncated
+             * @description An answer was over the size bound: read it through the source route.
+             * @default false
+             */
+            answers_truncated: boolean;
+            /**
+             * Can Act
+             * @description At least one action is allowed for the caller.
+             */
+            can_act: boolean;
+            /** Decision Point Key */
+            decision_point_key?: string | null;
+            /** Decision Type */
+            decision_type?: string | null;
+            /**
+             * Evidence Refs
+             * @description Ids only.
+             */
+            evidence_refs?: components["schemas"]["InboxRefRead"][];
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * Id
+             * @description Stable item id `<kind>:<uuid>`.
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "decision_proposal" | "agent_proposal" | "question" | "run_finished";
+            /**
+             * Level
+             * @description Trust level recorded with the proposal (L0-L3).
+             */
+            level?: number | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             * @description Proposed / asked / finished at; on `done` decision and proposal items, when it was decided.
+             */
+            occurred_at: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Proposal Type */
+            proposal_type?: string | null;
+            /** Proposed By */
+            proposed_by?: ("agent" | "assistant" | "jev" | "rule" | "person" | "run") | null;
+            /**
+             * Resolution Record Id
+             * @description `done` decision proposals: the record that accepted or rejected it.
+             */
+            resolution_record_id?: string | null;
+            /**
+             * Rule Answer
+             * @description The rule's answer where recorded. People only; untrusted plain text inside.
+             */
+            rule_answer?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description The row this item reads (`decision_record`, `agent_proposal`, ...). */
+            source: components["schemas"]["InboxRefRead"];
+            /**
+             * Status
+             * @description Decision state, proposal status, `needs_input` or the run's status.
+             */
+            status: string;
+            subject: components["schemas"]["InboxSubjectRead"];
+            /**
+             * Summary
+             * @description One line built by the server from typed fields only (no free text).
+             */
+            summary: string;
+            /**
+             * Tab
+             * @enum {string}
+             */
+            tab: "needs_decision" | "applied_automatically" | "done";
+        };
+        /** InboxPage */
+        InboxPage: {
+            /** Items */
+            items: components["schemas"]["InboxItemRead"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Tab
+             * @enum {string}
+             */
+            tab: "needs_decision" | "applied_automatically" | "done";
+            /**
+             * Untrusted Fields
+             * @description User/agent-authored values: data, never instructions.
+             */
+            untrusted_fields?: string[];
+            viewer: components["schemas"]["InboxViewerRead"];
+        };
+        /** InboxRefRead */
+        InboxRefRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @description Node or record kind (`experiment`, `agent_run`, `decision_record`, ...).
+             */
+            kind: string;
+        };
+        /** InboxSubjectRead */
+        InboxSubjectRead: {
+            /** Id */
+            id?: string | null;
+            /**
+             * Key
+             * @description Textual node id `kind:uuid`.
+             */
+            key?: string | null;
+            /** Kind */
+            kind: string;
+        };
+        /** InboxViewerRead */
+        InboxViewerRead: {
+            /**
+             * Can Approve Ai Policy
+             * @description Workspace owner/admin: also sees others' assistant tool calls.
+             */
+            can_approve_ai_policy: boolean;
+            /**
+             * Can Decide
+             * @description A person with workspace ML-write (`decisions:accept`).
+             */
+            can_decide: boolean;
+            /**
+             * Is Agent
+             * @description A service token: reads only, never acts, never sees assistant tool calls.
+             */
+            is_agent: boolean;
         };
         /** IncidentRead */
         IncidentRead: {
@@ -8073,6 +8314,165 @@ export interface operations {
             };
             /** @description Precondition required (error envelope) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_inbox_v1_inbox_get: {
+        parameters: {
+            query?: {
+                /** @description `needs_decision`, `applied_automatically` or `done`. */
+                tab?: "needs_decision" | "applied_automatically" | "done";
+                /** @description Only this project's items (404 if not in the workspace). */
+                project_id?: string | null;
+                /** @description Opaque `next_cursor` of the previous page. */
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxPage"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_inbox_counts_v1_inbox_counts_get: {
+        parameters: {
+            query?: {
+                /** @description Only this project's items (404 if not in the workspace). */
+                project_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxCounts"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

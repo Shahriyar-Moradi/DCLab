@@ -351,3 +351,28 @@ def test_activity_table_and_json(tmp_path):
     assert seen[0].url.path == "/v1/activity" and seen[0].url.params["project_id"] == PID
     code, out, _ = _run(["activity", "--json"], handler, tmp_path, env=_env())
     assert code == 0 and json.loads(out)["items"][0]["kind"] == "run_queued"
+
+
+def test_inbox_list_table_and_counts(tmp_path):
+    item = {"id": f"agent_proposal:{EID}", "kind": "agent_proposal", "tab": "needs_decision",
+            "occurred_at": "2026-10-07T09:12:00Z", "project_id": PID, "summary": "Experiment plan waiting for a decision",
+            "status": "proposed", "source": {"kind": "agent_proposal", "id": EID},
+            "subject": {"kind": "project", "id": PID}, "can_act": False, "actions": [
+                {"name": "accept", "operation": "POST /v1/proposals/{proposal_id}/accept",
+                 "path_params": {"proposal_id": EID}, "allowed": False}]}
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        if request.url.path == "/v1/inbox/counts":
+            return httpx.Response(200, json={"needs_decision": 1, "applied_automatically": 0, "done": 4})
+        return httpx.Response(200, json={"tab": "needs_decision", "items": [item], "next_cursor": None, "limit": 5,
+                                         "viewer": {"is_agent": False, "can_decide": False,
+                                                    "can_approve_ai_policy": False}})
+
+    code, out, _ = _run(["inbox", "list", "--project", PID, "--limit", "5"], handler, tmp_path, env=_env())
+    assert code == 0 and out.splitlines()[0].split() == ["OCCURRED_AT", "KIND", "SUMMARY", "CAN_ACT"]
+    assert "Experiment plan waiting for a decision" in out
+    assert seen[0].url.path == "/v1/inbox" and seen[0].url.params["tab"] == "needs_decision"
+    code, out, _ = _run(["inbox", "counts", "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out) == {"needs_decision": 1, "applied_automatically": 0, "done": 4}
