@@ -271,3 +271,31 @@
 .studio .gnode-sample.ref { border-left: 4px solid var(--ok); }
 .studio .gnode-sample.stale { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
 .studio .gnode-sample.ai { box-shadow: inset 0 -3px 0 var(--ai); }
+
+/* Model card (P4.11-UI) */
+.studio .mc-head { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; align-items: flex-start; }
+.studio .mc-title { font-size: 1.6rem; }
+.studio .mc-words { font-size: 1.15rem; line-height: 1.6; max-width: 76ch; }
+.studio .mc-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.studio .mc-bars li { display: grid; grid-template-columns: 2ch minmax(8ch, 22ch) minmax(80px, 1fr) 14ch minmax(10ch, 24ch); gap: 12px; align-items: center; }
+.studio .mc-rank { color: var(--muted); font-family: var(--font-mono); }
+.studio .mc-col { overflow-wrap: anywhere; }
+.studio .mc-val { font-family: var(--font-mono); font-size: .92rem; }
+.studio .mc-final { border-color: var(--ok); border-width: 2px; }
+@media (max-width: 760px) { .studio .mc-bars li { grid-template-columns: 2ch 1fr 10ch; } .studio .mc-bars .meter, .studio .mc-bars .mc-flag { grid-column: 2 / -1; } }
+@media print {
+  .studio:has(.model-card-print) .nav, .studio:has(.model-card-print) .topbar, .studio:has(.model-card-print) .assistant,
+  .studio:has(.model-card-print) .tabs, .studio:has(.model-card-print) .page-head, .studio:has(.model-card-print) section.toolbar,
+  .studio:has(.model-card-print) .mc-noprint, .studio:has(.model-card-print) .steps { display: none !important; }
+  .studio.shell:has(.model-card-print) { display: block; background: #fff; }
+  .studio:has(.model-card-print), .studio:has(.model-card-print) * { color: #000 !important; background: transparent !important; box-shadow: none !important; }
+  .studio:has(.model-card-print) .card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #888 !important; margin-bottom: 12px; }
+  .studio:has(.model-card-print) .card.mc-final { border: 3px double #000 !important; }
+  .studio:has(.model-card-print) .mc-bars li { break-inside: avoid; }
+  .studio:has(.model-card-print) .meter { border: 1px solid #000; }
+  .studio:has(.model-card-print) .meter i { background: #444 !important; }
+  .studio:has(.model-card-print) .pill { border: 1px solid #000; }
+  .studio:has(.model-card-print) a { text-decoration: none; }
+  .studio:has(.model-card-print) a[href]::after { content: none !important; }
+  .studio:has(.model-card-print) .tip { display: none !important; }
+}

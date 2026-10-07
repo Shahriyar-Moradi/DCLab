@@ -39,7 +39,7 @@ import { kindLabel, shortId } from "@/lib/application/studio-graph";
 const TERMS = {
   cv: "Cross-validation (CV): the training rows are split into folds; each fold is held out once while the model trains on the others. Models are compared on these CV scores only.",
   fold: "One of the parts the training rows are cut into for cross-validation. Preprocessing is fitted on the other folds, never on the one being scored.",
-  holdout: "Rows set aside by the split plan before any modelling. They are scored once, for the locked winner only, and are never used to choose anything. This page does not show them.",
+  holdout: "Rows set aside by the split plan before any modelling. They are scored once, for the locked winner only, and are never used to choose anything.",
   digest: "A SHA-256 fingerprint of the content. Two nodes with the same digest hold the same bytes.",
   importance: "How much the cross-validation score drops when a column's values are shuffled, measured on validation folds only.",
   leakage: "Information in a column that would not exist at prediction time (for example the answer itself). It makes scores look better than they will be.",
@@ -519,7 +519,7 @@ export function ModelInspector({ projectId, modelVersionId }: { projectId: strin
         purpose="See what this model version is, what it was built from and whether it is the project's champion."
         howTo="Follow the links to the run, split plan, features and data it came from."
         youGet="Version, digest, algorithm, CV score, lineage and the champion ref state."
-        attention={<>Only cross-validation numbers are shown. The final <Term definition={TERMS.holdout}>holdout</Term> evaluation appears on the model card page (P4.11-UI).</>}
+        attention={<>Only cross-validation numbers are shown here. The single labelled final <Term definition={TERMS.holdout}>holdout</Term> evaluation is on the Card tab.</>}
       />
       <Reason>
         <p>Produced by run {link(to("experiment", lineage.experiment_id), mono(shortId(lineage.experiment_id)))} from the winning candidate <span className="mono">{shortId(lineage.candidate_id)}</span>. {card.data ? plainText(card.data.metric_in_words.text, 400) : ""}</p>

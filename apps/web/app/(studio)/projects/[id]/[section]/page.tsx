@@ -9,7 +9,6 @@ const SECTIONS: Record<string, { title: string; subtitle: string; empty: string;
   lab: { title: "Lab", subtitle: "Describe a goal in plain words and review the agent's plan.", empty: "Chat with the lead agent arrives with the assistant.", phase: "A3-UI" },
   pipeline: { title: "Pipeline", subtitle: "Stage-by-stage evidence for one run.", empty: "The pipeline evidence page arrives later. Each experiment page already shows its stages live.", phase: "P4.17-UI" },
   improve: { title: "Improve", subtitle: "A budgeted loop that proposes and runs branches.", empty: "Improve arrives with improve runs.", phase: "P5.5-A" },
-  models: { title: "Models", subtitle: "Versions, scoring of new data and the card of each version.", empty: "The models page arrives with scoring and cards. The champion ref above names the current version.", phase: "P4.9-UI and P4.11-UI" },
   monitoring: { title: "Monitoring", subtitle: "Drift, labels and review of released versions.", empty: "Monitoring arrives with releases.", phase: "P7.5-A" },
 };
 

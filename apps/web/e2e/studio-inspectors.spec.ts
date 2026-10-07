@@ -94,7 +94,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await shot(page, "2-2b-feature-code");
   await page.goto(hrefs[3]);
   await expect(page.getByRole("link", { name: /^[0-9a-f]{8}$/ }).first()).toBeVisible();
-  await expect(page.getByText(/evaluation appears on the model card page/)).toBeVisible();
+  await expect(page.getByText(/is on the Card tab/)).toBeVisible();
 
   // Experiment inspector tabs.
   await page.goto(`/projects/${projectId}/experiments/${experimentId}`);
