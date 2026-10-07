@@ -37,6 +37,7 @@ from app.services.lineage_service import (
     create_workflow_run,
 )
 from app.storage.local import LocalStorage
+from conftest import refresh_planner_stats
 from test_data_model_lineage import make_lineage_setup
 
 TRUTH_BASELINE = Path(__file__).resolve().parents[3] / "contracts" / "truth_baseline.json"
@@ -906,10 +907,56 @@ def _plan(db_session, sql: str, **params) -> str:
     return "\n".join(row[0] for row in rows)
 
 
+def _seed_candidate_lists(db_session, a) -> None:
+    """Add four candidates to each of six alpha experiments.
+
+    The fixture has one candidate per workspace, so workspace_id narrows the
+    candidate list as much as experiment_id does and a workspace index is a
+    fair pick. In a real workspace one experiment holds a small share of the
+    candidates.
+    """
+    s = a.setup
+    experiments = [a.alpha_pipeline] + [
+        create_pipeline_run(
+            db_session,
+            workflow_run=a.alpha_run,
+            environment=s["env"],
+            dataset=s["alpha_dataset"],
+            task=s["task"],
+            pipeline_index=index,
+            input_role=None,
+            commit=False,
+        )
+        for index in range(1, 6)
+    ]
+    db_session.flush()
+    db_session.add_all(
+        ExperimentCandidate(
+            workspace_id=s["alpha"].id,
+            project_id=s["alpha_project"].id,
+            experiment_id=experiment.id,
+            candidate_key=f"seed-{index}-{trial}",
+            fingerprint=f"{index:02d}{trial:02d}".ljust(40, "0"),
+            status="generated",
+            payload={},
+        )
+        for index, experiment in enumerate(experiments)
+        for trial in range(4)
+    )
+    db_session.flush()
+
+
 def test_explain_uses_measured_hot_path_indexes(db_session, foundation):
     a = foundation
     s = a.setup
     workspace_id = s["alpha"].id
+    _seed_candidate_lists(db_session, a)
+    # Tables whose query below has competing indexes and an assertion that
+    # rejects one of them; the others have one index on the filtered column
+    # or the assertion accepts either index.
+    refresh_planner_stats(
+        db_session, "projects", "experiments", "ml_jobs", "experiment_candidates"
+    )
 
     projects = _plan(
         db_session,
@@ -972,7 +1019,13 @@ def test_explain_uses_measured_hot_path_indexes(db_session, foundation):
         run=a.alpha_pipeline.id,
         workspace_id=workspace_id,
     )
-    assert "ix_experiment_candidates_experiment_id" in candidates or "experiment_id" in candidates
+    # An index led by experiment_id serves the list: the dedicated one or the
+    # (experiment_id, fingerprint) unique key. Every plan prints experiment_id
+    # in an Index Cond or Filter, so only an index name shows which one ran.
+    assert (
+        "ix_experiment_candidates_experiment_id" in candidates
+        or "uq_experiment_candidates_experiment_fingerprint" in candidates
+    )
 
     folds = _plan(
         db_session,
