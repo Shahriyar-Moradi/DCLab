@@ -1,7 +1,7 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useRef, useState } from "react";
 import { Banner } from "@/components/studio/Banner";
 import { DataTable, type Column } from "@/components/studio/DataTable";
 import { KeyValue } from "@/components/studio/KeyValue";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/application/studio-compare-hooks";
 import { DECISION_TYPE_LABEL, ENGINE_OWNED_TYPES, acceptsViaRefs, mapActionError, proposedMoves } from "@/lib/application/studio-compare";
 import { decisionMarkers } from "@/lib/application/studio-graph";
+import { parseRecordParam } from "@/lib/application/studio-pipeline";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
 
@@ -129,12 +130,17 @@ function DecisionDrawer({ projectId, summary, onClose }: { projectId: string; su
   );
 }
 
-export default function DecisionsPage() {
+function DecisionsPageInner() {
   const { id } = useParams<{ id: string }>();
   const decisions = useProjectDecisions(id);
-  const [open, setOpen] = useState<string | null>(null);
+  // `?record=<uuid>` (the Pipeline page's links) opens that record; anything that is not a UUID is ignored.
+  const linked = parseRecordParam(useSearchParams().get("record"));
+  const [open, setOpen] = useState<string | null>(linked);
   const items = decisions.data?.items ?? [];
-  const selected = items.find((d) => d.id === open) ?? null;
+  const inList = items.find((d) => d.id === open) ?? null;
+  // A record older than the newest 100 is read by id, and only shown when it belongs to this project.
+  const older = useDecisionDetail(open && decisions.data && !inList ? open : null);
+  const selected = inList ?? (older.data && older.data.id === open && older.data.project_id === id ? older.data : null);
   const pending = items.filter((d) => d.effective_state === "proposed").length;
   const columns: Column<ListItem>[] = [
     { key: "type", header: "Decision", sortValue: (d) => d.decision_type, render: (d) => typeLabel(d.decision_type) },
@@ -163,4 +169,8 @@ export default function DecisionsPage() {
       ) : null}
     </>
   );
+}
+
+export default function DecisionsPage() {
+  return <Suspense fallback={<p role="status">Loading…</p>}><DecisionsPageInner /></Suspense>;
 }

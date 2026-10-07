@@ -299,3 +299,10 @@
   .studio:has(.model-card-print) a[href]::after { content: none !important; }
   .studio:has(.model-card-print) .tip { display: none !important; }
 }
+
+/* pipeline evidence (P4.17-UI) */
+.studio .stage-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 20px; }
+.studio .stage-note { border-left: 3px solid var(--line-strong); padding: 6px 0 6px 14px; display: grid; gap: 6px; font-size: .95rem; }
+.studio .stage-note.ai { border-left-color: var(--ai); }
+.studio .stage-note.rule { border-left-color: var(--ok); }
+.studio .digest-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: .92rem; overflow-wrap: anywhere; }
