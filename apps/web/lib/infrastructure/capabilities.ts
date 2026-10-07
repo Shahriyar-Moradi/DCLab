@@ -53,7 +53,7 @@ export function hasCapability(
 
 /**
  * Where each role lands after login (STUDIO_DESIGN section 3). Developers and admins with a
- * workspace open the project list (`/home` stays a placeholder until P4.15); a platform operator
+ * workspace open the project list (`/home` is one click away in the sidebar); a platform operator
  * with no workspace opens monitoring until `/operator` (P8.5-UI); a business-only administrator keeps
  * `/business`; clients keep their existing pages until `/outcomes` (P7.6).
  */

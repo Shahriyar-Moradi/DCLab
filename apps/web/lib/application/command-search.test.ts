@@ -106,7 +106,7 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   assert.equal(studioRoleForUser({ capabilities: { platform_read: true, development_access: true } }), "admin");
   const outside = studioNavigationForUser(developer);
   assert.deepEqual(outside.map((g) => g.id), ["workspace"]);
-  assert.deepEqual(outside[0]!.items.map((i) => i.href), ["/home", "/projects", "/agents"]);
+  assert.deepEqual(outside[0]!.items.map((i) => i.href), ["/home", "/projects", "/inbox", "/agents"]);
   const inside = studioNavigationForUser(developer, P1).find((g) => g.id === "project")!;
   assert.deepEqual(inside.items.map((i) => i.id), ["pipeline", "graph", "data", "experiments", "models", "decisions"]);
   assert.ok(inside.items.every((i) => i.href.startsWith(`/projects/${P1}/`)));

@@ -25,11 +25,13 @@ export type ShellProps = {
   /** Preview mode (design kit): no viewport-height layout and no duplicate landmarks. */
   embedded?: boolean;
   mainId?: string;
+  /** Sidebar count badges by item id (e.g. the Inbox count); empty or missing = none. */
+  badges?: Record<string, string | null | undefined>;
   children: ReactNode;
 };
 
 /** Sidebar (264 px) plus sticky glass top bar. Landmarks: nav, header, main (div in embedded mode). */
-export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, topbarRight, steps, guide, assistant, theme, embedded, mainId = "main", children }: ShellProps) {
+export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, topbarRight, steps, guide, assistant, theme, embedded, mainId = "main", badges, children }: ShellProps) {
   const Aside = embedded ? "div" : "aside";
   const Side = embedded ? "div" : "nav";
   const Top = embedded ? "div" : "header";
@@ -57,6 +59,7 @@ export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, t
                   <a key={item.id} href={href} aria-current={href === currentHref ? "page" : undefined}>
                     <span className="ic" aria-hidden="true">{item.icon}</span>
                     <span>{item.label}</span>
+                    {badges?.[item.id] ? <span className="cnt">{badges[item.id]}<span className="sr-only"> waiting</span></span> : null}
                   </a>
                 ) : (
                   <span key={item.id} className="nav-off" aria-disabled="true">

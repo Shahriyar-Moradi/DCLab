@@ -11,6 +11,20 @@ import { createCommandSearch, isUuid, projectHref, type SearchHit, type SearchSo
 
 const nullableString = z.string().nullable().optional();
 
+/** The project list summary (P4.15-A): current goal, champion CV metrics, latest run. Values marked untrusted are plain text. */
+const ProjectSummarySchema = z.object({
+  goal: z.object({
+    problem_spec_id: z.string(), version: z.number(), status: z.string(), is_ref: z.boolean(),
+    task_type: z.string(), target_column: nullableString, primary_metric: nullableString, objective: nullableString,
+  }).nullable().optional(),
+  champion: z.object({
+    model_version_id: z.string(), version: z.string(), experiment_id: z.string(),
+    selection_metric: nullableString, metric_scope: z.literal("cv_aggregate").optional(), cv_metrics: z.record(z.string(), z.number()).optional(),
+  }).nullable().optional(),
+  latest_run: z.object({ experiment_id: z.string(), status: z.string(), created_at: z.string(), ended_at: nullableString }).nullable().optional(),
+});
+export type StudioProjectSummary = z.infer<typeof ProjectSummarySchema>;
+
 export const StudioProjectSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
@@ -21,6 +35,9 @@ export const StudioProjectSchema = z.object({
   updated_at: z.string(),
 });
 export type StudioProject = z.infer<typeof StudioProjectSchema>;
+/** `GET /v1/projects` items: the project plus its summary. */
+export const StudioProjectListItemSchema = StudioProjectSchema.extend({ summary: ProjectSummarySchema.optional() });
+export type StudioProjectListItem = z.infer<typeof StudioProjectListItemSchema>;
 
 const RefSchema = z.object({
   ref_kind: z.string(),
@@ -86,7 +103,7 @@ const LIVE = new Set(["queued", "running", "cancelling"]);
 export function useStudioProjects() {
   return useQuery({
     queryKey: workspaceQueryKey("v1", "projects"),
-    queryFn: ({ signal }) => v1Get("/v1/projects", z.array(StudioProjectSchema), { signal }),
+    queryFn: ({ signal }) => v1Get("/v1/projects", z.array(StudioProjectListItemSchema), { signal }),
   });
 }
 

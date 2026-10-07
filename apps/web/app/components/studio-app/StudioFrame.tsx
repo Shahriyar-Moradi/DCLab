@@ -9,6 +9,8 @@ import { CommandBar } from "@/components/studio/CommandBar";
 import { Crumbs, type Crumb } from "@/components/studio/Crumbs";
 import { Shell } from "@/components/studio/Shell";
 import { useCommandSearch, useSession, useStudioProject } from "@/lib/application";
+import { useInboxCounts } from "@/lib/application/studio-inbox-hooks";
+import { badgeText } from "@/lib/application/studio-inbox";
 import { isUuid, MIN_QUERY_LENGTH } from "@/lib/application/command-search";
 import { displayName } from "@/lib/infrastructure/session";
 
@@ -43,6 +45,8 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   const { user, loaded, activeWorkspace, activeWorkspaceId, workspaceSwitching } = useSession();
   const project = useStudioProject(projectId);
   const nav = studioNavigationForUser(user, projectId);
+  // One cheap counts read (refetched once a minute); the sidebar badge never needs the list.
+  const counts = useInboxCounts(!!user && nav.some((group) => group.items.some((item) => item.id === "inbox")), true);
   const items = nav.flatMap((group) => group.items);
   const current = items
     .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
@@ -64,6 +68,7 @@ export function StudioFrame({ children }: { children: ReactNode }) {
     <Shell
       nav={nav}
       currentHref={current?.href}
+      badges={{ inbox: badgeText(counts.data?.needs_decision) }}
       workspace={activeWorkspace ? { name: activeWorkspace.name, detail: activeWorkspace.kind } : undefined}
       user={user ? { name: displayName(user), detail: user.email } : undefined}
       crumbs={<Crumbs items={crumbs} />}

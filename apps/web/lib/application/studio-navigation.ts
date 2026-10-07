@@ -12,9 +12,9 @@ import type { SessionUser } from "../infrastructure/session.ts";
  * Each flag flips in the prompt that ships the backend; the API still authorizes every read.
  */
 export const STUDIO_BACKEND_FEATURES: StudioCapabilities = {
-  home: true, // GET /v1/projects (activity arrives with P4.15)
+  home: true, // GET /v1/projects (summaries), GET /v1/activity
   projects: true, // GET /v1/projects
-  inbox: false, // GET /v1/inbox arrives with P4.16
+  inbox: true, // GET /v1/inbox, /v1/inbox/counts
   governance: false, // page arrives with P6.11-UI
   agents: true, // Connect + Service tokens (/v1/service-tokens); tool registry and runs arrive with A2-UI
   settings: false,
