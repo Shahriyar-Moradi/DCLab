@@ -907,3 +907,25 @@ def test_governance_routes_methods_bodies_and_idempotency():
         api.governance.set_switch("all_ai", "maybe", reason="x")
     with pytest.raises(DCLabClientError, match="UUID"):
         api.governance.accept_policy("../x", policy_digest="d" * 64)
+
+
+def test_activity_uses_v1_path_filters_and_parses_items():
+    recorded: list[httpx.Request] = []
+    project = "55555555-5555-5555-5555-555555555555"
+    item = {"id": f"run_queued:{project}", "kind": "run_queued", "occurred_at": "2026-10-07T09:12:00Z",
+            "project_id": project, "actor": {"kind": "person", "is_you": True},
+            "subject": {"kind": "experiment", "id": project, "key": f"experiment:{project}"},
+            "summary": "Run #1 queued", "link": {"kind": "experiment", "id": project}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"items": [item], "next_cursor": "c1.x.y", "limit": 1})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    page = api.activity.list(project_id=project, limit=1, cursor="c1.a.b")
+    assert page.next_cursor == "c1.x.y" and page.items[0].actor.is_you and page.items[0].link.kind == "experiment"
+    assert recorded[0].method == "GET" and recorded[0].url.path == "/v1/activity"
+    assert dict(recorded[0].url.params) == {"project_id": project, "cursor": "c1.a.b", "limit": "1"}
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.activity.list(project_id="../x")
+    assert len(recorded) == 1

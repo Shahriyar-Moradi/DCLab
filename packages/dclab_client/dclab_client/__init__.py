@@ -19,6 +19,8 @@ from dclab_client.errors import (
     UnprocessableEntityError,
 )
 from dclab_client.types import (
+    ActivityItem,
+    ActivityPage,
     AgentRun,
     AgentRunPage,
     Artifact,
@@ -77,6 +79,8 @@ __all__ = [
     "USER_AGENT",
     "__version__",
     "Artifact",
+    "ActivityItem",
+    "ActivityPage",
     "AgentRun",
     "AgentRunPage",
     "AuthenticationError",

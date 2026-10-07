@@ -333,3 +333,21 @@ def test_models_card_prints_markdown_or_json(tmp_path):
     assert code == 0 and json.loads(out)["drivers"]["features"][0]["column"] == "plan"
     code, out, _ = _run(["models", "card", EID, "--json", "--markdown"], handler, tmp_path, env=_env())
     assert code == 0 and out.startswith("# Model card")
+
+
+def test_activity_table_and_json(tmp_path):
+    item = {"id": f"run_queued:{EID}", "kind": "run_queued", "occurred_at": "2026-10-07T09:12:00Z",
+            "project_id": PID, "actor": {"kind": "person"}, "subject": {"kind": "experiment", "id": EID},
+            "summary": "Run #1 queued", "link": {"kind": "experiment", "id": EID}}
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"items": [item], "next_cursor": None, "limit": 5})
+
+    code, out, _ = _run(["activity", "--project", PID, "--limit", "5"], handler, tmp_path, env=_env())
+    assert code == 0 and out.splitlines()[0].split() == ["OCCURRED_AT", "KIND", "SUMMARY"]
+    assert "Run #1 queued" in out
+    assert seen[0].url.path == "/v1/activity" and seen[0].url.params["project_id"] == PID
+    code, out, _ = _run(["activity", "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out)["items"][0]["kind"] == "run_queued"

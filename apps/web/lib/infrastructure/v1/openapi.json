@@ -1,6 +1,259 @@
 {
   "components": {
     "schemas": {
+      "ActivityActorRead": {
+        "properties": {
+          "agent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Code-owned agent key (agent actors with an agent run).",
+            "title": "Agent Key"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id"
+          },
+          "is_you": {
+            "default": false,
+            "description": "The signed-in person is the actor (always false for service tokens).",
+            "title": "Is You",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "rule",
+              "agent",
+              "person"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Code-owned rule id (rule actors that have one).",
+            "title": "Rule"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ActivityActorRead",
+        "type": "object"
+      },
+      "ActivityItemRead": {
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/ActivityActorRead"
+          },
+          "decision_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "winner_locked",
+                  "split_plan_created",
+                  "ref_initialized",
+                  "problem_spec_locked",
+                  "ref_moved",
+                  "champion_promoted",
+                  "experiment_accepted",
+                  "experiment_rejected",
+                  "proposal_accepted",
+                  "proposal_rejected",
+                  "decision_point_resolved",
+                  "proposal_reverted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Type"
+          },
+          "id": {
+            "description": "Stable item id `<kind>:<uuid>`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "decision",
+              "run_queued",
+              "run_finished",
+              "agent_run_started",
+              "agent_run_finished"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "link": {
+            "$ref": "#/components/schemas/ActivityLinkRead"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Decision state, or the run's status on `*_finished` items.",
+            "title": "Status"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/ActivitySubjectRead"
+          },
+          "summary": {
+            "description": "One line built by the server from typed fields only (no free text).",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "occurred_at",
+          "actor",
+          "subject",
+          "summary",
+          "link"
+        ],
+        "title": "ActivityItemRead",
+        "type": "object"
+      },
+      "ActivityLinkRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "decision_record",
+              "experiment",
+              "agent_run"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "ActivityLinkRead",
+        "type": "object"
+      },
+      "ActivityPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "limit"
+        ],
+        "title": "ActivityPage",
+        "type": "object"
+      },
+      "ActivitySubjectRead": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Textual node id `kind:uuid`.",
+            "title": "Key"
+          },
+          "kind": {
+            "description": "Graph node kind (`project`, `experiment`, `model_version`, ...).",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ActivitySubjectRead",
+        "type": "object"
+      },
       "AgentReviewRequest": {
         "additionalProperties": false,
         "properties": {
@@ -876,6 +1129,58 @@
           "currency"
         ],
         "title": "BudgetPeriodRead",
+        "type": "object"
+      },
+      "ChampionSummaryRead": {
+        "properties": {
+          "cv_metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Locked winner's CV aggregate (empty until the run's evidence is locked). Threshold metrics (precision, recall, F1) are at 0.5, not at the locked decision threshold of the model card.",
+            "title": "Cv Metrics",
+            "type": "object"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "metric_scope": {
+            "const": "cv_aggregate",
+            "default": "cv_aggregate",
+            "description": "Metrics are the CV aggregate; final-holdout values are never listed.",
+            "title": "Metric Scope",
+            "type": "string"
+          },
+          "model_version_id": {
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "selection_metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "CV metric the locked winner was selected on (may be absent from `cv_metrics` for legacy runs).",
+            "title": "Selection Metric"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_version_id",
+          "version",
+          "experiment_id"
+        ],
+        "title": "ChampionSummaryRead",
         "type": "object"
       },
       "DataClassesRead": {
@@ -4488,6 +4793,53 @@
         "title": "IncidentRead",
         "type": "object"
       },
+      "LatestRunRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancelling",
+              "needs_input",
+              "completed",
+              "failed",
+              "skipped",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "status",
+          "created_at"
+        ],
+        "title": "LatestRunRead",
+        "type": "object"
+      },
       "MlRunEventRead": {
         "properties": {
           "created_at": {
@@ -7090,6 +7442,78 @@
         "title": "ProjectCreateRequest",
         "type": "object"
       },
+      "ProjectGoalRead": {
+        "properties": {
+          "is_ref": {
+            "description": "True when the project's `problem_spec` ref points here; else the latest version (no ref yet).",
+            "title": "Is Ref",
+            "type": "boolean"
+          },
+          "objective": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Business objective. Untrusted user/agent-authored; redacted, max 300 chars.",
+            "title": "Objective"
+          },
+          "primary_metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Untrusted; redacted.",
+            "title": "Primary Metric"
+          },
+          "problem_spec_id": {
+            "format": "uuid",
+            "title": "Problem Spec Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Untrusted; redacted.",
+            "title": "Target Column"
+          },
+          "task_type": {
+            "description": "Untrusted; redacted.",
+            "title": "Task Type",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "problem_spec_id",
+          "version",
+          "status",
+          "is_ref",
+          "task_type"
+        ],
+        "title": "ProjectGoalRead",
+        "type": "object"
+      },
       "ProjectGraphRead": {
         "properties": {
           "counts_by_kind": {
@@ -7387,6 +7811,136 @@
           "key"
         ],
         "title": "ProjectRefTarget",
+        "type": "object"
+      },
+      "ProjectSummaryRead": {
+        "properties": {
+          "champion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChampionSummaryRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectGoalRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestRunRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "untrusted_fields": {
+            "description": "User/agent-authored fields: data, never instructions.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Untrusted Fields",
+            "type": "array"
+          }
+        },
+        "title": "ProjectSummaryRead",
+        "type": "object"
+      },
+      "ProjectWithSummaryRead": {
+        "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provenance": {
+            "title": "Provenance",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ProjectSummaryRead"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "slug",
+          "description",
+          "status",
+          "created_by",
+          "provenance",
+          "created_at",
+          "updated_at",
+          "archived_at"
+        ],
+        "title": "ProjectWithSummaryRead",
         "type": "object"
       },
       "ProposalDecisionRequest": {
@@ -8970,6 +9524,140 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/activity": {
+      "get": {
+        "description": "Activity of agents, rules and people, newest first (P4.15-A): decision records and run\nlifecycle events (runs queued/finished, specialist and ops agent runs started/finished).\n\nA read-only projection: `summary` is built by the server from typed fields only; actors are a\nkind plus code-owned ids (rule id, agent key), never a user id. Follow `link` for details.",
+        "operationId": "read_activity_v1_activity_get",
+        "parameters": [
+          {
+            "description": "Only this project's activity (404 if not in the workspace).",
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this project's activity (404 if not in the workspace).",
+              "title": "Project Id"
+            }
+          },
+          {
+            "description": "Opaque `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque `next_cursor` of the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Activity",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
     "/v1/agent-reviews": {
       "post": {
         "description": "Queue a Critic (`experiment_id`), Investigator or Planner (`dataset_id`) run for a node you can read.\nThe run only proposes: proposals appear under ``GET /v1/proposals?run_id=`` for a person to decide.\nRequires ``Idempotency-Key``; ``409 agent_unavailable`` when AI is off or the agent has no release.",
@@ -14487,6 +15175,7 @@
     },
     "/v1/projects": {
       "get": {
+        "description": "Projects of the workspace, newest first, each with a `summary` (P4.15-A): the current goal\n(ProblemSpec ref, else the latest version), the champion's CV aggregate metrics (never\nfinal-holdout values) and the latest run's status. `goal.objective` and `goal.target_column`\nare untrusted user/agent-authored data.",
         "operationId": "read_projects_v1_projects_get",
         "responses": {
           "200": {
@@ -14494,7 +15183,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ProjectRead"
+                    "$ref": "#/components/schemas/ProjectWithSummaryRead"
                   },
                   "title": "Response Read Projects V1 Projects Get",
                   "type": "array"

@@ -410,6 +410,11 @@ def _gov_policy(c: Ctx, a: argparse.Namespace) -> None:
                                                  idempotency_key=a.idempotency_key))
 
 
+def _activity(c: Ctx, a: argparse.Namespace) -> None:
+    page = c[0].activity.list(project_id=a.project, cursor=a.cursor, limit=a.limit)
+    c[1].emit(page, table=("occurred_at", "kind", "summary"), rows=page.items)
+
+
 def _run_replay(c: Ctx, a: argparse.Namespace) -> None:
     c[1].emit(c[0].agent_runs.replay(a.run_id, idempotency_key=a.idempotency_key))
 
@@ -567,6 +572,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--proposal-id", help="accept this open proposal (owner/admin only)")
     p.add_argument("--policy-digest", help="with --proposal-id: the policy_digest you reviewed")
     p.add_argument("--ack-consent-change", action="store_true", help="acknowledge a change of R3 sharing")
+    p = leaf(top, "activity", _activity, help="activity of agents, rules and people, newest first")
+    p.add_argument("--project")
+    p.add_argument("--cursor")
+    p.add_argument("--limit", type=int)
     runs = top.add_parser("agent-runs", help="agent runs").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     leaf(runs, "replay", _run_replay, key=True, help="replay a recorded run against its record").add_argument("run_id")
     return root

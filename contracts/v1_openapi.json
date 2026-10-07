@@ -1,5 +1,38 @@
 {
   "paths": {
+    "/v1/activity": {
+      "GET": {
+        "operationId": "read_activity_v1_activity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ActivityPage"
+      }
+    },
     "/v1/agent-reviews": {
       "POST": {
         "operationId": "request_agent_review_v1_agent_reviews_post",

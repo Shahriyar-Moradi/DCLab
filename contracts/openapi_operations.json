@@ -122,6 +122,7 @@
   "GET /business/workspaces/{workspace_id}/workflows/{workflow_id}",
   "GET /development/context",
   "GET /health",
+  "GET /v1/activity",
   "POST /v1/agent-reviews",
   "GET /v1/agent-runs",
   "GET /v1/agent-runs/{run_id}",

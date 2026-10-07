@@ -559,6 +559,46 @@ class AgentRunPage(BaseModel):
     limit: int
 
 
+class ActivityActor(BaseModel):
+    kind: str  # rule | agent | person
+    rule: str | None = None
+    agent_key: str | None = None
+    agent_run_id: UUID | None = None
+    is_you: bool = False
+
+
+class ActivitySubject(BaseModel):
+    kind: str
+    id: UUID | None = None
+    key: str | None = None
+
+
+class ActivityLink(BaseModel):
+    kind: str  # decision_record | experiment | agent_run
+    id: UUID
+
+
+class ActivityItem(BaseModel):
+    """One line of ``GET /v1/activity``; ``summary`` is server-built from typed fields only."""
+
+    id: str
+    kind: str
+    occurred_at: datetime
+    project_id: UUID | None = None
+    actor: ActivityActor
+    subject: ActivitySubject
+    summary: str
+    status: str | None = None
+    decision_type: str | None = None
+    link: ActivityLink
+
+
+class ActivityPage(BaseModel):
+    items: list[ActivityItem]
+    next_cursor: str | None = None
+    limit: int
+
+
 class GovernanceViewer(BaseModel):
     can_approve: bool
     can_propose: bool

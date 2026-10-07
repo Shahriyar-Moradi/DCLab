@@ -89,6 +89,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             # P6.11-A: the governance console is read-only metadata of the token creator's own workspace
             # (the creator's ML-write / owner / platform authority is re-checked on every request).
             "/v1/governance",
+            # P4.15-A: typed activity projection (no free text, no user ids, no holdout values).
+            "/v1/activity",
         )
     },
     ("POST", "/v1/projects"): SCOPE_PROJECTS_WRITE,

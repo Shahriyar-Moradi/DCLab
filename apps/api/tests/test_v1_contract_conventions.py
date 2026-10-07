@@ -120,6 +120,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/workspaces",
         "GET /v1/projects",
         "POST /v1/projects",
+        "GET /v1/activity",
         "GET /v1/projects/{project_id}",
         "POST /v1/projects/{project_id}/problem-specs",
         "GET /v1/projects/{project_id}/graph",

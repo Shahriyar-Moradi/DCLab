@@ -17,7 +17,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Who am I, workspaces | `GET /v1/me`, `GET /v1/workspaces` | — | header workspace switcher | exists |
 | Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/agents` → Service tokens tab (also `/app/settings`) | exists |
 | Connect an agent (MCP/CLI) | — | — | `/agents` → Connect tab (copy `.mcp.json`, SDK, CLI, `/v1` conventions) | exists |
-| Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]` | planned P4.1-A |
+| Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]`; Home Projects table reads the list `summary` (goal, champion CV metrics, latest run; P4.15-A) | planned P4.1-A; list summary backend P4.15-A, screen P4.15-UI |
 | Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1 (upload response carries the column profile); Data page `/projects/[id]/data` Versions tab (list, digest, used by) and Policy & access tab (`GET /v1/datasets/{id}` `policy`) | wizard step: done P4.1-B; Data page done P4.1-C |
 | Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard steps 2–3 (target, task, objective, constraints) | done P4.1-B |
 | Target / split confirmation | `POST /v1/execution-requests/{id}/target-confirmation|split-confirmation` | — | experiment page "needs your answer" panel (rule beside AI suggestion) | done P4.1-B |
@@ -44,7 +44,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Core trust checks (5) | `GET /v1/experiments/{id}/findings` | `get_findings` | findings panel on every experiment | planned P4.10-A / P4.10-UI |
 | Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-UI (API + MCP shipped in P4.11-A) |
 | Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page `/projects/[id]/data`: Columns & roles (rule role vs role used, training-row statistics), Leakage audit (with `GET /v1/experiments/{id}/findings`); New run target dropdown | done P4.1-C |
-| Activity feed | `GET /v1/activity` | — | Home "Activity" | planned P4.15-A / P4.15-UI |
+| Activity feed | `GET /v1/activity` (workspace or `?project_id=`; decision records + runs queued/finished + specialist/ops agent runs; typed one-line summaries) | — (SDK `client.activity.list`, CLI `dclab-cli activity`; MCP tool is a follow-up) | Home "Activity" | backend P4.15-A; screen planned P4.15-UI |
 | Inbox | `GET /v1/inbox`, counts | `list_proposals` (P6.6-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |
 | Pipeline evidence | `GET /v1/model-builds/{id}`, `/events`, `/artifacts` | — | `/projects/[id]/pipeline/[experimentId]` | done P4.17-UI |
 | In-app assistant | `GET/POST /v1/assistant/threads`, `GET /v1/assistant/threads/{id}`, `POST …/messages` (SSE) | — (external agents use MCP itself) | Lab page + assistant panel on every project page | backend P6.3-B; screen planned A3-UI |

@@ -4,6 +4,30 @@
  */
 
 export interface paths {
+    "/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Activity
+         * @description Activity of agents, rules and people, newest first (P4.15-A): decision records and run
+         *     lifecycle events (runs queued/finished, specialist and ops agent runs started/finished).
+         *
+         *     A read-only projection: `summary` is built by the server from typed fields only; actors are a
+         *     kind plus code-owned ids (rule id, agent key), never a user id. Follow `link` for details.
+         */
+        get: operations["read_activity_v1_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agent-reviews": {
         parameters: {
             query?: never;
@@ -892,7 +916,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Projects */
+        /**
+         * Read Projects
+         * @description Projects of the workspace, newest first, each with a `summary` (P4.15-A): the current goal
+         *     (ProblemSpec ref, else the latest version), the champion's CV aggregate metrics (never
+         *     final-holdout values) and the latest run's status. `goal.objective` and `goal.target_column`
+         *     are untrusted user/agent-authored data.
+         */
         get: operations["read_projects_v1_projects_get"];
         put?: never;
         /**
@@ -1224,6 +1254,104 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActivityActorRead */
+        ActivityActorRead: {
+            /**
+             * Agent Key
+             * @description Code-owned agent key (agent actors with an agent run).
+             */
+            agent_key?: string | null;
+            /** Agent Run Id */
+            agent_run_id?: string | null;
+            /**
+             * Is You
+             * @description The signed-in person is the actor (always false for service tokens).
+             * @default false
+             */
+            is_you: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "rule" | "agent" | "person";
+            /**
+             * Rule
+             * @description Code-owned rule id (rule actors that have one).
+             */
+            rule?: string | null;
+        };
+        /** ActivityItemRead */
+        ActivityItemRead: {
+            actor: components["schemas"]["ActivityActorRead"];
+            /** Decision Type */
+            decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted") | null;
+            /**
+             * Id
+             * @description Stable item id `<kind>:<uuid>`.
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "decision" | "run_queued" | "run_finished" | "agent_run_started" | "agent_run_finished";
+            link: components["schemas"]["ActivityLinkRead"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Project Id */
+            project_id?: string | null;
+            /**
+             * Status
+             * @description Decision state, or the run's status on `*_finished` items.
+             */
+            status?: string | null;
+            subject: components["schemas"]["ActivitySubjectRead"];
+            /**
+             * Summary
+             * @description One line built by the server from typed fields only (no free text).
+             */
+            summary: string;
+        };
+        /** ActivityLinkRead */
+        ActivityLinkRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "decision_record" | "experiment" | "agent_run";
+        };
+        /** ActivityPage */
+        ActivityPage: {
+            /** Items */
+            items: components["schemas"]["ActivityItemRead"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** ActivitySubjectRead */
+        ActivitySubjectRead: {
+            /** Id */
+            id?: string | null;
+            /**
+             * Key
+             * @description Textual node id `kind:uuid`.
+             */
+            key?: string | null;
+            /**
+             * Kind
+             * @description Graph node kind (`project`, `experiment`, `model_version`, ...).
+             */
+            kind: string;
+        };
         /** AgentReviewRequest */
         AgentReviewRequest: {
             /**
@@ -1573,6 +1701,40 @@ export interface components {
             scope: string;
             /** Spent Micros */
             spent_micros: number;
+        };
+        /** ChampionSummaryRead */
+        ChampionSummaryRead: {
+            /**
+             * Cv Metrics
+             * @description Locked winner's CV aggregate (empty until the run's evidence is locked). Threshold metrics (precision, recall, F1) are at 0.5, not at the locked decision threshold of the model card.
+             */
+            cv_metrics?: {
+                [key: string]: number;
+            };
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /**
+             * Metric Scope
+             * @description Metrics are the CV aggregate; final-holdout values are never listed.
+             * @default cv_aggregate
+             * @constant
+             */
+            metric_scope: "cv_aggregate";
+            /**
+             * Model Version Id
+             * Format: uuid
+             */
+            model_version_id: string;
+            /**
+             * Selection Metric
+             * @description CV metric the locked winner was selected on (may be absent from `cv_metrics` for legacy runs).
+             */
+            selection_metric?: string | null;
+            /** Version */
+            version: string;
         };
         /** DataClassesRead */
         DataClassesRead: {
@@ -3045,6 +3207,26 @@ export interface components {
             /** Subject Kind */
             subject_kind: string;
         };
+        /** LatestRunRead */
+        LatestRunRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Ended At */
+            ended_at?: string | null;
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "cancelling" | "needs_input" | "completed" | "failed" | "skipped" | "cancelled";
+        };
         /** MlRunEventRead */
         MlRunEventRead: {
             /**
@@ -3974,6 +4156,43 @@ export interface components {
             /** Slug */
             slug?: string | null;
         };
+        /** ProjectGoalRead */
+        ProjectGoalRead: {
+            /**
+             * Is Ref
+             * @description True when the project's `problem_spec` ref points here; else the latest version (no ref yet).
+             */
+            is_ref: boolean;
+            /**
+             * Objective
+             * @description Business objective. Untrusted user/agent-authored; redacted, max 300 chars.
+             */
+            objective?: string | null;
+            /**
+             * Primary Metric
+             * @description Untrusted; redacted.
+             */
+            primary_metric?: string | null;
+            /**
+             * Problem Spec Id
+             * Format: uuid
+             */
+            problem_spec_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Target Column
+             * @description Untrusted; redacted.
+             */
+            target_column?: string | null;
+            /**
+             * Task Type
+             * @description Untrusted; redacted.
+             */
+            task_type: string;
+            /** Version */
+            version: number;
+        };
         /** ProjectGraphRead */
         ProjectGraphRead: {
             /** Counts By Kind */
@@ -4103,6 +4322,55 @@ export interface components {
              * @enum {string}
              */
             kind: "problem_spec" | "dataset_version" | "split_plan" | "feature_recipe" | "model_version";
+        };
+        /** ProjectSummaryRead */
+        ProjectSummaryRead: {
+            champion?: components["schemas"]["ChampionSummaryRead"] | null;
+            goal?: components["schemas"]["ProjectGoalRead"] | null;
+            latest_run?: components["schemas"]["LatestRunRead"] | null;
+            /**
+             * Untrusted Fields
+             * @description User/agent-authored fields: data, never instructions.
+             */
+            untrusted_fields?: string[];
+        };
+        /** ProjectWithSummaryRead */
+        ProjectWithSummaryRead: {
+            /** Archived At */
+            archived_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Description */
+            description: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Provenance */
+            provenance: string;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            summary?: components["schemas"]["ProjectSummaryRead"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
         };
         /**
          * ProposalDecisionRequest
@@ -4802,6 +5070,86 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    read_activity_v1_activity_get: {
+        parameters: {
+            query?: {
+                /** @description Only this project's activity (404 if not in the workspace). */
+                project_id?: string | null;
+                /** @description Opaque `next_cursor` of the previous page. */
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityPage"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     request_agent_review_v1_agent_reviews_post: {
         parameters: {
             query?: never;
@@ -8655,7 +9003,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProjectRead"][];
+                    "application/json": components["schemas"]["ProjectWithSummaryRead"][];
                 };
             };
             /** @description Bad request (error envelope) */

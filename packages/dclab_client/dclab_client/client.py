@@ -13,6 +13,7 @@ from dclab_client._http import DEFAULT_TIMEOUT_SECONDS, V1Transport
 from dclab_client._version import __version__
 from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
+    ActivityPage,
     AgentRun,
     AgentRunPage,
     Artifact,
@@ -601,6 +602,33 @@ class AgentRunsClient:
         payload = self._transport.request("POST", f"/v1/agent-runs/{_id(run_id)}/replay", json={},
                                           request_id=request_id, idempotency_key=idempotency_key)
         return Replay.model_validate(payload)
+
+
+class ActivityClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(
+        self,
+        *,
+        project_id: UUID | str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ActivityPage:
+        """Activity of agents, rules and people, newest first (decision records and run lifecycle)."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/activity",
+            params={
+                "project_id": _id(project_id) if project_id is not None else None,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return ActivityPage.model_validate(payload)
 
 
 class GovernanceClient:
@@ -1207,6 +1235,7 @@ class DCLabClient:
         self.decisions = DecisionsClient(self._transport)
         self.proposals = ProposalsClient(self._transport)
         self.agent_runs = AgentRunsClient(self._transport)
+        self.activity = ActivityClient(self._transport)
         self.agent_reviews = AgentReviewsClient(self._transport)
         self.governance = GovernanceClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)
