@@ -118,7 +118,7 @@ function ExperimentPageInner() {
       <div id="findings"><Card title="Trust checks" aside={<Pill tone="det">checked by fixed rules, no AI</Pill>}><FindingsPanel projectId={id} experimentId={experiment.id} /></Card></div>
       {experiment.status === "completed" ? (
         <div id="operating-points">
-          <Card title="Per-fold and threshold" aside={<Pill tone="det">chosen on cross-validation, not on the final test set</Pill>}>
+          <Card title="Threshold: how many rows get flagged" aside={<Pill tone="det">chosen on cross-validation, not on the final test set</Pill>}>
             <OperatingPointsPanel projectId={id} experimentId={experiment.id} />
           </Card>
         </div>

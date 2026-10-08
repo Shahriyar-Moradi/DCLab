@@ -16,7 +16,7 @@ const base = (extra: Record<string, unknown> = {}) => ({
 test("states: available, not applicable, no curve, too few rows (names the minimum)", () => {
   assert.equal(operatingView(base()).state, "available");
   const na = operatingView(base({ status: "not_applicable", points: [] }));
-  assert.ok(na.state === "empty" && /two-class/.test(na.text));
+  assert.ok(na.state === "empty" && /yes\/no/.test(na.text));
   const old = operatingView(base({ status: "not_available", points: [] }));
   assert.ok(old.state === "empty" && /predates/.test(old.text));
   const few = operatingView(base({ status: "not_evaluated", points: [] }));
@@ -43,9 +43,9 @@ test("constraint lines only from the chosen objective's precision/recall constra
   assert.equal(lines[0].metric, "recall");
 });
 
-test("point rows tag Pareto, locked and chosen; one row per threshold", () => {
+test("point rows tag best trade-off, locked and chosen; one row per threshold", () => {
   const rows = pointRows(base({ chosen: { threshold: 0.3, decision_id: "d", method: "threshold", rationale: "r", recorded_at: "t", point: detail(0.3) } }));
-  assert.deepEqual(rows.map((r) => [r.threshold, r.tags]), [[0.3, ["Pareto", "Chosen"]], [0.5, ["Locked"]]]);
+  assert.deepEqual(rows.map((r) => [r.threshold, r.tags]), [[0.3, ["Best trade-off", "Chosen"]], [0.5, ["Locked"]]]);
 });
 
 test("sentence is the server's text; fallback restates fields without computing", () => {
@@ -100,7 +100,7 @@ test("model card summary: only with a chosen point; untrusted reason passed thro
   const s = chosenSummary(base({ chosen: { decision_id: "d1", threshold: 0.3, method: "objective", rationale: "<b>x</b>", recorded_at: "2026-01-01T00:00:00Z", chosen_by_user_id: "u1", point: detail(0.3), curve_changed: true } }));
   assert.equal(s?.reason, "<b>x</b>");
   assert.equal(s?.threshold, "0.3");
-  assert.match(s?.method ?? "", /objective/);
+  assert.match(s?.method ?? "", /goal/);
   assert.match(s?.note ?? "", /curve changed/);
   assert.equal(chosenSummary(base({ status: "not_available", chosen: { threshold: 1 } })), null);
 });

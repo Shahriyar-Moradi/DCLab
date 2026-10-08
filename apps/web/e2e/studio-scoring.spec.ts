@@ -74,7 +74,7 @@ test("Score new data: upload, column check, progress, download, missing column, 
   await page.getByRole("button", { name: "Score this file" }).click();
   const check = page.getByRole("region", { name: "Column check" }).first();
   const card = page.locator("section.card", { has: page.getByRole("heading", { name: /Scoring of next-month.csv/ }) });
-  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv completed/ })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv done/ })).toBeVisible({ timeout: 120_000 });
   await expect(check).toContainText("The file has all 2 columns the model needs.");
   await expect(check).toContainText("region");
   await expect(card.getByText("40 of 40")).toBeVisible();
@@ -107,7 +107,7 @@ test("Score new data: upload, column check, progress, download, missing column, 
   // 4. The session list survives a reload (ids only; each is re-read from the API).
   await page.reload();
   await page.getByRole("tab", { name: "Score new data" }).click();
-  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv completed/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv done/ })).toBeVisible();
 
   // 5. Dark mode.
   await page.emulateMedia({ colorScheme: "dark" });

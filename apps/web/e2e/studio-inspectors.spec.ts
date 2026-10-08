@@ -74,7 +74,9 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
     if (node.source.includes("Split")) await shot(page, "1-drawer");
     await open.click();
     await expect(page).toHaveURL(route);
-    await expect(page.getByRole("heading", { name: node.source.includes("Split") ? "Goal & test design" : "Reason", level: node.source.includes("Split") ? 1 : undefined })).toBeVisible();
+    await expect(node.source.includes("Model")
+      ? page.getByRole("heading", { name: /^Model v\d+$/, level: 1 })
+      : page.getByRole("heading", { name: node.source.includes("Split") ? "Goal & test design" : "Reason", level: node.source.includes("Split") ? 1 : undefined })).toBeVisible();
     await expect(page.getByText(/^Loading/)).toHaveCount(0);
     expect(await axeViolations(page)).toEqual([]);
     await shot(page, `2-${hrefs.length}-${title.source.replace(/\W/g, "").toLowerCase()}`);
@@ -97,12 +99,12 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "2-2b-feature-code");
   await page.goto(hrefs[3]);
-  await expect(page.getByRole("link", { name: /^[0-9a-f]{8}$/ }).first()).toBeVisible();
-  await expect(page.getByText(/is on the Card tab/)).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Run (\d+|[0-9a-f]{8})$/ }).first()).toBeVisible();
+  await expect(page.getByText(/is on the Model card tab/)).toBeVisible();
 
   // Experiment inspector tabs.
   await page.goto(`/projects/${projectId}/experiments/${experimentId}`);
-  const tabs = ["Overview", "Models tried", "Per fold", "Feature importance", "Code", "Evidence"];
+  const tabs = ["Overview", "Models tried", "Per fold", "Feature importance", "Code", "Build record"];
   for (const name of tabs) {
     await page.getByRole("tab", { name: new RegExp(`^${name}`) }).click();
     await expect(page.getByRole("tab", { name: new RegExp(`^${name}`) })).toHaveAttribute("aria-selected", "true");

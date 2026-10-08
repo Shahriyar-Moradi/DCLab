@@ -26,9 +26,9 @@ import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 const TERMS = {
-  contract: "New files must have the same columns: the list of columns the model was trained on. A file can be scored only if it has every one of them, with the same names.",
+  contract: "New files must have the same columns as the training data. A file can be scored only if it has every column the model was trained on, with the same names.",
   threshold: "Set when the model was built: picked on cross-validation predictions when the project declared a cost, a constraint or a threshold-based metric, otherwise the default 0.5. Rows at or above it are labelled positive. It is applied as stored and cannot be changed here.", // see also GLOSSARY.threshold
-  operating: "The operating point is the threshold the model runs at. It decides how many rows are labelled positive, trading missed positives against false alarms.",
+  operating: "The threshold decides how many rows are labelled positive, trading missed positives against false alarms.",
 };
 
 const STORE = "dclab.scorings.";
@@ -53,6 +53,7 @@ function ErrorBanner({ error }: { error: PlainError | null }) {
 }
 
 const STATUS_TONE = { queued: "gray", running: "ai", completed: "ok", failed: "crit" } as const;
+const STATUS_WORDS = { queued: "waiting", running: "scoring", completed: "done", failed: "failed" } as const;
 
 function stepsFor(prediction: StudioPrediction | undefined, busy: boolean): Step[] {
   const status = prediction?.status;
@@ -100,7 +101,7 @@ function ScoringCard({ item, current, modelVersionId }: { item: SessionScoring; 
   return (
     <Card
       title={`Scoring of ${plainText(item.fileName, 80)}`}
-      aside={p ? <Pill tone={STATUS_TONE[p.status]}>{p.status}</Pill> : <span className="muted">loading</span>}
+      aside={p ? <Pill tone={STATUS_TONE[p.status]}>{STATUS_WORDS[p.status]}</Pill> : <span className="muted">loading</span>}
     >
       {current ? <StepBar label="Scoring progress" steps={stepsFor(p, false)} /> : null}
       {read.isError ? <Banner tone="crit">Could not read this scoring. {read.error instanceof Error ? read.error.message : ""}</Banner> : null}
@@ -181,8 +182,8 @@ export function ScoreNewData({ projectId, modelVersionId }: { projectId: string;
     <>
       <PageGuide
         purpose="Run this model on new rows and get a prediction for each one."
-        howTo={<>Upload a file with the same feature columns the model was trained on (the <Term definition={TERMS.contract}>feature contract</Term>). The column you predict is not needed and is ignored if present.</>}
-        youGet={<>A predictions file with one row per input row. For a yes/no model the labels use the stored <Term definition={TERMS.threshold}>threshold</Term> at the model&apos;s <Term definition={TERMS.operating}>operating point</Term>.</>}
+        howTo={<>Upload a file with <Term definition={TERMS.contract}>the same columns as the training data</Term>. The column you predict is not needed and is ignored if present.</>}
+        youGet={<>A predictions file with one row per input row. For a yes/no model the labels use the model&apos;s locked <Term definition={TERMS.threshold}>threshold</Term>, which cannot be changed here. <Term definition={TERMS.operating}>What the threshold does</Term>.</>}
         attention="Use rows the model has not seen. Only an exact copy of the training file (the same upload or identical bytes) is refused. A re-saved, re-ordered or edited copy is not detected, so check yourself that the rows are new."
       />
       <Card title="Score a file" aside={<span className="muted">CSV, TSV, JSON, Parquet or XLSX</span>}>
@@ -198,7 +199,7 @@ export function ScoreNewData({ projectId, modelVersionId }: { projectId: string;
       </Card>
       {rows.map((item, index) => <ScoringCard key={item.id} item={item} current={index === 0} modelVersionId={modelVersionId} />)}
       <Card title="Past scorings" aside={<span className="muted">this browser session</span>}>
-        <p className="muted">History needs a list read: the API can read one scoring by id but cannot yet list a model&apos;s scorings, so only the files scored in this session are kept above.</p>
+        <p className="muted">Only the files scored in this browser session are listed above. Earlier scorings cannot be listed yet.</p>
       </Card>
     </>
   );
