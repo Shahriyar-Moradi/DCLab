@@ -1,0 +1,65 @@
+<!-- title: Settings · DCLab demo -->
+<!-- crumbs: Northwind Telecom › Admin › <b>Settings</b> -->
+<!-- status: warn | Partly working · members and roles work; usage and cost, integrations and notifications are Planned -->
+<div class="page-head">
+  <div><h1>Settings</h1><p class="sub">Who is in the workspace and what each role can do, plus usage, integrations and notifications.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="create">Invite a member</button></div>
+</div>
+
+<div class="tabs" data-tabs="set">
+  <button data-tab="roles" aria-selected="true">Members &amp; roles</button>
+  <button data-tab="usage">Usage &amp; cost</button>
+  <button data-tab="integ">Integrations</button>
+  <button data-tab="notif">Notifications</button>
+</div>
+
+<div data-tabpanel="set:roles" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Member</th><th>Role</th><th>Last active</th></tr></thead>
+    <tbody>
+      <tr><td>Sam Rivera</td><td>Admin</td><td>Today</td></tr>
+      <tr><td>Maya Chen</td><td>Data scientist</td><td>Today</td></tr>
+      <tr><td>Jon Park</td><td>Analyst</td><td>Yesterday</td></tr>
+      <tr><td>Lena Ortiz</td><td>Business user</td><td>3 days ago</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Role</th><th>Can</th><th>Cannot</th></tr></thead>
+    <tbody>
+      <tr><td><b>Admin</b></td><td>Everything below, plus members, AI settings and access tokens</td><td>See DCLab staff screens</td></tr>
+      <tr><td><b>Data scientist</b></td><td>Upload data, set goals, start runs, approve models, see all rows</td><td>Change members or AI settings</td></tr>
+      <tr><td><b>Analyst</b></td><td>See data, runs and results; download lists</td><td>Start runs or approve models</td></tr>
+      <tr><td><b>Business user</b></td><td>See the Business view and download this week’s list</td><td>See raw rows or any other screen</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="set:usage">
+  <div class="card">
+    <div class="notice-planned"><span class="pill plan">Planned · Phase 8</span><span>Preview of a planned screen. Numbers are examples.</span></div>
+    <h3>This month</h3>
+    <div class="grid cols-3">
+      <div class="stat kpi"><span class="l">Compute</span><span class="v">412 min</span><span class="small muted">of 2,000 included</span><div class="meter"><i style="width:21%"></i></div></div>
+      <div class="stat kpi"><span class="l">AI cost</span><span class="v">$9.40</span><span class="small muted">of $25 budget</span><div class="meter ai"><i style="width:38%"></i></div></div>
+      <div class="stat kpi"><span class="l">Storage</span><span class="v">3.1 GB</span><span class="small muted">of 50 GB</span><div class="meter"><i style="width:6%"></i></div></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="set:integ">
+  <div class="card">
+    <div class="notice-planned"><span class="pill plan">Planned</span><span>Not available yet.</span></div>
+    <h3>Integrations</h3>
+    <p class="small muted">Planned: read data from where it already lives, and send the weekly list to the tools your team uses. Today you upload a file or use the <a href="connect.html">code connections</a>.</p>
+  </div>
+</div>
+
+<div data-tabpanel="set:notif">
+  <div class="card">
+    <div class="notice-planned"><span class="pill plan">Planned · Phase 8</span><span>Preview of a planned screen.</span></div>
+    <h3>Email me when</h3>
+    <div class="switch-row"><span><b>A decision is waiting for me</b><small>For example, a retrained model to approve.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="true" data-toggle><span>Email: <b>on</b></span><i aria-hidden="true"></i></button></div>
+    <div class="switch-row"><span><b>Drift is found</b><small>When a column passes its alert line.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="true" data-toggle><span>Email: <b>on</b></span><i aria-hidden="true"></i></button></div>
+    <div class="switch-row"><span><b>A run fails</b><small>With the reason in the first line.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="false" data-toggle><span>Email: <b>off</b></span><i aria-hidden="true"></i></button></div>
+  </div>
+</div>

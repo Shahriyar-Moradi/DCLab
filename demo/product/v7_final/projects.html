@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Projects · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="projects.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Projects</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Projects</h1><p class="sub">Every project in this workspace. Each one goes from a customer file to a model you can trust.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-wizard>New project</button></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="tbl card"><table>
+  <thead><tr><th>Project</th><th>Goal</th><th>Where it is</th><th class="r">Best CV score</th><th>Model in use</th><th>Last run</th></tr></thead>
+  <tbody>
+    <tr><td><a href="data.html"><b>Northwind churn</b></a></td><td>Catch ≥ 80% of churners</td><td><span class="pill warn">1 decision waiting</span> <span class="pill plan">Planned · Phase 7</span></td><td class="r">PR-AUC 0.70</td><td>LightGBM, threshold 0.31</td><td>Run 6 · running</td></tr>
+    <tr><td><b>Late payment risk</b></td><td>Flag accounts likely to pay late</td><td><span class="pill gray">Data uploaded</span></td><td class="r">—</td><td>None yet</td><td>No runs yet</td></tr>
+    <tr><td><b>Plan upgrade</b></td><td>Not set</td><td><span class="pill gray">Draft</span></td><td class="r">—</td><td>None yet</td><td>—</td></tr>
+  </tbody>
+</table></div>
+<div class="card"><h3>Starting a project</h3><p class="small muted">The wizard asks for a name and a file, then what to predict and how success is measured, and suggests a test design for you to confirm. With the assistant switched on, it can suggest each step; without it, every step is a form.</p></div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+</body>
+</html>

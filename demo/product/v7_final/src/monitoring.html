@@ -1,0 +1,93 @@
+<!-- title: Monitoring · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Monitoring</b> -->
+<!-- status: plan | Planned · Phase 7 -->
+<!-- planned: 1 -->
+<div class="page-head">
+  <div><h1>Monitoring <span class="pill warn">drift · week of 1 Sep</span></h1><p class="sub">Watches the incoming data every week and, once real outcomes arrive (about 4 weeks late), how good the predictions really are.</p></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><div class="stat"><span class="v">0.22</span><span class="l">drift (PSI) on <code>plan_type</code> · alert at 0.20</span></div></div>
+  <div class="card"><div class="stat"><span class="v">0.48</span><span class="l">real precision · was 0.63 in the final test</span></div></div>
+  <div class="card"><div class="stat"><span class="v">0.80</span><span class="l">real recall · still meets the rule</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="mon">
+  <button data-tab="drift" aria-selected="true">Input drift</button>
+  <button data-tab="real">Real results</button>
+  <button data-tab="auto">What the system does on its own</button>
+  <button data-tab="limits">Thresholds</button>
+</div>
+
+<div data-tabpanel="mon:drift" class="on">
+  <div class="card">
+    <h3>Drift of <code>plan_type</code>, by week <span class="sp">week of 7 Jul to week of 1 Sep</span></h3>
+    {{chart:psi_weekly}}
+  </div>
+</div>
+<div data-tabpanel="mon:real">
+  <div class="card">
+    <h3>Real precision and recall, by week <span class="sp">outcomes arrive about 4 weeks late</span></h3>
+    {{chart:precision_weekly}}
+    <p class="small muted">Whether a customer really cancelled is only known about 4 weeks after the prediction. So the real precision you see today describes predictions from a month ago, and the drift chart is the early warning.</p>
+  </div>
+</div>
+<div data-tabpanel="mon:auto">
+  <div class="card">
+    <h3>What the system does on its own <span class="sp">and where it stops to ask you</span></h3>
+    <ol class="flow-steps">
+      <li><b>Detect drift</b><span class="small muted">Done by a rule every week: a column’s drift passes 0.20.</span><span class="pill ok">automatic</span></li>
+      <li><b>Explain it</b><span class="small muted">The assistant writes a plain summary of what moved. Built, switched off.</span><span class="pill off">assistant</span></li>
+      <li><b>Retrain on new data</b><span class="small muted">Uses the newer file and the same test design. You can undo it.</span><span class="pill ok">automatic, you can undo</span></li>
+      <li><b>Ask you before switching</b><span class="small muted">The retrained model is never used for scoring until you approve it.</span><span class="pill warn">ask first</span></li>
+    </ol>
+  </div>
+</div>
+<div data-tabpanel="mon:limits">
+  <div class="card">
+    <h3>Thresholds <span class="sp">change them and the rules follow</span></h3>
+    <div class="fields">
+      <label class="field">Drift: watch at<input type="text" value="0.10" aria-label="Drift watch threshold"></label>
+      <label class="field">Drift: alert at<input type="text" value="0.20" aria-label="Drift alert threshold"></label>
+      <label class="field">Real precision: alert when it falls below<input type="text" value="0.55" aria-label="Precision alert"></label>
+      <label class="field">Real recall: alert when it falls below<input type="text" value="0.80" aria-label="Recall alert"></label>
+    </div>
+    <div class="toolbar"><button class="btn primary" type="button" data-save-thresholds>Save thresholds</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>What changed</h3>
+  <p>After the March marketing campaign, a new plan type, <code>family_5g</code>, appeared. It is now 6% of customers and churns about twice as often as the average. The model barely saw it in training, so it flags the wrong people: recall holds at 0.80, but precision fell from 0.63 to 0.48.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Column</th><th class="r">Drift (PSI)</th><th>Status</th><th>What moved</th></tr></thead>
+    <tbody>
+      <tr><td><code>plan_type</code></td><td class="r">0.22</td><td><span class="pill crit">alert</span></td><td>new value <code>family_5g</code>, 6% of customers</td></tr>
+      <tr><td><code>monthly_fee</code></td><td class="r">0.11</td><td><span class="pill warn">watch</span></td><td>average fee up 4%</td></tr>
+      <tr><td><code>region_code</code></td><td class="r">0.03</td><td><span class="pill ok">ok</span></td><td></td></tr>
+      <tr><td><code>last_login_days</code></td><td class="r">0.02</td><td><span class="pill ok">ok</span></td><td></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="pair">
+  <div class="card">
+    <h3>Churn model (in use)</h3>
+    <p class="small muted">Trained on data up to Jun 2026</p>
+    <dl class="kv"><dt>Precision</dt><dd><b>0.48</b> on recent weeks</dd><dt>Recall</dt><dd>0.80</dd><dt>PR-AUC</dt><dd>0.64</dd></dl>
+  </div>
+  <div class="card pick">
+    <h3>Churn model · retrained <span class="pill ok">better</span></h3>
+    <p class="small muted">Trained on data up to Sep 2026 · same test design</p>
+    <dl class="kv"><dt>Precision</dt><dd><b>0.59</b> on the same kind of test</dd><dt>Recall</dt><dd>0.81</dd><dt>PR-AUC</dt><dd>0.69</dd></dl>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Your decision</h3>
+  <p class="small muted">Precision goes from 0.48 to 0.59 with the retrained model, and recall stays above 0.80. The current model is kept, so you can switch back.</p>
+  <div class="toolbar" id="decision-buttons"><button class="btn primary" type="button" data-decide="switch">Switch to the retrained model</button><button class="btn" type="button" data-decide="keep">Keep the current model</button></div>
+  <div id="decision-result" class="banner" hidden></div>
+  <h4>History</h4>
+  <ul class="hist" id="history"><li>The model flagged a drop in precision to 0.48 · Mon</li><li>Retrained model was trained on data up to Sep 2026 · Mon</li></ul>
+</div>

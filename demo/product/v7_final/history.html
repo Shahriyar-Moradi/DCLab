@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>History · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="history.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>History</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>History</h1><p class="sub">Every decision in this project: who made it, what it was, the evidence, and how to undo or correct it.</p></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="tabs" data-tabs="hist">
+  <button data-tab="log" aria-selected="true">Log</button>
+  <button data-tab="lineage">Lineage</button>
+</div>
+
+<div data-tabpanel="hist:log" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Evidence</th><th>Undo or correct</th></tr></thead>
+    <tbody data-hist-top></tbody>
+    <tbody>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Found drift on <code>plan_type</code> <span class="pill plan">Planned · Phase 7</span></td><td>Drift 0.22, alert at 0.20</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill asst">The assistant</span></td><td>Explained the drift in plain words <span class="pill off">Built, switched off</span> <span class="pill plan">Planned · Phase 7</span></td><td>New plan type <code>family_5g</code>, 6% of customers</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Retrained on data up to Sep 2026 <span class="pill plan">Planned · Phase 7</span></td><td>Precision 0.59 on the same test design</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Weekly scoring: 6,412 customers flagged <span class="pill plan">Planned · Phase 7</span></td><td>51,296 scored</td><td>—</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill asst">The assistant</span></td><td>Left <code>customer_id</code> out · the rules agreed <span class="pill off">Built, switched off</span></td><td>Every value is different</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Kept <code>region_code</code> after the assistant and the rules disagreed <span class="pill off">Built, switched off</span></td><td>12 regions, enough rows</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Approved Version 1 for predictions</td><td>Final test: recall 0.81, precision 0.63</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Ran the final test set once</td><td>8,904 rows · 1,731 caught of 2,137 churners</td><td>Cannot be repeated</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Chose Run 3 on cross-validation · you confirmed</td><td>PR-AUC 0.70 ± 0.02</td><td><button class="btn sm" type="button" data-mock="edit">Correct</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Confirmed the goal and the test design</td><td>Time-ordered because churn rises over time</td><td><button class="btn sm" type="button" data-mock="edit">Correct</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Uploaded <code>customers_2026Q3.csv</code></td><td>48,210 rows, 31 columns</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Corrections add a new entry; nothing is deleted.</p>
+</div>
+
+<div data-tabpanel="hist:lineage">
+  <div class="card">
+    <h3>How the pieces connect <span class="sp">file → test design → runs → model → predictions</span></h3>
+    <svg class="chart" viewBox="0 0 498 190" role="img" aria-label="Diagram: the June 2026 customer file leads to the test design, the runs, the churn model in use and the weekly predictions. A newer September 2026 file exists, so the model in use and the predictions are marked as built on old data. A retrained version 2 waits for approval."><rect class="node" x="8" y="28" width="92" height="46" rx="10"/><text class="lbl" x="54.0" y="48" text-anchor="middle" font-weight="600">Customer file</text><text class="axis" x="54.0" y="64" text-anchor="middle">Jun 2026</text><rect class="node" x="112" y="28" width="88" height="46" rx="10"/><text class="lbl" x="156.0" y="48" text-anchor="middle" font-weight="600">Test design</text><text class="axis" x="156.0" y="64" text-anchor="middle">time-ordered</text><rect class="node" x="212" y="28" width="70" height="46" rx="10"/><text class="lbl" x="247.0" y="48" text-anchor="middle" font-weight="600">Runs</text><text class="axis" x="247.0" y="64" text-anchor="middle">6 so far</text><rect class="node node-warn" x="294" y="28" width="92" height="46" rx="10"/><text class="lbl" x="340.0" y="48" text-anchor="middle" font-weight="600">Churn model</text><text class="axis" x="340.0" y="64" text-anchor="middle">version 1</text><rect class="node node-warn" x="398" y="28" width="92" height="46" rx="10"/><text class="lbl" x="444.0" y="48" text-anchor="middle" font-weight="600">Predictions</text><text class="axis" x="444.0" y="64" text-anchor="middle">every Monday</text><rect class="node node-new" x="8" y="128" width="92" height="46" rx="10"/><text class="lbl" x="54.0" y="148" text-anchor="middle" font-weight="600">Customer file</text><text class="axis" x="54.0" y="164" text-anchor="middle">Sep 2026</text><rect class="node node-new" x="212" y="128" width="70" height="46" rx="10"/><text class="lbl" x="247.0" y="148" text-anchor="middle" font-weight="600">Retrain</text><text class="axis" x="247.0" y="164" text-anchor="middle">automatic</text><rect class="node node-new" x="294" y="128" width="92" height="46" rx="10"/><text class="lbl" x="340.0" y="148" text-anchor="middle" font-weight="600">Churn model</text><text class="axis" x="340.0" y="164" text-anchor="middle">version 2</text><line class="arrow" x1="100" y1="51" x2="112" y2="51"/><line class="arrow" x1="200" y1="51" x2="212" y2="51"/><line class="arrow" x1="282" y1="51" x2="294" y2="51"/><line class="arrow" x1="386" y1="51" x2="398" y2="51"/><line class="arrow arrow-dash" x1="100" y1="151" x2="212" y2="151"/><line class="arrow arrow-dash" x1="282" y1="151" x2="294" y2="151"/><text class="axis warn-t" x="340" y="88" text-anchor="middle">built on</text><text class="axis warn-t" x="340" y="101" text-anchor="middle">old data</text><text class="axis warn-t" x="444" y="88" text-anchor="middle">built on</text><text class="axis warn-t" x="444" y="101" text-anchor="middle">old data</text><text class="axis" x="8" y="14">Now in use</text><text class="axis" x="8" y="118">Newer file, waiting for your approval</text></svg>
+    <div class="banner warn"><div class="sp"><b>Built on old data.</b> <span class="pill plan">Planned · Phase 7</span> A newer file (Sep 2026) exists. The model in use and this week’s predictions were built on the Jun 2026 file.</div><a class="btn sm" href="monitoring.html">Open Monitoring</a></div>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+</body>
+</html>

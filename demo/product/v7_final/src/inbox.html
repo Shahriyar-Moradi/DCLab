@@ -1,0 +1,69 @@
+<!-- title: Inbox · DCLab demo -->
+<!-- crumbs: Northwind Telecom › <b>Inbox</b> -->
+<!-- status: ok | Working today -->
+<!-- status: off | Items suggested by the assistant: Built, switched off -->
+<div class="page-head">
+  <div><h1>Inbox</h1><p class="sub">What waits for you, what was done automatically (you can undo it), and what is finished.</p></div>
+</div>
+
+<div class="tabs" data-tabs="inbox">
+  <button data-tab="need" aria-selected="true">Needs your decision (3)</button>
+  <button data-tab="auto">Applied automatically (2)</button>
+  <button data-tab="done">Done (3)</button>
+</div>
+
+<div data-tabpanel="inbox:need" class="on">
+  <div class="card">
+    <div class="item">
+      <h3>Switch to the retrained model? <span class="pill plan">Planned · Phase 7</span></h3>
+      <div class="who"><span class="who-pill">Suggested by the rules</span><span>Northwind churn · Monitoring · Mon</span></div>
+      <div class="evid">
+        <div><small>Precision now</small><b>0.48</b></div>
+        <div><small>Precision, retrained</small><b>0.59</b></div>
+        <div><small>Recall, retrained</small><b>0.81 (rule ≥ 0.80)</b></div>
+        <div><small>Same test design</small><b>Yes</b></div>
+      </div>
+      <p class="small"><b>The automatic rule says: switch.</b> Precision is up by more than 0.05 and recall stays above 0.80. The assistant’s plain summary and the rule agree. <a href="monitoring.html">See the evidence</a></p>
+      <div class="toolbar" data-inbox-buttons><button class="btn primary" type="button" data-inbox="approve">Approve</button><button class="btn" type="button" data-inbox="reject">Reject</button></div>
+      <div class="banner" data-inbox-result hidden></div>
+    </div>
+    <div class="item">
+      <h3>Accept the calibration warning on Run 3?</h3>
+      <div class="who"><span class="who-pill">Suggested by the rules</span><span>Northwind churn · Experiments</span></div>
+      <p class="small">Balanced class weights push scores up, so a score of 0.3 is not a 30% chance. Ranking and the 0.31 threshold are fine. Accepting adds a line to the model’s known limits.</p>
+      <div class="toolbar" data-ack-buttons><button class="btn primary" type="button" data-ack>Accept and note it</button><a class="btn" href="experiments.html">Review the trust checks</a></div>
+      <div class="banner" data-ack-result hidden><b>Noted.</b> It now appears in the model’s known limits.</div>
+    </div>
+    <div class="item">
+      <h3>One upload was rejected</h3>
+      <div class="who"><span class="who-pill">Automatic check</span><span>Northwind churn · Data</span></div>
+      <p class="small">3 sheets could not be read in <code>customers_2026Q3_extra.xlsx</code>. Nothing was added to the project.</p>
+      <div class="toolbar"><a class="btn primary" href="data.html">Open Data</a></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="inbox:auto">
+  <div class="card">
+    <div class="item">
+      <h3>Left <code>customer_id</code> out <span class="pill off">Built, switched off</span></h3>
+      <div class="who"><span class="who-pill asst">Suggested by the assistant</span><span class="pill ok">both agreed</span><span>The rules said the same: every value is different.</span></div>
+      <p class="small">Applied automatically. Kind of decision: leave out ID-like columns · <b>Automatic, you can undo</b>.</p>
+      <div class="toolbar"><button class="btn sm" type="button" data-mock="undo">Undo</button></div>
+    </div>
+    <div class="item">
+      <h3>Retrained on data up to Sep 2026 <span class="pill plan">Planned · Phase 7</span></h3>
+      <div class="who"><span class="who-pill">Suggested by the rules</span><span>Triggered by drift on <code>plan_type</code></span></div>
+      <p class="small">Applied automatically. The current model stays in use until you approve the switch. <b>Automatic, you can undo.</b></p>
+      <div class="toolbar"><button class="btn sm" type="button" data-mock="undo">Undo</button></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="inbox:done">
+  <div class="card">
+    <div class="item done-item"><h3>Confirmed the goal and the test design</h3><div class="who"><span class="who-pill you">You</span><span>Rules suggested time-ordered folds because churn rises over time</span></div></div>
+    <div class="item done-item"><h3>Chose Run 3 as best on cross-validation</h3><div class="who"><span class="who-pill">Suggested by the rules</span><span class="who-pill you">Confirmed by you</span></div></div>
+    <div class="item done-item"><h3>Disagreement settled: keep <code>region_code</code> <span class="pill off">Built, switched off</span></h3><div class="who"><span class="who-pill asst">The assistant said: leave out</span><span class="who-pill">The rules said: keep</span><span class="who-pill you">They disagreed: we asked you, you kept it</span></div></div>
+  </div>
+</div>

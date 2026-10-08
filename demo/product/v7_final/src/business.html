@@ -1,0 +1,36 @@
+<!-- title: Business view · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Other views › <b>Business view</b> -->
+<!-- status: plan | Planned · Phase 7 -->
+<!-- planned: 1 -->
+<div class="page-head">
+  <div><h1>Customer churn: what to expect</h1><p class="sub">Written for the retention team. No machine-learning knowledge needed.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="download">Download this week’s list</button></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><div class="stat"><span class="v">8 of 10</span><span class="l">customers who really cancel are caught by the list</span></div></div>
+  <div class="card"><div class="stat"><span class="v">6 of 10</span><span class="l">customers on the list really would cancel</span></div></div>
+  <div class="card"><div class="stat"><span class="v">6,412</span><span class="l">customers on this week’s list · updated Monday</span></div></div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>How the model was built</h3>
+    <p>It learned from 18 months of customer history and was checked on the last 3 months, which it had never seen. It looks at things like days since last login, recent fee changes and when the contract ends. It was tested once at the end, and not changed after.</p>
+  </div>
+  <div class="card">
+    <h3>Trust and limits</h3>
+    <ul class="hist">
+      <li>It ranks customers; it does not give exact chances.</li>
+      <li>A new plan type, <code>family_5g</code>, is not well covered yet. A retrained model is waiting for the data team’s approval.</li>
+      <li>Real results are known about 4 weeks after each list.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Questions from the data team</h3>
+  <p class="small">Is it right to treat customers on <code>family_5g</code> the same as the others until the retrained model is in use?</p>
+  <div class="toolbar"><button class="btn" type="button" data-mock="edit">Reply to the data team</button></div>
+</div>
+<div class="banner"><div class="sp"><b>DCLab does not contact customers or take business actions.</b> It only produces the list and the reasons; your team decides what to do.</div></div>
