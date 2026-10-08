@@ -114,8 +114,8 @@ test("findings panel: severity, numbers, badge and a pre-filled Branch link", as
 
   // Data page tab uses the same panel with its provenance label.
   await page.goto(`/projects/${projectId}/data`);
-  await page.getByRole("tab", { name: /^Findings & questions/ }).click();
-  await expect(page.getByText(/From experiment/)).toBeVisible();
+  await page.getByRole("tab", { name: /^Data checks/ }).click();
+  await expect(page.getByRole("heading", { name: "All trust checks of the run" })).toBeVisible();
   await expect(page.getByTestId("findings-panel").locator("article")).toHaveCount(findings.checks.length);
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "4-data-tab");

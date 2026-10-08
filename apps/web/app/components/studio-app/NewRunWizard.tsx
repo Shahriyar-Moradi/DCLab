@@ -18,7 +18,9 @@ import {
   useProjectExperiments, useStudioExperiment, useWizardInvalidation, type ConstraintDraft, type PlainError, type TaskType,
   type UploadedDataset, type WizardStepId,
 } from "@/lib/application";
-import { projectHref } from "@/lib/application/command-search";
+import { plainText, projectHref } from "@/lib/application/command-search";
+import { metricInfo } from "@/lib/application/studio-goal";
+import { dataVersionName } from "@/lib/application/studio-names";
 import { useDatasetProfile } from "@/lib/application/studio-data-hooks";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
@@ -171,8 +173,8 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
           <PageGuide
             purpose={projectId ? "Pick the data this run trains on." : "Create the project and bring your data in."}
             howTo={projectId ? "Use a dataset already in this project, or upload a new file." : "Name the project and choose a CSV, TSV, JSON, Parquet or XLSX file with a header row."}
-            youGet="A stored, versioned dataset with its row count, columns, types and missing values. Nothing is trained yet."
-            attention={<>The file is checked for structure only. A <Term definition={TERMS.holdout}>final test set (used once)</Term> is set aside later, when the split is planned.</>}
+            youGet="A saved copy of your file (a new version) with its row count, columns, types and missing values. Nothing is trained yet."
+            attention={<>The file is checked for structure only. A <Term definition={TERMS.holdout}>final test set (used once)</Term> is set aside later, when the test design is made.</>}
           />
           <Card title="Data">
             <form className="form" onSubmit={(event) => { event.preventDefault(); void submitData(); }}>
@@ -184,7 +186,7 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
               {projectId && datasets.data?.length ? (
                 <label className="field"><span>Dataset in this project</span>
                   <select value={datasetId ?? ""} onChange={(e) => setDatasetId(e.target.value || null)} disabled={busy}>
-                    {datasets.data.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.version} · {d.row_count} rows</option>)}
+                    {datasets.data.map((d) => <option key={d.id} value={d.id}>{dataVersionName(plainText(d.name, 80), d.created_at)} · {d.row_count} rows</option>)}
                     <option value="">Upload a new file instead</option>
                   </select>
                 </label>
@@ -197,9 +199,8 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
               ) : null}
               {chosen ? (
                 <KeyValue items={[
-                  { key: "id", label: "Dataset id", value: <span className="mono">{chosen.id}</span> },
+                  { key: "file", label: "File", value: dataVersionName(plainText(chosen.name, 80), chosen.created_at) },
                   { key: "rows", label: "Rows", value: chosen.row_count }, { key: "cols", label: "Columns", value: chosen.column_count },
-                  { key: "digest", label: "Content digest", value: <span className="mono">{chosen.content_digest ?? "—"}</span> },
                 ]} />
               ) : null}
               {nav(null, <button type="submit" className="btn primary" disabled={busy}>{busy ? "Uploading…" : datasetId ? "Continue" : "Upload and continue"}</button>)}
@@ -219,16 +220,16 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
           {uploaded ? (
             <Card title="Profile of the uploaded file">
               <KeyValue items={[
-                { key: "name", label: "File", value: uploaded.name }, { key: "id", label: "Dataset id", value: <span className="mono">{uploaded.id}</span> },
+                { key: "name", label: "File", value: plainText(uploaded.name, 120) },
                 { key: "rows", label: "Rows", value: uploaded.row_count }, { key: "cols", label: "Columns", value: uploaded.column_count },
-                { key: "ing", label: "Ingestion", value: `${uploaded.ingestion.status} · ${uploaded.ingestion.publication_state}` },
-                { key: "digest", label: "Content digest", value: <span className="mono">{uploaded.content_digest ?? "—"}</span> },
+                { key: "ing", label: "Upload check", value: plainText(uploaded.ingestion.status, 40).replaceAll("_", " ") },
               ]} />
+              <details><summary>Details</summary><p className="muted">File id <span className="mono">{uploaded.id}</span></p></details>
               <DataTable caption="Columns of the uploaded file" columns={PROFILE_COLUMNS} rows={columns} rowKey={(c) => c.name} />
-              <p className="muted">Missing values are counted over the whole upload, before any split exists.</p>
+              <p className="muted">Missing values are counted over the whole file, before the test design exists.</p>
             </Card>
           ) : null}
-          <Card title="Target and task">
+          <Card title="What to predict">
             <form className="form" onSubmit={(event) => { event.preventDefault(); setStep("objective"); }}>
               <label className="field"><span>Task</span>
                 <select value={task} onChange={(e) => setTask(e.target.value as TaskType)}>
@@ -256,26 +257,26 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
       {step === "objective" ? (
         <>
           <PageGuide
-            purpose="Optionally say what good looks like."
-            howTo={<>Pick the <Term definition={TERMS.metric}>metric</Term> to optimise, and at most one limit it must respect (for example recall at least 0.8). Leave both empty to use DCLab&apos;s default for the task.</>}
-            youGet="A recorded objective. The decision threshold is chosen from out-of-fold predictions only."
-            attention="The metric and limit are checked against the task when you train; an invalid pair is refused with a reason."
+            purpose="Optionally say what good looks like for your business."
+            howTo={<>Pick the <Term definition={TERMS.metric}>ranking metric</Term> and, if you have one, a business rule: a score that must stay above or below a limit (for example recall at least 0.8). Leave both empty to use DCLab&apos;s default for the task.</>}
+            youGet="A recorded goal. The threshold for flagging a row is chosen from cross-validation predictions only, never from the final test set."
+            attention="The metric and rule are checked against the task when you train; an invalid pair is refused with a reason."
           />
-          <Card title="Objective and constraint">
-            <form className="form" onSubmit={(event) => { event.preventDefault(); const p = objectiveProblem(objective); if (p) setError({ title: "Check the constraint", detail: p, fixable: true }); else { setError(null); setStep("train"); } }}>
+          <Card title="What good looks like">
+            <form className="form" onSubmit={(event) => { event.preventDefault(); const p = objectiveProblem(objective); if (p) setError({ title: "Check the business rule", detail: p, fixable: true }); else { setError(null); setStep("train"); } }}>
               <label className="field"><span>What do you want to achieve? (optional)</span>
                 <textarea value={businessObjective} maxLength={500} rows={3} onChange={(e) => setBusinessObjective(e.target.value)} />
               </label>
-              <label className="field"><span>Primary metric</span>
+              <label className="field"><span>Ranking metric</span>
                 <select value={primaryMetric} onChange={(e) => setPrimaryMetric(e.target.value)}>
                   <option value="">DCLab default for the task</option>
-                  {primaryMetricOptions(task).map((m) => <option key={m} value={m}>{m}</option>)}
+                  {primaryMetricOptions(task).map((m) => <option key={m} value={m}>{metricInfo(m)?.label ?? m}</option>)}
                 </select>
               </label>
-              <label className="field"><span>Constraint metric (optional)</span>
+              <label className="field"><span>Business rule (optional)</span>
                 <select value={constraint?.metric ?? ""} onChange={(e) => setConstraint(e.target.value ? { metric: e.target.value, op: constraint?.op ?? ">=", value: constraint?.value ?? "" } : null)}>
-                  <option value="">No constraint</option>
-                  {constraintMetricOptions(task).map((m) => <option key={m} value={m}>{m}</option>)}
+                  <option value="">No business rule</option>
+                  {constraintMetricOptions(task).map((m) => <option key={m} value={m}>{metricInfo(m)?.label ?? m}</option>)}
                 </select>
               </label>
               {constraint ? (
@@ -301,17 +302,17 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
           <PageGuide
             purpose="Review and start the run."
             howTo="Check the summary, then press Train. Pressing it twice is safe: a retry reuses the same request."
-            youGet="An experiment you can follow live. Training runs in the background worker."
-            attention={<>DCLab sets aside a <Term definition={TERMS.holdout}>final test set (used once)</Term> and never shows or tunes on it. If the target or split needs your answer, the experiment page asks.</>}
+            youGet="A run you can follow live. Training happens in the background."
+            attention={<>DCLab sets aside a <Term definition={TERMS.holdout}>final test set (used once)</Term> and never shows or tunes on it. If the target or the test design needs your answer, the run page asks.</>}
           />
           <Card title="Summary">
             <KeyValue items={[
-              { key: "project", label: "Project", value: <span className="mono">{project}</span> },
-              { key: "dataset", label: "Dataset", value: <span className="mono">{datasetId}</span> },
-              { key: "task", label: "Task", value: task }, { key: "target", label: "Target column", value: target ? <span className="mono">{target}</span> : "DCLab chooses; you confirm if unclear" },
-              { key: "metric", label: "Primary metric", value: primaryMetric || "default for the task" },
-              { key: "constraint", label: "Constraint", value: constraint ? `${constraint.metric} ${constraint.op} ${constraint.value}` : "none" },
+              { key: "dataset", label: "Data file", value: chosen ? dataVersionName(plainText(chosen.name, 80), chosen.created_at) : uploaded ? plainText(uploaded.name, 120) : "—" },
+              { key: "task", label: "Kind of answer", value: TASK_OPTIONS.find((o) => o.value === task)?.label ?? task }, { key: "target", label: "What we predict", value: target ? <span className="mono">{target}</span> : "DCLab chooses; you confirm if unclear" },
+              { key: "metric", label: "Ranking metric", value: primaryMetric ? (metricInfo(primaryMetric)?.label ?? primaryMetric) : "default for the task" },
+              { key: "constraint", label: "Business rule", value: constraint ? `${metricInfo(constraint.metric)?.label ?? constraint.metric} ${constraint.op} ${constraint.value}` : "none" },
             ]} />
+            {project || datasetId ? <details><summary>Details</summary><p className="muted">{project ? <>Project id <span className="mono">{project}</span>. </> : null}{datasetId ? <>File id <span className="mono">{datasetId}</span>.</> : null}</p></details> : null}
             {nav("objective", <button type="button" className="btn primary" disabled={busy} onClick={() => void train()}>{busy ? "Starting…" : "Train"}</button>)}
           </Card>
         </>

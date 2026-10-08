@@ -57,14 +57,14 @@ test("New project wizard: CSV to a trained experiment", async ({ page }) => {
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "2-target");
 
-  // 2 Target and task.
+  // 2 What to predict.
   await page.getByLabel("Task").selectOption("binary");
   await page.getByLabel("Target column").selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
 
-  // 3 Objective (optional): metric and one constraint.
-  await page.getByLabel("Primary metric").selectOption("pr_auc");
-  await page.getByLabel("Constraint metric (optional)").selectOption("recall");
+  // 3 What good looks like (optional): ranking metric and one business rule.
+  await page.getByLabel("Ranking metric").selectOption("pr_auc");
+  await page.getByLabel("Business rule (optional)").selectOption("recall");
   await page.getByLabel("Value").fill("0.5");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "3-objective");

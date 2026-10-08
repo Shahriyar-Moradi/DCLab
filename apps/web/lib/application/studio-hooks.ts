@@ -90,7 +90,7 @@ const DecisionItemSchema = z.object({
   state: z.string(),
   effective_state: z.string(),
   recorded_at: z.string(),
-  actor: z.object({ kind: z.string() }),
+  actor: z.object({ kind: z.string(), agent_run_id: nullableString, service_token_id: nullableString }),
   subject: z.object({ kind: z.string(), id: z.string() }),
 });
 export type StudioDecisionItem = z.infer<typeof DecisionItemSchema>;

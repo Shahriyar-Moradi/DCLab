@@ -24,7 +24,6 @@ import { SectionTabs } from "@/components/studio/SectionTabs";
 import { Term } from "@/components/studio/Term";
 import { plainText, projectHref } from "@/lib/application/command-search";
 import { useModelBuild } from "@/lib/application/hooks";
-import { percent } from "@/lib/application/studio-data";
 import { attentionCount, findingsState } from "@/lib/application/studio-findings";
 import { useDatasetProfile, useDatasetVersion, useExperimentFindings, useProjectGraph, type StudioGraph, type StudioGraphNode } from "@/lib/application/studio-data-hooks";
 import {
@@ -288,7 +287,7 @@ export function ExperimentInspector({ projectId, experimentId, workspaceId, line
 // --- nodes backed by an experiment's build ----------------------------------------------
 
 /** Split plans and feature recipes have no read of their own: they are read through the newest run that uses them. */
-function useBackingRun(projectId: string, kind: "split_plan" | "feature_recipe", nodeId: string) {
+export function useBackingRun(projectId: string, kind: "split_plan" | "feature_recipe", nodeId: string) {
   const graph = useProjectGraph(projectId);
   const node = graph.data?.nodes.find((n) => n.kind === kind && n.id === nodeId) ?? null;
   const experimentId = graph.data ? experimentUsing(graph.data.nodes, graph.data.edges, kind, nodeId) : null;
@@ -310,54 +309,6 @@ function NodeFacts({ node }: { node: StudioGraphNode }) {
       { key: "status", label: "Status", value: node.status ? node.status.replaceAll("_", " ") : "—" },
       { key: "stale", label: "Built on an older version", value: node.stale ? "Yes: made from a version that is no longer in use" : "No" },
     ]} />
-  );
-}
-
-export function SplitInspector({ projectId, nodeId }: { projectId: string; nodeId: string }) {
-  const { graph, node, experimentId, build } = useBackingRun(projectId, "split_plan", nodeId);
-  const facts = useMemo(() => splitFacts(build.data), [build.data]);
-  const sizes = foldSizes(build.data);
-  const modelVersionId = graph.data && experimentId ? modelVersionOf(graph.data.edges, experimentId) : null;
-  const card = useModelCardRead(modelVersionId);
-  const split = card.data?.split;
-  if (graph.isError) return <QueryNotice error={graph.error} what="project graph" />;
-  if (graph.isPending) return <p role="status">Loading the split plan…</p>;
-  if (!node) return <NotInGraph what="split plan" />;
-  return (
-    <>
-      <PageGuide
-        purpose={<>See exactly how rows were assigned to the <Term definition={TERMS.holdout}>final test set (used once)</Term> and to <Term definition={TERMS.fold}>folds</Term>.</>}
-        howTo="Check the strategy and the group or time column, then the row counts. Runs on the same split plan are comparable."
-        youGet="Strategy, fractions, group and time columns, partition row counts and the digest. Counts only."
-        attention="The plan is locked before any model is fitted. Final test set row values are never shown."
-      />
-      <Reason>
-        <p>{facts.reason ? plainText(facts.reason, 500) : "A split plan fixes which rows are held out before modelling, so every experiment on it is scored on the same rows."}</p>
-        <p className="muted">Read from {experimentId ? <>run {link(inspectorPath(projectId, "experiment", experimentId), mono(shortId(experimentId)))}, the newest loaded run on this plan.</> : "no loaded run: no run on this plan is in the graph window."}</p>
-      </Reason>
-      <Card title="Plan">
-        <NodeFacts node={node} />
-        {build.isPending && experimentId ? <p role="status">Loading the plan…</p> : null}
-        {build.isError ? <QueryNotice error={build.error} what="model build" /> : null}
-        <KeyValue items={[
-          { key: "strategy", label: "Strategy", value: facts.strategy ?? split?.evaluation_split_strategy ?? "—" },
-          { key: "frac", label: "Final test set fraction", value: facts.testSize !== null ? percent(facts.testSize <= 1 ? facts.testSize : facts.testSize / 100) : percent(split?.evaluation_fraction) },
-          { key: "group", label: "Group column", value: mono(facts.groupColumn ?? split?.group_column) },
-          { key: "time", label: "Time column", value: mono(facts.timeColumn ?? split?.time_column) },
-          { key: "strat", label: "Stratified", value: split?.stratified == null ? "—" : split.stratified ? "yes" : "no" },
-          { key: "locked", label: "Locked", value: facts.locked ? `Yes${facts.lockedAt ? `, ${formatWhen(facts.lockedAt)}` : ""}` : "Not recorded as locked" },
-        ]} />
-      </Card>
-      <Card title="Rows per partition" aside={<span className="muted">counts only</span>}>
-        <KeyValue items={[
-          { key: "train", label: "Training rows", value: split?.train_rows ?? "—" },
-          { key: "eval", label: "Final test set rows", value: split?.evaluation_rows ?? "—" },
-          { key: "cv", label: "Validation", value: split?.validation_strategy ? `${split.validation_strategy}${split.validation_folds ? `, ${split.validation_folds} folds` : ""}` : "—" },
-        ]} />
-        {sizes.length ? <p className="muted">Fold sizes of the first candidate: {sizes.map((s) => `fold ${s.fold} ${s.trainRows ?? "—"}/${s.validationRows ?? "—"} (train/validation)`).join(" · ")}.</p> : null}
-        {!split && experimentId ? <p className="muted">Row counts come from the model card, which exists once the run produced a model version.</p> : null}
-      </Card>
-    </>
   );
 }
 

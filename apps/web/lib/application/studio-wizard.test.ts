@@ -68,7 +68,7 @@ test("single flight: a double submit runs once and a later submit runs again", a
 test("backend codes map to plain language; unknown codes keep the backend message", () => {
   assert.match(mapWizardError(err(422, "TARGET_NOT_IN_DATASET")).title, /target column/i);
   assert.match(mapWizardError(err(422, "plan_refused")).title, /plan/i);
-  assert.match(mapWizardError(err(409, "split_confirmation_required")).title, /split/i);
+  assert.match(mapWizardError(err(409, "split_confirmation_required")).title, /test design/i);
   assert.match(mapWizardError(err(409, "target_confirmation_required")).title, /target/i);
   assert.match(mapWizardError(err(422, "upload_rejected")).title, /could not be read/);
   assert.match(mapWizardError(err(409, "idempotency_key_conflict")).title, /already used/);

@@ -53,9 +53,12 @@ test("Data page: names only before a split, training-row profile after the first
   // Before any run: no split plan, so names and types only (statistics withheld).
   await page.goto(`/projects/${projectId}/data`);
   await expect(page.getByRole("heading", { name: "Data", level: 1 })).toBeVisible();
-  await page.getByRole("tab", { name: /Columns & roles/ }).click();
+  await page.getByRole("tab", { name: /^Columns/ }).click();
   await expect(page.getByText("No test design yet.")).toBeVisible();
-  await expect(page.getByRole("table", { name: "Columns and roles" })).toContainText("customer_code");
+  await expect(page.getByRole("table", { name: "Columns", exact: true })).toContainText("customer_code");
+  const strip = page.getByRole("region", { name: "File summary" });
+  await expect(strip).toContainText("300");
+  await expect(strip).not.toContainText("What we predict");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "1-before-run");
 
@@ -77,18 +80,28 @@ test("Data page: names only before a split, training-row profile after the first
 
   // After the run: statistics over the split plan's training rows, rule role beside role used.
   await page.goto(`/projects/${projectId}/data`);
-  await page.getByRole("tab", { name: /Columns & roles/ }).click();
-  await expect(page.getByText(/training rows/).first()).toBeVisible();
+  await page.getByRole("tab", { name: /^Columns/ }).click();
+  await expect(page.getByText(/Counts are over the .* training rows/)).toBeVisible();
   await expect(page.getByText("Final test set rows are never counted.", { exact: false })).toBeVisible();
-  const table = page.getByRole("table", { name: "Columns and roles" });
-  await expect(table).toContainText("identifier");
-  await expect(table).toContainText("target");
-  await expect(table).toContainText("imputer:median");
+  const table = page.getByRole("table", { name: "Columns", exact: true });
+  await expect(table).toContainText("ID column, not a predictor");
+  await expect(table).toContainText("This is what we predict");
+  await expect(page.getByRole("region", { name: "File summary" })).toContainText("What we predict");
+  await expect(page.getByRole("region", { name: "File summary" })).toContainText("Columns used");
+  await page.getByText("Technical details per column").click();
+  const details = page.getByRole("table", { name: "Column details" });
+  await expect(details).toContainText("identifier");
+  await expect(details).toContainText("imputer:median");
+  const pageText = await page.locator("main").innerText();
+  expect(pageText).not.toMatch(/service token|\bscope\b|\bdigest\b|holdout|champion|ADR 0005|Split plan/i);
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "2-columns");
 
-  await page.getByRole("tab", { name: /Leakage audit/ }).click();
-  await expect(page.getByRole("table", { name: "Columns excluded by the leakage plan" })).toContainText("customer_code");
+  await page.getByRole("tab", { name: /^Data checks/ }).click();
+  await expect(page.getByRole("table", { name: "Data checks" })).toContainText("Duplicates");
+  await expect(page.getByRole("table", { name: "Data checks" })).toContainText("Missing values");
+  // An ID column is "not a predictor", not leakage: it is not listed as left out by the leakage plan.
+  await expect(page.getByRole("table", { name: "Columns left out by the leakage plan" })).not.toContainText("customer_code");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "3-leakage");
 
@@ -101,21 +114,51 @@ test("Data page: names only before a split, training-row profile after the first
   await expect(sidebarNav.getByRole("link", { name: "Predictions" })).toHaveAttribute("href", new RegExp(`/projects/${projectId}/models/[0-9a-f-]{36}\\?tab=score$`));
   await sidebarNav.getByRole("link", { name: "Goal & test design" }).click();
   await expect(page.getByRole("heading", { name: "Goal & test design", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Rows per partition" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How we test" })).toBeVisible();
+  await expect(page.getByText("How we rank models")).toBeVisible();
+  await expect(page.getByText("Why this design?")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Who decided" })).toBeVisible();
+  // No final test set score from the run appears on this page.
+  const refsForCard = await page.request.get(`/api/backend/v1/projects/${projectId}/refs`).then((r) => r.json()) as { items: Array<{ ref_kind: string; target: { id: string } }> };
+  const championId = refsForCard.items.find((ref) => ref.ref_kind === "champion_model")?.target.id;
+  const card = await page.request.get(`/api/backend/v1/model-versions/${championId}/card`).then((r) => r.json()) as { final_evaluation?: unknown };
+  const finalNumbers: number[] = [];
+  const walk = (value: unknown): void => {
+    if (typeof value === "number" && Math.abs(value) < 1 && /\.\d{4,}/.test(String(value))) finalNumbers.push(value);
+    else if (value && typeof value === "object") Object.values(value).forEach(walk);
+  };
+  walk(card.final_evaluation);
+  const goalText = await page.locator("main").innerText();
+  for (const n of finalNumbers) expect(goalText).not.toContain(n.toFixed(3));
+  expect(goalText).not.toMatch(/holdout|final_evaluation/i);
   expect(await axeViolations(page)).toEqual([]);
+  await shot(page, "6-goal");
   await page.emulateMedia({ colorScheme: "dark" });
+  expect(await axeViolations(page)).toEqual([]);
+  await shot(page, "7-goal-dark");
+  await page.goto(`/projects/${projectId}/data`);
+  await page.getByRole("tab", { name: /^Columns/ }).click();
+  await expect(page.getByRole("table", { name: "Columns", exact: true })).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+  await shot(page, "8-columns-dark");
+  await page.getByRole("tab", { name: /^Data checks/ }).click();
   expect(await axeViolations(page)).toEqual([]);
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(`/projects/${projectId}/data`);
   await page.getByRole("tab", { name: /Versions/ }).click();
   await expect(page.getByRole("table", { name: "Data versions" })).toContainText("in use");
-  await expect(page.getByRole("table", { name: "Data versions" })).toContainText("1 split plan");
-  await expect(page.getByRole("table", { name: "Data versions" })).toContainText("prepared by a run");
+  await expect(page.getByRole("table", { name: "Data versions" })).toContainText("1 test design");
+  await expect(page.getByRole("table", { name: "Data versions" })).toContainText("made by a run");
   await shot(page, "4-versions");
 
-  await page.getByRole("tab", { name: /Policy & access/ }).click();
+  await page.getByRole("tab", { name: /^Access/ }).click();
+  await expect(page.getByText("Published for training, predictions and download by members of this workspace; not shared with other workspaces.")).toBeVisible();
+  await expect(page.getByText("What AI help may see")).toBeVisible();
+  await expect(page.getByText("never leave your workspace")).toHaveCount(0);
+  await page.getByText("Technical details", { exact: true }).click();
   await expect(page.getByText("internal_training")).toBeVisible();
-  await expect(page.getByText("Data class for AI")).toBeVisible();
+  await expect(page.getByText("Retention label (not yet enforced)")).toBeVisible();
+  await expect(page.getByText("Storage label (not yet enforced)")).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "5-policy");
 

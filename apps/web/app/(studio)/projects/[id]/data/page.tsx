@@ -10,13 +10,14 @@ import { PageGuide } from "@/components/studio/PageGuide";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill, type PillTone } from "@/components/studio/Pill";
 import { SectionTabs } from "@/components/studio/SectionTabs";
+import { Stat } from "@/components/studio/Stat";
 import { safeInternalHref } from "@/components/studio/safe-href";
 import { Term } from "@/components/studio/Term";
 import { FindingsPanel } from "@/app/components/studio-app/FindingsPanel";
-import { PhaseEmpty, QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
+import { QueryNotice, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { ActionKeys, mapWizardError, useProjectDatasets, useProjectRefs, type PlainError, type StudioDatasetItem } from "@/lib/application";
-import { projectHref } from "@/lib/application/command-search";
-import { compareRoles, percent, pickDatasetId, preparedIds, roleLabel, usedBy, usedByText } from "@/lib/application/studio-data";
+import { plainText, projectHref } from "@/lib/application/command-search";
+import { columnUse, compareRoles, dataCheckRows, fileSummary, leakageExcluded, percent, pickDatasetId, preparedIds, roleLabel, typeLabel, usedBy, usedByText, type CheckRow } from "@/lib/application/studio-data";
 import { dataVersionName } from "@/lib/application/studio-names";
 import {
   makeDatasetCurrent, useDatasetProfile, useDatasetVersion, useExperimentFindings, useProjectGraph, useRefInvalidation,
@@ -29,9 +30,17 @@ const TERMS = {
   rule: "The role a fixed, deterministic rule gives the column on the training rows. It works with AI off.",
   used: "What the run actually did with the column. It differs from the rules' answer when a change you made or an accepted suggestion changed it.",
   importance: "How much the cross-validation score drops when the column's values are shuffled, on validation folds only.",
-  policy: "The upload policy of ADR 0005: a structurally valid upload is published for deterministic training inside this workspace only.",
-  dataClass: "The most an AI call may receive from this dataset: none, metadata (names and types), aggregates (counts) or sample values.",
-  ref: "The data version new runs use. Changing it is saved in History.",
+  inUse: "The data version new runs use. Changing it is saved in History.",
+  dataClass: "The most that AI help may receive from this file, if you switch it on: nothing, column names and types, summary counts, or sample values.",
+};
+const AI_CLASS_WORDS: Record<string, string> = {
+  none: "Nothing from this file",
+  metadata: "Column names and types only",
+  aggregates: "Column names, types and summary counts",
+  sample_values: "Column names, types, summary counts and sample values",
+};
+const USED_PILL: Record<string, { tone: PillTone; text: string }> = {
+  yes: { tone: "ok", text: "yes" }, no: { tone: "gray", text: "no" }, target: { tone: "det", text: "target" }, unknown: { tone: "gray", text: "not clear yet" },
 };
 const ROLE_TONE: Record<string, PillTone> = { target: "ok", identifier: "gray", ignored_free_text: "gray" };
 
@@ -39,56 +48,57 @@ function RolePill({ role }: { role: string | null | undefined }) {
   return role ? <Pill tone={ROLE_TONE[role] ?? "det"}>{roleLabel(role)}</Pill> : <span className="muted">—</span>;
 }
 
-const COLUMN_TABLE: Column<StudioProfileColumn>[] = [
-  { key: "name", header: "Column", sortValue: (c) => c.ordinal_position, render: (c) => <span className="mono">{c.name}</span> },
-  { key: "type", header: "Type", sortValue: (c) => c.physical_dtype, render: (c) => c.physical_dtype },
-  {
-    key: "used", header: "Role used", sortValue: (c) => c.role_used ?? "",
-    render: (c) => (
-      <>
-        <RolePill role={c.role_used} />
-        {compareRoles(c.rule_role, c.role_used) === "differs" ? <> <Pill tone="warn">differs · {c.leakage_excluded ? "leakage plan" : `set by ${roleLabel(c.role_source)}`}</Pill></> : null}
-      </>
-    ),
-  },
-  { key: "rule", header: "Rule role", sortValue: (c) => c.rule_role ?? "", render: (c) => <RolePill role={c.rule_role} /> },
-  { key: "missing", header: "Missing", numeric: true, sortValue: (c) => c.missing_fraction ?? -1, render: (c) => (c.missing_count == null ? "—" : `${percent(c.missing_fraction)} (${c.missing_count})`) },
-  { key: "unique", header: "Unique", numeric: true, sortValue: (c) => c.unique_count ?? -1, render: (c) => c.unique_count ?? "—" },
-  { key: "transform", header: "Transform", render: (c) => (c.leakage_excluded ? "excluded" : c.transforms.length ? c.transforms.join(" · ") : "—") },
+const columnTable = (hasRun: boolean): Column<StudioProfileColumn>[] => [
+  { key: "name", header: "Column", sortValue: (c) => c.ordinal_position, render: (c) => <span className="mono">{plainText(c.name, 80)}</span> },
+  { key: "type", header: "Type", sortValue: (c) => typeLabel(c.physical_dtype, c.role_used ?? c.rule_role), render: (c) => typeLabel(c.physical_dtype, c.role_used ?? c.rule_role) },
+  { key: "missing", header: "Missing", numeric: true, sortValue: (c) => c.missing_fraction ?? -1, render: (c) => percent(c.missing_fraction) },
+  { key: "used", header: "Used?", sortValue: (c) => columnUse(c, hasRun).used, render: (c) => { const pill = USED_PILL[columnUse(c, hasRun).used]; return <Pill tone={pill.tone}>{pill.text}</Pill>; } },
+  { key: "why", header: "Why", render: (c) => columnUse(c, hasRun).reason ?? "—" },
   { key: "importance", header: "Importance", numeric: true, sortValue: (c) => c.importance ?? -1, render: (c) => (c.importance == null ? "—" : c.importance.toFixed(3)) },
 ];
 
-const LEAKAGE_TABLE: Column<StudioProfileColumn>[] = [
-  { key: "name", header: "Column", render: (c) => <span className="mono">{c.name}</span> },
-  { key: "risk", header: "Risk", render: (c) => c.leakage_risk ?? "—" },
-  { key: "reason", header: "Reason (recorded by the rule)", render: (c) => c.leakage_reason ?? "—" },
-  { key: "used", header: "Role used", render: (c) => <RolePill role={c.role_used} /> },
+const DETAIL_TABLE: Column<StudioProfileColumn>[] = [
+  { key: "name", header: "Column", render: (c) => <span className="mono">{plainText(c.name, 80)}</span> },
+  { key: "used", header: "Role used", render: (c) => (
+    <>
+      <RolePill role={c.role_used} />
+      {compareRoles(c.rule_role, c.role_used) === "differs" ? <> <Pill tone="warn">differs · {c.leakage_excluded ? "left out for leakage" : `set by ${roleLabel(c.role_source)}`}</Pill></> : null}
+    </>
+  ) },
+  { key: "rule", header: "Rule role", render: (c) => <RolePill role={c.rule_role} /> },
+  { key: "missingN", header: "Missing rows", numeric: true, render: (c) => c.missing_count ?? "—" },
+  { key: "unique", header: "Distinct values", numeric: true, render: (c) => c.unique_count ?? "—" },
+  { key: "transform", header: "Transform", render: (c) => (c.leakage_excluded ? "left out" : c.transforms.length ? c.transforms.map((t) => plainText(t, 40)).join(" · ") : "—") },
+];
+
+const LEFT_OUT_TABLE: Column<StudioProfileColumn>[] = [
+  { key: "name", header: "Column", render: (c) => <span className="mono">{plainText(c.name, 80)}</span> },
+  { key: "risk", header: "Risk", render: (c) => (c.leakage_risk ? plainText(c.leakage_risk, 40) : "—") },
+  { key: "reason", header: "Why (recorded by the rules)", render: (c) => (c.leakage_reason ? plainText(c.leakage_reason, 240) : "—") },
 ];
 
 function ScopeNote({ profile }: { profile: StudioDatasetProfile }) {
   if (profile.statistics_status === "computed" && profile.split_plan) {
     return (
       <p className="muted">
-        Statistics over the {profile.split_plan.training_row_count} <Term definition={TERMS.training}>training rows</Term> of split
-        plan v{profile.split_plan.version} <span className="mono">{profile.split_plan.id.slice(0, 8)}</span>
-        {profile.split_plan.source === "project_ref" ? " (the test design in use)" : " (this version's newest plan)"}. Final test set rows are never counted.
+        Counts are over the {profile.split_plan.training_row_count.toLocaleString("en-GB")} <Term definition={TERMS.training}>training rows</Term> of{" "}
+        {profile.split_plan.source === "project_ref" ? "the test design in use" : "this version's newest test design"}. Final test set rows are never counted.
       </p>
     );
   }
   if (profile.statistics_status === "unavailable") {
-    return <Banner tone="warn">The test design&apos;s row map could not be verified, so statistics are withheld. Names and types come from the upload.</Banner>;
+    return <Banner tone="warn">The test design&apos;s row map could not be verified, so counts are withheld. Names and types come from the upload.</Banner>;
   }
-  return <Banner>No test design yet. Statistics appear after the first run fixes the final test set; until then only names and types from the upload are shown.</Banner>;
+  return <Banner>No test design yet. Counts appear after the first run fixes the final test set; until then only names and types from the upload are shown.</Banner>;
 }
 
 function RunNote({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
-  if (!profile.experiment) return <p className="muted">No completed run on this test design yet, so what the run did, transforms and importance are empty.</p>;
+  if (!profile.experiment) return <p className="muted">No finished run on this test design yet, so what the run did, transforms and importance are empty.</p>;
   const href = projectHref(projectId, "experiments", profile.experiment.id);
-  const label = <span className="mono">{profile.experiment.id.slice(0, 8)}</span>;
   return (
     <p className="muted">
-      Role used, transforms and <Term definition={TERMS.importance}>importance</Term> come from run {href ? <Link href={href}>{label}</Link> : label}
-      {profile.experiment.selection === "champion" ? ", the run of the model in use on this test design." : ", the newest completed run on this test design."}
+      What the run did, transforms and <Term definition={TERMS.importance}>importance</Term> come from {href ? <Link href={href}>this run</Link> : "this run"}
+      {profile.experiment.selection === "champion" ? ", the run of the model in use." : ", the newest finished run on this test design."}
     </p>
   );
 }
@@ -126,19 +136,20 @@ function VersionsTab({ projectId, datasets, selected, onSelect }: { projectId: s
       key: "version", header: "Version", sortValue: (d) => d.created_at,
       render: (d) => (
         <>
-          {dataVersionName(d.name, d.created_at)} <span className="muted">(version {d.version})</span> {ref?.target.id === d.id ? <Pill tone="ok">in use</Pill> : null} {prepared.has(d.id) ? <Pill tone="gray">prepared by a run</Pill> : null} {d.id === selected ? <Pill tone="det">shown</Pill> : null}
+          {dataVersionName(plainText(d.name, 80), d.created_at)} <span className="muted">(version {plainText(d.version, 20)})</span> {ref?.target.id === d.id ? <Pill tone="ok">in use</Pill> : null} {prepared.has(d.id) ? <Pill tone="gray">made by a run</Pill> : null} {d.id === selected ? <Pill tone="det">shown</Pill> : null}
         </>
       ),
     },
     { key: "shape", header: "Rows × columns", numeric: true, sortValue: (d) => d.row_count, render: (d) => `${d.row_count} × ${d.column_count}` },
     { key: "used", header: "Used by", render: (d) => (graph.data ? usedByText(usedBy(edges, d.id)) : "—") },
     { key: "created", header: "Uploaded", sortValue: (d) => d.created_at, render: (d) => formatWhen(d.created_at) },
+    { key: "details", header: "Details", render: (d) => <details><summary>Show</summary><span className="muted">id </span><span className="mono">{d.id}</span></details> },
     {
       key: "actions", header: "Actions",
       render: (d) => (
         <span className="toolbar">
-          {d.id !== selected ? <button type="button" className="btn" onClick={() => onSelect(d.id)}>Show profile<span className="sr-only"> of {dataVersionName(d.name, d.created_at)}</span></button> : null}
-          {ref?.target.id !== d.id && refs.data && !prepared.has(d.id) ? <button type="button" className="btn" onClick={() => { setPending(d.id); setError(null); }}>Use this data<span className="sr-only">: {dataVersionName(d.name, d.created_at)}</span></button> : null}
+          {d.id !== selected ? <button type="button" className="btn" onClick={() => onSelect(d.id)}>Show columns<span className="sr-only"> of {dataVersionName(plainText(d.name, 80), d.created_at)}</span></button> : null}
+          {ref?.target.id !== d.id && refs.data && !prepared.has(d.id) ? <button type="button" className="btn" onClick={() => { setPending(d.id); setError(null); }}>Use this data<span className="sr-only">: {dataVersionName(plainText(d.name, 80), d.created_at)}</span></button> : null}
         </span>
       ),
     },
@@ -147,16 +158,16 @@ function VersionsTab({ projectId, datasets, selected, onSelect }: { projectId: s
   return (
     <>
       <p className="muted">
-        The <Term definition={TERMS.ref}>data in use</Term> {ref ? <>is {dataVersionName(datasets.find((d) => d.id === ref.target.id)?.name, datasets.find((d) => d.id === ref.target.id)?.created_at)}.</> : "is not set yet; the first finished run sets it."}
-        {graph.data?.truncated ? " The graph is truncated, so “Used by” may be incomplete." : ""}
+        The <Term definition={TERMS.inUse}>data in use</Term> {ref ? <>is {dataVersionName(plainText(datasets.find((d) => d.id === ref.target.id)?.name, 80), datasets.find((d) => d.id === ref.target.id)?.created_at)}.</> : "is not set yet; the first finished run sets it."}
+        {graph.data?.truncated ? " Only the newest runs are loaded, so “Used by” may be incomplete." : ""}
       </p>
       {refs.isError ? <QueryNotice error={refs.error} what="versions in use" /> : null}
-      {graph.isError ? <QueryNotice error={graph.error} what="project graph" /> : null}
+      {graph.isError ? <QueryNotice error={graph.error} what="what uses each version" /> : null}
       <DataTable caption="Data versions" columns={columns} rows={datasets} rowKey={(d) => d.id} highlightRow={(d) => d.id === selected} />
       {target ? (
         <form className="form card" onSubmit={(event) => { event.preventDefault(); void confirm(); }}>
-          <h3>Use {dataVersionName(target.name, target.created_at)} as the data in use</h3>
-          <p className="muted">This is saved in History. Runs, test designs and models built on the old version show as built on an older version in the lineage; nothing is retrained.</p>
+          <h3>Use {dataVersionName(plainText(target.name, 80), target.created_at)} (version {plainText(target.version, 20)}) as the data in use</h3>
+          <p className="muted">This is saved in History. Runs, test designs and models built on the old version show as built on an older version; nothing is retrained and old files are never changed or deleted.</p>
           {error ? <Banner tone="crit"><b>{error.title}.</b> {error.detail}</Banner> : null}
           <label className="field"><span>Why (saved with the change)</span>
             <textarea value={rationale} maxLength={2000} rows={2} required onChange={(e) => setRationale(e.target.value)} disabled={busy} />
@@ -171,63 +182,67 @@ function VersionsTab({ projectId, datasets, selected, onSelect }: { projectId: s
   );
 }
 
-function LeakageTab({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
+function ChecksTab({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
   const findings = useExperimentFindings(profile.experiment?.id);
-  if (!profile.experiment) return <div className="empty">The leakage check runs inside each run. No completed run on this version&apos;s test design yet.</div>;
-  const leakage = findings.data?.checks?.find((check) => check.check === "target_leakage");
-  const excluded = profile.columns.filter((c) => c.leakage_excluded);
+  const rows = dataCheckRows(profile, findings.data?.checks ?? null, (v, max = 120) => plainText(v, max), { findingsLoading: findings.isPending && Boolean(profile.experiment), findingsError: findings.isError });
+  const excluded = leakageExcluded(profile.columns);
+  const TONE: Record<string, PillTone> = { ok: "ok", info: "det", attention: "warn", unknown: "gray" };
+  const WORD: Record<string, string> = { ok: "ok", info: "for your information", attention: "look at this", unknown: "not checked yet" };
+  const checkColumns: Column<CheckRow>[] = [
+    { key: "check", header: "Check", render: (r) => r.label },
+    { key: "result", header: "Result", render: (r) => <Pill tone={TONE[r.result]}>{WORD[r.result]}</Pill> },
+    { key: "found", header: "What we found", render: (r) => r.text },
+  ];
   return (
     <>
-      <RunNote projectId={projectId} profile={profile} />
+      <p className="muted">Checks on the training rows. They run inside every run and work with AI off.</p>
       {findings.isError ? <QueryNotice error={findings.error} what="trust checks" /> : null}
-      {leakage ? (
-        <Banner tone={leakage.status === "pass" ? "info" : "warn"}>
-          <Pill tone={leakage.status === "pass" ? "ok" : (STATUS_TONE[leakage.status] ?? "warn")}>{leakage.status.replaceAll("_", " ")}</Pill> {leakage.message}
-        </Banner>
-      ) : findings.data ? <p className="muted">This run has no recorded target-leakage check.</p> : null}
-      <DataTable caption="Columns excluded by the leakage plan" columns={LEAKAGE_TABLE} rows={excluded} rowKey={(c) => c.name}
-        emptyMessage="The run's train-only leakage plan excluded no column." />
-      <p className="muted">The audit runs on training rows only. Re-including an excluded column is a new root run; the final test set stays the same rows.</p>
+      <DataTable caption="Data checks" columns={checkColumns} rows={rows} rowKey={(r) => r.key} />
+      {excluded.length ? (
+        <>
+          <h3>Columns left out by the leakage plan</h3>
+          <DataTable caption="Columns left out by the leakage plan" columns={LEFT_OUT_TABLE} rows={excluded} rowKey={(c) => c.name} />
+          <p className="muted">Putting a left-out column back is a new run; the final test set stays the same rows.</p>
+        </>
+      ) : null}
+      {profile.experiment ? (
+        <>
+          <h3>All trust checks of the run</h3>
+          <RunNote projectId={projectId} profile={profile} />
+          <FindingsPanel projectId={projectId} experimentId={profile.experiment.id} />
+        </>
+      ) : null}
     </>
   );
 }
 
-function DataFindingsTab({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
-  const experiment = profile.experiment;
-  if (!experiment) return <div className="empty">The trust checks run inside each run. No completed run on this version&apos;s test design yet, so there is nothing to show.</div>;
-  const href = projectHref(projectId, "experiments", experiment.id);
-  const label = <span className="mono">{experiment.id.slice(0, 8)}</span>;
-  return (
-    <>
-      <p className="muted">
-        From experiment {href ? <Link href={href}>{label}</Link> : label}
-        {experiment.selection === "champion" ? ", the run of the model in use on this test design." : ", the newest completed run on this test design."}
-      </p>
-      <FindingsPanel projectId={projectId} experimentId={experiment.id} />
-      <PhaseEmpty title="Open data questions arrive with the questions inbox." phase="P4.16-UI" />
-    </>
-  );
-}
-
-function PolicyTab({ datasetId }: { datasetId: string }) {
+function AccessTab({ datasetId }: { datasetId: string }) {
   const version = useDatasetVersion(datasetId);
   if (version.isError) return <QueryNotice error={version.error} what="dataset" />;
-  if (!version.data) return <p role="status">Loading policy…</p>;
+  if (!version.data) return <p role="status">Loading access…</p>;
   const p = version.data.policy;
+  const items = [
+    { key: "grant", label: "Who it is shared with", value: p.upload_policy ? "Published for training, predictions and download by members of this workspace; not shared with other workspaces." : "Not published (cannot be used for training)." },
+    { key: "ai", label: <Term definition={TERMS.dataClass}>What AI help may see</Term>, value: Object.hasOwn(AI_CLASS_WORDS, p.ai_data_class) ? AI_CLASS_WORDS[p.ai_data_class] : plainText(p.ai_data_class, 40) },
+    { key: "labels", label: "Column labels", value: p.policy_complete ? "Every column is labelled" : "Some columns are not labelled yet" },
+  ];
   return (
     <>
-      <KeyValue items={[
-        { key: "upload", label: <Term definition={TERMS.policy}>Upload policy</Term>, value: p.upload_policy ? <><span className="mono">{p.upload_policy}</span> (ADR 0005)</> : "Not published under an upload policy" },
-        { key: "pub", label: "Publication state", value: p.publication_state ?? "—" },
-        { key: "ai", label: <Term definition={TERMS.dataClass}>Data class for AI</Term>, value: <><Pill tone={p.ai_data_class === "none" ? "gray" : "ai"}>{p.ai_data_class}</Pill> exposure label <span className="mono">{p.llm_exposure_policy}</span>{p.workspace_ai_max_class ? <> · workspace AI policy allows up to <span className="mono">{p.workspace_ai_max_class}</span></> : " · no workspace AI policy in effect"}</> },
-        { key: "sens", label: "Sensitivity", value: p.sensitivity_class ?? "unresolved" },
-        { key: "ret", label: "Retention", value: p.retention_class ?? "unresolved" },
-        { key: "res", label: "Residency", value: p.residency_class ?? "unresolved" },
-        { key: "rev", label: "Policy revision", value: `${p.policy_revision ?? "none"} · ${p.policy_complete ? "every column labelled" : "labels incomplete"}` },
-      ]} />
+      <KeyValue items={items} />
       <h3>Who can read</h3>
-      <p>Members of this workspace with read access, and this workspace&apos;s service tokens with the <span className="mono">read</span> scope. Tokens and agents get the same profile: names, types and training-row counts, never rows and never final test set values.</p>
-      <PhaseEmpty title="A per-person access list" phase="the Settings page (members)" />
+      <p>Members of this workspace who can read data. On this page, connected tools (access token) with read access get the same summary: column names, types and training-row counts, never final test set values. They can also download prediction files of this project.</p>
+      <details>
+        <summary>Technical details</summary>
+        <KeyValue items={[
+          { key: "up", label: "Upload policy", value: p.upload_policy ? <span className="mono">{plainText(p.upload_policy, 60)}</span> : "Not published under an upload policy" },
+          { key: "pub", label: "Publication state", value: plainText(p.publication_state, 60) || "—" },
+          { key: "sens", label: "Sensitivity label", value: p.sensitivity_class ? plainText(p.sensitivity_class, 60) : "not set" },
+          { key: "ret", label: "Retention label (not yet enforced)", value: p.retention_class ? plainText(p.retention_class, 60) : "not set" },
+          { key: "res", label: "Storage label (not yet enforced)", value: p.residency_class ? plainText(p.residency_class, 60) : "not set" },
+          { key: "exp", label: "Exposure label", value: <span className="mono">{plainText(p.llm_exposure_policy, 60)}</span> },
+          { key: "ws", label: "Workspace AI limit", value: p.workspace_ai_max_class ? <span className="mono">{plainText(p.workspace_ai_max_class, 40)}</span> : "none set" },
+        ]} />
+      </details>
     </>
   );
 }
@@ -247,42 +262,50 @@ export default function DataPage() {
   const shown = rows.find((d) => d.id === selected);
   const experiments = projectHref(id, "experiments");
   const newRun = experiments ? safeInternalHref(`${experiments}/new`) : null;
+  const summary = shown ? fileSummary(shown, profile.data, (v) => plainText(v, 60)) : [];
   return (
     <>
-      <PageHead title="Data" subtitle="Your data versions, what each column is used for, the leakage check and who can see the data. Statistics come from training rows only; the rules' answer is shown beside what the run used." />
+      <PageHead title="Data" subtitle="The files in this project, what is in them and which columns the model uses." />
       <PageGuide
         purpose="Check what the model was built from before you trust it."
-        howTo={<>Pick a version under Versions. Columns &amp; roles compares the <Term definition={TERMS.rule}>rule role</Term> with the <Term definition={TERMS.used}>role used</Term>.</>}
-        youGet="Per-column types, missing and unique counts on training rows, transforms, importance, leakage exclusions and the policy that governs the data."
-        attention="Statistics never include the final test set. Before the first run there is no split, so only names and types are shown."
+        howTo={<>Pick a file under Versions. Columns shows which columns are used and why; the technical details compare the <Term definition={TERMS.rule}>rule role</Term> with the <Term definition={TERMS.used}>role used</Term>.</>}
+        youGet="Rows and columns, missing values, what each column is used for, the data checks and who can see the data."
+        attention="Counts never include the final test set (used once). Before the first run no test design exists, so only names and types are shown."
       />
       {datasets.isError ? <QueryNotice error={datasets.error} what="dataset list" /> : null}
-      {datasets.isPending ? <p role="status">Loading datasets…</p> : null}
+      {datasets.isPending ? <p role="status">Loading data…</p> : null}
       {datasets.data && rows.length === 0 ? (
         <div className="empty">No training data in this project yet. {newRun ? <Link href={newRun}>Start a run with a file</Link> : null}</div>
       ) : null}
       {selected && shown ? (
-        <SectionTabs
-          title={`${shown.name} · ${shown.version}`}
-          idPrefix="data"
-          aside={<span className="mono muted">{shown.id.slice(0, 8)}</span>}
-          sections={[
-            { id: "versions", label: "Versions", count: rows.length, content: <VersionsTab projectId={id} datasets={rows} selected={selected} onSelect={setChosen} /> },
-            {
-              id: "columns", label: "Columns & roles", count: profile.data?.columns.length,
-              content: profile.isError ? <QueryNotice error={profile.error} what="column profile" /> : !profile.data ? <p role="status">Loading profile…</p> : (
-                <>
-                  <ScopeNote profile={profile.data} />
-                  <RunNote projectId={id} profile={profile.data} />
-                  <DataTable caption="Columns and roles" columns={COLUMN_TABLE} rows={profile.data.columns} rowKey={(c) => c.name} />
-                </>
-              ),
-            },
-            { id: "leakage", label: "Leakage audit", content: profile.data ? <LeakageTab projectId={id} profile={profile.data} /> : <p role="status">Loading profile…</p> },
-            { id: "findings", label: "Findings & questions", content: profile.data ? <DataFindingsTab projectId={id} profile={profile.data} /> : <p role="status">Loading profile…</p> },
-            { id: "policy", label: "Policy & access", content: <PolicyTab datasetId={selected} /> },
-          ]}
-        />
+        <>
+          <section className="grid cols-4" aria-label="File summary">
+            {summary.map((item) => <Stat key={item.key} value={item.value} label={item.label} />)}
+          </section>
+          <SectionTabs
+            title={dataVersionName(plainText(shown.name, 80), shown.created_at)}
+            idPrefix="data"
+            sections={[
+              {
+                id: "columns", label: "Columns", count: profile.data?.columns.length,
+                content: profile.isError ? <QueryNotice error={profile.error} what="column profile" /> : !profile.data ? <p role="status">Loading columns…</p> : (
+                  <>
+                    <ScopeNote profile={profile.data} />
+                    <RunNote projectId={id} profile={profile.data} />
+                    <DataTable caption="Columns" columns={columnTable(Boolean(profile.data.experiment))} rows={profile.data.columns} rowKey={(c) => c.name} />
+                    <details>
+                      <summary>Technical details per column</summary>
+                      <DataTable caption="Column details" columns={DETAIL_TABLE} rows={profile.data.columns} rowKey={(c) => c.name} />
+                    </details>
+                  </>
+                ),
+              },
+              { id: "versions", label: "Versions", count: rows.length, content: <VersionsTab projectId={id} datasets={rows} selected={selected} onSelect={setChosen} /> },
+              { id: "checks", label: "Data checks", content: profile.data ? <ChecksTab projectId={id} profile={profile.data} /> : <p role="status">Loading data checks…</p> },
+              { id: "access", label: "Access", content: <AccessTab datasetId={selected} /> },
+            ]}
+          />
+        </>
       ) : null}
     </>
   );

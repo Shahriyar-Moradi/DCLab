@@ -74,17 +74,21 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
     if (node.source.includes("Split")) await shot(page, "1-drawer");
     await open.click();
     await expect(page).toHaveURL(route);
-    await expect(page.getByRole("heading", { name: "Reason" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: node.source.includes("Split") ? "Goal & test design" : "Reason", level: node.source.includes("Split") ? 1 : undefined })).toBeVisible();
     await expect(page.getByText(/^Loading/)).toHaveCount(0);
     expect(await axeViolations(page)).toEqual([]);
     await shot(page, `2-${hrefs.length}-${title.source.replace(/\W/g, "").toLowerCase()}`);
   }
 
-  // Split plan: counts only, no holdout values; feature recipe: formula and code snippet.
+  // Goal & test design: the target, the picture of the folds and counts only, no final test set values; feature recipe: formula and code snippet.
   await page.goto(hrefs[0]);
-  await expect(page.getByRole("heading", { name: "Rows per partition" })).toBeVisible();
-  await expect(page.getByText("counts only", { exact: true })).toBeVisible();
-  await expect(page.getByText("Strategy", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How we test" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What we predict" })).toBeVisible();
+  await expect(page.getByText("How we rank models")).toBeVisible();
+  await expect(page.getByRole("img", { name: /cross-validation folds/ })).toBeVisible();
+  await expect(page.getByText("Why this design?")).toBeVisible();
+  await expect(page.getByText(/(Time-ordered|Grouped|Random)/).first()).toBeVisible();
+  await expect(page.getByText("Training rows", { exact: true })).toBeVisible();
   await page.goto(hrefs[1]);
   await expect(page.getByRole("table", { name: "Features of this recipe" })).toContainText("tenure");
   await page.getByRole("button", { name: /^monthly_spend/ }).click();

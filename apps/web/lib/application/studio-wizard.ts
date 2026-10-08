@@ -9,8 +9,8 @@
 export type WizardStepId = "data" | "target" | "objective" | "train";
 export const WIZARD_STEPS: ReadonlyArray<{ id: WizardStepId; label: string }> = [
   { id: "data", label: "1 Data" },
-  { id: "target", label: "2 Target and task" },
-  { id: "objective", label: "3 Objective" },
+  { id: "target", label: "2 What to predict" },
+  { id: "objective", label: "3 What good looks like" },
   { id: "train", label: "4 Train" },
 ];
 
@@ -74,7 +74,7 @@ export function buildSpecBody(task: TaskType, target: string | null, objective: 
 export function objectiveProblem(objective: ObjectiveDraft): string | null {
   const draft = objective.constraint;
   if (!draft || !draft.metric) return null;
-  if (draft.value.trim() === "" || !Number.isFinite(Number(draft.value))) return "Enter a number for the constraint, or remove the constraint.";
+  if (draft.value.trim() === "" || !Number.isFinite(Number(draft.value))) return "Enter a number for the business rule, or remove the rule.";
   return null;
 }
 
@@ -135,9 +135,9 @@ const BY_CODE: Record<string, PlainError> = {
   target_not_in_dataset: { title: "That target column is not in the data", detail: "Pick a column that exists in the uploaded file.", fixable: true },
   target_intent_conflict: { title: "The target differs from the objective", detail: "The project's objective already names another target column. Use the same column, or create a new objective.", fixable: true },
   plan_refused: { title: "The run plan was refused", detail: "The plan cannot be used for this objective. The run can start without it; DCLab uses its own rules.", fixable: true },
-  split_confirmation_required: { title: "Confirm how the data is split", detail: "The run waits for your answer on the experiment page before anything is split.", fixable: true },
-  target_confirmation_required: { title: "Confirm the target column", detail: "DCLab found several possible targets. Choose one on the experiment page, or pick it here.", fixable: true },
-  execution_not_waiting: { title: "This run is not waiting for an answer", detail: "It may already have been answered. Reload the experiment to see its state.", fixable: false },
+  split_confirmation_required: { title: "Confirm the test design", detail: "The run waits for your answer on the run page before the data is split.", fixable: true },
+  target_confirmation_required: { title: "Confirm the target column", detail: "DCLab found several possible targets. Choose one on the run page, or pick it here.", fixable: true },
+  execution_not_waiting: { title: "This run is not waiting for an answer", detail: "It may already have been answered. Reload the run to see its state.", fixable: false },
   idempotency_key_conflict: { title: "That request was already used with different content", detail: "Reload the wizard and submit again.", fixable: false },
   upload_rejected: { title: "That file could not be read as a table", detail: "Use a CSV, TSV, JSON, Parquet or XLSX file with a header row.", fixable: true },
   payload_too_large: { title: "The file is too large", detail: "Upload a smaller file.", fixable: true },
