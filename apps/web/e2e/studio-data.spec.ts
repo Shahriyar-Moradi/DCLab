@@ -54,7 +54,7 @@ test("Data page: names only before a split, training-row profile after the first
   await page.goto(`/projects/${projectId}/data`);
   await expect(page.getByRole("heading", { name: "Data", level: 1 })).toBeVisible();
   await page.getByRole("tab", { name: /Columns & roles/ }).click();
-  await expect(page.getByText("No split plan yet.")).toBeVisible();
+  await expect(page.getByText("No test design yet.")).toBeVisible();
   await expect(page.getByRole("table", { name: "Columns and roles" })).toContainText("customer_code");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "1-before-run");
@@ -79,12 +79,11 @@ test("Data page: names only before a split, training-row profile after the first
   await page.goto(`/projects/${projectId}/data`);
   await page.getByRole("tab", { name: /Columns & roles/ }).click();
   await expect(page.getByText(/training rows/).first()).toBeVisible();
-  await expect(page.getByText("Holdout rows are never counted.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Final test set rows are never counted.", { exact: false })).toBeVisible();
   const table = page.getByRole("table", { name: "Columns and roles" });
   await expect(table).toContainText("identifier");
   await expect(table).toContainText("target");
   await expect(table).toContainText("imputer:median");
-  await expect(page.getByText("AI (Jev) role answers appear here when a decision point is promoted.")).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "2-columns");
 
@@ -93,10 +92,25 @@ test("Data page: names only before a split, training-row profile after the first
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "3-leakage");
 
+  // V7-A1 flow bar: with a finished run the data and goal steps are done and link to real pages; Goal opens the test-design page.
+  const flow = page.getByRole("navigation", { name: "Project steps" });
+  await expect(flow.getByRole("link", { name: "Data" })).toHaveAttribute("aria-current", "step");
+  await expect(flow.getByRole("link", { name: "Goal & test design" })).toHaveAttribute("href", new RegExp(`/projects/${projectId}/splits/[0-9a-f-]{36}$`));
+  await expect(flow.getByRole("link", { name: "Model" })).toBeVisible();
+  const sidebarNav = page.getByRole("navigation", { name: "Studio" });
+  await expect(sidebarNav.getByRole("link", { name: "Predictions" })).toHaveAttribute("href", new RegExp(`/projects/${projectId}/models/[0-9a-f-]{36}\\?tab=score$`));
+  await sidebarNav.getByRole("link", { name: "Goal & test design" }).click();
+  await expect(page.getByRole("heading", { name: "Goal & test design", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rows per partition" })).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await axeViolations(page)).toEqual([]);
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto(`/projects/${projectId}/data`);
   await page.getByRole("tab", { name: /Versions/ }).click();
-  await expect(page.getByRole("table", { name: "Dataset versions" })).toContainText("current");
-  await expect(page.getByRole("table", { name: "Dataset versions" })).toContainText("1 split plan");
-  await expect(page.getByRole("table", { name: "Dataset versions" })).toContainText("prepared by a run");
+  await expect(page.getByRole("table", { name: "Data versions" })).toContainText("in use");
+  await expect(page.getByRole("table", { name: "Data versions" })).toContainText("1 split plan");
+  await expect(page.getByRole("table", { name: "Data versions" })).toContainText("prepared by a run");
   await shot(page, "4-versions");
 
   await page.getByRole("tab", { name: /Policy & access/ }).click();

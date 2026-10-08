@@ -7,11 +7,14 @@ import { STATUS_TONE } from "@/app/components/studio-app/StudioParts";
 import { plainText } from "@/lib/application/command-search";
 import type { StudioGraph, StudioGraphNode } from "@/lib/application/studio-data-hooks";
 import {
-  NODE_H, NODE_W, RELATION_LABEL, builtFrom, groupByKind, kindLabel, markersFor, refBadges, shortId,
+  NODE_H, NODE_W, REF_BADGE, RELATION_LABEL, builtFrom, groupByKind, kindLabel, markersFor, refBadges, shortId,
   type DecisionMarker, type GraphLayout,
 } from "@/lib/application/studio-graph";
 
 export const nodeDomId = (node: { kind: string; id: string }) => `gn-${node.kind}-${node.id}`;
+
+/** "★ in use" -> "in use", "★ data" -> "data in use". */
+const inUseWords = (badge: string) => (badge === REF_BADGE.champion_model ? badge.replace("★ ", "") : `${badge.replace("★ ", "")} in use`);
 
 /** Spoken name of a node: kind, short id, label, status, stale, refs and AI markers (colour is never the only signal). */
 export function nodeName(node: StudioGraphNode, markers: number): string {
@@ -19,8 +22,8 @@ export function nodeName(node: StudioGraphNode, markers: number): string {
     `${kindLabel(node.kind)} ${shortId(node.id)}`,
     plainText(node.label, 80),
     node.status ? `status ${node.status.toLowerCase()}` : "",
-    node.stale ? "stale" : "",
-    ...refBadges(node).map((badge) => badge.replace("★", "ref")),
+    node.stale ? "built on an older version" : "",
+    ...refBadges(node).map(inUseWords),
     markers ? `${markers} AI decision point${markers === 1 ? "" : "s"}` : "",
   ].filter(Boolean).join(", ");
 }
@@ -29,8 +32,8 @@ function Badges({ node, markers }: { node: StudioGraphNode; markers: number }) {
   return (
     <>
       {node.status ? <Pill tone={STATUS_TONE[node.status.toLowerCase()] ?? "gray"}>{node.status.toLowerCase().replaceAll("_", " ")}</Pill> : null}
-      {refBadges(node).map((badge) => <Pill key={badge} tone={badge === "★ champion" ? "ok" : "det"}>{badge}</Pill>)}
-      {node.stale ? <Pill tone="warn"><span aria-hidden="true">⚠ </span>stale</Pill> : null}
+      {refBadges(node).map((badge) => <Pill key={badge} tone={badge === REF_BADGE.champion_model ? "ok" : "det"}>{badge}</Pill>)}
+      {node.stale ? <Pill tone="warn"><span aria-hidden="true">⚠ </span>built on an older version</Pill> : null}
       {markers ? <Pill tone="ai"><span aria-hidden="true">◆ </span>AI ×{markers}</Pill> : null}
       {node.outside_window ? <Pill tone="gray">older window</Pill> : null}
       {node.derived ? <Pill tone="gray">prepared</Pill> : null}
@@ -94,7 +97,7 @@ export function GraphCanvas({ graph, layout, markers, selected, zoom, onSelect }
   );
 }
 
-/** Accessible list fallback: every node grouped by kind, with stale flag, refs, AI markers and its "built from" edges. */
+/** Accessible list fallback: every node grouped by kind, with old-data flag, versions in use, assistant markers and its "built from" edges. */
 export function GraphList({ graph, markers, selected, onSelect }: {
   graph: StudioGraph; markers: Map<string, DecisionMarker[]>; selected: string | null; onSelect: (key: string) => void;
 }) {
@@ -123,7 +126,7 @@ export function GraphList({ graph, markers, selected, onSelect }: {
                 <li key={`${item.relation}-${item.node.id}`}>
                   {RELATION_LABEL[item.relation] ?? item.relation} {kindLabel(item.node.kind).toLowerCase()} <span className="mono">{shortId(item.node.id)}</span>
                   {target ? null : <span className="muted"> (not loaded)</span>}
-                  {item.attribute ? <span className="muted"> (attribute, not used for staleness)</span> : null}
+                  {item.attribute ? <span className="muted"> (a detail, not used to mark an older version)</span> : null}
                 </li>
               );
             })}
@@ -150,11 +153,11 @@ export function GraphLegend() {
     <section className="graph-legend" aria-label="Legend">
       <h2>Legend</h2>
       <ul>
-        <li><span className="gnode-sample" aria-hidden="true" /> A node: problem spec, dataset version, split plan, feature recipe, experiment or model version. Arrows point from what it was built from.</li>
-        <li><span className="gnode-sample ref" aria-hidden="true" /> <Pill tone="det">★ data</Pill> <Pill tone="ok">★ champion</Pill> a project ref points at this node.</li>
-        <li><span className="gnode-sample stale" aria-hidden="true" /> <Pill tone="warn"><span aria-hidden="true">⚠ </span>stale</Pill> built from a version a ref no longer points at.</li>
-        <li><span className="gnode-sample ai" aria-hidden="true" /> <Pill tone="ai"><span aria-hidden="true">◆ </span>AI ×2</Pill> recorded AI decision points about this experiment.</li>
-        <li><svg width="40" height="10" aria-hidden="true"><path d="M2,5 H38" className="gedge attr" /></svg> dashed: the run&apos;s prepared table (an attribute, not lineage for staleness).</li>
+        <li><span className="gnode-sample" aria-hidden="true" /> An item: goal, data version, test design, features, run or model. Arrows point from what it was built from.</li>
+        <li><span className="gnode-sample ref" aria-hidden="true" /> <Pill tone="det">★ data</Pill> <Pill tone="ok">★ in use</Pill> the project uses this version now.</li>
+        <li><span className="gnode-sample stale" aria-hidden="true" /> <Pill tone="warn"><span aria-hidden="true">⚠ </span>built on an older version</Pill> made from a version that is no longer in use.</li>
+        <li><span className="gnode-sample ai" aria-hidden="true" /> <Pill tone="ai"><span aria-hidden="true">◆ </span>AI ×2</Pill> recorded assistant suggestions about this run.</li>
+        <li><svg width="40" height="10" aria-hidden="true"><path d="M2,5 H38" className="gedge attr" /></svg> dashed: the run&apos;s prepared table (a detail, not lineage).</li>
       </ul>
     </section>
   );

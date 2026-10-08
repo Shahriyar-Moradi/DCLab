@@ -5,7 +5,7 @@
  * Contract: the branch builder only shapes the typed change set the API accepts (the closed kinds
  * below mirror `apps/api/app/domain/experiment_changes.py`); every semantic rule (known family,
  * observed classes, leakage exclusions) is answered by the API's own 422 and shown as it comes back.
- * Compare shows cross-validation numbers only: the schema in the hooks has no holdout field.
+ * Compare shows cross-validation numbers only: the schema in the hooks has no final test set field.
  */
 import { isUuid } from "./command-search.ts";
 import { mapWizardError, type PlainError } from "./studio-wizard.ts";
@@ -28,7 +28,7 @@ export function compareHref(projectId: string, ids: string[]): string | null {
 }
 
 const NOT_COMPARABLE: Record<string, string> = {
-  split_plan_mismatch: "These runs were split differently, so their holdouts and folds are different rows. Only runs on the same split plan can be compared fairly. Branch from one run to get a comparable run.",
+  split_plan_mismatch: "These runs were split differently, so their final test set and folds are different rows. Only runs on the same split plan can be compared fairly. Branch from one run to get a comparable run.",
   evidence_missing: "One of these runs has no locked winner with scores yet. Wait for it to finish, then compare again.",
   winner_missing: "One of these runs has no locked winner with scores yet. Wait for it to finish, then compare again.",
   not_comparable: "These runs cannot be compared (they belong to different workspaces or lack a shared plan).",
@@ -238,19 +238,19 @@ export function mapActionError(error: unknown, noun: "champion" | "decision" | "
   const code = typeof body?.error?.code === "string" ? body.error.code.toLowerCase() : "";
   const message = typeof body?.error?.message === "string" ? body.error.message : "";
   if (status === 412 || code === "precondition_failed" || code === "ref_version_conflict" || code === "stale_ref_version") {
-    return { title: noun === "champion" ? "Someone else moved the champion" : "This changed while you were looking", detail: "Reload to see the current state, then decide again.", fixable: false };
+    return { title: noun === "champion" ? "Someone else changed the model in use" : "This changed while you were looking", detail: "Reload to see the current state, then decide again.", fixable: false };
   }
   if (status === 428) return { title: "The page is out of date", detail: "Reload the page and try again.", fixable: false };
   if (code.includes("split_plan_mismatch") || code === "champion_split_plan_mismatch") {
-    return { title: "Not comparable with the current champion", detail: "This model was not evaluated on the same split plan as the current champion, so its holdout is different rows. Branch from the champion's run to stay on the same plan.", fixable: false };
+    return { title: "Not comparable with the model in use", detail: "This model was not tested on the same test design as the model in use, so its final test set is different rows. Branch from the run of the model in use to stay on the same design.", fixable: false };
   }
   if (code.startsWith("champion_") || code === "ref_target_not_found") {
-    return { title: "This model cannot be the champion yet", detail: message || "It needs a locked winner with its final evaluation, and its feature recipe must move with it.", fixable: false };
+    return { title: "This model cannot be put in use yet", detail: message || "It needs a chosen best run with its final test, and its features must move with it.", fixable: false };
   }
   if (code === "invalid_decision_transition" || (status === 409 && code !== "proposal_mismatch")) {
     return { title: noun === "decision" ? "This decision was already resolved" : noun === "cancel" ? "This run can no longer be cancelled" : "The request was refused", detail: message || "Reload the list; it was probably resolved by someone else.", fixable: false };
   }
-  if (status === 403 && !message) return { title: "You cannot do this here", detail: "Accepting, rejecting and moving refs needs a role that can write ML work in this workspace. The API enforces this; hiding the button is only a convenience.", fixable: false };
+  if (status === 403 && !message) return { title: "You cannot do this here", detail: "Accepting, rejecting and changing the version in use needs a role that can write ML work in this workspace. The API enforces this; hiding the button is only a convenience.", fixable: false };
   return mapWizardError(error);
 }
 
@@ -274,7 +274,7 @@ export function proposedMoves(decision: DecisionLike): ProposedMove[] {
 }
 
 export const DECISION_TYPE_LABEL: Record<string, string> = {
-  winner_locked: "Winner locked", split_plan_created: "Split plan created", ref_initialized: "Refs initialised", problem_spec_locked: "Objective locked",
-  ref_moved: "Ref moved", champion_promoted: "Champion promoted", experiment_accepted: "Experiment accepted", experiment_rejected: "Experiment rejected",
-  proposal_accepted: "Proposal accepted", proposal_rejected: "Proposal rejected", decision_point_resolved: "Decision point resolved", proposal_reverted: "Proposal reverted",
+  winner_locked: "Best run chosen", split_plan_created: "Test design created", ref_initialized: "Starting versions set", problem_spec_locked: "Goal confirmed",
+  ref_moved: "Version in use changed", champion_promoted: "Model put in use", experiment_accepted: "Run accepted", experiment_rejected: "Run rejected",
+  proposal_accepted: "Suggestion accepted", proposal_rejected: "Suggestion rejected", decision_point_resolved: "Kind of decision settled", proposal_reverted: "Suggestion undone",
 };

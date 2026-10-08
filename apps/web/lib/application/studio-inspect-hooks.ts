@@ -76,7 +76,7 @@ export const ModelVersionSchema = z.object({
 });
 export type StudioModelVersion = z.infer<typeof ModelVersionSchema>;
 
-/** The card read WITHOUT its `final_evaluation`: this page never shows holdout values. */
+/** The card read WITHOUT its `final_evaluation`: this page never shows final test set values. */
 export const ModelCardSchema = z.object({
   model_version_id: z.string(),
   baseline: z.object({ available: z.boolean(), text: z.string(), beats_baseline: z.boolean().nullable().optional() }),

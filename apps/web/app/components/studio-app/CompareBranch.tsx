@@ -125,10 +125,10 @@ export function BranchPanel({ projectId, experimentId, initial }: { projectId: s
     }
   };
   return (
-    <Card title="Branch this experiment" aside={<Pill tone="det">typed change set</Pill>}>
+    <Card title="Try a change" aside={<Pill tone="det">one change on top</Pill>}>
       {initial ? <Banner tone="info">Pre-filled from a finding. Review the change, add your reason if you want to change it, then start the branch; nothing runs until you do.</Banner> : null}
       <p className="muted">
-        A branch re-runs this experiment with a <Term definition="A typed list of changes applied on top of a parent experiment. The split plan and source dataset stay the same, so the branch is comparable with its parent.">change set</Term>.
+        Re-run this run with <Term definition="A list of changes applied on top of this run. The test design and data stay the same, so the new run can be compared with this one.">changes</Term> on top.
         Pick the changes below; the API validates them when you start the branch and its answer is shown here unchanged.
       </p>
       <form className="form" onSubmit={(event) => { event.preventDefault(); void send(); }}>
@@ -225,9 +225,9 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
   const flight = useRef(false);
   const decisions = projectHref(projectId, "decisions");
   if (graph.isError) return <QueryNotice error={graph.error} what="project graph" />;
-  if (refs.isError) return <QueryNotice error={refs.error} what="project refs" />;
-  if (graph.isPending || refs.isPending) return <p role="status">Checking the champion…</p>;
-  if (!modelVersionId) return <p className="muted">No model version yet: a run gets one when its winner is locked, and only then can it become the champion.</p>;
+  if (refs.isError) return <QueryNotice error={refs.error} what="versions in use" />;
+  if (graph.isPending || refs.isPending) return <p role="status">Checking the model in use…</p>;
+  if (!modelVersionId) return <p className="muted">No model yet: a run gets one when its best run is chosen, and only then can it be put in use.</p>;
   if (model.isError) return <QueryNotice error={model.error} what="model version" />;
   if (!model.data) return <p role="status">Loading the model version…</p>;
   const m = model.data;
@@ -257,23 +257,23 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
     }
   };
   return (
-    <section aria-label={`Champion state of model version ${m.id.slice(0, 8)}`}>
+    <section aria-label="Is this model in use?">
       <p>
-        Model version <span className="mono">{m.id.slice(0, 8)}</span> {isChampion ? <Pill tone="ok">★ the project&apos;s champion</Pill> : <Pill tone="gray">not the champion</Pill>}
-        {" "}{champion ? <span className="muted">Current champion: <span className="mono">{champion.target.id.slice(0, 8)}</span> (ref version {champion.version}).</span> : <span className="muted">The project has no champion yet.</span>}
+        This run&apos;s model {isChampion ? <Pill tone="ok">★ in use</Pill> : <Pill tone="gray">not in use</Pill>}
+        {" "}{champion && !isChampion ? <span className="muted">Another model is in use now.</span> : !champion ? <span className="muted">No model is in use yet.</span> : null}
       </p>
-      {moved ? <Banner tone="info">The champion ref moved and one decision was recorded.{decisions ? <> <Link href={decisions}>Open the decisions</Link>.</> : null}</Banner> : null}
-      {!isChampion && !open ? <button type="button" className="btn primary" onClick={() => { setOpen(true); setMoved(false); setError(null); }}>Make champion<span className="sr-only"> {m.id.slice(0, 8)}</span></button> : null}
+      {moved ? <Banner tone="info">This model is now in use and the change was saved in History.{decisions ? <> <Link href={decisions}>Open History</Link>.</> : null}</Banner> : null}
+      {!isChampion && !open ? <button type="button" className="btn primary" onClick={() => { setOpen(true); setMoved(false); setError(null); }}>Put this model in use</button> : null}
       {open ? (
         <form className="form card" onSubmit={(event) => { event.preventDefault(); void confirm(); }}>
-          <h3>Make model version {m.id.slice(0, 8)} the champion</h3>
+          <h3>Put this model in use</h3>
           {compact ? null : (
             <p className="muted">
-              This records one accepted decision and moves the champion ref (and the feature recipe with it) from version {champion?.version ?? "none"}. The API checks that this model has a locked winner, its
-              own final evaluation and the <Term definition="The fixed assignment of rows to folds and the final holdout. A new champion must be evaluated on the same split plan as the current one.">same split plan</Term> as the current champion. Nothing is retrained.
+              This is saved in History and switches the model in use (and its features with it). DCLab checks that this model has a chosen best run, its
+              own final test and the <Term definition="The fixed assignment of rows to folds and the final test set (used once). A new model in use must be tested on the same test design as the current one.">same test design</Term> as the model in use now. Nothing is retrained.
             </p>
           )}
-          <label className="field"><span>Why (recorded with the decision)</span>
+          <label className="field"><span>Why (saved with the change)</span>
             <textarea value={rationale} rows={2} maxLength={2000} required disabled={busy} onChange={(e) => setRationale(e.target.value)} />
           </label>
           {error ? (
@@ -281,7 +281,7 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
           ) : null}
           <div className="toolbar">
             <button type="button" className="btn" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
-            <button type="submit" className="btn primary" disabled={busy || !rationale.trim()}>{busy ? "Moving…" : "Move the champion ref"}</button>
+            <button type="submit" className="btn primary" disabled={busy || !rationale.trim()}>{busy ? "Saving…" : "Put in use"}</button>
           </div>
         </form>
       ) : null}

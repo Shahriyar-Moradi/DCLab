@@ -104,7 +104,7 @@ function DecidePanel({ item, mode, keys, onClose, onDone }: { item: StudioInboxI
         {mode === "supersede" ? "A correction appends a new record; the old one stays, marked superseded." : mode === "revert" ? "Revert restores the rule's value by branching the run that used the AI value." : "This appends a record; nothing is edited."}
         {needsReason ? " A reason is required." : " A reason is optional."}
       </p>
-      {needsRefs && (detail.isError || refs.isError) ? <Banner tone="warn">Could not read the current refs this moves. Reload and try again, or decide it from the project&apos;s Decisions page.</Banner> : null}
+      {needsRefs && (detail.isError || refs.isError) ? <Banner tone="warn">Could not read the versions currently in use. Reload and try again, or decide it from the project&apos;s History page.</Banner> : null}
       <label className="field"><span>Reason (recorded)</span><textarea rows={2} maxLength={2000} required={needsReason} value={reason} disabled={busy} onChange={(e) => setReason(e.target.value)} /></label>
       <div className="toolbar">
         <button type="button" className="btn" disabled={busy} onClick={onClose}>Back</button>
@@ -144,9 +144,10 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
           {typeof item.level === "number" && item.level >= 0 && item.level <= 3 ? <> <Level level={item.level as TrustLevel} /></> : null}
         </span>
       </h3>
+      {item.proposed_by === "agent" ? <p className="muted">From a connected tool; its text is not verified.</p> : null}
       <p className="muted">
         {formatWhen(item.occurred_at)}
-        {item.decision_point_key ? <> · decision point <span className="mono">{plainText(item.decision_point_key, 60)}</span></> : null}
+        {item.decision_point_key ? <> · kind of decision <span className="mono">{plainText(item.decision_point_key, 60)}</span></> : null}
         {item.expires_at ? <> · expires {formatWhen(item.expires_at)}</> : null}
       </p>
       {subject || evidence.length ? (

@@ -103,9 +103,9 @@ test("ref badges, stale lines and built-from read the API fields", () => {
     stale: true, ref_kinds: ["champion_model", "split_plan"],
     stale_reasons: [{ ref_kind: "dataset", expected: { kind: "dataset_version", id: uuid(40) }, actual: { kind: "dataset_version", id: uuid(2) } }],
   });
-  assert.deepEqual(refBadges(stale), ["★ champion", "★ split"]);
+  assert.deepEqual(refBadges(stale), ["★ in use", "★ test design"]);
   assert.deepEqual(refBadges(ds), []);
-  assert.deepEqual(staleLines(stale), ["data ref points at dataset version 00000000; this was built from 00000000"]);
+  assert.deepEqual(staleLines(stale), ["Built on an older version: the data in use is now dataset version 00000000; this was built from 00000000"]);
   assert.deepEqual(staleLines(ds), []);
   assert.deepEqual(builtFrom(EDGES, e1.key).map((b) => b.relation), ["uses_dataset", "uses_split_plan", "uses_problem_spec", "prepared_as"]);
   assert.deepEqual(builtFrom(EDGES, ds.key), []);

@@ -6,6 +6,7 @@ import { Banner } from "@/components/studio/Banner";
 import { DataTable, type Column } from "@/components/studio/DataTable";
 import { KeyValue } from "@/components/studio/KeyValue";
 import { PageGuide } from "@/components/studio/PageGuide";
+import Link from "next/link";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill, type PillTone } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
@@ -18,11 +19,12 @@ import {
 import { DECISION_TYPE_LABEL, ENGINE_OWNED_TYPES, acceptsViaRefs, mapActionError, proposedMoves } from "@/lib/application/studio-compare";
 import { decisionMarkers } from "@/lib/application/studio-graph";
 import { parseRecordParam } from "@/lib/application/studio-pipeline";
+import { evidenceScopeLabel } from "@/lib/application/studio-names";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
 
 const ACTOR_TONE: Record<string, PillTone> = { rule: "det", agent: "ai", human: "gray" };
-const ACTOR_LABEL: Record<string, string> = { rule: "rule", agent: "agent", human: "person" };
+const ACTOR_LABEL: Record<string, string> = { rule: "rules", agent: "connected tool (access token)", human: "person" };
 const REF_MOVE_TYPES = new Set(["ref_moved", "champion_promoted", "ref_initialized"]);
 const typeLabel = (type: string) => DECISION_TYPE_LABEL[type] ?? type.replaceAll("_", " ");
 
@@ -89,16 +91,16 @@ function DecisionDrawer({ projectId, summary, onClose }: { projectId: string; su
           ]} />
           <h3>Evidence</h3>
           {d.evidence_refs?.length ? (
-            <ul className="plain-list">{d.evidence_refs.map((e) => <li key={`${e.kind}-${e.id}-${e.scope ?? ""}`}>{e.kind.replaceAll("_", " ")} <span className="mono">{e.id.slice(0, 8)}</span>{e.scope ? ` (${e.scope.replaceAll("_", " ")})` : ""}{e.metric ? `, ${plainText(e.metric, 40)}` : ""}</li>)}</ul>
+            <ul className="plain-list">{d.evidence_refs.map((e) => <li key={`${e.kind}-${e.id}-${e.scope ?? ""}`}>{e.kind.replaceAll("_", " ")} <span className="mono">{e.id.slice(0, 8)}</span>{e.scope ? ` (${evidenceScopeLabel(e.scope)})` : ""}{e.metric ? `, ${plainText(e.metric, 40)}` : ""}</li>)}</ul>
           ) : <p className="muted">No evidence references are recorded on this decision.</p>}
-          <h3>Rule answer beside AI answer</h3>
+          <h3>The rules&apos; answer beside the assistant&apos;s answer</h3>
           {markers.length ? markers.map((m) => (
             <table key={m.id} className="graph-answers">
-              <caption className="sr-only">Rule answer beside AI answer for {m.point ?? "this decision"}</caption>
+              <caption className="sr-only">The rules&apos; answer beside the assistant&apos;s answer for {m.point ?? "this decision"}</caption>
               <thead><tr><th scope="col">Column</th><th scope="col">Rule</th><th scope="col">AI</th><th scope="col">Used</th></tr></thead>
               <tbody>{m.answers.map((a, i) => <tr key={`${a.column}-${i}`}><td className="mono">{plainText(a.column, 60)}</td><td>{plainText(a.rule, 40)}</td><td>{plainText(a.ai, 40)}</td><td>{plainText(a.used, 40)}</td></tr>)}</tbody>
             </table>
-          )) : <p className="muted">No rule and AI answers are recorded here; they appear on decision-point records when AI was on.</p>}
+          )) : <p className="muted">No answers from the rules and the assistant are recorded here; they appear when the assistant was on.</p>}
           {d.details_truncated ? <p className="muted">The record&apos;s details were too large to show in full.</p> : null}
           {proposed || canSupersede ? (
             <>
@@ -121,7 +123,7 @@ function DecisionDrawer({ projectId, summary, onClose }: { projectId: string; su
               )}
             </>
           ) : null}
-          {!proposed && REF_MOVE_TYPES.has(type) && state === "accepted" ? <p className="muted">A ref move is corrected by moving the ref again (a new decision), never in place. Do that from the experiment or Data page.</p> : null}
+          {!proposed && REF_MOVE_TYPES.has(type) && state === "accepted" ? <p className="muted">Changing the version in use is corrected by changing it again (a new entry), never in place. Do that from the run or Data page.</p> : null}
           {!proposed && !REF_MOVE_TYPES.has(type) && ENGINE_OWNED_TYPES.has(type) && state === "accepted" ? <p className="muted">The engine recorded this decision from evidence; only the engine corrects it.</p> : null}
           {error ? <Banner tone="crit" actions={<button type="button" className="btn" onClick={() => { invalidate(); setError(null); }}>Reload</button>}><b>{error.title}.</b> {error.detail}</Banner> : null}
         </>
@@ -152,18 +154,18 @@ function DecisionsPageInner() {
   ];
   return (
     <>
-      <PageHead title="Decisions" subtitle="Every change to this project is a recorded decision: who or what made it, about which node, and when. Records are append-only." />
+      <PageHead title="History" subtitle="A plain log of every change to this project: who or what made it (you, the rules or a connected tool), what it was about, and when. Corrections add a new entry; nothing is deleted." actions={<Link className="btn" href={`/projects/${id}/graph`}>Lineage</Link>} />
       <PageGuide
-        purpose="Audit how the project reached its current state, and resolve proposals."
-        howTo={<>Each row is one <Term definition="An append-only record of a choice (for example moving the champion ref), with its actor and evidence. Corrections supersede; nothing is edited.">decision record</Term>. Open one to see its evidence and reason. A proposal waits for you: Accept or Reject it. An accepted decision can be corrected with Supersede and a reason.</>}
-        youGet="The newest 100 decisions, newest first, with rule and agent decisions marked separately."
-        attention={pending ? `${pending} proposal${pending === 1 ? " is" : "s are"} waiting for a decision.` : undefined}
+        purpose="See how the project got to where it is, and answer suggestions that wait for you."
+        howTo={<>Each row is one <Term definition="A saved note of a choice (for example putting a model in use), with who made it and the evidence. Corrections add a new entry; nothing is edited or deleted.">History entry</Term>. Open one to see its evidence and reason. A suggestion waits for you: Accept or Reject it. An accepted entry can be corrected with a reason.</>}
+        youGet="The newest 100 entries, newest first, with entries made by the rules, by connected tools and by people marked separately."
+        attention={pending ? `${pending} suggestion${pending === 1 ? " is" : "s are"} waiting for your answer.` : undefined}
       />
       {decisions.isError ? <QueryNotice error={decisions.error} what="decision list" /> : null}
-      {decisions.isPending ? <p role="status">Loading decisions…</p> : null}
+      {decisions.isPending ? <p role="status">Loading History…</p> : null}
       {decisions.data ? (
         <div className={selected ? "grid cols-2" : undefined}>
-          <DataTable caption="Decisions" columns={columns} rows={items} rowKey={(d) => d.id} highlightRow={(d) => d.id === open} emptyMessage="No decisions recorded for this project yet." />
+          <DataTable caption="History" columns={columns} rows={items} rowKey={(d) => d.id} highlightRow={(d) => d.id === open} emptyMessage="Nothing has happened in this project yet." />
           {selected ? <DecisionDrawer key={selected.id} projectId={id} summary={selected} onClose={() => setOpen(null)} /> : null}
         </div>
       ) : null}

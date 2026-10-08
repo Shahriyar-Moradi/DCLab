@@ -58,9 +58,9 @@ test("Model card: drivers, baseline, labelled final evaluation, risks, Markdown 
 
   // Models list: the version, the champion marker, a link to the card.
   await page.goto(`/projects/${projectId}/models`);
-  await expect(page.getByRole("heading", { name: "Models", level: 1 })).toBeVisible();
-  const row = page.getByRole("table", { name: "Model versions" }).getByRole("row").nth(1);
-  await expect(row).toContainText("★ champion");
+  await expect(page.getByRole("heading", { name: "Model", level: 1 })).toBeVisible();
+  const row = page.getByRole("table", { name: "Models" }).getByRole("row").nth(1);
+  await expect(row).toContainText("In use");
   await expect(row).toContainText("Open card");
   await shot(page, "1-models-list");
   await page.getByRole("link", { name: /^Open the card of/ }).click();
@@ -73,7 +73,7 @@ test("Model card: drivers, baseline, labelled final evaluation, risks, Markdown 
   await expect(page.getByText(/P4\.11-UI/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /Final evaluation/ })).toHaveCount(0);
   const apiCard = (await (await page.request.get(`/api/backend/v1/model-versions/${modelId}/card`)).json()) as { final_evaluation: { value: number } };
-  await expect(page.getByRole("tabpanel", { name: "Version" })).not.toContainText(String(Number(apiCard.final_evaluation.value.toPrecision(3))));
+  await expect(page.getByRole("tabpanel", { name: "Details" })).not.toContainText(String(Number(apiCard.final_evaluation.value.toPrecision(3))));
 
   await page.getByRole("tab", { name: "Card" }).click();
   const card = page.locator(".model-card-print");

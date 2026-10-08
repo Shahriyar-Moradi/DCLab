@@ -9,7 +9,7 @@ export default function SplitInspectorPage() {
   const { id, nodeId } = useParams<{ id: string; nodeId: string }>();
   return (
     <>
-      <PageHead title="Split plan" eyebrow={`${nodeId.slice(0, 8)}`} subtitle="How rows were assigned to the final holdout and the cross-validation folds. Counts only." actions={<Link className="btn" href={`/projects/${id}/graph`}>Back to the graph</Link>} />
+      <PageHead title="Goal & test design" subtitle="What is predicted, and how rows were assigned to the final test set (used once) and the cross-validation folds. Counts only." actions={<Link className="btn" href={`/projects/${id}/graph`}>Back to lineage</Link>} />
       <SplitInspector projectId={id} nodeId={nodeId} />
     </>
   );

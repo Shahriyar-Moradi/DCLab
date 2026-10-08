@@ -3,8 +3,17 @@
 **Decided by the founder, 2026-10-08:** the click-through demo `demo/product/v7_final/` (plain words,
 v6 direction, real detail, honest status per screen) is the target for the product. Its brief,
 `demo/product/v7_final/BRIEF.md`, is the screen-by-screen spec; `demo/product/v6_plain/BRIEF.md` holds
-the words table. This plan replaces the order of the remaining prompt queue; the prompts in
-`docs/mvp/prompts/` stay as design reference for the backend pieces they describe.
+the words table. The founder then confirmed (2026-10-08, later): v7 is the target AND the best demo,
+and the existing prompt queue (P5.3-A, P5.4-A, P6.5-A, R2-A, R1-P, P7.1-A, P7.2-A) still runs. Both
+tracks run automatically, one change set at a time (one working tree), interleaved in this order:
+
+**Run order (no stopping between items, CI skipped):**
+V7-A1 (nav + language) → P5.3-A (improve-loop ADR) → V7-A2 (Data, Goal & test design) → P5.4-A
+(loop engine) → V7-A3 (Experiments) → P6.5-A (agent proposer in the loop) → V7-A4 (Model) → R2-A
+(loop benchmark) → V7-A5 (Predictions, History) → R1-P (publish benchmark) → V7-A6 (Home, Inbox,
+Connect) → P7.1-A (safe model package + feature contract) → P7.2-A (approve for scoring, batch) →
+Stage B (below). P5.5-A (Improve screen) is built in B4 on top of P5.4-A, rule-table first; the
+agent-facing screens stay behind checkpoint G6.
 
 **Rules**
 - Every screen uses the v6/v7 words table: no internal codes (`DS v1`, `SP-1`, `MV v4`, short ids

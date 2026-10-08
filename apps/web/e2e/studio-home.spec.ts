@@ -35,7 +35,7 @@ test("home shows real numbers, projects, activity and the inbox preview", async 
   await page.goBack();
 
   // Quick actions and the sidebar badge.
-  await expect(page.getByRole("link", { name: "Agents & tools" }).first()).toHaveAttribute("href", "/agents");
+  await expect(page.getByRole("link", { name: "Connect" }).first()).toHaveAttribute("href", "/agents");
   await expect(page.getByRole("navigation", { name: "Studio" }).getByRole("link", { name: /Inbox/ })).toContainText(String(waiting));
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });

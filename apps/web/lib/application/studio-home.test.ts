@@ -11,7 +11,7 @@ test("AI health says AI is off explicitly, for every way it can be off", () => {
   assert.equal(aiHealth({ ...base, policy_unavailable: "policy_missing" }).state, "off");
   assert.equal(aiHealth({ ...base, switches: { platform_ai_blocking: "global_ai", workspace: [] } }).state, "off");
   assert.equal(aiHealth(base).state, "on");
-  assert.match(aiHealth({ ...base, open_incidents: [{}, {}] }).label, /2 open incidents/);
+  assert.match(aiHealth({ ...base, open_incidents: [{}, {}] }).label, /2 open problem reports/);
   assert.equal(aiHealth({ ...base, switches: { platform_ai_blocking: null, workspace: [{ state: "off" }] } }).state, "attention");
 });
 
@@ -36,8 +36,8 @@ test("activity links need UUID ids and only point at decisions and runs", () => 
 });
 
 test("actor kinds map to rule / agent / person (you)", () => {
-  assert.deepEqual(actorLabel({ kind: "rule" }), { text: "rule", tone: "det" });
-  assert.deepEqual(actorLabel({ kind: "agent" }), { text: "agent", tone: "ai" });
+  assert.deepEqual(actorLabel({ kind: "rule" }), { text: "rules", tone: "det" });
+  assert.deepEqual(actorLabel({ kind: "agent" }), { text: "connected tool", tone: "ai" });
   assert.equal(actorLabel({ kind: "person", is_you: true }).text, "you");
   assert.equal(actorLabel({ kind: "person" }).text, "person");
 });
@@ -64,7 +64,7 @@ test("a failed governance read is 'unavailable', never 'AI is off'", () => {
     assert.equal(h.detail, "AI health could not be loaded.");
     assert.doesNotMatch(`${h.label} ${h.detail}`, /AI is off/);
   }
-  assert.match(aiHealthUnavailable({ status: 403 }).detail, /Your role cannot read governance/);
+  assert.match(aiHealthUnavailable({ status: 403 }).detail, /Your role cannot read the AI settings/);
   assert.equal(aiHealth({ ...base, ai_enabled_setting: false }).state, "off");
   assert.equal(aiHealth(base).state, "on");
 });

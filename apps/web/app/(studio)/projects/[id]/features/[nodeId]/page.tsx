@@ -9,7 +9,7 @@ export default function FeatureInspectorPage() {
   const { id, nodeId } = useParams<{ id: string; nodeId: string }>();
   return (
     <>
-      <PageHead title="Feature recipe" eyebrow={`${nodeId.slice(0, 8)}`} subtitle="Each feature with its reason, formula, importance and code." actions={<Link className="btn" href={`/projects/${id}/graph`}>Back to the graph</Link>} />
+      <PageHead title="Features" subtitle="Each feature with its reason, formula, importance and code." actions={<Link className="btn" href={`/projects/${id}/graph`}>Back to lineage</Link>} />
       <FeatureInspector projectId={id} nodeId={nodeId} />
     </>
   );

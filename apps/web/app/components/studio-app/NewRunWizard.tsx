@@ -1,5 +1,6 @@
 "use client";
 
+import { GLOSSARY } from "@/components/studio/glossary";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -32,8 +33,8 @@ const TERMS = {
   target: "The column you want to predict. Every other column is used to predict it.",
   task: "What kind of answer the target holds: a category (classification) or a number (regression).",
   metric: "The score DCLab uses to pick the best model. Higher or lower is better depending on the metric.",
-  holdout: "Rows set aside before training and used once at the end to check the chosen model. Never used to choose or tune it, and its values are not shown here.",
-  leakage: "A column that gives away the answer because it is only known after the outcome. DCLab checks for it after the run.",
+  holdout: GLOSSARY.finalTest.definition,
+  leakage: GLOSSARY.leakage.definition,
 };
 
 function ErrorBanner({ error }: { error: PlainError | null }) {
@@ -171,7 +172,7 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
             purpose={projectId ? "Pick the data this run trains on." : "Create the project and bring your data in."}
             howTo={projectId ? "Use a dataset already in this project, or upload a new file." : "Name the project and choose a CSV, TSV, JSON, Parquet or XLSX file with a header row."}
             youGet="A stored, versioned dataset with its row count, columns, types and missing values. Nothing is trained yet."
-            attention={<>The file is checked for structure only. A <Term definition={TERMS.holdout}>final holdout</Term> is set aside later, when the split is planned.</>}
+            attention={<>The file is checked for structure only. A <Term definition={TERMS.holdout}>final test set (used once)</Term> is set aside later, when the split is planned.</>}
           />
           <Card title="Data">
             <form className="form" onSubmit={(event) => { event.preventDefault(); void submitData(); }}>
@@ -301,7 +302,7 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
             purpose="Review and start the run."
             howTo="Check the summary, then press Train. Pressing it twice is safe: a retry reuses the same request."
             youGet="An experiment you can follow live. Training runs in the background worker."
-            attention={<>DCLab sets aside a <Term definition={TERMS.holdout}>final holdout</Term> and never shows or tunes on it. If the target or split needs your answer, the experiment page asks.</>}
+            attention={<>DCLab sets aside a <Term definition={TERMS.holdout}>final test set (used once)</Term> and never shows or tunes on it. If the target or split needs your answer, the experiment page asks.</>}
           />
           <Card title="Summary">
             <KeyValue items={[

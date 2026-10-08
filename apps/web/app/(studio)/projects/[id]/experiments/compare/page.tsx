@@ -59,12 +59,12 @@ function CompareBody({ projectId, ids }: { projectId: string; ids: string[] }) {
   return (
     <>
       <Banner tone="info">
-        <b>Comparable.</b> All {items.length} runs use split plan <span className="mono">{short(data.split_plan_id)}</span>, so they were scored on the same folds and the same holdout rows.
+        <b>Comparable.</b> All {items.length} runs use split plan <span className="mono">{short(data.split_plan_id)}</span>, so they were scored on the same folds and the same final test set rows.
       </Banner>
       <h2>Scores</h2>
       <DataTable caption="Cross-validation metric comparison" columns={columns} rows={rows} rowKey={(r) => r.metric}
         emptyMessage="These runs share no cross-validation metric." />
-      <p className="muted">Wording of a change (better, worse) is only a reading aid for the direction of the metric. A model is chosen on cross-validation by the fixed selection rule; the final holdout is not shown here.</p>
+      <p className="muted">Wording of a change (better, worse) is only a reading aid for the direction of the metric. A model is chosen on cross-validation by the fixed selection rule; the final test set is not shown here.</p>
       <h2>Runs</h2>
       <div className="grid">
         {items.map((item, i) => {
@@ -119,18 +119,18 @@ function ComparePageInner() {
   const back = projectHref(id, "experiments");
   return (
     <>
-      <PageHead title="Compare experiments" subtitle="Side-by-side cross-validation scores, change sets, time and split plan of two or more runs."
-        actions={back ? <Link className="btn" href={back}>All experiments</Link> : null} />
+      <PageHead title="Compare runs" subtitle="Side-by-side cross-validation scores, what changed, time and test design of two or more runs."
+        actions={back ? <Link className="btn" href={back}>All runs</Link> : null} />
       <PageGuide
         purpose="Decide which run to keep."
-        howTo={<>Runs are comparable only on the same <Term definition="The fixed assignment of rows to folds and the final holdout. Runs on one split plan are scored on the same rows.">split plan</Term>. Read the metric table, check what each change set did, then accept the run you want as champion.</>}
-        youGet="Metric deltas on cross-validation, the change-set difference, time and the split-plan identity."
+        howTo={<>Runs are comparable only on the same <Term definition="The fixed assignment of rows to folds and the final test set (used once). Runs on one test design are scored on the same rows.">test design</Term>. Read the metric table, check what each change did, then put the run you want in use.</>}
+        youGet="Metric differences on cross-validation, what changed, time and the shared test design."
         attention="If the runs are not comparable, the reason is shown and nothing is compared."
       />
       {ids ? <CompareBody projectId={id} ids={ids} /> : (
-        <Banner tone="warn" actions={back ? <Link className="btn" href={back}>Choose runs</Link> : null}>Choose two to ten runs on the experiments page, then press Compare. The link needs 2 to 10 distinct experiment ids.</Banner>
+        <Banner tone="warn" actions={back ? <Link className="btn" href={back}>Choose runs</Link> : null}>Choose two to ten runs on the Experiments page, then press Compare. The link needs 2 to 10 different runs.</Banner>
       )}
-      <Pill tone="gray">Final holdout values are not shown on this page</Pill>
+      <Pill tone="gray">Final test set values are not shown on this page</Pill>
     </>
   );
 }

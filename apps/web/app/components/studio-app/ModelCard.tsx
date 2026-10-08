@@ -4,6 +4,7 @@
  * Model card (P4.11-UI). Rendered natively from the API's JSON; the API's Markdown is only offered as a plain-text
  * download (client-side Blob), never rendered. Names, columns, labels and messages are untrusted: plain text only.
  */
+import { GLOSSARY } from "@/components/studio/glossary";
 import Link from "next/link";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
@@ -23,14 +24,15 @@ import { useFullModelCard } from "@/lib/application/studio-card-hooks";
 import { chosenSummary } from "@/lib/application/studio-operating";
 import { useOperatingPoints } from "@/lib/application/studio-operating-hooks";
 import { checkLabel, findingStatusLabel, findingTone } from "@/lib/application/studio-findings";
+import { modelName } from "@/lib/application/studio-names";
 import { ApiError } from "@/lib/infrastructure/api-client";
 
 const TERMS = {
   importance: "Permutation importance: how much the cross-validation score drops when one column's values are shuffled, measured on validation folds only. Larger means the model leans on that column more.",
-  baseline: "A dummy model that ignores the columns (for example always predicts the most common answer or the average). A real model must beat it by a clear margin.",
-  holdout: "Rows set aside by the split plan before any modelling. They are scored once, for the locked winner only, and never used to choose the model, its settings or its threshold.",
-  operating: "The decision threshold: the probability above which a row is predicted positive. When it was tuned, that was done on cross-validation; it is locked before the final evaluation.",
-  cv: "Cross-validation: the training rows are cut into folds; each fold is held out once while the model trains on the others. Models are compared on these scores.",
+  baseline: GLOSSARY.baseline.definition,
+  holdout: GLOSSARY.finalTest.definition,
+  operating: GLOSSARY.threshold.definition,
+  cv: GLOSSARY.cv.definition,
 };
 
 function saveText(text: string, type: string, filename: string) {
@@ -99,9 +101,13 @@ export function ModelCard({ projectId, modelVersionId }: { projectId: string; mo
         <div>
           <h2 className="mc-title">{cardTitle(card)}</h2>
           <p className="muted">
-            Version <span className="mono">{plainText(card.version, 40)}</span> · digest <span className="mono">{plainText(card.content_digest, 80)}</span> · created {formatWhen(card.created_at)}
-            {experimentHref ? <> · run <Link href={experimentHref}><span className="mono">{card.experiment_id.slice(0, 8)}</span></Link></> : null}
+            {modelName(card.version)} · created {formatWhen(card.created_at)}
+            {experimentHref ? <> · <Link href={experimentHref}>see its run</Link></> : null}
           </p>
+          <details className="ids">
+            <summary>Details</summary>
+            <p>Version <span className="mono">{plainText(card.version, 40)}</span> · fingerprint <span className="mono">{plainText(card.content_digest, 80)}</span> · run <span className="mono">{card.experiment_id.slice(0, 8)}</span></p>
+          </details>
         </div>
         <div className="toolbar mc-noprint">
           <button type="button" className="btn" onClick={() => window.print()}>Print / save as PDF</button>
@@ -130,7 +136,7 @@ export function ModelCard({ projectId, modelVersionId }: { projectId: string; mo
 
 
       {chosenPoint ? (
-        <Card title="Chosen operating point" aside={<Pill tone="det">decision recorded</Pill>}>
+        <Card title="Chosen operating point" aside={<Pill tone="det">saved in History</Pill>}>
           <p><b>Threshold {chosenPoint.threshold}</b> <span className="muted">({chosenPoint.method}; out-of-fold training predictions)</span></p>
           {chosenPoint.sentence ? <p>{plainText(chosenPoint.sentence, 600)}</p> : null}
           <KeyValue items={[
@@ -193,7 +199,7 @@ export function ModelCard({ projectId, modelVersionId }: { projectId: string; mo
 
       <section className="card mc-final" aria-labelledby="mc-final-h">
         <h2 id="mc-final-h">{FINAL_EVAL_HEADING}</h2>
-        <p className="muted">{FINAL_EVAL_SUBHEADING} Do not compare final evaluations across versions to pick a champion; compare on cross-validation. See <Term definition={TERMS.holdout}>what the holdout is</Term>.</p>
+        <p className="muted">{FINAL_EVAL_SUBHEADING} Do not compare final tests across models to pick one; compare on cross-validation. See <Term definition={TERMS.holdout}>what the final test set is</Term>.</p>
         {final.state === "reported" ? (
           <>
             <div className="grid cols-4">

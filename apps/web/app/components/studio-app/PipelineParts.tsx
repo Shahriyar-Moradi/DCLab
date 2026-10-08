@@ -27,9 +27,9 @@ import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 export const PIPELINE_TERMS = {
   digest: "A fingerprint of the exact content (a hash). If one byte changes, the digest changes, so equal digests mean identical files.",
-  stage: "One step the engine runs in a fixed order, such as profiling the data or locking the holdout. Each stage records what it did.",
+  stage: "One step the engine runs in a fixed order, such as profiling the data or locking the final test set. Each stage records what it did.",
   deterministic: "Decided by code that gives the same answer every time for the same inputs. No AI model is involved.",
-  decisionPoint: "A place where an AI answer could be compared with the rule's answer. The level says how much the AI is trusted to act: L0 advises only, L2 acts with review.",
+  decisionPoint: "A place where an AI answer could be compared with the rule's answer. The level says how much the AI may do: Shadow, the rules decided and the AI's answer is only recorded; Ask first, a person accepts it; Automatic, you can undo, it is applied and one click undoes it; Automatic, by policy.",
   replay: "Runs the agent again from its stored record with a stand-in model and stubbed tools, and checks it produces the same tool calls, output digest and proposals.",
 };
 

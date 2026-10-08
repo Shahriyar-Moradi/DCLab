@@ -33,8 +33,10 @@ export const KIND_LABEL: Record<string, string> = {
   feature_recipe: "Feature recipe", experiment: "Experiment", model_version: "Model version",
 };
 export const REF_BADGE: Record<string, string> = {
-  champion_model: "★ champion", problem_spec: "★ spec", dataset: "★ data", split_plan: "★ split", feature_recipe: "★ features",
+  champion_model: "★ in use", problem_spec: "★ goal", dataset: "★ data", split_plan: "★ test design", feature_recipe: "★ features",
 };
+/** What each project version is called in a sentence ("the model in use", "the data in use"). */
+const REF_NAME: Record<string, string> = { champion_model: "model", problem_spec: "goal", dataset: "data", split_plan: "test design", feature_recipe: "features" };
 export const RELATION_LABEL: Record<string, string> = {
   uses_problem_spec: "uses spec", uses_dataset: "trained on", prepared_as: "prepared as", uses_split_plan: "uses split",
   branch_of: "branch of", partitions: "partitions", produced_by: "produced by", uses_feature_recipe: "uses features",
@@ -181,7 +183,7 @@ export function refBadges(node: GraphNodeLike): string[] {
 /** "data ref points at dataset version 1a2b3c4d; this was built from 5e6f7a8b" — one line per reason. */
 export function staleLines(node: GraphNodeLike): string[] {
   return (node.stale_reasons ?? []).map((reason) =>
-    `${(REF_BADGE[reason.ref_kind] ?? reason.ref_kind).replace("★ ", "")} ref points at ${kindLabel(reason.expected.kind).toLowerCase()} ${shortId(reason.expected.id)}; this was built from ${shortId(reason.actual.id)}`);
+    `Built on an older version: the ${REF_NAME[reason.ref_kind] ?? reason.ref_kind.replaceAll("_", " ")} in use is now ${kindLabel(reason.expected.kind).toLowerCase()} ${shortId(reason.expected.id)}; this was built from ${shortId(reason.actual.id)}`);
 }
 
 export type BuiltFrom = { relation: string; attribute: boolean; node: NodeRefLike };

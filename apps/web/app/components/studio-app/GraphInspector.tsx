@@ -17,7 +17,7 @@ import {
 /** Typed slot for the compact per-kind inspector (reason, facts, link to the full inspector). */
 export type NodeInspectorSlot = (node: StudioGraphNode) => ReactNode;
 
-const IMPACT_TERM = "The nodes downstream of this one along lineage edges. If this node were replaced (for example a ref moved off it), these are the nodes that would be built from an old version, so the graph would mark them stale. Nothing is retrained automatically.";
+const IMPACT_TERM = "The items made from this one. If this one were replaced (for example another data version put in use), these would be built on an older version. Nothing is retrained automatically.";
 
 function NodeRefButton({ node, known, onSelect }: { node: { kind: string; id: string; key: string }; known: boolean; onSelect: (key: string) => void }) {
   const text = <>{kindLabel(node.kind)} <span className="mono">{shortId(node.id)}</span></>;
@@ -27,15 +27,15 @@ function NodeRefButton({ node, known, onSelect }: { node: { kind: string; id: st
 function Impact({ node, known, onSelect }: { node: StudioGraphNode; known: Set<string>; onSelect: (key: string) => void }) {
   const impact = useNodeImpact(node.kind, node.id);
   if (impact.isError) return <QueryNotice error={impact.error} what="impact of this node" />;
-  if (!impact.data) return <p role="status">Loading what becomes stale…</p>;
+  if (!impact.data) return <p role="status">Loading what would be built on an older version…</p>;
   const { items, total, truncated, graph_truncated: graphTruncated } = impact.data;
-  if (total === 0) return <p>Nothing downstream: a change to this node would make no other node stale.</p>;
+  if (total === 0) return <p>Nothing downstream: a change to this item would leave nothing else built on an older version.</p>;
   const groups = groupByKind(items.map((item) => ({ ...item, label: "", stale: false })));
   return (
     <>
       <p>{total} node{total === 1 ? "" : "s"} downstream{truncated ? `; the first ${items.length} are listed` : ""}.</p>
       {graphTruncated ? <p className="muted">The project graph was cut at its experiment window, so the closure may miss older nodes.</p> : null}
-      <ul className="plain-list" aria-label="What becomes stale">
+      <ul className="plain-list" aria-label="What would be built on an older version">
         {groups.map((group) => (
           <li key={group.kind}>
             <b>{kindLabel(group.kind)}</b> ({impact.data.counts_by_kind[group.kind] ?? group.nodes.length}):{" "}
@@ -106,12 +106,12 @@ export function GraphInspector({ projectId, graph, node, markers, known, onSelec
         { key: "created", label: "Created", value: formatWhen(node.created_at) },
         { key: "status", label: "Status", value: node.status ? node.status.toLowerCase().replaceAll("_", " ") : "—" },
         {
-          key: "refs", label: <Term definition="A ref is a named pointer to the version the project uses now. Moving it is a recorded decision.">Refs here</Term>,
-          value: refs.length ? refs.map((ref) => `${REF_BADGE[ref.ref_kind] ?? ref.ref_kind} (version ${ref.version}, moved ${formatWhen(ref.moved_at)})${ref.staleness_bearing ? "" : ", does not mark nodes stale yet"}`).join("; ") : "No ref points here",
+          key: "refs", label: <Term definition="The versions the project uses now (goal, data, test design, features, model). Changing one is saved in History.">Versions in use here</Term>,
+          value: refs.length ? refs.map((ref) => `${REF_BADGE[ref.ref_kind] ?? ref.ref_kind} (version ${ref.version}, moved ${formatWhen(ref.moved_at)})${ref.staleness_bearing ? "" : ", changing it does not mark anything as built on an older version yet"}`).join("; ") : "Not in use",
         },
         {
-          key: "stale", label: <Term definition="Stale: this node was built from a version that a project ref no longer points at. Computed on read from the refs; nothing is changed or retrained.">Stale</Term>,
-          value: node.stale ? <>{stale.length ? stale.map((line) => <span key={line} className="block"><span aria-hidden="true">⚠ </span>{line}</span>) : "stale"}</> : "Not stale",
+          key: "stale", label: <Term definition="Built on an older version: this item was made from a version that is no longer in use. Nothing is changed or retrained.">Built on an older version</Term>,
+          value: node.stale ? <>{stale.length ? stale.map((line) => <span key={line} className="block"><span aria-hidden="true">⚠ </span>{line}</span>) : "yes"}</> : "No",
         },
         ...(node.intent ? [{ key: "intent", label: "Intent", value: <span>{plainText(node.intent, 300)} <span className="muted">(written by a person or agent)</span></span> }] : []),
         ...(node.lineage_incomplete ? [{ key: "lineage", label: "Lineage", value: "Incomplete: an older run without a recorded source dataset" }] : []),
@@ -130,7 +130,7 @@ export function GraphInspector({ projectId, graph, node, markers, known, onSelec
           ))}
         </ul>
       ) : <p className="muted">Nothing: this node is a source.</p>}
-      <h3><Term definition={IMPACT_TERM}>What becomes stale</Term></h3>
+      <h3><Term definition={IMPACT_TERM}>What would be built on an older version</Term></h3>
       <Impact node={node} known={known} onSelect={onSelect} />
       {node.kind === "experiment" ? (<><h3>AI decision points</h3><DecisionPoints markers={markers} /></>) : null}
       {slot ? slot(node) : (

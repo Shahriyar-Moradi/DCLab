@@ -70,7 +70,7 @@ function ExperimentPageInner() {
         purpose="Understand one run: why it exists, what it tried, how it scored and how to reproduce it."
         howTo={<>Use the inspector tabs: Candidates and Per-fold show the <Term definition="Cross-validation: the training rows are split into folds and each is held out once. Models are compared on these scores only.">cross-validation</Term> evidence, Code is a plain-text script you can copy or download.</>}
         youGet="Config, change set, CV metrics, per-fold results, feature importance, generated code and the stage evidence. Two-class runs also get a threshold chooser (precision and recall by threshold, on training folds). An AI Critic review appears only when one exists."
-        attention="The final holdout is scored once for the locked winner and is not shown in this inspector."
+        attention="The final test set is scored once for the locked winner and is not shown in this inspector."
       />
       {experiment.failure_reason ? <Banner tone="crit">{experiment.failure_reason}</Banner> : null}
       {experiment.status === "needs_input" ? <WaitingPanel requestId={experiment.lineage.execution_request_id} projectId={id} experimentId={experiment.id} /> : null}
@@ -101,7 +101,7 @@ function ExperimentPageInner() {
       {live ? <Card title="Stop this run"><CancelPanel experimentId={experiment.id} /></Card> : null}
       {experiment.status === "completed" ? (
         <>
-          <Card title="Champion"><ChampionPanel projectId={id} experimentId={experiment.id} /></Card>
+          <Card title="Model in use"><ChampionPanel projectId={id} experimentId={experiment.id} /></Card>
           <div id="branch"><BranchPanel key={params.toString()} projectId={id} experimentId={experiment.id} initial={prefill} /></div>
         </>
       ) : null}

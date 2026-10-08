@@ -14,10 +14,10 @@ export function lookup<T>(table: Record<string, T>, key: string | null | undefin
 export type InboxTabId = "needs_decision" | "applied_automatically" | "done";
 
 export const INBOX_TABS: Array<{ id: InboxTabId; label: string; empty: string }> = [
-  { id: "needs_decision", label: "Needs a decision", empty: "Nothing is waiting for you. Proposals from agents and people, and runs that ask a question, show up here." },
+  { id: "needs_decision", label: "Needs a decision", empty: "Nothing is waiting for you. Suggestions from the assistant and from people, and runs that ask a question, show up here." },
   {
     id: "applied_automatically", label: "Applied automatically",
-    empty: "Nothing was applied without a person. Every decision point is below level L2 today, so every AI answer is shown to you first. When a decision point is raised to L2 or above, what the AI applied on its own is listed here with a Revert.",
+    empty: "Nothing was applied without a person. Every kind of decision is set to Ask first today, so every AI answer is shown to you first. When one is set to Automatic, you can undo, what the assistant applied on its own is listed here with an Undo.",
   },
   { id: "done", label: "Done", empty: "Nothing has been decided or finished yet." },
 ];
@@ -75,7 +75,7 @@ export function disabledReason(item: Pick<InboxItemLike, "actions" | "kind">, na
 export type EvidenceLink = { key: string; label: string; href: string | null };
 
 const KIND_LABEL: Record<string, string> = {
-  experiment: "Run", decision_record: "Decision record", agent_run: "Agent run", semantic_answer: "Column review answer",
+  experiment: "Run", decision_record: "History entry", agent_run: "Assistant run", semantic_answer: "Column review answer",
 };
 
 function evidenceHref(kind: string, id: string, projectId: string | null | undefined): string | null {
@@ -124,7 +124,7 @@ export function mapInboxError(error: unknown): PlainError {
   const status = (error as { status?: unknown } | null)?.status;
   const { code, message } = envelope((error as { body?: unknown } | null)?.body);
   if (code === "owner_only") return { title: "Only the owner can do this", detail: "Only the person whose conversation this came from can do this. An approver can still reject it.", fixable: false };
-  if (status === 428 || code === "ref_versions_required") return { title: "The page is out of date", detail: "The current versions of the refs this moves were not available. Reload the inbox and try again.", fixable: false };
+  if (status === 428 || code === "ref_versions_required") return { title: "The page is out of date", detail: "The versions currently in use were not available. Reload the inbox and try again.", fixable: false };
   if (status === 412 || code === "ref_version_conflict" || code === "precondition_failed") return { title: "This changed while you were looking", detail: "Reload the inbox to see the current state, then decide again.", fixable: false };
   if (status === 403) return { title: "You cannot do this here", detail: "Deciding needs a role that can write ML work in this workspace. The API enforces this; the disabled button is only a hint.", fixable: false };
   if (status === 404) return { title: "This item is gone", detail: "It is not in this workspace any more, or you cannot see it. Reload the inbox.", fixable: false };
@@ -140,7 +140,7 @@ export function badgeText(count: number | undefined): string | null {
 }
 
 export const PROPOSED_BY_LABEL: Record<string, string> = {
-  agent: "agent", assistant: "assistant", jev: "reviewer (AI)", rule: "rule", person: "person", run: "run",
+  agent: "connected tool (access token)", assistant: "the assistant", jev: "AI reviewer", rule: "suggested by the rules", person: "person", run: "run",
 };
 
 const ANSWER_LINES_MAX = 8;

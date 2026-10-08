@@ -1,17 +1,17 @@
 export type TrustLevel = 0 | 1 | 2 | 3;
 
 const LABELS: Record<TrustLevel, string> = {
-  0: "L0, advise only",
-  1: "L1, proposes",
-  2: "L2, acts with review",
-  3: "L3, acts autonomously",
+  0: "Shadow: the AI's answer is only recorded",
+  1: "Ask first",
+  2: "Automatic, you can undo",
+  3: "Automatic",
 };
 
-/** Trust-level badge (L0 to L3). */
+/** How much the assistant may do on its own, in words (internally trust level 0 to 3). */
 export function Level({ level }: { level: TrustLevel }) {
   return (
     <span className={`lvl ${level === 0 ? "" : `l${level}`}`} title={LABELS[level]} aria-label={LABELS[level]}>
-      L{level}
+      {LABELS[level]}
     </span>
   );
 }

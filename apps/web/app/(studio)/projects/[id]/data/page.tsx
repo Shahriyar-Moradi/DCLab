@@ -6,7 +6,6 @@ import { useRef, useState } from "react";
 import { Banner } from "@/components/studio/Banner";
 import { DataTable, type Column } from "@/components/studio/DataTable";
 import { KeyValue } from "@/components/studio/KeyValue";
-import { Level } from "@/components/studio/Level";
 import { PageGuide } from "@/components/studio/PageGuide";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill, type PillTone } from "@/components/studio/Pill";
@@ -18,6 +17,7 @@ import { PhaseEmpty, QueryNotice, STATUS_TONE, formatWhen } from "@/app/componen
 import { ActionKeys, mapWizardError, useProjectDatasets, useProjectRefs, type PlainError, type StudioDatasetItem } from "@/lib/application";
 import { projectHref } from "@/lib/application/command-search";
 import { compareRoles, percent, pickDatasetId, preparedIds, roleLabel, usedBy, usedByText } from "@/lib/application/studio-data";
+import { dataVersionName } from "@/lib/application/studio-names";
 import {
   makeDatasetCurrent, useDatasetProfile, useDatasetVersion, useExperimentFindings, useProjectGraph, useRefInvalidation,
   type StudioDatasetProfile, type StudioProfileColumn,
@@ -25,13 +25,13 @@ import {
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 const TERMS = {
-  training: "The rows the split plan keeps for training and cross-validation. The final holdout rows are set aside and never counted here.",
+  training: "The rows the test design keeps for training and cross-validation. The final test set (used once) is set aside and never counted here.",
   rule: "The role a fixed, deterministic rule gives the column on the training rows. It works with AI off.",
-  used: "The role the run actually used. It differs from the rule when a branch change, a validated decision or a promoted decision point changed it.",
+  used: "What the run actually did with the column. It differs from the rules' answer when a change you made or an accepted suggestion changed it.",
   importance: "How much the cross-validation score drops when the column's values are shuffled, on validation folds only.",
   policy: "The upload policy of ADR 0005: a structurally valid upload is published for deterministic training inside this workspace only.",
   dataClass: "The most an AI call may receive from this dataset: none, metadata (names and types), aggregates (counts) or sample values.",
-  ref: "The project's dataset ref names the version new runs and the graph treat as current. Moving it is a recorded decision.",
+  ref: "The data version new runs use. Changing it is saved in History.",
 };
 const ROLE_TONE: Record<string, PillTone> = { target: "ok", identifier: "gray", ignored_free_text: "gray" };
 
@@ -71,24 +71,24 @@ function ScopeNote({ profile }: { profile: StudioDatasetProfile }) {
       <p className="muted">
         Statistics over the {profile.split_plan.training_row_count} <Term definition={TERMS.training}>training rows</Term> of split
         plan v{profile.split_plan.version} <span className="mono">{profile.split_plan.id.slice(0, 8)}</span>
-        {profile.split_plan.source === "project_ref" ? " (the project's split ref)" : " (this version's newest plan)"}. Holdout rows are never counted.
+        {profile.split_plan.source === "project_ref" ? " (the test design in use)" : " (this version's newest plan)"}. Final test set rows are never counted.
       </p>
     );
   }
   if (profile.statistics_status === "unavailable") {
-    return <Banner tone="warn">The split plan&apos;s row map could not be verified, so statistics are withheld. Names and types come from the upload.</Banner>;
+    return <Banner tone="warn">The test design&apos;s row map could not be verified, so statistics are withheld. Names and types come from the upload.</Banner>;
   }
-  return <Banner>No split plan yet. Statistics appear after the first run fixes the final holdout; until then only names and types from the upload are shown.</Banner>;
+  return <Banner>No test design yet. Statistics appear after the first run fixes the final test set; until then only names and types from the upload are shown.</Banner>;
 }
 
 function RunNote({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
-  if (!profile.experiment) return <p className="muted">No completed run on this split plan yet, so role used, transforms and importance are empty.</p>;
+  if (!profile.experiment) return <p className="muted">No completed run on this test design yet, so what the run did, transforms and importance are empty.</p>;
   const href = projectHref(projectId, "experiments", profile.experiment.id);
   const label = <span className="mono">{profile.experiment.id.slice(0, 8)}</span>;
   return (
     <p className="muted">
       Role used, transforms and <Term definition={TERMS.importance}>importance</Term> come from run {href ? <Link href={href}>{label}</Link> : label}
-      {profile.experiment.selection === "champion" ? ", the champion's run on this plan." : ", the newest completed run on this plan."}
+      {profile.experiment.selection === "champion" ? ", the run of the model in use on this test design." : ", the newest completed run on this test design."}
     </p>
   );
 }
@@ -126,20 +126,19 @@ function VersionsTab({ projectId, datasets, selected, onSelect }: { projectId: s
       key: "version", header: "Version", sortValue: (d) => d.created_at,
       render: (d) => (
         <>
-          <span className="mono">{d.name}</span> · {d.version} {ref?.target.id === d.id ? <Pill tone="ok">current</Pill> : null} {prepared.has(d.id) ? <Pill tone="gray">prepared by a run</Pill> : null} {d.id === selected ? <Pill tone="det">shown</Pill> : null}
+          {dataVersionName(d.name, d.created_at)} <span className="muted">(version {d.version})</span> {ref?.target.id === d.id ? <Pill tone="ok">in use</Pill> : null} {prepared.has(d.id) ? <Pill tone="gray">prepared by a run</Pill> : null} {d.id === selected ? <Pill tone="det">shown</Pill> : null}
         </>
       ),
     },
     { key: "shape", header: "Rows × columns", numeric: true, sortValue: (d) => d.row_count, render: (d) => `${d.row_count} × ${d.column_count}` },
-    { key: "digest", header: "Content digest", render: (d) => <span className="mono" title={d.content_digest ?? undefined}>{d.content_digest ? `${d.content_digest.slice(0, 12)}…` : "—"}</span> },
     { key: "used", header: "Used by", render: (d) => (graph.data ? usedByText(usedBy(edges, d.id)) : "—") },
     { key: "created", header: "Uploaded", sortValue: (d) => d.created_at, render: (d) => formatWhen(d.created_at) },
     {
       key: "actions", header: "Actions",
       render: (d) => (
         <span className="toolbar">
-          {d.id !== selected ? <button type="button" className="btn" onClick={() => onSelect(d.id)}>Show profile<span className="sr-only"> of {d.name} {d.version}</span></button> : null}
-          {ref?.target.id !== d.id && refs.data && !prepared.has(d.id) ? <button type="button" className="btn" onClick={() => { setPending(d.id); setError(null); }}>Make current<span className="sr-only"> {d.name} {d.version}</span></button> : null}
+          {d.id !== selected ? <button type="button" className="btn" onClick={() => onSelect(d.id)}>Show profile<span className="sr-only"> of {dataVersionName(d.name, d.created_at)}</span></button> : null}
+          {ref?.target.id !== d.id && refs.data && !prepared.has(d.id) ? <button type="button" className="btn" onClick={() => { setPending(d.id); setError(null); }}>Use this data<span className="sr-only">: {dataVersionName(d.name, d.created_at)}</span></button> : null}
         </span>
       ),
     },
@@ -148,23 +147,23 @@ function VersionsTab({ projectId, datasets, selected, onSelect }: { projectId: s
   return (
     <>
       <p className="muted">
-        The <Term definition={TERMS.ref}>dataset ref</Term> {ref ? <>points at <span className="mono">{ref.target.id.slice(0, 8)}</span> (version {ref.version}).</> : "is not set yet; the first finished run sets it."}
+        The <Term definition={TERMS.ref}>data in use</Term> {ref ? <>is {dataVersionName(datasets.find((d) => d.id === ref.target.id)?.name, datasets.find((d) => d.id === ref.target.id)?.created_at)}.</> : "is not set yet; the first finished run sets it."}
         {graph.data?.truncated ? " The graph is truncated, so “Used by” may be incomplete." : ""}
       </p>
-      {refs.isError ? <QueryNotice error={refs.error} what="refs" /> : null}
+      {refs.isError ? <QueryNotice error={refs.error} what="versions in use" /> : null}
       {graph.isError ? <QueryNotice error={graph.error} what="project graph" /> : null}
-      <DataTable caption="Dataset versions" columns={columns} rows={datasets} rowKey={(d) => d.id} highlightRow={(d) => d.id === selected} />
+      <DataTable caption="Data versions" columns={columns} rows={datasets} rowKey={(d) => d.id} highlightRow={(d) => d.id === selected} />
       {target ? (
         <form className="form card" onSubmit={(event) => { event.preventDefault(); void confirm(); }}>
-          <h3>Make {target.name} · {target.version} current</h3>
-          <p className="muted">This records an accepted decision that moves the dataset ref. Runs, split plans and models built on the old version show as stale in the graph; nothing is retrained.</p>
+          <h3>Use {dataVersionName(target.name, target.created_at)} as the data in use</h3>
+          <p className="muted">This is saved in History. Runs, test designs and models built on the old version show as built on an older version in the lineage; nothing is retrained.</p>
           {error ? <Banner tone="crit"><b>{error.title}.</b> {error.detail}</Banner> : null}
-          <label className="field"><span>Why (recorded with the decision)</span>
+          <label className="field"><span>Why (saved with the change)</span>
             <textarea value={rationale} maxLength={2000} rows={2} required onChange={(e) => setRationale(e.target.value)} disabled={busy} />
           </label>
           <div className="toolbar">
             <button type="button" className="btn" disabled={busy} onClick={() => setPending(null)}>Cancel</button>
-            <button type="submit" className="btn primary" disabled={busy || !rationale.trim()}>{busy ? "Moving…" : "Move the dataset ref"}</button>
+            <button type="submit" className="btn primary" disabled={busy || !rationale.trim()}>{busy ? "Saving…" : "Use this data"}</button>
           </div>
         </form>
       ) : null}
@@ -174,7 +173,7 @@ function VersionsTab({ projectId, datasets, selected, onSelect }: { projectId: s
 
 function LeakageTab({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
   const findings = useExperimentFindings(profile.experiment?.id);
-  if (!profile.experiment) return <div className="empty">The leakage audit runs inside each experiment. No completed run on this version&apos;s split plan yet.</div>;
+  if (!profile.experiment) return <div className="empty">The leakage check runs inside each run. No completed run on this version&apos;s test design yet.</div>;
   const leakage = findings.data?.checks?.find((check) => check.check === "target_leakage");
   const excluded = profile.columns.filter((c) => c.leakage_excluded);
   return (
@@ -188,21 +187,21 @@ function LeakageTab({ projectId, profile }: { projectId: string; profile: Studio
       ) : findings.data ? <p className="muted">This run has no recorded target-leakage check.</p> : null}
       <DataTable caption="Columns excluded by the leakage plan" columns={LEAKAGE_TABLE} rows={excluded} rowKey={(c) => c.name}
         emptyMessage="The run's train-only leakage plan excluded no column." />
-      <p className="muted">The audit runs on training rows only. Re-including an excluded column is a new root run; the holdout stays the same rows.</p>
+      <p className="muted">The audit runs on training rows only. Re-including an excluded column is a new root run; the final test set stays the same rows.</p>
     </>
   );
 }
 
 function DataFindingsTab({ projectId, profile }: { projectId: string; profile: StudioDatasetProfile }) {
   const experiment = profile.experiment;
-  if (!experiment) return <div className="empty">The trust checks run inside each experiment. No completed run on this version&apos;s split plan yet, so there are no findings to show.</div>;
+  if (!experiment) return <div className="empty">The trust checks run inside each run. No completed run on this version&apos;s test design yet, so there is nothing to show.</div>;
   const href = projectHref(projectId, "experiments", experiment.id);
   const label = <span className="mono">{experiment.id.slice(0, 8)}</span>;
   return (
     <>
       <p className="muted">
         From experiment {href ? <Link href={href}>{label}</Link> : label}
-        {experiment.selection === "champion" ? ", the champion's run on this plan." : ", the newest completed run on this plan."}
+        {experiment.selection === "champion" ? ", the run of the model in use on this test design." : ", the newest completed run on this test design."}
       </p>
       <FindingsPanel projectId={projectId} experimentId={experiment.id} />
       <PhaseEmpty title="Open data questions arrive with the questions inbox." phase="P4.16-UI" />
@@ -227,7 +226,7 @@ function PolicyTab({ datasetId }: { datasetId: string }) {
         { key: "rev", label: "Policy revision", value: `${p.policy_revision ?? "none"} · ${p.policy_complete ? "every column labelled" : "labels incomplete"}` },
       ]} />
       <h3>Who can read</h3>
-      <p>Members of this workspace with read access, and this workspace&apos;s service tokens with the <span className="mono">read</span> scope. Tokens and agents get the same profile: names, types and training-row counts, never rows and never holdout values.</p>
+      <p>Members of this workspace with read access, and this workspace&apos;s service tokens with the <span className="mono">read</span> scope. Tokens and agents get the same profile: names, types and training-row counts, never rows and never final test set values.</p>
       <PhaseEmpty title="A per-person access list" phase="the Settings page (members)" />
     </>
   );
@@ -250,12 +249,12 @@ export default function DataPage() {
   const newRun = experiments ? safeInternalHref(`${experiments}/new`) : null;
   return (
     <>
-      <PageHead title="Data" subtitle="Dataset versions, column roles, the leakage audit and the access policy. Statistics come from training rows only; the rule's role is shown beside the role the run used." />
+      <PageHead title="Data" subtitle="Your data versions, what each column is used for, the leakage check and who can see the data. Statistics come from training rows only; the rules' answer is shown beside what the run used." />
       <PageGuide
         purpose="Check what the model was built from before you trust it."
         howTo={<>Pick a version under Versions. Columns &amp; roles compares the <Term definition={TERMS.rule}>rule role</Term> with the <Term definition={TERMS.used}>role used</Term>.</>}
         youGet="Per-column types, missing and unique counts on training rows, transforms, importance, leakage exclusions and the policy that governs the data."
-        attention="Statistics never include the final holdout. Before the first run there is no split, so only names and types are shown."
+        attention="Statistics never include the final test set. Before the first run there is no split, so only names and types are shown."
       />
       {datasets.isError ? <QueryNotice error={datasets.error} what="dataset list" /> : null}
       {datasets.isPending ? <p role="status">Loading datasets…</p> : null}
@@ -276,9 +275,6 @@ export default function DataPage() {
                   <ScopeNote profile={profile.data} />
                   <RunNote projectId={id} profile={profile.data} />
                   <DataTable caption="Columns and roles" columns={COLUMN_TABLE} rows={profile.data.columns} rowKey={(c) => c.name} />
-                  <PhaseEmpty title="AI (Jev) role answers appear here when a decision point is promoted." phase="the P6.8 release decision; every point is L0 (shadow) today">
-                    <Level level={0} />
-                  </PhaseEmpty>
                 </>
               ),
             },

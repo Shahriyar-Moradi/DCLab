@@ -60,15 +60,15 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
 
   // After the first run: refs set, nothing stale.
   await page.goto(`/projects/${projectId}/graph`);
-  await expect(page.getByRole("heading", { name: "Graph", level: 1 })).toBeVisible();
-  await expect(page.getByText("nothing stale")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lineage", level: 1 })).toBeVisible();
+  await expect(page.getByText("nothing built on an older version")).toBeVisible();
   const experimentNode = page.getByRole("button", { name: new RegExp(`^Experiment ${experimentId.slice(0, 8)}`) });
   await expect(experimentNode).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Model version .*ref champion/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Model version .*in use/ })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "1-fresh");
 
-  // A second upload, then "Make current" on the Data page: the dataset ref moves.
+  // A second upload, then "Use this data" on the Data page: the data in use changes.
   await page.goto(`/projects/${projectId}/experiments/new`);
   await expect(page.getByLabel("Dataset in this project")).not.toHaveValue(""); // prefilled from the latest run first
   await page.getByLabel("Dataset in this project").selectOption("");
@@ -78,40 +78,42 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
   await expect(page.getByText("churn-q3", { exact: true })).toBeVisible();
   await page.goto(`/projects/${projectId}/data`);
   await page.getByRole("tab", { name: /Versions/ }).click();
-  await page.getByRole("button", { name: /^Make current/ }).click();
-  await page.getByLabel("Why (recorded with the decision)").fill("Newer quarter of data");
-  await page.getByRole("button", { name: "Move the dataset ref" }).click();
-  await expect(page.getByText(/\(version 2\)/)).toBeVisible();
-  await expect(page.getByRole("row", { name: /churn-q3/ })).toContainText("current");
+  await page.getByRole("button", { name: /^Use this data/ }).click();
+  await page.getByLabel("Why (saved with the change)").fill("Newer quarter of data");
+  await page.locator("form").getByRole("button", { name: "Use this data", exact: true }).click();
+  await expect(page.getByRole("row", { name: /churn-q3/ })).toContainText("in use");
+  await expect(page.locator("p", { hasText: /History\. is churn-q3/ }).first()).toBeVisible();
+  const refsAfter = (await (await page.request.get(`/api/backend/v1/projects/${projectId}/refs`)).json()) as { items: Array<{ ref_kind: string; version: number }> };
+  expect(refsAfter.items.find((r) => r.ref_kind === "dataset")?.version).toBeGreaterThanOrEqual(2);
 
   // The graph marks the old run stale (orange + text); the drawer shows why and what becomes stale.
   await page.goto(`/projects/${projectId}/graph`);
-  await expect(page.getByLabel("Graph summary")).toContainText("stale");
-  const staleNode = page.getByRole("button", { name: new RegExp(`^Experiment ${experimentId.slice(0, 8)}.*, stale`) });
+  await expect(page.getByLabel("Graph summary")).toContainText("built on an older version");
+  const staleNode = page.getByRole("button", { name: new RegExp(`^Experiment ${experimentId.slice(0, 8)}.*, built on an older version`) });
   await expect(staleNode).toBeVisible();
-  await expect(staleNode).toContainText("stale");
+  await expect(staleNode).toContainText("built on an older version");
   await staleNode.click();
   const drawer = page.getByRole("complementary", { name: /Experiment/ });
   await expect(drawer).toBeVisible();
-  await expect(drawer).toContainText("data ref points at dataset version");
-  await expect(drawer.getByRole("list", { name: "What becomes stale" })).toContainText("Model version");
+  await expect(drawer).toContainText("the data in use is now dataset version");
+  await expect(drawer.getByRole("list", { name: "What would be built on an older version" })).toContainText("Model version");
   await expect(drawer).toContainText("No AI decision point is recorded for this experiment");
-  await expect(drawer.getByRole("link", { name: "Open the experiment" })).toHaveAttribute("href", `/projects/${projectId}/experiments/${experimentId}`);
+  await expect(drawer.getByRole("link", { name: "Open full inspector" })).toHaveAttribute("href", `/projects/${projectId}/experiments/${experimentId}`);
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "2-stale-drawer");
 
   // The superseded upload: its impact covers the split plan, the run and the model.
   await drawer.getByRole("button", { name: /^Dataset version/ }).first().click();
-  await expect(page.getByRole("complementary", { name: /Dataset version/ }).getByRole("list", { name: "What becomes stale" })).toContainText("Split plan");
+  await expect(page.getByRole("complementary", { name: /Dataset version/ }).getByRole("list", { name: "What would be built on an older version" })).toContainText("Split plan");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("complementary", { name: /Dataset version/ })).toHaveCount(0);
 
   // Accessible list fallback.
   await page.getByRole("tab", { name: /As a list/ }).click();
   const experiments = page.getByRole("table", { name: "Experiment nodes" });
-  await expect(experiments).toContainText("stale");
+  await expect(experiments).toContainText("built on an older version");
   await expect(experiments).toContainText("trained on dataset version");
-  await expect(page.getByRole("table", { name: "Model version nodes" })).toContainText("★ champion");
+  await expect(page.getByRole("table", { name: "Model version nodes" })).toContainText("★ in use");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "3-list");
 

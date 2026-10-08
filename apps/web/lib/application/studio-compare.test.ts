@@ -66,7 +66,7 @@ test("the API's change-set refusal is shown with its reason and path", () => {
 });
 
 test("ref and decision conflicts have explicit wording", () => {
-  assert.match(mapActionError(err(412, "precondition_failed"), "champion").title, /Someone else moved the champion/);
+  assert.match(mapActionError(err(412, "precondition_failed"), "champion").title, /Someone else changed the model in use/);
   assert.match(mapActionError(err(409, "champion_split_plan_mismatch"), "champion").title, /Not comparable/);
   assert.match(mapActionError(err(409, "invalid_decision_transition", "already accepted"), "decision").title, /already resolved/);
   assert.match(mapActionError(err(403, "forbidden"), "decision").title, /cannot do this/);

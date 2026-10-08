@@ -48,7 +48,7 @@ dclab-cli decisions list --project P
 `;
 
 export const SCOPE_HELP: Array<{ scope: string; help: string }> = [
-  { scope: "read", help: "Read projects, datasets, experiments, models and decisions. Never raw rows, never final holdout values." },
+  { scope: "read", help: "Read projects, datasets, experiments, models and decisions. Never raw rows, never final test set values." },
   { scope: "projects:write", help: "Create projects and problem specs (drafts)." },
   { scope: "datasets:write", help: "Upload datasets." },
   { scope: "experiments:write", help: "Start, branch and cancel experiments." },

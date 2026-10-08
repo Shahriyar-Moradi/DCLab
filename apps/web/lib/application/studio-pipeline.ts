@@ -3,9 +3,9 @@
  *
  * Every row comes from a field of `GET /v1/model-builds/{id}` (stages, in the order the engine returns them),
  * its `/events`, `/artifacts`, the run's decision records, `GET /v1/experiments/{id}/findings` and
- * `GET /v1/agent-runs`. Nothing is computed beyond counting. The final-holdout stage keeps its status and
- * summary but its configuration (the holdout metrics) is never turned into rows: the labelled final evaluation
- * is shown by the model card and the holdout flow, not here.
+ * `GET /v1/agent-runs`. Nothing is computed beyond counting. The final test set stage keeps its status and
+ * summary but its configuration (the final test set metrics) is never turned into rows: the labelled final evaluation
+ * is shown by the model card and the final test set flow, not here.
  */
 import { safeInternalHref } from "../../components/studio/safe-href.ts";
 import { isUuid } from "./command-search.ts";
@@ -92,7 +92,7 @@ export function stageDigests(stage: StageLike): Digest[] {
   return out;
 }
 
-/** Stage whose configuration holds holdout metrics: shown as a locked note, never as rows. */
+/** Stage whose configuration holds final test set metrics: shown as a locked note, never as rows. */
 export const HOLDOUT_STAGES = new Set(["final_holdout"]);
 const HIDDEN_KEY = /holdout|^test_(?!size)|_test$|y_true|y_pred|prediction|^score_delta$/i;
 const RESULT_CAP = 10;
@@ -144,7 +144,7 @@ function attemptChecks(stage: StageLike): CheckRow[] {
       id: `${stage.key}-attempt-${index}`,
       label: `Deterministic verification (${human(str(attempt.audit_mode) ?? "audit")})`,
       status: checkStatus(raw),
-      text: `Overall status ${raw.toLowerCase()}. The verifier also checks the locked holdout; only this overall result is shown here.`,
+      text: `Overall status ${raw.toLowerCase()}. The automatic checks also look at the locked final test set; only this overall result is shown here.`,
     };
   });
 }

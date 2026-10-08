@@ -73,7 +73,7 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
   await expect(cards).toHaveCount(stages.length);
   const keys = await cards.evaluateAll((els) => els.map((el) => el.getAttribute("data-stage")));
   expect(keys).toEqual(stages.map((s) => s.key));
-  await expect(page.getByRole("heading", { name: "Pipeline", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run evidence", level: 1 })).toBeVisible();
   await expect(page.getByLabel("Run summary")).toContainText(`${stages.filter((s) => ["completed", "complete", "succeeded"].includes(s.status.toLowerCase())).length} / ${stages.length}`);
 
   // Digests come from the API: every shown digest is one the API returned for this run.
@@ -111,7 +111,7 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
 
   // A hostile record parameter is ignored.
   await page.goto(`/projects/${projectId}/decisions?record=<script>alert(1)</script>`);
-  await expect(page.getByRole("heading", { name: "Decisions", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "History", level: 1 })).toBeVisible();
   await expect(page.locator("#decision-drawer-title")).toHaveCount(0);
 
   // Artifacts: digest only for model files, a real download for source code; the reproduction script downloads too.

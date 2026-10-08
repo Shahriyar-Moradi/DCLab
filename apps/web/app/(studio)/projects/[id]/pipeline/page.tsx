@@ -25,9 +25,9 @@ export default function PipelineListPage() {
   ];
   return (
     <>
-      <PageHead title="Pipeline" subtitle="Stage-by-stage evidence for one run." />
+      <PageHead title="Run evidence" subtitle="Step-by-step evidence for one run." />
       <PageGuide
-        purpose={<>Open the evidence of a run: every engine <Term definition="One step the engine runs in a fixed order, such as profiling the data or locking the holdout.">stage</Term>, its result, digests, checks and decision records.</>}
+        purpose={<>Open the evidence of a run: every engine <Term definition="One step the engine runs in a fixed order, such as profiling the data or locking the final test set.">stage</Term>, its result, digests, checks and decision records.</>}
         howTo="Pick a run below."
         youGet="The stages of that run in order, the decision points, agent runs with replay, artifacts and provenance."
       />

@@ -19,10 +19,10 @@ import { useDecisionPoints, useProjectGraph } from "@/lib/application/studio-dat
 import { REF_BADGE, decisionMarkers, graphSummary, kindLabel, layoutGraph, markersFor, shortId } from "@/lib/application/studio-graph";
 
 const TERMS = {
-  lineage: "Which versions each node was built from: a split plan partitions a dataset version, an experiment uses a spec, a dataset and a split plan, a model version is produced by an experiment.",
-  stale: "Built from a version that a project ref no longer points at. Computed on read from the refs; nothing is changed or retrained.",
-  ref: "A named pointer (spec, data, split, features, champion) to the version the project uses now. Moving it is a recorded decision.",
-  split: "SplitPlan: the fixed assignment of rows to the final holdout and cross-validation folds. Experiments on the same plan are comparable.",
+  lineage: "Which versions each item was built from: a test design splits a data version, a run uses a goal, a data version and a test design, a model is produced by a run.",
+  stale: "Built on an older version: it was made from a version that is no longer the one in use. Nothing is changed or retrained.",
+  ref: "The versions the project uses now (goal, data, test design, features, model). Changing one is saved in History.",
+  split: "Test design: the fixed assignment of rows to the final test set (used once) and the cross-validation folds. Runs on the same design are comparable.",
 };
 const ZOOMS = [0.3, 0.45, 0.6, 0.8, 1, 1.25];
 
@@ -64,24 +64,25 @@ export default function GraphPage() {
   return (
     <>
       <PageHead
-        title="Graph"
-        subtitle="Every versioned node of the project with its lineage. ★ marks the current refs; orange nodes marked stale were built from a version a ref has moved away from. Select a node to inspect it and see what would become stale."
+        title="Lineage"
+        actions={<Link className="btn" href={`/projects/${id}/decisions`}>History</Link>}
+        subtitle="How this project fits together: data, test design, runs, models. ★ marks the versions in use; orange items marked built on an older version were made from a version that is no longer in use. Select an item to inspect it and see what would become old."
       />
       <PageGuide
-        purpose={<>See how the project&apos;s versions connect (<Term definition={TERMS.lineage}>lineage</Term>) and which results are out of date.</>}
-        howTo={<>Select a node, or switch to &ldquo;As a list&rdquo; for a keyboard-friendly table. Arrows point from what a node was built from. The <Term definition={TERMS.ref}>refs</Term> and the <Term definition={TERMS.split}>split plan</Term> decide what is comparable.</>}
-        youGet="Kind, id, digest, status and refs of each node, the nodes it was built from, and the nodes a change to it would make stale. AI decision points appear only when the API recorded one."
-        attention={<>A <Term definition={TERMS.stale}>stale</Term> node is not wrong, only built from an older version. Nothing here changes the project; ref moves, compare and branch arrive with P4.4-A.</>}
+        purpose={<>See how the project&apos;s versions connect (<Term definition={TERMS.lineage}>lineage</Term>) and which results are built on an older version.</>}
+        howTo={<>Select a node, or switch to &ldquo;As a list&rdquo; for a keyboard-friendly table. Arrows point from what a node was built from. The <Term definition={TERMS.ref}>versions in use</Term> and the <Term definition={TERMS.split}>test design</Term> decide what is comparable.</>}
+        youGet="What each item is, its status, what it was built from, and what a change to it would make old. Ids and fingerprints are in each item's details."
+        attention={<>An item <Term definition={TERMS.stale}>built on an older version</Term> is not wrong, only made from an older version. Nothing here changes the project.</>}
       />
       {graph.isError ? <QueryNotice error={graph.error} what="project graph" /> : null}
       {points.isError ? <QueryNotice error={points.error} what="decision points" /> : null}
-      {graph.isPending ? <p role="status">Loading the graph…</p> : null}
+      {graph.isPending ? <p role="status">Loading the lineage…</p> : null}
       {data && layout && summary ? (
         <>
           <section className="toolbar" aria-label="Graph summary">
             <Pill tone="gray">{summary.nodes} nodes</Pill>
             <Pill tone="gray">{summary.edges} edges</Pill>
-            {summary.stale ? <Pill tone="warn"><span aria-hidden="true">⚠ </span>{summary.stale} stale</Pill> : <Pill tone="ok">nothing stale</Pill>}
+            {summary.stale ? <Pill tone="warn"><span aria-hidden="true">⚠ </span>{summary.stale} built on an older version</Pill> : <Pill tone="ok">nothing built on an older version</Pill>}
             {staleKinds.length ? <span className="muted">{staleKinds.map(([kind, n]) => `${n} ${kindLabel(kind).toLowerCase()}`).join(" · ")}</span> : null}
             {pointsTotal ? <Pill tone="ai"><span aria-hidden="true">◆ </span>{pointsTotal} AI decision points</Pill> : <span className="muted">No AI decision points recorded.</span>}
             {!data.refs_initialized ? <Pill tone="gray">No refs yet</Pill> : null}

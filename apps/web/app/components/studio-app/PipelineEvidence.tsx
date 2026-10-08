@@ -106,7 +106,7 @@ function StageCard({ projectId, stage, checks, records, points, reviews }: {
         {rows ? <p className="muted">{rows}</p> : null}
         <div className="stage-note rule"><p><Pill tone="det">deterministic</Pill> The result below is computed by code, not by an AI.</p></div>
         {result.locked ? (
-          <p className="muted">The final holdout is scored once, after the winner is locked. Its values are not shown on this page; see the model card for the labelled final evaluation.</p>
+          <p className="muted">The final test set is scored once, after the winner is locked. Its values are not shown on this page; see the model card for the labelled final evaluation.</p>
         ) : result.rows.length ? (
           <KeyValue items={result.rows.map((r) => ({ key: r.key, label: plainText(r.label, 60), value: <span className="mono">{plainText(r.value, 300)}</span> }))} />
         ) : <p className="muted">No configuration values were recorded for this stage.</p>}
@@ -174,10 +174,10 @@ export function PipelineEvidence({ projectId, experimentId }: { projectId: strin
   return (
     <>
       <PageHead
-        title="Pipeline"
+        title="Run evidence"
         eyebrow={<>Run <span className="mono">{experimentId.slice(0, 8)}</span></>}
         badges={<Pill tone={STATUS_TONE[run.status] ?? "gray"}>{run.status.replaceAll("_", " ")}</Pill>}
-        subtitle={run.intent ? plainText(run.intent, 300) : "Every stage of this run with its result, digests, checks and decision records."}
+        subtitle={run.intent ? plainText(run.intent, 300) : "Every step of this run with its result, fingerprints, checks and History entries."}
         actions={(
           <>
             <label className="sr-only" htmlFor="pipeline-run-switch">Switch run</label>

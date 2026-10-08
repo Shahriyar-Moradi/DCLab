@@ -31,6 +31,7 @@ SHELL = """<body data-page="{page}">
 <aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
 </div>
 <script src="app.js"></script>
+<script src="../versions.js" data-version="v6_plain"></script>
 <script src="guide.js"></script>
 </body>
 </html>

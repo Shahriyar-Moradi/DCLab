@@ -71,7 +71,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   // A run in progress offers Cancel, a finished one does not (checked on the root later).
   // Branch: an invalid change set is refused by the API with its own message and starts nothing.
   await page.goto(`/projects/${projectId}/experiments/${rootId}`);
-  const branch = page.getByRole("region", { name: "Branch this experiment" }).or(page.locator("section", { has: page.getByRole("heading", { name: "Branch this experiment" }) }));
+  const branch = page.getByRole("region", { name: "Try a change" }).or(page.locator("section", { has: page.getByRole("heading", { name: "Try a change" }) }));
   await expect(branch).toBeVisible();
   await expect(page.getByRole("button", { name: "Start branch" })).toBeDisabled();
   await page.getByLabel("Why are you branching?", { exact: false }).fill("Try balanced class weights");
@@ -96,7 +96,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   // Compare from the list: tick both, open the comparison.
   await page.goto(`/projects/${projectId}/experiments`);
   await page.getByRole("checkbox", { name: /Try balanced class weights to compare/ }).check();
-  await page.getByRole("checkbox", { name: new RegExp(`experiment ${rootId.slice(0, 8)} to compare`) }).check().catch(async () => {
+  await page.getByRole("checkbox", { name: /Select Run 1\b.* to compare/ }).check().catch(async () => {
     await page.getByRole("checkbox").nth(1).check();
   });
   await page.getByRole("button", { name: /Compare selected \(2\)/ }).click();
@@ -117,22 +117,22 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
 
   // Accept the branch: it becomes the champion; one decision is recorded.
   const decide = page.locator("section", { has: page.getByRole("heading", { name: "Accept Run A" }) }).first();
-  await decide.getByRole("button", { name: /Make champion/ }).click();
-  await decide.getByLabel("Why (recorded with the decision)").fill("Balanced weights improved recall on CV");
-  await decide.getByRole("button", { name: "Move the champion ref" }).click();
-  await expect(page.getByText("The champion ref moved and one decision was recorded.")).toBeVisible();
+  await decide.getByRole("button", { name: /Put this model in use/ }).click();
+  await decide.getByLabel("Why (saved with the change)").fill("Balanced weights improved recall on CV");
+  await decide.getByRole("button", { name: "Put in use" }).click();
+  await expect(page.getByText("This model is now in use and the change was saved in History.")).toBeVisible();
   const refs = await page.request.get(`/api/backend/v1/projects/${projectId}/refs`).then((r) => r.json()) as { items: Array<{ ref_kind: string; version: number }> };
   expect(refs.items.find((r) => r.ref_kind === "champion_model")?.version).toBeGreaterThanOrEqual(2);
   await shot(page, "3-accepted");
 
   await page.goto(`/projects/${projectId}/decisions`);
-  const decisions = page.getByRole("table", { name: "Decisions" });
-  await expect(decisions).toContainText("Champion promoted");
-  await decisions.getByRole("row", { name: /Champion promoted/ }).first().getByRole("button").click();
+  const decisions = page.getByRole("table", { name: "History" });
+  await expect(decisions).toContainText("Model put in use");
+  await decisions.getByRole("row", { name: /Model put in use/ }).first().getByRole("button").click();
   const drawer = page.locator("aside.graph-drawer");
   await expect(drawer).toContainText("Balanced weights improved recall on CV");
-  await expect(drawer).toContainText("final holdout");
-  await expect(drawer.getByText("A ref move is corrected by moving the ref again")).toBeVisible();
+  await expect(drawer).toContainText("final test set (used once)");
+  await expect(drawer.getByText("Changing the version in use is corrected by changing it again")).toBeVisible();
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     expect(await axeViolations(page)).toEqual([]);
@@ -142,15 +142,15 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
 
   // Conflict: the API answers 412 (the ref moved under the open form) -> an explicit message, nothing is written.
   await page.goto(`/projects/${projectId}/experiments/${rootId}`);
-  const champion = page.locator("section", { has: page.getByRole("heading", { name: "Champion", exact: true }) }).first();
-  await champion.getByRole("button", { name: /Make champion/ }).click();
-  await champion.getByLabel("Why (recorded with the decision)").fill("Back to the first run");
+  const champion = page.locator("section", { has: page.getByRole("heading", { name: "Model in use", exact: true }) }).first();
+  await champion.getByRole("button", { name: /Put this model in use/ }).click();
+  await champion.getByLabel("Why (saved with the change)").fill("Back to the first run");
   await page.route(`**/api/backend/v1/projects/${projectId}/refs/champion_model`, (route) => route.fulfill({
     status: 412, contentType: "application/json",
     body: JSON.stringify({ error: { code: "precondition_failed", message: "the champion_model ref changed", retryable: false, details: {} } }),
   }));
-  await champion.getByRole("button", { name: "Move the champion ref" }).click();
-  await expect(champion.getByText("Someone else moved the champion")).toBeVisible();
+  await champion.getByRole("button", { name: "Put in use" }).click();
+  await expect(champion.getByText("Someone else changed the model in use")).toBeVisible();
   await expect(champion.getByRole("button", { name: "Reload" })).toBeVisible();
   await page.unroute(`**/api/backend/v1/projects/${projectId}/refs/champion_model`);
   await shot(page, "5-champion-conflict");
@@ -159,7 +159,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   const propose = async (reason: string) => {
     const csrf = (await page.context().cookies()).find((c) => c.name === "dclab_csrf")?.value ?? "";
     const r = await page.request.post(`/api/backend/v1/projects/${projectId}/decisions`, {
-      headers: { "Idempotency-Key": `e2e-${reason.replace(/[^A-Za-z0-9]/g, "-")}-${Date.now()}`, "X-CSRF-Token": csrf },
+      headers: { "Idempotency-Key": `e2e-${reason.replace(/[^A-Za-z0-9]/g, "-")}-${Date.now()}`, "X-CSRF-Token": csrf, Origin: process.env.DCLAB_E2E_WEB_URL ?? "http://127.0.0.1:3001" },
       data: { action: "propose", decision_type: "experiment_accepted", subject: { kind: "experiment", id: branchId }, rationale: reason, evidence_refs: [{ kind: "experiment", id: branchId }] },
     });
     expect(r.status(), await r.text()).toBe(201);
@@ -167,25 +167,25 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await propose("Looks good to keep");
   await propose("Not convincing");
   await page.goto(`/projects/${projectId}/decisions`);
-  await expect(page.getByText("2 proposals are waiting for a decision.")).toBeVisible();
-  const list = page.getByRole("table", { name: "Decisions" });
-  await list.getByRole("row", { name: /Experiment accepted.*proposed/ }).first().getByRole("button").click();
+  await expect(page.getByText("2 suggestions are waiting for your answer.")).toBeVisible();
+  const list = page.getByRole("table", { name: "History" });
+  await list.getByRole("row", { name: /Run accepted.*proposed/ }).first().getByRole("button").click();
   const drawer2 = page.locator("aside.graph-drawer");
   await drawer2.getByRole("button", { name: /^Accept/ }).click();
   await expect(drawer2.getByRole("button", { name: "Confirm accept" })).toBeDisabled();
   await drawer2.getByLabel("Reason (recorded)").fill("Agreed after review");
   await drawer2.getByRole("button", { name: "Confirm accept" }).click();
   await expect(drawer2.getByText("Accepted: a new record was appended.")).toBeVisible();
-  await expect(page.getByText("1 proposal is waiting for a decision.")).toBeVisible();
+  await expect(page.getByText("1 suggestion is waiting for your answer.")).toBeVisible();
   await shot(page, "6-accepted-proposal");
 
-  await list.getByRole("row", { name: /Experiment accepted.*proposed/ }).first().getByRole("button").click();
+  await list.getByRole("row", { name: /Run accepted.*proposed/ }).first().getByRole("button").click();
   await drawer2.getByRole("button", { name: /^Reject/ }).click();
   await drawer2.getByLabel("Reason (recorded)").fill("Gain is within noise");
   await drawer2.getByRole("button", { name: "Confirm reject" }).click();
   await expect(drawer2.getByText("Rejected: a new record was appended.")).toBeVisible();
 
-  const accepted = list.getByRole("row", { name: /Experiment accepted.*accepted/ }).first();
+  const accepted = list.getByRole("row", { name: /Run accepted.*accepted/ }).first();
   await accepted.getByRole("button").click();
   await drawer2.getByRole("button", { name: "Supersede" }).click();
   await expect(drawer2.getByRole("button", { name: "Confirm supersede" })).toBeDisabled();
@@ -195,7 +195,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await shot(page, "7-superseded");
 
   // The engine's own records cannot be corrected by a person: no Supersede is offered.
-  await list.getByRole("row", { name: /Winner locked/ }).first().getByRole("button").click();
+  await list.getByRole("row", { name: /Best run chosen/ }).first().getByRole("button").click();
   await expect(drawer2.getByText("only the engine corrects it")).toBeVisible();
   await expect(drawer2.getByRole("button", { name: "Supersede" })).toHaveCount(0);
 });

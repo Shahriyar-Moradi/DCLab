@@ -26,8 +26,8 @@ import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 const TERMS = {
-  contract: "The feature contract: the list of columns the model was trained on. A file can be scored only if it has every one of them, with the same names.",
-  threshold: "Set when the model was built: picked on cross-validation predictions when the project declared a cost, a constraint or a threshold-based metric, otherwise the default 0.5. Rows at or above it are labelled positive. It is applied as stored and cannot be changed here.",
+  contract: "New files must have the same columns: the list of columns the model was trained on. A file can be scored only if it has every one of them, with the same names.",
+  threshold: "Set when the model was built: picked on cross-validation predictions when the project declared a cost, a constraint or a threshold-based metric, otherwise the default 0.5. Rows at or above it are labelled positive. It is applied as stored and cannot be changed here.", // see also GLOSSARY.threshold
   operating: "The operating point is the threshold the model runs at. It decides how many rows are labelled positive, trading missed positives against false alarms.",
 };
 
