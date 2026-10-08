@@ -20,6 +20,8 @@ import {
   llmLine, markdownDownload, thresholdSourceText, metricName, risksView, splitRows,
 } from "@/lib/application/studio-card";
 import { useFullModelCard } from "@/lib/application/studio-card-hooks";
+import { chosenSummary } from "@/lib/application/studio-operating";
+import { useOperatingPoints } from "@/lib/application/studio-operating-hooks";
 import { checkLabel, findingStatusLabel, findingTone } from "@/lib/application/studio-findings";
 import { ApiError } from "@/lib/infrastructure/api-client";
 
@@ -45,6 +47,7 @@ function saveText(text: string, type: string, filename: string) {
 
 export function ModelCard({ projectId, modelVersionId }: { projectId: string; modelVersionId: string }) {
   const read = useFullModelCard(modelVersionId);
+  const operating = useOperatingPoints(read.data?.experiment_id, !!read.data);
   if (read.isError) {
     if (read.error instanceof ApiError && read.error.status === 409) {
       return <Banner tone="warn">The card is not available yet. It is built once the run&apos;s evidence is locked.</Banner>;
@@ -79,6 +82,7 @@ export function ModelCard({ projectId, modelVersionId }: { projectId: string; mo
   if (o.business_objective) predicts.push({ key: "obj", label: "Business objective", value: plainText(o.business_objective, 400) });
   if (o.decision_threshold != null) predicts.push({ key: "thr", label: <Term definition={TERMS.operating}>Decision threshold</Term>, value: <>{cardNumber(o.decision_threshold)} <span className="muted">{thresholdSourceText(o.decision_threshold_source)}</span></> });
 
+  const chosenPoint = chosenSummary(operating.data);
   const facts = [...dataRows(card.data), ...splitRows(card.split)];
 
   return (
@@ -124,6 +128,19 @@ export function ModelCard({ projectId, modelVersionId }: { projectId: string; mo
         {card.cv.threshold_note ? <p className="muted">{plainText(card.cv.threshold_note, 500)}</p> : null}
       </Card>
 
+
+      {chosenPoint ? (
+        <Card title="Chosen operating point" aside={<Pill tone="det">decision recorded</Pill>}>
+          <p><b>Threshold {chosenPoint.threshold}</b> <span className="muted">({chosenPoint.method}; out-of-fold training predictions)</span></p>
+          {chosenPoint.sentence ? <p>{plainText(chosenPoint.sentence, 600)}</p> : null}
+          <KeyValue items={[
+            { key: "why", label: "Reason", value: plainText(chosenPoint.reason, 600) },
+            { key: "when", label: "Recorded", value: <>{formatWhen(chosenPoint.when)}{chosenPoint.by ? <> by user <span className="mono">{chosenPoint.by.slice(0, 8)}</span></> : null}</> },
+            { key: "dec", label: "Decision", value: <span className="mono">{chosenPoint.decisionId.slice(0, 8)}</span> },
+          ]} />
+          <p className="muted">This is a recorded decision. Batch scoring of this version still uses the locked threshold{o.decision_threshold != null ? ` (${cardNumber(o.decision_threshold)})` : ""}; applying a chosen point to scoring needs a new model version.{chosenPoint.note ? ` ${chosenPoint.note}` : ""}</p>
+        </Card>
+      ) : null}
 
       <Card title={<>Compared with the <Term definition={TERMS.baseline}>dummy baseline</Term></>} aside={<Pill tone={baseline.tone}>{baseline.badge}</Pill>}>
         <p>{baseline.text}</p>

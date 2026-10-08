@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { BranchPanel, CancelPanel, ChampionPanel } from "@/app/components/studio-app/CompareBranch";
 import { compareHref } from "@/lib/application/studio-compare";
+import { OperatingPointsPanel } from "@/app/components/studio-app/OperatingPoints";
 import { FindingsPanel } from "@/app/components/studio-app/FindingsPanel";
 import { ExperimentInspector } from "@/app/components/studio-app/Inspectors";
 import { Banner } from "@/components/studio/Banner";
@@ -68,7 +69,7 @@ function ExperimentPageInner() {
       <PageGuide
         purpose="Understand one run: why it exists, what it tried, how it scored and how to reproduce it."
         howTo={<>Use the inspector tabs: Candidates and Per-fold show the <Term definition="Cross-validation: the training rows are split into folds and each is held out once. Models are compared on these scores only.">cross-validation</Term> evidence, Code is a plain-text script you can copy or download.</>}
-        youGet="Config, change set, CV metrics, per-fold results, feature importance, generated code and the stage evidence. An AI Critic review appears only when one exists."
+        youGet="Config, change set, CV metrics, per-fold results, feature importance, generated code and the stage evidence. Two-class runs also get a threshold chooser (precision and recall by threshold, on training folds). An AI Critic review appears only when one exists."
         attention="The final holdout is scored once for the locked winner and is not shown in this inspector."
       />
       {experiment.failure_reason ? <Banner tone="crit">{experiment.failure_reason}</Banner> : null}
@@ -90,6 +91,13 @@ function ExperimentPageInner() {
         />
       </Card>
       <div id="findings"><Card title="Findings" aside={<Pill tone="det">deterministic checks</Pill>}><FindingsPanel projectId={id} experimentId={experiment.id} /></Card></div>
+      {experiment.status === "completed" ? (
+        <div id="operating-points">
+          <Card title="Per-fold and threshold" aside={<Pill tone="det">on training folds (out-of-fold)</Pill>}>
+            <OperatingPointsPanel projectId={id} experimentId={experiment.id} />
+          </Card>
+        </div>
+      ) : null}
       {live ? <Card title="Stop this run"><CancelPanel experimentId={experiment.id} /></Card> : null}
       {experiment.status === "completed" ? (
         <>

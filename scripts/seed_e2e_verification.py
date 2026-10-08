@@ -45,6 +45,8 @@ ACCOUNTS = (
     ),
     ("client-user@verification.invalid", UserRole.CLIENT_USER, "business-a"),
     ("multi-workspace@verification.invalid", UserRole.WORKSPACE_ADMIN, "business-a"),
+    # Read-only member (create_user stores a ``viewer`` membership for this role): lets specs prove a viewer cannot write.
+    ("viewer-a@verification.invalid", UserRole.VIEWER, "business-a"),
 )
 
 
