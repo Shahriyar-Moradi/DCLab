@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  attentionCount, branchPrefillHref, findingStatusLabel, findingTone, findingsState, formatEvidenceValue, evidenceRows, parseBranchPrefill, prefillFor, sortFindings,
+  CHECK_LABEL, RECOMMENDATION_TEXT, attentionCount, branchPrefillHref, checkLabel, findingStatusLabel, findingTone, findingsState, formatEvidenceValue, evidenceRows,
+  parseBranchPrefill, prefillFor, sortFindings,
 } from "./studio-findings.ts";
 
 const P = "11111111-1111-4111-8111-111111111111";
@@ -47,6 +48,12 @@ test("evidence formatting is unit aware and keeps unknown keys as plain text", (
   assert.equal(formatEvidenceValue("note", "z".repeat(500)).length, 301);
   assert.deepEqual(evidenceRows({ minority_rows: 3 }), [{ key: "minority_rows", label: "Minority rows", value: "3" }]);
   assert.deepEqual(evidenceRows(undefined), []);
+  const nested = evidenceRows({ holdout_rows: 40, holdout_comparison: { drifted_columns: ["amount"], max_psi: 0.31 } });
+  assert.deepEqual(nested.map((r) => [r.key, r.label, r.value]), [
+    ["holdout_rows", "Holdout rows", "40"],
+    ["holdout_comparison.drifted_columns", "Test rows: drifted columns", "amount"],
+    ["holdout_comparison.max_psi", "Test rows: max psi", "0.31"],
+  ]);
 });
 
 test("recommendations map to typed branch changes only when expressible", () => {
@@ -57,6 +64,19 @@ test("recommendations map to typed branch changes only when expressible", () => 
   assert.equal(leak?.prefill, "feature_transform_add");
   assert.equal(leak?.column, "customer_code");
   for (const kind of ["deduplicate", "collect_more_data", "something_new", null]) assert.equal(prefillFor(f("x", "warning", "warning", { recommendation_kind: kind })), null);
+});
+
+test("P5.1-A checks have labels, recommendation text and only expressible pre-fills", () => {
+  const added = ["fold_instability", "calibration", "subgroup_gap", "multicollinearity", "feature_drift", "temporal_shift",
+    "missingness_shift", "contamination", "time_travel", "new_feature"];
+  for (const check of added) assert.ok(CHECK_LABEL[check] && checkLabel(check) !== check.replaceAll("_", " "), check);
+  for (const kind of ["calibrate", "review_subgroups", "drop_correlated", "review_split"]) assert.ok(RECOMMENDATION_TEXT[kind], kind);
+  const collinear = prefillFor(f("multicollinearity", "warning", "warning", { recommendation_kind: "drop_correlated", evidence: { drop_candidates: ["a_copy"] } }));
+  assert.deepEqual([collinear?.prefill, collinear?.transform, collinear?.column], ["feature_transform_add", "drop_column", "a_copy"]);
+  const jump = prefillFor(f("new_feature", "fail", "error", { recommendation_kind: "investigate_leakage", evidence: { added_feature: "refund_flag" } }));
+  assert.equal(jump?.column, "refund_flag");
+  assert.equal(prefillFor(f("time_travel", "fail", "critical", { recommendation_kind: "review_columns", evidence: { moved_columns: ["prior_orders"] } }))?.column, "prior_orders");
+  for (const kind of ["calibrate", "review_subgroups", "review_split"]) assert.equal(prefillFor(f("x", "warning", "warning", { recommendation_kind: kind })), null);
 });
 
 test("branch href carries a validated pre-fill and round-trips through the parser", () => {

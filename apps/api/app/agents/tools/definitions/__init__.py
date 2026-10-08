@@ -69,8 +69,11 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
            "app.services.artifact_service.list_artifacts"),
           r._evidence_fetch, r._evidence_shape, aggregates=True),
     _read("get_findings", "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate "
-          "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | "
-          "not_evaluated), a plain-language message and the numbers behind it.", r.ExperimentInput,
+          "rows, class imbalance, a too-good-to-be-true CV score, fold instability, calibration, subgroup gaps, "
+          "multicollinearity, train-to-test feature drift, temporal shift, missingness shift, contamination "
+          "(those four compare training and test rows: status only, details are for people), time travel and "
+          "a single new feature's CV jump, each with status (pass | warning | fail | not_evaluated), a "
+          "plain-language message and the training-side numbers behind it.", r.ExperimentInput,
           ("GET /v1/experiments/{experiment_id}/findings",),
           (f"{_EXP}.experiment_findings",), r._findings_fetch, r._findings_shape, aggregates=True),
     _read("list_decisions", "Append-only decision records of a project, newest first (next_cursor pages).",

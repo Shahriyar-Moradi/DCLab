@@ -18,7 +18,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.db.models import DataQualityFinding, Experiment
-from app.domain.findings import FINDING_CHECKS
+from app.domain.findings import CHECK_FINDING_TYPES, FINDING_CHECKS
 from app.services.service_token_service import create_service_token
 from test_v1_contract_conventions import _assert_envelope
 from test_v1_resources_experiments import _csv, _h, _key, _root, _work, setup  # noqa: F401 (fixture)
@@ -59,6 +59,23 @@ def _checks(body: dict) -> dict[str, dict]:
     return {item["check"]: item for item in body["checks"]}
 
 
+# P5.1-A checks whose evidence a root run on a table without a time column cannot have; on a
+# few hundred rows no subgroup has 20 rows of each class, so subgroup_gap may not be evaluated.
+EXPECTED_NOT_EVALUATED = {"temporal_shift": "no_time_column", "time_travel": "no_time_column",
+                          "new_feature": "no_parent"}
+SMALL_DATA = {"subgroup_gap": "no_low_cardinality_column"}
+
+
+def _unevaluated(body: dict) -> dict[str, str]:
+    found = {item["check"]: item["evidence"].get("not_evaluated_reason") for item in body["checks"]
+             if item["status"] == "not_evaluated" or "not_evaluated_reason" in item["evidence"]}
+    return {k: v for k, v in found.items() if SMALL_DATA.get(k) != v}
+
+
+def _statuses(body: dict) -> list[tuple]:
+    return [(item["check"], item["status"], item["evidence"].get("not_evaluated_reason")) for item in body["checks"]]
+
+
 def _keys(value) -> set[str]:
     if isinstance(value, dict):
         return set(value) | {k for item in value.values() for k in _keys(item)}
@@ -77,10 +94,12 @@ def test_planted_leak_and_duplicates_produce_findings(client, db_session, setup)
     assert body["investigated"] is True and body["version"] == "investigate.v1"
     assert [item["check"] for item in body["checks"]] == list(FINDING_CHECKS)
     summary = body["summary"]
-    assert summary["passed"] + summary["warnings"] + summary["failures"] == 5 and summary["not_evaluated"] == 0
+    total = len(FINDING_CHECKS)  # P5.1-A: 15 checks (deliberately updated from 5)
+    assert summary["passed"] + summary["warnings"] + summary["failures"] + summary["not_evaluated"] == total
     checks = _checks(body)
-    assert not [item for item in body["checks"]
-                if item["status"] == "not_evaluated" or "not_evaluated_reason" in item["evidence"]]
+    assert _unevaluated(body) == EXPECTED_NOT_EVALUATED, _statuses(body)
+    # Exact copies are the duplicate check's; contamination looks beyond them.
+    assert checks["contamination"]["evidence"]["holdout_comparison"]["near_duplicate_holdout_rows"] == 0
 
     leakage = checks["target_leakage"]
     assert leakage["status"] == "warning" and leakage["recommendation_kind"] == "review_columns"
@@ -89,7 +108,7 @@ def test_planted_leak_and_duplicates_produce_findings(client, db_session, setup)
     assert "outcome_code" in leakage["message"]
     duplicates = checks["duplicate_rows"]
     assert duplicates["status"] in {"warning", "fail"} and duplicates["recommendation_kind"] == "deduplicate"
-    assert duplicates["evidence"]["train_duplicate_rows"] + duplicates["evidence"]["train_test_duplicate_rows"] > 0
+    assert duplicates["evidence"]["train_duplicate_rows"] + duplicates["evidence"]["holdout_duplicate_rows"] > 0
     assert "record_id" not in str(duplicates["evidence"])  # hashed on the model columns only
     for item in body["checks"]:
         assert item["message"] and item["severity"] in {"info", "warning", "error", "critical"}
@@ -98,6 +117,12 @@ def test_planted_leak_and_duplicates_produce_findings(client, db_session, setup)
     db.expire_all()
     experiment = db.get(Experiment, UUID(experiment_id))
     assert experiment.scientific_evidence_locked_at is not None
+    # P5.1-A: the out-of-fold summary covers exactly the training pool's CV validation rows (each
+    # once under K-fold) -- no holdout row -- and belongs to the locked winner.
+    oof, split = experiment.result["oof_evidence"], experiment.result["split"]
+    assert oof["rows"] == oof["calibration"]["rows"] == len(split["train_source_rows"])
+    assert oof["candidate_id"] == experiment.result["best_single"]["candidate_id"]
+    assert not set(split["train_source_rows"]) & set(split["test_source_rows"])
     rows = list(db.scalars(select(DataQualityFinding).where(
         DataQualityFinding.pipeline_run_id == experiment.id,
         DataQualityFinding.evidence["source"].astext == "investigate",
@@ -105,8 +130,9 @@ def test_planted_leak_and_duplicates_produce_findings(client, db_session, setup)
     by_check = {row.evidence["check"]: row for row in rows}
     assert {"target_leakage", "duplicate_rows"} <= set(by_check)
     assert by_check["duplicate_rows"].finding_type == "duplicates"
+    # P5.1-A checks are result-only until a migration widens ck_data_quality_findings_type_valid.
     assert {row.evidence["check"] for row in rows} == {
-        c for c, item in checks.items() if item["status"] in {"warning", "fail"}}
+        c for c, item in checks.items() if item["status"] in {"warning", "fail"} and c in CHECK_FINDING_TYPES}
     assert all(row.created_at <= experiment.scientific_evidence_locked_at for row in rows)
     with pytest.raises(DBAPIError):
         with db.begin_nested():
@@ -146,8 +172,12 @@ def test_clean_run_has_no_leak_or_duplicate_findings(client, db_session, setup):
     experiment_id = _run(client, db_session, setup, _csv(seed=5))
     body = client.get(f"/v1/experiments/{experiment_id}/findings", headers=_h(setup)).json()
     checks = _checks(body)
-    assert body["summary"]["not_evaluated"] == 0
-    assert not [item for item in body["checks"] if "not_evaluated_reason" in item["evidence"]]
+    assert _unevaluated(body) == EXPECTED_NOT_EVALUATED, _statuses(body)
+    assert body["summary"]["not_evaluated"] - len(EXPECTED_NOT_EVALUATED) in (0, 1)
+    # Clean data: the train -> test feature checks and the training-row checks pass.
+    for check in ("feature_drift", "missingness_shift", "contamination", "multicollinearity"):
+        assert checks[check]["status"] == "pass", (check, checks[check]["message"])
+    assert checks["subgroup_gap"]["status"] in {"pass", "not_evaluated"}
     assert checks["target_leakage"]["status"] == "pass"
     assert checks["duplicate_rows"]["status"] == "pass"
     assert checks["implausible_score"]["status"] == "pass"

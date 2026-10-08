@@ -449,7 +449,7 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
-      "description": "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | not_evaluated), a plain-language message and the numbers behind it.",
+      "description": "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate rows, class imbalance, a too-good-to-be-true CV score, fold instability, calibration, subgroup gaps, multicollinearity, train-to-test feature drift, temporal shift, missingness shift, contamination (those four compare training and test rows: status only, details are for people), time travel and a single new feature's CV jump, each with status (pass | warning | fail | not_evaluated), a plain-language message and the training-side numbers behind it.",
       "effect": "read",
       "input_schema": {
         "properties": {

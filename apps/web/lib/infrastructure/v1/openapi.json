@@ -3741,14 +3741,24 @@
               "overfit_gap",
               "duplicate_rows",
               "class_imbalance",
-              "implausible_score"
+              "implausible_score",
+              "fold_instability",
+              "calibration",
+              "subgroup_gap",
+              "multicollinearity",
+              "feature_drift",
+              "temporal_shift",
+              "missingness_shift",
+              "contamination",
+              "time_travel",
+              "new_feature"
             ],
             "title": "Check",
             "type": "string"
           },
           "evidence": {
             "additionalProperties": true,
-            "description": "Numbers and column names behind the check (training rows and CV only; never final-holdout values). Column names are user data.",
+            "description": "Numbers and column names behind the check: training rows and CV folds; for the split checks also test-row feature statistics under holdout_* keys (holdout scope: shown to people only, removed for agents and service tokens). Never a final-holdout label, prediction or metric. Column names are user data.",
             "title": "Evidence",
             "type": "object"
           },
@@ -3767,7 +3777,11 @@
                   "deduplicate",
                   "class_weights",
                   "collect_more_data",
-                  "investigate_leakage"
+                  "investigate_leakage",
+                  "calibrate",
+                  "review_subgroups",
+                  "drop_correlated",
+                  "review_split"
                 ],
                 "type": "string"
               },
@@ -3809,7 +3823,7 @@
       },
       "ExperimentFindingsRead": {
         "additionalProperties": false,
-        "description": "The five core trust checks of one run. ``investigated`` is false for runs that\nfinished before P4.10-A (or have not finished): ``checks`` is then empty. A check\nthat could not run is ``not_evaluated`` (counted separately, never as passed).",
+        "description": "The trust checks of one run (five core checks; runs since P5.1-A add ten more).\n``investigated`` is false for runs that finished before P4.10-A (or have not\nfinished): ``checks`` is then empty. A check that could not run is ``not_evaluated``\n(counted separately, never as passed).",
         "properties": {
           "checks": {
             "items": {
@@ -13791,7 +13805,7 @@
     },
     "/v1/experiments/{experiment_id}/findings": {
       "get": {
-        "description": "Five plain-language trust checks of a run: target leakage (from the leakage\naudit), train-vs-CV overfit gap, duplicate rows (within training and across the\nsplit, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a\nstatus (pass | warning | fail, or not_evaluated with a reason when its evidence is\nmissing or it errored), a severity, the numbers behind it and a\nrecommendation kind. Evidence comes from training rows and CV folds only, never\nfinal-holdout values. Runs finished before the checks existed: ``investigated: false``.",
+        "description": "Plain-language trust checks of a run: target leakage (from the leakage audit),\ntrain-vs-CV overfit gap, duplicate rows (within training and across the split, by\nrow hash), class imbalance and a too-good-to-be-true CV score; since P5.1-A also\nfold instability, calibration and subgroup gaps (out-of-fold predictions),\nmulticollinearity (training rows), train-to-test feature drift, temporal shift,\nmissingness shift and contamination (feature columns only), time travel and a single\nnew feature's CV jump against the parent. Each has a status (pass | warning | fail, or\nnot_evaluated with a reason when its evidence is missing or it errored), a severity,\nthe numbers behind it and a recommendation kind. No check reads a final-holdout label,\nprediction or metric; test-row feature statistics are holdout scope (``holdout_*`` keys):\nservice-token callers get status, severity and recommendation kind with a fixed message\nfor those checks. Runs finished before the checks existed: ``investigated: false``; runs\nfinished before P5.1-A carry the first five checks only.",
         "operationId": "read_experiment_findings_v1_experiments__experiment_id__findings_get",
         "parameters": [
           {

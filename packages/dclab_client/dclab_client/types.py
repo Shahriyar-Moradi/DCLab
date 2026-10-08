@@ -899,8 +899,9 @@ class ExperimentFindingsSummary(BaseModel):
 
 
 class ExperimentFindings(BaseModel):
-    """The five core trust checks of a run (P4.10-A); ``investigated`` is false for runs
-    that predate them."""
+    """The trust checks of a run: five since P4.10-A, fifteen since P5.1-A (service tokens get
+    status only for the checks that compare training and test rows); ``investigated`` is false
+    for runs that predate them."""
 
     experiment_id: UUID
     investigated: bool

@@ -1142,8 +1142,11 @@ class ExperimentsClient:
     def findings(
         self, experiment_id: UUID | str, *, request_id: str | None = None
     ) -> ExperimentFindings:
-        """The five trust checks of a run (leakage, overfit gap, duplicates, class
-        imbalance, too-good-to-be-true score) with plain-language messages."""
+        """The trust checks of a run (fifteen since P5.1-A: leakage, overfit gap, duplicates,
+        class imbalance, too-good-to-be-true score, fold instability, calibration, subgroup
+        gaps, multicollinearity, train-to-test drift / time order / missingness /
+        contamination, time travel, a single new feature's jump) with plain-language messages.
+        A service token gets status only for the checks that compare training and test rows."""
 
         payload = self._transport.request(
             "GET",

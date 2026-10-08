@@ -184,8 +184,30 @@ def withhold_experiment(body: Any) -> Any:
 
 
 def withhold_findings(body: Any) -> Any:
-    checks = [item.model_copy(update={"evidence": strip_holdout(item.evidence)}) for item in body.checks]
+    """Holdout-scoped evidence removed and fixed messages for the checks whose human messages
+    carry test-row numbers (``domain.findings.agent_finding``); status, severity and
+    recommendation kind stay."""
+
+    from app.domain.findings import agent_finding
+
+    checks = []
+    for item in body.checks:
+        message, evidence = agent_finding(item.check, item.message, item.evidence)
+        checks.append(item.model_copy(update={"evidence": evidence, "message": message}))
     return body.model_copy(update={"checks": checks})
+
+
+def withhold_card_risks(card: Any) -> Any:
+    """A model card whose risk messages for holdout-scoped checks are the fixed agent text
+    (their human messages name test-row numbers), Markdown re-rendered from it."""
+
+    from app.domain.findings import AGENT_MESSAGES
+    from app.domain.model_card import render_markdown
+
+    items = [item.model_copy(update={"message": AGENT_MESSAGES[item.check]}) if item.check in AGENT_MESSAGES
+             else item for item in card.risks.items]
+    card = card.model_copy(update={"risks": card.risks.model_copy(update={"items": items})})
+    return card.model_copy(update={"markdown": render_markdown(card)})
 
 
 def withhold_comparison(body: Any) -> Any:
@@ -212,6 +234,7 @@ def withhold_model_card(body: Any) -> Any:
     card = body.model_copy(update={
         "final_evaluation": ModelCardFinalEvaluation(status="withheld", note=FINAL_EVALUATION_WITHHELD),
     })
+    card = withhold_card_risks(card)
     return card.model_copy(update={"markdown": render_markdown(card)})
 
 

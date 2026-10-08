@@ -237,24 +237,34 @@ def read_experiment_findings(
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
 ) -> ExperimentFindingsRead:
-    """Five plain-language trust checks of a run: target leakage (from the leakage
-    audit), train-vs-CV overfit gap, duplicate rows (within training and across the
-    split, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a
-    status (pass | warning | fail, or not_evaluated with a reason when its evidence is
-    missing or it errored), a severity, the numbers behind it and a
-    recommendation kind. Evidence comes from training rows and CV folds only, never
-    final-holdout values. Runs finished before the checks existed: ``investigated: false``."""
+    """Plain-language trust checks of a run: target leakage (from the leakage audit),
+    train-vs-CV overfit gap, duplicate rows (within training and across the split, by
+    row hash), class imbalance and a too-good-to-be-true CV score; since P5.1-A also
+    fold instability, calibration and subgroup gaps (out-of-fold predictions),
+    multicollinearity (training rows), train-to-test feature drift, temporal shift,
+    missingness shift and contamination (feature columns only), time travel and a single
+    new feature's CV jump against the parent. Each has a status (pass | warning | fail, or
+    not_evaluated with a reason when its evidence is missing or it errored), a severity,
+    the numbers behind it and a recommendation kind. No check reads a final-holdout label,
+    prediction or metric; test-row feature statistics are holdout scope (``holdout_*`` keys):
+    service-token callers get status, severity and recommendation kind with a fixed message
+    for those checks. Runs finished before the checks existed: ``investigated: false``; runs
+    finished before P5.1-A carry the first five checks only."""
 
     try:
         body = experiment_findings(
-            db, actor=user, workspace_id=request_workspace_id(request), experiment_id=experiment_id
+            db, actor=user, workspace_id=request_workspace_id(request), experiment_id=experiment_id,
+            agent=is_agent(request),  # rendered from holdout-stripped evidence, like the in-process path
         )
     except ExperimentNotFoundError as exc:
         raise _not_found("experiment not found") from exc
     except IdentityError as exc:
         raise domain_error(exc) from exc
-    body = findings_view(request, body)
+    body = findings_view(request, body)  # second guard for service tokens
     set_etag(response, representation_etag(body))
+    # The representation depends on the principal (holdout-scoped detail for people only).
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
     return body
 
 

@@ -522,6 +522,36 @@ def _lock_decision_threshold(
     return decision
 
 
+def _winner_oof_evidence(
+    task_type: str,
+    winner: dict[str, Any],
+    oof: tuple[list[np.ndarray], list[np.ndarray]] | None,
+    pool: pd.DataFrame,
+    y_pool: np.ndarray,
+    primary_metric: str | None,
+    n_classes: int | None,
+) -> dict[str, Any] | None:
+    """P5.1-A trust-check evidence (calibration bins, subgroup scores) from the locked
+    winner's CV validation-row predictions: training pool only, taken before the holdout
+    is touched. Advisory: an error is logged and leaves the checks ``not_evaluated``."""
+    from app.engine.investigate.oof import oof_evidence
+
+    try:
+        return oof_evidence(
+            task_type,
+            y_pool,
+            list(zip(oof[0], oof[1])) if oof else None,
+            pool,
+            list(winner.get("categorical_cols") or []),
+            primary_metric=primary_metric,
+            n_classes=n_classes,
+            candidate_id=winner.get("candidate_id"),
+        )
+    except Exception:  # noqa: BLE001 - diagnostics never fail the run
+        logger.exception("out-of-fold evidence failed for candidate %s", winner.get("candidate_id"))
+        return None
+
+
 def _apply_holdout_constraints(
     decision: dict[str, Any], objective, test_metrics: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1389,8 +1419,18 @@ def _run_open_ingest_candidates(
 
     parsed_objective = objective_from_dict(objective, task_type=task.task_type)
     decision_threshold: dict[str, Any] | None = None
+    oof_summary: dict[str, Any] | None = None
     threshold = DEFAULT_THRESHOLD
     if best_single is not None:
+        oof_summary = _winner_oof_evidence(
+            task.task_type,
+            best_single,
+            oof_scores.get(best_single["candidate_id"]),
+            pool,
+            y_pool,
+            selection_metric,
+            n_classes,
+        )
         decision_threshold = _lock_decision_threshold(
             task.task_type,
             best_single,
@@ -1543,6 +1583,7 @@ def _run_open_ingest_candidates(
         "baseline_comparison": baseline_comparison,
         "decision_threshold": decision_threshold,
         "feature_importance": feature_importance,
+        "oof_evidence": oof_summary,
     }
 
 
@@ -1792,6 +1833,8 @@ def _run_open_ingest_experiment(
         "objective": config.objective,
         "decision_threshold": outcome.get("decision_threshold"),
         "feature_importance": outcome.get("feature_importance"),
+        # P5.1-A: aggregates of the winner's CV validation-row predictions (no holdout).
+        "oof_evidence": outcome.get("oof_evidence"),
     }
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")

@@ -255,6 +255,68 @@ def test_critic_validator_rejections(ac, answer, code):
         AgentProposal.run_id == result.run_id)) == 0
 
 
+def test_critic_reads_and_cites_every_trust_check_and_rejects_unknown_ones(ac):
+    """P5.1-A: the Critic's get_findings context carries all fifteen checks (FINDING_CHECKS order,
+    past the old ten-check cap); a citation of a stored new check validates, an unknown one does not."""
+    from app.domain.findings import FINDING_CHECKS
+
+    g, db = ac.g, ac.db
+    checks = [{"check": c, "status": "pass", "severity": "info", "evidence": {}, "recommendation_kind": None,
+               "message_keys": [f"{c}.pass"]} for c in FINDING_CHECKS]
+    checks[FINDING_CHECKS.index("time_travel")].update(status="fail", severity="critical",
+                                                       recommendation_kind="review_columns")
+    db.execute(text("UPDATE experiments SET result = jsonb_set(result, '{investigation}', CAST(:i AS jsonb)) "
+                    "WHERE id = :e"), {"i": json.dumps({"version": "investigate.v1", "checks": checks}), "e": g.exp[1]})
+    db.commit()
+    cited = _run(ac, critic.AGENT_KEY, _review(findings=[{"check": "time_travel", "status": "fail", "note": "replay"}]))
+    assert (cited.status, cited.error_code) == ("completed", None), cited
+    from app.agents.tools.definitions.reads import FINDING_LIMIT
+
+    # Every stored check reaches the Critic's findings read (summary over all fifteen); the tool's
+    # per-check list is capped at FINDING_LIMIT, which now holds the whole library.
+    assert 'get_findings.summary","outcome_scope":"none","value":{"failures":1,"not_evaluated":0,"passed":14,' in \
+        ac.fake.calls[-1].input_json
+    assert FINDING_LIMIT >= len(FINDING_CHECKS)
+    for answer in (_review(findings=[{"check": "made_up_check", "status": "pass", "note": "x"}]),
+                   _review(findings=[{"check": "time_travel", "status": "pass", "note": "x"}])):
+        rejected = _run(ac, critic.AGENT_KEY, answer)
+        assert (rejected.status, rejected.error_code) == ("rejected_by_validator", "finding_not_found")
+    promote = _run(ac, critic.AGENT_KEY, _review(verdict="promote_candidate", findings=[]))
+    assert promote.error_code == "promote_despite_failed_check"  # a failed new check blocks promotion too
+
+
+def test_critic_provider_input_never_carries_holdout_feature_statistics(ac, monkeypatch):
+    """P5.1-A review canary: a real investigation payload (with a label-proxy column, so a test-row
+    missing share is the test negative rate) on the reviewed run; aggregates may reach the model,
+    holdout-scoped numbers and test timestamps never do."""
+
+    from ai_harness.kit import numbers_in
+    from app.agents.gateway import redaction
+    from app.services.auto_train.persistence import _investigation
+    from test_investigate_library import _run_inputs, holdout_scope_values
+
+    monkeypatch.setattr(redaction._Labels, "exposure", lambda self, source: ("allow", "internal"))
+    g, db = ac.g, ac.db
+    stored = _investigation(*_run_inputs())
+    numbers, texts = holdout_scope_values(stored)
+    assert numbers and texts
+    db.execute(text("UPDATE experiments SET result = jsonb_set(result, '{investigation}', CAST(:i AS jsonb)) "
+                    "WHERE id = :e"), {"i": json.dumps(stored), "e": g.exp[1]})
+    db.commit()
+    result = _run(ac, critic.AGENT_KEY, _review(findings=[]))
+    assert result.status == "completed", result
+    sent = ac.fake.calls[-1].input_json
+    training_side = {row["evidence"]["ece"] for row in stored["checks"] if row["check"] == "calibration"}
+    assert training_side & numbers_in(sent), "positive control: aggregates reach the model"
+    assert not numbers_in(sent) & numbers, sorted(numbers_in(sent) & numbers)
+    assert not [t for t in texts if t in sent]
+    from app.domain.findings import AGENT_MESSAGES, HOLDOUT_FEATURE_CHECKS, findings_read
+
+    human = {item.check: item.message for item in findings_read(uuid4(), stored).checks}
+    for check in HOLDOUT_FEATURE_CHECKS:  # rounded renderings in the human message never reach the model
+        assert human[check][:60] not in sent and AGENT_MESSAGES[check] in sent, check
+
+
 def test_investigator_and_planner_validator_rejections(ac):
     unknown = {"target_candidates": [{"column": "churned", "rank": 1, "reason": "outcome"}], "missing_values": [],
                "leakage_suspects": [], "questions": [], "confidence": 0.5}

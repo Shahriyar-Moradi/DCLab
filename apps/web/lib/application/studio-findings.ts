@@ -65,6 +65,12 @@ export function findingsState(findings: FindingsLike | null | undefined): Findin
 export const CHECK_LABEL: Record<string, string> = {
   target_leakage: "Target leakage", overfit_gap: "Overfit gap (training vs CV)", duplicate_rows: "Duplicate rows",
   class_imbalance: "Class imbalance", implausible_score: "Too-good-to-be-true score",
+  // P5.1-A
+  fold_instability: "Fold-to-fold instability", calibration: "Probability calibration", subgroup_gap: "Subgroup performance gap",
+  multicollinearity: "Repeated (collinear) columns", feature_drift: "Feature drift (training vs test)",
+  temporal_shift: "Time order of the split", missingness_shift: "Missing-value shift (training vs test)",
+  contamination: "Train/test contamination", time_travel: "Time travel (future rows in features)",
+  new_feature: "Single new feature jump",
 };
 export const checkLabel = (check: string) => CHECK_LABEL[check] ?? check.replaceAll("_", " ");
 
@@ -76,6 +82,10 @@ export const RECOMMENDATION_TEXT: Record<string, string> = {
   deduplicate: "Remove duplicate records before splitting. This is a data change: upload a cleaned file as a new dataset version.",
   class_weights: "Train with class weights so the rare class is not ignored.",
   collect_more_data: "Collect more examples of the rare class. This is a data change, not a branch.",
+  calibrate: "Recalibrate the scores (for example Platt or isotonic scaling on out-of-fold predictions) before reading them as probabilities; decisions at the locked threshold are unaffected.",
+  review_subgroups: "Look at the weakest group: check whether it has too few rows or behaves differently, and collect more examples of it if it matters.",
+  drop_correlated: "Drop one column of each repeated pair; the model loses almost nothing and becomes easier to explain.",
+  review_split: "Review how the rows were split (by time or by group) and what differs between training and test rows. This is a split or data decision, not a branch.",
 };
 
 // --- evidence formatting ------------------------------------------------------------------
@@ -115,8 +125,16 @@ export function evidenceLabel(key: string): string {
 }
 
 export type EvidenceRow = { key: string; label: string; value: string };
+/** `holdout_comparison` (test-row statistics, shown to people only) is listed entry by entry. */
 export function evidenceRows(evidence: Record<string, unknown> | undefined | null): EvidenceRow[] {
-  return Object.entries(evidence ?? {}).map(([key, value]) => ({ key, label: evidenceLabel(key), value: formatEvidenceValue(key, value) }));
+  return Object.entries(evidence ?? {}).flatMap(([key, value]) => {
+    if (key === "holdout_comparison" && value && typeof value === "object" && !Array.isArray(value)) {
+      return Object.entries(value as Record<string, unknown>).map(([inner, v]) => ({
+        key: `${key}.${inner}`, label: `Test rows: ${evidenceLabel(inner).toLowerCase()}`, value: formatEvidenceValue(inner, v),
+      }));
+    }
+    return [{ key, label: evidenceLabel(key), value: formatEvidenceValue(key, value) }];
+  });
 }
 
 // --- recommendation -> Branch pre-fill ----------------------------------------------------
@@ -148,7 +166,9 @@ export function prefillFor(finding: FindingLike): PrefillParams | null {
     case "simpler_model": return { prefill: "family_exclude", family: firstString(ev, ["winner_family"]), intent: why };
     case "review_columns":
     case "investigate_leakage":
-      return { prefill: "feature_transform_add", transform: "drop_column", column: firstString(ev, ["risky_columns", "flagged_columns", "excluded_columns"]), intent: why };
+      return { prefill: "feature_transform_add", transform: "drop_column", column: firstString(ev, ["risky_columns", "flagged_columns", "excluded_columns", "added_feature", "moved_columns"]), intent: why };
+    case "drop_correlated":
+      return { prefill: "feature_transform_add", transform: "drop_column", column: firstString(ev, ["drop_candidates"]), intent: why };
     default: return null;
   }
 }

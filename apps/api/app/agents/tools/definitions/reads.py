@@ -33,6 +33,7 @@ from app.agents.tools.shaping import (
     data_text,
     sample_text,
     text,
+    withhold_card_risks,
     withhold_holdout_code,
 )
 
@@ -40,7 +41,7 @@ logger = logging.getLogger("dclab.agents.tools")
 LIST_LIMIT = 50
 GRAPH_NODE_LIMIT = 40
 RECENT_EXPERIMENTS = 10
-FINDING_LIMIT = 10
+FINDING_LIMIT = 20  # every trust check (15 since P5.1-A) fits
 FINDING_EVIDENCE_CHARS = 1500
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 GraphKind = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"]
@@ -231,7 +232,8 @@ class ServiceReads:
     def findings(self, experiment_id: UUID) -> Any:
         from app.services.experiment_service import experiment_findings
 
-        return experiment_findings(self.db, **self._who, experiment_id=experiment_id)
+        # Agent view: holdout-scoped evidence stripped, fixed messages for the split checks.
+        return experiment_findings(self.db, **self._who, experiment_id=experiment_id, agent=True)
 
     def decisions(self, project_id: UUID, **filters: Any) -> Any:
         from app.services.decision_record_service import list_decisions
@@ -528,7 +530,8 @@ def _findings_shape(raw: dict[str, Any]) -> Shaped:
               for f in result.checks[:FINDING_LIMIT]]
     return _cv_shaped({"experiment_id": result.experiment_id, "investigated": result.investigated,
                        "version": result.version, "summary": result.summary.model_dump(mode="json"), "checks": checks,
-                       "note": "Trust checks use training rows and CV folds only; never final-holdout values."},
+                       "note": "Trust checks use training rows and CV folds; checks comparing training and test "
+                               "rows report status only. Never a final-holdout value."},
                       raw["experiment"], "checks")
 
 
@@ -640,6 +643,7 @@ def _card_fetch(reads: Any, a: ModelInput) -> Any:
 
 
 def _card_shape(card: Any) -> Shaped:
+    card = withhold_card_risks(card)  # risk messages of holdout-scoped checks: fixed agent text
     data = card.model_dump(mode="json")
     # Holdout-blind whatever the principal: the final evaluation (and its Markdown section) is dropped.
     markdown = card.markdown.split("\n## Final evaluation", 1)[0].rstrip("\n")

@@ -25,6 +25,8 @@ export const FINDING_TERMS = {
   duplicates: "Rows that repeat another row on every model column. Repeats inside training weigh twice; repeats across the split make the test score partly a memory test.",
   imbalance: "One class is much rarer than another, so accuracy can look good while the rare class is mostly missed.",
   baseline: "A dummy model (for example always the majority class). A real model has to beat it to be worth anything.",
+  calibration: "Whether a predicted 30% really happens about 30% of the time, measured on cross-validation predictions.",
+  drift: "How differently a column is distributed in the test rows than in the training rows. Only column values are compared, never the test outcomes or scores.",
 };
 
 export function FindingsPanel({ projectId, experimentId }: { projectId: string; experimentId: string }) {
@@ -36,10 +38,12 @@ export function FindingsPanel({ projectId, experimentId }: { projectId: string; 
   return (
     <div aria-label="Findings" data-testid="findings-panel">
       <p className="muted">
-        Five trust checks run on every finished run:{" "}
+        Trust checks run on every finished run:{" "}
         <Term definition={FINDING_TERMS.leakage}>target leakage</Term>, the <Term definition={FINDING_TERMS.overfit}>overfit gap</Term>,{" "}
-        <Term definition={FINDING_TERMS.duplicates}>duplicate rows</Term>, <Term definition={FINDING_TERMS.imbalance}>class imbalance</Term> and a score that looks too good against the{" "}
-        <Term definition={FINDING_TERMS.baseline}>baseline</Term>. They use training rows and cross-validation only, never the final holdout, and work with AI switched off.
+        <Term definition={FINDING_TERMS.duplicates}>duplicate rows</Term>, <Term definition={FINDING_TERMS.imbalance}>class imbalance</Term>, a score that looks too good against the{" "}
+        <Term definition={FINDING_TERMS.baseline}>baseline</Term>, and (for newer runs) fold stability, <Term definition={FINDING_TERMS.calibration}>calibration</Term>, subgroup gaps,
+        repeated columns, <Term definition={FINDING_TERMS.drift}>training-to-test drift</Term>, the time order of the split, contamination, time travel and a single new feature&apos;s jump.
+        They never read the final holdout&apos;s outcomes, predictions or scores, and work with AI switched off.
       </p>
       {query.isError ? <QueryNotice error={query.error} what="findings" /> : null}
       {query.isPending ? <p role="status">Loading findings…</p> : null}

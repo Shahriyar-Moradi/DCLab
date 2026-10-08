@@ -60,7 +60,7 @@ GRAPH_NODE_LIMIT = 40
 GRAPH_NODE_KINDS = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment",
                            "model_version"]
 RECENT_EXPERIMENTS = 10
-FINDING_LIMIT = 10
+FINDING_LIMIT = 20  # every trust check (15 since P5.1-A) fits
 FINDING_EVIDENCE_CHARS = 1500
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
@@ -506,7 +506,8 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             return {"experiment_id": str(result.experiment_id), "investigated": result.investigated,
                     "version": result.version, "summary": result.summary.model_dump(mode="json"),
                     "checks": checks,
-                    "note": "Trust checks use training rows and CV folds only; never final-holdout values."}
+                    "note": "Trust checks use training rows and CV folds; checks comparing training and test "
+                            "rows report status only. Never a final-holdout value."}
         return run(call)
 
     def list_decisions(
@@ -637,8 +638,11 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(get_evidence, read, "Evidence of an experiment: locked metrics, pipeline stage summaries and artifact "
              "digests (no rows, no file contents).")
         tool(get_findings, read, "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate "
-             "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | not_evaluated), "
-             "a plain-language message and the numbers behind it.")
+             "rows, class imbalance, a too-good-to-be-true CV score, fold instability, calibration, subgroup gaps, "
+             "multicollinearity, train-to-test feature drift, temporal shift, missingness shift, contamination "
+             "(those four compare training and test rows: status only, details are for people), time travel and "
+             "a single new feature's CV jump, each with status (pass | warning | fail | not_evaluated), a "
+             "plain-language message and the training-side numbers behind it.")
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(list_proposals, read, "AI proposals of a project (agents, Jev review items, assistant tool calls), "
              "newest first, with status and whether a person can still decide: read-only; only a person accepts or "

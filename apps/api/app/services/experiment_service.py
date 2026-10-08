@@ -450,14 +450,16 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
 
 
 def experiment_findings(
-    db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID
+    db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID, agent: bool = False
 ) -> ExperimentFindingsRead:
-    """The run's five trust checks (P4.10-A), stored before its evidence lock; runs
-    that predate them read ``investigated: false``."""
+    """The run's trust checks (five since P4.10-A, fifteen since P5.1-A), stored before its
+    evidence lock; runs that predate them read ``investigated: false``. ``agent``: the
+    agent-consumer view (holdout-scoped evidence stripped, fixed messages for the checks that
+    compare training and test rows)."""
 
     _require_read(db, actor, workspace_id)
     experiment, _status = _load(db, workspace_id, experiment_id)
-    return findings_read(experiment.id, (experiment.result or {}).get("investigation"))
+    return findings_read(experiment.id, (experiment.result or {}).get("investigation"), agent=agent)
 
 
 def _aware(value: datetime | None) -> datetime | None:

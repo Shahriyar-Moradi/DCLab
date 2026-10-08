@@ -71,3 +71,60 @@ class RunEvidence:
     leakage_risks: Sequence[Mapping[str, Any]] = ()
     leakage_exclusions: Sequence[Mapping[str, Any]] = ()
     allowed_features: tuple[str, ...] = ()
+    # P5.1-A: the winner's per-fold metrics and its out-of-fold summary (``result["oof_evidence"]``:
+    # calibration bins and subgroup scores of CV validation rows; ``engine.investigate.oof``).
+    winner_fold_metrics: Sequence[Mapping[str, float]] = ()
+    oof: Mapping[str, Any] = field(default_factory=dict)
+    # How the run split its rows (HoldoutPlan strategy) and the plan's time / group columns.
+    split_strategy: str | None = None
+    time_column: str | None = None
+    group_column: str | None = None
+    # Modeled columns produced by as_of_aggregate transforms (P5.0-A registry); none today.
+    as_of_features: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SplitFeatures:
+    """The model columns of the training partition and of the test partition, built in
+    the worker for the train -> test checks. FEATURES ONLY on the test side: no test
+    label, prediction or metric ever enters, and the checks store aggregates and column
+    names only. ``train_labels`` are training-partition labels (conflicting duplicates);
+    times and groups are the plan's time / group column values of each partition."""
+
+    train: Any  # pandas DataFrame
+    test: Any  # pandas DataFrame
+    train_labels: Any = None
+    time_column: str | None = None
+    train_times: Any = None
+    test_times: Any = None
+    group_column: str | None = None
+    train_groups: Any = None
+    test_groups: Any = None
+    # The whole time column in frame order and the (train, test) row masks into it: the check
+    # reads it ONCE (as the splitter does) and then splits, so both sides share one date format.
+    all_times: Any = None
+    time_masks: Any = None
+
+
+@dataclass(frozen=True)
+class ParentEvidence:
+    """The parent experiment of a branch, from its stored result: CV only (never holdout)."""
+
+    experiment_id: str
+    same_split_plan: bool
+    primary_metric: str | None
+    features: tuple[str, ...]
+    cv: Mapping[str, float] = field(default_factory=dict)
+    cv_std: Mapping[str, float] = field(default_factory=dict)
+    winner_family: str | None = None
+    # Per-fold CV metrics in fold order (same SplitPlan -> the same outer folds as the child).
+    fold_metrics: Sequence[Mapping[str, float]] = ()
+
+
+@dataclass(frozen=True)
+class TimeTravelProbe:
+    """What the truncation replay (``future_influence_probe``) needs: a producer that
+    recomputes the as-of features of a frame, and training-partition rows only."""
+
+    produce: Any  # Callable[[DataFrame], DataFrame]
+    frame: Any  # pandas DataFrame (training partition)
