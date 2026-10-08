@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Decisions · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="decisions.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Decisions</b></div>
+    <div class="cmd"><span>Search or jump to anything…</span><kbd>⌘K</kbd></div>
+    <div class="right"><a class="ai-state" href="lab.html"><i aria-hidden="true"></i>Assistant on</a><button class="tbtn" type="button" data-guide-toggle>Guide</button><button class="tbtn" type="button" data-glossary>Glossary</button><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Decision records</h1><p class="sub">The project's append-only memory. Every state change, by a rule, an agent, Jev or a person, is a record with evidence and a way back. Corrections create new records; nothing is edited.</p></div>
+  <div class="toolbar"><input class="input" placeholder="search records…"><select class="input"><option>Actor: all</option><option>human</option><option>rule</option><option>agent</option><option>jev</option></select><select class="input"><option>Type: all</option><option>winner_locked</option><option>champion_promoted</option><option>decision_point_resolved</option><option>proposal_*</option><option>ref_moved</option></select><select class="input"><option>State: all</option><option>accepted</option><option>proposed</option><option>rejected</option><option>superseded</option></select><button class="btn" data-mock="export decisions (GET /v1/projects/p_7Q2/decisions)">Export</button></div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">64</span><span class="l">records · 61 accepted · 2 proposed · 1 rejected</span></div></div>
+  <div class="card"><div class="stat"><span class="v">29 / 18 / 14 / 3</span><span class="l">by rule / agent / human / Jev</span></div></div>
+  <div class="card"><div class="stat"><span class="v">2</span><span class="l">reverts (both L2 role decisions)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">100%</span><span class="l">records with valid evidence refs</span></div></div>
+</div>
+
+<div class="side">
+  <div class="card">
+    <div class="tbl"><table>
+      <thead><tr><th>Id</th><th>When</th><th>Type</th><th>Subject</th><th>Actor</th><th>State</th><th>Evidence</th><th></th></tr></thead>
+      <tbody>
+        <tr><td class="mono">d-402</td><td>Mon 02:14</td><td>retrain_started</td><td>E9</td><td><span class="pill ai">ops_agent · L2</span></td><td><span class="pill ok">accepted (auto)</span></td><td class="mono">finding f-77 · W-9 PSI 0.22</td><td><button class="btn sm" data-mock="revert = cancel E9">revert</button></td></tr>
+        <tr><td class="mono">d-401</td><td>Mon 02:12</td><td>finding_explained</td><td>W-9</td><td><span class="pill ai">dataset_investigator · L3</span></td><td><span class="pill ok">recorded</span></td><td class="mono">window profile W-9</td><td></td></tr>
+        <tr><td class="mono">d-400</td><td>Mon 02:10</td><td>drift_detected</td><td>R-12 · W-9</td><td><span class="pill det">rule drift.psi.v2</span></td><td><span class="pill ok">recorded</span></td><td class="mono">psi plan_type 0.22</td><td></td></tr>
+        <tr><td class="mono">d-351</td><td>Wed</td><td>feature_availability_confirmed</td><td>last_login_days</td><td>human · you</td><td><span class="pill ok">accepted</span></td><td class="mono">answer to Critic q-12</td><td></td></tr>
+        <tr class="sel"><td class="mono">d-340</td><td>Mon</td><td>champion_promoted</td><td>MV v4</td><td>human · you</td><td><span class="pill ok">accepted</span></td><td class="mono">final_holdout E7 · 14 metrics</td><td><button class="btn sm" data-mock="open">open</button></td></tr>
+        <tr><td class="mono">d-335</td><td>Mon</td><td>improve_result_selected</td><td>IL-2 → E7</td><td><span class="pill det">rule improve.select.v1</span></td><td><span class="pill ok">accepted</span></td><td class="mono">E6 vs E7 CV table</td><td></td></tr>
+        <tr><td class="mono">d-331</td><td>Mon</td><td>winner_locked</td><td>E7 · lightgbm__tuned</td><td><span class="pill det">rule selection.cv_winner.v1</span></td><td><span class="pill ok">accepted</span></td><td class="mono">cv_aggregate 0.71 vs 0.70</td><td></td></tr>
+        <tr><td class="mono">d-322</td><td>Mon</td><td>proposal_accepted</td><td>p-388 · next action (IL-2 it.1)</td><td><span class="pill ai">improvement_hypothesis · L2</span></td><td><span class="pill ok">accepted (validator)</span></td><td class="mono">constraint gap 0.01 · rule proposed threshold</td><td></td></tr>
+        <tr><td class="mono">d-305</td><td>Thu 09:09</td><td>winner_locked</td><td>E1</td><td><span class="pill det">rule</span></td><td><span class="pill ok">accepted</span></td><td class="mono">cv_aggregate 0.69 vs 0.67</td><td></td></tr>
+        <tr><td class="mono">d-304</td><td>Thu 09:04</td><td>decision_point_resolved</td><td>training.families</td><td><span class="pill ai">planner · L2</span></td><td><span class="pill ok">accepted</span></td><td class="mono">allowlist · budget</td><td></td></tr>
+        <tr><td class="mono">d-303</td><td>Thu 09:04</td><td>split_strategy_accepted</td><td>SP-1 · temporal</td><td>human · you (proposed by planner)</td><td><span class="pill ok">accepted</span></td><td class="mono">18 snapshots · positive rate trend</td><td></td></tr>
+        <tr><td class="mono">d-302</td><td>Thu 09:04</td><td>leakage_exclusion_accepted</td><td>churned_at · retention_offer_sent (flag)</td><td>human · you</td><td><span class="pill ok">accepted</span></td><td class="mono">audit e801 · jev sa-5602</td><td></td></tr>
+        <tr><td class="mono">d-301</td><td>Thu 09:04</td><td>problem_spec_accepted</td><td>Spec v1</td><td>human · you (proposed by planner)</td><td><span class="pill ok">accepted</span></td><td class="mono">profile 19bd</td><td></td></tr>
+        <tr><td class="mono">d-298</td><td>Thu 09:03</td><td>decision_point_resolved</td><td>column.semantic_role · region_code</td><td><span class="pill ai">jev · L2</span></td><td><span class="pill ok">accepted (validator)</span></td><td class="mono">sa-5571 conf 0.91 · rule numeric</td><td><button class="btn sm" data-mock="revert → d-4xx supersedes with rule value">revert</button></td></tr>
+        <tr class="dim"><td class="mono">d-290</td><td>Tue</td><td>proposal_rejected</td><td>p-371 · feature from days_to_cancellation</td><td><span class="pill ai">planner</span></td><td><span class="pill crit">rejected_by_validator</span></td><td class="mono">column does not exist</td><td></td></tr>
+      </tbody>
+    </table></div>
+    <div class="toolbar"><span class="small muted">showing 15 of 64 · keyset cursor</span><span class="sp"></span><button class="btn sm" data-mock="next page">next</button></div>
+  </div>
+  <div class="drawer">
+    <h3>d-340 · champion_promoted</h3>
+    <dl class="kv">
+      <dt>Subject</dt><dd>model_version MV v4 (from E7)</dd>
+      <dt>Actor</dt><dd>human · developer@dclab.io · session</dd>
+      <dt>Proposed by</dt><dd>improve loop IL-2 result (d-335)</dd>
+      <dt>Rationale</dt><dd>"meets recall ≥ 0.80 with best precision on CV; holdout confirms 0.81 / 0.63" <span class="pill gray">human text</span></dd>
+      <dt>Evidence refs</dt><dd class="mono">E7.final_holdout.recall = 0.81 · E7.final_holdout.precision = 0.63 · E7.cv.pr_auc = 0.71 · verifier E7 = 19 ✓ 1 ⚠ · critic ar-1041 needs_work (q-12 answered d-351)</dd>
+      <dt>Effect</dt><dd>refs champion_model MV v3 → v4 and feature_recipe FR v2 → v3 (version 7 → 8)</dd>
+      <dt>Revert</dt><dd>propose ref move back to MV v3 (new record); R-12 keeps running until a release change</dd>
+      <dt>Supersedes</dt><dd>— · superseded by: —</dd>
+      <dt>Idempotency</dt><dd class="mono">key 8c2e… · request req_0a91</dd>
+    </dl>
+    <div class="toolbar"><button class="btn sm" data-mock="supersede with correction">Correct</button><button class="btn sm" data-mock="revert">Revert</button><a class="btn sm" href="graph.html">Graph</a></div>
+  </div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>All actors, states, evidence refs, revert and correction, pagination</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Workspace-level records (policy changes) live in governance; should they also appear here filtered by project?</li><li>Human rationale required or optional?</li><li>Export format for audits (CSV, JSON, signed bundle)?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Idempotency details for non-developers</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+<script src="../versions.js" data-version="v5"></script>
+</body>
+</html>

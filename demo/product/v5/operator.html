@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Operator · DCLab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="operator.html" data-role="operator">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs"><b>Operator console</b> (admin@dclab.io · platform)</div>
+    <div class="cmd"><span>Search or jump to anything…</span><kbd>⌘K</kbd></div>
+    <div class="right"><a class="ai-state" href="lab.html"><i aria-hidden="true"></i>Assistant on</a><button class="tbtn" type="button" data-guide-toggle>Guide</button><button class="tbtn" type="button" data-glossary>Glossary</button><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Operator console</h1><p class="sub">Platform view across workspaces: health, quotas, quarantine, platform-level AI policy caps, incidents and the evaluation gates. Operators never read customer rows through the UI.</p></div>
+  <div class="toolbar"><button class="btn" data-mock="open runbooks">Runbooks</button><button class="btn" data-mock="open traces (OTel)">Traces</button><button class="btn danger" data-mock="global AI kill switch (confirm)">Global AI switch</button></div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">3 / 3</span><span class="l">design partners with a promoted model</span></div></div>
+  <div class="card"><div class="stat"><span class="v">180 ms</span><span class="l">API p95 · error rate 0.2%</span></div></div>
+  <div class="card"><div class="stat"><span class="v">4 · 0</span><span class="l">queue depth · jobs older than 10 min</span></div></div>
+  <div class="card"><div class="stat"><span class="v">22 min</span><span class="l">last backup-restore drill · 0 cross-tenant findings</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="op">
+  <button data-tab="ws" aria-selected="true">Workspaces</button>
+  <button data-tab="jobs">Jobs &amp; workers</button>
+  <button data-tab="quarantine">Quarantine</button>
+  <button data-tab="caps">Platform AI caps</button>
+  <button data-tab="bench">Benchmarks &amp; gates</button>
+</div>
+
+<div data-tabpanel="op:ws" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Workspace</th><th>Plan</th><th>Region</th><th class="r">Projects</th><th class="r">Jobs 30 d</th><th class="r">Compute</th><th class="r">LLM $</th><th>Heavy jobs</th><th>AI policy</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Northwind Telecom</td><td>beta</td><td>EU</td><td class="r">4</td><td class="r">146</td><td class="r">142 / 600 min</td><td class="r">9.71 / 25</td><td>home</td><td>v4 · 2 L2 points</td><td><span class="pill ok">healthy</span></td></tr>
+      <tr><td>Harbor Insurance</td><td>beta</td><td>EU</td><td class="r">2</td><td class="r">88</td><td class="r">410 / 600</td><td class="r">14.20 / 40</td><td>SkyPilot · $12.40</td><td>v2 · all L1</td><td><span class="pill ok">healthy</span></td></tr>
+      <tr><td>Fieldline Retail</td><td>beta</td><td>EU</td><td class="r">1</td><td class="r">39</td><td class="r">510 / 600</td><td class="r">6.10 / 25</td><td>home</td><td>default</td><td><span class="pill warn">quota 85%</span></td></tr>
+      <tr><td>DCLab internal</td><td>internal</td><td>EU</td><td class="r">6</td><td class="r">1,204</td><td class="r">— </td><td class="r">41.80</td><td>home</td><td>benchmarks</td><td><span class="pill ok">—</span></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="op:jobs">
+  <div class="card sect">
+<div class="sect-head"><h2>Jobs</h2></div>
+<section data-tab="Workers">
+<div class="tbl"><table><thead><tr><th>Pool</th><th class="r">Workers</th><th class="r">Busy</th><th>Claims</th><th>Version</th></tr></thead><tbody>
+      <tr><td>eu-home</td><td class="r">4</td><td class="r">2</td><td>labs.auto_train, labs.improve, agents.run, models.batch_predict, monitoring.window</td><td>1.4.0 (restart after engine deploy)</td></tr>
+      <tr><td>skypilot-eu (Harbor)</td><td class="r">0 → 1 on demand</td><td class="r">0</td><td>labs.auto_train (heavy)</td><td>1.4.0</td></tr>
+    </tbody></table></div>
+</section>
+<section data-tab="Jobs (live)">
+<div class="tbl"><table><thead><tr><th>Job</th><th>Type</th><th>Workspace</th><th>Status</th><th class="r">Age</th><th class="r">Attempt</th></tr></thead><tbody>
+      <tr><td class="mono">j-9921</td><td>labs.auto_train (E9)</td><td>Northwind</td><td><span class="pill run">running</span> fold 4/5</td><td class="r">6 m</td><td class="r">1</td></tr>
+      <tr><td class="mono">j-9924</td><td>agents.run (Critic, batch)</td><td>Harbor</td><td><span class="pill run">running</span></td><td class="r">20 s</td><td class="r">1</td></tr>
+      <tr><td class="mono">j-9925</td><td>models.batch_predict</td><td>Fieldline</td><td><span class="pill gray">queued</span></td><td class="r">40 s</td><td class="r">0</td></tr>
+      <tr><td class="mono">j-9910</td><td>labs.improve</td><td>Harbor</td><td><span class="pill crit">failed</span> → retried once, abandoned recovery OK</td><td class="r">—</td><td class="r">2</td></tr>
+    </tbody></table></div>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="op:quarantine">
+  <div class="tbl card"><table>
+    <thead><tr><th>Upload</th><th>Workspace</th><th>Reason</th><th>Scanner</th><th>Retained</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>export_with_notes.xlsx</td><td>Northwind</td><td>3 structurally invalid sheets</td><td>clean</td><td>no (422, not stored)</td><td>—</td></tr>
+      <tr><td>claims_2026.csv</td><td>Harbor</td><td>classifier: possible PII free text</td><td>clean</td><td>quarantined 2 d</td><td><button class="btn sm" data-mock="release to workspace (records decision)">release</button> <button class="btn sm danger" data-mock="delete">delete</button></td></tr>
+      <tr><td>vendor_dump.zip</td><td>Fieldline</td><td>malware signature</td><td><span class="pill crit">hit</span></td><td>quarantined, hashed</td><td><button class="btn sm danger" data-mock="delete + notify">delete</button></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Operators see metadata and scanner output, never the content. Every action is audited.</p>
+</div>
+
+<div data-tabpanel="op:caps">
+  <div class="card"><h3>Platform caps (code-owned; changing one needs an ADR)</h3>
+    <div class="tbl"><table><thead><tr><th>Cap</th><th>Value</th></tr></thead><tbody>
+      <tr><td>Decision points never AI</td><td>selection.winner · holdout.score · split.build · metric.compute</td></tr>
+      <tr><td>Column exclusion</td><td>≤ L1</td></tr>
+      <tr><td>Release</td><td>≤ L1 (auto-release off everywhere in beta)</td></tr>
+      <tr><td>Raw rows to models</td><td>never</td></tr>
+      <tr><td>Approved providers</td><td>Anthropic (gateway), TypeSafe Jev (pinned)</td></tr>
+      <tr><td>Agent strategy</td><td>NOOA Predict only; CodeAct banned (CI)</td></tr>
+      <tr><td>Promotion evidence</td><td>≥ 300 cases, AI ≥ rule, cost/latency within budget, ECE reported</td></tr>
+      <tr><td>Auto-demotion</td><td>5 validator rejections / 24 h, or a failed R3 run</td></tr>
+    </tbody></table></div>
+  </div>
+</div>
+
+<div data-tabpanel="op:bench">
+  <div class="card sect">
+<div class="sect-head"><h2>Benchmarks and gates</h2></div>
+<section data-tab="R1 engine benchmark">
+<p class="muted small">weekly · 23 tasks</p>
+<dl class="kv"><dt>Last run</dt><dd>Mon 03:17 · 23/23 completed · all beat dummy</dd><dt>Regressions</dt><dd>0 (tolerance 0.03 abs)</dd><dt>Tuned vs untuned</dt><dd>+0.012 mean primary</dd></dl>
+</section>
+<section data-tab="R2 · R3 · ablation">
+<dl class="kv"><dt>R2 loop</dt><dd>agent 70% vs rule 61% feasible · 23 tasks</dd><dt>R3 decision points</dt><dd>7 of 8 ≥ rule · corpus 2,391</dd><dt>Ablation (AI off)</dt><dd>1,257 tests green nightly</dd><dt>Replay</dt><dd>212/212 identical</dd><dt>Gate G6</dt><dd><span class="pill ok">passed 2026-10-20</span></dd></dl>
+</section>
+</div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Workspaces, quotas, jobs/workers, quarantine review, platform caps, benchmarks and gates</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Is the operator console part of Studio or a separate admin app (the old /admin)?</li><li>Support access to a customer workspace: impersonation with audit, or none?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Worker pool details if hosting is managed</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+<script src="../versions.js" data-version="v5"></script>
+</body>
+</html>

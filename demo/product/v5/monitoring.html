@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Monitoring · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="monitoring.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Monitoring</b> › R-12</div>
+    <div class="cmd"><span>Search or jump to anything…</span><kbd>⌘K</kbd></div>
+    <div class="right"><a class="ai-state" href="lab.html"><i aria-hidden="true"></i>Assistant on</a><button class="tbtn" type="button" data-guide-toggle>Guide</button><button class="tbtn" type="button" data-glossary>Glossary</button><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Monitoring · R-12 (MV v4) <span class="pill warn">drift · W-9</span></h1><p class="sub">Weekly windows compute input drift, prediction shift and, when labels arrive, real performance. Thresholds are owned by DCLab; Evidently only calculates. The Ops agent explains and acts within the workspace autonomy policy.</p></div>
+  <div class="toolbar"><select class="input"><option>Release R-12 · MV v4</option><option>R-9 · MV v3 (retired)</option></select><select class="input"><option>Window: weekly</option><option>daily</option></select><button class="btn" data-mock="upload labels for W-9">Upload labels</button><button class="btn" data-mock="edit thresholds (governance)">Thresholds</button></div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">0.22</span><span class="l">PSI on plan_type · W-9 · alert ≥ 0.20</span></div></div>
+  <div class="card"><div class="stat"><span class="v">0.48</span><span class="l">labeled precision W-9 · champion was 0.63 on holdout</span></div></div>
+  <div class="card"><div class="stat"><span class="v">12.5%</span><span class="l">predicted positive rate · training 21% actual</span></div></div>
+  <div class="card"><div class="stat"><span class="v">E9</span><span class="l">retrain running (Ops agent, L2) · release R-15 waits (L1)</span></div></div>
+</div>
+
+<div class="card sect">
+<div class="sect-head"><h2>Signals</h2></div>
+<section data-tab="Input drift · PSI per window">
+<p class="muted small">top feature: plan_type</p>
+<svg class="chart" viewBox="0 0 420 170" role="img" aria-label="PSI per week rises above the 0.2 alert line at week 9">
+      <line class="grid-l" x1="40" y1="140" x2="410" y2="140"/><line class="grid-l" x1="40" y1="100" x2="410" y2="100"/><line class="grid-l" x1="40" y1="60" x2="410" y2="60"/><line class="grid-l" x1="40" y1="20" x2="410" y2="20"/>
+      <text class="axis" x="34" y="143" text-anchor="end">0</text><text class="axis" x="34" y="103" text-anchor="end">0.1</text><text class="axis" x="34" y="63" text-anchor="end">0.2</text><text class="axis" x="34" y="23" text-anchor="end">0.3</text>
+      <line class="lim" x1="40" y1="60" x2="410" y2="60"/><text class="axis" x="44" y="55">alert 0.20</text>
+      <line class="lim-w" x1="40" y1="100" x2="410" y2="100"/><text class="axis" x="44" y="95">watch 0.10</text>
+      <path class="area" d="M60,128 L100,124 L140,128 L180,120 L220,116 L260,108 L300,96 L340,76 L380,52 L380,140 L60,140 Z"/>
+      <polyline class="ln-a" points="60,128 100,124 140,128 180,120 220,116 260,108 300,96 340,76 380,52"/>
+      <circle class="pt-a" cx="380" cy="52" r="4.5"/>
+      <text class="axis" x="60" y="158" text-anchor="middle">W1</text><text class="axis" x="220" y="158" text-anchor="middle">W5</text><text class="axis" x="380" y="158" text-anchor="middle">W9</text>
+    </svg>
+    <div class="tbl"><table><thead><tr><th>Feature</th><th class="r">PSI W-9</th><th>Status</th><th>Change</th></tr></thead><tbody>
+      <tr><td><code>plan_type</code></td><td class="r">0.22</td><td><span class="pill crit">alert</span></td><td>new value family_5g 6%</td></tr>
+      <tr><td><code>monthly_fee</code></td><td class="r">0.11</td><td><span class="pill warn">watch</span></td><td>mean +4%</td></tr>
+      <tr><td><code>region_code</code></td><td class="r">0.03</td><td><span class="pill ok">ok</span></td><td></td></tr>
+      <tr><td><code>last_login_days</code></td><td class="r">0.02</td><td><span class="pill ok">ok</span></td><td></td></tr>
+    </tbody></table></div>
+</section>
+<section data-tab="Performance when labels arrive">
+<p class="muted small">labels lag ~4 weeks</p>
+<svg class="chart" viewBox="0 0 420 170" role="img" aria-label="Weekly precision and recall on labeled windows; precision falls from 0.62 to 0.48 by week 9">
+      <line class="grid-l" x1="40" y1="140" x2="410" y2="140"/><line class="grid-l" x1="40" y1="100" x2="410" y2="100"/><line class="grid-l" x1="40" y1="60" x2="410" y2="60"/><line class="grid-l" x1="40" y1="20" x2="410" y2="20"/>
+      <text class="axis" x="34" y="143" text-anchor="end">0.4</text><text class="axis" x="34" y="103" text-anchor="end">0.55</text><text class="axis" x="34" y="63" text-anchor="end">0.7</text><text class="axis" x="34" y="23" text-anchor="end">0.85</text>
+      <line class="lim-w" x1="40" y1="87" x2="410" y2="87"/><text class="axis" x="44" y="82">rollback if precision &lt; 0.58</text>
+      <polyline class="ln-a" points="60,81 100,84 140,80 180,86 220,92 260,100 300,110 340,120 380,124"/>
+      <polyline class="ln-b" points="60,36 100,40 140,38 180,42 220,40 260,44 300,46 340,48 380,50"/>
+      <text class="lbl" x="48" y="14">■ precision   <tspan fill="var(--ai)">■ recall</tspan></text>
+      <text class="axis" x="60" y="158" text-anchor="middle">W1</text><text class="axis" x="220" y="158" text-anchor="middle">W5</text><text class="axis" x="380" y="158" text-anchor="middle">W9</text>
+    </svg>
+    <p class="small muted">Recall holds (0.80–0.82); precision falls as the new segment is over-flagged. Rollback threshold not crossed for v4 itself (it is the champion); it applies to a new release.</p>
+</section>
+</div>
+
+<div class="side">
+  <div class="card"><h3>Ops agent chain · W-9 <span class="sp">each step a decision point at its workspace level</span></h3>
+    <div class="events">
+      <div class="ev det"><span class="when">Mon 02:10 · drift job · rule · <span class="lvl l3">L3</span></span><br>PSI 0.22 on <code>plan_type</code> ≥ 0.20 → finding <code>drift_detected</code> (f-77). Precision on labeled W-7–W-9: 0.48.</div>
+      <div class="ev ai"><span class="when">Mon 02:12 · DatasetInvestigator · <span class="lvl l3">L3</span></span><br>Cause: new plan <code>family_5g</code> (6% of rows, churns 2× average); <code>monthly_fee</code> mean +4% in the same segment. <span class="muted">validator: cited stats match window profile</span></div>
+      <div class="ev ai"><span class="when">Mon 02:14 · Ops agent · <span class="lvl l2">L2</span> auto · policy: ≤ 2 retrains/week (1 used)</span><br>Imported DS v3 (Jul–Sep), created SP-2, branched E7 → <b>E9</b> with the same objective. Decision record d-402, revert = cancel E9.</div>
+      <div class="ev ai"><span class="when">Mon 02:41 · Critic · <span class="lvl l3">L3</span></span><br>When E9 completes: compare with champion on labeled weeks per segment; verdict goes to the release proposal.</div>
+      <div class="ev ai"><span class="when">Mon 02:42 · Ops agent · <span class="lvl l1">L1</span></span><br>Release proposal <b>R-15</b> (MV v5 replaces v4) will wait in your inbox. Auto-release is off in this workspace.</div>
+      <div class="ev det"><span class="when">policy · rollback · <span class="lvl l3">L3</span></span><br>If R-15 ships and labeled precision drops below 0.58, the champion ref returns to MV v4 automatically and you are notified.</div>
+    </div>
+    <div class="toolbar"><a class="btn primary" href="inbox.html">Review R-15 when ready</a><button class="btn" data-mock="pause Ops agent for this project">Pause Ops agent</button><button class="btn" data-mock="open autonomy policy">Autonomy policy</button></div>
+  </div>
+  <div class="card sect">
+<section data-tab="Windows">
+<div class="tbl"><table><thead><tr><th>Window</th><th class="r">Rows</th><th class="r">PSI max</th><th class="r">Prec.</th><th></th></tr></thead><tbody>
+      <tr class="sel"><td>W-9 · Sep 22–28</td><td class="r">12,104</td><td class="r">0.22</td><td class="r">0.48</td><td><span class="pill crit">alert</span></td></tr>
+      <tr><td>W-8</td><td class="r">11,980</td><td class="r">0.16</td><td class="r">0.50</td><td><span class="pill warn">watch</span></td></tr>
+      <tr><td>W-7</td><td class="r">11,890</td><td class="r">0.11</td><td class="r">0.53</td><td><span class="pill warn">watch</span></td></tr>
+      <tr><td>W-6</td><td class="r">11,760</td><td class="r">0.08</td><td class="r">0.56</td><td><span class="pill ok">ok</span></td></tr>
+      <tr><td>W-5 … W-1</td><td class="r">—</td><td class="r">&lt; 0.06</td><td class="r">0.60–0.62</td><td><span class="pill ok">ok</span></td></tr>
+    </tbody></table></div>
+</section>
+<section data-tab="Thresholds (workspace)">
+<dl class="kv"><dt>PSI watch / alert</dt><dd>0.10 / 0.20</dd><dt>Prediction-rate shift</dt><dd>± 30% relative</dd><dt>Rollback</dt><dd>precision − 0.05 vs release baseline on ≥ 2 labeled weeks</dd><dt>Label lag</dt><dd>4 weeks</dd></dl>
+</section>
+<section data-tab="With AI off">
+<p class="small muted">The drift job still writes the finding and alerts you. No retrain, no proposal, no rollback happens on its own.</p>
+</section>
+</div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Drift per feature, performance on labeled windows, thresholds, windows list</li><li>Ops agent chain with levels, policy limits, revert, AI-off behaviour</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>How do labels arrive: upload, connector, or a labeling view in the client app?</li><li>Segment-level monitoring (by plan_type) as a first-class view?</li><li>Alert channels (email, Slack, webhook) and on-call for L3 actions</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Daily windows for monthly-snapshot data</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+<script src="../versions.js" data-version="v5"></script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!-- title: The plan · DCLab MVP -->
+<!-- crumbs: DCLab › <b>The plan</b> -->
+<div class="page-head">
+  <div><h1>The plan this demo follows</h1><p class="sub">Everything on these screens comes from <code>docs/mvp</code>: the product definition and state graph (ARCHITECTURE.md), the phase order and the hybrid AI model (ROADMAP.md), the screen map (design/STUDIO_DESIGN.md) and the progress ledger (STATUS.md, 2026-10-08). Use <b>Built today</b> in the top bar to see only what exists.</p></div>
+  <div class="toolbar"><a class="btn primary" href="home.html">Walk the product</a><a class="btn" href="index.html">Role chooser</a></div>
+</div>
+
+<div class="plan-story">
+  <div class="card">
+    <p class="big">An ML lab your AI agent can drive, which proves every model is correct.</p>
+    <p class="muted">For data scientists and ML engineers on tabular data. The unit of work is the versioned ML state graph, not code: datasets, features, splits, models and experiments are typed, versioned nodes. DCLab executes every change as a reproducible experiment, verifies it scientifically, and remembers why each decision was made.</p>
+    <h3>Five differentiators</h3>
+    <ol>
+      <li><b>The state graph</b> with staleness and branching (Phase 2, done).</li>
+      <li><b>Verify</b>: automatic scientific investigation, five core checks now, twelve or more in Phase 5.</li>
+      <li><b>Improve</b>: a bounded, constraint-driven experiment loop where every iteration is an auditable node (Phase 5).</li>
+      <li><b>Project memory</b> as immutable decision records (Phase 2, done).</li>
+      <li><b>An R&amp;D benchmark</b> that proves engine quality publicly (R1 done, R1-P in Phase 5).</li>
+    </ol>
+  </div>
+  <div class="card">
+    <h3>Three views of one truth</h3>
+    <p class="small muted">Every view resolves to the same node ids (CORE_CONCEPT §20–38).</p>
+    <div class="views">
+      <a href="lab.html"><b>Level 1 · Conversation</b><small>Lab chat, proposals, decisions</small></a>
+      <a href="graph.html"><b>Level 2 · Workflow graph</b><small>nodes, refs ★, stale markers</small></a>
+      <a href="experiments.html#code"><b>Level 3 · Code and infra</b><small>reproducible script per experiment</small></a>
+    </div>
+    <h3>Interfaces, in delivery order</h3>
+    <p class="small"><code>/v1</code> API → Python SDK and CLI → <b>MCP server</b> (Claude Code, Cursor, Codex drive DCLab) → <b>Studio</b> with the <b>in-app assistant</b> (same tool catalog as MCP: read tools run, write tools become confirm cards) → internal agents (NOOA proposal classes) → notebook and IDE plugin (later).</p>
+    <h3>Not in the MVP</h3>
+    <p class="small muted">Online serving, autonomous retraining, arbitrary connectors, stateful Jupyter, dual-cloud parity, external GPU marketplace, SLM fine-tuning, a business decision layer. Each has a place in Phase 9 behind a trigger and an ADR.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Order of work <span class="sp">inside out: engine → graph → agent interface → use and trust → hybrid AI core → agent-first Studio → verify and improve → operations → hosted beta</span></h2>
+  <div class="order">
+    <div class="done"><span class="n">1 · Phase 0</span><b>Stabilize</b><span class="w">done · CI green</span></div>
+    <div class="done"><span class="n">2 · Phase 1</span><b>One correct engine</b><span class="w">done · R1 benchmark</span></div>
+    <div class="done"><span class="n">3 · Phase 2</span><b>State graph</b><span class="w">done · ADR 0006</span></div>
+    <div class="done"><span class="n">4 · Phase 3</span><b>/v1 · SDK · CLI · MCP</b><span class="w">done</span></div>
+    <div class="done"><span class="n">5 · Phase 4 · S1</span><b>Use and trust</b><span class="w">score · 5 checks · card · done</span></div>
+    <div class="done"><span class="n">6 · Phase 6</span><b>Hybrid AI core</b><span class="w">backend done · NOOA install blocked</span></div>
+    <div class="progress"><span class="n">7 · Phase 4 · S2–5</span><b>Agent-first Studio</b><span class="w">S2, S3, S5 built · S4 after G6</span></div>
+    <div class="progress"><span class="n">8 · Phase 5</span><b>Verify &amp; Improve</b><span class="w">P5.0 done · P5.1, P5.2 implemented</span></div>
+    <div class="planned"><span class="n">9 · Phase 7 → 8</span><b>Operations · Hosted beta</b><span class="w">planned · then Phase 9 by demand</span></div>
+  </div>
+  <p class="small muted">Merge points, one full suite and CI each: <b>MP-46</b> after Phase 4 Stage 1 + Phase 6 · <b>MP-4a</b> after Stages 2–3 · <b>MP-4b</b> after Stages 4–5 (design partners start) · <b>MP-5</b> · <b>MP-78</b>. <b>Checkpoint G6</b>, about four weeks of R3 data after the Phase 6 gate, confirms trust levels, models (<code>gpt-6.1-sol</code> complex, <code>gpt-6-luna</code> simple) and budgets before Stage 4 exposes AI to users.</p>
+</div>
+
+<div class="card sect">
+<div class="sect-head"><h2>Phases</h2><span class="sp">what a user can do at the end of each one · status from STATUS.md</span></div>
+<section data-tab="Roadmap">
+<div class="tbl"><table>
+  <thead><tr><th>Order</th><th>Phase</th><th>Weeks</th><th>Ends with a user being able to…</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><b>0 · Stabilize the foundation</b></td><td>done</td><td>trust that <code>main</code> is green and reproducible</td><td><span class="pill ok">done</span></td></tr>
+    <tr><td>2</td><td><b>1 · One correct ML engine</b></td><td>done</td><td>upload any tabular CSV and get a scientifically valid, baseline-beating model</td><td><span class="pill ok">done</span></td></tr>
+    <tr><td>3</td><td><b>2 · ML state graph</b></td><td>done</td><td>see lineage, branch an experiment, see what became stale</td><td><span class="pill ok">done</span></td></tr>
+    <tr><td>4</td><td><b>3 · Agent interface</b></td><td>done</td><td>drive DCLab from Claude Code or Cursor over MCP</td><td><span class="pill ok">done</span></td></tr>
+    <tr><td>5</td><td><b>4 · Stage 1 · Use and trust</b></td><td>1–2</td><td>score new data, read five trust checks and a model card from CLI, SDK or MCP</td><td><span class="pill ok">done</span></td></tr>
+    <tr><td>6</td><td><b>6 · Hybrid AI core</b></td><td>3–4</td><td>get a cited AI review of every run; see at every decision point what the AI said, what the rule said, what was used</td><td><span class="pill ok">backend done</span> <span class="pill warn">NOOA blocked</span></td></tr>
+    <tr><td>7</td><td><b>4 · Stages 2–5 · Agent-first Studio</b></td><td>4–5</td><td>give a goal in the Lab chat or the forms; watch upload → spec → train → results with evidence; findings, model card, scoring; proposals in the Inbox</td><td><span class="pill ai">Stages 2, 3, 5 built</span> <span class="pill gray">Stage 4 after G6</span></td></tr>
+    <tr><td>8</td><td><b>5 · Verify &amp; Improve</b></td><td>3–4</td><td>ask "recall ≥ 0.80, best precision" and get audited iterations proposed by AI and rules</td><td><span class="pill ai">in progress</span></td></tr>
+    <tr><td>9</td><td><b>7 · Release, monitoring, agentic MLOps</b></td><td>4</td><td>release a model, schedule scoring, watch drift; have it explained, retrained and proposed for release; approve or roll back</td><td><span class="pill gray">planned</span></td></tr>
+    <tr><td>10</td><td><b>8 · Hosted beta</b></td><td>3–4</td><td>use DCLab in the cloud with design partners, with LLM budgets and metering</td><td><span class="pill gray">planned</span></td></tr>
+    <tr><td>11</td><td><b>9 · Expansion</b></td><td>—</td><td>demand-gated: <code>dlt</code> connectors, forecasting, CodeAct sandbox lane, evidence library, second cloud, online serving</td><td><span class="pill gray">each needs an ADR</span></td></tr>
+  </tbody>
+</table></div>
+</section>
+<section data-tab="Phase 4 stages">
+<div class="tbl"><table>
+  <thead><tr><th>Stage</th><th>Prompts</th><th>Outcome</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td><b>1 · Use and trust</b> (backend + MCP)</td><td>P4.9-A, P4.10-A, P4.11-A, P4.0-A</td><td>score a file with a model version; five findings on every run; model card</td><td><span class="pill ok">done</span></td></tr>
+    <tr><td><b>2 · UI foundation + catch-up</b></td><td>P4.0-B, P4.1-A/B/C, P4.2-A, P4.3-A, P4.4-A, P4.5-A, P4.8-UI</td><td>design system and shell; project IA, wizard, Data page; Graph; node inspectors; compare, branch, refs, decide; Agents &amp; tools</td><td><span class="pill ok">done on branch</span></td></tr>
+    <tr><td><b>3 · UI for use and trust</b></td><td>P4.9-UI, P4.10-UI, P4.11-UI, P4.17-UI</td><td>Score page, findings panel, model card page, Pipeline evidence page</td><td><span class="pill ok">done on branch</span></td></tr>
+    <tr><td><b>4 · Agent-first Studio</b> (after G6)</td><td>A2-UI, A3-UI, A4-A, A4-B, A6-A, P6.7-UI, P6.8-UI, P6.11-UI</td><td>agent runs and tool registry; Lab = lead-agent chat; confirm cards; golden conversations; Jev view; agent catalog; governance page</td><td><span class="pill gray">planned</span></td></tr>
+    <tr><td><b>5 · Home, inbox, focus, demo, partners</b></td><td>P4.15, P4.16, P4.12, P4.13, P4.14, P4.6</td><td>Home with activity and AI health; Inbox with L2 auto-decisions and Revert; one story; demo kit; partner kit; killer-flow E2E</td><td><span class="pill ok">Home, Inbox, one story done</span> <span class="pill gray">demo kit, partner kit, E2E planned</span></td></tr>
+  </tbody>
+</table></div>
+</section>
+<section data-tab="Exit gate of Phase 4">
+<p>Playwright, against the real backend with the fake LLM: Home → new project → Lab: goal in chat → AI decisions shown beside the rule answers (accept one L1) → run → Pipeline evidence (every stage, digest and check) → findings → Data page → inspect feature → view code → assistant proposes a branch → confirm → Inbox → compare → accept → score new data → model card. A second spec runs the same flow with AI off through the forms.</p>
+<p class="small muted">This demo walks that exact flow: <a href="home.html">Home</a> → <a href="lab.html">Lab</a> → <a href="pipeline.html">Pipeline</a> → <a href="data.html">Data</a> → <a href="graph.html">Graph</a> → <a href="experiments.html">Experiments</a> → <a href="inbox.html">Inbox</a> → <a href="models.html">Models</a>.</p>
+</section>
+</div>
+
+<div class="card sect">
+<div class="sect-head"><h2>The hybrid AI model</h2><span class="sp">AI-first in how users work, deterministic in how results are produced · ADR 0008, ADR 0009</span></div>
+<section data-tab="Rules">
+<ol class="small" style="margin:0;padding-left:18px;display:grid;gap:5px">
+  <li><b>AI proposes at every decision point</b>: target, column roles, leakage suspects, split strategy, families and budget, next improve action, retrain, release, rollback.</li>
+  <li><b>Deterministic code validates every proposal</b>: columns exist, actions on an allowlist, the final holdout untouched, the budget not exceeded.</li>
+  <li><b>Every decision is a <code>project_decision_records</code> row</b>: who decided (rule, agent, Jev, human), why, cited evidence, the rule's answer, how to revert.</li>
+  <li><b>Autonomy is per decision point and earned with evidence</b> (R3): a level changes only when the AI is at least as good as the rule, and the change is itself a decision record.</li>
+  <li><b>AI sits before or after each deterministic step, never inside it</b>: AI-before proposes inputs, AI-after reviews outputs (Critic on every run), cross-check runs both.</li>
+  <li><b>Jev is used deterministically</b>: pinned release, calibrated thresholds in code, answers cached by input digest, fixed agreement policy.</li>
+  <li><b>Specialists make one structured LLM call</b> (NOOA Predict); only the lead agent, which is the in-app assistant, runs bounded tool loops over the same catalog as MCP.</li>
+  <li><b>Never AI:</b> model training, metric calculation, final model selection on validation data, holdout scoring, the splits themselves.</li>
+  <li><b>Every path works with AI off</b>; disabling NOOA and Jev leaves every test green. Try the <b>AI on</b> switch in the top bar.</li>
+</ol>
+</section>
+<section data-tab="Trust levels">
+<div class="levels">
+  <div><span class="lvl">L0</span><b>Shadow</b><small>AI answers and is logged; the rule decides. Every point starts here.</small></div>
+  <div><span class="lvl l1">L1</span><b>Advise</b><small>AI answer shown with evidence; a person accepts. Highest level ever for target, exclusions, leakage flags, split, experiment review, release, rollback and every lead-agent write tool.</small></div>
+  <div><span class="lvl l2">L2</span><b>Auto + revert</b><small>Applied when the validator accepts it; one-click revert. Numeric ↔ categorical roles, impute choice, families and budget, retrain.</small></div>
+  <div><span class="lvl l3">L3</span><b>Auto + notify</b><small>Acts under a workspace policy; person notified. <code>ops.diagnose</code> only. Never inside auto-train.</small></div>
+</div>
+<p class="small muted">Promotion needs sealed benchmark partitions and blind labels (ADR 0008 §4): L0 → L1 needs ≥ 100 sealed and ≥ 30 blind cases with precision lower bound ≥ 0.90; L1 → L2 needs ≥ 20 datasets, ≥ 300 cases, non-inferiority to the rule and a Wilson lower bound ≥ 0.98 on in-band overrides. Demotion is automatic on evidence of harm, incidents or drift.</p>
+</section>
+<section data-tab="Where AI sits">
+<div class="tbl"><table>
+  <thead><tr><th>Pattern</th><th>AI role</th><th>Examples in this demo</th></tr></thead>
+  <tbody>
+    <tr><td><b>AI-before</b></td><td>proposes the inputs of a deterministic step</td><td>target and spec (<a href="lab.html">Lab</a>), column roles and leakage suspects (<a href="pipeline.html">Pipeline</a> stages 3–4), split strategy, families and budget, next improve action (<a href="improve.html">Improve</a>)</td></tr>
+    <tr><td><b>AI-after</b></td><td>reviews the outputs of a deterministic step</td><td>Critic on every completed run (<a href="experiments.html">Experiments</a>, stage 10), drift diagnosis (<a href="monitoring.html">Monitoring</a>), release notes</td></tr>
+    <tr><td><b>Cross-check</b></td><td>both answer; agreement applies, disagreement goes to L1 review</td><td>Jev vs schema inference on <code>region_code</code> (Pipeline stage 3, record d-298), agent vs rule proposer in the improve loop</td></tr>
+  </tbody>
+</table></div>
+</section>
+<section data-tab="Agents">
+<div class="tbl"><table>
+  <thead><tr><th>Agent</th><th>Pattern</th><th>Proposes</th><th>Validator</th><th>Phase</th></tr></thead>
+  <tbody>
+    <tr><td>DatasetInvestigator</td><td>AI-before</td><td>prioritized findings, questions for the user, semantic-role suggestions</td><td>every cited column exists; no new statistics</td><td>6 · done</td></tr>
+    <tr><td>ExperimentPlanner</td><td>AI-before</td><td>metric and rationale, split strategy, families, budget</td><td>metric, split, families from code allowlists</td><td>6 · done</td></tr>
+    <tr><td>ExperimentCritic</td><td>AI-after</td><td>review with CV metric citations; verdict promote / needs work / reject</td><td>cited metrics exist in CV scope; verdict never auto-applies</td><td>6 · done</td></tr>
+    <tr><td>ImprovementHypothesis</td><td>cross-check</td><td>one action from the typed action space</td><td>action and ranges allowlisted; budget; never touches holdout</td><td>5</td></tr>
+    <tr><td>Lead agent = in-app assistant</td><td>bounded tool loop</td><td>answers with citations; L1 proposals as confirm cards</td><td>catalog validator per tool call; citation validator</td><td>6 runtime done · 4 Stage 4 screen</td></tr>
+    <tr><td>Ops agent</td><td>monitor → diagnose → retrain → review → release → rollback</td><td>retrain as new root, release and rollback proposals</td><td>same tools; workspace autonomy policy; release and rollback never above L1</td><td>7</td></tr>
+    <tr><td>Jev (TypeSafe)</td><td>typed judgments, ~100 ms</td><td><code>column.is_identifier</code>, <code>column.semantic_role</code>, <code>feature.leakage_suspect</code>, <code>command.intent_route</code>, <code>proposal.completeness</code></td><td>deterministic agreement policy; cached by digest</td><td>6 · done, starts at L0</td></tr>
+  </tbody>
+</table></div>
+</section>
+</div>
+
+<div class="card sect">
+<div class="sect-head"><h2>The ML state graph</h2><span class="sp">nodes are immutable versions; refs ★ are the only mutable pointers; staleness is computed, never stored</span></div>
+<section data-tab="Nodes">
+<div class="tbl"><table>
+  <thead><tr><th>Node</th><th>Owner today</th><th>Status</th><th>In this demo</th></tr></thead>
+  <tbody>
+    <tr><td><b>Project</b></td><td><code>projects</code></td><td>exists</td><td>Northwind churn</td></tr>
+    <tr><td><b>ProblemSpec</b></td><td><code>problem_specs</code> + objective block</td><td>exists</td><td>Spec v1 · recall ≥ 0.80 · PR-AUC (<a href="lab.html">Lab</a>)</td></tr>
+    <tr><td><b>DatasetVersion</b></td><td><code>datasets</code>, assets, columns</td><td>exists, immutable, digested</td><td>DS v1 ★, DS v3 (<a href="data.html">Data</a>)</td></tr>
+    <tr><td><b>SplitPlan</b></td><td><code>split_plans</code> (promoted in Phase 2)</td><td>exists</td><td>SP-1 ★ temporal, SP-2 (<a href="pipeline.html">Pipeline</a>)</td></tr>
+    <tr><td><b>FeatureRecipe</b></td><td><code>feature_set_versions</code>, features, transformations, lineage</td><td>exists</td><td>FR v3 ★ · 29 features (<a href="graph.html">Graph</a>)</td></tr>
+    <tr><td><b>Experiment</b></td><td><code>experiments</code> with parent, change set, split plan, intent</td><td>exists</td><td>E1…E9 (<a href="experiments.html">Experiments</a>)</td></tr>
+    <tr><td><b>Candidate / Fold</b></td><td><code>experiment_candidates</code>, <code>cv_fold_runs</code>, dummy baseline</td><td>exists</td><td>7 candidates, 5 folds</td></tr>
+    <tr><td><b>Evaluation · ModelSelection</b></td><td><code>model_evaluations</code>, <code>model_selection_decisions</code></td><td>exists, CV-only, immutable</td><td>winner locked by rule, holdout once</td></tr>
+    <tr><td><b>ModelVersion</b></td><td><code>model_versions</code>, assets</td><td>exists; safe package in Phase 7</td><td>MV v4 ★ champion (<a href="models.html">Models</a>)</td></tr>
+    <tr><td><b>Finding</b></td><td><code>investigation findings</code> (P4.10-A)</td><td>exists; ≥ 12 checks in Phase 5</td><td>19 ✓ · 1 ⚠ on E7</td></tr>
+    <tr><td><b>ProjectDecisionRecord</b></td><td><code>project_decision_records</code></td><td>exists (Phase 2)</td><td>d-298 … d-410 (<a href="decisions.html">Decisions</a>)</td></tr>
+    <tr><td><b>AgentRun · AgentProposal</b></td><td><code>agent_runs</code>, <code>agent_events</code>, <code>agent_proposals</code></td><td>exists (Phase 6)</td><td>ar-1021 … (<a href="agents.html">Agents</a>, <a href="inbox.html">Inbox</a>)</td></tr>
+    <tr><td><b>ModelRelease · BatchPrediction · MonitoringWindow</b></td><td><code>batch_predictions</code> exists (P4.9-A); releases and windows in Phase 7</td><td>partly</td><td>R-12, R-15, W-7…W-9 <span class="arrives">Phase 7</span></td></tr>
+  </tbody>
+</table></div>
+</section>
+<section data-tab="Scientific invariants">
+<ul class="small" style="margin:0;padding-left:18px;display:grid;gap:5px">
+  <li>Holdout plan first (stratified, random, group-disjoint, temporal-future); profile, leakage audit and plans on the locked train partition only.</li>
+  <li>Fit-dependent preprocessing inside per-fold Pipelines; name or correlation alone never excludes a feature.</li>
+  <li>CV-only winner lock, then a single winner-only holdout evaluation; a dummy baseline in every portfolio.</li>
+  <li>Thresholds and constraints tuned on validation folds only; every run reports "LLM used: yes/no".</li>
+  <li>All experiments in a lineage share the same locked SplitPlan, so comparisons are valid and the improve loop can never peek at a fresh holdout.</li>
+</ul>
+</section>
+</div>
+
+<div class="card sect">
+<div class="sect-head"><h2>Screen map</h2><span class="sp">prototype screen → Studio route → built by (STUDIO_DESIGN.md §4) → status (STATUS.md)</span></div>
+<section data-tab="Screens">
+<div class="tbl"><table>
+  <thead><tr><th>Screen</th><th>Route</th><th>Reads</th><th>Built by</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td><a href="home.html">Home</a></td><td class="mono">/home</td><td>projects, refs, model versions, <code>/v1/activity</code>, <code>/v1/inbox</code>, ledger</td><td>P4.15-A, P4.15-UI</td><td><span class="pill ok">built</span></td></tr>
+    <tr><td><a href="inbox.html">Inbox</a></td><td class="mono">/inbox</td><td><code>/v1/inbox</code>, proposals, decisions</td><td>P4.16-A, P4.16-UI</td><td><span class="pill ok">built</span></td></tr>
+    <tr><td><a href="lab.html">Lab</a></td><td class="mono">/projects/[id]/lab</td><td>assistant threads (SSE), proposals</td><td>A3-UI, A4-A (backend P6.3-B done)</td><td><span class="pill gray">Stage 4</span></td></tr>
+    <tr><td><a href="pipeline.html">Pipeline</a></td><td class="mono">/projects/[id]/pipeline/[eid]</td><td>model-builds, events, artifacts, decision records, findings</td><td>P4.17-UI</td><td><span class="pill ok">built</span></td></tr>
+    <tr><td><a href="graph.html">Graph</a></td><td class="mono">/projects/[id]/graph</td><td><code>/v1/projects/{id}/graph</code>, impact, refs</td><td>P4.2-A, P4.3-A</td><td><span class="pill ok">built</span></td></tr>
+    <tr><td><a href="data.html">Data</a></td><td class="mono">/projects/[id]/data</td><td>datasets, <code>/profile</code>, findings, policy</td><td>P4.1-C, P4.10-UI</td><td><span class="pill ok">built</span></td></tr>
+    <tr><td><a href="experiments.html">Experiments</a></td><td class="mono">/projects/[id]/experiments</td><td>list, detail, compare, branch, cancel, code, findings, Critic</td><td>P4.1-A, P4.3-A, P4.4-A · P5.2-UI</td><td><span class="pill ok">built</span></td></tr>
+    <tr><td><a href="improve.html">Improve</a></td><td class="mono">/projects/[id]/improve</td><td><code>/v1/improve-runs</code></td><td>P5.4-A, P5.5-A, P6.5-A</td><td><span class="pill ai">Phase 5 in progress</span></td></tr>
+    <tr><td><a href="models.html">Models</a></td><td class="mono">/projects/[id]/models</td><td>model versions, predictions, card · releases, contract, package</td><td>P4.9-UI, P4.11-UI · P7.2-A, P7.5-A</td><td><span class="pill ok">built</span> <span class="pill gray">releases Phase 7</span></td></tr>
+    <tr><td><a href="monitoring.html">Monitoring</a></td><td class="mono">/projects/[id]/monitoring</td><td>monitoring windows, labels</td><td>P7.4-A, P7.5-A, P7.8-A</td><td><span class="pill gray">Phase 7</span></td></tr>
+    <tr><td><a href="decisions.html">Decisions</a></td><td class="mono">/projects/[id]/decisions</td><td>decision records, accept / reject / supersede</td><td>P4.4-A</td><td><span class="pill ok">built</span></td></tr>
+    <tr><td><a href="agents.html">Agents &amp; tools</a></td><td class="mono">/agents</td><td>service tokens, <code>agent_tools.json</code>, agent runs, catalog</td><td>P4.8-UI · A2-UI, P6.8-UI</td><td><span class="pill ok">Connect, Tokens built</span> <span class="pill gray">rest Stage 4</span></td></tr>
+    <tr><td><a href="governance.html">Governance</a></td><td class="mono">/governance</td><td><code>/v1/governance</code>, ledger, R3</td><td>P6.11-UI (API P6.11-A done)</td><td><span class="pill gray">Stage 4</span></td></tr>
+    <tr><td><a href="settings.html">Settings</a></td><td class="mono">/settings</td><td>members · usage, integrations, data safety, notifications</td><td>exists · P8.4-A, P7.3-A, P8.7-A, P8.8-A</td><td><span class="pill ok">members built</span> <span class="pill gray">rest Phase 7–8</span></td></tr>
+    <tr><td><a href="client.html">Business Outcomes</a></td><td class="mono">/outcomes</td><td>champion release, latest batch prediction, model card, per-row reasons</td><td>P7.6-A, P7.7-A</td><td><span class="pill gray">Phase 7</span></td></tr>
+    <tr><td><a href="operator.html">Operator console</a></td><td class="mono">/operator</td><td>queue and worker health, quarantine, platform caps, R1–R3</td><td>P8.5-UI, P8.7-A</td><td><span class="pill gray">Phase 8</span></td></tr>
+  </tbody>
+</table></div>
+</section>
+<section data-tab="The sync rule">
+<ol class="small" style="margin:0;padding-left:18px;display:grid;gap:5px">
+  <li><b>Every value on screen comes from an API field.</b> Screens are typed against the generated <code>/v1</code> types; no number is copied from this prototype.</li>
+  <li><b>No backend, no element.</b> A prototype element whose backend does not exist yet is not drawn, or is an explicit empty state naming the phase. This demo marks those elements with a phase chip and dims them in the <b>Built today</b> view.</li>
+  <li><b>Prototype ≠ status.</b> UI_COVERAGE.md and STATUS.md say what is implemented.</li>
+  <li><b>Rule answer beside AI answer</b> wherever an agent, Jev or the assistant contributes.</li>
+  <li><b>Works with AI off.</b> Each AI element has its non-AI path ("Use forms instead", "With AI off").</li>
+</ol>
+</section>
+</div>

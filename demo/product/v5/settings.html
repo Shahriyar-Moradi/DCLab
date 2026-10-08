@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Settings · Northwind Telecom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="settings.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Settings</b></div>
+    <div class="cmd"><span>Search or jump to anything…</span><kbd>⌘K</kbd></div>
+    <div class="right"><a class="ai-state" href="lab.html"><i aria-hidden="true"></i>Assistant on</a><button class="tbtn" type="button" data-guide-toggle>Guide</button><button class="tbtn" type="button" data-glossary>Glossary</button><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Workspace settings</h1><p class="sub">Members and roles, plan and usage, integrations, data safety and notifications. AI policy lives in Governance.</p></div>
+</div>
+
+<div class="tabs" data-tabs="set">
+  <button data-tab="members" aria-selected="true">Members &amp; roles</button>
+  <button data-tab="usage">Plan &amp; usage</button>
+  <button data-tab="integrations">Integrations</button>
+  <button data-tab="safety">Data safety</button>
+  <button data-tab="notify">Notifications</button>
+</div>
+
+<div data-tabpanel="set:members" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Member</th><th>Role</th><th>Capabilities</th><th>Projects</th><th>Last active</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>admin@dclab.io</td><td>admin</td><td>all · governance approver</td><td>all</td><td>today</td><td><button class="btn sm" data-mock="edit">edit</button></td></tr>
+      <tr><td>developer@dclab.io (you)</td><td>developer</td><td>ML write · decisions:accept · tokens · governance approver</td><td>all</td><td>now</td><td></td></tr>
+      <tr><td>analyst@northwind.example</td><td>analyst</td><td>read · decisions:propose · run (budgeted)</td><td>Northwind churn, Invoice</td><td>yesterday</td><td><button class="btn sm" data-mock="edit">edit</button></td></tr>
+      <tr><td>demo@client.io</td><td>client</td><td>read outcomes · download predictions · answer questions</td><td>Northwind churn</td><td>Mon</td><td><button class="btn sm" data-mock="edit">edit</button></td></tr>
+      <tr><td><i>ops-agent</i> (system)</td><td>agent</td><td>per autonomy policy</td><td>projects with releases</td><td>Mon 02:14</td><td><a class="btn sm" href="governance.html">policy</a></td></tr>
+    </tbody>
+  </table></div>
+  <div class="toolbar"><button class="btn primary" data-mock="invite member">Invite</button><button class="btn" data-mock="SSO setup (Phase 8)">SSO</button></div>
+  <div class="card"><h3>Roles</h3><div class="tbl"><table><thead><tr><th>Role</th><th>Can</th><th>Cannot</th></tr></thead><tbody>
+    <tr><td>client</td><td>see outcomes, download predictions, answer agent questions, upload data for scoring</td><td>see experiments internals, change anything</td></tr>
+    <tr><td>analyst</td><td>run experiments within budget, propose decisions, use the Lab agent</td><td>accept decisions, promote, change policy</td></tr>
+    <tr><td>developer</td><td>everything in projects, tokens, MCP, accept decisions</td><td>change platform caps</td></tr>
+    <tr><td>admin</td><td>+ members, plan, governance policy, switches</td><td>read raw customer rows through AI</td></tr>
+  </tbody></table></div></div>
+</div>
+
+<div data-tabpanel="set:usage">
+  <div class="grid cols-4">
+    <div class="card"><div class="stat"><span class="v">beta</span><span class="l">plan · 5 projects · 2 concurrent runs</span></div></div>
+    <div class="card"><div class="stat"><span class="v">142 / 600 min</span><span class="l">worker compute this month</span></div><div class="meter"><i style="width:24%"></i></div></div>
+    <div class="card"><div class="stat"><span class="v">$9.71 / $25</span><span class="l">LLM + Jev this month</span></div><div class="meter ai"><i style="width:39%"></i></div></div>
+    <div class="card"><div class="stat"><span class="v">2.1 GB</span><span class="l">storage · datasets 1.6 · models 0.1 · artifacts 0.4</span></div></div>
+  </div>
+  <div class="card"><h3>Usage records <span class="sp">metered from ml_jobs, llm_invocations, storage</span></h3>
+    <div class="tbl"><table><thead><tr><th>Period</th><th class="r">Compute min</th><th class="r">Agent runs</th><th class="r">LLM tokens</th><th class="r">LLM $</th><th class="r">Storage GB</th><th class="r">Batch rows scored</th></tr></thead><tbody>
+      <tr><td>Oct 2026 (to date)</td><td class="r">142</td><td class="r">235</td><td class="r">8.2M</td><td class="r">9.71</td><td class="r">2.1</td><td class="r">1.9M</td></tr>
+      <tr><td>Sep 2026</td><td class="r">388</td><td class="r">610</td><td class="r">21.4M</td><td class="r">24.10</td><td class="r">1.9</td><td class="r">1.5M</td></tr>
+      <tr><td>Aug 2026</td><td class="r">201</td><td class="r">290</td><td class="r">10.1M</td><td class="r">11.80</td><td class="r">1.2</td><td class="r">0.3M</td></tr>
+    </tbody></table></div>
+    <div class="toolbar"><button class="btn sm" data-mock="export usage CSV">Export</button><button class="btn" data-mock="change plan">Change plan</button></div>
+  </div>
+</div>
+
+<div data-tabpanel="set:integrations">
+  <div class="card sect">
+<div class="sect-head"><h2>Integrations</h2></div>
+<section data-tab="MLflow mirror">
+<p class="muted small"><span class="pill ok">connected</span></p>
+<dl class="kv"><dt>Mode</dt><dd>telemetry mirror only · never source of truth</dd><dt>Required for promotion</dt><dd>no (tracking_degraded would block if yes)</dd><dt>Last sync</dt><dd>02:03 · 0 drift</dd></dl>
+</section>
+<section data-tab="Data sources">
+<p class="muted small"><span class="pill gray">Phase 9</span></p>
+<p class="small muted">Postgres, S3, CRM connectors via dlt. Until then: CSV upload and API.</p>
+</section>
+<section data-tab="Compute placement">
+<dl class="kv"><dt>Home pool</dt><dd>EU workers · 2 concurrent</dd><dt>External (SkyPilot)</dt><dd><span class="pill gray">off</span> · needs policy: data may leave home cloud</dd></dl>
+</section>
+<section data-tab="Model providers">
+<dl class="kv"><dt>Anthropic</dt><dd>via gateway · org key · region EU inference</dd><dt>TypeSafe (Jev)</dt><dd>via gateway · pinned 1.13.0</dd><dt>Others</dt><dd>require governance allowlist + ADR</dd></dl>
+</section>
+<section data-tab="Webhooks">
+<p class="muted small"><span class="pill gray">planned</span></p>
+<p class="small muted">run.completed · proposal.created · drift.alert · release.changed</p>
+</section>
+<section data-tab="Slack / email">
+<p class="small muted">See Notifications.</p>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="set:safety">
+  <div class="card sect">
+<div class="sect-head"><h2>Data safety</h2></div>
+<section data-tab="Uploads and retention">
+<dl class="kv"><dt>Upload policy</dt><dd>internal_training (ADR 0005)</dd><dt>Scanner</dt><dd>content + malware · quarantine on hit · operator review</dd><dt>Retention</dt><dd>datasets 24 months · artifacts 24 months · LLM inputs (redacted) 12 months</dd><dt>Deletion</dt><dd>weekly job · deletion requests honored within 30 days</dd><dt>Residency</dt><dd>EU storage, EU workers, EU inference</dd></dl>
+</section>
+<section data-tab="What never leaves">
+<div class="chips"><span class="pill crit">raw rows to any model</span><span class="pill crit">holdout rows to anything but the engine</span><span class="pill crit">secrets in exports</span><span class="pill crit">storage keys in API responses</span></div><p class="small muted">Enforced by the gateway redaction, the tool registry and the artifact service; property-tested nightly.</p>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="set:notify">
+  <div class="card"><div class="tbl"><table><thead><tr><th>Event</th><th>In-app</th><th>Email</th><th>Slack</th></tr></thead><tbody>
+    <tr><td>Decision needed (L1 proposal, question)</td><td>✓</td><td>✓ daily digest</td><td>#ml-decisions</td></tr>
+    <tr><td>L2 auto-decision applied</td><td>✓</td><td>—</td><td>—</td></tr>
+    <tr><td>L3 action taken (retrain, rollback)</td><td>✓</td><td>✓ immediately</td><td>#ml-ops</td></tr>
+    <tr><td>Run completed / failed</td><td>✓</td><td>on failure</td><td>—</td></tr>
+    <tr><td>Drift alert</td><td>✓</td><td>✓</td><td>#ml-ops</td></tr>
+    <tr><td>Budget at 80% / exhausted</td><td>✓</td><td>✓</td><td>—</td></tr>
+    <tr><td>Governance incident</td><td>✓</td><td>✓ approvers</td><td>—</td></tr>
+  </tbody></table></div></div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Members and four roles plus the agent actor, plan and metered usage, integrations, data safety, notifications</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Is "analyst" needed in the MVP or only developer + client?</li><li>Billing: self-serve plan changes or sales-led in beta?</li><li>Per-project settings page, or everything at workspace level?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Compute placement UI before any heavy jobs exist</li><li>Slack integration before webhooks</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+<script src="../versions.js" data-version="v5"></script>
+</body>
+</html>

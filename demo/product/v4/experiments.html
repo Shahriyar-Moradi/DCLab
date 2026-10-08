@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Experiments · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="experiments.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Experiments</b></div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="tbtn" type="button" data-guide-toggle>Guide</button><button class="tbtn" type="button" data-glossary>Glossary</button><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Experiments</h1><p class="sub">Every run is an experiment node. Branches share the parent's split plan, so they are comparable. Selection is a CV rule; the holdout is scored once per experiment.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="new root run (form)">New run</button><button class="btn" data-mock="branch builder">Branch…</button><button class="btn" data-mock="compare selected (same split plan required)">Compare selected</button><a class="btn ai" href="lab.html">Ask the agent</a></div>
+</div>
+
+<div class="tabs" data-tabs="exp">
+  <button data-tab="list" aria-selected="true">All experiments</button>
+  <button data-tab="detail">E7 detail</button>
+  <button data-tab="compare">Compare E1 · E2 · E7</button>
+  <button data-tab="branch">Branch builder</button>
+  <button data-tab="code">Code</button>
+</div>
+
+<div data-tabpanel="exp:list" class="on">
+  <div class="toolbar"><input class="input" placeholder="filter…"><select class="input"><option>Status: all</option><option>completed</option><option>running</option><option>failed</option><option>cancelled</option></select><select class="input"><option>Split plan: all</option><option>SP-1</option><option>SP-2</option></select><span class="switch"><i></i>only with change set</span><span class="sp"></span><span class="small muted">9 experiments · 1 running · 1 cancelled</span></div>
+  <div class="tbl card"><table>
+    <thead><tr><th></th><th>Id</th><th>Parent · intent</th><th>Change set</th><th>Split</th><th>Winner</th><th class="r">CV primary</th><th class="r">Holdout recall</th><th class="r">Holdout precision</th><th>Verifier</th><th>Critic</th><th>Started by</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><input type="checkbox" checked></td><td><b>E1</b></td><td>root · first model</td><td>—</td><td>SP-1</td><td>lightgbm__tuned</td><td class="r">0.69 ± .02</td><td class="r">0.82</td><td class="r">0.61</td><td><span class="pill ok">19 ✓ 1 ⚠</span></td><td><span class="pill warn">needs_work</span></td><td>agent for you</td><td><a class="btn sm" href="pipeline.html">pipeline</a></td></tr>
+      <tr><td><input type="checkbox" checked></td><td><b>E2</b></td><td>E1 · raise recall</td><td class="mono">class_weighting balanced</td><td>SP-1</td><td>lightgbm__tuned</td><td class="r">0.69 ± .02</td><td class="r">0.85</td><td class="r">0.58</td><td><span class="pill ok">20 ✓</span></td><td><span class="pill ok">promote</span></td><td>IL-2 rule proposer</td><td></td></tr>
+      <tr><td><input type="checkbox"></td><td>E3</td><td>E2 · IL-2 it.2</td><td class="mono">family_include catboost</td><td>SP-1</td><td>catboost</td><td class="r">0.70 ± .01</td><td class="r">—</td><td class="r">—</td><td><span class="pill ok">20 ✓</span></td><td>—</td><td>IL-2 agent proposer</td><td></td></tr>
+      <tr><td><input type="checkbox"></td><td>E4</td><td>E3 · IL-2 it.3</td><td class="mono">datetime_extract signup_date</td><td>SP-1</td><td>catboost</td><td class="r">0.71 ± .02</td><td class="r">—</td><td class="r">—</td><td><span class="pill ok">20 ✓</span></td><td>—</td><td>IL-2 agent</td><td></td></tr>
+      <tr class="dim"><td><input type="checkbox"></td><td>E5</td><td>E4 · IL-2 it.4</td><td class="mono">hyperparameter_override depth 4–8</td><td>SP-1</td><td>—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td><span class="pill gray">cancelled</span></td><td>—</td><td>budget stop</td><td></td></tr>
+      <tr><td><input type="checkbox"></td><td>E6</td><td>E4 · IL-2 it.5</td><td class="mono">threshold_objective recall ≥ .80</td><td>SP-1</td><td>catboost</td><td class="r">0.71 ± .02</td><td class="r">—</td><td class="r">—</td><td><span class="pill ok">20 ✓</span></td><td>—</td><td>IL-2 rule</td><td></td></tr>
+      <tr class="win"><td><input type="checkbox" checked></td><td><b>E7</b> ★</td><td>E2 · IL-2 best · champion source</td><td class="mono">threshold_objective recall ≥ .80 + class weights</td><td>SP-1</td><td>lightgbm__tuned</td><td class="r">0.71 ± .02</td><td class="r">0.81</td><td class="r">0.63</td><td><span class="pill ok">19 ✓ 1 ⚠</span></td><td><span class="pill warn">needs_work · 1 q</span></td><td>IL-2 (accepted by you)</td><td><button class="btn sm" data-mock="open">open</button></td></tr>
+      <tr><td><input type="checkbox"></td><td>E8</td><td>root · re-include churned_at (test)</td><td>—</td><td>SP-1</td><td>—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td><span class="pill crit">FAIL leakage</span></td><td>—</td><td>you</td><td></td></tr>
+      <tr><td><input type="checkbox"></td><td>E9</td><td>E7 · retrain after drift</td><td class="mono">dataset DS v3 (new root lineage)</td><td>SP-2</td><td>—</td><td class="r">running fold 4/5</td><td class="r">—</td><td class="r">—</td><td>—</td><td>—</td><td>Ops agent · L2</td><td><button class="btn sm danger" data-mock="cancel E9">cancel</button></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="exp:detail">
+  <div class="grid cols-4">
+    <div class="card"><div class="stat"><span class="v">0.71 ± .02</span><span class="l">CV PR-AUC · 5 folds · SP-1</span></div></div>
+    <div class="card"><div class="stat"><span class="v">0.81 / 0.63</span><span class="l">holdout recall / precision @ 0.31</span></div></div>
+    <div class="card"><div class="stat"><span class="v">+0.50</span><span class="l">margin over dummy baseline</span></div></div>
+    <div class="card"><div class="stat"><span class="v">needs_work</span><span class="l">Critic · 1 open question</span></div></div>
+  </div>
+  <div class="card sect">
+<div class="sect-head"><h2>Winner evidence</h2></div>
+<section data-tab="Candidates">
+<p class="muted small">7 · nested tuning inside each fold</p>
+<div class="tbl"><table>
+        <thead><tr><th>Candidate</th><th class="r">CV PR-AUC</th><th class="r">± sd</th><th class="r">fit s</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr class="dim"><td>dummy (prior)</td><td class="r">0.21</td><td class="r">0.00</td><td class="r">0.1</td><td>never eligible</td></tr>
+          <tr><td>logistic · balanced</td><td class="r">0.60</td><td class="r">0.02</td><td class="r">4</td><td></td></tr>
+          <tr><td>random_forest · balanced</td><td class="r">0.64</td><td class="r">0.02</td><td class="r">31</td><td></td></tr>
+          <tr><td>xgboost · scale_pos_weight</td><td class="r">0.68</td><td class="r">0.02</td><td class="r">22</td><td></td></tr>
+          <tr><td>catboost · auto weights</td><td class="r">0.70</td><td class="r">0.01</td><td class="r">48</td><td>runner-up</td></tr>
+          <tr><td>lightgbm · balanced</td><td class="r">0.69</td><td class="r">0.02</td><td class="r">9</td><td></td></tr>
+          <tr class="win"><td><b>lightgbm__tuned</b></td><td class="r"><b>0.71</b></td><td class="r">0.02</td><td class="r">71</td><td>winner · 12 Optuna trials/fold</td></tr>
+        </tbody>
+      </table></div>
+</section>
+<section data-tab="Per-fold and threshold">
+<svg class="chart" viewBox="0 0 360 150" role="img" aria-label="Per-fold PR-AUC for winner and runner-up, five folds">
+        <line class="grid-l" x1="40" y1="120" x2="350" y2="120"/><line class="grid-l" x1="40" y1="80" x2="350" y2="80"/><line class="grid-l" x1="40" y1="40" x2="350" y2="40"/>
+        <text class="axis" x="34" y="123" text-anchor="end">0.60</text><text class="axis" x="34" y="83" text-anchor="end">0.70</text><text class="axis" x="34" y="43" text-anchor="end">0.80</text>
+        <polyline class="ln-a" points="60,76 130,72 200,80 270,68 340,72"/><polyline class="ln-b" points="60,84 130,80 200,86 270,78 340,76"/>
+        <circle class="pt-a" cx="60" cy="76" r="3"/><circle class="pt-a" cx="130" cy="72" r="3"/><circle class="pt-a" cx="200" cy="80" r="3"/><circle class="pt-a" cx="270" cy="68" r="3"/><circle class="pt-a" cx="340" cy="72" r="3"/>
+        <text class="axis" x="60" y="140" text-anchor="middle">f1 (warm)</text><text class="axis" x="130" y="140" text-anchor="middle">f2</text><text class="axis" x="200" y="140" text-anchor="middle">f3</text><text class="axis" x="270" y="140" text-anchor="middle">f4</text><text class="axis" x="340" y="140" text-anchor="middle">f5</text>
+        <text class="lbl" x="48" y="16">■ lightgbm__tuned   <tspan fill="var(--ai)">■ catboost</tspan></text>
+      </svg>
+      <dl class="kv"><dt>Threshold</dt><dd>0.31 · from out-of-fold scores · constraint recall ≥ 0.80 met on OOF (0.80) · spread across folds 0.28–0.34</dd><dt>Holdout at 0.31</dt><dd>recall 0.81 ✓ · precision 0.63 · expected cost n/a</dd><dt>Calibration</dt><dd>ECE 0.03 · Brier 0.14</dd></dl>
+</section>
+</div>
+  <div class="card sect">
+<div class="sect-head"><h2>Review</h2></div>
+<section data-tab="Feature importance (winner, permutation on CV)">
+<svg class="chart" viewBox="0 0 360 150" role="img" aria-label="Top features by importance">
+        <text class="lbl" x="4" y="22">last_login_days</text><rect class="bar" x="130" y="12" width="164" height="12"/><text class="axis" x="298" y="22">0.41</text>
+        <text class="lbl" x="4" y="44">monthly_fee</text><rect class="bar" x="130" y="34" width="44" height="12"/><text class="axis" x="178" y="44">0.11</text>
+        <text class="lbl" x="4" y="66">plan_type</text><rect class="bar" x="130" y="56" width="36" height="12"/><text class="axis" x="170" y="66">0.09</text>
+        <text class="lbl" x="4" y="88">support_tickets_90d</text><rect class="bar" x="130" y="78" width="32" height="12"/><text class="axis" x="166" y="88">0.08</text>
+        <text class="lbl" x="4" y="110">retention_offer_sent</text><rect class="bar ai" x="130" y="100" width="28" height="12"/><text class="axis" x="162" y="110">0.07 ⚠ review</text>
+        <text class="lbl" x="4" y="132">region_code (AI role)</text><rect class="bar ai" x="130" y="122" width="24" height="12"/><text class="axis" x="158" y="132">0.06</text>
+      </svg>
+</section>
+<section data-tab="Critic review">
+<p class="muted small">ar-1041 · prompt critic v8 · L1</p>
+<p><b>Verdict: needs_work.</b> The model is sound and beats the baseline by a wide margin, but 41% of its gain comes from one feature. If <code>last_login_days</code> is computed after churn in your systems, production recall will be lower than 0.81.</p>
+      <div class="cite"><span>feature_importance.last_login_days = 0.41 (E7)</span><span>cv_pr_auc = 0.71 ± 0.02 (E7, SP-1)</span><span>verifier.winner_relies_on_single_feature = WARN</span><span>validator: 3/3 citations valid · no new statistics</span></div>
+      <div class="toolbar"><button class="btn primary" data-mock="answer question → decision record → Critic re-run">Answer: known daily</button><button class="btn" data-mock="accept as finding">Accept finding</button><button class="btn" data-mock="reject review">Reject</button><button class="btn" data-mock="re-run Critic (Batch, $0.01)">Re-run</button></div>
+</section>
+</div>
+  <div class="toolbar"><button class="btn primary" data-mock="promote E7 winner → MV (needs L1 approval + Critic question)">Promote to champion</button><button class="btn" data-mock="branch">Branch</button><button class="btn" data-mock="start improve loop from E7">Improve from here</button><button class="btn" data-mock="download report.html">Report</button><button class="btn" data-mock="download reproduction.py / notebook">Code</button><button class="btn" data-mock="score file with this winner (unreleased)">Score a file</button></div>
+</div>
+
+<div data-tabpanel="exp:compare">
+  <div class="banner">Comparison requires the same split plan (SP-1). E9 (SP-2) is not comparable by CV and is excluded; compare it on labeled production weeks in Monitoring.</div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Metric · CV on SP-1</th><th class="r">E1 root</th><th class="r">E2 ← E1</th><th class="r">E7 ← E2 ★</th><th class="r">Δ E7 − E1</th></tr></thead>
+    <tbody>
+      <tr><td>PR-AUC</td><td class="r">0.69</td><td class="r">0.69</td><td class="r">0.71</td><td class="r">+0.02</td></tr>
+      <tr><td>ROC-AUC</td><td class="r">0.84</td><td class="r">0.84</td><td class="r">0.85</td><td class="r">+0.01</td></tr>
+      <tr><td>Recall @ OOF threshold</td><td class="r">0.74</td><td class="r">0.79</td><td class="r">0.80</td><td class="r">+0.06</td></tr>
+      <tr><td>Precision @ OOF threshold</td><td class="r">0.63</td><td class="r">0.60</td><td class="r">0.64</td><td class="r">+0.01</td></tr>
+      <tr><td>Threshold</td><td class="r">0.50</td><td class="r">0.42</td><td class="r">0.31</td><td class="r"></td></tr>
+      <tr><td>Holdout recall / precision (once each)</td><td class="r">0.82 / 0.61</td><td class="r">0.85 / 0.58</td><td class="r">0.81 / 0.63</td><td class="r"></td></tr>
+      <tr><td>Change set vs parent</td><td>—</td><td class="mono">class_weighting balanced</td><td class="mono">+ threshold_objective recall ≥ .80</td><td></td></tr>
+      <tr><td>Features</td><td class="r">29</td><td class="r">29</td><td class="r">29</td><td class="r">0</td></tr>
+      <tr><td>Cost (compute · LLM)</td><td class="r">4 m · $0.27</td><td class="r">3 m · $0.04</td><td class="r">4 m · $0.06</td><td></td></tr>
+    </tbody>
+  </table></div>
+  <div class="toolbar"><button class="btn primary" data-mock="accept E7 as champion source">Accept E7</button><button class="btn" data-mock="branch from E7">Branch from E7</button><button class="btn" data-mock="reject E2">Reject E2</button><button class="btn" data-mock="export comparison CSV">Export</button></div>
+</div>
+
+<div data-tabpanel="exp:branch">
+  <div class="grid cols-2">
+    <div class="card"><h3>Branch from E7 <span class="sp">typed change set · same split plan</span></h3>
+      <div class="field">Intent<input class="input" value="try CatBoost with native categoricals at the same threshold objective"></div>
+      <div class="field">Changes<div class="chips">
+        <span class="chip"><b>family_include</b><small>catboost</small></span>
+        <span class="chip"><b>hyperparameter_override</b><small>catboost · depth 6 · l2 3</small></span>
+        <span class="chip"><b>feature_transform_add</b><small>contract_end · days_to (as_of snapshot_month ✓)</small></span>
+        <button class="btn sm" data-mock="add change from allowlist">+ add</button>
+      </div></div>
+      <div class="field">Not allowed here<ul class="small muted" style="margin:0;padding-left:18px"><li>re-include a leakage-excluded column (new root)</li><li>change dataset, target, split plan or metric (new root)</li><li>remove the dummy baseline</li></ul></div>
+      <div class="toolbar"><button class="btn primary" data-mock="validate → POST /v1/experiments/E7/branches">Validate and run</button><button class="btn ai" data-mock="ask agent to suggest changes">Suggest changes</button></div>
+    </div>
+    <div class="card"><h3>Validation preview</h3>
+      <div class="chips"><span class="pill ok">catboost installed</span><span class="pill ok">depth in constructor allowlist</span><span class="pill ok">contract_end not target/group/time</span><span class="pill ok">as_of column declared</span><span class="pill ok">no duplicate change kinds</span><span class="pill ok">budget: 8 of 10 runs this hour</span></div>
+      <p class="small muted">The effective config is parent config ⊕ change set; the digest enters the search fingerprint so a replay returns the same experiment.</p>
+      <pre class="code">POST /v1/experiments/E7/branches
+Idempotency-Key: 3f1c-…
+{ "intent": "…", "changes": [
+  {"kind":"family_include","family":"catboost"},
+  {"kind":"hyperparameter_override","family":"catboost","parameters":{"depth":6,"l2_leaf_reg":3}},
+  {"kind":"feature_transform_add","column":"contract_end","transform":"days_to","parameters":{"as_of":"snapshot_month"}} ] }</pre>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="exp:code">
+  <div class="grid cols-2">
+    <div class="card"><h3>Reproduction script · E7 <span class="sp">generator v2 · reproduces CV, max |Δ| 0.0</span></h3>
+<pre class="code"><span class="c"># DCLab reproduction for experiment E7 (branch of E2) — no DCLab imports
+# inputs: dataset 7f3a…c21, split_assignment a3f9…d10 (fold map), spec v1
+# decisions: churned_at excluded (leak, d-302), region_code categorical (d-298, AI L2)
+# user note: churn = "no payment for 60 days"</span>
+NUM = [...]; CAT = [..., "region_code"]; DATE = ["signup_date"]
+<span class="k">prep</span> = ColumnTransformer([
+  ("num", Pipeline([("impute", SimpleImputer(strategy="median")), ("scale", StandardScaler())]), NUM),
+  ("cat", Pipeline([("impute", SimpleImputer(strategy="most_frequent")),
+                    ("onehot", OneHotEncoder(handle_unknown="ignore", drop=None))]), CAT),
+  ("date", DateParts(["month", "weekday"]), DATE)])
+<span class="k">model</span> = Pipeline([("prep", prep),
+  ("clf", LGBMClassifier(class_weight="balanced", num_leaves=31, learning_rate=0.05, n_estimators=420, random_state=42))])
+<span class="c"># folds from the stored assignment map; holdout rows are never used here</span>
+for fold in folds: fit(model, train_idx); score(model, valid_idx)
+<span class="k">THRESHOLD</span> = 0.31  <span class="c"># chosen on out-of-fold scores, constraint recall >= 0.80</span></pre>
+    </div>
+    <div class="card"><h3>Also available</h3>
+      <div class="chips"><button class="btn sm" data-mock="download notebook">Notebook (.ipynb)</button><button class="btn sm" data-mock="download requirements lock">requirements.lock</button><button class="btn sm" data-mock="copy CLI">dclab experiments code E7 --json</button><button class="btn sm" data-mock="open in MCP transcript">MCP get_experiment_code</button></div>
+      <dl class="kv"><dt>Standalone CV</dt><dd>true</dd><dt>Inputs</dt><dd>by artifact id + digest, no storage keys</dd><dt>Secrets</dt><dd>none</dd></dl>
+    </div>
+  </div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>List with lineage, change sets, split plan, metrics, verifier, Critic, who started it</li><li>Detail: candidates, per-fold, threshold, importance, Critic with citations</li><li>Compare (same split plan), typed branch builder with validation, exported code</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Regression/multiclass views: same table with different metric columns?</li><li>Subgroup metrics (fairness) tab from P5.1?</li><li>Should "score a file" with an unreleased winner exist, or only via release?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Manual hyperparameter overrides in the UI if the loop handles tuning</li><li>Notebook export in addition to the script</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+<script src="../versions.js" data-version="v4"></script>
+</body>
+</html>

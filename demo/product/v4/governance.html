@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Governance · Northwind Telecom</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="governance.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Governance</b></div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="tbtn" type="button" data-guide-toggle>Guide</button><button class="tbtn" type="button" data-glossary>Glossary</button><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>AI governance</h1><p class="sub">What the AI may do in this workspace, and proof of what it did. Policies are data with platform caps; every change is a decision record approved by a governance approver. The gateway and the harness enforce what is set here.</p></div>
+  <div class="toolbar"><span class="pill ok">policy v4 · effective</span><button class="btn primary" data-mock="propose policy change → decision record → approver">Propose change</button><button class="btn" data-mock="export audit bundle (policy, levels, ledger, incidents, replays)">Audit bundle</button></div>
+</div>
+
+<div class="tabs" data-tabs="gov">
+  <button data-tab="policy" aria-selected="true">Policy</button>
+  <button data-tab="levels">Decision points &amp; trust levels</button>
+  <button data-tab="spend">Budgets &amp; spend</button>
+  <button data-tab="switches">Kill switches</button>
+  <button data-tab="incidents">Incidents</button>
+  <button data-tab="audit">Audit &amp; replay</button>
+  <button data-tab="evals">Evaluation (R3)</button>
+</div>
+
+<div data-tabpanel="gov:policy" class="on">
+  <div class="card sect">
+<div class="sect-head"><h2>Effective policy · v4</h2></div>
+<section data-tab="Models">
+<p class="muted small">allowlist per role · platform cap: approved providers only</p>
+<div class="tbl"><table><thead><tr><th>Role</th><th>Default</th><th>Allowed</th><th>Fallback</th></tr></thead><tbody>
+        <tr><td>Lead agent</td><td>gpt-6.1-sol</td><td>gpt-6.1-sol</td><td>rule path (forms)</td></tr>
+        <tr><td>Specialists (Critic, Investigator, Planner, Improve, Ops)</td><td>gpt-6.1-sol (Critic, Planner, Improve, Ops) · gpt-6-luna (Investigator)</td><td>gpt-6.1-sol, gpt-6-luna</td><td>rule answer</td></tr>
+        <tr><td>Jev purposes</td><td>jev-1.13.0 (pinned)</td><td>jev-1.13.0</td><td>rule answer</td></tr>
+        <tr><td>Legacy decision agent (frozen)</td><td>off</td><td>—</td><td>—</td></tr>
+      </tbody></table></div>
+</section>
+<section data-tab="Data allowed to leave to a model">
+<p class="muted small">platform cap: raw rows never</p>
+<div class="tbl"><table><tbody>
+        <tr><td>Column names, dtypes, counts, statistics</td><td><span class="pill ok">allowed</span></td></tr>
+        <tr><td>Aggregates (bands, distributions, metrics)</td><td><span class="pill ok">allowed</span></td></tr>
+        <tr><td>Sample values (up to 5 per column)</td><td><span class="pill gray">off</span> <button class="btn sm" data-mock="propose enabling sample values">propose</button></td></tr>
+        <tr><td>Raw rows</td><td><span class="pill crit">never (cap)</span></td></tr>
+        <tr><td>User free text (goals, answers)</td><td><span class="pill ok">allowed · marked untrusted</span></td></tr>
+        <tr><td>Column names into prompts</td><td><span class="pill ok">allowed · untrusted</span></td></tr>
+      </tbody></table></div>
+      <p class="small muted">Jev retention and region are not documented by the provider; with sample values off only metadata leaves.</p>
+</section>
+<section data-tab="Autonomy">
+<dl class="kv"><dt>Pipeline decision points</dt><dd>per point, see next tab · caps: column exclusion ≤ L1, selection never</dd><dt>Improve loop</dt><dd>agent proposer ≤ L2 · feature attempts ≤ 2 per loop</dd><dt>Operations</dt><dd>auto-retrain ≤ 2 / week (L2) · auto-release <span class="pill gray">off</span> (L1) · auto-rollback on precision −0.05 over 2 labeled weeks (L3) · monitoring status L3</dd><dt>Lead agent loop</dt><dd>≤ 40 steps · ≤ 300k tokens · ≤ 15 min · ≤ $1.00 per session</dd></dl>
+</section>
+<section data-tab="Approvals, retention, change history">
+<dl class="kv"><dt>Governance approvers</dt><dd>developer@dclab.io, admin@dclab.io (2)</dd><dt>L1 decision approvers</dt><dd>anyone with decisions:accept (4)</dd><dt>Prompt/answer retention</dt><dd>12 months · redacted inputs only</dd><dt>Policy history</dt><dd>v4 (d-218, Tue) · v3 (d-190) · v2 · v1 platform default</dd></dl>
+      <div class="toolbar"><button class="btn sm" data-mock="diff v3 → v4">diff v3 → v4</button></div>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="gov:levels">
+  <div class="banner">A level moves up only with R3 evidence (≥ 300 cases, AI ≥ rule, cost and latency within budget) and an approver; it moves down automatically on incidents. Each change is a decision record.</div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Decision point</th><th>Pattern</th><th>AI</th><th>Rule</th><th class="r">Cases</th><th class="r">AI acc.</th><th class="r">Rule acc.</th><th class="r">Disagree</th><th class="r">Cost / 1k</th><th class="r">p95</th><th>Level · cap</th><th>Evidence</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>column.is_identifier</td><td>AI-before</td><td>Jev Noul</td><td>schema_inference.id</td><td class="r">412</td><td class="r">98.6%</td><td class="r">97.1%</td><td class="r">2.4%</td><td class="r">$0.01</td><td class="r">0.1 s</td><td><span class="lvl l2">L2</span> · L2</td><td class="mono">r3-1020</td><td><button class="btn sm" data-mock="propose level change">change</button></td></tr>
+      <tr><td>column.semantic_role</td><td>AI-before</td><td>Jev Choice</td><td>split_column_roles</td><td class="r">388</td><td class="r">93.1%</td><td class="r">88.4%</td><td class="r">9.0%</td><td class="r">$0.01</td><td class="r">0.1 s</td><td><span class="lvl l2">L2</span> · L2</td><td class="mono">r3-1020</td><td><button class="btn sm" data-mock="change">change</button></td></tr>
+      <tr><td>feature.leakage_suspect</td><td>cross-check</td><td>Jev + Investigator</td><td>leakage_auditor names</td><td class="r">301</td><td class="r">90.4%</td><td class="r">71.0%</td><td class="r">21%</td><td class="r">$9</td><td class="r">6 s</td><td><span class="lvl l0">L0</span> · L1 <span class="pill warn">change pending</span></td><td class="mono">r3-1020 · i-31</td><td><a class="btn sm" href="inbox.html">approve</a></td></tr>
+      <tr><td>target.column</td><td>AI-before</td><td>Planner</td><td>target inference</td><td class="r">260</td><td class="r">96%</td><td class="r">92%</td><td class="r">5%</td><td class="r">$27</td><td class="r">9 s</td><td><span class="lvl l1">L1</span> · L1</td><td class="mono">r3-1020</td><td></td></tr>
+      <tr><td>split.strategy</td><td>AI-before</td><td>Planner</td><td>holdout planner</td><td class="r">320</td><td class="r">95.3%</td><td class="r">94.0%</td><td class="r">3.1%</td><td class="r">$27</td><td class="r">9 s</td><td><span class="lvl l1">L1</span> · L1</td><td class="mono">r3-1020</td><td></td></tr>
+      <tr><td>training.families</td><td>AI-before</td><td>Planner</td><td>portfolio rule</td><td class="r">320</td><td class="r">n/a (union)</td><td class="r">—</td><td class="r">—</td><td class="r">$27</td><td class="r">9 s</td><td><span class="lvl l2">L2</span> · L2</td><td class="mono">r3-1020</td><td></td></tr>
+      <tr><td>experiment.review</td><td>AI-after</td><td>Critic</td><td>verifier</td><td class="r">150</td><td class="r">citations 99% valid</td><td class="r">—</td><td class="r">—</td><td class="r">$14 (Batch)</td><td class="r">12 s</td><td><span class="lvl l1">L1</span> · L1</td><td class="mono">r3-1020</td><td></td></tr>
+      <tr><td>improve.next_action</td><td>cross-check</td><td>ImprovementHypothesis</td><td>rule table</td><td class="r">23 tasks</td><td class="r">70% feasible</td><td class="r">61%</td><td class="r">48%</td><td class="r">$27</td><td class="r">8 s</td><td><span class="lvl l2">L2</span> · L2</td><td class="mono">r2-0930</td><td></td></tr>
+      <tr><td>ops.diagnose</td><td>AI-after</td><td>Investigator</td><td>drift finding</td><td class="r">40</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$9</td><td class="r">6 s</td><td><span class="lvl l3">L3</span> · L3</td><td>—</td><td></td></tr>
+      <tr><td>ops.retrain</td><td>AI-before</td><td>Ops agent</td><td>none</td><td class="r">6</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$30</td><td class="r">—</td><td><span class="lvl l2">L2</span> · L2</td><td>policy</td><td></td></tr>
+      <tr><td>ops.release</td><td>AI-before</td><td>Ops agent</td><td>release gate</td><td class="r">3</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$30</td><td class="r">—</td><td><span class="lvl l1">L1</span> · L1</td><td>policy</td><td></td></tr>
+      <tr><td>ops.rollback</td><td>rule + notify</td><td>—</td><td>precision threshold</td><td class="r">1</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$0</td><td class="r">—</td><td><span class="lvl l3">L3</span> · L3</td><td>policy</td><td></td></tr>
+      <tr><td>command.intent_route</td><td>AI-before</td><td>Jev Choice</td><td>none</td><td class="r">220</td><td class="r">n &lt; 300</td><td class="r">—</td><td class="r">—</td><td class="r">$0.01</td><td class="r">0.1 s</td><td><span class="lvl l0">L0</span> · L1</td><td>pending</td><td></td></tr>
+      <tr class="dim"><td>selection.winner · holdout.score · split.build · metric.compute</td><td colspan="9">never AI (platform cap)</td><td><span class="pill crit">—</span></td><td></td><td></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="gov:spend">
+  <div class="grid cols-4">
+    <div class="card"><div class="stat"><span class="v">$9.40</span><span class="l">LLM this month · budget $25 · alert 80%</span></div><div class="meter ai"><i style="width:38%"></i></div></div>
+    <div class="card"><div class="stat"><span class="v">$0.31</span><span class="l">Jev this month · 42,110 questions · 58% cache hits</span></div></div>
+    <div class="card"><div class="stat"><span class="v">142 min</span><span class="l">worker compute · ≈ $5.70</span></div></div>
+    <div class="card"><div class="stat"><span class="v">3</span><span class="l">budget refusals → rule fallback</span></div></div>
+  </div>
+  <div class="card sect">
+<section data-tab="Spend by agent">
+<p class="muted small">from llm_invocations</p>
+<div class="tbl"><table><thead><tr><th>Agent</th><th class="r">Runs</th><th class="r">Calls</th><th class="r">Tokens in / out</th><th class="r">Cache</th><th class="r">Cost</th></tr></thead><tbody>
+        <tr><td>Lead agent</td><td class="r">31</td><td class="r">412</td><td class="r">6.1M / 0.4M</td><td class="r">84%</td><td class="r">$5.12</td></tr>
+        <tr><td>Critic (Batch)</td><td class="r">96</td><td class="r">96</td><td class="r">0.8M / 0.2M</td><td class="r">61%</td><td class="r">$1.30</td></tr>
+        <tr><td>ImprovementHypothesis</td><td class="r">58</td><td class="r">58</td><td class="r">0.5M / 0.1M</td><td class="r">63%</td><td class="r">$1.56</td></tr>
+        <tr><td>Investigator + Planner</td><td class="r">44</td><td class="r">44</td><td class="r">0.4M / 0.1M</td><td class="r">59%</td><td class="r">$1.18</td></tr>
+        <tr><td>Ops agent</td><td class="r">6</td><td class="r">22</td><td class="r">0.1M / 0.02M</td><td class="r">70%</td><td class="r">$0.24</td></tr>
+      </tbody></table></div>
+</section>
+<section data-tab="Budgets">
+<dl class="kv"><dt>Workspace / month</dt><dd>$25 LLM · alert at 80% · over budget → rule fallback, inbox notice</dd><dt>Per project / month</dt><dd>$12</dd><dt>Per run</dt><dd>$1.00 lead session · $0.10 specialist · 600 s compute</dd><dt>Compute</dt><dd>600 min / month (plan) · heavy jobs: none</dd><dt>Plan entitlements</dt><dd>beta · 5 projects · 2 concurrent runs</dd></dl>
+      <div class="toolbar"><button class="btn sm" data-mock="propose budget change">Propose change</button><a class="btn sm" href="settings.html">Usage &amp; plan</a></div>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="gov:switches">
+  <div class="banner warn">Flipping a switch is audited and takes effect on the next gateway call. Off = the rule path runs; nothing fails.</div>
+  <div class="grid cols-2">
+    <div class="card"><h3>Switches</h3>
+      <div class="tbl"><table><tbody>
+        <tr><td>All AI (workspace)</td><td><span class="switch on"><i></i>on</span></td><td class="small muted">last changed: never</td></tr>
+        <tr><td>Lead agent (chat)</td><td><span class="switch on"><i></i>on</span></td><td></td></tr>
+        <tr><td>Specialists: Critic</td><td><span class="switch on"><i></i>on</span></td><td></td></tr>
+        <tr><td>Specialists: Investigator, Planner</td><td><span class="switch on"><i></i>on</span></td><td></td></tr>
+        <tr><td>Improve agent proposer</td><td><span class="switch on"><i></i>on</span></td><td></td></tr>
+        <tr><td>Ops agent</td><td><span class="switch on"><i></i>on</span></td><td class="small muted">paused per project: none</td></tr>
+        <tr><td>Jev · all purposes</td><td><span class="switch on"><i></i>on</span></td><td></td></tr>
+        <tr><td>Jev · command.intent_route</td><td><span class="switch"><i></i>off</span></td><td class="small muted">L0 only, no user effect</td></tr>
+        <tr><td>Provider: Anthropic</td><td><span class="switch on"><i></i>on</span></td><td class="small muted">breaker closed · p95 2.1 s</td></tr>
+        <tr><td>Provider: TypeSafe (Jev)</td><td><span class="switch on"><i></i>on</span></td><td class="small muted">breaker closed · 0 timeouts today</td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="card"><h3>Platform switches (operator only)</h3><dl class="kv"><dt>Global AI</dt><dd>on</dd><dt>CodeAct strategy</dt><dd><span class="pill crit">banned in API/worker</span> (CI test)</dd><dt>New provider onboarding</dt><dd>requires ADR + allowlist entry</dd></dl></div>
+  </div>
+</div>
+
+<div data-tabpanel="gov:incidents">
+  <div class="tbl card"><table>
+    <thead><tr><th>Id</th><th>Opened</th><th>Kind</th><th>Subject</th><th>Evidence</th><th>Action</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">i-31</td><td>Tue 11:02</td><td>validator_rejections</td><td>feature.leakage_suspect</td><td>5 rejections in 24 h (prompt v7 cited a renamed column)</td><td>auto-demote L1 → L0</td><td><span class="pill ok">resolved · prompt v8 · re-promotion pending approval</span></td></tr>
+      <tr><td class="mono">i-29</td><td>last week</td><td>provider_timeouts</td><td>TypeSafe</td><td>14 timeouts in 10 min</td><td>breaker open 15 min → rule fallback</td><td><span class="pill ok">resolved</span></td></tr>
+      <tr><td class="mono">i-27</td><td>2 weeks ago</td><td>budget</td><td>project Invoice late payment</td><td>$12 project budget reached</td><td>rule fallback until month end; owner notified</td><td><span class="pill ok">closed</span></td></tr>
+      <tr><td class="mono">i-25</td><td>3 weeks ago</td><td>eval_failure</td><td>improve.next_action</td><td>R2 run: agent 58% vs rule 61% feasible</td><td>held at L1 for 2 weeks; re-run passed (70%)</td><td><span class="pill ok">closed</span></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="gov:audit">
+  <div class="card sect">
+<div class="sect-head"><h2>Audit</h2></div>
+<section data-tab="Ledger">
+<p class="muted small">every model call, including cache hits at $0</p>
+<dl class="kv"><dt>LLM calls (30 d)</dt><dd>1,948 · ledger rows 1,948 · <span class="pill ok">match</span></dd><dt>Jev questions</dt><dd>42,110 · rows 42,110</dd><dt>Agent runs</dt><dd>235 · all with harness record and prompt release id</dd><dt>Redaction</dt><dd>0 raw values sent (property test nightly)</dd><dt>Retention</dt><dd>redacted inputs 12 months</dd></dl>
+      <div class="toolbar"><button class="btn sm" data-mock="query ledger">Query ledger</button><button class="btn sm" data-mock="export CSV">Export</button></div>
+</section>
+<section data-tab="Replay">
+<p class="muted small">any recorded run, offline, no live model</p>
+<dl class="kv"><dt>Nightly replay</dt><dd>212 / 212 runs identical (tool sequence + output)</dd><dt>Last mismatch</dt><dd>none in 30 d</dd><dt>On demand</dt><dd><input class="input" value="ar-1041" style="width:120px"> <button class="btn sm" data-mock="replay ar-1041 → identical">Replay</button></dd></dl>
+      <p class="small muted">Replay feeds the fake provider from the recorded prompt release, redacted input digest and cached answers; it proves what the agent did can be reproduced for an audit.</p>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="gov:evals">
+  <div class="card sect">
+<div class="sect-head"><h2>Evaluation</h2></div>
+<section data-tab="R3 runs">
+<p class="muted small">continuous · benchmark datasets + labeled user decisions</p>
+<div class="tbl"><table><thead><tr><th>Run</th><th>Date</th><th class="r">Cases</th><th>Result</th><th>Effect</th></tr></thead><tbody>
+        <tr><td class="mono">r3-1020</td><td>Sun</td><td class="r">2,391</td><td>7 points ≥ rule · 1 below (intent_route n &lt; 300)</td><td>no level change</td></tr>
+        <tr><td class="mono">r3-1013</td><td>2 weeks ago</td><td class="r">2,210</td><td>leakage_suspect 90.4% vs 71.0%</td><td>proposed L0 → L1 (pending)</td></tr>
+        <tr><td class="mono">r2-0930</td><td>3 weeks ago</td><td class="r">23 tasks</td><td>agent proposer 70% vs rule 61% feasible · cost +$0.31/loop</td><td>improve.next_action → L2</td></tr>
+        <tr><td class="mono">ablation</td><td>nightly</td><td class="r">1,257 tests</td><td>AI off: all Phase 1–5 tests green</td><td>—</td></tr>
+      </tbody></table></div>
+</section>
+<section data-tab="Jev calibration · column.is_identifier">
+<svg class="chart" viewBox="0 0 300 170" role="img" aria-label="Reliability diagram close to the diagonal; ECE 0.02">
+        <line class="grid-l" x1="40" y1="140" x2="280" y2="140"/><line class="grid-l" x1="40" y1="20" x2="40" y2="140"/>
+        <line class="ln-c" x1="40" y1="140" x2="280" y2="20"/>
+        <polyline class="ln-a" points="64,128 112,104 160,84 208,52 256,26"/>
+        <circle class="pt-a" cx="64" cy="128" r="3"/><circle class="pt-a" cx="112" cy="104" r="3"/><circle class="pt-a" cx="160" cy="84" r="3"/><circle class="pt-a" cx="208" cy="52" r="3"/><circle class="pt-a" cx="256" cy="26" r="3"/>
+        <text class="axis" x="40" y="156">0</text><text class="axis" x="280" y="156" text-anchor="end">1 · predicted p</text><text class="axis" x="34" y="24" text-anchor="end">1</text>
+        <text class="lbl" x="48" y="16">ECE 0.02 · acting band p ≥ 0.9 / ≤ 0.1 · precision in band 98.6%</text>
+      </svg>
+</section>
+</div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Policy (models, data, autonomy, approvals, retention), levels with evidence, budgets, switches, incidents, ledger, replay, evaluations</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Who is the governance persona at a small customer: the same developer? Then approvals are self-approvals</li><li>Platform-wide (operator) vs workspace policy UI: one page or two?</li><li>Regulatory exports (EU AI Act style records): what format?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Per-purpose Jev switches (purpose-level levels already cover it)</li><li>Calibration chart for non-technical approvers</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+<script src="../versions.js" data-version="v4"></script>
+</body>
+</html>

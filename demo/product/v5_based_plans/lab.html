@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Lab · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="lab.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Lab</b></div>
+    <div class="cmd"><span>Search or jump to anything…</span><kbd>⌘K</kbd></div>
+    <div class="right"><select class="input view-select" data-plan-view aria-label="Which plan state to show"><option value="plan">Full MVP plan</option><option value="built">Built today</option></select><button class="ai-state" type="button" data-ai-toggle aria-pressed="true" title="Every path works with AI off (hybrid AI model, rule 9)"><i aria-hidden="true"></i>AI on</button><button class="tbtn" type="button" data-guide-toggle>Guide</button><button class="tbtn" type="button" data-glossary>Glossary</button><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Lab</h1><p class="sub">Talk to the lab agent. It uploads, profiles, proposes, runs and reports through validated tools; you decide. Everything it does appears on the Pipeline and Decisions screens.</p></div>
+  <div class="toolbar"><span class="switch on"><i></i>AI on</span><a class="btn" href="pipeline.html">Pipeline</a><a class="btn" href="graph.html">Graph</a><button class="btn" data-mock="switch to forms (AI off)">Use forms instead</button></div>
+</div>
+
+<div class="side">
+  <div class="grid">
+    <div class="chat">
+      <div class="msg sys">Session s-88 · project Northwind churn · model gpt-6.1-sol · budget this run $1.00 · steps ≤ 40 · data class: aggregates · tools: 11 available, 3 need your approval (L1)</div>
+      <div class="msg user"><span class="from"><span>You · 09:02</span><span>customers_2026Q3.csv · 48,210 rows</span></span>Here's our customer CSV. Predict who will churn next month. We must catch at least 80% of churners.</div>
+      <div class="msg agent">
+        <span class="from"><span>Lab agent · 09:02 → 09:03</span><span>7 tool calls · 38 s · $0.19</span><span><a href="agents.html">run ar-1021</a></span></span>
+        <p>I uploaded and profiled the file (DS v1, published). Here is what I found and what I plan. Items marked <span class="lvl l1">L1</span> need your OK; <span class="lvl l2">L2</span> items were applied and can be reverted.</p>
+        <ul>
+          <li><span class="lvl l2">L2</span> <code>customer_id</code> looks like an ID, so I won't use it. <span class="muted small">Jev p 0.99 · rule agrees (unique ratio 1.0)</span></li>
+          <li><span class="lvl l1">L1</span> <code>churned_at</code> would leak the answer (it is filled after cancellation). I propose excluding it. <span class="muted small">rule: date after target (CRITICAL) · Jev p 0.97</span></li>
+          <li><span class="lvl l1">L1</span> <code>retention_offer_sent</code> might leak: offers go to customers already cancelling. The rule did not flag it. I propose a review flag, not exclusion. <span class="muted small">Jev p 0.88 · rule: not flagged</span></li>
+          <li><span class="lvl l2">L2</span> <code>signup_date</code> is a date; I'll extract month and weekday. <code>region_code</code> is a category code, not a number. <span class="muted small">Jev conf 0.91 · rule said numeric → disagreement logged</span></li>
+          <li><span class="lvl l1">L1</span> Your data covers 18 months, so I'll test on the <b>latest 3 months</b> (time split), not on random rows. <span class="muted small">Planner · rule: temporal_future</span></li>
+          <li><span class="lvl l1">L1</span> Goal: recall ≥ 0.80, then best precision. Primary metric PR-AUC (21% churn). 5 model families, 10-minute budget. <span class="muted small">Planner · families from allowlist · dummy baseline always included</span></li>
+        </ul>
+        <div class="chips">
+          <span class="chip"><b>Exclude churned_at</b><small>L1 · leakage · revert: re-include creates a new root experiment</small></span>
+          <span class="chip"><b>Flag retention_offer_sent</b><small>L1 · review only</small></span>
+          <span class="chip"><b>Time split, last 3 months</b><small>L1 · split plan SP-1</small></span>
+          <span class="chip"><b>Spec v1: recall ≥ 0.80</b><small>L1 · problem spec</small></span>
+        </div>
+        <div class="toolbar"><button class="btn primary" data-mock="accept 4 L1 decisions → 4 decision records → run queued">Accept all 4 and run</button><button class="btn" data-mock="open each decision">Review each</button><button class="btn" data-mock="edit spec in form">Edit the plan</button><a class="btn" href="data.html">See the data profile</a></div>
+      </div>
+      <div class="msg user"><span class="from"><span>You · 09:04</span></span>Accept all. Also: churn = no payment for 60 days, in case that matters.</div>
+      <div class="msg agent">
+        <span class="from"><span>Lab agent · 09:04</span><span>2 tool calls · $0.03</span></span>
+        <p>Recorded your definition on Spec v1 (<code>target_definition</code>), it will appear in the report and the exported code. Four decision records written (d-301…d-304). Experiment <b>E1</b> is queued; the worker will take it in a moment. I'll report when it finishes; you can watch the <a href="pipeline.html">pipeline</a> meanwhile.</p>
+      </div>
+      <div class="msg sys">E1 · running · stage 6 of 10 (training, fold 4 of 5) · 2 m 50 s elapsed · <a href="pipeline.html">live pipeline</a></div>
+      <div class="msg agent">
+        <span class="from"><span>Lab agent · 09:09</span><span>run E1 completed in 4 m 12 s · Critic ar-1024 · $0.05</span></span>
+        <p><b>Best: LightGBM (tuned).</b> On the unseen months: recall 0.82, precision 0.61 at the locked threshold 0.31. It beats the simple baseline by 34 points of PR-AUC (0.68 vs 0.21). All 19 verifier checks pass; 1 warning.</p>
+        <p><b>One risk</b> (Critic, cited): <code>last_login_days</code> carries most of the signal (41% of gain). If that value is only known after churn in your systems, the model is weaker than it looks. Can you confirm it is available at prediction time?</p>
+        <p>Do you want me to try to raise precision while keeping recall ≥ 0.80? I have 3 ideas, cross-checked against the rule proposer: class weights, CatBoost with native categoricals, and tenure features from <code>signup_date</code>. About 20 minutes and $0.40.</p>
+        <div class="toolbar"><button class="btn ai" data-mock="start improve loop IL-1 with 3 proposed actions">Try the 3 ideas</button><button class="btn" data-mock="answer: last_login_days is available daily">Answer the Critic</button><a class="btn" href="pipeline.html">Pipeline evidence</a><a class="btn" href="experiments.html">Show code</a><button class="btn" data-mock="promote → needs Critic question answered first">Promote to champion</button></div>
+      </div>
+    </div>
+    <div class="composer">
+      <textarea placeholder="Ask, decide or instruct… e.g. 'use only the last 12 months', 'why did you drop region?', 'export the code'"></textarea>
+      <div class="acts"><button class="btn primary" data-mock="send">Send</button><button class="btn sm" data-mock="attach file">Attach data</button></div>
+    </div>
+  </div>
+  <div class="card sect">
+<section data-tab="This run at a glance">
+<p class="muted small">E1</p>
+<dl class="kv">
+        <dt>Dataset</dt><dd>DS v1 · 48,210 × 31 · published</dd>
+        <dt>Target</dt><dd><code>churned_next_30d</code> · binary · 21% positive</dd>
+        <dt>Split</dt><dd>SP-1 · temporal, last 3 months · 5 folds</dd>
+        <dt>Winner</dt><dd>lightgbm__tuned · CV PR-AUC 0.69 ± 0.02</dd>
+        <dt>Holdout</dt><dd>PR-AUC 0.68 · recall 0.82 · precision 0.61</dd>
+        <dt>Decisions</dt><dd>4 L1 accepted · 3 L2 applied · 1 disagreement</dd>
+        <dt>Cost</dt><dd>compute 4 m 12 s · LLM $0.27 · Jev 212 q</dd>
+      </dl>
+</section>
+<section data-tab="Agent capabilities in this session">
+<div class="tbl"><table>
+        <tbody>
+          <tr><td>inspect_dataset, get_evidence, compare</td><td><span class="pill ok">read</span></td></tr>
+          <tr><td>upload, run_experiment, branch</td><td><span class="pill det">budgeted</span></td></tr>
+          <tr><td>create_problem_spec, exclude column, promote</td><td><span class="lvl l1">L1</span></td></tr>
+          <tr><td>read holdout rows, pick winner, compute metric</td><td><span class="pill crit">no such tool</span></td></tr>
+        </tbody>
+      </table></div>
+</section>
+<section data-tab="Sessions">
+<div class="tbl"><table><tbody>
+        <tr class="sel"><td>s-88 · today</td><td>E1 · 4 decisions</td></tr>
+        <tr><td>s-71 · Mon</td><td>Improve IL-2 · promoted MV v4</td></tr>
+        <tr><td>s-64 · last week</td><td>Data questions</td></tr>
+      </tbody></table></div>
+</section>
+</div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Goal in, decisions out with levels, evidence and rule answer</li><li>Agent works through tools; live run status; results with Critic risk</li><li>Session budget, model, data class, capabilities visible</li><li>AI-off path = forms</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Free-text definitions ("no payment for 60 days"): stored as spec text only, or should the agent propose a label-building rule?</li><li>Multi-file uploads and joins: out of scope until Phase 9 connectors?</li><li>Should chat be per project only, or also workspace-wide?</li><li>How are long runs reported when the user leaves (email, inbox item)?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Sessions list (history could live in Decisions)</li><li>"Edit the plan" form if the chips already allow editing</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="guide.js"></script>
+<script src="../versions.js" data-version="v5_based_plans"></script>
+</body>
+</html>
