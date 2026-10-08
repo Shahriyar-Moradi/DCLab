@@ -33,6 +33,7 @@ from app.agents.tools.shaping import (
     data_text,
     sample_text,
     text,
+    withhold_card_risks,
     withhold_holdout_code,
 )
 
@@ -40,8 +41,14 @@ logger = logging.getLogger("dclab.agents.tools")
 LIST_LIMIT = 50
 GRAPH_NODE_LIMIT = 40
 RECENT_EXPERIMENTS = 10
-FINDING_LIMIT = 10
+FINDING_LIMIT = 20  # every trust check (15 since P5.1-A) fits
 FINDING_EVIDENCE_CHARS = 1500
+OPERATING_PARETO_LIMIT = 20
+OPERATING_POINT_KEYS = ("threshold", "tp", "fp", "fn", "tn", "precision", "recall", "specificity", "f1",
+                        "flagged_share", "expected_cost", "precision_interval", "recall_interval", "fold_spread",
+                        "what_this_means")
+OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked from many thresholds); never a "
+                  "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 GraphKind = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"]
 
@@ -187,9 +194,14 @@ class ServiceReads:
         return list_datasets(self.db, self.actor, workspace_id=self.ws, limit=limit)
 
     def dataset(self, dataset_id: UUID) -> Any:
-        from app.services.technical_explorer_service import get_dataset
+        from app.services.dataset_profile_service import dataset_read
 
-        return _found(get_dataset(self.db, self.actor, dataset_id, workspace_id=self.ws))
+        return dataset_read(self.db, **self._who, dataset_id=dataset_id)
+
+    def dataset_profile(self, dataset_id: UUID) -> Any:
+        from app.services.dataset_profile_service import dataset_profile
+
+        return dataset_profile(self.db, **self._who, dataset_id=dataset_id)
 
     def experiment(self, experiment_id: UUID) -> Any:
         from app.services.experiment_service import experiment_read
@@ -226,7 +238,13 @@ class ServiceReads:
     def findings(self, experiment_id: UUID) -> Any:
         from app.services.experiment_service import experiment_findings
 
-        return experiment_findings(self.db, **self._who, experiment_id=experiment_id)
+        # Agent view: holdout-scoped evidence stripped, fixed messages for the split checks.
+        return experiment_findings(self.db, **self._who, experiment_id=experiment_id, agent=True)
+
+    def operating_points(self, experiment_id: UUID) -> Any:
+        from app.services.operating_point_service import operating_points_read
+
+        return operating_points_read(self.db, **self._who, experiment_id=experiment_id)
 
     def decisions(self, project_id: UUID, **filters: Any) -> Any:
         from app.services.decision_record_service import list_decisions
@@ -381,17 +399,52 @@ def _inspect_project_shape(raw: dict[str, Any]) -> Shaped:
 
 
 _DATASET_NOTE = "Row and column counts only; dataset rows are never returned."
+_PROFILE_NOTE = ("Never rows. Profile statistics are counts over the training rows of the current split plan only "
+                 "(scope training_rows); without one they are null (scope upload). Importance is CV-only.")
+PROFILE_COLUMN_LIMIT = 100
+
+
+def _policy(p: Any) -> dict[str, Any]:
+    return {key: code(getattr(p, key)) for key in (
+        "upload_policy", "publication_state", "sensitivity_class", "llm_exposure_policy", "retention_class",
+        "residency_class", "ai_data_class", "workspace_ai_max_class")} | {
+        "policy_revision": p.policy_revision, "policy_complete": p.policy_complete}
+
+
+def profile_summary(p: Any) -> dict[str, Any]:
+    plan, run = p.split_plan, p.experiment
+    columns = [{
+        "name": data_text(c.name, 200), "ordinal_position": c.ordinal_position, "physical_dtype": code(c.physical_dtype),
+        "rule_role": code(c.rule_role), "role_used": code(c.role_used), "role_source": code(c.role_source),
+        "role_reason": data_text(c.role_reason, 300), "missing_count": c.missing_count,
+        "missing_fraction": c.missing_fraction, "unique_count": c.unique_count, "unique_fraction": c.unique_fraction,
+        "transforms": [code(t) for t in c.transforms[:10]], "importance": c.importance,
+        "leakage_excluded": c.leakage_excluded, "leakage_risk": code(c.leakage_risk),
+        "leakage_reason": data_text(c.leakage_reason, 300),
+    } for c in p.columns[:PROFILE_COLUMN_LIMIT]]
+    return {
+        "scope": code(p.scope), "statistics_status": code(p.statistics_status),
+        "split_plan": plan and {"id": plan.id, "version": plan.version, "source": code(plan.source),
+                                "target_column": data_text(plan.target_column, 200),
+                                "training_row_count": plan.training_row_count},
+        "experiment": run and {"id": run.id, "selection": code(run.selection), "created_at": run.created_at},
+        "importance_method": code(p.importance_method), "columns": columns,
+        "columns_omitted": max(0, len(p.columns) - PROFILE_COLUMN_LIMIT),
+    }
 
 
 def _inspect_dataset_fetch(reads: Any, a: InspectDatasetInput) -> dict[str, Any]:
     if a.dataset_id is not None:
-        return {"dataset": reads.dataset(a.dataset_id)}
+        return {"dataset": reads.dataset(a.dataset_id), "profile": reads.dataset_profile(a.dataset_id)}
     return {"datasets": [d for d in reads.datasets(LIST_LIMIT) if a.project_id is None or d.project_id == a.project_id]}
 
 
 def _inspect_dataset_shape(raw: dict[str, Any]) -> Shaped:
     if "dataset" in raw:
-        return Shaped({"dataset": _dataset(raw["dataset"]), "note": _DATASET_NOTE}, source_datasets=_ids(raw["dataset"].id))
+        d = raw["dataset"]
+        return Shaped({"dataset": _dataset(d), "policy": _policy(d.policy), "profile": profile_summary(raw["profile"]),
+                       "note": _PROFILE_NOTE}, data_class="aggregates", outcome_scope="cv",
+                      source_datasets=_ids(d.id), aggregates=("profile",))
     rows = raw["datasets"]
     return Shaped({"datasets": [_dataset(d) for d in rows], "note": _DATASET_NOTE},
                   source_datasets=_ids(*(d.id for d in rows)))
@@ -488,8 +541,55 @@ def _findings_shape(raw: dict[str, Any]) -> Shaped:
               for f in result.checks[:FINDING_LIMIT]]
     return _cv_shaped({"experiment_id": result.experiment_id, "investigated": result.investigated,
                        "version": result.version, "summary": result.summary.model_dump(mode="json"), "checks": checks,
-                       "note": "Trust checks use training rows and CV folds only; never final-holdout values."},
+                       "note": "Trust checks use training rows and CV folds; checks comparing training and test "
+                               "rows report status only. Never a final-holdout value."},
                       raw["experiment"], "checks")
+
+
+def spread_sample(items: list[Any], limit: int) -> list[Any]:
+    """At most ``limit`` items, evenly spaced, both ends kept (deterministic)."""
+
+    if len(items) <= limit:
+        return list(items)
+    picks = dict.fromkeys(round(i * (len(items) - 1) / (limit - 1)) for i in range(limit))
+    return [items[i] for i in picks]
+
+
+def operating_point_summary(p: Any) -> dict[str, Any] | None:
+    if p is None:
+        return None
+    data = p.model_dump(mode="json")
+    return {key: data.get(key) for key in OPERATING_POINT_KEYS}
+
+
+def _operating_points_fetch(reads: Any, a: ExperimentInput) -> dict[str, Any]:
+    return {"points": reads.operating_points(a.experiment_id), "experiment": reads.experiment(a.experiment_id)}
+
+
+def _operating_points_shape(raw: dict[str, Any]) -> Shaped:
+    o = raw["points"]
+    locked, chosen = o.locked, o.chosen
+    payload = {
+        "experiment_id": o.experiment_id, "status": code(o.status), "reason": code(o.reason),
+        "task_type": code(o.task_type), "outcome_scope": code(o.outcome_scope), "basis": code(o.basis),
+        "oof_folds": code(o.oof_folds), "rows": o.rows, "positives": o.positives, "negatives": o.negatives,
+        "min_class_rows": o.min_class_rows, "cost_matrix": o.cost_matrix and o.cost_matrix.model_dump(mode="json"),
+        "candidate_count": len(o.points), "pareto_total": len(o.pareto),
+        "pareto": [operating_point_summary(p) for p in spread_sample(o.pareto, OPERATING_PARETO_LIMIT)],
+        "locked": locked and {
+            "threshold": locked.threshold, "source": code(locked.source),
+            "constraint_status": code(locked.constraint_status),
+            "reproduced_from_curve": locked.reproduced_from_curve, "point": operating_point_summary(locked.point)},
+        "chosen": chosen and {
+            "decision_id": chosen.decision_id, "threshold": chosen.threshold, "method": code(chosen.method),
+            "objective": chosen.objective and chosen.objective.model_dump(mode="json"),
+            "rationale": text(chosen.rationale), "recorded_at": chosen.recorded_at,
+            "point": operating_point_summary(chosen.point), "curve_changed": chosen.curve_changed,
+            "applies_to_scoring": chosen.applies_to_scoring},
+        "scoring": o.scoring and {"threshold": o.scoring.threshold, "uses": code(o.scoring.uses)},
+        "tie_break": o.tie_break, "note": OPERATING_NOTE,
+    }
+    return _cv_shaped({"operating_points": payload}, raw["experiment"], "operating_points")
 
 
 def _decisions_fetch(reads: Any, a: ListDecisionsInput) -> dict[str, Any]:
@@ -600,6 +700,7 @@ def _card_fetch(reads: Any, a: ModelInput) -> Any:
 
 
 def _card_shape(card: Any) -> Shaped:
+    card = withhold_card_risks(card)  # risk messages of holdout-scoped checks: fixed agent text
     data = card.model_dump(mode="json")
     # Holdout-blind whatever the principal: the final evaluation (and its Markdown section) is dropped.
     markdown = card.markdown.split("\n## Final evaluation", 1)[0].rstrip("\n")

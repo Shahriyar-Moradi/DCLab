@@ -140,7 +140,7 @@ def _features(n: int, seed: int) -> pd.DataFrame:
 def test_duplicates_negative_distinct_rows_pass():
     finding = check_duplicate_rows(_features(300, 1), row_hashes(_features(80, 2)))
     assert finding.status == "pass" and finding.message_keys == ("duplicate_rows.pass",)
-    assert finding.evidence["train_duplicate_rows"] == finding.evidence["train_test_duplicate_rows"] == 0
+    assert finding.evidence["train_duplicate_rows"] == finding.evidence["holdout_duplicate_rows"] == 0
 
 
 def test_duplicates_positive_rows_differing_only_in_an_id_column():
@@ -151,7 +151,7 @@ def test_duplicates_positive_rows_differing_only_in_an_id_column():
     train, test = frame.iloc[:270][model_columns], frame.iloc[270:][model_columns]  # test: 30 copies
     finding = check_duplicate_rows(train, row_hashes(test))
     assert (finding.status, finding.recommendation_kind) == ("fail", "deduplicate")
-    assert finding.evidence["train_test_duplicate_rows"] == 30 and finding.evidence["fail_eligible"]
+    assert finding.evidence["holdout_duplicate_rows"] == 30 and finding.evidence["fail_eligible"]
     assert finding.evidence["near_unique_columns"] == ["amount"]
     within = pd.concat([train, train.iloc[:10]], ignore_index=True)
     finding = check_duplicate_rows(within, row_hashes(_features(50, 9)))
@@ -315,7 +315,7 @@ def test_no_holdout_input_reaches_any_check_including_duplicates():
 
     result = _result()
     baseline = payload(result)
-    assert baseline["checks"][2]["evidence"]["train_test_duplicate_rows"] == 5
+    assert baseline["checks"][2]["evidence"]["holdout_duplicate_rows"] == 5
     for key in ("test_metrics", "final_test_evaluation"):
         result[key] = {"roc_auc": 0.999, "metrics": {"roc_auc": 0.999}}
     result["best_single"]["test_metrics"] = {"roc_auc": 0.999}
@@ -326,8 +326,9 @@ def test_no_holdout_input_reaches_any_check_including_duplicates():
 
 def test_missing_evidence_is_not_evaluated_never_passed():
     body = findings_read(uuid4(), investigation_payload(investigate_result({})))
-    assert body.investigated and [item.status for item in body.checks] == ["not_evaluated"] * 5
-    assert (body.summary.passed, body.summary.not_evaluated) == (0, 5)
+    total = len(FINDING_CHECKS)  # P5.1-A: 15 checks (deliberately updated from 5)
+    assert body.investigated and [item.status for item in body.checks] == ["not_evaluated"] * total
+    assert (body.summary.passed, body.summary.not_evaluated) == (0, total)
     assert all(item.message.startswith(("Not evaluated", "Not applicable")) for item in body.checks)
 
 
@@ -341,7 +342,8 @@ def test_a_crashing_check_or_partition_is_not_evaluated_and_the_rest_still_run(m
     assert findings[2].status == "not_evaluated" and findings[2].evidence == {
         "error_type": "ValueError", "not_evaluated_reason": "check_error"}
     assert "could not run (ValueError)" in findings[2].message
-    assert [f.status for f in findings if f.check != "duplicate_rows"].count("not_evaluated") == 0
+    # The other core checks still run (the P5.1-A checks have no evidence in this fixture).
+    assert [f.status for f in findings[:5] if f.check != "duplicate_rows"].count("not_evaluated") == 0
     monkeypatch.setattr(checks, "check_class_imbalance", boom)
     assert investigate_result(_result())[3].evidence["not_evaluated_reason"] == "check_error"
     monkeypatch.setattr(checks, "run_evidence_from_result", boom)
@@ -353,10 +355,10 @@ def test_read_model_orders_checks_renders_messages_and_counts():
         _features(200, 1), row_hashes(_features(50, 2)))))
     assert [row["check"] for row in payload["checks"]] == list(FINDING_CHECKS)
     body = findings_read(uuid4(), payload)
-    assert body.investigated and len(body.checks) == 5 and all(item.message for item in body.checks)
+    assert body.investigated and len(body.checks) == len(FINDING_CHECKS) and all(item.message for item in body.checks)
     summary = body.summary
-    assert summary.passed + summary.warnings + summary.failures + summary.not_evaluated == 5
-    assert summary.not_evaluated == 0
+    assert summary.passed + summary.warnings + summary.failures + summary.not_evaluated == len(FINDING_CHECKS)
+    assert [item.status for item in body.checks[:5]].count("not_evaluated") == 0  # the core five
     assert findings_read(uuid4(), None).investigated is False
 
 

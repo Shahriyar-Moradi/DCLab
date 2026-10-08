@@ -1,5 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { CAPABILITY_MATRIX_VERSION, canAccessProductRoute } from "@/lib/infrastructure/capabilities";
+import {
+  CAPABILITIES,
+  CAPABILITY_MATRIX_VERSION,
+  canAccessProductRoute,
+  hasCapability,
+  isLegacyMarketingPath,
+  isStudioPath,
+  studioRoute,
+} from "@/lib/infrastructure/capabilities";
 
 const SESSION_COOKIE = process.env.DCLAB_SESSION_COOKIE || "dclab_session";
 
@@ -71,6 +79,19 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const principal = await capabilitiesFromRequest(request);
 
+  // P4.12-A: frozen marketing pages are public-looking but gated by a platform flag that the
+  // session capabilities carry; without the flag (or without a session) they go to `/`.
+  if (isLegacyMarketingPath(pathname)) {
+    if (principal && hasCapability(principal, CAPABILITIES.legacyMarketingPages)) {
+      const allowed = NextResponse.next();
+      allowed.headers.set("Cache-Control", "private, no-store");
+      return allowed;
+    }
+    const home = NextResponse.redirect(new URL("/", request.url));
+    home.headers.set("Cache-Control", "no-store");
+    return home;
+  }
+
   if (!principal) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname);
@@ -84,10 +105,17 @@ export async function middleware(request: NextRequest) {
       ? "the admin area"
       : pathname.startsWith("/business")
         ? "the business administration area"
-        : pathname.startsWith("/development")
+        : pathname.startsWith("/development") || pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname)
           ? "the Development workspace"
           : "the Business client area";
     return forbidden(area);
+  }
+
+  if (isStudioPath(pathname)) {
+    const route = studioRoute(pathname);
+    // Unknown section or non-UUID id: render the app's not-found page with a real 404.
+    if (route === "not_found") return NextResponse.rewrite(new URL("/_studio-not-found", request.url));
+    if (route !== "ok") return NextResponse.redirect(new URL(route.redirect, request.url));
   }
 
   return NextResponse.next();
@@ -98,7 +126,21 @@ export const config = {
     "/admin/:path*",
     "/business/:path*",
     "/development/:path*",
+    "/dev/:path*",
     "/app/:path*",
     "/lab/:path*",
+    // Developer Studio (P4.1-A).
+    "/home/:path*",
+    "/inbox/:path*",
+    "/agents/:path*",
+    "/projects/:path*",
+    // Frozen Decision.ai marketing pages (P4.12-A): redirected to `/` unless the flag is on.
+    "/industries/:path*",
+    "/solutions/:path*",
+    "/pricing/:path*",
+    "/showcase/:path*",
+    "/platform/:path*",
+    "/company/:path*",
+    "/resources/:path*",
   ],
 };

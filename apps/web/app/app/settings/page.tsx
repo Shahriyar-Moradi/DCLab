@@ -5,7 +5,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { useSession } from "@/lib/application";
 import { displayName, roleLabel } from "@/lib/infrastructure/session";
-import { ServiceTokensPanel } from "./ServiceTokensPanel";
+import { ServiceTokensPanel } from "@/app/components/studio-app/ServiceTokensPanel";
 
 export default function AccountPage() {
   const { user, loaded } = useSession();

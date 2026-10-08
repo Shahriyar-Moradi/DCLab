@@ -449,7 +449,7 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
-      "description": "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | not_evaluated), a plain-language message and the numbers behind it.",
+      "description": "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate rows, class imbalance, a too-good-to-be-true CV score, fold instability, calibration, subgroup gaps, multicollinearity, train-to-test feature drift, temporal shift, missingness shift, contamination (those four compare training and test rows: status only, details are for people), time travel and a single new feature's CV jump, each with status (pass | warning | fail | not_evaluated), a plain-language message and the training-side numbers behind it.",
       "effect": "read",
       "input_schema": {
         "properties": {
@@ -627,6 +627,46 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
+      "description": "Operating points of a binary experiment, all from the locked winner's out-of-fold predictions: the threshold curve summary, up to 20 Pareto points over precision and recall (and expected cost) with 95% intervals and fold spread, the locked threshold and the chosen operating point with its reason. Never a final-evaluation value; choosing a point is a person's act in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "experiment_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id"
+        ],
+        "title": "ExperimentInput",
+        "type": "object"
+      },
+      "name": "get_operating_points",
+      "notes": [],
+      "operations": [
+        "GET /v1/experiments/{experiment_id}/operating-points"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.operating_point_service.operating_points_read"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
       "description": "Batch prediction: status, row counts, feature-contract check (required / missing / ignored columns), error code; never predicted rows or storage locations.",
       "effect": "read",
       "input_schema": {
@@ -668,7 +708,7 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
-      "description": "Dataset version summary (row/column counts, digest); never rows. Omit dataset_id to list datasets.",
+      "description": "Dataset version summary (row/column counts, digest); never rows. With dataset_id: its upload policy and AI data class, and the column profile (type, rule role vs role used, missing and unique counts over the training rows of the current split plan only, transforms, CV importance). Omit dataset_id to list datasets.",
       "effect": "read",
       "input_schema": {
         "properties": {
@@ -708,16 +748,18 @@
       "notes": [],
       "operations": [
         "GET /v1/datasets",
-        "GET /v1/datasets/{dataset_id}"
+        "GET /v1/datasets/{dataset_id}",
+        "GET /v1/datasets/{dataset_id}/profile"
       ],
       "read_only": true,
       "result": {
-        "data_class": "metadata",
-        "outcome_scope": "none"
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
       },
       "services": [
         "app.services.technical_explorer_service.list_datasets",
-        "app.services.technical_explorer_service.get_dataset"
+        "app.services.dataset_profile_service.dataset_read",
+        "app.services.dataset_profile_service.dataset_profile"
       ],
       "surfaces": [
         "assistant",

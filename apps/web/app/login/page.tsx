@@ -6,7 +6,7 @@ import { Spinner } from "@/app/components/ui/Spinner";
 import { controlErrorClass } from "@/app/components/ui/control";
 import { cn } from "@/lib/cn";
 import { useLogin, useSession } from "@/lib/application";
-import { canAccessProductRoute, defaultProductRoute } from "@/lib/infrastructure/capabilities";
+import { defaultProductRoute, safeNextPath } from "@/lib/infrastructure/capabilities";
 import { displayName, parseSessionUser, roleLabel } from "@/lib/infrastructure/session";
 import { Lock, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -44,11 +44,8 @@ function LoginForm() {
       { email, password },
       {
         onSuccess: (data) => {
-          const requested = params.get("next");
           const nextUser = parseSessionUser(data.user);
-          const fallback = defaultProductRoute(nextUser);
-          const allowed = requested && canAccessProductRoute(nextUser, requested);
-          router.push(allowed && requested ? requested : fallback);
+          router.push(safeNextPath(nextUser, params.get("next")) ?? defaultProductRoute(nextUser));
           router.refresh();
         },
       },

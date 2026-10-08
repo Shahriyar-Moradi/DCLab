@@ -33,8 +33,8 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, tuple_, update
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, case, func, or_, select, tuple_, update
+from sqlalchemy.orm import Session, aliased
 
 from app.agents.tools.catalog import ToolError
 from app.agents.tools.catalog import get as get_tool
@@ -90,12 +90,12 @@ def _aware(value: datetime | None) -> datetime | None:
     return value if value is None or value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
-def _proposed_by(row: AgentProposal) -> str:
+def proposed_by_kind(row: AgentProposal) -> str:
     return "jev" if row.semantic_answer_id is not None else ("assistant" if row.proposal_type == "ToolCallProposal"
                                                               else "agent")
 
 
-def _is_open(row: AgentProposal) -> bool:
+def is_open(row: AgentProposal) -> bool:
     expires = _aware(row.expires_at)
     return row.status == "proposed" and (expires is None or expires > datetime.now(UTC))
 
@@ -118,8 +118,8 @@ def proposal_read(row: AgentProposal, *, agent: bool) -> ProposalRead:
         id=row.id, project_id=row.project_id, source="jev" if row.semantic_answer_id else "agent_run",
         run_id=row.run_id, semantic_answer_id=row.semantic_answer_id, decision_point_key=row.decision_point_key,
         level_at_proposal=row.level_at_proposal, answer_ceiling=row.answer_ceiling, proposal_type=row.proposal_type,
-        proposed_by=_proposed_by(row), schema_version=row.schema_version, status=row.status,
-        supersede_reason=row.supersede_reason, open=_is_open(row), subject=_subject(row.subject_kind, row),
+        proposed_by=proposed_by_kind(row), schema_version=row.schema_version, status=row.status,
+        supersede_reason=row.supersede_reason, open=is_open(row), subject=_subject(row.subject_kind, row),
         payload=shape(row.payload), rule_answer=shape(row.rule_answer), citations=shape(list(row.citations or [])),
         validator_verdict=row.validator_verdict, validator_reasons=reasons,
         tool_name=row.tool_name, tool_arguments=shape(row.tool_arguments), proposed_rationale=rationale,
@@ -151,17 +151,29 @@ def _after(cursor: str | None, scope: str) -> tuple[datetime, UUID] | None:
         raise InvalidCursorError("cursor is not for this list and filter set") from exc
 
 
+def owner_user_id_sql() -> Any:
+    """Whose conversation a proposal came from, as a scalar subquery correlated to ``agent_proposals``:
+    the creator of its run's parent (the assistant thread), else of the run itself (P4.16-A reads
+    it for a whole page in one statement)."""
+
+    run, parent = aliased(AgentRun), aliased(AgentRun)
+    return (
+        select(case((parent.id.is_not(None), parent.created_by_user_id), else_=run.created_by_user_id))
+        .select_from(run)
+        .outerjoin(parent, and_(parent.id == run.parent_run_id, parent.workspace_id == run.workspace_id))
+        .where(run.id == AgentProposal.run_id, run.workspace_id == AgentProposal.workspace_id)
+        .correlate(AgentProposal)
+        .scalar_subquery()
+    )
+
+
 def _owner_id(db: Session, row: AgentProposal) -> UUID | None:
     """Whose conversation an assistant proposal came from: the creator of the lead run's thread."""
 
     if row.run_id is None:
         return None
-    run = db.scalar(select(AgentRun).where(AgentRun.id == row.run_id, AgentRun.workspace_id == row.workspace_id))
-    if run is None:
-        return None
-    parent = db.scalar(select(AgentRun).where(AgentRun.id == run.parent_run_id, AgentRun.workspace_id == row.workspace_id)
-                       ) if run.parent_run_id else None
-    return (parent or run).created_by_user_id
+    return db.scalar(select(owner_user_id_sql()).select_from(AgentProposal).where(
+        AgentProposal.id == row.id, AgentProposal.workspace_id == row.workspace_id))
 
 
 def can_see(db: Session, user: User, row: AgentProposal) -> bool:
@@ -171,6 +183,18 @@ def can_see(db: Session, user: User, row: AgentProposal) -> bool:
     if row.proposal_type != "ToolCallProposal":
         return True
     return user.id == _owner_id(db, row) or can_approve_ai_policy(db, user, row.workspace_id)
+
+
+def visibility_clause(db: Session, *, workspace_id: UUID, viewer: User | None, agent: bool) -> Any | None:
+    """The SQL form of ``can_see`` for lists (``None``: no restriction). Assistant tool calls: never for
+    an agent reader; for a person only their own threads' (approvers: all)."""
+
+    if not (agent or (viewer is not None and not can_approve_ai_policy(db, viewer, workspace_id))):
+        return None
+    if agent:
+        return AgentProposal.proposal_type != "ToolCallProposal"
+    # The same owner as ``_owner_id``: a list never shows a call that ``get_proposal`` would 404.
+    return or_(AgentProposal.proposal_type != "ToolCallProposal", owner_user_id_sql() == viewer.id)
 
 
 def list_proposals(db: Session, *, workspace_id: UUID, project_id: UUID | None = None, run_id: UUID | None = None,
@@ -192,14 +216,9 @@ def list_proposals(db: Session, *, workspace_id: UUID, project_id: UUID | None =
                           (AgentProposal.proposal_type, proposal_type)):
         if value is not None:
             stmt = stmt.where(column == value)
-    if agent or (viewer is not None and not can_approve_ai_policy(db, viewer, workspace_id)):
-        mine = select(AgentRun.id).where(AgentRun.workspace_id == workspace_id, or_(
-            AgentRun.created_by_user_id == (viewer.id if viewer else None),
-            AgentRun.parent_run_id.in_(select(AgentRun.id).where(
-                AgentRun.workspace_id == workspace_id, AgentRun.kind == "assistant",
-                AgentRun.created_by_user_id == (viewer.id if viewer else None)))))
-        stmt = stmt.where(AgentProposal.proposal_type != "ToolCallProposal" if agent else or_(
-            AgentProposal.proposal_type != "ToolCallProposal", AgentProposal.run_id.in_(mine)))
+    visible = visibility_clause(db, workspace_id=workspace_id, viewer=viewer, agent=agent)
+    if visible is not None:
+        stmt = stmt.where(visible)
     after = _after(cursor, scope)
     if after is not None:
         stmt = stmt.where(tuple_(AgentProposal.created_at, AgentProposal.id) < tuple_(*after))
@@ -300,7 +319,7 @@ def _load(db: Session, user: User, workspace_id: UUID, proposal_id: UUID, action
 
 
 def _not_open(row: AgentProposal, wanted: str) -> ProposalError:
-    expired = row.status == "proposed" and not _is_open(row)
+    expired = row.status == "proposed" and not is_open(row)
     code = "proposal_expired" if expired else _NOT_OPEN.get(row.status, "proposal_not_open" if wanted == "open"
                                                           else "proposal_not_applied")
     return ProposalError(409, code, f"the proposal is {'expired' if expired else row.status}",
@@ -330,7 +349,7 @@ def _text(ctx: _Ctx, default: str) -> str:
 def _details(row: AgentProposal, extra: dict[str, Any]) -> dict[str, Any]:
     details: dict[str, Any] = {
         "proposal_id": str(row.id), "proposal_type": row.proposal_type, "decision_point": row.decision_point_key,
-        "level": row.level_at_proposal, "proposed_by": _proposed_by(row),
+        "level": row.level_at_proposal, "proposed_by": proposed_by_kind(row),
         "run_id": str(row.run_id) if row.run_id else None,
         "semantic_answer_id": str(row.semantic_answer_id) if row.semantic_answer_id else None,
         "validator_verdict": row.validator_verdict, "payload_digest": row.payload_digest, **extra,
@@ -394,7 +413,7 @@ def _write_record(ctx: _Ctx, decision_type: str, state: str, rationale: str, ext
 
 
 def _default_rationale(ctx: _Ctx, verb: str) -> str:
-    return f"{verb} {_proposed_by(ctx.row)} proposal {ctx.row.id}"
+    return f"{verb} {proposed_by_kind(ctx.row)} proposal {ctx.row.id}"
 
 
 def _finish(ctx: _Ctx, executed: dict[str, Any] | None, *, applied: bool) -> ProjectDecisionRecord:
@@ -437,7 +456,7 @@ def accept(db: Session, *, user: User, workspace_id: UUID, proposal_id: UUID, ra
     """``proposed -> accepted`` (and ``applied`` once its command ran). Commits."""
 
     row = _load(db, user, workspace_id, proposal_id)
-    if row.status != "proposed" or not _is_open(row):
+    if row.status != "proposed" or not is_open(row):
         raise _not_open(row, "open")
     ctx = _Ctx(db, user, workspace_id, row, rationale, ref_versions, bind)
     command, kind = _command_for(ctx)  # validates and authorizes before anything changes
@@ -452,7 +471,7 @@ def reject(db: Session, *, user: User, workspace_id: UUID, proposal_id: UUID, ra
     """``proposed -> rejected`` (terminal) with a ``proposal_rejected`` record. Commits."""
 
     row = _load(db, user, workspace_id, proposal_id, "reject")
-    if row.status != "proposed" or not _is_open(row):
+    if row.status != "proposed" or not is_open(row):
         raise _not_open(row, "open")
     ctx = _Ctx(db, user, workspace_id, row, rationale, None, bind)
     record = _write_record(ctx, "proposal_rejected", STATE_REJECTED, _text(ctx, _default_rationale(ctx, "rejected")),
@@ -801,6 +820,13 @@ def _revert_semantic(ctx: _Ctx) -> tuple[UUID, list[dict[str, Any]], list[Projec
     return parent, changes, [record], {}
 
 
+def has_in_place_revert(row: AgentProposal) -> bool:
+    """The proposal types ``revert`` can undo (once ``applied``): an L2 plan and a Jev review item."""
+
+    return ((row.proposal_type == PLAN_PROPOSAL_TYPE and row.level_at_proposal >= 2)
+            or row.proposal_type == "SemanticReviewProposal")
+
+
 def revert(db: Session, *, user: User, workspace_id: UUID, proposal_id: UUID, rationale: str | None,
            bind: Callable[[Any], None]) -> AgentProposal:
     """``applied -> reverted``: the RULE value is restored by a branch of the experiment that used the
@@ -811,12 +837,12 @@ def revert(db: Session, *, user: User, workspace_id: UUID, proposal_id: UUID, ra
     if row.status != "applied":
         raise _not_open(row, "applied")
     ctx = _Ctx(db, user, workspace_id, row, rationale, None, bind)
-    if row.proposal_type == PLAN_PROPOSAL_TYPE and row.level_at_proposal >= 2:
-        parent, changes, records, extra = _revert_plan(ctx)
-    elif row.proposal_type == "SemanticReviewProposal":
-        parent, changes, records, extra = _revert_semantic(ctx)
-    else:
+    if not has_in_place_revert(row):
         raise ProposalError(409, "not_revertible_in_place", f"a {row.proposal_type} has no in-place revert")
+    if row.proposal_type == PLAN_PROPOSAL_TYPE:
+        parent, changes, records, extra = _revert_plan(ctx)
+    else:
+        parent, changes, records, extra = _revert_semantic(ctx)
     from app.domain.experiment_changes import ExperimentChangeSet
 
     from app.db.models import MlJob
@@ -932,5 +958,6 @@ def request_review(db: Session, *, user: User, workspace_id: UUID, project_id: U
     return db.get(AgentRun, run_id)
 
 
-__all__ = ["ProposalError", "accept", "agent_run_read", "get_agent_run", "get_proposal", "list_agent_runs",
-           "list_proposals", "promote_authority", "proposal_read", "reject", "request_review", "revert"]
+__all__ = ["ProposalError", "accept", "agent_run_read", "get_agent_run", "get_proposal", "has_in_place_revert",
+           "is_open", "list_agent_runs", "list_proposals", "owner_user_id_sql", "promote_authority", "proposal_read",
+           "proposed_by_kind", "reject", "request_review", "revert", "visibility_clause"]

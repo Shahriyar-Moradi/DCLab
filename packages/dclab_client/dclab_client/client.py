@@ -13,12 +13,15 @@ from dclab_client._http import DEFAULT_TIMEOUT_SECONDS, V1Transport
 from dclab_client._version import __version__
 from dclab_client.errors import DCLabClientError
 from dclab_client.types import (
+    ActivityPage,
     AgentRun,
     AgentRunPage,
     Artifact,
     BatchPrediction,
     Dataset,
+    DatasetProfile,
     DatasetUpload,
+    DatasetVersion,
     DecisionRecord,
     DecisionRecordPage,
     EventPage,
@@ -27,9 +30,13 @@ from dclab_client.types import (
     ExperimentCode,
     ExperimentComparison,
     ExperimentFindings,
+    OperatingPointChoice,
+    OperatingPoints,
     ExperimentPage,
     Governance,
     GovernanceSwitch,
+    InboxCounts,
+    InboxPage,
     ModelBuild,
     ModelCard,
     ModelVersion,
@@ -601,6 +608,75 @@ class AgentRunsClient:
         return Replay.model_validate(payload)
 
 
+class ActivityClient:
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(
+        self,
+        *,
+        project_id: UUID | str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ActivityPage:
+        """Activity of agents, rules and people, newest first (decision records and run lifecycle)."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/activity",
+            params={
+                "project_id": _id(project_id) if project_id is not None else None,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return ActivityPage.model_validate(payload)
+
+
+class InboxClient:
+    """What needs a person (read-only). Act through the routes each item's ``actions`` name."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(
+        self,
+        *,
+        tab: str = "needs_decision",
+        project_id: UUID | str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        request_id: str | None = None,
+    ) -> InboxPage:
+        """One tab (``needs_decision`` | ``applied_automatically`` | ``done``), newest first."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/inbox",
+            params={
+                "tab": tab,
+                "project_id": _id(project_id) if project_id is not None else None,
+                "cursor": cursor,
+                "limit": limit,
+            },
+            request_id=request_id,
+        )
+        return InboxPage.model_validate(payload)
+
+    def counts(self, *, project_id: UUID | str | None = None, request_id: str | None = None) -> InboxCounts:
+        """Item totals per tab (the badge number is ``needs_decision``)."""
+
+        payload = self._transport.request(
+            "GET",
+            "/v1/inbox/counts",
+            params={"project_id": _id(project_id) if project_id is not None else None},
+            request_id=request_id,
+        )
+        return InboxCounts.model_validate(payload)
+
+
 class GovernanceClient:
     """The governance console. Reading needs ML-write, owner/admin or platform access; changing is a person's
     act (a service token is refused): propose a policy, an owner/admin accepts it, switches flip at once."""
@@ -731,11 +807,20 @@ class DatasetsClient:
         )
         return [Dataset.model_validate(row) for row in payload]
 
-    def get(self, dataset_id: UUID | str, *, request_id: str | None = None) -> Dataset:
+    def get(self, dataset_id: UUID | str, *, request_id: str | None = None) -> DatasetVersion:
         payload = self._transport.request(
             "GET", f"/v1/datasets/{_id(dataset_id)}", request_id=request_id
         )
-        return Dataset.model_validate(payload)
+        return DatasetVersion.model_validate(payload)
+
+    def profile(self, dataset_id: UUID | str, *, request_id: str | None = None) -> DatasetProfile:
+        """Column profile: type, rule role vs role used, missing / unique counts over the
+        training rows of the current split plan only (never holdout rows), transforms, CV importance."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/datasets/{_id(dataset_id)}/profile", request_id=request_id
+        )
+        return DatasetProfile.model_validate(payload)
 
     def upload(
         self,
@@ -1059,8 +1144,11 @@ class ExperimentsClient:
     def findings(
         self, experiment_id: UUID | str, *, request_id: str | None = None
     ) -> ExperimentFindings:
-        """The five trust checks of a run (leakage, overfit gap, duplicates, class
-        imbalance, too-good-to-be-true score) with plain-language messages."""
+        """The trust checks of a run (fifteen since P5.1-A: leakage, overfit gap, duplicates,
+        class imbalance, too-good-to-be-true score, fold instability, calibration, subgroup
+        gaps, multicollinearity, train-to-test drift / time order / missingness /
+        contamination, time travel, a single new feature's jump) with plain-language messages.
+        A service token gets status only for the checks that compare training and test rows."""
 
         payload = self._transport.request(
             "GET",
@@ -1068,6 +1156,49 @@ class ExperimentsClient:
             request_id=request_id,
         )
         return ExperimentFindings.model_validate(payload)
+
+    def operating_points(
+        self, experiment_id: UUID | str, *, request_id: str | None = None
+    ) -> OperatingPoints:
+        """Operating points of a binary run (P5.2-A): the out-of-fold threshold curve, Pareto
+        points, the locked threshold and the chosen point with its reason. Choosing one is a
+        person's act (``POST .../operating-point`` refuses service tokens)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/operating-points",
+            request_id=request_id,
+        )
+        return OperatingPoints.model_validate(payload)
+
+    def choose_operating_point(
+        self,
+        experiment_id: UUID | str,
+        *,
+        reason: str,
+        threshold: float | None = None,
+        objective: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> OperatingPointChoice:
+        """Choose the run's operating point (exactly a ``threshold`` of its curve, or an
+        ``objective``) as a person with ML-write: records an ``operating_point_chosen`` decision.
+        A service token gets 403 ``service_token_not_permitted``; scoring keeps the locked
+        threshold."""
+
+        body: dict[str, Any] = {"reason": reason}
+        if threshold is not None:
+            body["threshold"] = threshold
+        if objective is not None:
+            body["objective"] = dict(objective)
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/experiments/{_id(experiment_id)}/operating-point",
+            json=body,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(OperatingPointChoice, payload, headers)
 
 
 class PredictionsClient:
@@ -1196,6 +1327,8 @@ class DCLabClient:
         self.decisions = DecisionsClient(self._transport)
         self.proposals = ProposalsClient(self._transport)
         self.agent_runs = AgentRunsClient(self._transport)
+        self.activity = ActivityClient(self._transport)
+        self.inbox = InboxClient(self._transport)
         self.agent_reviews = AgentReviewsClient(self._transport)
         self.governance = GovernanceClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)

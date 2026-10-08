@@ -121,6 +121,14 @@ class DatasetIngestionRead(BaseModel):
     completed_at: datetime | None
 
 
+class DatasetColumnSummaryRead(BaseModel):
+    """One column of an uploaded dataset: schema facts only (no values, no row-level data)."""
+
+    name: str
+    dtype: str
+    missing_fraction: float
+
+
 class DatasetUploadRead(BaseModel):
     """``POST /v1/datasets`` result: the published DatasetVersion plus its ingestion."""
 
@@ -139,3 +147,7 @@ class DatasetUploadRead(BaseModel):
     purpose: str = "training"
     created_at: datetime
     ingestion: DatasetIngestionRead
+    columns: list[DatasetColumnSummaryRead] = Field(
+        default_factory=list,
+        description="Name, physical type and missing fraction per column, in file order. Column names are user data.",
+    )

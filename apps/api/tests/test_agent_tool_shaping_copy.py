@@ -30,6 +30,7 @@ from app.agents.tools import shaping
 from app.agents.tools.catalog import ToolError, catalog
 from app.agents.tools.render import to_mcp
 from app.domain.batch_predictions import BatchPredictionRead
+from app.domain.dataset_profile import DatasetProfileRead, DatasetVersionRead
 from app.domain.decision_records import DecisionRecordPage, DecisionRecordRead
 from app.domain.experiment_resources import (
     ExperimentComparisonRead,
@@ -42,6 +43,7 @@ from app.domain.governance_console import GovernanceRead
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.model_card import ModelCardRead
+from app.domain.operating_points import OperatingPointsRead
 from app.domain.project_graph import NodeImpactRead, ProjectGraphRead
 from app.domain.proposal_reviews import ProposalPage
 from app.domain.reproducibility import ArtifactRead
@@ -95,7 +97,10 @@ class CorpusReads:
         return self._get("/v1/datasets", DatasetListItem, many=True)
 
     def dataset(self, did):
-        return self._get(f"/v1/datasets/{did}", DatasetListItem)
+        return self._get(f"/v1/datasets/{did}", DatasetVersionRead)
+
+    def dataset_profile(self, did):
+        return self._get(f"/v1/datasets/{did}/profile", DatasetProfileRead)
 
     def experiment(self, eid):
         return self._get(f"/v1/experiments/{eid}", ExperimentDetailRead)
@@ -114,6 +119,9 @@ class CorpusReads:
 
     def findings(self, eid):
         return self._get(f"/v1/experiments/{eid}/findings", ExperimentFindingsRead)
+
+    def operating_points(self, eid):
+        return self._get(f"/v1/experiments/{eid}/operating-points", OperatingPointsRead)
 
     def decisions(self, pid, **filters):
         return self._get(f"/v1/projects/{pid}/decisions", DecisionRecordPage)
@@ -206,6 +214,9 @@ def _adversarial(corpus: dict) -> dict:
         experiment["diff_vs_parent"] = {**(experiment.get("diff_vs_parent") or {}), **leak}
         experiment["metrics"]["baseline_comparison"] = {**(experiment["metrics"].get("baseline_comparison") or {}),
                                                         **leak}
+    for key in [k for k in r if k.endswith("/profile")]:  # column names and recorded reasons are dataset text
+        for column in r[key]["columns"]:
+            column.update(name=f"{column['name']} {INJECTION}", role_reason=f"{INJECTION} {SECRET}")
     for check in r[f"GET /v1/experiments/{ids['branch']}/findings"]["checks"]:
         check["evidence"] = {**check["evidence"], **leak}
     page = r[f"GET /v1/projects/{ids['project']}/decisions"]
@@ -214,6 +225,8 @@ def _adversarial(corpus: dict) -> dict:
         record["evidence_refs"] = [*record.get("evidence_refs", []),
                                    {"kind": "model_version", "id": ids["model_version"],
                                     "key": f"model_version:{ids['model_version']}", "scope": "final_holdout"}]
+    points = r[f"GET /v1/experiments/{ids['root']}/operating-points"]  # a person's reason is data
+    points["chosen"]["rationale"] = f"{INJECTION} {SECRET} " + points["chosen"]["rationale"]
     for item in r["GET /v1/proposals"]["items"]:  # an agent's payload / arguments / text are data
         item["payload"] = {**item["payload"], **leak}
         item["tool_arguments"] = None if item["tool_arguments"] is None else {**item["tool_arguments"], **leak}
@@ -314,12 +327,13 @@ def test_record_corpus(client, db_session, st, tmp_path):  # noqa: F811
     paths = {  # corpus key -> request (query only where it changes the response)
         "/v1/projects": None, f"/v1/projects/{pid}": None, f"/v1/projects/{pid}/graph": "?limit=40",
         "/v1/experiments": f"?project_id={pid}&limit=10", "/v1/datasets": "?limit=50",
-        f"/v1/datasets/{t.dataset}": None, f"/v1/experiments/{r}": None, f"/v1/experiments/{b}": None,
+        f"/v1/datasets/{t.dataset}": None, f"/v1/datasets/{t.dataset}/profile": None, f"/v1/experiments/{r}": None, f"/v1/experiments/{b}": None,
         "/v1/experiments/compare": f"?ids={r},{b}", f"/v1/experiments/{b}/code": None,
         f"/v1/model-builds/{b}": None, f"/v1/model-builds/{b}/artifacts": None, f"/v1/experiments/{b}/findings": None,
         f"/v1/projects/{pid}/decisions": "?limit=20", f"/v1/decisions/{t.decision}": None,
         f"/v1/model-versions/{t.root_mv}": None, f"/v1/model-versions/{t.root_mv}/card": None,
         f"/v1/predictions/{t.prediction}": None, f"/v1/nodes/experiment/{r}/impact": None,
+        f"/v1/experiments/{r}/operating-points": None,
     }  # no model build of the root run: get_evidence on it covers "no build"
     responses = {}
     for key, query in paths.items():
@@ -328,6 +342,8 @@ def test_record_corpus(client, db_session, st, tmp_path):  # noqa: F811
         responses[f"GET {key}"] = got.json()
     code = responses[f"GET /v1/experiments/{b}/code"]
     code["notebook"]["source"] = code["notebook"]["source"][:2000]  # no scenario reads the notebook
+    curve = responses[f"GET /v1/experiments/{r}/operating-points"]
+    curve["points"] = curve["points"][:3]  # no tool reads the full curve
     for stage in responses[f"GET /v1/model-builds/{b}"]["stages"]:  # fields no tool reads, trimmed for size
         stage.update(evidence_references=[], related_candidate_ids=[], related_fold_ids=[], generated_code=None)
         if stage["key"] != "final_holdout":  # its configuration carries the holdout metrics tools must drop

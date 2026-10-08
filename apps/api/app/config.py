@@ -107,6 +107,14 @@ class Settings(BaseSettings):
     # P3.1-B2: queued + running auto-train jobs one workspace may hold at once
     # (root runs and branches); above it a new run is 429 run_quota_exceeded.
     ml_max_active_runs_per_workspace: int = 20
+    # P4.1-A: show the frozen Decision.ai vertical pages (opportunities, decisions,
+    # insights, dashboards) in Studio navigation. Presentation only: the legacy
+    # /app routes keep their own authorization either way.
+    legacy_decision_layer_enabled: bool = False
+    # P4.12-A: keep the frozen Decision.ai marketing pages (industries, solutions,
+    # pricing, showcase, platform, company, resources) reachable for signed-in
+    # users. Off (or signed out): the web tier redirects them to `/`. Presentation only; no data is behind these pages.
+    legacy_marketing_pages_enabled: bool = False
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
     # Durable ML jobs. Production default persists a row and returns; a worker

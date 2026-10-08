@@ -330,6 +330,17 @@ def _exp_findings(c: Ctx, a: argparse.Namespace) -> None:
         c[1].emit(result, table=("check", "status", "severity", "message"), rows=result.checks)
 
 
+def _exp_operating_points(c: Ctx, a: argparse.Namespace) -> None:
+    result = c[0].experiments.operating_points(a.experiment_id)
+    if c[1].as_json:
+        c[1].emit(result)
+    elif result.status != "available":
+        c[1].text(f"experiment {result.experiment_id}: operating points {result.status} ({result.reason})")
+    else:
+        c[1].emit(result, table=("threshold", "precision", "recall", "flagged_share", "f1", "expected_cost"),
+                  rows=result.pareto)
+
+
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
@@ -408,6 +419,20 @@ def _gov_policy(c: Ctx, a: argparse.Namespace) -> None:
     else:
         c[1].emit(c[0].governance.propose_policy(_json_arg(a.policy or "", "--policy"), rationale=a.rationale or "",
                                                  idempotency_key=a.idempotency_key))
+
+
+def _activity(c: Ctx, a: argparse.Namespace) -> None:
+    page = c[0].activity.list(project_id=a.project, cursor=a.cursor, limit=a.limit)
+    c[1].emit(page, table=("occurred_at", "kind", "summary"), rows=page.items)
+
+
+def _inbox_list(c: Ctx, a: argparse.Namespace) -> None:
+    page = c[0].inbox.list(tab=a.tab, project_id=a.project, cursor=a.cursor, limit=a.limit)
+    c[1].emit(page, table=("occurred_at", "kind", "summary", "can_act"), rows=page.items)
+
+
+def _inbox_counts(c: Ctx, a: argparse.Namespace) -> None:
+    c[1].emit(c[0].inbox.counts(project_id=a.project))
 
 
 def _run_replay(c: Ctx, a: argparse.Namespace) -> None:
@@ -497,6 +522,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", "-o", help="write the source to this file")
     leaf(exps, "findings", _exp_findings, help="trust checks of a run (leakage, overfit, duplicates, "
          "imbalance, too-good score)").add_argument("experiment_id")
+    leaf(exps, "operating-points", _exp_operating_points, help="out-of-fold operating points of a binary run "
+         "(Pareto points; --json for the full curve, locked and chosen points)").add_argument("experiment_id")
     leaf(exps, "cancel", _exp_cancel, key=True).add_argument("experiment_id")
 
     models = top.add_parser("models", help="model versions").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
@@ -567,6 +594,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--proposal-id", help="accept this open proposal (owner/admin only)")
     p.add_argument("--policy-digest", help="with --proposal-id: the policy_digest you reviewed")
     p.add_argument("--ack-consent-change", action="store_true", help="acknowledge a change of R3 sharing")
+    p = leaf(top, "activity", _activity, help="activity of agents, rules and people, newest first")
+    p.add_argument("--project")
+    p.add_argument("--cursor")
+    p.add_argument("--limit", type=int)
+    inbox = top.add_parser("inbox", help="what needs a person").add_subparsers(dest="cmd", required=True,
+                                                                                parser_class=_Parser)
+    p = leaf(inbox, "list", _inbox_list, help="one inbox tab, newest first")
+    p.add_argument("--tab", default="needs_decision", choices=("needs_decision", "applied_automatically", "done"))
+    p.add_argument("--project")
+    p.add_argument("--cursor")
+    p.add_argument("--limit", type=int)
+    leaf(inbox, "counts", _inbox_counts, help="item totals per tab").add_argument("--project")
     runs = top.add_parser("agent-runs", help="agent runs").add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     leaf(runs, "replay", _run_replay, key=True, help="replay a recorded run against its record").add_argument("run_id")
     return root

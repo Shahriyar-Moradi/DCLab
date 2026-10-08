@@ -82,6 +82,8 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"target_id": UUID_ZERO, "rationale": "x", "evidence_refs": [{"kind": "experiment", "id": UUID_ZERO}]}
         elif path.endswith("/predictions"):
             body = {"dataset_id": UUID_ZERO}
+        elif path.endswith("/operating-point"):
+            body = {"threshold": 0.5, "reason": "x"}
         kwargs.setdefault("json", body)
         # P3.1-B commands require a key; supply one so the resource checks answer.
         kwargs["headers"] = {"Idempotency-Key": f"conv-{uuid4().hex}", **(kwargs.get("headers") or {})}
@@ -120,6 +122,9 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/workspaces",
         "GET /v1/projects",
         "POST /v1/projects",
+        "GET /v1/activity",
+        "GET /v1/inbox",
+        "GET /v1/inbox/counts",
         "GET /v1/projects/{project_id}",
         "POST /v1/projects/{project_id}/problem-specs",
         "GET /v1/projects/{project_id}/graph",
@@ -128,6 +133,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/datasets",
         "POST /v1/datasets",
         "GET /v1/datasets/{dataset_id}",
+        "GET /v1/datasets/{dataset_id}/profile",
         "POST /v1/execution-requests",
         "POST /v1/execution-requests/{request_id}/target-confirmation",
         "POST /v1/execution-requests/{request_id}/split-confirmation",
@@ -142,6 +148,8 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/experiments/compare",
         "GET /v1/experiments/{experiment_id}",
         "GET /v1/experiments/{experiment_id}/findings",
+        "GET /v1/experiments/{experiment_id}/operating-points",
+        "POST /v1/experiments/{experiment_id}/operating-point",
         "POST /v1/experiments/{experiment_id}/branches",
         "POST /v1/experiments/{experiment_id}/cancel",
         "POST /v1/projects/{project_id}/decisions",

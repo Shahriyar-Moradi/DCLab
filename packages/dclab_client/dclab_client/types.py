@@ -98,6 +98,21 @@ class Project(_Versioned):
     archived_at: datetime | None = None
 
 
+class DatasetPolicy(BaseModel):
+    """ADR 0005 upload policy and the AI data class of one dataset (``GET /v1/datasets/{id}``)."""
+
+    upload_policy: str | None = None
+    publication_state: str | None = None
+    policy_revision: int | None = None
+    policy_complete: bool
+    sensitivity_class: str | None = None
+    llm_exposure_policy: str
+    retention_class: str | None = None
+    residency_class: str | None = None
+    ai_data_class: str
+    workspace_ai_max_class: str | None = None
+
+
 class Dataset(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -110,6 +125,59 @@ class Dataset(BaseModel):
     column_count: int
     purpose: str = "training"
     created_at: datetime
+
+
+class DatasetVersion(Dataset):
+    """``GET /v1/datasets/{id}``: the dataset plus its read-only policy."""
+
+    policy: DatasetPolicy
+
+
+class DatasetProfileSplitPlan(BaseModel):
+    id: UUID
+    version: int
+    source: str
+    target_column: str
+    training_row_count: int
+
+
+class DatasetProfileExperiment(BaseModel):
+    id: UUID
+    selection: str
+    created_at: datetime
+
+
+class DatasetProfileColumn(BaseModel):
+    name: str
+    ordinal_position: int
+    physical_dtype: str
+    rule_role: str | None = None
+    role_used: str | None = None
+    role_source: str | None = None
+    role_reason: str | None = None
+    missing_count: int | None = None
+    missing_fraction: float | None = None
+    unique_count: int | None = None
+    unique_fraction: float | None = None
+    transforms: list[str] = Field(default_factory=list)
+    importance: float | None = None
+    leakage_excluded: bool = False
+    leakage_risk: str | None = None
+    leakage_reason: str | None = None
+
+
+class DatasetProfile(BaseModel):
+    """``GET /v1/datasets/{id}/profile``: statistics over the current split plan's training rows only
+    (``scope == "training_rows"``); ``scope == "upload"`` carries names and types without statistics."""
+
+    dataset_id: UUID
+    project_id: UUID | None = None
+    scope: str
+    statistics_status: str
+    split_plan: DatasetProfileSplitPlan | None = None
+    experiment: DatasetProfileExperiment | None = None
+    importance_method: str | None = None
+    columns: list[DatasetProfileColumn]
 
 
 class ProblemSpec(_Versioned):
@@ -491,6 +559,108 @@ class AgentRunPage(BaseModel):
     limit: int
 
 
+class ActivityActor(BaseModel):
+    kind: str  # rule | agent | person
+    rule: str | None = None
+    agent_key: str | None = None
+    agent_run_id: UUID | None = None
+    is_you: bool = False
+
+
+class ActivitySubject(BaseModel):
+    kind: str
+    id: UUID | None = None
+    key: str | None = None
+
+
+class ActivityLink(BaseModel):
+    kind: str  # decision_record | experiment | agent_run
+    id: UUID
+
+
+class ActivityItem(BaseModel):
+    """One line of ``GET /v1/activity``; ``summary`` is server-built from typed fields only."""
+
+    id: str
+    kind: str
+    occurred_at: datetime
+    project_id: UUID | None = None
+    actor: ActivityActor
+    subject: ActivitySubject
+    summary: str
+    status: str | None = None
+    decision_type: str | None = None
+    link: ActivityLink
+
+
+class ActivityPage(BaseModel):
+    items: list[ActivityItem]
+    next_cursor: str | None = None
+    limit: int
+
+
+class InboxRef(BaseModel):
+    kind: str
+    id: UUID
+
+
+class InboxAction(BaseModel):
+    """An existing route this item can be acted on with (``allowed`` is re-checked by the route)."""
+
+    name: str  # accept | reject | supersede | revert | answer
+    operation: str  # e.g. "POST /v1/decisions/{decision_id}/accept"
+    path_params: dict[str, str] = Field(default_factory=dict)
+    body: dict[str, str] = Field(default_factory=dict)
+    allowed: bool
+
+
+class InboxItem(BaseModel):
+    """One ``GET /v1/inbox`` item. ``rule_answer`` / ``ai_answer`` are untrusted data (``None`` for tokens)."""
+
+    id: str
+    kind: str  # decision_proposal | agent_proposal | question | run_finished
+    tab: str
+    occurred_at: datetime
+    project_id: UUID | None = None
+    summary: str
+    status: str
+    source: InboxRef
+    subject: ActivitySubject
+    proposed_by: str | None = None
+    decision_type: str | None = None
+    proposal_type: str | None = None
+    decision_point_key: str | None = None
+    level: int | None = None
+    resolution_record_id: UUID | None = None
+    expires_at: datetime | None = None
+    rule_answer: dict[str, Any] | None = None
+    ai_answer: dict[str, Any] | None = None
+    answers_truncated: bool = False
+    evidence_refs: list[InboxRef] = Field(default_factory=list)
+    actions: list[InboxAction] = Field(default_factory=list)
+    can_act: bool
+
+
+class InboxViewer(BaseModel):
+    is_agent: bool
+    can_decide: bool
+    can_approve_ai_policy: bool
+
+
+class InboxPage(BaseModel):
+    tab: str
+    items: list[InboxItem]
+    next_cursor: str | None = None
+    limit: int
+    viewer: InboxViewer
+
+
+class InboxCounts(BaseModel):
+    needs_decision: int
+    applied_automatically: int
+    done: int
+
+
 class GovernanceViewer(BaseModel):
     can_approve: bool
     can_propose: bool
@@ -729,14 +899,130 @@ class ExperimentFindingsSummary(BaseModel):
 
 
 class ExperimentFindings(BaseModel):
-    """The five core trust checks of a run (P4.10-A); ``investigated`` is false for runs
-    that predate them."""
+    """The trust checks of a run: five since P4.10-A, fifteen since P5.1-A (service tokens get
+    status only for the checks that compare training and test rows); ``investigated`` is false
+    for runs that predate them."""
 
     experiment_id: UUID
     investigated: bool
     version: str | None = None
     checks: list[ExperimentFinding] = Field(default_factory=list)
     summary: ExperimentFindingsSummary = Field(default_factory=ExperimentFindingsSummary)
+
+
+class OperatingInterval(BaseModel):
+    low: float
+    high: float
+
+
+class OperatingFoldSpread(BaseModel):
+    folds: int
+    recall_folds: int
+    precision_folds: int
+    min_fold_positives: int
+    min_fold_flagged: int
+    min_denominator: int
+    includes_folds_outside_curve: bool
+    recall_min: float | None = None
+    recall_max: float | None = None
+    precision_min: float | None = None
+    precision_max: float | None = None
+
+
+class OperatingPoint(BaseModel):
+    """One candidate threshold on the out-of-fold curve (flagged = score >= threshold); the
+    detail fields are set on Pareto, locked and chosen points."""
+
+    threshold: float
+    tp: int
+    fp: int
+    fn: int
+    tn: int
+    precision: float
+    recall: float
+    specificity: float
+    f1: float
+    accuracy: float
+    balanced_accuracy: float
+    flagged_share: float
+    expected_cost: float | None = None
+    precision_interval: OperatingInterval | None = None
+    recall_interval: OperatingInterval | None = None
+    fold_spread: OperatingFoldSpread | None = None
+    what_this_means: str | None = None
+
+
+class OperatingCostMatrix(BaseModel):
+    false_positive: float
+    false_negative: float
+
+
+class LockedOperatingPoint(BaseModel):
+    threshold: float | None = None
+    source: str | None = None
+    constraint_status: str | None = None
+    reproduced_from_curve: bool | None = None
+    point: OperatingPoint | None = None
+    note: str | None = None
+
+
+class ChosenOperatingPoint(BaseModel):
+    """A person's choice (a decision record); ``rationale`` is user-authored text."""
+
+    decision_id: UUID
+    threshold: float
+    method: str
+    objective: dict[str, Any] | None = None
+    rationale: str
+    chosen_by_user_id: UUID | None = None
+    recorded_at: datetime
+    supersedes_id: UUID | None = None
+    point: OperatingPoint | None = None
+    curve_changed: bool | None = None
+    applies_to_scoring: bool = False
+
+
+class OperatingScoring(BaseModel):
+    threshold: float | None = None
+    uses: str
+    note: str | None = None
+
+
+class OperatingPoints(BaseModel):
+    """Operating points of a binary run (P5.2-A): out-of-fold figures only (``outcome_scope``
+    ``cv``); ``status`` available | not_applicable | not_available | not_evaluated."""
+
+    experiment_id: UUID
+    status: str
+    reason: str | None = None
+    message: str | None = None
+    task_type: str | None = None
+    version: str | None = None
+    outcome_scope: str = "cv"
+    basis: str = "out_of_fold_cv"
+    oof_folds: str | None = None
+    rows: int | None = None
+    positives: int | None = None
+    negatives: int | None = None
+    min_class_rows: int
+    cost_matrix: OperatingCostMatrix | None = None
+    points: list[OperatingPoint] = Field(default_factory=list)
+    pareto: list[OperatingPoint] = Field(default_factory=list)
+    locked: LockedOperatingPoint | None = None
+    chosen: ChosenOperatingPoint | None = None
+    scoring: OperatingScoring | None = None
+    tie_break: str
+    optimism_note: str | None = None
+    final_evaluation_note: str | None = None
+
+
+class OperatingPointChoice(_Versioned):
+    """The decision a person's operating-point choice recorded (P5.2-A)."""
+
+    experiment_id: UUID
+    chosen: ChosenOperatingPoint
+    decision: DecisionRecord
+    scoring: OperatingScoring
 
 
 class ExperimentLineage(BaseModel):

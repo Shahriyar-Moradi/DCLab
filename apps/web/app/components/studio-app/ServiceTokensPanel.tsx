@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Badge } from "@/app/components/ui/Badge";
 import { Button } from "@/app/components/ui/Button";
 import { Panel } from "@/app/components/ui/Card";
@@ -28,6 +28,26 @@ export function ServiceTokensPanel() {
   const [password, setPassword] = useState("");
   // The secret lives only in the mutation result until "Done" resets it.
   const secret = create.data?.secret ?? null;
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+  const { reset: resetCreate } = create;
+  // Leaving the page drops the secret (never stored in storage, URL or a cache).
+  useEffect(() => {
+    const drop = () => resetCreate();
+    window.addEventListener("pagehide", drop);
+    return () => {
+      window.removeEventListener("pagehide", drop);
+      resetCreate();
+    };
+  }, [resetCreate]);
+
+  async function copySecret(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopy("copied");
+    } catch {
+      setCopy("failed");
+    }
+  }
 
   function toggle(scope: ServiceTokenScope, checked: boolean) {
     setScopes((current) => (checked ? [...current, scope] : current.filter((item) => item !== scope)));
@@ -105,13 +125,14 @@ export function ServiceTokensPanel() {
           <p className="text-body text-ink">Copy this token now. It will not be shown again.</p>
           <code className="mt-2 block break-all font-mono text-data text-ink">{secret}</code>
           <div className="mt-3 flex gap-2">
-            <Button size="sm" variant="secondary" onClick={() => void navigator.clipboard?.writeText(secret)}>
-              Copy
+            <Button size="sm" variant="secondary" onClick={() => void copySecret(secret)}>
+              {copy === "copied" ? "Copied" : "Copy"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => create.reset()}>
+            <Button size="sm" variant="ghost" onClick={() => { setCopy("idle"); create.reset(); }}>
               Done
             </Button>
           </div>
+          {copy === "failed" ? <p className="mt-2 text-body text-oxblood" role="alert">Could not copy. Select the token above and copy it by hand.</p> : null}
         </div>
       ) : null}
 

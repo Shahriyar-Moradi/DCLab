@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
@@ -33,7 +34,7 @@ from app.api.deps import (
     require_workspace_read,
 )
 from app.config import get_settings
-from app.db.models import Dataset, IngestionRun, Project, User
+from app.db.models import Dataset, DatasetColumn, IngestionRun, Project, User
 from app.db.session import get_db
 from app.domain.application_api import (
     DatasetIngestionRead,
@@ -56,7 +57,14 @@ from app.domain.decision_records import (
     DecisionSubjectKind,
     DecisionType,
 )
-from app.api.v1_agent_views import code_view, decision_page_view, event_view, model_build_view, visualization_rows_view
+from app.api.v1_agent_views import (
+    code_view,
+    decision_page_view,
+    event_view,
+    is_agent,
+    model_build_view,
+    visualization_rows_view,
+)
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -100,12 +108,15 @@ from app.domain.idempotency import (
     RESOURCE_PROBLEM_SPEC,
     RESOURCE_PROJECT,
 )
+from app.domain.home_reads import ACTIVITY_PAGE_DEFAULT, ACTIVITY_PAGE_MAX, ActivityPage, ProjectWithSummaryRead
+from app.domain.inbox_reads import INBOX_PAGE_DEFAULT, INBOX_PAGE_MAX, InboxCounts, InboxPage, InboxTab
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.observability import MlRunEventRead
 from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead
 from app.domain.state_graph import GRAPH_EXPERIMENT_WINDOW
 from app.domain.reproducibility import ArtifactRead
+from app.domain.dataset_profile import DatasetProfileRead, DatasetVersionRead
 from app.domain.technical_explorer import DatasetListItem
 from app.domain.workspace_identity import (
     ProblemSpecCreateRequest,
@@ -124,6 +135,8 @@ from app.services.execution_request_service import (
     get_execution_request,
 )
 from app.services.decision_record_service import list_decisions, unique_violation
+from app.services.home_read_service import list_activity, project_summaries
+from app.services.inbox_read_service import inbox_counts, list_inbox
 from app.services.graph_service import impact, project_graph
 from app.services.model_build_reproduction_service import (
     get_experiment_code,
@@ -137,7 +150,8 @@ from app.services.client_lab_upload_service import ingest_dataset
 from app.services.idempotency_service import IdempotencyKeyRaceError, KeyScope
 from app.services.problem_spec_service import create_problem_spec, get_problem_spec
 from app.services.project_service import create_project, get_project, list_projects
-from app.services.technical_explorer_service import get_dataset, list_datasets
+from app.services.dataset_profile_service import DatasetNotFoundError, dataset_profile, dataset_read
+from app.services.technical_explorer_service import list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
 from app.services.workspace_service import list_workspaces_for_actor
 from app.services.workspace_selection_service import principal_read, service_token_principal_read
@@ -224,18 +238,114 @@ def read_workspaces(
     return rows if token is None else [row for row in rows if row.id == token.workspace_id]
 
 
-@router.get("/projects", response_model=list[ProjectRead])
+@router.get("/projects", response_model=list[ProjectWithSummaryRead])
 def read_projects(
     request: Request,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
-) -> list[ProjectRead]:
+) -> list[ProjectWithSummaryRead]:
+    """Projects of the workspace, newest first, each with a `summary` (P4.15-A): the current goal
+    (ProblemSpec ref, else the latest version), the champion's CV aggregate metrics (never
+    final-holdout values) and the latest run's status. `goal.objective` and `goal.target_column`
+    are untrusted user/agent-authored data."""
+
     workspace_id = request_workspace_id(request)
     try:
         rows = list_projects(db, actor=user, workspace_id=workspace_id)
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    return [ProjectRead.model_validate(row) for row in rows]
+    summaries = project_summaries(db, workspace_id=workspace_id, project_ids=[row.id for row in rows])
+    return [
+        ProjectWithSummaryRead.model_validate(
+            {**ProjectRead.model_validate(row).model_dump(), "summary": summaries[row.id]}
+        )
+        for row in rows
+    ]
+
+
+@router.get("/activity", response_model=ActivityPage)
+def read_activity(
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    project_id: UUID | None = Query(None, description="Only this project's activity (404 if not in the workspace)."),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
+    limit: int = Query(ACTIVITY_PAGE_DEFAULT, ge=1, le=ACTIVITY_PAGE_MAX),
+) -> ActivityPage:
+    """Activity of agents, rules and people, newest first (P4.15-A): decision records and run
+    lifecycle events (runs queued/finished, specialist and ops agent runs started/finished).
+
+    A read-only projection: `summary` is built by the server from typed fields only; actors are a
+    kind plus code-owned ids (rule id, agent key), never a user id. Follow `link` for details.
+    """
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return list_activity(
+            db,
+            actor=user,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            cursor=cursor,
+            limit=limit,
+            viewer_is_agent=is_agent(request),
+        )
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except InvalidCursorError as exc:
+        raise _bad_cursor(exc) from exc
+
+
+@router.get("/inbox", response_model=InboxPage)
+def read_inbox(
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    tab: InboxTab = Query("needs_decision", description="`needs_decision`, `applied_automatically` or `done`."),
+    project_id: UUID | None = Query(None, description="Only this project's items (404 if not in the workspace)."),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
+    limit: int = Query(INBOX_PAGE_DEFAULT, ge=1, le=INBOX_PAGE_MAX),
+) -> InboxPage:
+    """What needs a person, newest first (P4.16-A): proposed decision records, open agent / Jev /
+    assistant proposals (an assistant tool call only for its thread's owner and the workspace's
+    approvers; never for service tokens), runs waiting for an answer, and run-completed notices
+    (`done`). A read-only projection: `actions` name the existing accept / reject / supersede /
+    revert / answer routes, which re-check every call; `allowed` / `can_act` reflect the caller
+    (a person with workspace ML-write decides; viewers and service tokens only read).
+    `rule_answer` / `ai_answer` are untrusted plain text for people and `null` for service tokens.
+    """
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return list_inbox(db, actor=user, workspace_id=workspace_id, tab=tab, project_id=project_id,
+                          cursor=cursor, limit=limit, viewer_is_agent=is_agent(request))
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except InvalidCursorError as exc:
+        raise _bad_cursor(exc) from exc
+
+
+@router.get("/inbox/counts", response_model=InboxCounts)
+def read_inbox_counts(
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    project_id: UUID | None = Query(None, description="Only this project's items (404 if not in the workspace)."),
+) -> InboxCounts:
+    """Item totals per inbox tab for the caller (the sidebar badge reads `needs_decision`)."""
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return inbox_counts(db, actor=user, workspace_id=workspace_id, project_id=project_id,
+                            viewer_is_agent=is_agent(request))
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
 
 
 @router.get(
@@ -616,21 +726,43 @@ def read_datasets(
         raise _identity_http(exc) from exc
 
 
-@router.get("/datasets/{dataset_id}", response_model=DatasetListItem)
+@router.get("/datasets/{dataset_id}", response_model=DatasetVersionRead)
 def read_dataset(
     dataset_id: UUID,
     request: Request,
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
-) -> DatasetListItem:
-    workspace_id = request_workspace_id(request)
+) -> DatasetVersionRead:
+    """One DatasetVersion with its ADR 0005 upload policy and AI data class (read-only)."""
+
     try:
-        row = get_dataset(db, user, dataset_id, workspace_id=workspace_id)
+        return dataset_read(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id)
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    if row is None:
-        raise _not_found()
-    return row
+    except DatasetNotFoundError as exc:
+        raise _not_found() from exc
+
+
+@router.get("/datasets/{dataset_id}/profile", response_model=DatasetProfileRead)
+def read_dataset_profile(
+    dataset_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> DatasetProfileRead:
+    """Per-column type, rule role, role used, missing / unique, transforms and CV importance.
+
+    Statistics come from the TRAINING rows of the dataset's current SplitPlan only
+    (``scope: "training_rows"``); holdout rows are never counted. Without a verified
+    plan the profile is whole-upload metadata (``scope: "upload"``) and statistics are null.
+    """
+
+    try:
+        return dataset_profile(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except DatasetNotFoundError as exc:
+        raise _not_found() from exc
 
 
 _CREATE_DATASET = "POST /v1/datasets"
@@ -683,10 +815,18 @@ def _sha256(stream: Any) -> str:
 
 def _dataset_upload_read(db: Session, dataset: Any) -> DatasetUploadRead:
     run = db.get(IngestionRun, dataset.ingestion_run_id)
+    columns = db.scalars(
+        select(DatasetColumn)
+        .where(DatasetColumn.workspace_id == dataset.workspace_id, DatasetColumn.dataset_id == dataset.id)
+        .order_by(DatasetColumn.ordinal_position)
+    ).all()
     return DatasetUploadRead.model_validate(
         {
-            **{key: getattr(dataset, key) for key in DatasetUploadRead.model_fields if key != "ingestion"},
+            **{key: getattr(dataset, key) for key in DatasetUploadRead.model_fields if key not in ("ingestion", "columns")},
             "ingestion": DatasetIngestionRead.model_validate(run, from_attributes=True),
+            "columns": [
+                {"name": c.name, "dtype": c.physical_dtype, "missing_fraction": c.missing_fraction} for c in columns
+            ],
         }
     )
 

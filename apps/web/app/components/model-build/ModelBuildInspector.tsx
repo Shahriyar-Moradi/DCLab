@@ -136,7 +136,7 @@ export function ModelBuildInspector({
           {downloadError}
         </p>
       ) : null}
-      <div className="model-build-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}>
+      <div className="model-build-progress" role="progressbar" aria-label="Model build progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}>
         <div className="model-build-progress-fill" style={{ width: `${progress.percent}%` }} />
       </div>
 

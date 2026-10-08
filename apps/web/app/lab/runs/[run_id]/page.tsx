@@ -15,7 +15,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { SectionHeader } from "@/app/components/ui/SectionHeader";
 import { Select } from "@/app/components/ui/Select";
 import { Skeleton } from "@/app/components/ui/Skeleton";
-import { downloadLabPredictions, useConfirmLabTarget, useLabUpload, useSession } from "@/lib/application";
+import { downloadLabPredictions, useConfirmLabTarget, useExperimentProjectHref, useLabUpload, useSession } from "@/lib/application";
 import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { ApiError } from "@/lib/infrastructure/api-client";
 import {
@@ -26,10 +26,11 @@ import {
   type LabRunStep,
   type SignalTone,
 } from "@/lib/domain";
+import { labRunVisibility, processingTitle } from "@/lib/application/lab-run-view";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 
 type DetailFact = { label: string; value: string; mono?: boolean };
 
@@ -97,9 +98,11 @@ function FactBlock({ facts }: { facts: DetailFact[] }) {
   );
 }
 
-function ExecutionProgress({ run }: { run: ClientLabUpload }) {
+function ExecutionProgress({ run, liveSteps }: { run: ClientLabUpload; liveSteps: boolean }) {
+  // Clients see one fixed title; stage names and the step list are for development roles.
+  if (!liveSteps) return <GlassPanel title={processingTitle(labRunVisibility(false), undefined)} description="This may take a while." />;
   if (!hasLiveSteps(run.steps)) return null;
-  const title = nonempty(run.milestone) ?? run.steps.find((step) => step.state === "current")?.label;
+  const title = processingTitle(labRunVisibility(true), nonempty(run.milestone) ?? run.steps.find((step) => step.state === "current")?.label);
   return (
     <GlassPanel title={title} description="This may take a while.">
       <RunProgress items={run.steps.map((step) => ({ id: step.id, label: step.label, state: step.state }))} />
@@ -138,6 +141,19 @@ export default function LabRunPage() {
   const [selectedTarget, setSelectedTarget] = useState("");
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const isPlatformMember = hasCapability(user, CAPABILITIES.platformRead);
+  const view = labRunVisibility(hasCapability(user, CAPABILITIES.developmentAccess));
+  // P4.1-A: developers follow the run on its project experiment page (same live stages).
+  // Only once the run is an experiment of a project readable in this workspace; target
+  // confirmation, every client view and `?view=labs` (results download) stay here.
+  const router = useRouter();
+  const stay = useSearchParams().get("view") === "labs";
+  const loaded = query.data;
+  const studioHref = useExperimentProjectHref(
+    !stay && hasCapability(user, CAPABILITIES.developmentAccess) && loaded && loaded.status !== "needs_input" ? loaded.pipeline_run_id : null,
+  );
+  useEffect(() => {
+    if (studioHref) router.replace(studioHref);
+  }, [router, studioHref]);
 
   async function onDownload(runId: string) {
     setDownloadError(null);
@@ -179,18 +195,22 @@ export default function LabRunPage() {
   const run: ClientLabUpload = query.data;
   const outcome = run.outcome;
   const inProgress = run.status === "queued" || run.status === "processing";
+  // Quarantined uploads (not published) carry their own actionable message; keep it for clients.
+  const quarantined = run.stage === "saved" && run.progress === "saved";
   const downloadAvailable = Boolean(outcome?.download_available);
   const created = nonempty(formatTimestamp(run.created_at)) ?? nonempty(run.created_at);
   const headerDescription =
-    nonempty(run.headline) ?? (run.status === "failed" ? undefined : nonempty(run.message));
+    inProgress && !quarantined && !view.liveSteps
+      ? undefined
+      : nonempty(run.headline) ?? (run.status === "failed" ? undefined : nonempty(run.message));
 
   const contextFacts = factsOf([
     nonempty(run.category) ? { label: "Category", value: run.category } : null,
     nonempty(run.kind) ? { label: "Kind", value: KIND_LABELS[run.kind] ?? run.kind } : null,
     nonempty(run.filename) ? { label: "File", value: run.filename } : null,
     { label: "Records", value: run.record_count.toLocaleString(), mono: true },
-    { label: "Named fields", value: yesNo(run.has_named_fields) },
-    { label: "Structured", value: yesNo(run.structured) },
+    view.technical ? { label: "Named fields", value: yesNo(run.has_named_fields) } : null,
+    view.technical ? { label: "Structured", value: yesNo(run.structured) } : null,
     created ? { label: "Created", value: created, mono: true } : null,
   ]);
 
@@ -211,7 +231,7 @@ export default function LabRunPage() {
       : null,
   ]);
 
-  const showArtifacts = downloadAvailable || Boolean(run.dataset_id);
+  const showArtifacts = downloadAvailable || (view.technical && Boolean(run.dataset_id));
   const confirmation = run.target_confirmation;
   const columnNames = (confirmation?.possible_columns ?? [])
     .map((row) => row.name)
@@ -250,7 +270,7 @@ export default function LabRunPage() {
       <PageHeader
         eyebrow="ML workspace · Labs"
         title={run.filename}
-        identifier={run.run_id}
+        identifier={view.technical ? run.run_id : undefined}
         description={headerDescription}
         breadcrumbs={[{ label: "Labs", href: "/app/labs" }, { label: run.filename }]}
         status={{ label: LAB_RUN_STATUS_LABEL[run.status], tone: statusTone(run.status) }}
@@ -290,7 +310,12 @@ export default function LabRunPage() {
           ) : null}
         </Panel>
 
-        {inProgress ? <ExecutionProgress run={run} /> : null}
+        {inProgress && !quarantined ? <ExecutionProgress run={run} liveSteps={view.liveSteps} /> : null}
+        {inProgress && quarantined ? (
+          <Panel title={nonempty(run.milestone) ?? "Awaiting safety review"}>
+            <p className="text-body text-ink">{run.message}</p>
+          </Panel>
+        ) : null}
 
         {run.status === "needs_input" ? (
           <Panel title="Needs input" description="Choose the outcome column you want DCLab to predict.">
@@ -328,7 +353,7 @@ export default function LabRunPage() {
           </Panel>
         ) : null}
 
-        {run.pipeline_run_id ? (
+        {view.technical && run.pipeline_run_id ? (
           <TechnicalRunDetails workspaceId={run.workspace_id} pipelineRunId={run.pipeline_run_id} />
         ) : null}
 
@@ -345,7 +370,7 @@ export default function LabRunPage() {
 
         {outcome && outcome.predictions.length > 0 ? (
           <Panel title="Results">
-            <div className="max-h-[28rem] overflow-auto">
+            <div className="max-h-[28rem] overflow-auto" role="region" aria-label="Prediction results" tabIndex={0}>
               <DataTable
                 columns={[
                   { id: "record", header: "Record", mono: true, cell: (row) => row.record_id },
@@ -369,7 +394,7 @@ export default function LabRunPage() {
             <SectionHeader title="Insights" />
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               {run.insights.map((insight) => (
-                <InsightCard key={`${insight.subject_id}-${insight.headline}`} insight={insight} />
+                <InsightCard key={`${insight.subject_id}-${insight.headline}`} insight={insight} showSubjectId={view.technical} />
               ))}
             </div>
           </section>
@@ -382,7 +407,7 @@ export default function LabRunPage() {
             <FactBlock
               facts={factsOf([
                 downloadAvailable ? { label: "Predictions", value: "Available for download" } : null,
-                run.dataset_id ? { label: "Dataset ID", value: run.dataset_id, mono: true } : null,
+                view.technical && run.dataset_id ? { label: "Dataset ID", value: run.dataset_id, mono: true } : null,
               ])}
             />
           </Panel>
@@ -396,9 +421,11 @@ export default function LabRunPage() {
           </Panel>
         ) : null}
 
-        <Panel title="Technical information">
-          <FactBlock facts={technicalFacts} />
-        </Panel>
+        {view.technical ? (
+          <Panel title="Technical information">
+            <FactBlock facts={technicalFacts} />
+          </Panel>
+        ) : null}
       </div>
     </div>
   );

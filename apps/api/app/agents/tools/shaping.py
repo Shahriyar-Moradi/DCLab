@@ -33,6 +33,42 @@ from typing import Any, Literal
 from uuid import UUID
 
 HOLDOUT_KEY = re.compile(r"holdout|final_test", re.IGNORECASE)
+# The agent-argument backstop (P5.0-A review): separated, confusable or spaced-out forms of
+# the holdout words. A documented BACKSTOP, not a classifier: text is NFKD-folded, every
+# format (Cf) and combining-mark (Mn) character is removed, Cyrillic/Greek homoglyphs are
+# folded to Latin and "h o l d o u t" is collapsed; the lookarounds keep "threshold;
+# outliers", "withhold output", "Threshold-Outcome" and "final testing" out. Digit
+# confusables (0 → o, 1 → l) are deliberately not folded.
+HOLDOUT_WORDS = re.compile(r"(?<![a-z])(?:hold|held)[\W_]*out|(?<![a-z])final[\W_]*test(?!ing)", re.IGNORECASE)
+_HOMOGLYPHS = str.maketrans({
+    # Cyrillic lower/upper
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "і": "i",
+    "ѕ": "s", "һ": "h", "т": "t", "ԁ": "d", "у": "y", "ӏ": "l", "н": "h",
+    "А": "A", "Е": "E", "О": "O", "Р": "P", "С": "C", "Х": "X", "І": "I",
+    "Ѕ": "S", "Н": "H", "Т": "T", "У": "Y", "К": "K", "М": "M", "В": "B",
+    # Greek lower/upper
+    "ο": "o", "α": "a", "ε": "e", "ι": "i", "τ": "t", "υ": "u", "ν": "v",
+    "ρ": "p", "κ": "k", "η": "n", "Ο": "O", "Α": "A", "Ε": "E", "Ι": "I",
+    "Τ": "T", "Ν": "N", "Η": "H", "Κ": "K", "Μ": "M", "Β": "B", "Ζ": "Z",
+    # Armenian / other look-alikes
+    "ո": "n", "օ": "o", "ա": "a",
+})
+_SPACED_WORD = re.compile(r"(?<![^\W_])(?:[A-Za-z][\s._-]+){3,}[A-Za-z](?![^\W_])")
+
+
+def _fold_text(text: str) -> str:
+    import unicodedata
+
+    decomposed = unicodedata.normalize("NFKD", str(text))
+    plain = "".join(ch for ch in decomposed if unicodedata.category(ch) not in {"Cf", "Mn"})
+    plain = plain.translate(_HOMOGLYPHS)
+    return _SPACED_WORD.sub(lambda match: re.sub(r"[\s._-]+", "", match.group(0)), plain)
+
+
+def names_holdout(text: str) -> bool:
+    """Does free text or an argument value name the final holdout in any spelling?"""
+
+    return bool(HOLDOUT_WORDS.search(_fold_text(text)))
 # Model-build stages whose summary/configuration carry final-holdout results.
 HOLDOUT_RESULT_STAGES = frozenset({"final_holdout"})
 # Stages whose verdicts fold in holdout-derived checks (the deterministic verifier's status
@@ -148,8 +184,30 @@ def withhold_experiment(body: Any) -> Any:
 
 
 def withhold_findings(body: Any) -> Any:
-    checks = [item.model_copy(update={"evidence": strip_holdout(item.evidence)}) for item in body.checks]
+    """Holdout-scoped evidence removed and fixed messages for the checks whose human messages
+    carry test-row numbers (``domain.findings.agent_finding``); status, severity and
+    recommendation kind stay."""
+
+    from app.domain.findings import agent_finding
+
+    checks = []
+    for item in body.checks:
+        message, evidence = agent_finding(item.check, item.message, item.evidence)
+        checks.append(item.model_copy(update={"evidence": evidence, "message": message}))
     return body.model_copy(update={"checks": checks})
+
+
+def withhold_card_risks(card: Any) -> Any:
+    """A model card whose risk messages for holdout-scoped checks are the fixed agent text
+    (their human messages name test-row numbers), Markdown re-rendered from it."""
+
+    from app.domain.findings import AGENT_MESSAGES
+    from app.domain.model_card import render_markdown
+
+    items = [item.model_copy(update={"message": AGENT_MESSAGES[item.check]}) if item.check in AGENT_MESSAGES
+             else item for item in card.risks.items]
+    card = card.model_copy(update={"risks": card.risks.model_copy(update={"items": items})})
+    return card.model_copy(update={"markdown": render_markdown(card)})
 
 
 def withhold_comparison(body: Any) -> Any:
@@ -176,6 +234,7 @@ def withhold_model_card(body: Any) -> Any:
     card = body.model_copy(update={
         "final_evaluation": ModelCardFinalEvaluation(status="withheld", note=FINAL_EVALUATION_WITHHELD),
     })
+    card = withhold_card_risks(card)
     return card.model_copy(update={"markdown": render_markdown(card)})
 
 

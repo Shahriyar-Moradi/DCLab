@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy import event, select
 from sqlalchemy.orm import Session, SessionTransaction
 
+from app.config import get_settings
 from app.db.models import (
     PlatformRole,
     PlatformMembership,
@@ -63,6 +64,12 @@ WORKSPACE_EXECUTE_ML = "workspace_execute_ml"
 APPLICATION_ACCESS = "application_access"
 BUSINESS_ACCESS = "business_access"
 DEVELOPMENT_ACCESS = "development_access"
+# P4.1-A: presentation flag for the frozen Decision.ai vertical pages (navigation
+# and the landing-page opportunity panel). The legacy /app routes still authorize.
+LEGACY_DECISION_LAYER = "legacy_decision_layer_enabled"
+# P4.12-A: presentation flag for the frozen Decision.ai marketing pages (web redirects
+# them to `/` when off). Not an authorization input.
+LEGACY_MARKETING_PAGES = "legacy_marketing_pages_enabled"
 
 PIPELINE_MONITOR = "pipeline_monitor"
 CV_FOLD_DETAILS = "cv_fold_details"
@@ -87,6 +94,8 @@ BASE_CAPABILITIES = (
     APPLICATION_ACCESS,
     BUSINESS_ACCESS,
     DEVELOPMENT_ACCESS,
+    LEGACY_DECISION_LAYER,
+    LEGACY_MARKETING_PAGES,
 )
 
 BUSINESS_CAPABILITIES = (
@@ -263,6 +272,10 @@ def _resolve_effective_capabilities(
         APPLICATION_ACCESS: application_access,
         BUSINESS_ACCESS: business_access,
         DEVELOPMENT_ACCESS: development_access,
+        LEGACY_DECISION_LAYER: bool(
+            application_access and get_settings().legacy_decision_layer_enabled
+        ),
+        LEGACY_MARKETING_PAGES: bool(get_settings().legacy_marketing_pages_enabled),
     }
     matrix.update(_feature_capabilities(db, user, workspace_id))
     return {key: bool(matrix.get(key, False)) for key in ALL_EFFECTIVE_CAPABILITIES}

@@ -45,9 +45,11 @@ from app.api.v1_conventions import (
     representation_etag,
     set_etag,
 )
-from app.db.models import Experiment, User
+from app.api.v1_decisions import _keyed as keyed_decision
+from app.db.models import Experiment, ProjectDecisionRecord, User
 from app.db.session import get_db
 from app.domain.errors import (
+    DecisionRecordError,
     ExperimentComparisonError,
     ExperimentNotBranchableError,
     ExperimentNotCancellableError,
@@ -56,6 +58,7 @@ from app.domain.errors import (
     IdentityError,
     InvalidChangeSetError,
     InvalidCursorError,
+    OperatingPointError,
     ProblemSpecNotFoundError,
     ProjectNotFoundError,
     RunQuotaExceededError,
@@ -78,7 +81,9 @@ from app.domain.experiment_resources import (
 from app.domain.findings import ExperimentFindingsRead
 from app.domain.model_card import ModelCardRead
 from app.domain.idempotency import RESOURCE_EXPERIMENT
+from app.domain.operating_points import OperatingPointChoiceRead, OperatingPointChoiceRequest, OperatingPointsRead
 from app.services.experiment_branch_service import branch_experiment, compare_side_by_side
+from app.services.operating_point_service import choice_read, choose_operating_point, operating_points_read
 from app.services.experiment_service import (
     cancel_experiment,
     experiment_findings,
@@ -104,6 +109,7 @@ _ACCEPTED_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 _CREATE_EXPERIMENT = "POST /v1/experiments"
 _CREATE_BRANCH = "POST /v1/experiments/{experiment_id}/branches"
+_CHOOSE_OPERATING_POINT = "POST /v1/experiments/{experiment_id}/operating-point"
 
 
 def _token_id(request: Request) -> UUID | None:
@@ -237,24 +243,130 @@ def read_experiment_findings(
     user: User = Depends(require_workspace_read),
     db: Session = Depends(get_db),
 ) -> ExperimentFindingsRead:
-    """Five plain-language trust checks of a run: target leakage (from the leakage
-    audit), train-vs-CV overfit gap, duplicate rows (within training and across the
-    split, by row hash), class imbalance and a too-good-to-be-true CV score. Each has a
-    status (pass | warning | fail, or not_evaluated with a reason when its evidence is
-    missing or it errored), a severity, the numbers behind it and a
-    recommendation kind. Evidence comes from training rows and CV folds only, never
-    final-holdout values. Runs finished before the checks existed: ``investigated: false``."""
+    """Plain-language trust checks of a run: target leakage (from the leakage audit),
+    train-vs-CV overfit gap, duplicate rows (within training and across the split, by
+    row hash), class imbalance and a too-good-to-be-true CV score; since P5.1-A also
+    fold instability, calibration and subgroup gaps (out-of-fold predictions),
+    multicollinearity (training rows), train-to-test feature drift, temporal shift,
+    missingness shift and contamination (feature columns only), time travel and a single
+    new feature's CV jump against the parent. Each has a status (pass | warning | fail, or
+    not_evaluated with a reason when its evidence is missing or it errored), a severity,
+    the numbers behind it and a recommendation kind. No check reads a final-holdout label,
+    prediction or metric; test-row feature statistics are holdout scope (``holdout_*`` keys):
+    service-token callers get status, severity and recommendation kind with a fixed message
+    for those checks. Runs finished before the checks existed: ``investigated: false``; runs
+    finished before P5.1-A carry the first five checks only."""
 
     try:
         body = experiment_findings(
+            db, actor=user, workspace_id=request_workspace_id(request), experiment_id=experiment_id,
+            agent=is_agent(request),  # rendered from holdout-stripped evidence, like the in-process path
+        )
+    except ExperimentNotFoundError as exc:
+        raise _not_found("experiment not found") from exc
+    except IdentityError as exc:
+        raise domain_error(exc) from exc
+    body = findings_view(request, body)  # second guard for service tokens
+    set_etag(response, representation_etag(body))
+    # The representation depends on the principal (holdout-scoped detail for people only).
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get(
+    "/experiments/{experiment_id}/operating-points",
+    response_model=OperatingPointsRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
+def read_operating_points(
+    experiment_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> OperatingPointsRead:
+    """Operating points of a binary run, all from the locked winner's out-of-fold predictions
+    (``outcome_scope: "cv"``): every candidate threshold of the lock's own search with its
+    confusion counts and rates, the Pareto points over precision and recall (and expected cost
+    when the run declares a cost matrix) with 95 % intervals, fold spread and a plain sentence,
+    the locked threshold (re-solved from the curve) and the chosen point with its reason. No
+    final-evaluation figure is computed at any point. ``status``: ``not_applicable``
+    (multiclass / regression), ``not_available`` (no stored curve: older or unfinished runs) or
+    ``not_evaluated`` (too few rows of one class: the locked threshold, no confusion counts).
+    The per-point 95 % intervals cover counting noise only (not the choice among candidates)."""
+
+    try:
+        body = operating_points_read(
             db, actor=user, workspace_id=request_workspace_id(request), experiment_id=experiment_id
         )
     except ExperimentNotFoundError as exc:
         raise _not_found("experiment not found") from exc
     except IdentityError as exc:
         raise domain_error(exc) from exc
-    body = findings_view(request, body)
     set_etag(response, representation_etag(body))
+    # Like findings and the model card: per-principal reads are never shared by caches.
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.post(
+    "/experiments/{experiment_id}/operating-point",
+    response_model=OperatingPointChoiceRead,
+    status_code=201,
+    responses={
+        201: {"headers": {**ETAG_HEADER_DOC, **REPLAY_HEADER_DOC,
+                          "Location": {"description": "URL of the decision record.", "schema": {"type": "string"}}}},
+        **error_responses(409),
+    },
+)
+def choose_operating_point_v1(
+    experiment_id: UUID,
+    payload: OperatingPointChoiceRequest,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_ml_execution),
+    db: Session = Depends(get_db),
+    idempotency_key: str | None = Depends(idempotency_key_header),
+) -> OperatingPointChoiceRead:
+    """Choose the run's operating point: an exact ``threshold`` of its stored out-of-fold curve,
+    or an ``objective`` (maximise a metric subject to constraints, or minimise expected cost)
+    re-solved on it. Records an accepted ``operating_point_chosen`` decision (the reason is its
+    rationale) that supersedes the previous choice and carries the curve's digest. People with
+    ML-write only: a service token gets ``403 service_token_not_permitted`` (agents read
+    ``get_operating_points``); a viewer ``403 forbidden``. ``422 threshold_not_on_curve`` (the
+    threshold must equal a listed one exactly), ``422 objective_infeasible`` (``details.closest``,
+    ``details.constraints``), ``422 cost_matrix_required``, ``422 validation_failed``;
+    ``409 operating_points_not_applicable|not_available|not_evaluated`` (``details.reason``, e.g.
+    ``evidence_not_locked``), ``409 idempotency_key_conflict``. Batch scoring keeps the locked
+    threshold. Requires ``Idempotency-Key``."""
+
+    if is_agent(request):
+        raise V1APIError(403, "human_session_required", "operating points are chosen by people, not agents")
+    workspace_id = request_workspace_id(request)
+    binding = idempotency_binding(
+        operation=_CHOOSE_OPERATING_POINT, principal_id=_principal_id(request, user), header_key=idempotency_key,
+        path_params={"experiment_id": experiment_id}, body=payload.model_dump(mode="json"), required=True,
+    )
+
+    def execute(bind: Callable[[Any], None]) -> ProjectDecisionRecord:
+        row = choose_operating_point(db, actor=user, workspace_id=workspace_id, experiment_id=experiment_id,
+                                     request=payload)
+        bind(row.id)
+        db.commit()
+        return row
+
+    try:
+        row, status, replayed = keyed_decision(db, request, user, _CHOOSE_OPERATING_POINT, binding, execute)
+        body = choice_read(db, row)
+    except ExperimentNotFoundError as exc:
+        db.rollback()
+        raise _not_found("experiment not found") from exc
+    except (IdentityError, OperatingPointError, DecisionRecordError) as exc:
+        db.rollback()
+        raise domain_error(exc) from exc
+    _created(response, status, replayed, etag=representation_etag(body), location=f"/v1/decisions/{row.id}")
     return body
 
 

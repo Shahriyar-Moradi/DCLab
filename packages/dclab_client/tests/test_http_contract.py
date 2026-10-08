@@ -356,6 +356,55 @@ def test_experiment_findings_use_v1_path_and_parse_checks():
     assert len(recorded) == 1
 
 
+def test_experiment_operating_points_use_v1_path_and_parse_points():
+    recorded: list[httpx.Request] = []
+    point = {"threshold": 0.4, "tp": 3, "fp": 1, "fn": 1, "tn": 5, "precision": 0.75, "recall": 0.75,
+             "specificity": 0.83, "f1": 0.75, "accuracy": 0.8, "balanced_accuracy": 0.79, "flagged_share": 0.4}
+    payload = {"experiment_id": "33333333-3333-3333-3333-333333333333", "status": "available", "min_class_rows": 20,
+               "tie_break": "t", "points": [point], "pareto": [{**point, "fold_spread": {
+                   "folds": 5, "recall_folds": 5, "precision_folds": 4, "min_fold_positives": 12,
+                   "min_fold_flagged": 9, "min_denominator": 10, "includes_folds_outside_curve": False}}],
+               "locked": {"threshold": 0.5, "source": "default"}, "outcome_scope": "cv"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=payload)
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    result = api.experiments.operating_points("33333333-3333-3333-3333-333333333333")
+    assert result.pareto[0].fold_spread.folds == 5 and result.locked.threshold == 0.5 and result.chosen is None
+    assert recorded[0].method == "GET"
+    assert recorded[0].url.path == "/v1/experiments/33333333-3333-3333-3333-333333333333/operating-points"
+    with pytest.raises(DCLabClientError):
+        api.experiments.operating_points("../x")
+
+
+def test_choose_operating_point_posts_a_keyed_body():
+    recorded: list[httpx.Request] = []
+    eid = "33333333-3333-3333-3333-333333333333"
+    decision = {"id": "55555555-5555-5555-5555-555555555555", "project_id": "66666666-6666-6666-6666-666666666666",
+                "decision_type": "operating_point_chosen", "state": "accepted", "effective_state": "accepted",
+                "subject": {"kind": "experiment", "id": eid, "key": f"experiment:{eid}"},
+                "actor": {"kind": "human"}, "rationale": "r", "rationale_untrusted": False, "content_origin": "human",
+                "schema_version": 1, "policy_version": "p", "event_at": "2026-10-08T06:00:00Z",
+                "recorded_at": "2026-10-08T06:00:00Z"}
+    payload = {"experiment_id": eid, "decision": decision, "scoring": {"threshold": 0.5, "uses": "locked_threshold"},
+               "chosen": {"decision_id": decision["id"], "threshold": 0.31, "method": "threshold", "rationale": "r",
+                          "recorded_at": "2026-10-08T06:00:00Z"}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(201, json=payload, headers={"ETag": '"e1"'})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    result = api.experiments.choose_operating_point(eid, threshold=0.31, reason="r", idempotency_key="k1")
+    assert result.chosen.threshold == 0.31 and result.decision.decision_type == "operating_point_chosen"
+    assert result.etag == '"e1"' and recorded[0].method == "POST"
+    assert recorded[0].url.path == f"/v1/experiments/{eid}/operating-point"
+    assert recorded[0].headers["Idempotency-Key"] == "k1"
+    assert json.loads(recorded[0].content) == {"reason": "r", "threshold": 0.31}
+
+
 def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
     from datetime import UTC, datetime
 
@@ -907,3 +956,54 @@ def test_governance_routes_methods_bodies_and_idempotency():
         api.governance.set_switch("all_ai", "maybe", reason="x")
     with pytest.raises(DCLabClientError, match="UUID"):
         api.governance.accept_policy("../x", policy_digest="d" * 64)
+
+
+def test_activity_uses_v1_path_filters_and_parses_items():
+    recorded: list[httpx.Request] = []
+    project = "55555555-5555-5555-5555-555555555555"
+    item = {"id": f"run_queued:{project}", "kind": "run_queued", "occurred_at": "2026-10-07T09:12:00Z",
+            "project_id": project, "actor": {"kind": "person", "is_you": True},
+            "subject": {"kind": "experiment", "id": project, "key": f"experiment:{project}"},
+            "summary": "Run #1 queued", "link": {"kind": "experiment", "id": project}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"items": [item], "next_cursor": "c1.x.y", "limit": 1})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    page = api.activity.list(project_id=project, limit=1, cursor="c1.a.b")
+    assert page.next_cursor == "c1.x.y" and page.items[0].actor.is_you and page.items[0].link.kind == "experiment"
+    assert recorded[0].method == "GET" and recorded[0].url.path == "/v1/activity"
+    assert dict(recorded[0].url.params) == {"project_id": project, "cursor": "c1.a.b", "limit": "1"}
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.activity.list(project_id="../x")
+    assert len(recorded) == 1
+
+
+def test_inbox_uses_v1_paths_filters_and_parses_items():
+    recorded: list[httpx.Request] = []
+    project = "55555555-5555-5555-5555-555555555555"
+    item = {"id": f"question:{project}", "kind": "question", "tab": "needs_decision",
+            "occurred_at": "2026-10-07T09:12:00Z", "project_id": project, "summary": "Run needs a target column",
+            "status": "needs_input", "source": {"kind": "execution_request", "id": project},
+            "subject": {"kind": "project", "id": project}, "ai_answer": {"value": "churned"}, "can_act": True,
+            "actions": [{"name": "answer", "operation": "POST /v1/execution-requests/{request_id}/target-confirmation",
+                         "path_params": {"request_id": project}, "allowed": True}]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path == "/v1/inbox/counts":
+            return httpx.Response(200, json={"needs_decision": 3, "applied_automatically": 0, "done": 2})
+        return httpx.Response(200, json={"tab": "done", "items": [item], "next_cursor": "c1.x.y", "limit": 1,
+                                         "viewer": {"is_agent": False, "can_decide": True,
+                                                    "can_approve_ai_policy": True}})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    page = api.inbox.list(tab="done", project_id=project, limit=1, cursor="c1.a.b")
+    assert page.next_cursor == "c1.x.y" and page.items[0].actions[0].allowed and page.viewer.can_decide
+    assert recorded[0].method == "GET" and recorded[0].url.path == "/v1/inbox"
+    assert dict(recorded[0].url.params) == {"tab": "done", "project_id": project, "cursor": "c1.a.b", "limit": "1"}
+    assert api.inbox.counts().needs_decision == 3 and recorded[1].url.path == "/v1/inbox/counts"
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.inbox.list(project_id="../x")
+    assert len(recorded) == 2

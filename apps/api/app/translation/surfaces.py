@@ -65,6 +65,9 @@ FRONTEND_SURFACES: tuple[FrontendSurface, ...] = (
             WEB_ROOT / "app" / "business",
             WEB_ROOT / "app" / "components" / "model-build",
             WEB_ROOT / "app" / "components" / "explorer",
+            # P4.1-A Developer Studio (developer/admin roles only).
+            WEB_ROOT / "app" / "(studio)",
+            WEB_ROOT / "app" / "components" / "studio-app",
         ),
         enforce_banned_terms=False,
     ),

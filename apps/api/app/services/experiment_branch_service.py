@@ -55,10 +55,12 @@ from app.domain.execution_requests import OPERATION_MODEL_BUILD, SOURCE_API
 from app.domain.experiment_changes import (
     CHANGE_KINDS,
     CHANGE_SET_SCHEMA_VERSION,
+    FEATURE_CHANGE_KINDS,
     INTENT_MAX_CHARS,
     NON_EXCLUDABLE_FAMILIES,
     ExperimentChangeSet,
 )
+from app.engine.features.contract import FeaturePlan, spec_for_transform, validate_feature_plan
 from app.engine.modeling.objective import (
     CONSTRAINT_METRICS,
     PRIMARY_METRICS,
@@ -209,6 +211,9 @@ class ParentContext:
     datetime_converted: set[str]
     numeric_dtype: set[str]
     observed_classes: list[str]
+    # The parent's prediction-time and entity/group columns (feature contract, P5.0-A).
+    time_column: str | None = None
+    group_column: str | None = None
 
 
 def _parent_overrides(parent: Experiment) -> dict[str, Any]:
@@ -319,6 +324,8 @@ def load_parent_context(db: Session, *, actor: User, workspace_id: UUID, parent_
         datetime_converted=set((result.get("feature_engineering") or {}).get("transformed_features") or []),
         numeric_dtype=_numeric_dtype_columns(result),
         observed_classes=_observed_classes(task_type, result),
+        time_column=str(development.get("time_column") or holdout.get("time_column") or "") or None,
+        group_column=str(development.get("group_column") or holdout.get("group_column") or "") or None,
     )
 
 
@@ -400,13 +407,41 @@ def _parent_applied(ctx: ParentContext, column: str, transform: str) -> bool:
     return column in ctx.numeric or column in ctx.categorical  # keep
 
 
-def _column_treatments(change_set: ExperimentChangeSet, ctx: ParentContext) -> dict[str, dict[str, Any]]:
+def _feature_contract(change_set: ExperimentChangeSet, ctx: ParentContext, proposed_by: str = "human") -> None:
+    """P5.0-A: every feature-affecting change must satisfy the feature-engineering
+    leakage contract (fold-local fitting, out-of-fold target encoding, strict as-of
+    cutoffs, in-CV selection) as the engine declares it executes the transform.
+    Allowlisted transforms satisfy it by construction; this is a tripwire so a
+    transform whose declaration drifts from the contract is refused, not trained
+    (conformance of the engine itself is shown by the contract tests' probes)."""
+
+    indexes = [index for index, change in enumerate(change_set.changes) if change.kind in FEATURE_CHANGE_KINDS]
+    if not indexes:
+        return
+    plan = FeaturePlan(
+        transforms=tuple(
+            spec_for_transform(change_set.changes[index].transform, change_set.changes[index].column)
+            for index in indexes
+        ),
+        proposed_by=proposed_by,  # type: ignore[arg-type]
+        target_column=ctx.target_column,
+        time_column=ctx.time_column,
+        group_column=ctx.group_column,
+    )
+    for violation in validate_feature_plan(plan):
+        index = indexes[violation.index] if violation.index is not None else indexes[0]
+        raise _bad(violation.code, violation.message, index, "transform")
+
+
+def _column_treatments(
+    change_set: ExperimentChangeSet, ctx: ParentContext, *, proposed_by: str = "human"
+) -> dict[str, dict[str, Any]]:
     """Per-column effect of the feature-transform changes (adds win over removes)."""
 
     adds: dict[str, dict[str, Any]] = {}
     removes: dict[str, dict[str, Any]] = {}
     for index, change in enumerate(change_set.changes):
-        if change.kind not in {"feature_transform_add", "feature_transform_remove"}:
+        if change.kind not in FEATURE_CHANGE_KINDS:
             continue
         column = _feature_column(change, index, ctx)
         target = adds if change.kind == "feature_transform_add" else removes
@@ -438,6 +473,8 @@ def _column_treatments(change_set: ExperimentChangeSet, ctx: ParentContext) -> d
         if "treatment" in spec and spec["treatment"] != treatment:
             raise _bad("conflicting_transforms", f"conflicting treatments for {column!r}", index)
         spec["treatment"] = treatment
+    # After the column checks above, so their typed errors keep precedence (P5.0-A).
+    _feature_contract(change_set, ctx, proposed_by)
     merged: dict[str, dict[str, Any]] = {}
     inherited = dict(ctx.overrides.get("columns") or {})
     for column in sorted(set(adds) | set(removes)):
@@ -555,9 +592,13 @@ def _objective(change_set: ExperimentChangeSet, ctx: ParentContext) -> dict[str,
 
 
 def materialize_branch(
-    change_set: ExperimentChangeSet, ctx: ParentContext
+    change_set: ExperimentChangeSet, ctx: ParentContext, *, proposed_by: str = "human"
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """Validate every change; return (branch_overrides, objective) = parent ⊕ change set."""
+    """Validate every change; return (branch_overrides, objective) = parent ⊕ change set.
+
+    ``proposed_by`` ("human" | "agent") only feeds the feature contract's plan-level
+    rules; it never changes the materialized overrides.
+    """
 
     overrides = copy.deepcopy(ctx.overrides)
     include = list(overrides.get("families_include") or [])
@@ -599,7 +640,7 @@ def materialize_branch(
             overrides["class_weighting"] = _class_weighting(change, index, replace(ctx, portfolio=portfolio))
     overrides["hyperparameters"] = {family: hyperparameters[family] for family in sorted(hyperparameters)}
     columns = dict(overrides.get("columns") or {})
-    for column, spec in _column_treatments(change_set, ctx).items():
+    for column, spec in _column_treatments(change_set, ctx, proposed_by=proposed_by).items():
         columns[column] = {**dict(columns.get(column) or {}), **spec}
     overrides["columns"] = {column: columns[column] for column in sorted(columns)}
     overrides.update(
@@ -676,7 +717,10 @@ def branch_experiment(
     ctx = load_parent_context(db, actor=actor, workspace_id=workspace_id, parent_id=parent_id)
     change_set = parse_change_set(changes)
     text = sanitize_intent(intent)
-    overrides, objective = materialize_branch(change_set, ctx)
+    # A service-token caller is an agent surface for the feature contract (P5.0-A).
+    overrides, objective = materialize_branch(
+        change_set, ctx, proposed_by="agent" if initiated_by_service_token_id is not None else "human"
+    )
     digest = overrides["change_set_digest"]
     key = (idempotency_key or "").strip()[:256] or None
     if key is not None:

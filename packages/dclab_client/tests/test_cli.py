@@ -197,6 +197,25 @@ def test_experiment_findings_table_json_and_old_runs(tmp_path):
     assert code == 0 and "no trust checks recorded" in out
 
 
+def test_experiment_operating_points_table_json_and_not_available(tmp_path):
+    point = {"threshold": 0.31, "tp": 30, "fp": 20, "fn": 10, "tn": 140, "precision": 0.6, "recall": 0.75,
+             "specificity": 0.875, "f1": 0.667, "accuracy": 0.85, "balanced_accuracy": 0.81, "flagged_share": 0.25,
+             "expected_cost": None, "what_this_means": "At threshold 0.31 the model flags 25% of rows"}
+    payload = {"experiment_id": EID, "status": "available", "min_class_rows": 20, "tie_break": "t",
+               "points": [point], "pareto": [point], "locked": {"threshold": 0.5}}
+    handler = lambda r: httpx.Response(200, json=payload)  # noqa: E731
+    code, out, _ = _run(["experiments", "operating-points", EID], handler, tmp_path, env=_env())
+    assert code == 0 and out.splitlines()[0].split()[:3] == ["THRESHOLD", "PRECISION", "RECALL"]
+    assert "0.31" in out
+    code, out, _ = _run(["experiments", "operating-points", EID, "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out)["locked"]["threshold"] == 0.5
+    old = {"experiment_id": EID, "status": "not_available", "reason": "no_operating_curve", "min_class_rows": 20,
+           "tie_break": "t"}
+    code, out, _ = _run(["experiments", "operating-points", EID], lambda r: httpx.Response(200, json=old), tmp_path,
+                        env=_env())
+    assert code == 0 and "not_available (no_operating_curve)" in out
+
+
 def test_branch_requires_one_change_source_and_valid_json(tmp_path):
     handler = lambda r: httpx.Response(200, json={})  # noqa: E731
     code, _, err = _run(["experiments", "branch", EID, "--intent", "x"], handler, tmp_path, env=_env())
@@ -333,3 +352,46 @@ def test_models_card_prints_markdown_or_json(tmp_path):
     assert code == 0 and json.loads(out)["drivers"]["features"][0]["column"] == "plan"
     code, out, _ = _run(["models", "card", EID, "--json", "--markdown"], handler, tmp_path, env=_env())
     assert code == 0 and out.startswith("# Model card")
+
+
+def test_activity_table_and_json(tmp_path):
+    item = {"id": f"run_queued:{EID}", "kind": "run_queued", "occurred_at": "2026-10-07T09:12:00Z",
+            "project_id": PID, "actor": {"kind": "person"}, "subject": {"kind": "experiment", "id": EID},
+            "summary": "Run #1 queued", "link": {"kind": "experiment", "id": EID}}
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"items": [item], "next_cursor": None, "limit": 5})
+
+    code, out, _ = _run(["activity", "--project", PID, "--limit", "5"], handler, tmp_path, env=_env())
+    assert code == 0 and out.splitlines()[0].split() == ["OCCURRED_AT", "KIND", "SUMMARY"]
+    assert "Run #1 queued" in out
+    assert seen[0].url.path == "/v1/activity" and seen[0].url.params["project_id"] == PID
+    code, out, _ = _run(["activity", "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out)["items"][0]["kind"] == "run_queued"
+
+
+def test_inbox_list_table_and_counts(tmp_path):
+    item = {"id": f"agent_proposal:{EID}", "kind": "agent_proposal", "tab": "needs_decision",
+            "occurred_at": "2026-10-07T09:12:00Z", "project_id": PID, "summary": "Experiment plan waiting for a decision",
+            "status": "proposed", "source": {"kind": "agent_proposal", "id": EID},
+            "subject": {"kind": "project", "id": PID}, "can_act": False, "actions": [
+                {"name": "accept", "operation": "POST /v1/proposals/{proposal_id}/accept",
+                 "path_params": {"proposal_id": EID}, "allowed": False}]}
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        if request.url.path == "/v1/inbox/counts":
+            return httpx.Response(200, json={"needs_decision": 1, "applied_automatically": 0, "done": 4})
+        return httpx.Response(200, json={"tab": "needs_decision", "items": [item], "next_cursor": None, "limit": 5,
+                                         "viewer": {"is_agent": False, "can_decide": False,
+                                                    "can_approve_ai_policy": False}})
+
+    code, out, _ = _run(["inbox", "list", "--project", PID, "--limit", "5"], handler, tmp_path, env=_env())
+    assert code == 0 and out.splitlines()[0].split() == ["OCCURRED_AT", "KIND", "SUMMARY", "CAN_ACT"]
+    assert "Experiment plan waiting for a decision" in out
+    assert seen[0].url.path == "/v1/inbox" and seen[0].url.params["tab"] == "needs_decision"
+    code, out, _ = _run(["inbox", "counts", "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out) == {"needs_decision": 1, "applied_automatically": 0, "done": 4}

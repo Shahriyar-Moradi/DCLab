@@ -1,5 +1,38 @@
 {
   "paths": {
+    "/v1/activity": {
+      "GET": {
+        "operationId": "read_activity_v1_activity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ActivityPage"
+      }
+    },
     "/v1/agent-reviews": {
       "POST": {
         "operationId": "request_agent_review_v1_agent_reviews_post",
@@ -293,7 +326,30 @@
           "422",
           "500"
         ],
-        "successSchema": "DatasetListItem"
+        "successSchema": "DatasetVersionRead"
+      }
+    },
+    "/v1/datasets/{dataset_id}/profile": {
+      "GET": {
+        "operationId": "read_dataset_profile_v1_datasets__dataset_id__profile_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "DatasetProfileRead"
       }
     },
     "/v1/decisions/{decision_id}": {
@@ -768,6 +824,58 @@
         "successSchema": "ExperimentFindingsRead"
       }
     },
+    "/v1/experiments/{experiment_id}/operating-point": {
+      "POST": {
+        "operationId": "choose_operating_point_v1_v1_experiments__experiment_id__operating_point_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "OperatingPointChoiceRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatingPointChoiceRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}/operating-points": {
+      "GET": {
+        "operationId": "read_operating_points_v1_experiments__experiment_id__operating_points_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatingPointsRead"
+      }
+    },
     "/v1/governance": {
       "GET": {
         "operationId": "read_governance_v1_governance_get",
@@ -863,6 +971,67 @@
           "500"
         ],
         "successSchema": "SwitchRead"
+      }
+    },
+    "/v1/inbox": {
+      "GET": {
+        "operationId": "read_inbox_v1_inbox_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "tab",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "InboxPage"
+      }
+    },
+    "/v1/inbox/counts": {
+      "GET": {
+        "operationId": "read_inbox_counts_v1_inbox_counts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "InboxCounts"
       }
     },
     "/v1/me": {
@@ -1843,9 +2012,96 @@
         "workspace_id"
       ]
     },
+    "DatasetPolicyRead": {
+      "properties": [
+        "ai_data_class",
+        "llm_exposure_policy",
+        "policy_complete",
+        "policy_revision",
+        "publication_state",
+        "residency_class",
+        "retention_class",
+        "sensitivity_class",
+        "upload_policy",
+        "workspace_ai_max_class"
+      ],
+      "required": [
+        "ai_data_class",
+        "llm_exposure_policy",
+        "policy_complete",
+        "policy_revision",
+        "publication_state",
+        "residency_class",
+        "retention_class",
+        "sensitivity_class",
+        "upload_policy",
+        "workspace_ai_max_class"
+      ]
+    },
+    "DatasetProfileColumnRead": {
+      "properties": [
+        "importance",
+        "leakage_excluded",
+        "leakage_reason",
+        "leakage_risk",
+        "missing_count",
+        "missing_fraction",
+        "name",
+        "ordinal_position",
+        "physical_dtype",
+        "role_reason",
+        "role_source",
+        "role_used",
+        "rule_role",
+        "transforms",
+        "unique_count",
+        "unique_fraction"
+      ],
+      "required": [
+        "importance",
+        "leakage_excluded",
+        "leakage_reason",
+        "leakage_risk",
+        "missing_count",
+        "missing_fraction",
+        "name",
+        "ordinal_position",
+        "physical_dtype",
+        "role_reason",
+        "role_source",
+        "role_used",
+        "rule_role",
+        "transforms",
+        "unique_count",
+        "unique_fraction"
+      ]
+    },
+    "DatasetProfileRead": {
+      "properties": [
+        "columns",
+        "dataset_id",
+        "experiment",
+        "importance_method",
+        "project_id",
+        "scope",
+        "split_plan",
+        "statistics_status"
+      ],
+      "required": [
+        "columns",
+        "dataset_id",
+        "experiment",
+        "importance_method",
+        "project_id",
+        "scope",
+        "split_plan",
+        "statistics_status"
+      ]
+    },
     "DatasetUploadRead": {
       "properties": [
         "column_count",
+        "columns",
         "content_digest",
         "created_at",
         "dataset_asset_id",
@@ -1874,6 +2130,35 @@
         "schema_digest",
         "size_bytes",
         "source_type",
+        "version",
+        "workspace_id"
+      ]
+    },
+    "DatasetVersionRead": {
+      "properties": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "name",
+        "policy",
+        "project_id",
+        "purpose",
+        "row_count",
+        "version",
+        "workspace_id"
+      ],
+      "required": [
+        "column_count",
+        "content_digest",
+        "created_at",
+        "dataset_asset_id",
+        "id",
+        "name",
+        "policy",
+        "project_id",
+        "row_count",
         "version",
         "workspace_id"
       ]

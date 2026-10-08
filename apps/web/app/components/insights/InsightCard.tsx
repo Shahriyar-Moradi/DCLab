@@ -4,12 +4,13 @@ import { Badge } from "@/app/components/ui/Badge";
 import { Card, Fact, FactGrid } from "@/app/components/ui/Card";
 import { formatMoney, formatTimestamp, toneFromConfidenceBand, type ClientInsight } from "@/lib/domain";
 
-export function InsightCard({ insight }: { insight: ClientInsight }) {
+/** `showSubjectId` is false on the client run page: the id is an internal identifier. */
+export function InsightCard({ insight, showSubjectId = true }: { insight: ClientInsight; showSubjectId?: boolean }) {
   const tone = toneFromConfidenceBand(insight.confidence_band);
   return (
     <article>
       <Card className="p-5">
-        <p className="font-mono text-data text-ink-muted">{insight.subject_id}</p>
+        {showSubjectId ? <p className="font-mono text-data text-ink-muted">{insight.subject_id}</p> : null}
         <h3 className="mt-2 font-sans text-section text-ink">{insight.headline}</h3>
         <div className="mt-3">
           <Badge tone={tone} emphasis="soft">

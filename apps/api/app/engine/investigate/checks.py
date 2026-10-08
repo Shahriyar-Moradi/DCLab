@@ -1,10 +1,12 @@
-"""The five core trust checks (P4.10-A).
+"""The five core trust checks (P4.10-A) and the orchestration of all fifteen (P5.1-A).
 
 Pure functions over ``RunEvidence`` (training rows and CV only). The final holdout is
 never an input: the duplicate check receives the test partition as 64-bit row hashes
 of the model columns, never values or labels, and ``run_evidence_from_result`` copies
-no ``test_*`` / holdout key of the run result. A check whose evidence is missing, or
-that raises, reports ``not_evaluated`` with a reason -- never ``pass``.
+no ``test_*`` / holdout key of the run result. The P5.1-A train -> test checks
+(``split_checks``) receive the test partition's FEATURE columns only. A check whose
+evidence is missing, or that raises, reports ``not_evaluated`` with a reason -- never
+``pass``.
 """
 
 from __future__ import annotations
@@ -85,7 +87,11 @@ LEAKAGE_RISKY = frozenset({"MEDIUM", "HIGH", "CRITICAL"})
 COLUMN_DETAIL_LIMIT = 20
 CLASS_WEIGHT_KEYS = ("class_weight", "auto_class_weights", "scale_pos_weight")
 DUMMY_FAMILIES = frozenset({"majority", "mean", "median"})
-CHECK_ORDER = ("target_leakage", "overfit_gap", "duplicate_rows", "class_imbalance", "implausible_score")
+CHECK_ORDER = (
+    "target_leakage", "overfit_gap", "duplicate_rows", "class_imbalance", "implausible_score",
+    "fold_instability", "calibration", "subgroup_gap", "multicollinearity", "feature_drift", "temporal_shift",
+    "missingness_shift", "contamination", "time_travel", "new_feature",
+)
 
 
 def _float(value: Any) -> float | None:
@@ -110,12 +116,32 @@ def _weighted(row: Mapping[str, Any]) -> bool:
     return any(params.get(key) not in (None, "", {}) for key in CLASS_WEIGHT_KEYS)
 
 
+def _as_of_features(result: Mapping[str, Any]) -> tuple[str, ...]:
+    """Modeled columns whose transform is an ``as_of_aggregate`` in the P5.0-A registry."""
+
+    from app.engine.features.contract import FEATURE_TRANSFORM_REGISTRY
+
+    out: list[str] = []
+    for action in _mapping(result.get("feature_engineering")).get("transformations") or []:
+        if not isinstance(action, Mapping):
+            continue
+        rules = (FEATURE_TRANSFORM_REGISTRY.get(str(action.get(key))) for key in ("transform", "transformation", "step"))
+        rule = next((item for item in rules if item is not None), None)
+        if rule is not None and rule.fit_scope == "as_of_aggregate":
+            out.extend(str(name) for name in action.get("output_columns") or action.get("columns") or [])
+    return tuple(dict.fromkeys(out))
+
+
 def run_evidence_from_result(result: Mapping[str, Any]) -> RunEvidence:
     """The allowlisted, holdout-free view of an open-ingest run result."""
 
     metric_plan, baseline = _mapping(result.get("metric_plan")), _mapping(result.get("baseline_comparison"))
     winner, profile = _mapping(result.get("best_single")), _mapping(result.get("problem_profile"))
     plan, task = _mapping(result.get("model_development_plan")), _mapping(result.get("task"))
+    split_plan, cv_plan = _mapping(result.get("holdout_plan")), _mapping(result.get("validation_plan"))
+    oof = _mapping(result.get("oof_evidence"))
+    if oof.get("candidate_id") not in (None, winner.get("candidate_id")):
+        oof = {}  # another candidate's predictions: not the winner's evidence
     assessment = plan.get("leakage_assessment")
     trained = [row for row in result.get("candidates") or [] if isinstance(row, Mapping) and row.get("status") == "trained"]
     baseline_row = next(
@@ -151,6 +177,13 @@ def run_evidence_from_result(result: Mapping[str, Any]) -> RunEvidence:
         leakage_risks=tuple(row for row in _mapping(assessment).get("findings") or [] if isinstance(row, Mapping)),
         leakage_exclusions=tuple(row for row in plan.get("excluded_features") or [] if isinstance(row, Mapping)),
         allowed_features=tuple(str(name) for name in plan.get("allowed_features") or []),
+        winner_fold_metrics=tuple(_numbers(row) for row in winner.get("fold_metrics") or [] if isinstance(row, Mapping)),
+        oof=oof,
+        split_strategy=str(split_plan.get("strategy") or "") or None,
+        time_column=str(plan.get("time_column") or split_plan.get("time_column") or cv_plan.get("time_column")
+                        or "") or None,
+        group_column=str(plan.get("group_column") or split_plan.get("group_column") or "") or None,
+        as_of_features=_as_of_features(result),
     )
 
 
@@ -330,14 +363,15 @@ def check_duplicate_rows(train_features: pd.DataFrame | None,
     identifying = sorted(c for c, k in distinct.items() if k >= NEAR_UNIQUE_RATIO * max(n_train, 1))
     log_capacity = sum(math.log(max(k, 1)) for k in distinct.values())
     fail_eligible = bool(identifying) or log_capacity >= math.log(DUPLICATE_CAPACITY_FACTOR * max(n_train + n_test, 1))
+    # Test-side counts are holdout scope (holdout_* keys: shown to people, stripped for agents).
     evidence = {
-        "feature_count": int(train_features.shape[1]), "train_rows": n_train, "test_rows": n_test,
+        "feature_count": int(train_features.shape[1]), "train_rows": n_train, "holdout_rows": n_test,
         "train_duplicate_rows": within, "train_duplicate_groups": groups,
         "train_duplicate_fraction": within / max(n_train, 1),
         "expected_train_duplicate_rows": round(expected_within, 1), "excess_train_duplicate_fraction": within_excess,
-        "train_test_duplicate_rows": across, "train_test_duplicate_fraction": across / max(n_test, 1),
-        "expected_train_test_duplicate_rows": round(expected_across, 1),
-        "excess_train_test_duplicate_fraction": across_excess,
+        "holdout_duplicate_rows": across, "holdout_duplicate_fraction": across / max(n_test, 1),
+        "expected_holdout_duplicate_rows": round(expected_across, 1),
+        "excess_holdout_duplicate_fraction": across_excess,
         "chance_model": "independent_columns", "near_unique_columns": identifying,
         "log10_distinct_combination_capacity": round(log_capacity / math.log(10), 2), "fail_eligible": fail_eligible,
     }
@@ -435,23 +469,73 @@ def _check_error(check: str, exc: BaseException) -> Finding:
     return _not_evaluated(check, "check_error", "check_error", {"error_type": type(exc).__name__})
 
 
+# Checks that read test-partition cells: their errors are logged by type only (a pandas
+# message can echo a cell value of the test rows).
+TEST_PARTITION_CHECKS = frozenset({"duplicate_rows", "feature_drift", "temporal_shift", "missingness_shift",
+                                   "contamination"})
+
+
 def _guarded(check: str, run: Callable[[], Finding]) -> Finding:
     try:
         return run()
     except Exception as exc:  # noqa: BLE001 - one broken check must not hide the others
-        logger.exception("trust check %s failed", check)
+        if check in TEST_PARTITION_CHECKS:
+            logger.error("trust check %s failed (%s)", check, type(exc).__name__)
+        else:
+            logger.exception("trust check %s failed", check)
         return _check_error(check, exc)
+
+
+def _once(supply: Callable[[], Any] | None) -> Callable[[], Any]:
+    """A lazy supplier evaluated at most once (its error re-raised to every caller)."""
+
+    box: list[tuple[Any, BaseException | None]] = []
+
+    def get() -> Any:
+        if supply is None:
+            return None
+        if not box:
+            try:
+                box.append((supply(), None))
+            except Exception as exc:  # noqa: BLE001 - reported per check by _guarded
+                box.append((None, exc))
+        value, error = box[0]
+        if error is not None:
+            raise error
+        return value
+
+    return get
 
 
 def investigate(ev: RunEvidence, *, train_features: pd.DataFrame | None = None,
                 test_row_hashes: Collection[int] | np.ndarray | None = None,
-                partition: Callable[[], Partition] | None = None) -> list[Finding]:
-    """All five checks in order, each guarded (an error is ``not_evaluated``, reason
-    ``check_error``). ``partition`` lazily supplies (train features, test row hashes)."""
+                partition: Callable[[], Partition] | None = None,
+                split: Callable[[], Any] | None = None,
+                time_travel: Callable[[], Any] | None = None,
+                parent: Callable[[], Any] | None = None) -> list[Finding]:
+    """Every check in ``CHECK_ORDER``, each guarded (an error is ``not_evaluated``, reason
+    ``check_error``). Lazy suppliers: ``partition`` -> (train features, test row hashes);
+    ``split`` -> ``SplitFeatures`` (features only on the test side); ``time_travel`` ->
+    ``TimeTravelProbe``; ``parent`` -> ``ParentEvidence``. Without ``partition`` the
+    duplicate check hashes ``split``'s test features."""
+
+    from app.engine.investigate import cv_checks, probe_checks, split_checks
+
+    get_split = _once(split)
 
     def duplicates() -> Finding:
-        features, hashes = partition() if partition is not None else (train_features, test_row_hashes)
+        if partition is not None:
+            features, hashes = partition()
+        elif split is not None:
+            pair = get_split()
+            features, hashes = (pair.train, row_hashes(pair.test)) if pair is not None else (None, None)
+        else:
+            features, hashes = train_features, test_row_hashes
         return check_duplicate_rows(features, hashes)
+
+    def multicollinearity() -> Finding:
+        pair = get_split()
+        return cv_checks.check_multicollinearity(pair.train if pair is not None else train_features, ev.winner_family)
 
     runs: dict[str, Callable[[], Finding]] = {
         "target_leakage": lambda: check_target_leakage(ev),
@@ -459,11 +543,25 @@ def investigate(ev: RunEvidence, *, train_features: pd.DataFrame | None = None,
         "duplicate_rows": duplicates,
         "class_imbalance": lambda: check_class_imbalance(ev),
         "implausible_score": lambda: check_implausible_score(ev),
+        "fold_instability": lambda: cv_checks.check_fold_instability(ev),
+        "calibration": lambda: cv_checks.check_calibration(ev),
+        "subgroup_gap": lambda: cv_checks.check_subgroup_gap(ev),
+        "multicollinearity": multicollinearity,
+        "feature_drift": lambda: split_checks.check_feature_drift(get_split(), ev.split_strategy),
+        "temporal_shift": lambda: split_checks.check_temporal_shift(get_split(), ev.split_strategy),
+        "missingness_shift": lambda: split_checks.check_missingness_shift(get_split()),
+        "contamination": lambda: split_checks.check_contamination(get_split(), ev.split_strategy),
+        # The replay is built only when there is something to replay.
+        "time_travel": lambda: probe_checks.check_time_travel(
+            ev, time_travel() if time_travel is not None and ev.time_column and ev.as_of_features else None),
+        "new_feature": lambda: probe_checks.check_new_feature(ev, parent() if parent is not None else None),
     }
     return [_guarded(check, runs[check]) for check in CHECK_ORDER]
 
 
-def investigate_result(result: Mapping[str, Any], *, partition: Callable[[], Partition] | None = None) -> list[Finding]:
+def investigate_result(result: Mapping[str, Any], *, partition: Callable[[], Partition] | None = None,
+                       split: Callable[[], Any] | None = None, time_travel: Callable[[], Any] | None = None,
+                       parent: Callable[[], Any] | None = None) -> list[Finding]:
     """``investigate`` over a run result; unreadable evidence -> every check not_evaluated."""
 
     try:
@@ -471,4 +569,4 @@ def investigate_result(result: Mapping[str, Any], *, partition: Callable[[], Par
     except Exception as exc:  # noqa: BLE001
         logger.exception("trust check evidence could not be read")
         return [_check_error(check, exc) for check in CHECK_ORDER]
-    return investigate(ev, partition=partition)
+    return investigate(ev, partition=partition, split=split, time_travel=time_travel, parent=parent)

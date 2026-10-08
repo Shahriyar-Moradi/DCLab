@@ -60,8 +60,14 @@ GRAPH_NODE_LIMIT = 40
 GRAPH_NODE_KINDS = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment",
                            "model_version"]
 RECENT_EXPERIMENTS = 10
-FINDING_LIMIT = 10
+FINDING_LIMIT = 20  # every trust check (15 since P5.1-A) fits
 FINDING_EVIDENCE_CHARS = 1500
+OPERATING_PARETO_LIMIT = 20
+OPERATING_POINT_KEYS = ("threshold", "tp", "fp", "fn", "tn", "precision", "recall", "specificity", "f1",
+                        "flagged_share", "expected_cost", "precision_interval", "recall_interval", "fold_spread",
+                        "what_this_means")
+OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked from many thresholds); never a "
+                  "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 
@@ -150,6 +156,43 @@ def _dataset(d: Any) -> dict[str, Any]:
     return {"id": str(d.id), "project_id": d.project_id and str(d.project_id), "name": untrusted(d.name, 200),
             "version": d.version, "row_count": d.row_count, "column_count": d.column_count,
             "content_digest": d.content_digest, "created_at": d.created_at.isoformat()}
+
+
+_PROFILE_NOTE = ("Never rows. Profile statistics are counts over the training rows of the current split plan only "
+                 "(scope training_rows); without one they are null (scope upload). Importance is CV-only.")
+PROFILE_COLUMN_LIMIT = 100
+
+
+def _policy(p: Any) -> dict[str, Any] | None:
+    if p is None:
+        return None
+    return {key: getattr(p, key) for key in (
+        "upload_policy", "publication_state", "sensitivity_class", "llm_exposure_policy", "retention_class",
+        "residency_class", "ai_data_class", "workspace_ai_max_class")} | {
+        "policy_revision": p.policy_revision, "policy_complete": p.policy_complete}
+
+
+def _profile(p: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``profile_summary``."""
+
+    plan, run = p.split_plan, p.experiment
+    columns = [{
+        "name": untrusted(c.name, 200), "ordinal_position": c.ordinal_position, "physical_dtype": c.physical_dtype,
+        "rule_role": c.rule_role, "role_used": c.role_used, "role_source": c.role_source,
+        "role_reason": untrusted(c.role_reason, 300), "missing_count": c.missing_count,
+        "missing_fraction": c.missing_fraction, "unique_count": c.unique_count, "unique_fraction": c.unique_fraction,
+        "transforms": list(c.transforms[:10]), "importance": c.importance, "leakage_excluded": c.leakage_excluded,
+        "leakage_risk": c.leakage_risk, "leakage_reason": untrusted(c.leakage_reason, 300),
+    } for c in p.columns[:PROFILE_COLUMN_LIMIT]]
+    return {
+        "scope": p.scope, "statistics_status": p.statistics_status,
+        "split_plan": plan and {"id": str(plan.id), "version": plan.version, "source": plan.source,
+                                "target_column": untrusted(plan.target_column, 200),
+                                "training_row_count": plan.training_row_count},
+        "experiment": run and {"id": str(run.id), "selection": run.selection, "created_at": run.created_at.isoformat()},
+        "importance_method": p.importance_method, "columns": columns,
+        "columns_omitted": max(0, len(p.columns) - PROFILE_COLUMN_LIMIT),
+    }
 
 
 _HOLDOUT_KEY = re.compile(r"holdout|final_test", re.IGNORECASE)
@@ -321,6 +364,46 @@ def _prediction(p: Any) -> dict[str, Any]:
     }
 
 
+def spread_sample(items: list[Any], limit: int) -> list[Any]:
+    """At most ``limit`` items, evenly spaced, both ends kept (same rule as the catalog)."""
+
+    if len(items) <= limit:
+        return list(items)
+    picks = dict.fromkeys(round(i * (len(items) - 1) / (limit - 1)) for i in range(limit))
+    return [items[i] for i in picks]
+
+
+def _operating_point(p: Any) -> dict[str, Any] | None:
+    if p is None:
+        return None
+    data = p.model_dump(mode="json")
+    return {key: data.get(key) for key in OPERATING_POINT_KEYS}
+
+
+def _operating_points(o: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``_operating_points_shape`` (out-of-fold figures only)."""
+
+    locked, chosen = o.locked, o.chosen
+    return {"operating_points": {
+        "experiment_id": str(o.experiment_id), "status": o.status, "reason": o.reason, "task_type": o.task_type,
+        "outcome_scope": o.outcome_scope, "basis": o.basis, "oof_folds": o.oof_folds, "rows": o.rows,
+        "positives": o.positives, "negatives": o.negatives, "min_class_rows": o.min_class_rows,
+        "cost_matrix": o.cost_matrix and o.cost_matrix.model_dump(mode="json"),
+        "candidate_count": len(o.points), "pareto_total": len(o.pareto),
+        "pareto": [_operating_point(p) for p in spread_sample(o.pareto, OPERATING_PARETO_LIMIT)],
+        "locked": locked and {
+            "threshold": locked.threshold, "source": locked.source, "constraint_status": locked.constraint_status,
+            "reproduced_from_curve": locked.reproduced_from_curve, "point": _operating_point(locked.point)},
+        "chosen": chosen and {
+            "decision_id": str(chosen.decision_id), "threshold": chosen.threshold, "method": chosen.method,
+            "objective": chosen.objective, "rationale": untrusted(chosen.rationale),
+            "recorded_at": chosen.recorded_at.isoformat(), "point": _operating_point(chosen.point),
+            "curve_changed": chosen.curve_changed, "applies_to_scoring": chosen.applies_to_scoring},
+        "scoring": o.scoring and {"threshold": o.scoring.threshold, "uses": o.scoring.uses},
+        "tie_break": o.tie_break, "note": OPERATING_NOTE,
+    }}
+
+
 # --- server --------------------------------------------------------------------------------
 
 
@@ -386,7 +469,10 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         def call() -> dict[str, Any]:
             note = "Row and column counts only; dataset rows are never returned."
             if dataset_id is not None:
-                return {"dataset": _dataset(api.datasets.get(uuid_arg(dataset_id, "dataset_id"))), "note": note}
+                did = uuid_arg(dataset_id, "dataset_id")
+                d = api.datasets.get(did)
+                profile = _profile(api.datasets.profile(did))
+                return {"dataset": _dataset(d), "policy": _policy(d.policy), "profile": profile, "note": _PROFILE_NOTE}
             pid = project_id and uuid_arg(project_id, "project_id")
             rows = [d for d in api.datasets.list(limit=LIST_LIMIT) if pid is None or str(d.project_id) == pid]
             return {"datasets": [_dataset(d) for d in rows], "note": note}
@@ -466,8 +552,12 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             return {"experiment_id": str(result.experiment_id), "investigated": result.investigated,
                     "version": result.version, "summary": result.summary.model_dump(mode="json"),
                     "checks": checks,
-                    "note": "Trust checks use training rows and CV folds only; never final-holdout values."}
+                    "note": "Trust checks use training rows and CV folds; checks comparing training and test "
+                            "rows report status only. Never a final-holdout value."}
         return run(call)
+
+    def get_operating_points(experiment_id: Id) -> CallToolResult:
+        return run(lambda: _operating_points(api.experiments.operating_points(uuid_arg(experiment_id, "experiment_id"))))
 
     def list_decisions(
         project_id: Id,
@@ -585,8 +675,10 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
     if settings.read_enabled:
         tool(inspect_project, read, "Project summary: refs, graph node counts, stale flags, recent experiments "
              "(omit project_id to list projects).")
-        tool(inspect_dataset, read, "Dataset version summary (row/column counts, digest); never rows. Omit dataset_id "
-             "to list datasets.")
+        tool(inspect_dataset, read, "Dataset version summary (row/column counts, digest); never rows. With "
+             "dataset_id: its upload policy and AI data class, and the column profile (type, rule role vs role used, "
+             "missing and unique counts over the training rows of the current split plan only, transforms, CV "
+             "importance). Omit dataset_id to list datasets.")
         tool(get_experiment, read, "One experiment: status, lineage, change set, locked winner CV metrics (never "
              "final-holdout values), diff vs parent.")
         tool(compare_experiments, read, "Side-by-side metrics of 2-10 experiments sharing one split plan.")
@@ -595,8 +687,16 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(get_evidence, read, "Evidence of an experiment: locked metrics, pipeline stage summaries and artifact "
              "digests (no rows, no file contents).")
         tool(get_findings, read, "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate "
-             "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | not_evaluated), "
-             "a plain-language message and the numbers behind it.")
+             "rows, class imbalance, a too-good-to-be-true CV score, fold instability, calibration, subgroup gaps, "
+             "multicollinearity, train-to-test feature drift, temporal shift, missingness shift, contamination "
+             "(those four compare training and test rows: status only, details are for people), time travel and "
+             "a single new feature's CV jump, each with status (pass | warning | fail | not_evaluated), a "
+             "plain-language message and the training-side numbers behind it.")
+        tool(get_operating_points, read, "Operating points of a binary experiment, all from the locked winner's "
+             "out-of-fold predictions: the threshold curve summary, up to 20 Pareto points over precision and recall "
+             "(and expected cost) with 95% intervals and fold spread, the locked threshold and the chosen operating "
+             "point with its reason. Never a final-evaluation value; choosing a point is a person's act in DCLab "
+             "Studio.")
         tool(list_decisions, read, "Append-only decision records of a project, newest first (next_cursor pages).")
         tool(list_proposals, read, "AI proposals of a project (agents, Jev review items, assistant tool calls), "
              "newest first, with status and whether a person can still decide: read-only; only a person accepts or "

@@ -145,13 +145,19 @@ def test_binary_card_and_agent_view(client, db_session, setup):  # noqa: F811
     again = client.get(f"/v1/model-versions/{mv_id}/card", headers=_h(setup))
     assert again.json()["markdown"] == card["markdown"]
 
-    # A read-scoped service token: same card except the withheld final evaluation.
+    # A read-scoped service token: same card except the withheld final evaluation and, for the
+    # checks that compare training and test rows (holdout scope, P5.1-A), the fixed risk text.
+    from app.domain.findings import AGENT_MESSAGES
+
     agent = _card(client, setup, mv_id, headers={"Authorization": f"Bearer {_token(db, setup)}"})
     assert agent["final_evaluation"]["status"] == "withheld" and agent["final_evaluation"]["metrics"] == {}
     assert agent["final_evaluation"]["value"] is None
     assert not {key for key in _keys(agent) if HOLDOUT_KEY.search(key)}
-    rest = {"final_evaluation", "markdown"}
+    rest = {"final_evaluation", "markdown", "risks"}
     assert {k: v for k, v in agent.items() if k not in rest} == {k: v for k, v in card.items() if k not in rest}
+    expected_risks = [{**item, "message": AGENT_MESSAGES.get(item["check"], item["message"])}
+                      for item in card["risks"]["items"]]
+    assert agent["risks"] == {**card["risks"], "items": expected_risks}
     _assert_no_final_values(agent, experiment)
 
     beta = _h(setup, setup["beta_admin"], workspace=setup["beta"])

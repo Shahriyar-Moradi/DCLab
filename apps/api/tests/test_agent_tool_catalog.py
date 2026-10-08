@@ -99,13 +99,14 @@ def test_catalog_is_the_mcp_tool_set_with_get_impact():
     tools = catalog()
     reads = {name for name, item in tools.items() if item.effect == "read"}
     writes = {name for name, item in tools.items() if item.effect == "proposal"}
-    assert len(tools) == 22 and len(reads) == 15 and len(writes) == 7 and "get_impact" in reads
+    assert len(tools) == 23 and len(reads) == 16 and len(writes) == 7 and "get_impact" in reads
     assert writes == {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
                       "predict", "record_decision", "request_agent_review"}
     assert {item.name for item in visible("mcp")} == set(tools)
     # P6.6-A: the assistant surface is unchanged (no accept, no proposal listing, no review request).
+    # P5.2-A: get_operating_points is MCP-only (the lead agent's released prompt lists its tools).
     assert {item.name for item in visible("assistant")} == set(tools) - {
-        "accept_proposal", "list_proposals", "request_agent_review", "inspect_governance"}
+        "accept_proposal", "list_proposals", "request_agent_review", "inspect_governance", "get_operating_points"}
     assert tools["accept_proposal"].surfaces == {"mcp"}  # a hand-off; the lead agent never gets it
     assert tools["list_proposals"].surfaces == {"mcp"} and "accept_proposal" not in {
         item.name for item in visible("studio_forms")}
@@ -303,6 +304,13 @@ def trained_project(client, db, st, tmp_path) -> SimpleNamespace:  # noqa: F811
     db.expire_all()
     job = db.scalar(select(MlJob).where(MlJob.target_id == UUID(str(prediction.id))))
     assert process_next_job(db, job_id=job.id, claimed_by="tool-test").status == "completed"
+    # P5.2-A: a person's operating point on the root run (its reason is workspace text).
+    session = {"Authorization": f"Bearer {create_access_token(st.admin)}", "X-Workspace-Id": str(st.alpha.id)}
+    points = client.get(f"/v1/experiments/{root.id}/operating-points", headers=session).json()
+    assert points["status"] == "available", points["reason"]
+    chosen = client.post(f"/v1/experiments/{root.id}/operating-point", headers={**session, "Idempotency-Key": "op-1"},
+                         json={"threshold": points["pareto"][0]["threshold"], "reason": "staffing allows more flags"})
+    assert chosen.status_code == 201, chosen.text
     agent = DCLabClient(BASE, token=_token(db, st, scopes=ALL_SCOPES), http=client)
     decision = agent.projects.create_decision(project.id, decision_type="experiment_accepted",
                                               subject_kind="experiment", subject_id=branch.id,
@@ -325,6 +333,7 @@ def _read_calls(t: SimpleNamespace) -> list[tuple[str, dict]]:
         ("get_model_card", {"model_version_id": t.root_mv}), ("get_prediction", {"prediction_id": t.prediction}),
         ("get_impact", {"kind": "experiment", "node_id": t.root}), ("accept_proposal", {"proposal_id": t.decision}),
         ("list_proposals", {"project_id": t.project}), ("inspect_governance", {}),
+        ("get_operating_points", {"experiment_id": t.root}),
     ]
 
 

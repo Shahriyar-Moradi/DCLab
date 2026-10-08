@@ -77,10 +77,10 @@
         "context_digest": "<digest>",
         "dropped": {
           "capped": 0,
-          "class_or_scope": 0,
+          "class_or_scope": 2,
           "unavailable": 0
         },
-        "fields": 23,
+        "fields": 24,
         "reads": [
           "inspect_project",
           "inspect_dataset",
@@ -97,7 +97,7 @@
             "sample_values": 0
           },
           "effective_data_class": "metadata",
-          "fields_kept": 17
+          "fields_kept": 18
         }
       },
       "type": "context_built"
@@ -113,7 +113,7 @@
     {
       "payload": {
         "call": 1,
-        "fields": 23,
+        "fields": 24,
         "notes": 0,
         "request_digest": "<digest>",
         "transcript_items": 0
@@ -124,13 +124,13 @@
       "payload": {
         "cache_hit": false,
         "call": 1,
-        "cost_micros": 4264,
+        "cost_micros": 4446,
         "invocation_id": "<id:1>",
         "ok": true,
         "output_digest": "<digest>",
         "refusal": null,
         "usage": {
-          "input": 1867,
+          "input": 1958,
           "output": 53
         }
       },
@@ -148,8 +148,8 @@
     },
     {
       "payload": {
-        "cost_micros": 4264,
-        "freed_micros": 95736
+        "cost_micros": 4446,
+        "freed_micros": 95554
       },
       "type": "budget_settled"
     },
@@ -170,7 +170,7 @@
           "cache_hits": 0,
           "calls": 1,
           "steps": 1,
-          "tokens_in": 1867,
+          "tokens_in": 1958,
           "tokens_out": 53,
           "tool_calls": 0,
           "wall_ms": "<volatile>"
@@ -183,7 +183,7 @@
     {
       "cache_hit": false,
       "data_class": "metadata",
-      "input_tokens": 1867,
+      "input_tokens": 1958,
       "llm_used": true,
       "model": "gpt-6.1-sol",
       "outcome_scope": "none",

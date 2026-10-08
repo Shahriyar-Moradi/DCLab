@@ -100,7 +100,10 @@ test("Model Build inspector, live stages, code, candidates, and downloads", asyn
     binaryCsv(),
     "outcome",
   );
-  await expect(page).toHaveURL(new RegExp(`/lab/runs/${String(upload.run_id)}`));
+  // P4.1-A: development roles continue on the project experiment page (same live stages).
+  await expect(page).toHaveURL(
+    new RegExp(`/lab/runs/${String(upload.run_id)}|/projects/[0-9a-f-]{36}/experiments/[0-9a-f-]{36}`),
+  );
 
   const modelBuild = page.getByRole("heading", { name: "Model build", exact: true });
   await expect(modelBuild).toBeVisible({ timeout: 120_000 });

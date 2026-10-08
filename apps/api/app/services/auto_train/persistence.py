@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
@@ -71,33 +72,120 @@ class PersistenceOutput(BaseModel):
     log: dict[str, Any]
 
 
-def _investigation(inp: PersistenceInput, result: dict[str, Any]) -> dict[str, Any]:
-    """The five trust checks of this run, each guarded (a failing check reads
-    ``not_evaluated``). Test rows enter only as row hashes of the model columns
-    (duplicate check); no check reads a holdout value or label."""
+def _parent_evidence(db: Any, experiment: Any) -> Any:
+    """The parent experiment's stored CV (same workspace) for ``new_feature``; ``None`` for
+    a root run. Only CV aggregates, per-fold CV metrics, features and family are read."""
 
-    from app.engine.investigate import investigate_result, investigation_payload, row_hashes
+    from app.engine.investigate import ParentEvidence
+
+    parent_id = getattr(experiment, "parent_pipeline_run_id", None)
+    if db is None or parent_id is None:
+        return None
+    row = db.scalar(select(Experiment).where(
+        Experiment.workspace_id == experiment.workspace_id, Experiment.id == parent_id))
+    stored = row.result if row is not None and isinstance(row.result, dict) else None
+    if stored is None:
+        return None
+    winner = stored.get("best_single") if isinstance(stored.get("best_single"), dict) else {}
+
+    def numbers(value: Any) -> dict[str, float]:
+        values = value if isinstance(value, dict) else {}
+        return {str(k): float(v) for k, v in values.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+
+    return ParentEvidence(
+        experiment_id=str(row.id),
+        same_split_plan=experiment.split_plan_id is not None and experiment.split_plan_id == row.split_plan_id,
+        primary_metric=(stored.get("baseline_comparison") or {}).get("metric")
+        or (stored.get("metric_plan") or {}).get("primary_metric"),
+        features=tuple(str(name) for name in winner.get("features") or []),
+        cv=numbers(winner.get("cv_mean")), cv_std=numbers(winner.get("cv_std")),
+        winner_family=winner.get("model_family"),
+        fold_metrics=tuple(numbers(item) for item in winner.get("fold_metrics") or [] if isinstance(item, dict)),
+    )
+
+
+def _investigation(inp: PersistenceInput, result: dict[str, Any], db: Any = None) -> dict[str, Any]:
+    """The trust checks of this run, each guarded (a failing check reads
+    ``not_evaluated``). Test rows enter only as the model / time / group columns of the
+    split checks and as row hashes for the duplicate check, never the target column; no
+    check reads a holdout label, prediction or metric, and test-derived numbers are stored
+    as holdout scope. ``new_feature`` reads the parent's stored CV (same workspace), once,
+    in a savepoint so a database error cannot poison the run's session."""
+
+    from app.engine.investigate import SplitFeatures, investigate_result, investigation_payload
     from app.engine.validation.splits import SOURCE_ROW_COLUMN
 
-    def partition() -> tuple[pd.DataFrame | None, Any]:
-        frame = inp.frame
+    frame = inp.frame
+    target = (result.get("task") or {}).get("target")
+
+    def plan_column(key: str, fallback: str | None = None) -> str | None:
+        holdout = result.get("holdout_plan") if isinstance(result.get("holdout_plan"), dict) else {}
+        from app.engine.modeling.holdout_planner import GROUP_HOLDOUT_STRATEGIES
+
+        # A group-disjoint holdout is checked on the holdout plan's own group column first.
+        grouped = key == "group_column" and holdout.get("strategy") in GROUP_HOLDOUT_STRATEGIES
+        order = ("holdout_plan", "model_development_plan", "validation_plan") if grouped else (
+            "model_development_plan", "holdout_plan", "validation_plan")
+        for source in order:
+            name = (result.get(source) or {}).get(key) if isinstance(result.get(source), dict) else None
+            if name and name in frame.columns and name != target:
+                return str(name)
+        return fallback if fallback and fallback in frame.columns and fallback != target else None
+
+    def split_features() -> SplitFeatures | None:
+        """One copy of each partition's model columns (the duplicate check hashes the test side)."""
+
         split = result.get("split") if isinstance(result.get("split"), dict) else {}
         train_rows, test_rows = split.get("train_source_rows"), split.get("test_source_rows")
         if (train_rows is None or test_rows is None) and inp.split_assignment is not None:
             train_rows, test_rows = list(inp.split_assignment.train_folds), list(inp.split_assignment.holdout_rows)
         winner = result.get("best_single") if isinstance(result.get("best_single"), dict) else {}
-        target = (result.get("task") or {}).get("target")
         columns = [
             name for name in (winner.get("features") or inp.modeled_cols)
             if name in frame.columns and name not in {SOURCE_ROW_COLUMN, target}
         ]
         if not columns or train_rows is None or test_rows is None:
-            return None, None
+            return None
         source = frame[SOURCE_ROW_COLUMN] if SOURCE_ROW_COLUMN in frame.columns else frame.index.to_series()
-        train_features = frame.loc[source.isin(set(train_rows)).to_numpy(), columns]
-        return train_features, row_hashes(frame.loc[source.isin(set(test_rows)).to_numpy(), columns])
+        train_mask, test_mask = source.isin(set(train_rows)).to_numpy(), source.isin(set(test_rows)).to_numpy()
+        time_column, group_column = plan_column("time_column"), plan_column("group_column", inp.entity_column)
 
-    return investigation_payload(investigate_result(result, partition=partition))
+        def times(mask: Any) -> Any:
+            values = frame.loc[mask, time_column]
+            if time_column in inp.transformed_datetime and pd.api.types.is_numeric_dtype(values):
+                return pd.to_datetime(values, unit="s", errors="coerce")  # datetime_extract: unix seconds
+            return values
+
+        return SplitFeatures(
+            # Test side: model / time / group columns only -- the target column never leaves the frame.
+            train=frame.loc[train_mask, columns], test=frame.loc[test_mask, columns],
+            train_labels=frame.loc[train_mask, target] if target in frame.columns else None,
+            time_column=time_column,
+            train_times=times(train_mask) if time_column else None,
+            test_times=times(test_mask) if time_column else None,
+            group_column=group_column,
+            train_groups=frame.loc[train_mask, group_column] if group_column else None,
+            test_groups=frame.loc[test_mask, group_column] if group_column else None,
+            # The whole time column, read once by the check (one date format for both sides).
+            all_times=times(np.ones(len(frame), dtype=bool)) if time_column else None,
+            time_masks=(train_mask, test_mask) if time_column else None,
+        )
+
+    parent_value: Any = None
+    parent_error: Exception | None = None
+    if db is not None and getattr(inp.experiment, "parent_pipeline_run_id", None) is not None:
+        try:
+            with db.begin_nested():  # a failed read rolls back to the savepoint, not the run
+                parent_value = _parent_evidence(db, inp.experiment)
+        except Exception as exc:  # noqa: BLE001 - reported by the guarded check as check_error
+            parent_error = exc
+
+    def parent() -> Any:
+        if parent_error is not None:
+            raise parent_error
+        return parent_value
+
+    return investigation_payload(investigate_result(result, split=split_features, parent=parent))
 
 
 def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput:
@@ -221,7 +309,7 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
     if not reuse_locked_run:
         # P4.10-A trust checks: stored on the result now and as findings rows with the
         # lineage below, both before the evidence lock.
-        result["investigation"] = _investigation(inp, result)
+        result["investigation"] = _investigation(inp, result, db)
         # P6.9-A: the AI policy digest and decision-point outcomes (AI off: absent).
         decision_evidence = decision_points(ctx).evidence()
         if decision_evidence is not None:

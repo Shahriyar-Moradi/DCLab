@@ -1,5 +1,6 @@
-"""The catalog's tool definitions: the 15 read tools MCP registers (incl. ``get_impact``, ``list_proposals``
-and the MCP-only ``accept_proposal`` hand-off) and the 7 write tools (proposals)."""
+"""The catalog's tool definitions: the 16 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
+the MCP-only ``get_operating_points`` (P5.2-A) and the MCP-only ``accept_proposal`` hand-off) and the 7 write
+tools (proposals)."""
 
 from __future__ import annotations
 
@@ -40,11 +41,15 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           ("app.services.project_service.list_projects", "app.services.project_service.get_project",
            "app.services.graph_service.project_graph", f"{_EXP}.list_experiments"),
           r._inspect_project_fetch, r._inspect_project_shape),
-    _read("inspect_dataset", "Dataset version summary (row/column counts, digest); never rows. Omit dataset_id "
-          "to list datasets.", r.InspectDatasetInput, ("GET /v1/datasets", "GET /v1/datasets/{dataset_id}"),
+    _read("inspect_dataset", "Dataset version summary (row/column counts, digest); never rows. With dataset_id: "
+          "its upload policy and AI data class, and the column profile (type, rule role vs role used, missing and "
+          "unique counts over the training rows of the current split plan only, transforms, CV importance). "
+          "Omit dataset_id to list datasets.", r.InspectDatasetInput,
+          ("GET /v1/datasets", "GET /v1/datasets/{dataset_id}", "GET /v1/datasets/{dataset_id}/profile"),
           ("app.services.technical_explorer_service.list_datasets",
-           "app.services.technical_explorer_service.get_dataset"),
-          r._inspect_dataset_fetch, r._inspect_dataset_shape),
+           "app.services.dataset_profile_service.dataset_read",
+           "app.services.dataset_profile_service.dataset_profile"),
+          r._inspect_dataset_fetch, r._inspect_dataset_shape, aggregates=True),
     _read("get_experiment", "One experiment: status, lineage, change set, locked winner CV metrics (never "
           "final-holdout values), diff vs parent.", r.ExperimentInput, ("GET /v1/experiments/{experiment_id}",),
           (f"{_EXP}.experiment_read",), r._experiment_fetch, r._get_experiment_shape, aggregates=True),
@@ -65,10 +70,20 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
            "app.services.artifact_service.list_artifacts"),
           r._evidence_fetch, r._evidence_shape, aggregates=True),
     _read("get_findings", "Trust checks of an experiment: target leakage, train-vs-CV overfit gap, duplicate "
-          "rows, class imbalance and a too-good-to-be-true CV score, each with status (pass | warning | fail | "
-          "not_evaluated), a plain-language message and the numbers behind it.", r.ExperimentInput,
+          "rows, class imbalance, a too-good-to-be-true CV score, fold instability, calibration, subgroup gaps, "
+          "multicollinearity, train-to-test feature drift, temporal shift, missingness shift, contamination "
+          "(those four compare training and test rows: status only, details are for people), time travel and "
+          "a single new feature's CV jump, each with status (pass | warning | fail | not_evaluated), a "
+          "plain-language message and the training-side numbers behind it.", r.ExperimentInput,
           ("GET /v1/experiments/{experiment_id}/findings",),
           (f"{_EXP}.experiment_findings",), r._findings_fetch, r._findings_shape, aggregates=True),
+    _read("get_operating_points", "Operating points of a binary experiment, all from the locked winner's "
+          "out-of-fold predictions: the threshold curve summary, up to 20 Pareto points over precision and recall "
+          "(and expected cost) with 95% intervals and fold spread, the locked threshold and the chosen operating "
+          "point with its reason. Never a final-evaluation value; choosing a point is a person's act in DCLab "
+          "Studio.", r.ExperimentInput, ("GET /v1/experiments/{experiment_id}/operating-points",),
+          ("app.services.operating_point_service.operating_points_read",), r._operating_points_fetch,
+          r._operating_points_shape, surfaces=frozenset({"mcp"}), aggregates=True),
     _read("list_decisions", "Append-only decision records of a project, newest first (next_cursor pages).",
           r.ListDecisionsInput, ("GET /v1/projects/{project_id}/decisions",),
           ("app.services.decision_record_service.list_decisions",), r._decisions_fetch, r._decisions_shape,
