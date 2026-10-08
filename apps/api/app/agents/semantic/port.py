@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -58,6 +58,15 @@ class SemanticAsk(_Frozen):
     source_datasets: tuple[UUID, ...] = Field(default=(), max_length=64)
     source_columns: tuple[UUID, ...] = Field(default=(), max_length=512)
     budget: BudgetReservation | None = None  # one pre-reservation per run; else one per ask
+    # P6.9-A: the levels snapshotted at job claim, per §1b answer kind ("*" = no kind);
+    # None reads the live ``effective_level``. Inside a run the evidence partition is
+    # ``train`` (ADR 0008 §2c); None takes the registry's.
+    levels: dict[str, int] | None = None
+    evidence_partition: Literal["metadata", "train"] | None = None
+    # False only for R3 evaluation asks: the gateway skips the cache lookup, so every ask reaches
+    # the provider; the answer rows are still written (ledger + evaluation samples) and may serve
+    # later cached asks inside the evaluation workspace.
+    cache: bool = True
 
 
 @dataclass(frozen=True)
@@ -88,6 +97,7 @@ class SemanticOutcome:
 
 
 Validator = Callable[[Subject, Any], bool]  # accepts the Jev value of an L2 disagreement
+NO_KIND = "*"  # ``SemanticAsk.levels`` key of an answer without a §1b kind
 
 
 class SemanticPort(Protocol):
@@ -116,4 +126,5 @@ def semantic_port(gateway: Any = None, *, settings: Any = None) -> SemanticPort:
     return JevSemanticPort(gateway, settings=settings)
 
 
-__all__ = ["Resolution", "SemanticAsk", "SemanticOutcome", "SemanticPort", "Subject", "Validator", "semantic_port"]
+__all__ = ["NO_KIND", "Resolution", "SemanticAsk", "SemanticOutcome", "SemanticPort", "Subject", "Validator",
+           "semantic_port"]

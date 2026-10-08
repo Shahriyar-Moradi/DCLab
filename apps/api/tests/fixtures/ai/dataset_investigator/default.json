@@ -1,0 +1,95 @@
+{
+  "agent": "dataset_investigator",
+  "case": "default",
+  "exchanges": [
+    {
+      "input_digest": "5ed9dc4cd8cc014a0e92dd6dcbb7a672d588808c4b4319c2a0ad17eca4569726",
+      "instructions_digest": "f7f8fc307580447e911ae727e88c48c29cbca511714df9865841f2e7bcf27b3a",
+      "model": "gpt-6-luna",
+      "output": {
+        "confidence": 0.6,
+        "leakage_suspects": [],
+        "missing_values": [
+          {
+            "action": "impute_median",
+            "column": "feature",
+            "reason": "numeric"
+          }
+        ],
+        "questions": [
+          "Is signup_date known at prediction time?"
+        ],
+        "target_candidates": [
+          {
+            "column": "target",
+            "rank": 1,
+            "reason": "binary outcome name"
+          }
+        ]
+      },
+      "output_schema_digest": "6461895e6acb5bf155177777b61c125d5a48d0ce8f63bd34010c35a856e47987",
+      "payload_digest": "77ba75904d58b27d4850290fbf523f2554e855857b2894f023323314c04e6ddb",
+      "payload_keys": [
+        "$.context",
+        "$.context[].data_class",
+        "$.context[].key",
+        "$.context[].outcome_scope",
+        "$.context[].value",
+        "$.context[].value.column_count",
+        "$.context[].value.counts_by_kind",
+        "$.context[].value.counts_by_kind.dataset_version",
+        "$.context[].value.counts_by_kind.experiment",
+        "$.context[].value.counts_by_kind.feature_recipe",
+        "$.context[].value.counts_by_kind.model_version",
+        "$.context[].value.counts_by_kind.problem_spec",
+        "$.context[].value.counts_by_kind.split_plan",
+        "$.context[].value.created_at",
+        "$.context[].value.description",
+        "$.context[].value.edge_count",
+        "$.context[].value.id",
+        "$.context[].value.name",
+        "$.context[].value.name.untrusted_text",
+        "$.context[].value.nodes",
+        "$.context[].value.nodes[].intent",
+        "$.context[].value.nodes[].key",
+        "$.context[].value.nodes[].key.dataset_version:<id>",
+        "$.context[].value.nodes[].key.experiment:<id>",
+        "$.context[].value.nodes[].key.feature_recipe:<id>",
+        "$.context[].value.nodes[].key.model_version:<id>",
+        "$.context[].value.nodes[].key.problem_spec:<id>",
+        "$.context[].value.nodes[].key.split_plan:<id>",
+        "$.context[].value.nodes[].stale",
+        "$.context[].value.nodes[].status",
+        "$.context[].value.nodes[].status.locked",
+        "$.context[].value.nodes_omitted",
+        "$.context[].value.project_id",
+        "$.context[].value.refs_initialized",
+        "$.context[].value.row_count",
+        "$.context[].value.slug",
+        "$.context[].value.slug.untrusted_text",
+        "$.context[].value.status",
+        "$.context[].value.status.active",
+        "$.context[].value.truncated",
+        "$.context[].value[].created_at",
+        "$.context[].value[].dtype",
+        "$.context[].value[].dtype.datetime",
+        "$.context[].value[].dtype.numeric",
+        "$.context[].value[].dtype.text_or_category",
+        "$.context[].value[].has_change_set",
+        "$.context[].value[].has_missing",
+        "$.context[].value[].id",
+        "$.context[].value[].intent",
+        "$.context[].value[].parent_experiment_id",
+        "$.context[].value[].position",
+        "$.context[].value[].role",
+        "$.context[].value[].semantic_type",
+        "$.context[].value[].status",
+        "$.context[].value[].status.completed",
+        "$.transcript",
+        "$.user_text"
+      ],
+      "purpose": "target.column"
+    }
+  ],
+  "schema_version": 1
+}

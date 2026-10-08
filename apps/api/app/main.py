@@ -40,8 +40,11 @@ from app.api.technical_explorer import (
     workspace_router as technical_explorer_workspace_router,
 )
 from app.api.v1 import router as v1_router
+from app.api.v1_assistant import router as v1_assistant_router
 from app.api.v1_decisions import router as v1_decisions_router
+from app.api.v1_proposals import router as v1_proposals_router
 from app.api.v1_experiments import router as v1_experiments_router
+from app.api.v1_governance import router as v1_governance_router
 from app.api.v1_predictions import router as v1_predictions_router
 from app.api.v1_service_tokens import router as v1_service_tokens_router
 from app.api.v1_conventions import install_v1_conventions
@@ -123,6 +126,9 @@ app.include_router(v1_experiments_router)
 app.include_router(v1_decisions_router)
 app.include_router(v1_predictions_router)
 app.include_router(v1_service_tokens_router)
+app.include_router(v1_assistant_router)
+app.include_router(v1_proposals_router)
+app.include_router(v1_governance_router)
 app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(scoped_workspaces_router)

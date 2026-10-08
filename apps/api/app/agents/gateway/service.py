@@ -31,7 +31,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -58,7 +58,7 @@ from app.agents.gateway.contract import (
 from app.agents.gateway.limits import LIMITS, GatewayLimits
 from app.agents.gateway.providers import Provider, ProviderCall, ProviderError, default_providers
 from app.agents.gateway.router import Route, route
-from app.agents.governance.decision_points import REGISTRY
+from app.agents.governance.decision_points import REGISTRY, registry_key_for
 from app.agents.governance.policy import PolicyUnavailable, effective_policy
 from app.agents.governance.switches import effective_switches
 from app.agents.prompt_releases import (
@@ -243,6 +243,7 @@ class _SemanticSteps:
 
     def __init__(self, service: "GatewayService", request: SemanticDecisionRequest) -> None:
         self.service, self.request = service, request
+        self.use_cache = request.cache
         self.release = release_for(request.purpose, request.release_version)
         self.question_keys: list[str] = []
 
@@ -322,6 +323,7 @@ class _SemanticSteps:
         if len(cache.canonical_json(state).encode()) > releases.MAX_STATE_BYTES:
             raise GatewayRefusal("policy_denied", "Jev state exceeds 8 KB")
         call.summary = {"effective_data_class": allowed, "questions": len(r.questions), "untrusted_marked": True,
+                        "user_text_present": bool(user),  # audit (P6.7-A security follow-up)
                         "input_evidence_persisted": False, "raw_rows_stored": False, "secrets_stored": False}
         return {"purpose": r.purpose, "state": state, "user_text": [{"untrusted_text": t} for t in user],
                 "questions": [
@@ -575,13 +577,16 @@ class GatewayService:
         # 2. switches (the provider switch is checked again once the route is known)
         switches = effective_switches(db, r.workspace_id)
         ai_enabled = bool(self._settings().ai_enabled)
-        blocking = switches.blocking(ai_enabled=ai_enabled, agent_key=call.agent_key, purpose=r.purpose)
+        # A legacy purpose also obeys the switch of its registry point (P6.9-A, ADR 0008 §1).
+        purposes = dict.fromkeys(p for p in (r.purpose, registry_key_for(r.purpose)) if p)
+        blocking = next((b for p in purposes if (b := switches.blocking(
+            ai_enabled=ai_enabled, agent_key=call.agent_key, purpose=p))), None)
         if blocking:
             raise GatewayRefusal("kill_switch", "AI is switched off", scope=blocking)
         # 3. router, provider adapter, prompt release
         call.route = route(policy, role=call.role, agent_key=call.agent_key, requested=steps.requested_model)
-        blocking = switches.blocking(ai_enabled=ai_enabled, agent_key=call.agent_key,
-                                     provider=call.route.provider, purpose=r.purpose)
+        blocking = next((b for p in purposes if (b := switches.blocking(
+            ai_enabled=ai_enabled, agent_key=call.agent_key, provider=call.route.provider, purpose=p))), None)
         if blocking:
             raise GatewayRefusal("kill_switch", "AI is switched off", scope=blocking)
         call.adapter = self._provider(call.route.provider)
@@ -633,8 +638,9 @@ class GatewayService:
         # 8 (prelude). The pending row is durable before anything leaves the process.
         pending = ledger.insert_pending(db, call.entry(llm_used=True, provider=call.adapter.name),
                                         worst_case_micros=worst)
-        return _Prepared(pending_id=pending.id, provider_call=steps.provider_call(call, instructions, input_json),
-                         worst_micros=worst)
+        provider_call = replace(steps.provider_call(call, instructions, input_json), input_digest=call.digest,
+                                invocation_id=pending.id)
+        return _Prepared(pending_id=pending.id, provider_call=provider_call, worst_micros=worst)
 
     @staticmethod
     def _parse_cached(steps: Any, hit: Any) -> BaseModel | None:

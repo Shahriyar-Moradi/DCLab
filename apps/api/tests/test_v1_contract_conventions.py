@@ -35,8 +35,11 @@ from test_data_model_lineage import make_lineage_setup
 ENVELOPE_KEYS = {"code", "message", "retryable", "request_id", "details"}
 UUID_ZERO = "00000000-0000-0000-0000-000000000000"
 WORKSPACE_FREE = {"/v1/me", "/v1/workspaces"}
-# P3.2-A: signed-in sessions only; any Authorization header is 403 session_required.
-SESSION_ONLY = {"/v1/service-tokens", "/v1/service-tokens/{token_id}/revoke"}
+# Signed-in sessions only; any Authorization header is a 403 with this code (P3.2-A; P6.3-B2).
+SESSION_ONLY = {"/v1/service-tokens": "session_required", "/v1/service-tokens/{token_id}/revoke": "session_required",
+                **{path: "human_session_required" for path in (
+                    "/v1/assistant/threads", "/v1/assistant/threads/{thread_id}",
+                    "/v1/assistant/threads/{thread_id}/messages")}}
 
 
 def _operations() -> list[tuple[str, str]]:
@@ -60,7 +63,9 @@ def _concrete(path: str, fill: str = UUID_ZERO) -> str:
 def _call(client, method: str, path: str, **kwargs):
     if method == "POST":
         body = {}
-        if "confirmation" in path:
+        if path.endswith("/split-confirmation"):
+            body = {"answer": "keep_rule_split"}
+        elif "confirmation" in path:
             body = {"target_column": "y"}
         elif path.endswith("/problem-specs"):
             body = {"task_type": "binary", "business_objective": "x"}
@@ -69,6 +74,8 @@ def _call(client, method: str, path: str, **kwargs):
         elif path.endswith("/decisions"):
             body = {"action": "propose", "decision_type": "experiment_accepted",
                     "subject": {"kind": "project"}, "rationale": "x"}
+        elif "/governance/policy/" in path:
+            body = {"policy_digest": "0" * 64}
         elif path.endswith(("/accept", "/reject", "/supersede")):
             body = {"rationale": "x"}
         elif "/refs/" in path:
@@ -123,6 +130,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/datasets/{dataset_id}",
         "POST /v1/execution-requests",
         "POST /v1/execution-requests/{request_id}/target-confirmation",
+        "POST /v1/execution-requests/{request_id}/split-confirmation",
         "GET /v1/execution-requests/{request_id}",
         "GET /v1/model-builds/{pipeline_run_id}",
         "GET /v1/model-builds/{pipeline_run_id}/events",
@@ -152,6 +160,23 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/service-tokens",
         "POST /v1/service-tokens",
         "POST /v1/service-tokens/{token_id}/revoke",
+        "GET /v1/assistant/threads",
+        "POST /v1/assistant/threads",
+        "GET /v1/assistant/threads/{thread_id}",
+        "POST /v1/assistant/threads/{thread_id}/messages",
+        "GET /v1/agent-runs",
+        "GET /v1/agent-runs/{run_id}",
+        "GET /v1/proposals",
+        "GET /v1/proposals/{proposal_id}",
+        "POST /v1/proposals/{proposal_id}/accept",
+        "POST /v1/proposals/{proposal_id}/reject",
+        "POST /v1/proposals/{proposal_id}/revert",
+        "POST /v1/agent-reviews",
+        "GET /v1/governance",
+        "POST /v1/governance/policy",
+        "POST /v1/governance/policy/{proposal_id}/accept",
+        "POST /v1/governance/switches",
+        "POST /v1/agent-runs/{run_id}/replay",
     }
 
 
@@ -188,7 +213,7 @@ def test_every_workspace_operation_400_without_selector_and_403_foreign(client, 
         if path in WORKSPACE_FREE:
             continue
         if path in SESSION_ONLY:
-            _assert_envelope(_call(client, method, _concrete(path), headers=bearer), 403, "session_required")
+            _assert_envelope(_call(client, method, _concrete(path), headers=bearer), 403, SESSION_ONLY[path])
             continue
         missing = _call(client, method, _concrete(path), headers=bearer)
         assert "X-Workspace-Id" in _assert_envelope(missing, 400, "bad_request")["message"]

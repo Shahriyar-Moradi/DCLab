@@ -12,7 +12,8 @@ builds it from ``AgentRunSpec`` with the factory registered for ``spec.runtime``
 P6.3-A: a runtime with ``arun`` (the NOOA runtime) runs under an asyncio wall-time
 timeout (``run_coroutine``); a runtime that cannot start or continue raises
 ``RuntimeRefused`` (the run ends ``failed`` with its code). Specialist agent classes
-are registry metadata (``AgentClass``): a declared strategy, which must be ``predict``
+are registry metadata (``AgentClass``, registered by ``app.agents.classes`` since P6.4-A):
+a declared strategy, which must be ``predict``
 (ADR 0008 §6: CodeAct is banned), an output schema and one generation method;
 ``nooa_runtime`` materializes them as NOOA ``PredictStrategy`` classes.
 """
@@ -90,6 +91,11 @@ class RuntimeSession(Protocol):
         """A validated strategy step (NOOA ``AfterTurn``) -> ``step_validated``. Optional:
         replay's session makes it a no-op; runtimes call it through ``getattr``."""
 
+    def check(self, output: "RuntimeOutput") -> list[str]:
+        """P6.3-B: the run's output validator over one intermediate step (schema, holdout,
+        citations, the runtime's own checks) -> reason codes, recorded as ``step_validated`` /
+        ``step_rejected``; replay returns the recorded verdicts. Optional (``getattr``)."""
+
 
 class Runtime(Protocol):
     name: str  # agent_runs.runtime
@@ -157,14 +163,43 @@ def run_coroutine(make: Callable[[], Awaitable[_T]], *, timeout_s: float | None 
 
 
 @dataclass(frozen=True)
+class ContextRequest:
+    """What an agent class's context builder gets (P6.4-A): the consumer-mode tool context
+    (the acting human, one workspace) and the run's project and subject."""
+
+    tool_ctx: Any  # app.agents.tools.catalog.ToolContext
+    project_id: UUID | None
+    subject_kind: str | None
+    subject_id: UUID | None
+
+
+@dataclass(frozen=True)
+class OutputCheck:
+    """What an agent class's database-backed validator gets (P6.4-A): a read-only session
+    and the run's workspace, project and subject; P6.3-B adds the run's consumer-mode tool
+    context (the acting human; holdout-free reads, e.g. a cited experiment's CV metrics)."""
+
+    db: Any
+    workspace_id: UUID
+    project_id: UUID | None
+    subject_kind: str | None
+    subject_id: UUID | None
+    tool_ctx: Any = None  # app.agents.tools.catalog.ToolContext
+
+
+@dataclass(frozen=True)
 class AgentClass:
-    """A specialist agent class as data. P6.4-A registers the real ones (critic,
-    investigator, planner, hypothesis). ``task`` is the generation method's docstring
+    """A specialist agent class as data (P6.4-A registers the critic, investigator and
+    planner from ``app.agents.classes``). ``task`` is the generation method's docstring
     (NOOA's task text, which never leaves the process: the provider prompt is the
     agent's prompt release, built by the gateway from the redacted envelope);
     ``to_output`` maps the validated model output to the run's output (citations, a
     typed ``ProposalDraft``); ``validate_output`` is the deterministic validator the
-    harness's output hook runs (``-> [codes]``)."""
+    harness's output hook runs (``-> [codes]``); ``check_output`` is the same with the
+    database (cited nodes, columns, CV metrics); ``context`` adds the class's own
+    holdout-free sections to the envelope (``-> [(name, Shaped | () -> Shaped)]``); ``version`` is
+    ``agent_runs.agent_version`` (bumped with ``task``); ``batch_eligible`` marks an
+    AI-after class whose runs may use a provider batch API (no one waits on them)."""
 
     agent_key: str
     output_schema: type[BaseModel]
@@ -174,6 +209,11 @@ class AgentClass:
     max_output_tokens: int = 2000
     to_output: Callable[[BaseModel], RuntimeOutput] | None = None
     validate_output: Callable[[RuntimeOutput], Sequence[str]] | None = None
+    check_output: Callable[[OutputCheck, RuntimeOutput], Sequence[str]] | None = None
+    context: Callable[[ContextRequest], Sequence[tuple[str, Any]]] | None = None
+    version: str = "1"
+    prompt_version: int = 1  # app/agents/prompts/<agent_key>/v<N>.md, pinned per class
+    batch_eligible: bool = False
 
 
 AGENT_CLASSES: dict[str, AgentClass] = {}

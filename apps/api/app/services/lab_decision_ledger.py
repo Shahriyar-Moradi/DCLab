@@ -24,10 +24,10 @@ from typing import Any
 from uuid import UUID
 
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.gateway.contract import LedgerNote, Refusal
-from app.agents.governance.platform_default import ai_development_env
 from app.agents.legacy import LegacyContext, context_for_upload, refusal_text
 from app.config import get_settings
 from app.db.models import LabDecisionRecord, LlmInvocation
@@ -51,9 +51,9 @@ from app.engine.lab.evidence import (
 from app.engine.lab.llm_client import WITHHELD, consult
 from app.engine.lab.prompts.column_type_v2 import PROMPT_VERSION as COLUMN_TYPE_PROMPT_VERSION
 from app.engine.lab.prompts.leakage_review_v1 import PROMPT_VERSION as LEAKAGE_PROMPT_VERSION
-from app.engine.lab.prompts.missing_value_v2 import PROMPT_VERSION
+from app.engine.lab.prompts.missing_value_v3 import PROMPT_VERSION
 from app.engine.lab.prompts.target_selection_v1 import PROMPT_VERSION as TARGET_SELECTION_PROMPT_VERSION
-from app.engine.lab.schema_inference import TargetChoice, choose_target_deterministically, metric_for_task
+from app.engine.lab.schema_inference import TargetChoice, choose_target_deterministically
 
 logger = logging.getLogger(__name__)
 
@@ -245,18 +245,13 @@ def _evidence_snapshot(evidence: ColumnEvidence | ColumnTypeEvidence) -> dict[st
 
 
 def _agent_configured() -> bool:
-    """Flag AND ``AI_ENABLED`` AND a development environment (``llm_client.agent_enabled``:
-    production is blocked until P6.9-A applies ADR 0008 decision-point levels)."""
-    settings = get_settings()
-    return bool(
-        settings.decision_agent_enabled
-        and getattr(settings, "ai_enabled", False)
-        and ai_development_env(settings)
-    )
+    """``AI_ENABLED`` (``llm_client.agent_enabled``); kill switches act per call."""
+    return bool(getattr(get_settings(), "ai_enabled", False))
 
 
 def _target_outcome(choice: TargetChoice, consulted: _Consulted) -> TargetChoice:
-    """The choice after one semantic consultation (a copy; pure)."""
+    """The choice after one semantic consultation (a copy; pure): the rule's choice with the
+    agent's answer in ``raw_llm_output`` and its verdict."""
     outcome = copy.copy(choice)
     outcome.validator_verdict = consulted.verdict
     outcome.source = "fallback"
@@ -268,15 +263,9 @@ def _target_outcome(choice: TargetChoice, consulted: _Consulted) -> TargetChoice
     if check.verdict != "accept":
         outcome.reason += f"; semantic decision rejected: {check.reason}"
         return outcome
-    candidate = next(item for item in choice.candidates if item.column == decision.target)
-    outcome.column = candidate.column
-    outcome.task_type = decision.task_type
-    outcome.evaluation_metric = metric_for_task(decision.task_type)
-    outcome.confidence = float(decision.confidence)
-    outcome.source = "llm"
-    outcome.intent_source = "llm"
-    outcome.reason = decision.rationale
-    outcome.evidence = candidate.evidence
+    # P6.9-A: target.column is L1 (ADR 0008 §1): the accepted answer is a suggestion a person
+    # confirms (the needs_input target confirmation), never the run's target.
+    outcome.reason += f"; semantic suggestion {decision.target!r} recorded for confirmation (target.column is L1)"
     return outcome
 
 
@@ -353,39 +342,45 @@ def is_ambiguous_column(
     return AMBIGUOUS_MISSING_MIN <= rule.missing_fraction <= AMBIGUOUS_MISSING_MAX
 
 
-def _apply_accepted_override(frame: pd.DataFrame, rule: ColumnMissingDecision, action: str, fill_value: Any) -> None:
-    rule.action = action
-    rule.fill_value = fill_value
-    if action == "domain_fill" and fill_value is not None and rule.column in frame.columns:
-        frame[rule.column] = frame[rule.column].fillna(fill_value)
-
-
 def _source(check: ValidationResult | None) -> str:
     if check is None:
         return "rule"
     return "llm" if check.verdict == "accept" else "fallback"
 
 
-def record_missing_value_decisions(
+@dataclass
+class LegacyMissing:
+    """One column's legacy decision-agent consultation (P6.9-A: an interim AI answer of
+    ``column.missing_value_action``; the decision-point hook decides what is applied)."""
+
+    column: str
+    rule_action: str
+    action: str | None  # the validator-accepted answer, else None
+    verdict: str
+    check_source: str  # rule (not consulted / unavailable) | llm (accepted) | fallback (rejected)
+    raw: dict[str, Any] | None
+    invocation_id: UUID | None
+    evidence: Any
+
+
+def consult_missing_values(
     db: Session,
     upload_id: UUID,
     frame: pd.DataFrame,
     missing_plan: MissingValuePlan,
     target: str | None,
-) -> pd.DataFrame:
-    """Consult the agent on ambiguous columns, apply accepted overrides, persist the ledger.
+    *,
+    consult_agent: bool = True,
+) -> dict[str, LegacyMissing]:
+    """Consult the agent on ambiguous columns (missing_value v3) and write each column's
+    ``llm_invocations`` row; applies nothing (``record_missing_value_decisions`` persists the
+    ledger rows once the decision point has applied what its level allows). Each row is
+    flushed so the session stays clean for the next gateway call."""
 
-    Mutates `missing_plan.column_decisions` and `frame` when an override is applied.
-    Re-running the job for the same upload replaces the previous rows. Each record is
-    flushed at once so the session stays clean for the next gateway call.
-    """
-    db.query(LabDecisionRecord).filter(LabDecisionRecord.upload_id == upload_id).delete(
-        synchronize_session=False
-    )
-
-    consult_agent = _agent_configured()
+    consult_agent = consult_agent and _agent_configured()
     context = context_for_upload(db, upload_id) if consult_agent else None
     withheld = WITHHELD["missing_value"]
+    out: dict[str, LegacyMissing] = {}
     for rule in missing_plan.column_decisions:
         if rule.column not in frame.columns:
             continue
@@ -394,26 +389,27 @@ def record_missing_value_decisions(
         ambiguous = is_ambiguous_column(rule, evidence, frame)
 
         def final(item: _Consulted, column: str = rule.column, original: str = original_action) -> dict[str, Any]:
-            accepted = _source(item.check) == "llm"
-            return {"column": column, "rule_decision": original,
-                    "final_decision": item.decision.action if accepted else original, "source": _source(item.check)}
+            decided = {"column": column, "rule_decision": original, "final_decision": original,
+                       "source": _source(item.check)}
+            if item.decision is not None:  # what the decision point weighs (it applies by level)
+                decided["ai_decision"] = item.decision.action if _source(item.check) == "llm" else None
+            return decided
 
-        source, verdict, raw, applied_fill, invocation_id = "rule", _VERDICT_NOT_RUN, None, None, None
         if consult_agent and ambiguous:
             consulted = _consult(
                 "missing_value", evidence, context, wording=_MISSING_VALUE, target=target, final_decision=final,
                 judge=lambda decision, item=evidence: validate_decision(item, decision, withheld=withheld),
             )
-            verdict, source = consulted.verdict, _source(consulted.check)
-            if consulted.decision is not None:
-                raw = consulted.decision.model_dump(mode="json")
-                if source == "llm":
-                    _apply_accepted_override(frame, rule, consulted.decision.action, consulted.decision.fill_value)
-                    applied_fill = consulted.decision.fill_value
             invocation_id = _ledger_row_id(
                 consulted, db, upload_id, purpose="semantic_missing_value", prompt_version=PROMPT_VERSION,
                 evidence=asdict(evidence), wording=_MISSING_VALUE, final_decision=final(consulted),
             )
+            accepted = consulted.decision is not None and _source(consulted.check) == "llm"
+            out[rule.column] = LegacyMissing(
+                rule.column, original_action, consulted.decision.action if accepted else None, consulted.verdict,
+                _source(consulted.check),
+                consulted.decision.model_dump(mode="json") if consulted.decision is not None else None,
+                invocation_id, evidence)
         else:
             invocation = _observe_semantic_decision(
                 db,
@@ -423,42 +419,74 @@ def record_missing_value_decisions(
                 evidence=asdict(evidence),
                 reason=_DETERMINISTIC_REASON if not ambiguous else _DISABLED_REASON,
                 status="not_used",
-                validator_verdict=verdict,
-                final_decision=final(_Consulted(None, None, verdict, None)),
+                validator_verdict=_VERDICT_NOT_RUN,
+                final_decision=final(_Consulted(None, None, _VERDICT_NOT_RUN, None)),
             )
-            invocation_id = invocation.id if invocation is not None else None
+            out[rule.column] = LegacyMissing(rule.column, original_action, None, _VERDICT_NOT_RUN, "rule", None,
+                                             invocation.id if invocation is not None else None, evidence)
+        db.flush()
+    return out
+
+
+def revert_missing_value_decisions(db: Session, upload_id: UUID, columns: set[str]) -> None:
+    """Columns whose deferred value the decision point rolled back after the ledger rows were
+    written (a §1b role conflict or a failed record): the rows show the rule's action again,
+    before the scientific lineage reads them."""
+
+    if not columns:
+        return
+    for row in db.scalars(select(LabDecisionRecord).where(LabDecisionRecord.upload_id == upload_id,
+                                                          LabDecisionRecord.column.in_(sorted(columns)))):
+        row.final_decision = row.rule_decision
+        if row.source == "llm":
+            row.source = "rule"
+    db.flush()
+
+
+def record_missing_value_decisions(
+    db: Session,
+    upload_id: UUID,
+    frame: pd.DataFrame,
+    missing_plan: MissingValuePlan,
+    target: str | None,
+    consulted: dict[str, LegacyMissing] | None = None,
+    agent_applied: set[str] | frozenset[str] = frozenset(),
+) -> pd.DataFrame:
+    """Persist one ledger row per missing-value column: the rule-engine action
+    (``rule_decision``) and what was applied (``final_decision``, after the decision point;
+    ``source`` ``llm`` only for ``agent_applied`` columns, whose value the decision point took
+    from the agent's answer). Re-running the job for the same upload replaces the previous
+    rows. ``consulted`` comes from ``consult_missing_values`` (called here when absent).
+    Never applies an answer itself."""
+
+    db.query(LabDecisionRecord).filter(LabDecisionRecord.upload_id == upload_id).delete(
+        synchronize_session=False
+    )
+    if consulted is None:
+        consulted = consult_missing_values(db, upload_id, frame, missing_plan, target)
+    for rule in missing_plan.column_decisions:
+        item = consulted.get(rule.column)
+        if item is None:
+            continue
+        applied = rule.column in agent_applied and rule.action == item.action
+        source = "llm" if applied else ("fallback" if item.check_source == "fallback" else "rule")
         db.add(
             LabDecisionRecord(
-                llm_invocation_id=invocation_id,
+                llm_invocation_id=item.invocation_id,
                 upload_id=upload_id,
                 column=rule.column,
-                evidence_snapshot=_evidence_snapshot(evidence),
+                evidence_snapshot=_evidence_snapshot(item.evidence),
                 prompt_version=PROMPT_VERSION,
-                raw_llm_output=raw,
-                validator_verdict=verdict,
-                rule_decision=original_action,
+                raw_llm_output=item.raw,
+                validator_verdict=item.verdict,
+                rule_decision=item.rule_action,
                 final_decision=rule.action,
-                fill_value=_jsonable(applied_fill) if applied_fill is not None else None,
+                fill_value=None,
                 source=source,
             )
         )
         db.flush()
     return frame
-
-
-def _apply_column_type_override(
-    numerical: list[str],
-    categorical: list[str],
-    column: str,
-    action: str,
-) -> tuple[list[str], list[str]]:
-    numerical = [name for name in numerical if name != column]
-    categorical = [name for name in categorical if name != column]
-    if action == "numerical":
-        numerical.append(column)
-    elif action == "categorical":
-        categorical.append(column)
-    return numerical, categorical
 
 
 def record_column_type_decisions(
@@ -468,11 +496,13 @@ def record_column_type_decisions(
     numerical_cols: list[str],
     categorical_cols: list[str],
 ) -> tuple[list[str], list[str]]:
-    """Consult the agent on ambiguous numeric columns, apply accepted role overrides.
+    """Consult the agent on ambiguous numeric columns and record its answer (advisory).
 
-    Does not delete missing-value ledger rows. Non-ambiguous columns never
-    consult the agent and are not written here. Disabled, unavailable, or
-    rejected calls leave ``split_column_roles`` lists unchanged.
+    P6.9-A: role changes are applied only by the ``column.semantic_role`` decision point
+    (``auto_train.decision_points``), so the lists come back unchanged; an accepted answer is
+    recorded (``raw_llm_output``, verdict) beside the inferred type. Does not delete
+    missing-value ledger rows. Non-ambiguous columns never consult the agent and are not
+    written here.
     """
     numerical = list(numerical_cols)
     categorical = list(categorical_cols)
@@ -491,9 +521,11 @@ def record_column_type_decisions(
         original = "numerical" if column in original_numerical else "categorical"
 
         def final(item: _Consulted, name: str = column, rule_role: str = original) -> dict[str, Any]:
-            accepted = _source(item.check) == "llm"
-            return {"column": name, "rule_decision": rule_role,
-                    "final_decision": item.decision.action if accepted else rule_role, "source": _source(item.check)}
+            decided = {"column": name, "rule_decision": rule_role, "final_decision": rule_role,
+                       "source": _source(item.check)}
+            if item.decision is not None:  # advisory: the role point applies role changes
+                decided["ai_decision"] = item.decision.action if _source(item.check) == "llm" else None
+            return decided
 
         if not consult_agent or not ambiguous:
             _observe_semantic_decision(
@@ -514,14 +546,10 @@ def record_column_type_decisions(
             "column_type", evidence, context, wording=_COLUMN_TYPE, final_decision=final,
             judge=lambda decision, item=evidence: validate_column_type_decision(item, decision, withheld=withheld),
         )
-        verdict, source = consulted.verdict, _source(consulted.check)
+        verdict = consulted.verdict
+        source = "fallback" if consulted.check is not None and consulted.check.verdict != "accept" else "rule"
         if consulted.decision is not None:
             raw = consulted.decision.model_dump(mode="json")
-            if source == "llm":
-                numerical, categorical = _apply_column_type_override(
-                    numerical, categorical, column, consulted.decision.action
-                )
-                final_role = consulted.decision.action
         invocation_id = _ledger_row_id(
             consulted, db, upload_id, purpose="semantic_column_type", prompt_version=COLUMN_TYPE_PROMPT_VERSION,
             evidence=asdict(evidence), wording=_COLUMN_TYPE, final_decision=final(consulted),
@@ -560,7 +588,8 @@ def leakage_reviewer(db: Session, upload_id: UUID) -> Callable[[LeakageReviewEvi
         def final(item: _Consulted) -> dict[str, Any]:
             accepted = _source(item.check) == "llm"
             return {"column": evidence.column, "rule_availability": evidence.availability_status,
-                    "availability_status": item.decision.availability_status if accepted else evidence.availability_status,
+                    "availability_status": evidence.availability_status,  # advisory (L1): never applied
+                    "recommended_availability": item.decision.availability_status if accepted else None,
                     "recommended_risk_level": item.decision.risk_level if accepted else None,
                     "source": _source(item.check)}
 
@@ -570,9 +599,11 @@ def leakage_reviewer(db: Session, upload_id: UUID) -> Callable[[LeakageReviewEvi
         )
         _ledger_row_id(consulted, db, upload_id, purpose="semantic_leakage", prompt_version=LEAKAGE_PROMPT_VERSION,
                        evidence=asdict(evidence), wording=_LEAKAGE, final_decision=final(consulted))
-        # A rejected recommendation is returned on purpose: ``leakage_auditor._apply_reviewer``
-        # re-runs the same deterministic validator on the same evidence, applies only an accepted
-        # availability status (never keep / exclude) and records the rejection reason.
-        return consulted.decision
+        # P6.9-A: feature.leakage_suspect is L1 (ADR 0008 §1b: the AI may only flag; an
+        # availability change could exclude or re-include a column), so the answer is recorded
+        # in the ledger and the auditor keeps the rule's assessment.
+        if consulted.decision is None:
+            return None
+        return f"advisory only (feature.leakage_suspect is L1): {consulted.verdict}"[:200]
 
     return review

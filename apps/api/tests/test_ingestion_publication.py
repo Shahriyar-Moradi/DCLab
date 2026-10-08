@@ -270,16 +270,19 @@ def test_failed_publication_rolls_back_upload_and_object(auth_client, db_session
     assert len(deleted) == 1
 
 
-def test_production_allows_the_gateway_verifier_but_refuses_the_decision_agent():
-    # The AI gateway applies every dataset and column llm_exposure_policy (ADR 0009 §8), so the
-    # advisory verifier may run in production; the legacy decision writers stay refused until
-    # P6.9-A applies ADR 0008 decision-point levels (deviation from ADR 0009 §8).
+def test_production_allows_ai_governed_by_switches_and_levels():
+    # P6.9-A lifted the P6.2-B2 block: the gateway applies every dataset and column
+    # llm_exposure_policy (ADR 0009 §8), kill switches and budgets, and the legacy decision
+    # writers apply nothing above the ADR 0008 decision-point levels. The retired
+    # DECISION_AGENT_ENABLED / PIPELINE_LLM_VERIFIER_ENABLED settings are ignored.
     from app.config import Settings, validate_runtime_settings
 
     secrets = {"jwt_secret": "j" * 40, "auth_token_hash_secret": "h" * 40, "auth_csrf_secret": "c" * 40}
-    validate_runtime_settings(Settings(dclab_env="production", pipeline_llm_verifier_enabled=True, **secrets))
-    with pytest.raises(RuntimeError, match="P6.9-A applies ADR 0008 decision-point levels"):
-        validate_runtime_settings(Settings(dclab_env="production", decision_agent_enabled=True, **secrets))
+    validate_runtime_settings(Settings(dclab_env="production", ai_enabled=True, **secrets))
+    retired = Settings(dclab_env="production", decision_agent_enabled=True, pipeline_llm_verifier_enabled=True,
+                       **secrets)
+    validate_runtime_settings(retired)
+    assert not hasattr(retired, "decision_agent_enabled") and not hasattr(retired, "pipeline_llm_verifier_enabled")
 
 
 def test_unverified_upload_projection_hides_preview_and_dataset(auth_client, monkeypatch):

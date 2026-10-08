@@ -279,6 +279,23 @@
     ]
    ],
    [
+    "decision_points",
+    "decision_point_resolved",
+    "completed",
+    [
+     "agreement",
+     "ai",
+     "ai_applied",
+     "columns_total",
+     "decision_point",
+     "evidence_partition",
+     "level",
+     "policy_digest",
+     "reason",
+     "review_items"
+    ]
+   ],
+   [
     "train_only_decisions",
     "operation_completed",
     "completed",
@@ -353,6 +370,40 @@
     "operation_started",
     "started",
     []
+   ],
+   [
+    "decision_points",
+    "decision_point_resolved",
+    "completed",
+    [
+     "agreement",
+     "ai",
+     "ai_applied",
+     "columns_total",
+     "decision_point",
+     "evidence_partition",
+     "level",
+     "policy_digest",
+     "reason",
+     "review_items"
+    ]
+   ],
+   [
+    "decision_points",
+    "decision_point_resolved",
+    "completed",
+    [
+     "agreement",
+     "ai",
+     "ai_applied",
+     "columns_total",
+     "decision_point",
+     "evidence_partition",
+     "level",
+     "policy_digest",
+     "reason",
+     "review_items"
+    ]
    ],
    [
     "column_roles_finalization",
@@ -2493,6 +2544,23 @@
     ]
    ],
    [
+    "decision_points",
+    "decision_point_resolved",
+    "completed",
+    [
+     "agreement",
+     "ai",
+     "ai_applied",
+     "columns_total",
+     "decision_point",
+     "evidence_partition",
+     "level",
+     "policy_digest",
+     "reason",
+     "review_items"
+    ]
+   ],
+   [
     "train_only_decisions",
     "operation_completed",
     "completed",
@@ -2567,6 +2635,40 @@
     "operation_started",
     "started",
     []
+   ],
+   [
+    "decision_points",
+    "decision_point_resolved",
+    "completed",
+    [
+     "agreement",
+     "ai",
+     "ai_applied",
+     "columns_total",
+     "decision_point",
+     "evidence_partition",
+     "level",
+     "policy_digest",
+     "reason",
+     "review_items"
+    ]
+   ],
+   [
+    "decision_points",
+    "decision_point_resolved",
+    "completed",
+    [
+     "agreement",
+     "ai",
+     "ai_applied",
+     "columns_total",
+     "decision_point",
+     "evidence_partition",
+     "level",
+     "policy_digest",
+     "reason",
+     "review_items"
+    ]
    ],
    [
     "column_roles_finalization",

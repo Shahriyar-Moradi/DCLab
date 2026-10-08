@@ -153,6 +153,20 @@ class TargetIntentConflictError(Exception):
         return detail
 
 
+class PlanRefusedError(ValueError):
+    """A ProblemSpec named a run plan that cannot supply it (P6.9-A): the same checks as a
+    run's ``plan`` (``refusal`` is the code), or a plan that conflicts with the request."""
+
+    def __init__(self, refusal: str) -> None:
+        super().__init__(f"the plan cannot be used for this problem spec ({refusal})")
+        self.status_code = 422
+        self.code = "plan_refused"
+        self.refusal = refusal
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": str(self), "refusal": self.refusal}
+
+
 class ExecutionNotWaitingError(Exception):
     """Confirmation was submitted but this execution is not waiting for input."""
 

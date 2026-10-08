@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Run E1 · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="pipeline.html" data-role="developer" data-nav="experiments.html">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind churn › Experiments › <b>Run E1</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Run E1 <span class="tag ok">Completed</span></h1><p class="sub">The first churn model. Trained on 15 months and tested once on the latest 3.</p></div>
+  <div class="toolbar"><button class="btn" data-mock="download report">Download report</button><button class="btn primary" data-mock="use this model">Use this model</button></div>
+</div>
+
+<div class="tabs" data-tabs="run">
+  <button data-tab="summary" aria-selected="true">Summary</button>
+  <button data-tab="pipeline">Pipeline</button>
+  <button data-tab="models">Models tried</button>
+  <button data-tab="review">Review</button>
+  <button data-tab="code">Code</button>
+</div>
+
+<div data-tabpanel="run:summary" class="on">
+  <div class="stats">
+    <div class="stat"><span class="v">82%</span><span class="l">of churners caught, on months the model never saw</span></div>
+    <div class="stat"><span class="v">61%</span><span class="l">of flagged customers really churn</span></div>
+    <div class="stat"><span class="v">+47 pts</span><span class="l">better than a simple baseline</span></div>
+    <div class="stat"><span class="v ok">19 of 20</span><span class="l">checks passed · 1 warning</span></div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>How this run went</h2><p>4 min 12 s</p></div>
+    <div class="steps">
+      <div class="step"><b>Data checked</b><span>48,210 rows. Two columns left out.</span></div>
+      <div class="step"><b>Test set locked</b><span>The latest 3 months were set aside.</span></div>
+      <div class="step"><b>Models trained</b><span>6 models, each validated 5 times.</span></div>
+      <div class="step"><b>Best model chosen</b><span>LightGBM, by a fixed rule.</span></div>
+      <div class="step"><b>Tested once</b><span>On the months set aside.</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Decisions in this run</h2><p>Who suggested each choice and what happened.</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Decision</th><th>Suggested by</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr><td>Leave out <code>churned_at</code></td><td>Assistant and rule agree</td><td><span class="tag ok">Approved by you</span></td></tr>
+        <tr><td>Flag <code>retention_offer_sent</code> for review</td><td>Assistant only</td><td><span class="tag ok">Approved by you</span></td></tr>
+        <tr><td>Treat <code>region_code</code> as a category</td><td>Assistant<small>the rule said "number"</small></td><td><span class="tag">Applied</span> <button class="btn sm" data-mock="undo">Undo</button></td></tr>
+        <tr><td>Test on the latest 3 months</td><td>Assistant and rule agree</td><td><span class="tag ok">Approved by you</span></td></tr>
+        <tr><td>Winning model</td><td>Fixed rule, never the assistant</td><td>LightGBM</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="run:pipeline">
+  <div class="card">
+    <div class="head"><h2>Every step, with its evidence</h2><p>Open a step to see what the rule found, what the assistant added and the files produced.</p></div>
+    <div>
+      <div class="stage"><span class="dot ok"></span><h3>1 · Upload and checks</h3><span class="tag ok">Passed</span><p>48,210 rows and 31 columns. File structure is valid.</p>
+        <details class="more"><summary>Evidence</summary><div><div class="ev-line"><b>Checks</b><span>6 of 6 structure checks passed.</span></div><div class="ev-line"><b>File</b><span>Dataset version 1 · <span class="mono">sha256 7f3a…c21</span></span></div></div></details></div>
+      <div class="stage"><span class="dot ok"></span><h3>2 · Column roles</h3><span class="tag ok">Passed</span><p>17 numbers, 11 categories, 1 date, 1 identifier.</p>
+        <details class="more"><summary>Evidence</summary><div><div class="ev-line"><b>Rule</b><span>Agreed with the assistant on 30 of 31 columns. It read <code>region_code</code> as a number.</span></div><div class="ev-line"><b>Assistant</b><span><code>region_code</code> is a category (12 codes). Applied automatically; you can undo it.</span></div></div></details></div>
+      <div class="stage"><span class="dot warn"></span><h3>3 · Leakage check</h3><span class="tag warn">1 to review</span><p>Two columns left out. One column flagged for you to review.</p>
+        <details class="more"><summary>Evidence</summary><div><div class="ev-line"><b>Rule</b><span><code>churned_at</code> is always dated after the outcome. <code>last_login_days</code> is very predictive alone.</span></div><div class="ev-line"><b>Assistant</b><span><code>retention_offer_sent</code> may leak: offers go to customers who are already cancelling. The rule did not catch this.</span></div><div class="ev-line"><b>You</b><span>Approved leaving out <code>churned_at</code> and flagging <code>retention_offer_sent</code>.</span></div></div></details></div>
+      <div class="stage"><span class="dot ok"></span><h3>4 · Test split</h3><span class="tag ok">Locked</span><p>The latest 3 months (8,904 rows) are set aside. They are not touched until step 7.</p>
+        <details class="more"><summary>Evidence</summary><div><div class="ev-line"><b>Why</b><span>Churn rate rises over time, so a random split would overstate results.</span></div><div class="ev-line"><b>Reuse</b><span>Later runs on this data use exactly the same test rows, so they can be compared.</span></div></div></details></div>
+      <div class="stage"><span class="dot ok"></span><h3>5 · Training</h3><span class="tag ok">Passed</span><p>6 models and a simple baseline, each validated on 5 time-ordered folds.</p>
+        <details class="more"><summary>Evidence</summary><div><div class="ev-line"><b>Preparation</b><span>Missing values and scaling are learned inside each fold, never on the full data.</span></div><div class="ev-line"><b>Budget</b><span>3 min 05 s of a 10 minute budget.</span></div></div></details></div>
+      <div class="stage"><span class="dot ok"></span><h3>6 · Model selection</h3><span class="tag ok">Fixed rule</span><p>LightGBM had the best validation score. The decision threshold was set on validation data.</p>
+        <details class="more"><summary>Evidence</summary><div><div class="ev-line"><b>Score</b><span>0.69 versus 0.67 for the runner-up; the baseline scored 0.21.</span></div><div class="ev-line"><b>Threshold</b><span>0.31, chosen so that at least 80% of churners are caught.</span></div></div></details></div>
+      <div class="stage"><span class="dot ok"></span><h3>7 · Final test</h3><span class="tag ok">Scored once</span><p>82% of churners caught, 61% precise, on the months set aside.</p></div>
+      <div class="stage"><span class="dot ok"></span><h3>8 · Verification</h3><span class="tag ok">19 of 20</span><p>Automatic checks and an AI review. See the Review tab.</p></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="run:models">
+  <div class="card">
+    <div class="head"><h2>Models tried</h2><p>Scores are on validation data. Higher is better.</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Model</th><th class="r">Validation score</th><th class="r">Spread across folds</th><th class="r">Training time</th><th></th></tr></thead>
+      <tbody>
+        <tr class="win"><td><b>LightGBM, tuned</b></td><td class="r"><b>0.69</b></td><td class="r">± 0.02</td><td class="r">71 s</td><td><span class="tag ok">Winner</span></td></tr>
+        <tr><td>CatBoost</td><td class="r">0.67</td><td class="r">± 0.01</td><td class="r">48 s</td><td></td></tr>
+        <tr><td>XGBoost</td><td class="r">0.66</td><td class="r">± 0.02</td><td class="r">22 s</td><td></td></tr>
+        <tr><td>Random forest</td><td class="r">0.63</td><td class="r">± 0.02</td><td class="r">31 s</td><td></td></tr>
+        <tr><td>Logistic regression</td><td class="r">0.58</td><td class="r">± 0.02</td><td class="r">4 s</td><td></td></tr>
+        <tr class="dim"><td>Simple baseline</td><td class="r">0.21</td><td class="r">—</td><td class="r">—</td><td>Can never win</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">Score is PR-AUC, a good measure when about 1 in 5 customers churn.</p>
+  </div>
+</div>
+
+<div data-tabpanel="run:review">
+  <div class="grid cols-2">
+    <div class="card">
+      <div class="head"><h2>Automatic checks</h2><span class="tag ok">19 passed</span></div>
+      <div class="dlist">
+        <div class="drow"><span class="t">Test data never used for training or choosing the model</span><span class="a"><span class="tag ok">Passed</span></span></div>
+        <div class="drow"><span class="t">Data preparation learned inside each fold</span><span class="a"><span class="tag ok">Passed</span></span></div>
+        <div class="drow"><span class="t">Result can be reproduced from the exported code</span><span class="a"><span class="tag ok">Passed</span></span></div>
+        <div class="drow"><span class="t">Model relies heavily on one column</span><span class="d"><code>last_login_days</code> carries 41% of the signal.</span><span class="a"><span class="tag warn">Warning</span></span></div>
+      </div>
+      <details class="more"><summary>All 20 checks</summary><div><p>Baseline beaten · threshold set on validation only · same split as planned · no duplicate rows across train and test · calibration acceptable · stable across folds, and 10 more.</p></div></details>
+    </div>
+    <div class="card">
+      <div class="head"><h2>AI review</h2><span class="tag warn">One thing to confirm</span></div>
+      <p>The model is sound and clearly beats the baseline. Most of its signal comes from <code>last_login_days</code>. If that value is only known after a customer has left, real results will be weaker than the test shows.</p>
+      <p><b>Is <code>last_login_days</code> known on the day you predict?</b></p>
+      <div class="toolbar"><button class="btn primary" data-mock="answer: known daily">Yes, daily</button><button class="btn" data-mock="answer: not known">No</button></div>
+      <details class="more"><summary>What the review is based on</summary><div><p>Feature importance, validation scores and the warning above. Every number it cites was checked against the stored results.</p></div></details>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="run:code">
+  <div class="card">
+    <div class="head"><h2>Reproduce this run</h2><div class="toolbar"><button class="btn sm" data-mock="download script">Python script</button><button class="btn sm" data-mock="download notebook">Notebook</button></div></div>
+    <p class="hint">Plain scikit-learn. Running it on the same data gives the same validation scores.</p>
+<pre class="code"><span class="c"># Run E1 · churn in the next 30 days · left out: churned_at, customer_id</span>
+<span class="k">prep</span> = ColumnTransformer([
+    ("numbers",    Pipeline([("fill", SimpleImputer(strategy="median")), ("scale", StandardScaler())]), NUMBERS),
+    ("categories", Pipeline([("fill", SimpleImputer(strategy="most_frequent")),
+                             ("encode", OneHotEncoder(handle_unknown="ignore"))]), CATEGORIES),
+    ("dates",      DateParts(["month", "weekday"]), ["signup_date"]),
+])
+<span class="k">model</span> = Pipeline([("prep", prep), ("clf", LGBMClassifier(**TUNED, random_state=42))])
+
+<span class="c"># Same folds as the run; the test months are never used here</span>
+<span class="k">for</span> train, valid <span class="k">in</span> folds:
+    model.fit(X.iloc[train], y.iloc[train])
+    score(model, X.iloc[valid], y.iloc[valid])
+
+<span class="k">THRESHOLD</span> = 0.31   <span class="c"># catches at least 80% of churners on validation data</span></pre>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

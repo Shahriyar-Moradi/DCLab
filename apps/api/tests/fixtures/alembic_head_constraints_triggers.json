@@ -82,6 +82,11 @@
     },
     {
       "table": "agent_proposals",
+      "name": "ck_agent_proposals_source",
+      "definition": "CHECK (((num_nonnulls(run_id, semantic_answer_id) = 1) AND ((semantic_answer_id IS NOT NULL) = ((proposal_type)::text = 'SemanticReviewProposal'::text)) AND ((semantic_answer_id IS NULL) OR (level_at_proposal = 1))))"
+    },
+    {
+      "table": "agent_proposals",
       "name": "ck_agent_proposals_status",
       "definition": "CHECK (((status)::text = ANY ((ARRAY['shadow'::character varying, 'proposed'::character varying, 'rejected_by_validator'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'applied'::character varying, 'reverted'::character varying, 'superseded'::character varying, 'expired'::character varying])::text[])))"
     },
@@ -123,7 +128,7 @@
     {
       "table": "agent_proposals",
       "name": "ck_agent_proposals_type",
-      "definition": "CHECK (((proposal_type)::text = ANY ((ARRAY['ExperimentPlanProposal'::character varying, 'ExperimentReviewProposal'::character varying, 'DatasetInvestigationProposal'::character varying, 'ImprovementActionProposal'::character varying, 'ToolCallProposal'::character varying, 'ReleaseProposal'::character varying])::text[])))"
+      "definition": "CHECK (((proposal_type)::text = ANY ((ARRAY['ExperimentPlanProposal'::character varying, 'ExperimentReviewProposal'::character varying, 'DatasetInvestigationProposal'::character varying, 'ImprovementActionProposal'::character varying, 'ToolCallProposal'::character varying, 'ReleaseProposal'::character varying, 'SemanticReviewProposal'::character varying])::text[])))"
     },
     {
       "table": "agent_proposals",
@@ -1321,6 +1326,31 @@
       "definition": "CHECK ((version >= 1))"
     },
     {
+      "table": "r3_runs",
+      "name": "ck_r3_runs_candidate",
+      "definition": "CHECK ((char_length(btrim((candidate)::text)) > 0))"
+    },
+    {
+      "table": "r3_runs",
+      "name": "ck_r3_runs_created_at",
+      "definition": "CHECK ((created_at <= (recorded_at + '00:05:00'::interval)))"
+    },
+    {
+      "table": "r3_runs",
+      "name": "ck_r3_runs_digests",
+      "definition": "CHECK (((content_digest ~ '^[0-9a-f]{64}$'::text) AND (run_digest ~ '^[0-9a-f]{64}$'::text)))"
+    },
+    {
+      "table": "r3_runs",
+      "name": "ck_r3_runs_live",
+      "definition": "CHECK ((live = (\"left\"((candidate)::text, 5) = 'live:'::text)))"
+    },
+    {
+      "table": "r3_runs",
+      "name": "ck_r3_runs_report",
+      "definition": "CHECK (((jsonb_typeof(report) = 'object'::text) AND (octet_length((report)::text) <= 524288)))"
+    },
+    {
       "table": "semantic_decision_answers",
       "name": "ck_sda_agreement",
       "definition": "CHECK (((agreement)::text = ANY ((ARRAY['agree'::character varying, 'disagree'::character varying, 'abstain'::character varying, 'unavailable'::character varying])::text[])))"
@@ -1931,6 +1961,11 @@
       "table": "prompt_releases",
       "name": "prompt_releases_status_transition",
       "definition": "CREATE TRIGGER prompt_releases_status_transition BEFORE UPDATE OF status, released_at ON public.prompt_releases FOR EACH ROW WHEN (((((new.status)::text IS DISTINCT FROM (old.status)::text) AND (NOT ((((old.status)::text = 'draft'::text) AND ((new.status)::text = 'released'::text)) OR (((old.status)::text = 'released'::text) AND ((new.status)::text = 'retired'::text))))) OR ((old.released_at IS NOT NULL) AND (new.released_at IS DISTINCT FROM old.released_at)))) EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "r3_runs",
+      "name": "r3_runs_append_only",
+      "definition": "CREATE TRIGGER r3_runs_append_only BEFORE DELETE OR UPDATE ON public.r3_runs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "runtime_environments",

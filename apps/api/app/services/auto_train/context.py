@@ -89,6 +89,9 @@ class RunContext:
         # A branch run (ADR 0006 §4): its parent's split plan and materialized
         # change set (``app.services.auto_train.branch.BranchRun``); None = root.
         self.branch: Any = None
+        # P6.9-A: the AI policy snapshot taken at job claim and the resolved decision
+        # points (``app.services.auto_train.decision_points.RunDecisionPoints``).
+        self.decisions: Any = None
         # P3.1-B2: cleared once the final holdout is touched. A cancel that
         # arrives later is not honoured: the holdout was scored, so the run must
         # finish and lock (record) that single evaluation.
@@ -205,12 +208,28 @@ class RunContext:
 
     def request_routine_advisory_verification(self) -> None:
         """Run only after ML state commits; provider failure cannot fail the job."""
-        if not get_settings().pipeline_llm_verifier_enabled:
+        if not get_settings().ai_enabled:  # P6.9-A: AI_ENABLED + kill switches gate it
             return
         try:
             request_pipeline_verification(self.db, self.upload_id)
         except Exception:  # noqa: BLE001 - advisory isolation is intentional
             logger.exception("advisory pipeline verification failed for upload %s", self.upload_id)
+
+    def request_experiment_review(self, experiment_id: UUID) -> None:
+        """P6.4-A ``experiment.review``: queue the Critic once ML state is committed (AI on,
+        switches allow). Its own transaction; a failure never fails or changes the run."""
+        settings = get_settings()
+        if not settings.ai_enabled:
+            return
+        try:
+            from app.agents.harness.service import enqueue_experiment_review
+
+            row = self.db.get(ClientLabUpload, self.upload_id)
+            enqueue_experiment_review(self.db, experiment_id=experiment_id,
+                                      user_id=row.requested_by if row is not None else None, settings=settings)
+        except Exception:  # noqa: BLE001 - advisory isolation is intentional
+            self.db.rollback()
+            logger.exception("experiment review could not be queued for upload %s", self.upload_id)
 
     def fail(
         self,

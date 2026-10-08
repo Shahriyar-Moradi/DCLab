@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Settings · DCLab</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="settings.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Settings</b></div>
+    <div class="cmd">Search or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><button class="pill demo-status" type="button" data-demo-status>Demo data</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Settings</h1><p class="sub">People, usage, connections for developers and how your data is protected.</p></div>
+</div>
+
+<div class="tabs" data-tabs="set">
+  <button data-tab="members" aria-selected="true">Members</button>
+  <button data-tab="usage">Usage</button>
+  <button data-tab="developers">Developers</button>
+  <button data-tab="safety">Data safety</button>
+  <button data-tab="notifications">Notifications</button>
+</div>
+
+<div data-tabpanel="set:members" class="on">
+  <div class="card">
+    <div class="head"><h2>Members</h2><button class="btn primary sm" data-mock="invite member">Invite</button></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Person</th><th>Role</th><th>Can</th></tr></thead>
+      <tbody>
+        <tr><td><b>Dana Reyes</b><small>you</small></td><td>Data scientist</td><td>Run experiments, approve decisions, release models</td></tr>
+        <tr><td><b>Priya Shah</b></td><td>Admin</td><td>Everything, plus members and AI governance</td></tr>
+        <tr><td><b>Tom Becker</b></td><td>Analyst</td><td>Run experiments and suggest decisions</td></tr>
+        <tr><td><b>Alex Kim</b></td><td>Business user</td><td>See results, download lists, answer questions</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="set:usage">
+  <div class="stats">
+    <div class="stat"><span class="v">142 min</span><span class="l">of 600 compute minutes</span><div class="meter"><i style="width:24%"></i></div></div>
+    <div class="stat"><span class="v">$9.40</span><span class="l">of $25 AI budget</span><div class="meter"><i style="width:38%"></i></div></div>
+    <div class="stat"><span class="v">2.1 GB</span><span class="l">stored</span></div>
+  </div>
+  <div class="card">
+    <div class="head"><h2>Plan</h2><button class="btn sm" data-mock="change plan">Change plan</button></div>
+    <dl class="kv"><dt>Plan</dt><dd>Beta</dd><dt>Projects</dt><dd>4 of 5</dd><dt>Runs at the same time</dt><dd>2</dd><dt>Resets</dt><dd>1 November</dd></dl>
+  </div>
+</div>
+
+<div data-tabpanel="set:developers">
+  <div class="card sect">
+    <div class="sect-head"><h2>Connect your tools</h2></div>
+    <section data-tab="Claude Code or Cursor">
+      <p class="muted">Let your coding agent run DCLab for you. It can read, upload and run experiments; it cannot release a model.</p>
+<pre class="code"><span class="c">// .mcp.json</span>
+{ "mcpServers": { "dclab": {
+    "command": "python", "args": ["-m", "dclab_mcp"],
+    "env": { "DCLAB_TOKEN": "${DCLAB_TOKEN}" } } } }</pre>
+    </section>
+    <section data-tab="Python">
+<pre class="code">from dclab_client import DCLab
+
+lab = DCLab()                                   <span class="c"># reads DCLAB_TOKEN</span>
+project = lab.projects.create(name="Northwind churn")
+data    = lab.datasets.upload(project.id, "customers.csv")
+run     = lab.experiments.run(project.id, dataset=data.id, target="churned_next_30d")
+print(lab.experiments.get(run.id).summary)</pre>
+    </section>
+    <section data-tab="Command line">
+<pre class="code">$ dclab data upload customers.csv --project northwind-churn
+$ dclab experiments run --project northwind-churn --wait
+$ dclab experiments compare E1 E7
+$ dclab experiments code E7 > reproduce.py</pre>
+    </section>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Access tokens</h2><button class="btn primary sm" data-mock="create token">New token</button></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Name</th><th>Can</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><b>Claude Code</b><small>Dana Reyes</small></td><td>Read, upload, run</td><td>In 27 days</td><td>Today</td><td><button class="btn sm danger" data-mock="revoke token">Revoke</button></td></tr>
+        <tr><td><b>Nightly benchmark</b><small>CI</small></td><td>Read, run</td><td>In 80 days</td><td>Today 03:17</td><td><button class="btn sm danger" data-mock="revoke token">Revoke</button></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="set:safety">
+  <div class="card">
+    <div class="head"><h2>How your data is protected</h2></div>
+    <dl class="kv">
+      <dt>Where it is stored</dt><dd>EU only, including training and AI calls</dd>
+      <dt>Uploads</dt><dd>Scanned and checked before use; invalid files are rejected and not kept</dd>
+      <dt>Kept for</dt><dd>24 months, then deleted</dd>
+      <dt>Shared with AI</dt><dd>Summaries only, never full rows. <a href="governance.html#data">Change</a></dd>
+      <dt>Deletion requests</dt><dd>Completed within 30 days</dd>
+    </dl>
+  </div>
+</div>
+
+<div data-tabpanel="set:notifications">
+  <div class="card">
+    <div class="head"><h2>When to tell me</h2></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">A decision needs me</span><span class="d">In the app and a daily email.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">The assistant did something on its own</span><span class="d">In the app.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">A model was rolled back or data drifted</span><span class="d">Email right away.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+      <div class="drow"><span class="t">A run finished</span><span class="d">Only if it failed.</span><span class="a"><span class="switch"><i></i></span></span></div>
+      <div class="drow"><span class="t">Budget is nearly used up</span><span class="d">At 80%.</span><span class="a"><span class="switch on"><i></i></span></span></div>
+    </div>
+  </div>
+</div>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v3"></script>
+</body>
+</html>

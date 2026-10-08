@@ -83,7 +83,7 @@ def _disable_agent(monkeypatch) -> None:
     from app.engine.lab import llm_client
     from app.services import lab_decision_ledger
 
-    settings = SimpleNamespace(decision_agent_enabled=False)
+    settings = SimpleNamespace(ai_enabled=False)  # P6.9-A: AI_ENABLED is the agent's gate
     monkeypatch.setattr(lab_decision_ledger, "get_settings", lambda: settings)
     monkeypatch.setattr(llm_client, "get_settings", lambda: settings)
 
@@ -174,7 +174,7 @@ def test_validator_rejects_cited_field_that_does_not_exist():
     assert "skewness" in result.reason
 
 
-def test_plan_code_reclassified_as_categorical_and_logged(auth_client, db_session, monkeypatch):
+def test_plan_code_answer_is_logged_and_only_the_role_point_applies_roles(auth_client, db_session, monkeypatch):
     raw = _plan_code_frame()
     upload = upload_via_api(auth_client, db_session, monkeypatch, raw, filename="plans.csv")
     ai = _enable_agent(monkeypatch, db_session, {
@@ -195,8 +195,9 @@ def test_plan_code_reclassified_as_categorical_and_logged(auth_client, db_sessio
     assert "tenure" not in consulted
     assert "MonthlyCharges" not in consulted
 
-    assert "plan_code" in upload.pipeline_log["categorical_cols"]
-    assert "plan_code" not in upload.pipeline_log["numerical_cols"]
+    # P6.9-A: the legacy writer no longer applies roles; column.semantic_role (Jev) does, by level.
+    assert "plan_code" in upload.pipeline_log["numerical_cols"]
+    assert "plan_code" not in upload.pipeline_log["categorical_cols"]
     assert "tenure" in upload.pipeline_log["numerical_cols"]
 
     type_rows = (
@@ -211,10 +212,10 @@ def test_plan_code_reclassified_as_categorical_and_logged(auth_client, db_sessio
     assert set(by_column) == {"plan_code"}
     row = by_column["plan_code"]
     assert row.rule_decision == "numerical"
-    assert row.final_decision == "categorical"
-    assert row.source == "llm"
+    assert row.final_decision == "numerical"
+    assert row.source == "rule"
     assert row.validator_verdict == "accept"
-    assert row.raw_llm_output is not None
+    assert row.raw_llm_output["action"] == "categorical"
     assert row.raw_llm_output["rationale"]
     assert row.evidence_snapshot["cardinality"] == 3
     assert row.evidence_snapshot["column"] == "plan_code"

@@ -1,0 +1,81 @@
+<!-- title: Models · Northwind churn -->
+<!-- crumbs: Northwind churn › <b>Models</b> -->
+<div class="page-head">
+  <div><h1>Models</h1><p class="sub">The model that is in use, the versions before it, and every scoring run.</p></div>
+  <div class="toolbar"><button class="btn danger" data-mock="roll back to version 3">Roll back</button><button class="btn primary" data-mock="score a file">Score a file</button></div>
+</div>
+
+<div class="tabs" data-tabs="models">
+  <button data-tab="current" aria-selected="true">In use</button>
+  <button data-tab="versions">Versions</button>
+  <button data-tab="scoring">Scoring runs</button>
+  <button data-tab="format">Input format</button>
+</div>
+
+<div data-tabpanel="models:current" class="on">
+  <div class="note"><div><b>A retrained model is waiting for your approval.</b><span class="muted">Version 5 was trained on newer data after the assistant detected drift.</span></div><a class="btn primary" href="inbox.html">Review</a></div>
+
+  <div class="stats">
+    <div class="stat"><span class="v">Version 4</span><span class="l">in use since Monday</span></div>
+    <div class="stat"><span class="v">81%</span><span class="l">of churners caught when tested</span></div>
+    <div class="stat"><span class="v">63%</span><span class="l">precision when tested</span></div>
+    <div class="stat"><span class="v">Daily 02:00</span><span class="l">scores 51,330 customers</span></div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Where version 4 came from</h2><a class="btn link" href="graph.html">See lineage →</a></div>
+    <dl class="kv">
+      <dt>Built by</dt><dd><a href="pipeline.html">Run E7</a>, the result of the improve loop</dd>
+      <dt>Data</dt><dd>Version 1 · January 2025 to June 2026</dd>
+      <dt>Model type</dt><dd>LightGBM · flags customers with risk above 0.31</dd>
+      <dt>Approved by</dt><dd>Dana Reyes, on Monday</dd>
+      <dt>Checks</dt><dd>19 of 20 passed · the one warning was answered</dd>
+    </dl>
+  </div>
+</div>
+
+<div data-tabpanel="models:versions">
+  <div class="card">
+    <div class="tbl"><table>
+      <thead><tr><th>Version</th><th>From run</th><th class="r">Churners caught</th><th class="r">Precision</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>Version 5</b></td><td>E9</td><td class="r">—</td><td class="r">—</td><td><span class="tag info">Waiting for approval</span></td></tr>
+        <tr class="win"><td><b>Version 4</b></td><td>E7</td><td class="r">81%</td><td class="r">63%</td><td><span class="tag ok">In use</span></td></tr>
+        <tr><td>Version 3</td><td>E2</td><td class="r">85%</td><td class="r">58%</td><td>Replaced · <button class="btn link" data-mock="roll back to version 3">roll back to this</button></td></tr>
+        <tr><td>Version 2</td><td>E1</td><td class="r">82%</td><td class="r">61%</td><td>Replaced</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">A model can be put into use only after a completed final test, passing checks and your approval.</p>
+  </div>
+</div>
+
+<div data-tabpanel="models:scoring">
+  <div class="card">
+    <div class="head"><h2>Scoring runs</h2><p>Each run checks the input file first. If the format is wrong, nothing is scored.</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>When</th><th>Input</th><th class="r">Customers</th><th class="r">Flagged</th><th>Result</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>Today 02:00</td><td>Scheduled</td><td class="r">51,330</td><td class="r">6,412</td><td><span class="tag ok">Done</span></td><td><button class="btn sm" data-mock="download predictions csv">Download</button></td></tr>
+        <tr><td>Yesterday 02:00</td><td>Scheduled</td><td class="r">51,330</td><td class="r">6,398</td><td><span class="tag ok">Done</span></td><td><button class="btn sm" data-mock="download predictions csv">Download</button></td></tr>
+        <tr><td>Tuesday 14:20</td><td>sept_list.csv</td><td class="r">1,204</td><td class="r">—</td><td><span class="tag crit">Not scored</span><small><code>monthly_fee</code> is missing</small></td><td></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="models:format">
+  <div class="card">
+    <div class="head"><h2>What a file must contain</h2><button class="btn sm" data-mock="download template csv">Download template</button></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Column</th><th>Type</th><th>Allowed values</th><th>Required</th></tr></thead>
+      <tbody>
+        <tr><td><code>monthly_fee</code></td><td>Number</td><td>0 to 500</td><td>Yes</td></tr>
+        <tr><td><code>plan_type</code></td><td>Text</td><td>One of 6 plans; new values are accepted and ignored</td><td>Yes</td></tr>
+        <tr><td><code>region_code</code></td><td>Whole number</td><td>One of 12 codes</td><td>Yes</td></tr>
+        <tr><td><code>signup_date</code></td><td>Date</td><td>Not in the future</td><td>Yes</td></tr>
+        <tr><td><code>last_login_days</code></td><td>Whole number</td><td>0 to 400</td><td>Can be empty</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">Showing 5 of 29 columns.</p>
+  </div>
+</div>

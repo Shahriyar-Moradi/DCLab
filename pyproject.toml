@@ -70,4 +70,8 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["apps/api/tests", "packages/dclab_client/tests", "packages/dclab_mcp/tests"]
+# Parallel by default (one Postgres database per xdist worker, see apps/api/tests/conftest.py);
+# worksteal rebalances the long ML/e2e tests. `-n 0` runs serially for debugging.
+addopts = "-n auto --dist worksteal"
 pythonpath = [".", "apps/api", "apps/api/tests", "packages/dclab_client", "packages/dclab_mcp"]
+markers = ["ai_harness: the offline AI test harness (apps/api/tests/ai_harness; `make test-ai`)"]

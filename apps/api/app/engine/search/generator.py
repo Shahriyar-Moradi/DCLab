@@ -138,15 +138,21 @@ def open_ingest_families(task_type: str) -> list[str]:
 CUSTOM_CLASS_WEIGHT_FAMILIES = ("logistic_regression", "random_forest", "extra_trees", "lightgbm")
 
 
-def open_ingest_portfolio(task_type: str, overrides: dict | None = None) -> list[str]:
-    """Learned families of a run: defaults − branch exclusions + branch inclusions (installed)."""
+def open_ingest_portfolio(task_type: str, overrides: dict | None = None, subset: list[str] | None = None) -> list[str]:
+    """Learned families of a run: defaults (∩ ``subset``, a ``SearchConfig.families`` choice)
+    − branch exclusions + branch inclusions (installed). A branch inclusion can therefore
+    restore a family the subset left out (the recorded revert of training.families_budget)."""
     overrides = overrides or {}
     excluded = set(overrides.get("families_exclude") or [])
     avail = set(available_families(task_type))
-    families = [name for name in open_ingest_families(task_type) if name not in excluded]
+    families = [name for name in open_ingest_families(task_type)
+                if name not in excluded and (subset is None or name in subset)]
     for name in overrides.get("families_include") or []:
         if name in avail and name not in excluded and name not in families and name not in DUMMY_FAMILIES:
             families.append(name)
+    if subset is not None:  # a restored family (the subset's revert) keeps the rule's candidate order
+        order = open_ingest_families(task_type)
+        families = [n for n in order if n in families] + [n for n in families if n not in order]
     return families
 
 
@@ -195,6 +201,8 @@ def _candidate_fingerprint(
     holdout_plan=None,
     development_plan=None,
     feature_set_version_digest: str | None = None,
+    ai_policy_digest: str | None = None,
+    search_families: list[str] | None = None,
 ) -> str:
     return scientific_candidate_fingerprint(
         task=task,
@@ -208,6 +216,8 @@ def _candidate_fingerprint(
         holdout_plan=holdout_plan,
         development_plan=development_plan,
         feature_set_version_digest=feature_set_version_digest,
+        ai_policy_digest=ai_policy_digest,
+        search_families=search_families,
     )
 
 
@@ -304,7 +314,7 @@ def _open_ingest_candidates(
         task=task,
     )
     overrides = dict(config.branch_overrides or {})
-    families = open_ingest_portfolio(task.task_type, overrides)
+    families = open_ingest_portfolio(task.task_type, overrides, config.families)  # dummy baseline added below
     # Branch hyperparameter overrides apply to every untuned candidate of a family.
     hp_overrides = {
         str(family): dict(values)
@@ -334,6 +344,8 @@ def _open_ingest_candidates(
                 holdout_plan=holdout_plan,
                 development_plan=development_plan,
                 feature_set_version_digest=feature_set_version_digest,
+                ai_policy_digest=config.ai_policy_digest,
+                search_families=config.families,
             ),
             metadata=dict(identity),
         )

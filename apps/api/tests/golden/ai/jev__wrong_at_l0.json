@@ -1,0 +1,171 @@
+{
+  "answers": [
+    {
+      "agreement": "disagree",
+      "answer": {
+        "value": 0.99
+      },
+      "cache_hit": false,
+      "evidence_partition": "train",
+      "level": 0,
+      "policy_outcome": "rule",
+      "purpose": "column.is_identifier",
+      "question_key": "feature",
+      "rule_answer": {
+        "value": false
+      },
+      "value_used": {
+        "value": false
+      }
+    },
+    {
+      "agreement": "disagree",
+      "answer": {
+        "value": "categorical_code"
+      },
+      "cache_hit": false,
+      "evidence_partition": "train",
+      "level": 0,
+      "policy_outcome": "rule",
+      "purpose": "column.semantic_role",
+      "question_key": "feature",
+      "rule_answer": {
+        "value": "numeric"
+      },
+      "value_used": {
+        "value": "numeric"
+      }
+    },
+    {
+      "agreement": "disagree",
+      "answer": {
+        "value": 0.97
+      },
+      "cache_hit": false,
+      "evidence_partition": "train",
+      "level": 0,
+      "policy_outcome": "rule",
+      "purpose": "feature.leakage_suspect",
+      "question_key": "feature",
+      "rule_answer": {
+        "value": "clear"
+      },
+      "value_used": {
+        "value": "clear"
+      }
+    }
+  ],
+  "events": [
+    {
+      "agreement": "disagree",
+      "ai": "on",
+      "ai_applied": 0,
+      "columns_total": 1,
+      "decision_point": "column.is_identifier",
+      "evidence_partition": "train",
+      "level": 0,
+      "policy_digest": "<digest>",
+      "reason": null,
+      "review_items": 0
+    },
+    {
+      "agreement": "disagree",
+      "ai": "on",
+      "ai_applied": 0,
+      "columns_total": 1,
+      "decision_point": "column.semantic_role",
+      "evidence_partition": "train",
+      "level": 0,
+      "policy_digest": "<digest>",
+      "reason": null,
+      "review_items": 0
+    },
+    {
+      "agreement": "disagree",
+      "ai": "on",
+      "ai_applied": 0,
+      "columns_total": 1,
+      "decision_point": "feature.leakage_suspect",
+      "evidence_partition": "train",
+      "level": 0,
+      "policy_digest": "<digest>",
+      "reason": null,
+      "review_items": 0
+    }
+  ],
+  "ledger": [
+    {
+      "cache_hit": false,
+      "data_class": "metadata",
+      "input_tokens": 143,
+      "llm_used": true,
+      "model": "jev-1.13.0",
+      "outcome_scope": "none",
+      "output_tokens": 22,
+      "prompt_version": "jev:column.is_identifier:v1",
+      "provider": "fake",
+      "purpose": "column.is_identifier",
+      "refusal_code": null,
+      "status": "completed",
+      "validator_verdict": "accepted"
+    },
+    {
+      "cache_hit": false,
+      "data_class": "metadata",
+      "input_tokens": 164,
+      "llm_used": true,
+      "model": "jev-1.13.0",
+      "outcome_scope": "none",
+      "output_tokens": 25,
+      "prompt_version": "jev:column.semantic_role:v1",
+      "provider": "fake",
+      "purpose": "column.semantic_role",
+      "refusal_code": null,
+      "status": "completed",
+      "validator_verdict": "accepted"
+    },
+    {
+      "cache_hit": false,
+      "data_class": "metadata",
+      "input_tokens": 134,
+      "llm_used": true,
+      "model": "jev-1.13.0",
+      "outcome_scope": "none",
+      "output_tokens": 22,
+      "prompt_version": "jev:feature.leakage_suspect:v1",
+      "provider": "fake",
+      "purpose": "feature.leakage_suspect",
+      "refusal_code": null,
+      "status": "completed",
+      "validator_verdict": "accepted"
+    },
+    {
+      "cache_hit": false,
+      "data_class": null,
+      "input_tokens": null,
+      "llm_used": false,
+      "model": null,
+      "outcome_scope": null,
+      "output_tokens": null,
+      "prompt_version": "v1",
+      "provider": null,
+      "purpose": "pipeline_audit_routine",
+      "refusal_code": null,
+      "status": "not_used",
+      "validator_verdict": "not_run"
+    }
+  ],
+  "values": {
+    "applied": [],
+    "categorical": [],
+    "leakage": [
+      [
+        "feature",
+        "clear"
+      ]
+    ],
+    "numeric": [
+      "feature"
+    ]
+  }
+}

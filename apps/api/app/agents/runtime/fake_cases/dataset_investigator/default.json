@@ -1,0 +1,1 @@
+{"schema_version": 1, "agent_key": "dataset_investigator", "case": "default", "steps": [{"kind": "llm"}]}

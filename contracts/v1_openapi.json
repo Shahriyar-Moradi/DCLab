@@ -1,5 +1,231 @@
 {
   "paths": {
+    "/v1/agent-reviews": {
+      "POST": {
+        "operationId": "request_agent_review_v1_agent_reviews_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "AgentReviewRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "AgentRunRead"
+      }
+    },
+    "/v1/agent-runs": {
+      "GET": {
+        "operationId": "list_agent_runs_v1_agent_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_key",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "AgentRunPage"
+      }
+    },
+    "/v1/agent-runs/{run_id}": {
+      "GET": {
+        "operationId": "read_agent_run_v1_agent_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "AgentRunRead"
+      }
+    },
+    "/v1/agent-runs/{run_id}/replay": {
+      "POST": {
+        "operationId": "replay_agent_run_v1_agent_runs__run_id__replay_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500",
+          "504"
+        ],
+        "successSchema": "ReplayRead"
+      }
+    },
+    "/v1/assistant/threads": {
+      "GET": {
+        "operationId": "list_threads_v1_assistant_threads_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_thread_v1_assistant_threads_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "AssistantThreadCreate",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500",
+          "503"
+        ],
+        "successSchema": "AssistantThreadRead"
+      }
+    },
+    "/v1/assistant/threads/{thread_id}": {
+      "GET": {
+        "operationId": "read_thread_v1_assistant_threads__thread_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "AssistantThreadDetail"
+      }
+    },
+    "/v1/assistant/threads/{thread_id}/messages": {
+      "POST": {
+        "operationId": "post_message_v1_assistant_threads__thread_id__messages_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "AssistantMessageCreate",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500",
+          "503"
+        ],
+        "successSchema": null
+      }
+    },
     "/v1/datasets": {
       "GET": {
         "operationId": "read_datasets_v1_datasets_get",
@@ -221,6 +447,41 @@
           "401",
           "403",
           "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExecutionRequestRead"
+      }
+    },
+    "/v1/execution-requests/{request_id}/split-confirmation": {
+      "POST": {
+        "operationId": "confirm_execution_request_split_v1_execution_requests__request_id__split_confirmation_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ExecutionSplitConfirmation",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
           "422",
           "500"
         ],
@@ -505,6 +766,103 @@
           "500"
         ],
         "successSchema": "ExperimentFindingsRead"
+      }
+    },
+    "/v1/governance": {
+      "GET": {
+        "operationId": "read_governance_v1_governance_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "GovernanceRead"
+      }
+    },
+    "/v1/governance/policy": {
+      "POST": {
+        "operationId": "propose_governance_policy_v1_governance_policy_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "PolicyProposalRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "PolicyChangeRead"
+      }
+    },
+    "/v1/governance/policy/{proposal_id}/accept": {
+      "POST": {
+        "operationId": "accept_governance_policy_v1_governance_policy__proposal_id__accept_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "PolicyAcceptRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "PolicyChangeRead"
+      }
+    },
+    "/v1/governance/switches": {
+      "POST": {
+        "operationId": "change_governance_switch_v1_governance_switches_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "SwitchChangeRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "SwitchRead"
       }
     },
     "/v1/me": {
@@ -1095,6 +1453,177 @@
           "500"
         ],
         "successSchema": "RefMoveRead"
+      }
+    },
+    "/v1/proposals": {
+      "GET": {
+        "operationId": "list_proposals_v1_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "decision_point_key",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "proposal_type",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProposalPage"
+      }
+    },
+    "/v1/proposals/{proposal_id}": {
+      "GET": {
+        "operationId": "read_proposal_v1_proposals__proposal_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProposalRead"
+      }
+    },
+    "/v1/proposals/{proposal_id}/accept": {
+      "POST": {
+        "operationId": "accept_proposal_v1_proposals__proposal_id__accept_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ProposalDecisionRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "ProposalRead"
+      }
+    },
+    "/v1/proposals/{proposal_id}/reject": {
+      "POST": {
+        "operationId": "reject_proposal_v1_proposals__proposal_id__reject_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ProposalDecisionRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "ProposalRead"
+      }
+    },
+    "/v1/proposals/{proposal_id}/revert": {
+      "POST": {
+        "operationId": "revert_proposal_v1_proposals__proposal_id__revert_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ProposalDecisionRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "ProposalRead"
       }
     },
     "/v1/service-tokens": {

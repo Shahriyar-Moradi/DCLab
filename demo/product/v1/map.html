@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Screen map · DCLab Studio mock</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="map.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs"><b>Screen map and review</b></div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>DCLab product map &amp; review</h1><p class="sub">A detailed click-through target-state prototype for Developer Studio, the business outcome view and internal platform operations. Screen completeness is not evidence that a feature is already implemented: compare the UI idea with the current MVP roadmap below. All records and metrics are invented sample data.</p></div>
+  <div class="toolbar"><a class="btn" href="index.html">Choose a workspace</a><a class="btn primary" href="lab.html">Developer journey</a><a class="btn" href="client.html">Business journey</a><a class="btn" href="operator.html">Operator</a></div>
+</div>
+
+<div class="banner warn"><b>Prototype boundary:</b> this is a UI concept built from <code>docs/mvp</code>, not a claim that every screen or control exists in the running application. Use the roadmap status and per-screen review notes to separate shipped foundations from planned work.</div>
+
+<div class="grid cols-2">
+  <div class="card"><h3>Developer journey <span class="sp">Studio</span></h3>
+    <div class="events">
+      <div class="ev hum"><span class="when">1</span><a href="home.html">Home</a>: what needs a decision, what runs, what the AI did, spend</div>
+      <div class="ev ai"><span class="when">2</span><a href="lab.html">Lab</a>: give data and a goal; the lead agent proposes decisions with levels and runs in the background</div>
+      <div class="ev det"><span class="when">3</span><a href="pipeline.html">Pipeline</a>: every stage with deterministic result, AI before/after, decision, artifact digest, checks</div>
+      <div class="ev det"><span class="when">4</span><a href="data.html">Data</a>: versions, column roles (rule vs AI), leakage audit, availability contract, findings</div>
+      <div class="ev det"><span class="when">5</span><a href="experiments.html">Experiments</a>: candidates, folds, threshold, Critic, compare, typed branch builder, exported code</div>
+      <div class="ev ai"><span class="when">6</span><a href="improve.html">Improve</a>: goal and budget; agent and rule proposers cross-checked per iteration</div>
+      <div class="ev det"><span class="when">7</span><a href="graph.html">Graph</a>: refs, lineage, stale impact, inspector</div>
+      <div class="ev det"><span class="when">8</span><a href="models.html">Models</a>: versions, releases, batch predictions, feature contract, package integrity</div>
+      <div class="ev ai"><span class="when">9</span><a href="monitoring.html">Monitoring</a>: drift, labeled performance, Ops agent chain with levels</div>
+      <div class="ev hum"><span class="when">10</span><a href="inbox.html">Inbox</a> and <a href="decisions.html">Decisions</a>: approve, revert, audit</div>
+      <div class="ev det"><span class="when">11</span><a href="governance.html">Governance</a>: policy, trust levels, budgets, switches, incidents, replay, evaluations</div>
+      <div class="ev det"><span class="when">12</span><a href="agents.html">Agents &amp; tools</a>: catalog, tool registry, runs with harness trace, MCP/SDK/CLI/API, tokens · <a href="settings.html">Settings</a></div>
+    </div>
+  </div>
+  <div class="card"><h3>Business user journey <span class="sp">client view</span></h3>
+    <div class="events">
+      <div class="ev hum"><span class="when">1</span><a href="client.html">Outcome page</a>: the question, trust figures in plain words, this week's list with reasons</div>
+      <div class="ev ai"><span class="when">2</span>Plain-language updates from the Ops agent ("precision fell, retrained, waiting for approval")</div>
+      <div class="ev hum"><span class="when">3</span>Answer agent questions; download predictions; ask "why is C-48112 flagged?"</div>
+    </div>
+    <h3 style="margin-top:12px">Operator journey</h3>
+    <div class="events">
+      <div class="ev det"><span class="when">1</span><a href="operator.html">Operator console</a>: workspaces, quotas, jobs, quarantine, platform caps, benchmarks and gates</div>
+    </div>
+  </div>
+</div>
+
+<div class="card"><h3>Coverage against the roadmap</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Roadmap item</th><th>Prototype screens</th><th>Prototype coverage</th><th>Current MVP position</th></tr></thead>
+    <tbody>
+      <tr><td>P1 deterministic ML engine and valid evaluation</td><td>Pipeline, Experiments</td><td><span class="pill ok">detailed concept</span> (some task types not drawn)</td><td><span class="pill ok">foundation marked done</span></td></tr>
+      <tr><td>P2 ML state graph, refs, staleness, branch, decision records</td><td>Graph, Experiments, Decisions</td><td><span class="pill ok">detailed concept</span></td><td><span class="pill ok">foundation marked done</span></td></tr>
+      <tr><td>P3 /v1, SDK/CLI, MCP and scoped service tokens</td><td>Agents &amp; tools</td><td><span class="pill ok">detailed concept</span></td><td><span class="pill ok">foundation marked done</span></td></tr>
+      <tr><td>P6 hybrid AI core: NOOA Predict, Jev judgments, harness and gateway</td><td>Lab, Pipeline, Governance, Agents</td><td><span class="pill ok">target UI</span></td><td><span class="pill det">next after Phase 3</span></td></tr>
+      <tr><td>P4 agent-first Studio: chat, pipeline evidence, inbox, dashboard</td><td>Lab, Pipeline, Inbox, Home</td><td><span class="pill ok">target UI</span></td><td><span class="pill det">planned after Phase 6</span></td></tr>
+      <tr><td>P5 verify &amp; improve, leakage contract and bounded loop</td><td>Data, Improve, Experiments</td><td><span class="pill ok">target UI</span></td><td><span class="pill det">planned after Phase 4</span></td></tr>
+      <tr><td>P7 release, batch prediction, drift and rollback</td><td>Models, Monitoring, Inbox</td><td><span class="pill ok">target UI</span></td><td><span class="pill det">planned after Phase 5</span></td></tr>
+      <tr><td>P8 hosted beta, usage metering, data safety and operations</td><td>Settings, Governance, Operator</td><td><span class="pill ok">target UI</span></td><td><span class="pill det">planned after Phase 7</span></td></tr>
+      <tr><td>Phase 9 demand-gated: online serving, persistent Jupyter, external GPU, second cloud, broad connectors, business actions and open-ended code agents</td><td>Not in product views; limits and review notes only</td><td><span class="pill gray">intentionally deferred</span></td><td><span class="pill gray">not MVP</span></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card" style="border-top:3px solid var(--crit)"><h3>Things the mock exposed as missing from the plan</h3>
+    <ul style="margin:0;padding-left:18px;display:grid;gap:5px;font-size:0.9rem">
+      <li><b>Per-row explanations</b> for the client list ("why is this customer flagged") need a deterministic explainer in the engine; nothing in P1–P8 provides it.</li>
+      <li><b>Label arrival</b> for monitoring: no defined path (upload, connector, or a labeling view).</li>
+      <li><b>Notifications and webhooks</b>: L1 items and L3 actions need email/Slack/webhook; only the usage ledger exists.</li>
+      <li><b>Report agent</b> is not a committed MVP dependency; start with a deterministic template and add generation only if it saves time without changing evidence.</li>
+      <li><b>Cleaning actions</b> (dedupe, indicator for missingness): who owns them, agent proposal or a cleaning recipe?</li>
+      <li><b>Workspace-level decision records</b> (policy changes) vs project records: one ledger or two?</li>
+      <li><b>Analyst role</b> (run but not accept) is useful for teams; not in the current role model.</li>
+      <li><b>Session persistence for the lead agent</b>: chat sessions, resumption, and reporting when the user leaves.</li>
+    </ul>
+  </div>
+  <div class="card" style="border-top:3px solid var(--warn)"><h3>Things worth questioning</h3>
+    <ul style="margin:0;padding-left:18px;display:grid;gap:5px;font-size:0.9rem">
+      <li>Does a small customer have a separate governance approver, or does the developer self-approve? If so, simplify approvals.</li>
+      <li>Manual hyperparameter overrides in the branch builder when the loop tunes.</li>
+      <li>Rule-proposer shadow runs in every improve iteration cost compute; limit to R2.</li>
+      <li>Daily windows, compute placement UI, Slack before webhooks: later.</li>
+      <li>Timeline layout and archived toggle in the graph.</li>
+    </ul>
+  </div>
+  <div class="card" style="border-top:3px solid var(--ok)"><h3>Things that look right</h3>
+    <ul style="margin:0;padding-left:18px;display:grid;gap:5px;font-size:0.9rem">
+      <li>One registry of tools for MCP, lead agent and forms keeps the surface small.</li>
+      <li>Rule answer beside every AI answer makes disagreements visible and cheap to audit.</li>
+      <li>The pipeline evidence view is the trust surface for both personas.</li>
+      <li>Inbox + Decisions + Governance separate "act now", "what happened" and "what is allowed".</li>
+      <li>Client view hides internals but keeps the trust figures and the undo.</li>
+    </ul>
+  </div>
+</div>
+
+<p class="small muted">All displayed organizations, names, metrics, token labels, events and spend figures are fictional. Controls open an action preview and simulate locally only. Files: <code>demo/product/</code>; editable page sources in <code>demo/product/src/</code>, composed by <code>build.py</code>.</p>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v1"></script>
+</body>
+</html>

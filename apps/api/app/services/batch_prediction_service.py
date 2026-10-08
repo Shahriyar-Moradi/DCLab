@@ -121,6 +121,15 @@ def create_batch_prediction(
             "model_not_scoreable", "this model version has no locked, stored model to score with", status_code=409
         )
     dataset = uploaded_dataset(db, workspace_id, model_version.project_id, dataset_id)
+    # ADR 0008 §2b: refuse the file the model was trained on, by id and by identical content digest. Limit:
+    # a shuffled, re-encoded or column-extended copy has another digest and is NOT caught here; matching
+    # scored rows against the training rows is a worker-side follow-up. This is not a holdout guarantee.
+    source = _scoped(db, Dataset, workspace_id, experiment.source_dataset_id) if experiment.source_dataset_id else None
+    if source is not None and (dataset.id == source.id or (
+            dataset.content_digest and dataset.content_digest == source.content_digest)):
+        raise BatchPredictionError(
+            "training_dataset_not_scoreable", "score new data, not the dataset this model was trained on",
+            status_code=409)
     ensure_run_capacity(db, workspace_id)  # one shared limit for training and scoring jobs
     prediction_id = uuid4()
     request = create_execution_request(

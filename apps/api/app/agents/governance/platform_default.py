@@ -50,6 +50,9 @@ class DataPolicy(_Strict):
     max_class: DataClass
     sample_values_per_column: int = Field(ge=0, le=50)
     user_text_to_jev: bool
+    # P6.8-A: the workspace's explicit opt-in to contribute per-workspace aggregates (never
+    # rows) to platform R3 runs (ADR 0008 §4 "platform R3 = benchmarks + explicit opt-in").
+    share_r3_aggregates: bool = False
 
 
 class RollbackRule(_Strict):
@@ -162,7 +165,8 @@ PLATFORM_DEFAULT = AiPolicyV1.model_validate(
                 "jev": {"default": _JEV, "allowed": [_JEV], "fallback": "rule_answer"},
             }
         },
-        "data": {"max_class": "aggregates", "sample_values_per_column": 0, "user_text_to_jev": False},
+        "data": {"max_class": "aggregates", "sample_values_per_column": 0, "user_text_to_jev": False,
+                 "share_r3_aggregates": False},
         "autonomy": {
             "ops": {
                 "auto_retrain_per_week": 2,

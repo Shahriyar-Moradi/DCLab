@@ -1,0 +1,85 @@
+<!-- title: Lab · Northwind churn -->
+<!-- crumbs: Northwind churn › <b>Lab</b> -->
+<div class="page-head">
+  <div><h1>Lab</h1><p class="sub">Tell the assistant what you want to predict. It prepares the data, runs the experiments and asks you before anything important.</p></div>
+  <div class="toolbar"><span class="switch on"><i></i>Assistant on</span></div>
+</div>
+
+<div class="tabs" data-tabs="lab">
+  <button data-tab="chat" aria-selected="true">Conversation</button>
+  <button data-tab="run">This run</button>
+  <button data-tab="can">What the assistant can do</button>
+</div>
+
+<div data-tabpanel="lab:chat" class="on">
+  <div class="grid">
+    <div class="chat">
+      <div class="msg user">
+        <span class="file">customers_2026Q3.csv · 48,210 rows</span>
+        Here's our customer file. Predict who will churn next month. We must catch at least 80% of churners.
+      </div>
+
+      <div class="msg agent">
+        <span class="from">Assistant</span>
+        <p>I read the file and checked it. Here is my plan. Three choices need your approval; two small ones I already applied and you can undo them.</p>
+        <div class="dlist">
+          <div class="drow"><span class="t">Leave out <code>churned_at</code></span><span class="d">It is filled in after a customer leaves, so it would give away the answer.</span><span class="a"><span class="tag info">Needs approval</span></span></div>
+          <div class="drow"><span class="t">Test on the latest 3 months</span><span class="d">Your data covers 18 months. Testing on the newest months shows how the model will do next month.</span><span class="a"><span class="tag info">Needs approval</span></span></div>
+          <div class="drow"><span class="t">Goal: catch at least 80% of churners, then be as precise as possible</span><span class="d">About 1 in 5 customers churn, so I will also compare against a simple baseline.</span><span class="a"><span class="tag info">Needs approval</span></span></div>
+          <div class="drow"><span class="t">Treat <code>region_code</code> as a category</span><span class="d">It has 12 codes; it is not a quantity.</span><span class="a"><span class="tag">Applied</span><button class="btn sm" data-mock="undo">Undo</button></span></div>
+          <div class="drow"><span class="t">Ignore <code>customer_id</code></span><span class="d">It is an identifier, not information.</span><span class="a"><span class="tag">Applied</span><button class="btn sm" data-mock="undo">Undo</button></span></div>
+        </div>
+        <div class="toolbar"><button class="btn primary" data-mock="approve and run">Approve and run</button><button class="btn" data-mock="change the plan">Change something</button></div>
+        <p class="hint">5 model types · about 10 minutes · every step is recorded</p>
+      </div>
+
+      <div class="msg user">Approved. For us, churn means no payment for 60 days.</div>
+
+      <div class="msg sys"><span class="dot ok"></span>Run E1 finished in 4 min 12 s</div>
+
+      <div class="msg agent">
+        <span class="from">Assistant</span>
+        <p>The best model is LightGBM. Tested once on three months it had never seen:</p>
+        <div class="mini">
+          <div><b>82%</b><span>of churners caught</span></div>
+          <div><b>61%</b><span>of flagged customers really churn</span></div>
+          <div><b>+47 pts</b><span>better than a simple baseline</span></div>
+        </div>
+        <p><b>One thing to confirm.</b> Days since last login carries most of the signal. Is that value known on the day you make predictions?</p>
+        <div class="toolbar"><button class="btn primary" data-mock="answer: known daily">Yes, we know it daily</button><button class="btn" data-mock="answer: not known">No</button></div>
+        <div class="toolbar"><a class="btn link" href="pipeline.html">See how it was built →</a><a class="btn link" href="experiments.html#improve">Try to improve precision →</a></div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <textarea placeholder="Ask a question or tell the assistant what to do next…" aria-label="Message the assistant"></textarea>
+      <div class="acts"><button class="btn" data-mock="upload data">Attach data</button><button class="btn primary" data-mock="send">Send</button></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="lab:run">
+  <div class="card">
+    <div class="head"><h2>Run E1</h2><a class="btn link" href="pipeline.html">Open the full run →</a></div>
+    <dl class="kv">
+      <dt>Data</dt><dd>48,210 customer snapshots, January 2025 to June 2026</dd>
+      <dt>Predicting</dt><dd>Churn in the next 30 days (no payment for 60 days)</dd>
+      <dt>Tested on</dt><dd>The latest 3 months, never used for training</dd>
+      <dt>Best model</dt><dd>LightGBM, chosen by a fixed rule on validation data</dd>
+      <dt>Result</dt><dd>Catches 82% of churners; 61% of flagged customers really churn</dd>
+      <dt>Your decisions</dt><dd>3 approved · 2 applied automatically</dd>
+      <dt>Time and cost</dt><dd>4 min 12 s · $0.30</dd>
+    </dl>
+  </div>
+</div>
+
+<div data-tabpanel="lab:can">
+  <div class="card">
+    <div class="three">
+      <div><h3><span class="dot ok"></span>Does on its own</h3><ul><li>Reads and profiles your data</li><li>Runs experiments within your budget</li><li>Compares runs and writes reviews</li><li>Small data choices you can undo</li></ul></div>
+      <div><h3><span class="dot run"></span>Asks you first</h3><ul><li>Leaving a column out</li><li>The goal and how to test it</li><li>Putting a model into use</li><li>Anything that costs more than the budget</li></ul></div>
+      <div><h3><span class="dot crit"></span>Never does</h3><ul><li>Sees the test data</li><li>Picks the winning model</li><li>Calculates the scores</li></ul><p class="hint" style="margin-top:12px">These are done by fixed, tested code.</p></div>
+    </div>
+  </div>
+  <p class="hint">You decide how much the assistant may do on its own in <a href="governance.html">AI governance</a>.</p>
+</div>

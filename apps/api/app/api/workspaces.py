@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_workspace_read
 from app.db.models import User
 from app.db.session import get_db
-from app.domain.errors import IdentityError, ProblemSpecNotFoundError, ProjectNotFoundError
+from app.domain.errors import IdentityError, PlanRefusedError, ProblemSpecNotFoundError, ProjectNotFoundError
 from app.domain.workspace_identity import (
     ProblemSpecCreateRequest,
     ProblemSpecRead,
@@ -193,7 +193,10 @@ def create_problem_spec_endpoint(
             constraints=payload.constraints,
             success_criteria=payload.success_criteria,
             status=payload.status,
+            plan=payload.plan,
         )
+    except PlanRefusedError as exc:
+        raise HTTPException(status_code=422, detail=exc.public_detail()) from exc
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except ProjectNotFoundError as exc:

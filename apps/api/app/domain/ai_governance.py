@@ -129,3 +129,14 @@ CK_SWITCHES_REASON = "char_length(btrim(reason)) > 0"
 CK_SWITCHES_CHAIN = "supersedes_id IS NULL OR supersedes_id <> id"
 # Rules only switch off; the platform seed is the one rule-written ``on``.
 CK_SWITCHES_RULE_OFF = "actor_rule IS NULL OR state = 'off' OR actor_rule = 'governance.seed.v1'"
+
+# --- r3_runs (P6.8-A; ADR 0008 §4: promotion evidence is a stored, server-side R3 run) ----
+R3_REPORT_MAX_BYTES = 512 * 1024  # bounded body: a deliberate exception to "large bodies go to object storage"
+CK_R3_RUNS_CANDIDATE = "char_length(btrim(candidate)) > 0"
+CK_R3_RUNS_DIGESTS = "content_digest ~ '^[0-9a-f]{64}$' AND run_digest ~ '^[0-9a-f]{64}$'"
+CK_R3_RUNS_REPORT = (
+    f"jsonb_typeof(report) = 'object' AND octet_length(report::text) <= {R3_REPORT_MAX_BYTES}"
+)
+CK_R3_RUNS_LIVE = "live = (left(candidate, 5) = 'live:')"
+# the operator clock (created_at) may not run ahead of the database clock (recorded_at)
+CK_R3_RUNS_CREATED_AT = "created_at <= recorded_at + interval '5 minutes'"

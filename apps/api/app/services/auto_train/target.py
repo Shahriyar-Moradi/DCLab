@@ -17,9 +17,16 @@ from app.engine.lab.schema_inference import TargetChoice
 from app.engine.modeling.objective import Objective, ObjectiveError, objective_from_dict
 from app.services.auto_train.branch import require_same_target
 from app.services.auto_train.context import RunContext, StageHalt, service_module
+from app.services.auto_train.decision_points import TARGET, plan_answers
+from app.services.auto_train.plan_points import (
+    resolve_legacy_target,
+    resolve_objective_point,
+    resolve_target_point,
+)
 from app.services.target_intent_service import (
     UNRESOLVED_TARGET_STATUS,
     audit_source_for_choice,
+    load_workspace_problem_spec,
     public_target_payload,
     requested_target_from_execution,
     resolve_execution_target,
@@ -67,6 +74,14 @@ def run_target_resolution(ctx: RunContext, inp: TargetResolutionInput) -> Target
             upload_explicit_target=upload.explicit_target_column,
             workflow_run=workflow_run,
         )
+        if ctx.branch is None and plan_answers(ctx, TARGET) is not None:  # P6.9-A: target.column (L1)
+            spec = load_workspace_problem_spec(
+                db, workspace_id=upload.workspace_id,
+                problem_spec_id=workflow_run.problem_spec_id if workflow_run is not None else None,
+                project_id=workflow_run.project_id if workflow_run is not None else None)
+            requested = resolve_target_point(
+                ctx, frame=coerced, columns=columns, requested=requested,
+                spec_target=spec.target_column if spec is not None else None)
         target = resolve_execution_target(
             db,
             workspace_id=upload.workspace_id,
@@ -88,6 +103,7 @@ def run_target_resolution(ctx: RunContext, inp: TargetResolutionInput) -> Target
             extra={"target": detail, "analysis": profile, "quality": quality},
         )
         raise StageHalt from exc
+    suggestion = resolve_legacy_target(ctx, target) if target.column is None else None  # target.column (L1)
     target_evidence = {
         **public_target_payload(target),
         "locked_at": datetime.now(UTC).isoformat() if target.column is not None else None,
@@ -117,6 +133,8 @@ def run_target_resolution(ctx: RunContext, inp: TargetResolutionInput) -> Target
             raise StageHalt
         ctx.finish_stage(status="completed")
         waiting = target_confirmation_required_payload(target)
+        if suggestion is not None:  # the legacy agent's answer, for a person to confirm (L1)
+            waiting["ai_suggestion"] = suggestion
         payload = {
             "target": {**target_evidence, "status": UNRESOLVED_TARGET_STATUS},
             "target_confirmation": waiting,
@@ -156,6 +174,7 @@ def run_target_resolution(ctx: RunContext, inp: TargetResolutionInput) -> Target
             run_objective = None if run_objective is None or run_objective.is_empty else run_objective
         else:
             run_objective = svc._run_objective(db, upload, workflow_run, target.task_type)
+            run_objective = resolve_objective_point(ctx, target.task_type, run_objective)  # spec.objective
     except ObjectiveError as exc:
         ctx.fail(
             f"the problem spec objective is invalid for a {target.task_type} target: {exc}",

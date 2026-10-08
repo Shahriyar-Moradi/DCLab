@@ -33,7 +33,12 @@ from app.db.models import (
     ProjectDecisionRecord,
     SplitPlan,
 )
-from app.domain.agent_records import PROPOSAL_PAYLOAD_MAX_BYTES, PROPOSAL_TYPES, TOOL_ARGUMENTS_MAX_BYTES
+from app.domain.agent_records import (
+    PROPOSAL_PAYLOAD_MAX_BYTES,
+    PROPOSAL_TYPES,
+    SERVICE_ONLY_PROPOSAL_TYPES,
+    TOOL_ARGUMENTS_MAX_BYTES,
+)
 from app.domain.errors import DecisionRecordError
 
 PAYLOAD_SCHEMA_VERSION = 1
@@ -44,7 +49,8 @@ _NODE_TABLES: dict[str, Any] = {
 }
 # Write-tool argument -> node kind it must name in the run's project.
 _ARGUMENT_NODES = {"experiment_id": "experiment", "dataset_id": "dataset_version",
-                   "model_version_id": "model_version", "problem_spec_id": "problem_spec"}
+                   "model_version_id": "model_version", "problem_spec_id": "problem_spec",
+                   "plan": "proposal"}  # P6.9-A: a run plan is a proposal of the run's project
 
 
 def names_holdout(value: Any) -> bool:
@@ -134,9 +140,12 @@ def citation_reasons(db: Session, citations: Sequence[Citation], *, workspace_id
     return []
 
 
-def output_reasons(db: Session, output: Any, runtime: Any, *, workspace_id: UUID, project_id: UUID | None) -> list[str]:
+def output_reasons(db: Session, output: Any, runtime: Any, *, workspace_id: UUID, project_id: UUID | None,
+                   run_id: UUID | None = None, tool_ctx: Any = None) -> list[str]:
     """Pydantic (the runtime's declared output schema) + holdout + citations + the
-    runtime's own deterministic validator (``validate_output(output) -> [codes]``)."""
+    runtime's own deterministic validator (``validate_output(output) -> [codes]``) + its
+    agent class's (or, for the lead loop, its own) database-backed validator
+    (``check_output``, P6.4-A: cited columns, CV metrics, findings) against the run's subject."""
 
     if output is None:
         return ["no_output"]
@@ -157,13 +166,32 @@ def output_reasons(db: Session, output: Any, runtime: Any, *, workspace_id: UUID
     custom = getattr(runtime, "validate_output", None)
     if not reasons and callable(custom):
         reasons = [str(code)[:64] for code in custom(output) or ()]
+    check = getattr(runtime, "check_output", None) or getattr(getattr(runtime, "agent_class", None), "check_output",
+                                                             None)
+    if not reasons and callable(check):
+        reasons = [str(code)[:64] for code in check(
+            _output_check(db, workspace_id, project_id, run_id, tool_ctx), output) or ()]
     return reasons
+
+
+def _output_check(db: Session, workspace_id: UUID, project_id: UUID | None, run_id: UUID | None,
+                  tool_ctx: Any = None) -> Any:
+    from app.agents.runtime.base import OutputCheck
+    from app.db.models import AgentRun
+    from app.domain.agent_records import AGENT_SUBJECT_COLUMNS
+
+    run = db.scalar(select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)) \
+        if run_id is not None else None
+    kind = run.subject_kind if run is not None else None
+    column = AGENT_SUBJECT_COLUMNS.get(kind or "")
+    return OutputCheck(db=db, workspace_id=workspace_id, project_id=project_id, subject_kind=kind,
+                       subject_id=getattr(run, column) if column else None, tool_ctx=tool_ctx)
 
 
 def draft_reasons(draft: Any) -> list[str]:
     from app.agents.governance.decision_points import REGISTRY
 
-    if draft.proposal_type not in PROPOSAL_TYPES or draft.proposal_type == "ToolCallProposal":
+    if draft.proposal_type not in PROPOSAL_TYPES or draft.proposal_type in SERVICE_ONLY_PROPOSAL_TYPES:
         return ["proposal_type_invalid"]
     if draft.decision_point_key not in REGISTRY:
         return ["decision_point_unknown"]

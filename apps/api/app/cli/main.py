@@ -151,6 +151,142 @@ def cmd_agents_sync_prompts(args: argparse.Namespace) -> int:
     return 1 if problems or result.get("mismatched") else 0
 
 
+def _load_report(path: str) -> dict:
+    from pathlib import Path
+
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def cmd_r3_run(args: argparse.Namespace) -> int:
+    """R3 evaluation run (P6.8-A). Offline by default: the R1 ``quick`` corpus and the scripted
+    fake answerer; ``--live`` asks the real Jev provider through the gateway (AI_ENABLED and
+    the platform switches must allow it; refused when CI is set)."""
+
+    import tempfile
+    from pathlib import Path
+    from uuid import UUID
+
+    from app.services import r3_evaluation_service as r3
+
+    ci = os.environ.get("CI", "").strip().lower() not in ("", "0", "false") or bool(os.environ.get("GITHUB_ACTIONS"))
+    workspaces = [UUID(w) for w in args.workspace]
+    if args.live and ci:
+        print(json.dumps({"error": "a live R3 run never runs in CI"}))
+        return 2
+    if (args.live or workspaces) and not args.admin:
+        print(json.dumps({"error": "--live and --workspace need --admin (an active dclab_admin; operator-trust "
+                                   "attribution recorded in the run)"}))
+        return 2
+    corpus = r3.benchmark_corpus(args.suite, tasks=args.task or None, seed=args.seed)
+    answerer, candidate, db, eval_ws, admin = r3.ScriptedAnswerer(seed=args.seed), f"fake:{args.seed}", None, None, None
+    operator = None
+    if args.live or workspaces or args.store:
+        db = _session()
+    try:
+        if args.admin and db is not None:
+            import getpass
+            import socket
+
+            from sqlalchemy import func, select
+
+            from app.agents.governance.policy import is_platform_admin
+            from app.db.models import User
+
+            admin = db.scalar(select(User).where(func.lower(User.email) == args.admin.strip().lower()))
+            if admin is None or not is_platform_admin(db, admin):
+                print(json.dumps({"error": "--admin must name an active dclab_admin"}))
+                return 2
+            # --admin is operator trust (no login): the admin id and a hash of user@host (never the raw
+            # names) are part of the run's evidence. Never commit a live report file.
+            import hashlib
+
+            operator = {"admin_id": str(admin.id),
+                        "operator_digest": hashlib.sha256(f"{getpass.getuser()}@{socket.gethostname()}".encode()).hexdigest()[:16]}
+        if args.live:
+            from app.agents.gateway.service import GatewayService
+            from app.agents.semantic.port import semantic_port
+            from app.config import get_settings
+
+            settings = get_settings()
+            port = semantic_port(GatewayService(), settings=settings)
+            if not r3.platform_evaluation_workspace_ok(db, settings.r3_eval_workspace_id, settings) or type(
+                    port).__name__ != "JevSemanticPort":
+                print(json.dumps({"error": "live runs need AI enabled, the typesafe provider and R3_EVAL_WORKSPACE_ID "
+                                           f"naming a workspace with the {r3.EVALUATION_CAPABILITY} capability"}))
+                return 2
+            eval_ws = settings.r3_eval_workspace_id
+            answerer = r3.port_answerer(db, port, eval_ws, settings=settings,
+                                        dataset_id=UUID(args.dataset) if args.dataset else None,
+                                        project_id=UUID(args.project) if args.project else None)
+            candidate = f"live:jev:admin:{admin.id}"
+        previous = _load_report(args.previous) if args.previous else None
+        report = r3.run_r3(corpus, answerer, candidate=candidate, db=db, workspace_ids=workspaces, actor=admin,
+                           evaluation_workspace_id=eval_ws, previous=previous, apply_demotions=bool(args.live),
+                           partition=args.partition, operator=operator,
+                           settings=settings if args.live else None)
+        if db is not None:
+            db.commit()  # the stored run (+ eval_failure incidents of a live run)
+    finally:
+        if db is not None:
+            db.close()
+    out = Path(args.out or Path(tempfile.gettempdir()) / "dclab-runs" / "r3-latest.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.touch(mode=0o600, exist_ok=True)
+    out.chmod(0o600)  # aggregates and operator attribution: owner-readable only
+    out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    print(r3.render_markdown(report))
+    print(json.dumps({"run_id": report["run_id"], "digest": report["digest"], "out": str(out)}))
+    return 0 if all(v["equal"] for v in report["ablation"]["points"].values()) else 1
+
+
+def cmd_r3_report(args: argparse.Namespace) -> int:
+    from app.services.r3_evaluation_service import render_markdown
+
+    print(render_markdown(_load_report(args.report)))
+    return 0
+
+
+def cmd_r3_promote_check(args: argparse.Namespace) -> int:
+    """ADVISORY: would the rule engine let ``--key`` be proposed at ``--level`` on this report file?
+    Prints every gate; writes nothing. The binding decision is ``propose_promotion`` on a STORED
+    live run plus a second dclab_admin's ``accept_level`` — neither has, nor may get, a CLI path."""
+
+    from dataclasses import asdict
+
+    from app.services.r3_evaluation_service import promotion_check
+
+    report = _load_report(args.report)
+    previous = _load_report(args.previous) if args.previous else {}
+    entry = dict(report["points"][args.key], key=args.key)
+    verdict = promotion_check(entry, args.level, previous=previous.get("points", {}).get(args.key),
+                              holm=report.get("holm_adjusted_p_values") or {})
+    print(json.dumps(asdict(verdict), indent=1))
+    return 0 if verdict.allowed else 1
+
+
+def cmd_r3_record_levels(args: argparse.Namespace) -> int:
+    """Platform L0 rows for every registry key, by a named platform admin, citing the run."""
+
+    from sqlalchemy import func, select
+
+    from app.db.models import User
+    from app.services.r3_evaluation_service import record_first_levels
+
+    report = _load_report(args.report)
+    db = _session()
+    try:
+        admin = db.scalar(select(User).where(func.lower(User.email) == args.admin.strip().lower()))
+        if admin is None:
+            print(json.dumps({"error": "unknown admin"}))
+            return 2
+        outcome = record_first_levels(db, report, admin=admin)
+        db.commit()
+    finally:
+        db.close()
+    print(json.dumps({"run_id": report["run_id"], "levels": outcome}))
+    return 0
+
+
 def cmd_env_seed(_args: argparse.Namespace) -> int:
     db = _session()
     env = seed_dogfood(db)
@@ -426,6 +562,42 @@ def build_parser() -> argparse.ArgumentParser:
     sync_prompts.add_argument("--check", action="store_true", help="verify only; write nothing")
     sync_prompts.add_argument("--root", default=None, help="prompt directory (default app/agents/prompts)")
     sync_prompts.set_defaults(func=cmd_agents_sync_prompts)
+
+    r3 = sub.add_parser("r3", help="R3 evaluation harness and trust levels (ADR 0008 §4)")
+    r3_sub = r3.add_subparsers(dest="r3_cmd", required=True)
+    r3_run = r3_sub.add_parser("run")
+    r3_run.add_argument("--suite", choices=["quick", "full"], default="quick")
+    r3_run.add_argument("--task", action="append", default=[], help="run only these R1 task ids")
+    r3_run.add_argument("--seed", type=int, default=42)
+    r3_run.add_argument("--out", default=None, help="report path (default <temp>/dclab-runs/r3-latest.json; "
+                                                     "never commit a live report)")
+    r3_run.add_argument("--previous", default=None, help="previous run report (stability over two runs)")
+    r3_run.add_argument("--workspace", action="append", default=[],
+                        help="workspace id whose aggregates (never rows) join the report if it opted in "
+                             "(policy data.share_r3_aggregates)")
+    r3_run.add_argument("--live", action="store_true",
+                        help="ask the real Jev provider inside R3_EVAL_WORKSPACE_ID (never in CI)")
+    r3_run.add_argument("--admin", default=None,
+                        help="email of the active dclab_admin running a live run or joining tenant aggregates")
+    r3_run.add_argument("--store", action="store_true", help="also store an offline run in r3_runs (needs the DB)")
+    r3_run.add_argument("--partition", choices=["both", "development", "sealed"], default="both",
+                        help="development = prompt-work mode (sealed cases never scored)")
+    r3_run.add_argument("--dataset", default=None, help="live: the registered benchmark dataset id")
+    r3_run.add_argument("--project", default=None, help="live: project the calls are attributed to")
+    r3_run.set_defaults(func=cmd_r3_run)
+    r3_report = r3_sub.add_parser("report")
+    r3_report.add_argument("--report", required=True)
+    r3_report.set_defaults(func=cmd_r3_report)
+    r3_check = r3_sub.add_parser("promote-check")
+    r3_check.add_argument("--report", required=True)
+    r3_check.add_argument("--key", required=True)
+    r3_check.add_argument("--level", type=int, required=True)
+    r3_check.add_argument("--previous", default=None)
+    r3_check.set_defaults(func=cmd_r3_promote_check)
+    r3_levels = r3_sub.add_parser("record-levels")
+    r3_levels.add_argument("--report", required=True)
+    r3_levels.add_argument("--admin", required=True, help="email of the platform admin who records the levels")
+    r3_levels.set_defaults(func=cmd_r3_record_levels)
 
     env = sub.add_parser("env")
     env_sub = env.add_subparsers(dest="env_cmd", required=True)

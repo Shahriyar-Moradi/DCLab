@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -41,10 +42,12 @@ from app.agents.governance.platform_default import (
 )
 from app.db.models import AiPolicy, DecisionPointPolicy, User, Workspace
 from app.services.authorization_service import (
+    PlatformRole,
     can_approve_ai_policy,
     count_ai_policy_approvers,
     explicit_workspace_role,
     is_ml_write_role,
+    platform_role_for,
 )
 
 
@@ -82,6 +85,11 @@ class PolicyCapViolation(GovernanceError):
 class PolicyConflict(GovernanceError):
     code = "policy_conflict"
     status_code = 409
+
+
+class PolicyProposalLimit(GovernanceError):
+    code = "too_many_open_proposals"
+    status_code = 429
 
 
 class GovernanceNotFound(GovernanceError):
@@ -150,6 +158,8 @@ def narrow(candidate: AiPolicyV1, bound: AiPolicyV1) -> AiPolicyV1:
                     candidate.data.sample_values_per_column, bound.data.sample_values_per_column
                 ),
                 user_text_to_jev=candidate.data.user_text_to_jev and bound.data.user_text_to_jev,
+                # the workspace's own opt-in (approver flow); no cap applies, the default is off
+                share_r3_aggregates=candidate.data.share_r3_aggregates,
             ),
             "autonomy": candidate.autonomy.model_copy(update={"ops": OpsAutonomy(
                 auto_retrain_per_week=min(ops.auto_retrain_per_week, bound_ops.auto_retrain_per_week),
@@ -232,6 +242,37 @@ def effective_policy(db: Session, workspace_id: UUID) -> EffectivePolicy:
     return EffectivePolicy(policy, digest, platform_version, workspace_version)
 
 
+OPEN_PROPOSALS_MAX = 20  # per workspace (unexpired, undecided)
+
+
+@dataclass(frozen=True)
+class PolicyReview:
+    """What an approver reviewed (the HTTP accept path): the proposal's digest, and whether they acknowledged a
+    change of the workspace's R3 aggregate-sharing consent."""
+
+    policy_digest: str
+    acknowledge_consent_change: bool = False
+
+
+def policy_diff(candidate: dict[str, Any], base: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Field-level changes ``base -> candidate`` as ``{path, before, after}`` (at most 60)."""
+
+    before, after = _flatten(base or {}), _flatten(candidate)
+    paths = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
+    return [{"path": path, "before": before.get(path), "after": after.get(path)} for path in paths[:60]]
+
+
+def consent_changed(candidate: AiPolicyV1 | dict, effective: AiPolicyV1) -> bool:
+    """The proposal flips the workspace's opt-in to share R3 aggregates with the platform."""
+
+    doc = candidate if isinstance(candidate, AiPolicyV1) else AiPolicyV1.model_validate(candidate)
+    return doc.data.share_r3_aggregates != effective.data.share_r3_aggregates
+
+
+def _proposal_ttl(db: Session) -> timedelta:
+    return timedelta(days=_platform_bound(db)[0].proposals.ttl_days)
+
+
 def _lock_workspace(db: Session, workspace_id: UUID) -> None:
     if db.scalar(select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()) is None:
         raise GovernanceNotFound(detail="workspace")
@@ -263,6 +304,13 @@ def propose_policy(
     if violations:
         raise PolicyCapViolation(violations)
     _lock_workspace(db, workspace_id)
+    successor = aliased(AiPolicy)
+    open_count = db.scalar(select(func.count()).select_from(AiPolicy).where(
+        AiPolicy.workspace_id == workspace_id, AiPolicy.state == "proposed",
+        AiPolicy.created_at > datetime.now(UTC) - _proposal_ttl(db),
+        ~exists().where(successor.supersedes_id == AiPolicy.id))) or 0
+    if open_count >= OPEN_PROPOSALS_MAX:
+        raise PolicyProposalLimit(detail=f"at most {OPEN_PROPOSALS_MAX} open policy proposals per workspace")
     head = _accepted_head(db, workspace_id)
     row = AiPolicy(
         workspace_id=workspace_id,
@@ -282,8 +330,11 @@ def propose_policy(
     return row
 
 
-def accept_policy(db: Session, *, approver: User, workspace_id: UUID, proposal_id: UUID) -> AiPolicy:
-    """Accept a proposal if the head has not moved (else ``PolicyConflict``, 409)."""
+def accept_policy(db: Session, *, approver: User, workspace_id: UUID, proposal_id: UUID,
+                  review: PolicyReview | None = None) -> AiPolicy:
+    """Accept a proposal if the head has not moved (else ``PolicyConflict``, 409) and it has not expired
+    (``proposals.ttl_days``). With ``review`` (the HTTP path) the digest the approver saw must equal the
+    proposal's (``policy_digest_mismatch``) and a consent change needs the explicit acknowledgement."""
 
     if not can_approve_ai_policy(db, approver, workspace_id):
         raise GovernanceNotPermitted(detail="approving needs workspace owner/admin")
@@ -300,10 +351,18 @@ def accept_policy(db: Session, *, approver: User, workspace_id: UUID, proposal_i
     head = _accepted_head(db, workspace_id)
     if (head.version if head is not None else None) != proposal.base_version:
         raise PolicyConflict(detail="the accepted head moved since the proposal")
+    if proposal.created_at < datetime.now(UTC) - _proposal_ttl(db):
+        raise PolicyConflict("proposal_expired", "propose the change again")
     candidate = AiPolicyV1.model_validate(proposal.policy)
     violations = cap_violations(candidate, _platform_bound(db)[0])
     if violations:
         raise PolicyCapViolation(violations)
+    if review is not None:
+        if review.policy_digest != proposal.policy_digest.strip():
+            raise PolicyConflict("policy_digest_mismatch", "the proposal changed since you reviewed it")
+        if consent_changed(candidate, effective_policy(db, workspace_id).policy) and not review.acknowledge_consent_change:
+            raise PolicyConflict("consent_change_unacknowledged",
+                                 "this proposal changes R3 aggregate sharing: acknowledge it to accept")
     self_approved = proposal.proposed_by_user_id == approver.id
     if self_approved and count_ai_policy_approvers(db, workspace_id) != 1:
         raise GovernanceNotPermitted("self_approval_not_allowed", "another approver must decide")
@@ -416,12 +475,23 @@ def _require_point(key: str) -> None:
         raise GovernanceNotFound(detail=f"decision point {key}")
 
 
-def _require_workspace_levels(workspace_id: UUID | None) -> UUID:
+def is_platform_admin(db: Session, user: User) -> bool:
+    return bool(getattr(user, "is_active", True)) and platform_role_for(db, user) is PlatformRole.DCLAB_ADMIN
+
+
+def _authorize_level_change(db: Session, actor: User, workspace_id: UUID | None, *, decide: bool) -> None:
+    """Workspace rows: ML-write members propose, owners/admins decide (ADR 0009 §3).
+    Platform rows (P6.8-A, R3): a named ``dclab_admin`` proposes and another decides."""
+
     if workspace_id is None:
-        raise GovernanceNotPermitted(
-            "platform_levels_not_supported", "platform levels are written by P6.8-A (R3), not here"
-        )
-    return workspace_id
+        if not is_platform_admin(db, actor):
+            raise GovernanceNotPermitted("platform_levels_need_admin", "platform levels need a dclab_admin")
+        return
+    allowed = can_approve_ai_policy(db, actor, workspace_id) if decide else is_ml_write_role(
+        explicit_workspace_role(db, actor, workspace_id))
+    if not allowed:
+        raise GovernanceNotPermitted(detail="levels need a workspace owner/admin" if decide
+                                     else "proposing a level needs ML-write membership")
 
 
 def set_level(
@@ -443,8 +513,8 @@ def set_level(
     _require_point(key)
     if (actor is None) == (actor_rule is None):
         raise GovernanceNotPermitted(detail="exactly one of actor / actor_rule")
-    if actor is not None and not can_approve_ai_policy(db, actor, _require_workspace_levels(workspace_id)):
-        raise GovernanceNotPermitted(detail="levels need a workspace owner/admin")
+    if actor is not None:
+        _authorize_level_change(db, actor, workspace_id, decide=True)
     advisory_lock(db, LOCK_NS_LEVELS, f"{workspace_id}:{key}")
     head = _level_head(db, workspace_id, key)
     head_level = head.level if head is not None else 0
@@ -474,14 +544,25 @@ def propose_level(
     prompt_release_id: UUID | None = None,
     model_id: str | None = None,
     evidence: list[dict] | None = None,
+    verification: object | None = None,
 ) -> DecisionPointPolicy:
-    """A ``proposed`` level row naming the accepted head it would supersede (its base)."""
+    """A ``proposed`` level row naming the accepted head it would supersede (its base). A platform
+    level above L0 can only be proposed by ``r3_evaluation_service.propose_promotion`` (it passes the
+    module-private ``R3_VERIFIED`` token after the shared §4 verification); the facade has no such path."""
 
     _require_point(key)
-    workspace_id = _require_workspace_levels(workspace_id)
-    if not is_ml_write_role(explicit_workspace_role(db, actor, workspace_id)):
-        raise GovernanceNotPermitted(detail="proposing a level needs ML-write membership")
+    _authorize_level_change(db, actor, workspace_id, decide=False)
     head = _level_head(db, workspace_id, key)
+    if workspace_id is None:  # platform rows: one step at a time, always on a verified R3 run (ADR 0008 §3, §4)
+        if level > 0 and verification is not R3_VERIFIED:
+            raise GovernanceNotPermitted("platform_level_needs_r3_verification",
+                                         "platform levels above L0 are proposed through propose_promotion only")
+        # Evidence is keyed by (prompt release, model): a head for another pair counts as L0 (§3, §5).
+        same_pair = head is not None and (head.prompt_release_id, head.model_id) == (prompt_release_id, model_id)
+        if level > (head.level if same_pair else 0) + 1:
+            raise GovernanceNotPermitted("platform_level_one_step", "a platform level rises one step per R3 run")
+        if level > 0 and not any(isinstance(e, dict) and e.get("kind") == "r3_run" for e in evidence or []):
+            raise GovernanceNotPermitted("platform_level_needs_r3_run", "a platform level above L0 cites an R3 run")
     row = _level_row(
         workspace_id=workspace_id, key=key, level=level, rationale=rationale, state="proposed",
         actor=actor, actor_rule=None, decided_by=None, prompt_release_id=prompt_release_id,
@@ -495,15 +576,14 @@ def propose_level(
 def accept_level(db: Session, *, approver: User, workspace_id: UUID | None, proposal_id: UUID) -> DecisionPointPolicy:
     """Accept a level proposal if its base is still the head; same rules as ``accept_policy``."""
 
-    workspace_id = _require_workspace_levels(workspace_id)
-    if not can_approve_ai_policy(db, approver, workspace_id):
-        raise GovernanceNotPermitted(detail="approving needs workspace owner/admin")
-    _lock_workspace(db, workspace_id)
+    _authorize_level_change(db, approver, workspace_id, decide=True)
+    if workspace_id is not None:
+        _lock_workspace(db, workspace_id)
+    scope = (DecisionPointPolicy.workspace_id.is_(None) if workspace_id is None
+             else DecisionPointPolicy.workspace_id == workspace_id)
     proposal = db.scalar(
         select(DecisionPointPolicy).where(
-            DecisionPointPolicy.id == proposal_id,
-            DecisionPointPolicy.workspace_id == workspace_id,
-            DecisionPointPolicy.state == "proposed",
+            DecisionPointPolicy.id == proposal_id, scope, DecisionPointPolicy.state == "proposed",
         )
     )
     if proposal is None:
@@ -513,8 +593,14 @@ def accept_level(db: Session, *, approver: User, workspace_id: UUID | None, prop
     if (head.id if head is not None else None) != proposal.supersedes_id:
         raise PolicyConflict(detail="the level head moved since the proposal")
     self_approved = proposal.actor_user_id == approver.id
-    if self_approved and count_ai_policy_approvers(db, workspace_id) != 1:
+    # Platform rows never self-approve (a second named dclab_admin decides).
+    if self_approved and (workspace_id is None or count_ai_policy_approvers(db, workspace_id) != 1):
         raise GovernanceNotPermitted("self_approval_not_allowed", "another approver must decide")
+    if workspace_id is None:  # a raise = above the head of the SAME pair (a pair change restarts at L0)
+        same_pair = head is not None and (head.prompt_release_id, head.model_id) == (
+            proposal.prompt_release_id, proposal.model_id)
+        if proposal.level > (head.level if same_pair else 0):
+            _platform_raise_checks(db, proposal)
     proposer = db.get(User, proposal.actor_user_id)
     row = _level_row(
         workspace_id=workspace_id, key=proposal.decision_point_key, level=proposal.level,
@@ -525,6 +611,32 @@ def accept_level(db: Session, *, approver: User, workspace_id: UUID | None, prop
     db.add(row)
     db.flush()
     return row
+
+
+AUTO_DEMOTE_RULE = "governance.auto_demote.v1"  # also in governance/incidents.py
+
+
+R3_VERIFIED = object()  # module-private token: only propose_promotion holds it
+
+
+def _platform_raise_checks(db: Session, proposal: DecisionPointPolicy) -> None:
+    """At accept time a platform raise re-runs the SAME verification ``propose_promotion`` ran
+    (ADR 0008 §4): the cited stored live run is loaded and re-verified (digests, pair incl. the
+    prompt release, partition, ledger cross-check, recorded after the latest demotion / incident),
+    the current pair-aware level and open incidents are re-read, the stored previous run and the
+    Holm-adjusted gates are re-checked. Lazy import: the R3 service imports this module."""
+
+    from app.services.r3_evaluation_service import verify_platform_raise
+
+    run_ids = [e.get("id") for e in (proposal.evidence or []) if isinstance(e, dict) and e.get("kind") == "r3_run"]
+    try:
+        run_id = UUID(str(run_ids[0])) if run_ids else None
+    except ValueError:
+        run_id = None
+    if run_id is None:
+        raise GovernanceNotPermitted("r3_run_required", "a platform raise cites a stored live R3 run")
+    verify_platform_raise(db, run_id=run_id, key=proposal.decision_point_key, level=proposal.level,
+                          prompt_release_id=proposal.prompt_release_id, model_id=proposal.model_id)
 
 
 class GovernancePolicyService:

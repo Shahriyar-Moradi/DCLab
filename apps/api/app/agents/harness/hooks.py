@@ -127,6 +127,7 @@ class HookContext:
     started: float = field(default_factory=time.monotonic)
     proposal_ids: list[UUID] = field(default_factory=list)
     record: Callable[..., Any] | None = None  # the recorder (observe-only hooks)
+    tool_ctx: Any = None  # the run's consumer-mode tool context (output validators read through it)
 
 
 @dataclass(frozen=True)
@@ -317,6 +318,11 @@ def _capability_pre_tool(ctx: HookContext, call: ToolCallInput) -> Effect | None
             return Deny("ml_write_required")
     if definition.effect == "proposal" and not (principal.can_propose and ctx.may_propose):
         return Deny("ml_write_required")
+    if definition.effect == "proposal":  # re-authorized per write call (a role can change mid-run)
+        from app.services.authorization_service import can_execute_workspace_ml
+
+        if not can_execute_workspace_ml(ctx.db, principal.user, ctx.workspace_id):
+            return Deny("ml_write_required")
     return None
 
 
@@ -360,7 +366,7 @@ def _output_validator(ctx: HookContext, run: RunOutput) -> Effect | None:
     from app.agents.harness.validation import output_reasons
 
     reasons = output_reasons(ctx.db, run.output, run.runtime, workspace_id=ctx.workspace_id,
-                             project_id=ctx.project_id)
+                             project_id=ctx.project_id, run_id=ctx.run_id, tool_ctx=ctx.tool_ctx)
     return DenyOutput(reasons[0]) if reasons else None
 
 

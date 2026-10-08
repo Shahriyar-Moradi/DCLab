@@ -29,6 +29,7 @@ from app.engine.lab.llm_client import (
     ColumnTypeDecision,
     LeakageReviewDecision,
     MissingValueDecision,
+    MissingValueDecisionV3,
     TargetSelectionDecision,
 )
 from app.engine.lab.prompts import (
@@ -37,12 +38,13 @@ from app.engine.lab.prompts import (
     leakage_review_v1,
     missing_value_v1,
     missing_value_v2,
+    missing_value_v3,
     target_selection_v1,
 )
 from app.services import lab_decision_ledger
 from legacy_ai_support import enable_legacy_ai, forbid_gateway, sent, upload_via_api
 
-MEDIAN = {"action": "impute_median", "evidence_field": "missing_fraction", "fill_value": None,
+MEDIAN = {"action": "impute_median", "evidence_field": "missing_fraction",
           "rationale": "median is robust", "confidence": 0.9}
 
 
@@ -76,13 +78,10 @@ def upload(auth_client, db_session, monkeypatch):
 
 
 def test_ai_enabled_off_makes_no_gateway_call_and_writes_todays_rows(upload, auth_client, db_session, monkeypatch):
-    enable_legacy_ai(monkeypatch, db_session, decision_agent=False)
+    # P6.9-A retired DECISION_AGENT_ENABLED: AI_ENABLED is the gate, kill switches act per call.
+    enable_legacy_ai(monkeypatch, db_session, ai_enabled=False)
     forbid_gateway(monkeypatch)
     flag_off = _decide(db_session, upload)
-    other = upload_via_api(auth_client, db_session, monkeypatch, _frame())
-    enable_legacy_ai(monkeypatch, db_session, ai_enabled=False)  # decision agent on, AI_ENABLED off
-    forbid_gateway(monkeypatch)
-    assert _decide(db_session, other) == flag_off
     assert {(llm_used, kind) for _p, _s, _r, llm_used, kind, _v in flag_off} == {(False, "deterministic_fallback")}
     assert {reason for _p, _s, reason, *_ in flag_off} == {
         "LLM used: NO — semantic assistance was disabled or unconfigured.",
@@ -90,9 +89,11 @@ def test_ai_enabled_off_makes_no_gateway_call_and_writes_todays_rows(upload, aut
     }
 
 
-def test_flag_on_and_switch_off_falls_back_with_the_refusal_code(upload, db_session, monkeypatch):
+@pytest.mark.parametrize("switch_key", ["agent:missing_value", "purpose:semantic_missing_value",
+                                        "purpose:column.missing_value_action"])  # the registry point's switch too
+def test_flag_on_and_switch_off_falls_back_with_the_refusal_code(upload, db_session, monkeypatch, switch_key):
     ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: dict(MEDIAN))
-    flip_off(db_session, workspace_id=upload.workspace_id, switch_key="agent:missing_value", reason="test",
+    flip_off(db_session, workspace_id=upload.workspace_id, switch_key=switch_key, reason="test",
              actor_rule="test.switch.v1")
     db_session.commit()
     frame = _frame()
@@ -158,14 +159,16 @@ def test_leakage_reviewer_goes_through_the_gateway_and_writes_a_ledger_row(uploa
         identifier_likelihood=0.0, unique_ratio=1.0, missing_fraction=0.0, availability_reason="name token",
     )
     decision = lab_decision_ledger.leakage_reviewer(db_session, upload.id)(evidence)
-    assert isinstance(decision, LeakageReviewDecision) and decision.risk_level == "MEDIUM"
+    # P6.9-A: feature.leakage_suspect is L1, so the answer is advice; the auditor keeps its own assessment.
+    assert decision == "advisory only (feature.leakage_suspect is L1): accept"
     [call] = ai.fake.calls
     assert sent(call)["exact_target_match_fraction"] == 0.1
     db_session.commit()
     [row] = db_session.scalars(select(LlmInvocation).where(LlmInvocation.purpose == "semantic_leakage")).all()
     assert (row.status, row.llm_used, row.decision_point_key, row.agent_role) == (
         "completed", True, "feature.leakage_suspect", "legacy_decision")
-    assert row.final_decision["availability_status"] == "unknown" and row.final_decision["source"] == "llm"
+    assert row.final_decision["recommended_availability"] == "unknown" and row.final_decision["source"] == "llm"
+    assert row.final_decision["availability_status"] == evidence.availability_status  # never applied
     assert row.final_decision["recommended_risk_level"] == "MEDIUM" and "risk_level" not in row.final_decision
     assert row.safe_output == {"availability_status": "unknown", "risk_level": "MEDIUM",
                                "evidence_field": "suspicious_name_tokens", "confidence": 0.82}
@@ -189,18 +192,22 @@ def test_one_denied_related_column_does_not_refuse_the_leakage_review(auth_clien
     assert "related_column_names" not in sent(call) and "monthly" not in call.input_json
 
 
-def test_production_blocks_the_legacy_decision_writers(upload, db_session, monkeypatch):
+def test_production_no_longer_blocks_the_legacy_writers_which_apply_nothing_themselves(upload, db_session,
+                                                                                         monkeypatch):
+    # P6.9-A lifted the P6.2-B2 block: the writers record answers; only decision points apply them.
     ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda _call: dict(MEDIAN))
-    ai.settings.dclab_env = "production"  # flag and AI_ENABLED on, but not a development environment
-    forbid_gateway(monkeypatch)
-    rows = _decide(db_session, upload)
-    assert {(llm_used, reason) for _p, _s, reason, llm_used, *_ in rows} <= {
-        (False, "LLM used: NO — semantic assistance was disabled or unconfigured."),
-        (False, "LLM used: NO — deterministic evidence was sufficient."),
-    }
-    assert lab_decision_ledger.leakage_reviewer(db_session, upload.id)(
-        LeakageReviewEvidence(column="final_score", target="churn", task="binary", dtype="float64",
-                              cardinality=2)) is None
+    ai.settings.dclab_env = "production"
+    frame = _frame()
+    plan = plan_missing_values(frame, ["monthly"])
+    rule_action = plan.column_decisions[0].action
+    consulted = lab_decision_ledger.consult_missing_values(db_session, upload.id, frame, plan, "churn")
+    assert ai.fake.calls and consulted["monthly"].action == "impute_median"
+    assert plan.column_decisions[0].action == rule_action  # nothing applied by the writer
+    lab_decision_ledger.record_missing_value_decisions(db_session, upload.id, frame, plan, "churn",
+                                                       consulted=consulted)
+    db_session.commit()
+    record = db_session.scalar(select(LabDecisionRecord).where(LabDecisionRecord.upload_id == upload.id))
+    assert (record.final_decision, record.source) == (rule_action, "rule")
 
 
 def test_leakage_reviewer_with_the_agent_off_never_calls_a_model(db_session, monkeypatch):
@@ -214,7 +221,7 @@ def test_context_requires_attributable_lineage(db_session):
 
 
 def test_prompt_files_match_the_output_models_and_the_legacy_modules():
-    models = {"missing_value": MissingValueDecision, "column_type": ColumnTypeDecision,
+    models = {"missing_value": MissingValueDecisionV3, "column_type": ColumnTypeDecision,
               "target_selection": TargetSelectionDecision, "leakage_review": LeakageReviewDecision,
               "pipeline_auditor": PipelineAuditReport}
     files = {item.agent_key: item for item in discover(PROMPTS_ROOT)}
@@ -222,24 +229,40 @@ def test_prompt_files_match_the_output_models_and_the_legacy_modules():
     for key, model in models.items():
         assert files[key].output_schema_digest == output_schema_digest(model), key
     for module, version in ((missing_value_v1, 1), (column_type_v1, 1), (target_selection_v1, 1),
-                            (leakage_review_v1, 1), (missing_value_v2, 2), (column_type_v2, 2)):
+                            (leakage_review_v1, 1), (missing_value_v2, 2), (column_type_v2, 2), (missing_value_v3, 3)):
         assert module.SYSTEM_PROMPT == prompt_text(module.AGENT_KEY, version)
         assert module.PROMPT_VERSION == f"{module.AGENT_KEY}_v{version}" and module.AGENT_KEY in CALLS
-    # calls go to the v2 prompts that no longer steer to withheld evidence; v1 rows stay immutable
+    # missing_value v3 offers only the actions the pipeline executes (P6.9-A); older rows stay immutable
     assert {key: call.prompt_version for key, call in CALLS.items()} == {
-        "missing_value": 2, "column_type": 2, "target_selection": 1, "leakage_review": 1}
+        "missing_value": 3, "column_type": 2, "target_selection": 1, "leakage_review": 1}
+    for absent in ("impute_mean", "drop_rows", "domain_fill"):
+        assert absent not in missing_value_v3.SYSTEM_PROMPT.split("Allowed actions")[1].split("\n\n")[0]
+    assert missing_value_v3.ACTIONS == ("impute_median", "impute_most_frequent", "drop_column")
+    assert set(MissingValueDecisionV3.model_fields["action"].annotation.__args__) == set(missing_value_v3.ACTIONS)
     assert "domain_fill" not in missing_value_v2.SYSTEM_PROMPT and "sample_rows" not in missing_value_v2.SYSTEM_PROMPT
     assert "sample_values" not in column_type_v2.SYSTEM_PROMPT
     auditor = prompt_text("pipeline_auditor", 2)
     assert "no final-holdout values" in auditor and "Never state, estimate or infer a" in auditor
     for key in ("missing_value", "column_type", "pipeline_auditor"):
         assert files_by_version(key, 1).output_schema_digest == files_by_version(key, 2).output_schema_digest
+    assert files_by_version("missing_value", 2).output_schema_digest == output_schema_digest(MissingValueDecision)
     assert {call.purpose for call in CALLS.values()} == {
         "semantic_missing_value", "semantic_column_type", "semantic_target", "semantic_leakage"}
 
 
 def files_by_version(agent_key: str, version: int):
     return next(item for item in discover(PROMPTS_ROOT) if (item.agent_key, item.version) == (agent_key, version))
+
+
+def test_every_legacy_purpose_maps_to_its_registry_key():
+    from app.agents.governance.decision_points import LEGACY_PURPOSE_KEYS, REGISTRY, registry_key_for
+
+    assert all(key in REGISTRY for key in LEGACY_PURPOSE_KEYS.values())
+    purposes = {call.purpose for call in CALLS.values()} | {f"pipeline_audit_{m}" for m in ("routine", "deep")}
+    assert purposes == set(LEGACY_PURPOSE_KEYS)
+    assert all(call.decision_point_key == LEGACY_PURPOSE_KEYS[call.purpose] for call in CALLS.values())
+    assert registry_key_for("pipeline_audit_deep") == "experiment.review"
+    assert registry_key_for("target.column") == "target.column" and registry_key_for("nope") is None
 
 
 def test_withheld_fields_follow_the_no_sample_values_cap():
@@ -280,4 +303,6 @@ def test_user_seed_syncs_the_code_owned_prompt_releases_idempotently(db_session,
     from app.agents.semantic.releases import RELEASES
 
     jev = {release.agent_key for release in RELEASES.values()}  # and one per pinned Jev purpose (P6.7-A)
-    assert keys == sorted({*CALLS, "pipeline_auditor", *jev})  # one release per prompt file, never duplicated
+    specialists = {"dataset_investigator", "experiment_critic", "experiment_planner"}  # P6.4-A agent classes
+    # One release per prompt file, never duplicated (+ the P6.3-B lead agent).
+    assert keys == sorted({*CALLS, "pipeline_auditor", *jev, *specialists, "lead"})

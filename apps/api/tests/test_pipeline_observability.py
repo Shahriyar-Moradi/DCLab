@@ -24,7 +24,7 @@ from app.db.models import (
 )
 from app.domain.ml_verification import PipelineAuditReport, PipelineAuditStage
 from app.engine.lab.auto_prepare import plan_missing_values
-from app.engine.lab.llm_client import MissingValueDecision
+from app.engine.lab.llm_client import MissingValueDecisionV3
 from app.engine.types import SearchConfig, TaskSpec
 from app.services.auth_service import create_access_token, create_user
 from app.services.auto_train_service import run_auto_train_job
@@ -255,11 +255,10 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
 
     label_dataset(db_session, workspace_id=upload.workspace_id, dataset_id=upload.dataset_id)
     monkeypatch.setenv("DCLAB_OPENAI_API_KEY", PROVIDER_SECRET)
-    ai = enable_legacy_ai(monkeypatch, db_session, verifier=True, handler=lambda call: _audit_answer(call)
-                          if call.agent_key == "pipeline_auditor" else MissingValueDecision(
+    ai = enable_legacy_ai(monkeypatch, db_session, handler=lambda call: _audit_answer(call)
+                          if call.agent_key == "pipeline_auditor" else MissingValueDecisionV3(
         action="impute_median",
         evidence_field="missing_fraction",
-        fill_value=None,
         rationale="Median is robust for this bounded numeric evidence.",
         confidence=0.9,
     ).model_dump())

@@ -593,7 +593,7 @@ def test_item2_levels_rise_only_through_an_accepted_proposal(db_session, gov):
     with pytest.raises(GovernanceNotPermitted, match="level_raise_needs_approval"):
         set_level(db, workspace_id=gov.ws_a, key=key, level=1, rationale="up", actor=gov.owner, **pair)
     db.rollback()
-    with pytest.raises(GovernanceNotPermitted, match="platform_levels_not_supported"):
+    with pytest.raises(GovernanceNotPermitted, match="platform_levels_need_admin"):  # P6.8-A: dclab_admins only
         propose_level(db, actor=gov.owner, workspace_id=None, key=key, level=1, rationale="x", **pair)
     stale = propose_level(db, actor=gov.engineer, workspace_id=gov.ws_a, key=key, level=1, rationale="a", **pair)
     own = propose_level(db, actor=gov.owner, workspace_id=gov.ws_a, key=key, level=2, rationale="b", **pair)

@@ -38,6 +38,8 @@ from app.domain.execution_requests import (
     REQUEST_SPEC_MAX_BYTES,
     RESULT_SUMMARY_MAX_BYTES,
     SOURCE_LEGACY_LABS,
+    SPLIT_CONFIRMED,
+    SPLIT_RESOLUTIONS,
     TARGET_CONFIRMATION_REQUIRED,
     TARGET_CONFIRMED,
     UQ_EXECUTION_REQUESTS_WORKSPACE_IDEMPOTENCY_KEY,
@@ -462,6 +464,7 @@ def mark_execution_needs_input(
     upload: ClientLabUpload,
     waiting: dict[str, Any],
     source: str,
+    event_type: str = TARGET_CONFIRMATION_REQUIRED,
 ) -> ExecutionRequest | None:
     """Park the control-plane request in needs_input. Does not fail the run."""
 
@@ -478,7 +481,7 @@ def mark_execution_needs_input(
             db,
             upload=upload,
             request=request,
-            event_type=TARGET_CONFIRMATION_REQUIRED,
+            event_type=event_type,
             status=REQUEST_NEEDS_INPUT,
             payload={
                 **dict(summary or {}),
@@ -573,6 +576,9 @@ def confirm_execution_target(
                 requested_target=selected,
             )
         raise ExecutionNotWaitingError(request.status)
+    waiting_kind = (request.result_summary if isinstance(request.result_summary, dict) else {}).get("kind")
+    if waiting_kind is not None:  # e.g. a split confirmation: the target is already resolved
+        raise ExecutionNotWaitingError("not_waiting_for_target")
 
     upload = upload_for_execution_request(db, request)
     # Lock the job row before the upload/workflow rows (the cancel route's order).
@@ -728,6 +734,75 @@ def confirm_execution_target(
             else None,
         },
     )
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+def confirm_execution_split(
+    db: Session,
+    *,
+    actor: User,
+    workspace_id: UUID,
+    request_id: UUID,
+    answer: str,
+    service_token_id: UUID | None = None,
+) -> ExecutionRequest:
+    """Resolve ``split_confirmation_required`` (P6.9-A): keep the rule's split and resume the
+    run once; the run plan's split answer is refused for this execution so the resume never
+    parks again. Replay-safe by state: the same answer again returns the request."""
+
+    if answer not in SPLIT_RESOLUTIONS:
+        raise ExecutionRequestSpecError(f"unknown split answer {answer!r}")
+    if not can_read_workspace(db, actor, workspace_id) or not can_execute_workspace_ml(db, actor, workspace_id):
+        raise IdentityError("not found", status_code=404)
+    request = db.scalar(select(ExecutionRequest).where(
+        ExecutionRequest.workspace_id == workspace_id, ExecutionRequest.id == request_id).with_for_update())
+    if request is None:
+        raise IdentityError("not found", status_code=404)
+    spec = dict(request.request_spec if isinstance(request.request_spec, dict) else {})
+    waiting = request.result_summary if isinstance(request.result_summary, dict) else {}
+    if request.status != REQUEST_NEEDS_INPUT:
+        if spec.get("split_resolution") == answer:
+            return request
+        raise ExecutionNotWaitingError(request.status)
+    if waiting.get("kind") != "split_strategy_confirmation":
+        raise ExecutionNotWaitingError("not_waiting_for_split")
+    upload = upload_for_execution_request(db, request)
+    locked_job = _job_for_request(db, request, upload, for_update=True)
+    if locked_job is not None and (locked_job.status == JOB_CANCELLED or locked_job.cancel_requested_at is not None):
+        raise ExecutionNotWaitingError("cancelled")
+    now = datetime.now(UTC)
+    confirmer = {"confirmed_by": str(actor.id)}
+    if service_token_id is not None:
+        confirmer["confirmed_by_service_token_id"] = str(service_token_id)
+    spec["split_resolution"] = answer
+    request.request_spec = bound_request_spec(spec)
+    request.status = REQUEST_RUNNING
+    request.result_summary = bound_result_summary(
+        {"code": SPLIT_CONFIRMED, "answer": answer, **confirmer, "confirmed_at": now.isoformat()})
+    _touch_started(request, now)
+    job = _job_for_request(db, request, upload)
+    job_was_running = job is not None and job.status == JOB_RUNNING
+    if upload is not None:
+        from app.services.auto_train_service import _mark
+
+        log = dict(upload.pipeline_log or {})
+        log["split_confirmation"] = {**dict(log.get("split_confirmation") or {}), "code": SPLIT_CONFIRMED,
+                                     "answer": answer, **confirmer}
+        if not job_was_running:
+            _mark(db, upload, status=ANALYZING, log=log)
+            db.refresh(request)
+            db.refresh(upload)
+        else:
+            upload.pipeline_log = log
+            db.flush()
+    _emit_execution_event(db, upload=upload, request=request, event_type=SPLIT_CONFIRMED, status="completed",
+                          payload={"answer": answer, **confirmer, "execution_request_id": str(request.id)})
+    resumed = _resume_auto_train_job(db, request=request, upload=upload, job_was_running=job_was_running)
+    _emit_execution_event(db, upload=upload, request=request, event_type=EXECUTION_RESUMED, status=REQUEST_RUNNING,
+                          payload={"answer": answer, "execution_request_id": str(request.id),
+                                   "ml_job_id": str(resumed.id) if resumed is not None else None})
     db.commit()
     db.refresh(request)
     return request

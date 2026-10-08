@@ -1,0 +1,54 @@
+<!-- title: Home · DCLab -->
+<!-- crumbs: Northwind Telecom › <b>Home</b> -->
+<div class="page-head">
+  <div><h1>Welcome back, Dana</h1><p class="sub">Three things need your decision. One run is in progress.</p></div>
+  <div class="toolbar"><a class="btn primary" href="lab.html">New project</a></div>
+</div>
+
+<div class="tabs" data-tabs="home">
+  <button data-tab="overview" aria-selected="true">Overview</button>
+  <button data-tab="activity">Activity</button>
+</div>
+
+<div data-tabpanel="home:overview" class="on">
+  <div class="stats">
+    <a class="stat" href="inbox.html"><span class="v">3</span><span class="l">decisions waiting for you</span></a>
+    <a class="stat" href="experiments.html"><span class="v">1</span><span class="l">run in progress</span></a>
+    <a class="stat" href="models.html"><span class="v">2</span><span class="l">models in use</span></a>
+    <a class="stat" href="governance.html#budget"><span class="v">$9.40</span><span class="l">AI spend this month, of $25</span></a>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Projects</h2></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Project</th><th>Goal</th><th>Model in use</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><a href="lab.html"><b>Northwind churn</b></a></td><td>Catch at least 80% of churners</td><td>Version 4<small>catches 81%, 63% precise</small></td><td><span class="tag warn">New model waiting for approval</span></td></tr>
+        <tr><td><b>Invoice late payment</b></td><td>Predict payments more than 30 days late</td><td>Version 2</td><td><span class="tag ok">Healthy</span></td></tr>
+        <tr><td><b>Lead scoring</b></td><td>Find leads likely to convert</td><td>None yet</td><td><span class="tag info">Needs your answer</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Needs your decision</h2><a class="btn link" href="inbox.html">Open inbox →</a></div>
+    <div class="dlist">
+      <div class="drow"><span class="t">Put the retrained churn model into use?</span><span class="d">Precision is back to 59% from 48% after new customers changed the data.</span><span class="a"><a class="btn sm" href="inbox.html">Review</a></span></div>
+      <div class="drow"><span class="t">Is the plan <code>family_5g</code> the same product family as <code>family</code>?</span><span class="d">A question from the assistant about your data.</span><span class="a"><a class="btn sm" href="inbox.html">Answer</a></span></div>
+      <div class="drow"><span class="t">Use <code>converted_90d</code> as the target for Lead scoring?</span><span class="d">The assistant found three possible targets and suggests this one.</span><span class="a"><a class="btn sm" href="inbox.html">Review</a></span></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="home:activity">
+  <div class="card">
+    <div class="head"><h2>Last 24 hours</h2><p>What people, the assistant and automatic checks did.</p></div>
+    <div class="events">
+      <div class="ev ai"><span class="when">Today 09:12 · Assistant</span><span class="what">Started retraining the churn model on newer data after detecting drift.</span></div>
+      <div class="ev warn"><span class="when">Today 09:10 · Automatic check</span><span class="what">Drift detected: new customers on the <code>family_5g</code> plan look different.</span></div>
+      <div class="ev you"><span class="when">Yesterday 17:40 · You</span><span class="what">Approved flagging <code>retention_offer_sent</code> for review.</span></div>
+      <div class="ev"><span class="when">Yesterday 17:31 · Automatic rule</span><span class="what">Chose LightGBM as the best model for run E7.</span></div>
+      <div class="ev ai"><span class="when">Yesterday 17:33 · Assistant</span><span class="what">Reviewed run E7 and asked one question about <code>last_login_days</code>.</span></div>
+    </div>
+  </div>
+</div>

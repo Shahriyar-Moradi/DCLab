@@ -302,7 +302,7 @@ def load_parent_context(db: Session, *, actor: User, workspace_id: UUID, parent_
         target_column=target_column,
         overrides=overrides,
         objective=copy.deepcopy((parent.config or {}).get("objective")),
-        portfolio=open_ingest_portfolio(task_type, overrides),
+        portfolio=open_ingest_portfolio(task_type, overrides, (parent.config or {}).get("families")),
         dataset_columns=set(column_names_from_dataset_id(db, parent.source_dataset_id)),
         reserved_columns=reserved,
         leakage_excluded={
@@ -975,7 +975,7 @@ def applied_change_evidence(change_set: dict[str, Any], result: dict[str, Any]) 
                 f"{family}__{suffix}"
                 for suffix, family, _hp in class_weight_variants(
                     task_type,
-                    open_ingest_portfolio(task_type, overrides),
+                    open_ingest_portfolio(task_type, overrides, (result.get("config") or {}).get("families")),
                     result.get("model_development_plan"),
                     overrides.get("class_weighting"),
                 )

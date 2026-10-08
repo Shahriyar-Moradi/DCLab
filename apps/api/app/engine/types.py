@@ -67,9 +67,22 @@ class SearchConfig:
     # change set (portfolio, hyperparameters, class weighting, column treatments).
     # None for root runs. Shape: ``app.services.experiment_branch_service``.
     branch_overrides: dict[str, Any] | None = None
+    # ADR 0008 §2c: the AI policy snapshot digest when some decision point of the run may
+    # apply an AI value (level >= 2); part of every candidate fingerprint. None (AI off,
+    # or all points at L0/L1, where the rule value is used) is left out of ``to_dict``,
+    # so such configurations stay byte-identical to the rule run's.
+    ai_policy_digest: str | None = None
+    # ADR 0008 §2c: the learned-family subset a run plan (training.families_budget, L2) or
+    # an inherited value chose; the dummy baseline is always added. In the fingerprint.
+    # None = the rule's portfolio, left out of ``to_dict`` like ``ai_policy_digest``.
+    families: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        for name in ("ai_policy_digest", "families"):
+            if payload.get(name) is None:
+                payload.pop(name, None)
+        return payload
 
 
 @dataclass

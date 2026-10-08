@@ -1,0 +1,246 @@
+{
+  "events": [
+    {
+      "payload": {
+        "data_class": "metadata",
+        "hooks": [
+          {
+            "name": "capability",
+            "stage": "pre_run"
+          },
+          {
+            "name": "switch_check",
+            "stage": "pre_run"
+          },
+          {
+            "name": "budget",
+            "stage": "pre_run"
+          },
+          {
+            "name": "redaction_verifier",
+            "stage": "pre_call"
+          },
+          {
+            "name": "step_counter",
+            "stage": "pre_call"
+          },
+          {
+            "name": "forbidden_op_guard",
+            "stage": "pre_tool"
+          },
+          {
+            "name": "capability",
+            "stage": "pre_tool"
+          },
+          {
+            "name": "decision_point",
+            "stage": "pre_tool"
+          },
+          {
+            "name": "validator",
+            "stage": "pre_tool"
+          },
+          {
+            "name": "shaper",
+            "stage": "post_tool"
+          },
+          {
+            "name": "citation_builder",
+            "stage": "post_tool"
+          },
+          {
+            "name": "output_validator",
+            "stage": "post_run"
+          },
+          {
+            "name": "eval_sampler",
+            "stage": "post_run"
+          }
+        ],
+        "limits": {
+          "cost_micros": 100000,
+          "steps": 2,
+          "tokens": 24000,
+          "tool_calls": 0,
+          "wall_s": 60
+        },
+        "outcome_scope": "none",
+        "policy_digest": "<digest>",
+        "runtime": "fake",
+        "tool_catalog_digest": "<digest>",
+        "tools": []
+      },
+      "type": "run_started"
+    },
+    {
+      "payload": {
+        "context_digest": "<digest>",
+        "dropped": {
+          "capped": 0,
+          "class_or_scope": 0,
+          "unavailable": 0
+        },
+        "fields": 13,
+        "reads": [
+          "inspect_project",
+          "inspect_dataset",
+          "dataset_columns"
+        ],
+        "redaction": {
+          "dropped": {
+            "data_class": 0,
+            "deny": 5,
+            "no_source": 0,
+            "outcome_scope": 0,
+            "sample_values": 0
+          },
+          "effective_data_class": "metadata",
+          "fields_kept": 8
+        }
+      },
+      "type": "context_built"
+    },
+    {
+      "payload": {
+        "expires_at": "<ts>",
+        "held_micros": 100000,
+        "run_kind": "specialist"
+      },
+      "type": "budget_reserved"
+    },
+    {
+      "payload": {
+        "call": 1,
+        "fields": 13,
+        "notes": 0,
+        "request_digest": "<digest>",
+        "transcript_items": 0
+      },
+      "type": "llm_call_started"
+    },
+    {
+      "payload": {
+        "cache_hit": false,
+        "call": 1,
+        "cost_micros": 176,
+        "invocation_id": "<id:1>",
+        "ok": true,
+        "output_digest": "<digest>",
+        "refusal": null,
+        "usage": {
+          "input": 1401,
+          "output": 70
+        }
+      },
+      "type": "llm_call_finished"
+    },
+    {
+      "payload": {
+        "level": 0,
+        "payload_digest": "<digest>",
+        "proposal_id": "<id:2>",
+        "status": "shadow",
+        "type": "DatasetInvestigationProposal"
+      },
+      "type": "proposal_created"
+    },
+    {
+      "payload": {
+        "cost_micros": 176,
+        "freed_micros": 99824
+      },
+      "type": "budget_settled"
+    },
+    {
+      "payload": {
+        "citations": [],
+        "error_code": null,
+        "eval_sample": {
+          "llm_calls": 1,
+          "proposal_ids": []
+        },
+        "output_digest": "<digest>",
+        "proposal_ids": [
+          "<id:2>"
+        ],
+        "status": "completed",
+        "usage": {
+          "cache_hits": 0,
+          "calls": 1,
+          "steps": 1,
+          "tokens_in": 1401,
+          "tokens_out": 70,
+          "tool_calls": 0,
+          "wall_ms": "<volatile>"
+        }
+      },
+      "type": "run_finished"
+    }
+  ],
+  "ledger": [
+    {
+      "cache_hit": false,
+      "data_class": "metadata",
+      "input_tokens": 1401,
+      "llm_used": true,
+      "model": "gpt-6-luna",
+      "outcome_scope": "none",
+      "output_tokens": 70,
+      "prompt_version": "dataset_investigator:v1",
+      "provider": "fake",
+      "purpose": "target.column",
+      "refusal_code": null,
+      "status": "completed",
+      "validator_verdict": "accepted"
+    }
+  ],
+  "proposals": [
+    {
+      "citations": [],
+      "decision_point_key": "target.column",
+      "level_at_proposal": 0,
+      "payload": {
+        "confidence": 0.6,
+        "leakage_suspects": [],
+        "missing_values": [
+          {
+            "action": "impute_median",
+            "column": "feature",
+            "reason": "numeric"
+          }
+        ],
+        "questions": [
+          "Is signup_date known at prediction time?"
+        ],
+        "schema_version": 1,
+        "target_candidates": [
+          {
+            "column": "target",
+            "rank": 1,
+            "reason": "binary outcome name"
+          }
+        ]
+      },
+      "proposal_type": "DatasetInvestigationProposal",
+      "status": "shadow",
+      "validator_verdict": "accepted"
+    }
+  ],
+  "result": {
+    "error_code": null,
+    "proposals": 1,
+    "status": "completed"
+  },
+  "run": {
+    "agent_key": "dataset_investigator",
+    "data_class": "metadata",
+    "decision_point_key": "target.column",
+    "error_code": null,
+    "kind": "specialist",
+    "model": "gpt-6-luna",
+    "outcome_scope": "none",
+    "purpose": "target.column",
+    "runtime": "fake",
+    "status": "completed"
+  }
+}

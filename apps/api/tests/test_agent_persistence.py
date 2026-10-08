@@ -307,13 +307,19 @@ def test_agent_events_are_append_only_with_retention_and_deletion_gucs(db_sessio
     _guc(db_session, "dclab.retention_workspace", str(ns.ws_a))
     _guc(db_session, "dclab.deleting_workspace", str(ns.ws_a))
     _rejects(db_session, "append-only", _sql, db_session, delete, id=old)
-    _sql(db_session, "SET dclab.deleting_workspace = '%s'" % ns.ws_a)  # session level
-    _sql(db_session, "SET dclab.retention_xact = '1'")
-    db_session.commit()
-    _rejects(db_session, "append-only", _sql, db_session, delete, id=old)
-    _sql(db_session, "RESET dclab.deleting_workspace")
-    _sql(db_session, "RESET dclab.retention_xact")
-    db_session.commit()
+    # Session-level SETs on ONE pinned connection, reset before it returns to the pool: a Session
+    # may get another pooled connection after a commit, which would leave them set on this one
+    # for whichever test draws it next (order-dependent once the pool holds several connections).
+    with db_session.get_bind().connect() as conn:
+        conn.execute(text("SET dclab.deleting_workspace = '%s'" % ns.ws_a))
+        conn.execute(text("SET dclab.retention_xact = '1'"))
+        conn.commit()
+        with pytest.raises(DBAPIError, match="append-only"):
+            conn.execute(text(delete), {"id": old})
+        conn.rollback()
+        conn.execute(text("RESET dclab.deleting_workspace"))
+        conn.execute(text("RESET dclab.retention_xact"))
+        conn.commit()
     # A stamp from an earlier transaction does not carry over.
     allow_workspace_deletion(db_session, ns.ws_a)
     stamp = _sql(db_session, "SELECT current_setting('dclab.retention_xact')").scalar()

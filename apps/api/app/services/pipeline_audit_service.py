@@ -1,12 +1,12 @@
 """Persistence and orchestration for advisory ML pipeline verification.
 
-The advisory auditor is a gateway caller (ADR 0009 §4; purpose ``pipeline_audit_<mode>``
-until P6.9-A maps it onto ``experiment.review``): the ``verifier`` role's model
+The advisory auditor is a gateway caller (ADR 0009 §4; ledger purpose ``pipeline_audit_<mode>``,
+registry key ``experiment.review`` via ``LEGACY_PURPOSE_KEYS``): the ``verifier`` role's model
 (``gpt-6-luna`` routine, ``gpt-6.1-sol`` deep), CV-scoped, holdout-free evidence
 (``verification_evidence``) tagged with the run's dataset, and one ``llm_invocations``
-row written by the gateway with this module's legacy wording. With
-``pipeline_llm_verifier_enabled`` or ``AI_ENABLED`` off nothing is called and the attempt
-is ``disabled``; a gateway refusal maps onto ``disabled`` (kill switch), ``failed``
+row written by the gateway with this module's legacy wording. With ``AI_ENABLED`` off
+(its own flag was retired in P6.9-A; kill switches act per call) nothing is called and
+the attempt is ``disabled``; a gateway refusal maps onto ``disabled`` (kill switch), ``failed``
 (invalid output) or ``unavailable``. The deterministic verifier stays authoritative.
 """
 
@@ -23,6 +23,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.agents import legacy
+from app.agents.governance.decision_points import LEGACY_PURPOSE_KEYS
 from app.agents.gateway.contract import LedgerNote, Refusal
 from app.agents.governance.platform_default import PLATFORM_DEFAULT
 from app.config import Settings, get_settings
@@ -239,8 +240,8 @@ def request_pipeline_verification(
     config = settings or get_settings()
     audit_mode = "deep" if deep else "routine"
     model = VERIFIER_MODELS[audit_mode]
-    flag_on = bool(getattr(config, "pipeline_llm_verifier_enabled", False))
-    enabled = flag_on and bool(getattr(config, "ai_enabled", False))
+    # P6.9-A: the auditor's own flag is retired; AI_ENABLED gates it, kill switches act per call.
+    enabled = bool(getattr(config, "ai_enabled", False))
     started_at = datetime.now(UTC)
     timer = time.perf_counter()
     disabled_row = None
@@ -364,8 +365,6 @@ def request_pipeline_verification(
             )
         return attempt
 
-    if not flag_on:
-        return finish("disabled", error="verifier_disabled")
     if not enabled:
         return finish("disabled", error="ai_disabled")
 
@@ -375,7 +374,8 @@ def request_pipeline_verification(
     call = legacy.LegacyCall(
         agent_role="verifier", agent_key=AGENT_KEY, prompt_version=AUDITOR_PROMPT_VERSION,
         purpose=f"pipeline_audit_{audit_mode}",
-        decision_point_key="experiment.review", output_schema=PipelineAuditReport, max_output_tokens=8000,
+        decision_point_key=LEGACY_PURPOSE_KEYS[f"pipeline_audit_{audit_mode}"], output_schema=PipelineAuditReport,
+        max_output_tokens=8000,
         timeout_s=float(getattr(config, "pipeline_llm_timeout_seconds", 30.0)), max_data_class="aggregates",
         outcome_scope="cv", model=VERIFIER_MODELS["deep"] if deep else None, temperature=None,
     )

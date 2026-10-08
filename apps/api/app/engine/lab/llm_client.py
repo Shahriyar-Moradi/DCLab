@@ -11,8 +11,8 @@ founder Q3) always drop. ``WITHHELD`` names the evidence fields the model theref
 never sees; validators reject a decision that cites one.
 
 ``consult`` returns the gateway response; the ``request_*`` wrappers return the
-decision or raise ``DecisionAgentUnavailable``. With ``decision_agent_enabled`` or
-``ai_enabled`` off nothing is called. The gateway cache replaces the old per-process
+decision or raise ``DecisionAgentUnavailable``. With ``ai_enabled`` off nothing is
+called (kill switches stop it per call). The gateway cache replaces the old per-process
 caches.
 """
 
@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.contracts import ContextField
 from app.agents.gateway.contract import Annotate, CompletionResponse, Refusal
-from app.agents.governance.platform_default import ai_development_env
+from app.agents.governance.decision_points import LEGACY_PURPOSE_KEYS
 from app.agents.legacy import LegacyCall, LegacyContext, complete, ctx_field, number, refusal_text, scalar, text
 from app.config import get_settings
 from app.engine.lab.evidence import (
@@ -95,6 +95,22 @@ class MissingValueDecision(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class MissingValueDecisionV3(BaseModel):
+    """missing_value v3: only actions the pipeline executes; no fill value (P6.9-A)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    action: Literal["impute_median", "impute_most_frequent", "drop_column"]
+    evidence_field: Literal["column", "dtype", "missing_count", "missing_fraction", "correlation_with_target",
+                            "missingness_cooccurrence"]
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    @property
+    def fill_value(self) -> None:  # the v2 validator and ledger read it; v3 never fills
+        return None
+
+
 class ColumnTypeDecision(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -127,6 +143,9 @@ class LeakageReviewDecision(BaseModel):
 
 
 def _call(key: str, version: int, purpose: str, point: str, schema: type[BaseModel], max_class: str) -> LegacyCall:
+    # ADR 0008 §1: the legacy purpose maps onto its registry key (the ledger keeps the purpose).
+    if LEGACY_PURPOSE_KEYS.get(purpose) != point:
+        raise ValueError(f"legacy purpose {purpose!r} does not map to {point!r}")
     return LegacyCall(agent_role="legacy_decision", agent_key=key, prompt_version=version, purpose=purpose,
                       decision_point_key=point, output_schema=schema, max_output_tokens=1000, timeout_s=20.0,
                       max_data_class=max_class)
@@ -134,8 +153,8 @@ def _call(key: str, version: int, purpose: str, point: str, schema: type[BaseMod
 
 # Purpose and decision point per ADR 0008 §1; Lab-time points (target, role) are metadata only (§2c).
 CALLS: dict[str, LegacyCall] = {
-    "missing_value": _call("missing_value", 2, "semantic_missing_value", "column.missing_value_action",
-                           MissingValueDecision, "aggregates"),
+    "missing_value": _call("missing_value", 3, "semantic_missing_value", "column.missing_value_action",
+                           MissingValueDecisionV3, "aggregates"),
     "column_type": _call("column_type", 2, "semantic_column_type", "column.semantic_role", ColumnTypeDecision,
                          "metadata"),
     "target_selection": _call("target_selection", 1, "semantic_target", "target.column", TargetSelectionDecision,
@@ -261,16 +280,11 @@ def envelope_fields(kind: str, evidence: Any, ctx: LegacyContext, *, target: str
 
 
 def agent_enabled() -> bool:
-    """The legacy decision agent's gate: its flag AND ``AI_ENABLED`` AND a development
-    environment. Production stays blocked (API and worker alike) until P6.9-A applies the
-    ADR 0008 decision-point levels: these writers apply answers above the registry caps."""
+    """The Lab decision agent's gate: ``AI_ENABLED`` (P6.9-A retired its own flag). The
+    gateway enforces the kill switches (``agent:<key>``, ``purpose:<purpose>``) per call,
+    and the writers apply answers only through the decision-point levels (ADR 0008)."""
 
-    settings = get_settings()
-    return bool(
-        getattr(settings, "decision_agent_enabled", False)
-        and getattr(settings, "ai_enabled", False)
-        and ai_development_env(settings)
-    )
+    return bool(getattr(get_settings(), "ai_enabled", False))
 
 
 def consult(

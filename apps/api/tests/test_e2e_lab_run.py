@@ -423,3 +423,59 @@ def test_explicit_two_label_target_positive_class_is_value_based():
     assert binary_positive_label(pd.Series(["pos"] * 9 + ["neg"])) == "pos"
     assert binary_positive_label(pd.Series(["yes", "no"])) is None
 
+
+
+# ---------------------------------------------------------------------------
+# P6.4-A — the Critic (AI-after) is queued on every completed run when AI is on,
+# and its run never changes the experiment
+# ---------------------------------------------------------------------------
+
+
+def test_critic_runs_on_every_completed_run_when_enabled(auth_client, db_session, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.agents.gateway.limits import GatewayLimits
+    from app.agents.gateway.providers.fake import FakeProvider
+    from app.agents.gateway.service import GatewayService
+    from app.agents.governance.seed import seed_platform_governance
+    from app.agents.harness.service import AgentService, spec_for_job
+    from app.agents.prompt_releases import sync_prompt_releases
+    from app.db.models import AgentProposal, AgentRun, MlJob
+
+    _no_background(monkeypatch)
+    on = SimpleNamespace(ai_enabled=True, service_tokens_enabled=True, dclab_env="test")
+    seed_platform_governance(db_session, environment="test")
+    sync_prompt_releases(db_session)
+    db_session.commit()
+    # AI on for the run's post-commit hooks only (the legacy decision agent stays off).
+    monkeypatch.setattr("app.services.auto_train.context.get_settings", lambda: on)
+    monkeypatch.setattr("app.services.pipeline_audit_service.get_settings",
+                        lambda: SimpleNamespace(ai_enabled=False, pipeline_llm_timeout_seconds=1.0))
+
+    reviewed = []
+    for frame in (_classification(), _regression()):
+        upload, _result = _train(db_session, _upload(auth_client, frame))
+        assert upload.pipeline_status == "completed", upload.pipeline_log
+        experiment = db_session.get(Experiment, upload.experiment_id)
+        run = db_session.scalar(select(AgentRun).where(AgentRun.experiment_id == experiment.id,
+                                                       AgentRun.agent_key == "experiment_critic"))
+        assert run is not None and run.status == "queued" and run.decision_point_key == "experiment.review"
+        reviewed.append((experiment, run))
+
+    advice = {"verdict": "needs_work", "summary": "Insufficient evidence for promotion.", "cv_metrics": [],
+              "findings": [], "confidence": 0.4}
+    fake = FakeProvider(handler=lambda _call: dict(advice), environment="test")
+    service = AgentService(gateway=GatewayService(providers={"openai": fake}, limits=GatewayLimits(),
+                                                  settings=lambda: on), settings=lambda: on)
+    for experiment, run in reviewed:
+        before = (experiment.status, experiment.scientific_evidence_locked_at, dict(experiment.result))
+        job = db_session.scalar(select(MlJob).where(MlJob.target_id == run.id))
+        result = service.run(db_session, spec_for_job(db_session, job))
+        assert result.status == "completed", result
+        db_session.expire_all()
+        experiment = db_session.get(Experiment, experiment.id)
+        assert (experiment.status, experiment.scientific_evidence_locked_at, experiment.result) == before
+        [proposal] = db_session.scalars(select(AgentProposal).where(AgentProposal.run_id == run.id))
+        assert proposal.proposal_type == "ExperimentReviewProposal" and proposal.status in ("shadow", "proposed")
+    assert len(fake.calls) == 2
+    assert not any("holdout" in call.input_json or "final_test" in call.input_json for call in fake.calls)

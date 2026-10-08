@@ -1,0 +1,97 @@
+<!-- title: Churn prediction · Northwind -->
+<!-- crumbs: Northwind churn › <b>Churn prediction</b> -->
+<!-- role: client -->
+<div class="page-head">
+  <div><h1>Churn prediction</h1><p class="sub">Which customers are likely to leave in the next 30 days, and how much to trust the list.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="download predictions csv">Download this week's list</button></div>
+</div>
+
+<div class="tabs" data-tabs="biz">
+  <button data-tab="overview" aria-selected="true">Overview</button>
+  <button data-tab="predictions">This week's list</button>
+  <button data-tab="questions">Questions <span class="cnt">1</span></button>
+  <button data-tab="about">About this model</button>
+</div>
+
+<div data-tabpanel="biz:overview" class="on">
+  <div class="note warn"><div><b>The list is less precise than usual this week.</b><span class="muted">Customers on the new <code>family_5g</code> plan behave differently. An updated model is ready and waiting for your data team's approval.</span></div></div>
+
+  <div class="stats">
+    <div class="stat"><span class="v">6,412</span><span class="l">customers flagged this week</span></div>
+    <div class="stat"><span class="v">8 in 10</span><span class="l">customers who leave are on the list</span></div>
+    <div class="stat"><span class="v">5 in 10</span><span class="l">customers on the list really leave (usually 6)</span></div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Highest risk this week</h2><a class="btn link" href="#predictions">See the full list →</a></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Customer</th><th>Risk</th><th>Main reasons</th></tr></thead>
+      <tbody>
+        <tr><td><b>C-48112</b></td><td><span class="tag crit">Very high</span></td><td>No login for 61 days · 3 support tickets · fee went up</td></tr>
+        <tr><td><b>C-10377</b></td><td><span class="tag crit">Very high</span></td><td>No login for 44 days · contract ends in 12 days</td></tr>
+        <tr><td><b>C-22930</b></td><td><span class="tag warn">High</span></td><td>2 support tickets · fee went up 9%</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="biz:predictions">
+  <div class="card">
+    <div class="head"><h2>6,412 customers</h2><div class="toolbar"><input class="input" placeholder="Search customers" aria-label="Search customers" style="width:220px"><select class="input" aria-label="Filter by plan"><option>All plans</option><option>family_5g</option><option>premium</option><option>basic</option></select></div></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Customer</th><th>Plan</th><th>Risk</th><th>Main reasons</th></tr></thead>
+      <tbody>
+        <tr><td><b>C-48112</b></td><td>family_5g</td><td><span class="tag crit">Very high</span></td><td>No login for 61 days · 3 support tickets · fee went up</td></tr>
+        <tr><td><b>C-10377</b></td><td>premium</td><td><span class="tag crit">Very high</span></td><td>No login for 44 days · contract ends in 12 days</td></tr>
+        <tr><td><b>C-22930</b></td><td>basic</td><td><span class="tag warn">High</span></td><td>2 support tickets · fee went up 9%</td></tr>
+        <tr><td><b>C-31504</b></td><td>family</td><td><span class="tag warn">High</span></td><td>No login for 38 days</td></tr>
+        <tr><td><b>C-07781</b></td><td>basic</td><td><span class="tag warn">High</span></td><td>Contract ends in 5 days · no login for 21 days</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">Showing 5 of 6,412, highest risk first. Updated every day at 02:00.</p>
+  </div>
+</div>
+
+<div data-tabpanel="biz:questions">
+  <div class="card ask">
+    <span class="who">A question from your data team's assistant</span>
+    <h2>Is <code>family_5g</code> the same product family as <code>family</code>?</h2>
+    <p>This plan is new. Your answer helps the next model treat these customers correctly.</p>
+    <div class="toolbar"><button class="btn primary" data-mock="answer yes">Yes</button><button class="btn" data-mock="answer no">No</button><button class="btn" data-mock="answer not sure">Not sure</button></div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Ask about a result</h2></div>
+    <div class="grid">
+      <div class="chat">
+        <div class="msg user">Why is customer C-48112 on the list?</div>
+        <div class="msg agent"><span class="from">Assistant</span><p>No login for 61 days, three support tickets in 90 days and a recent fee increase. Those are the strongest signs of leaving in your data.</p></div>
+      </div>
+      <div class="composer">
+        <textarea placeholder="For example: how many premium customers are flagged?" aria-label="Ask a question"></textarea>
+        <div class="acts"><button class="btn primary" data-mock="send">Ask</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="biz:about">
+  <div class="card">
+    <div class="head"><h2>How this model was built</h2><button class="btn sm" data-mock="download report">Download full report</button></div>
+    <ul class="bullets">
+      <li><b>The question:</b> who will stop paying within the next 30 days.</li>
+      <li><b>The data:</b> 18 months of customer history. Information that would give away the answer was left out.</li>
+      <li><b>The test:</b> it was checked on three months it had never seen, the same way it is used today.</li>
+      <li><b>Your goal:</b> catch at least 8 in 10 customers who leave. It does.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="head"><h2>What you can rely on</h2></div>
+    <dl class="kv">
+      <dt>Approved by</dt><dd>Dana Reyes, data scientist</dd>
+      <dt>Your customers' data</dt><dd>Never sent to an AI model; only summaries are</dd>
+      <dt>If something goes wrong</dt><dd>The previous model can be restored in one step</dd>
+      <dt>What this page does not do</dt><dd>Contact customers or change anything in your CRM</dd>
+    </dl>
+  </div>
+</div>

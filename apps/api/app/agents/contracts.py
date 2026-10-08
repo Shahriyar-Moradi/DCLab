@@ -6,7 +6,8 @@ redacts by these tags, never by regex. Free text (user messages, column names,
 descriptions) travels wrapped as ``Untrusted``; a plain ``str`` value is refused.
 ``holdout`` is not an outcome scope: the final holdout never enters an AI call.
 ``AgentRunSpec`` / ``RunLimits`` / ``AgentRunResult`` / ``Citation`` are the harness
-contract (ADR 0009 §5, §7.1; P6.10-A); P6.3-B adds ``AssistantStep``.
+contract (ADR 0009 §5, §7.1; P6.10-A); P6.3-B adds ``AssistantStep`` (the only thing the
+lead model may return) and ``LeadTurn`` (one assistant turn's input on the spec).
 """
 
 from __future__ import annotations
@@ -110,10 +111,20 @@ class RunLimits(_Frozen):
         return RunLimits(**{name: min(getattr(self, name), getattr(other, name)) for name in type(self).model_fields})
 
 
+class LeadTurn(_Frozen):
+    """One lead-agent turn's input (P6.3-B): the user's message (untrusted) and the bounded,
+    tagged transcript of the thread's earlier items; the graph, re-read every turn, stays
+    the memory. Never persisted on the run row (the turn runs in the API process)."""
+
+    user_text: Untrusted
+    transcript: tuple[TranscriptItem, ...] = Field(default=(), max_length=20)
+
+
 class AgentRunSpec(_Frozen):
     """What to run, for whom. Exactly one principal: a user, or a service token (which
     acts as its creator, re-checked from the token row on every run). ``run_id`` names
-    an existing queued run (the ``agents.run`` job rebuilds the spec from the row)."""
+    an existing queued run (the ``agents.run`` job rebuilds the spec from the row);
+    ``turn`` is the ``lead_loop`` runtime's input."""
 
     workspace_id: UUID
     project_id: UUID | None = None
@@ -136,6 +147,7 @@ class AgentRunSpec(_Frozen):
     may_propose: bool = True  # ADR 0009 §5.1 step 1: ML-write for any run that may propose
     parent_run_id: UUID | None = None
     run_id: UUID | None = None
+    turn: LeadTurn | None = None
 
     @model_validator(mode="after")
     def _principal_and_subject(self) -> "AgentRunSpec":
@@ -143,6 +155,8 @@ class AgentRunSpec(_Frozen):
             raise ValueError("exactly one principal: user_id or service_token_id")
         if self.subject_kind is not None and self.subject_kind not in AGENT_SUBJECT_KINDS:
             raise ValueError("unknown subject kind")
+        if self.turn is not None and self.runtime != "lead_loop":
+            raise ValueError("a turn is the lead_loop runtime's input")
         return self
 
 
@@ -151,6 +165,23 @@ class Citation(_Frozen):
 
     kind: CitationKind
     id: UUID
+
+
+class ToolCall(_Frozen):
+    tool: str = Field(max_length=64)  # a catalog name; anything else rejects the step
+    arguments: dict[str, Any] = Field(default_factory=dict)  # validated by the tool's input schema
+    reason: str = Field(default="", max_length=200)
+
+
+class AssistantStep(_Frozen):
+    """One lead-agent step (ADR 0009 §7.1): tool calls, or a final answer / clarification /
+    done. ``message`` is the Markdown subset (no raw HTML, images or external links; links
+    only ``dclab://<kind>/<id>`` to cited nodes); every claim cites a node of the project."""
+
+    kind: Literal["tool_calls", "answer", "clarify", "done"]
+    tool_calls: tuple[ToolCall, ...] = Field(default=(), max_length=6)
+    message: str | None = Field(default=None, max_length=4000)
+    citations: tuple[Citation, ...] = Field(default=(), max_length=32)
 
 
 class AgentRunResult(_Frozen):

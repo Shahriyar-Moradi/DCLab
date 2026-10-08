@@ -77,7 +77,7 @@ DOCUMENT_FORBIDDEN = (
 def _rule_engine_only(monkeypatch):
     monkeypatch.setattr(
         "app.services.lab_decision_ledger.get_settings",
-        lambda: SimpleNamespace(decision_agent_enabled=False, decision_agent_api_key=""),
+        lambda: SimpleNamespace(ai_enabled=False),
     )
 
 

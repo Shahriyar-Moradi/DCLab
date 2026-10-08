@@ -101,12 +101,30 @@ RULE_HOLDOUT_PLANNER_PREFIX = "holdout.planner"
 REFS_BOOTSTRAP_RATIONALE = "first locked model; not a comparison"
 CODE_OWNED_RULES = frozenset({RULE_WINNER_LOCKED, RULE_WINNER_LOCKED_BACKFILL, RULE_REFS_BOOTSTRAP})
 _HOLDOUT_PLANNER_RULE = re.compile(r"^holdout\.planner\.v[A-Za-z0-9_]{1,32}$")
+# ADR 0008 §7: a decision point's deterministic policy (``decision_point.<registry key>.v1``)
+# is the actor of its ``decision_point_resolved`` record, also when a Jev value is applied.
+RULE_DECISION_POINT_PREFIX = "decision_point"
+DECISION_POINT_RULE_VERSION = "v1"
+
+
+def decision_point_rule(key: str) -> str:
+    return f"{RULE_DECISION_POINT_PREFIX}.{key}.{DECISION_POINT_RULE_VERSION}"
+
+
+def _is_decision_point_rule(rule: str) -> bool:
+    from app.agents.governance.decision_points import REGISTRY  # code data only; no import cycle
+
+    prefix, suffix = f"{RULE_DECISION_POINT_PREFIX}.", f".{DECISION_POINT_RULE_VERSION}"
+    return rule.startswith(prefix) and rule.endswith(suffix) and rule[len(prefix):-len(suffix)] in REGISTRY
 
 
 def is_code_owned_rule(rule: object) -> bool:
-    """Only the ``RULE_*`` constants (and ``holdout.planner.v<N>``) are rule actors."""
+    """Only the ``RULE_*`` constants, ``holdout.planner.v<N>`` and ``decision_point.<key>.v<N>``
+    are rule actors."""
 
-    return isinstance(rule, str) and (rule in CODE_OWNED_RULES or bool(_HOLDOUT_PLANNER_RULE.match(rule)))
+    return isinstance(rule, str) and (
+        rule in CODE_OWNED_RULES or bool(_HOLDOUT_PLANNER_RULE.match(rule)) or _is_decision_point_rule(rule)
+    )
 
 
 WINNER_LOCKED_SCHEMA_VERSION = 1

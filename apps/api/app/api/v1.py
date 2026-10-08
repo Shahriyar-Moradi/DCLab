@@ -41,6 +41,7 @@ from app.domain.application_api import (
     EventPage,
     ExecutionRequestCreate,
     ExecutionRequestRead,
+    ExecutionSplitConfirmation,
     ExecutionTargetConfirmation,
     PrincipalRead,
     VisualizationRead,
@@ -80,6 +81,7 @@ from app.domain.errors import (
     InvalidDecisionQueryError,
     InvalidDecisionRecordError,
     OpenLabFileError,
+    PlanRefusedError,
     ProblemSpecNotFoundError,
     ProjectNotFoundError,
     TargetIntentConflictError,
@@ -116,6 +118,7 @@ from app.services.artifact_service import list_artifacts
 from app.services.cursor_codec import open_cursor, sign_cursor
 from app.services.execution_request_service import (
     ExecutionRequestSpecError,
+    confirm_execution_split,
     confirm_execution_target,
     create_or_replay_execution_request,
     get_execution_request,
@@ -440,12 +443,15 @@ def create_problem_spec_v1(
     validated for the task). Requires ``Idempotency-Key``."""
 
     workspace_id = request_workspace_id(request)
+    body = payload.model_dump(mode="json")
+    if body.get("plan") is None:  # keeps the request digest of plan-less bodies unchanged
+        body.pop("plan", None)
     binding = idempotency_binding(
         operation=_CREATE_PROBLEM_SPEC,
         principal_id=_principal_id(request, user),
         header_key=idempotency_key,
         path_params={"project_id": project_id},
-        body=payload.model_dump(mode="json"),
+        body=body,
         required=True,
     )
 
@@ -478,6 +484,9 @@ def create_problem_spec_v1(
     except InvalidDecisionRecordError as exc:  # agent text refused (secret-like / control chars)
         db.rollback()
         raise domain_error(exc, status_code=422, code="invalid_problem_spec") from exc
+    except PlanRefusedError as exc:
+        db.rollback()
+        raise domain_error(exc) from exc
     except IdentityError as exc:
         db.rollback()
         raise _identity_http(exc) from exc
@@ -949,6 +958,50 @@ def confirm_execution_request_target(
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except (ExecutionNotWaitingError, TargetNotInDatasetError, TargetIntentConflictError) as exc:
+        raise domain_error(exc) from exc
+    except ExecutionRequestSpecError as exc:
+        raise V1APIError(400, "invalid_request_spec", str(exc)) from exc
+    body = _execution_request_read(row)
+    set_etag(response, representation_etag(body))
+    return body
+
+
+@router.post(
+    "/execution-requests/{request_id}/split-confirmation",
+    response_model=ExecutionRequestRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}, **error_responses(409, 412)},
+)
+def confirm_execution_request_split(
+    request_id: UUID,
+    payload: ExecutionSplitConfirmation,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_ml_execution),
+    db: Session = Depends(get_db),
+    idempotency_key: str | None = Depends(idempotency_key_header),
+    if_match: str | None = Depends(if_match_header),
+) -> ExecutionRequestRead:
+    """Answer ``split_confirmation_required``: keep the rule's split and resume once (the
+    run plan's split answer is refused for this execution). Replay-safe by state; ``409``
+    when the request is not waiting for a split answer; ``If-Match`` as for the target."""
+
+    del idempotency_key  # validated by the dependency; the state machine dedupes
+    workspace_id = request_workspace_id(request)
+    try:
+        if if_match is not None:
+            current = get_execution_request(db, actor=user, workspace_id=workspace_id, request_id=request_id,
+                                            for_update=True)
+            try:
+                check_if_match(if_match, representation_etag(_execution_request_read(current)))
+            except V1APIError:
+                spec = current.request_spec if isinstance(current.request_spec, dict) else {}
+                if current.status == REQUEST_NEEDS_INPUT or spec.get("split_resolution") != payload.answer:
+                    raise
+        row = confirm_execution_split(db, actor=user, workspace_id=workspace_id, request_id=request_id,
+                                      answer=payload.answer, service_token_id=_service_token_id(request))
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ExecutionNotWaitingError as exc:
         raise domain_error(exc) from exc
     except ExecutionRequestSpecError as exc:
         raise V1APIError(400, "invalid_request_spec", str(exc)) from exc

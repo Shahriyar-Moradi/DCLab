@@ -35,6 +35,11 @@ from uuid import UUID
 HOLDOUT_KEY = re.compile(r"holdout|final_test", re.IGNORECASE)
 # Model-build stages whose summary/configuration carry final-holdout results.
 HOLDOUT_RESULT_STAGES = frozenset({"final_holdout"})
+# Stages whose verdicts fold in holdout-derived checks (the deterministic verifier's status
+# and counts, per attempt and in the legacy summary; P6.4-A review): those keys are withheld.
+HOLDOUT_VERDICT_STAGES = frozenset({"deterministic_verification"})
+VERIFICATION_VERDICT_KEYS = frozenset({"deterministic_status", "overall_status", "status", "failure_count",
+                                       "warning_count"})
 _HOLDOUT_LITERAL = re.compile(r"HOLDOUT_METRICS = \{[^{}]*\}")
 HOLDOUT_WITHHELD = "HOLDOUT_METRICS = {}  # final-holdout values are withheld from agents"
 
@@ -87,6 +92,27 @@ def strip_holdout(value: Any) -> Any:
 
 
 cv_only = strip_holdout  # the name the tool shapers use: free-form engine dicts, CV only
+
+# P6.4-A: the pipeline auditor's stored advisory report (``ml_run_verifications.llm_report``
+# and its ``openai_audit`` / ``verification_attempt`` overlay) is floored with the FULL
+# deterministic status, holdout-derived checks included, so it is holdout-scoped: no agent
+# context or tool result may carry it (the harness drops such fields).
+HOLDOUT_SCOPED_REPORT_KEYS = frozenset({"llm_report", "openai_audit", "verification_attempt", "advisory_status"})
+
+
+def names_holdout_report(value: Any, depth: int = 0) -> bool:
+    """A dotted key or an object (by its keys, recursively) naming a holdout-scoped report."""
+
+    if depth > MAX_DEPTH + 2:
+        return True  # fail closed on anything deeper than shaped results go
+    if isinstance(value, str):
+        return any(part in HOLDOUT_SCOPED_REPORT_KEYS for part in value.split("."))
+    if isinstance(value, dict):
+        return any(names_holdout_report(str(key)) or names_holdout_report(item, depth + 1)
+                   for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(names_holdout_report(item, depth + 1) for item in value)
+    return False
 
 
 def cv_record(m: Any) -> dict[str, Any] | None:
@@ -153,12 +179,24 @@ def withhold_model_card(body: Any) -> Any:
     return card.model_copy(update={"markdown": render_markdown(card)})
 
 
+def _without_verdicts(value: Any, keys: frozenset[str] = VERIFICATION_VERDICT_KEYS) -> Any:
+    """``value`` without the verdict keys at any depth (attempts, legacy summaries, reports)."""
+
+    if isinstance(value, dict):
+        return {key: _without_verdicts(item, keys) for key, item in value.items() if key not in keys}
+    if isinstance(value, list):
+        return [_without_verdicts(item, keys) for item in value]
+    return value
+
+
 def withhold_model_build(body: Any) -> Any:
     stages = []
     for stage in body.stages:
         update: dict[str, Any] = {"configuration": strip_holdout(stage.configuration)}
         if stage.key in HOLDOUT_RESULT_STAGES:
             update.update(configuration={}, decision_summary=None)
+        if stage.key in HOLDOUT_VERDICT_STAGES:
+            update["configuration"] = _without_verdicts(update["configuration"])
         code = stage.generated_code
         if code is not None and "HOLDOUT_METRICS" in code.source:
             source = withhold_holdout_code(code.source)
@@ -176,7 +214,20 @@ def withhold_decision(body: Any) -> Any:
                                    "evidence_refs": refs})
 
 
+VERDICT_EVENT_STAGES = frozenset({"openai_audit", "deterministic_verification"})
+WITHHELD_STATUS = "withheld"
+
+
 def withhold_event(event: Any) -> Any:
+    """Holdout-stage events lose their metrics; verifier and advisory-audit events lose the
+    verdicts that fold in holdout checks (``VERIFICATION_VERDICT_KEYS``, the advisory
+    report keys) and an audit event's outcome-correlated ``status``."""
+
+    if event.stage in VERDICT_EVENT_STAGES or event.event_type.startswith("openai_audit"):
+        audit = event.stage == "openai_audit" or event.event_type.startswith("openai_audit")
+        payload = _without_verdicts(strip_holdout(event.payload),
+                                    VERIFICATION_VERDICT_KEYS | HOLDOUT_SCOPED_REPORT_KEYS)
+        return event.model_copy(update={"payload": payload, **({"status": WITHHELD_STATUS} if audit else {})})
     if not (HOLDOUT_KEY.search(event.stage) or HOLDOUT_KEY.search(event.event_type)):
         return event
     payload = {key: item for key, item in strip_holdout(event.payload).items() if key != "metrics"}

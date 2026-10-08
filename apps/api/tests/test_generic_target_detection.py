@@ -151,7 +151,7 @@ def test_llm_target_validator_rejects_nonexistent_column():
     assert "not a real eligible column" in result.reason
 
 
-def test_ambiguous_target_uses_the_gateway_llm_path(auth_client, db_session, monkeypatch):
+def test_ambiguous_target_consults_the_gateway_and_keeps_it_a_suggestion(auth_client, db_session, monkeypatch):
     frame = pd.DataFrame(
         {
             "measure_a": np.linspace(1, 50, 100),
@@ -168,11 +168,10 @@ def test_ambiguous_target_uses_the_gateway_llm_path(auth_client, db_session, mon
         "confidence": 0.91,
     })
     choice = resolve_target_selection(frame, list(frame.columns), db=db_session, upload_id=upload.id)
-    assert choice.column == "measure_b"
-    assert choice.task_type == "regression"
-    assert choice.source == "llm"
-    assert choice.validator_verdict == "accept"
-    assert "measure_b is the intended response" == choice.reason
+    # P6.9-A: target.column is L1 — the accepted answer is a suggestion a person confirms.
+    assert choice.column is None and choice.source == "fallback"
+    assert choice.validator_verdict == "accept" and choice.raw_llm_output["target"] == "measure_b"
+    assert "semantic suggestion 'measure_b' recorded for confirmation" in choice.reason
     [call] = ai.fake.calls
     assert call.model == "gpt-6-luna"  # the legacy_decision role's policy model
     evidence = sent(call)
@@ -182,7 +181,37 @@ def test_ambiguous_target_uses_the_gateway_llm_path(auth_client, db_session, mon
     db_session.commit()
     row = db_session.scalar(select(LlmInvocation).where(LlmInvocation.purpose == "semantic_target"))
     assert (row.status, row.data_class, row.decision_point_key) == ("completed", "metadata", "target.column")
-    assert row.final_decision["column"] == "measure_b"
+    assert row.final_decision["column"] is None  # never the run's target
+
+
+def test_at_l1_the_legacy_target_answer_is_the_needs_input_suggestion(auth_client, db_session, monkeypatch):
+    from app.agents.governance.decision_points import answer_ceiling
+    from app.db.models import ProjectDecisionRecord
+    from app.services.auto_train_service import run_auto_train_job
+
+    frame = pd.DataFrame({"measure_a": np.linspace(1, 50, 100), "measure_b": np.linspace(5, 100, 100) ** 1.1,
+                          "measure_c": np.linspace(3, 75, 100) ** 1.05})
+    upload = upload_via_api(auth_client, db_session, monkeypatch, frame)
+    enable_legacy_ai(monkeypatch, db_session, handler=lambda call: {
+        "target": "measure_b", "task_type": "regression", "evidence_field": "columns",
+        "rationale": "measure_b is the intended response", "confidence": 0.91,
+    } if call.agent_key == "target_selection" else {"action": "numerical", "evidence_field": "dtype",
+                                                    "rationale": "unsure", "confidence": 0.1})
+    monkeypatch.setattr("app.agents.governance.snapshot.effective_level",
+                        lambda db, ws, key, kind=None, prompt_release_id=None, model_id=None:
+                        min(2, answer_ceiling(key, kind)))
+    run_auto_train_job(db_session, upload.id)
+    db_session.refresh(upload)
+    assert upload.pipeline_status == "needs_input"  # never applied: a person confirms
+    suggestion = upload.pipeline_log["target_confirmation"]["ai_suggestion"]
+    assert suggestion == {"decision_point": "target.column", "target_column": "measure_b",
+                          "task_type": "regression", "level": 1}
+    record = next(r for r in db_session.scalars(select(ProjectDecisionRecord).where(
+        ProjectDecisionRecord.experiment_id == upload.experiment_id,
+        ProjectDecisionRecord.decision_type == "decision_point_resolved"))
+        if r.details["decision_point"] == "target.column")
+    [column] = record.details["columns"]
+    assert (column["ai"], column["used"], column["source"], column["level"]) == ("measure_b", None, "rule", 1)
 
 
 def test_column_position_does_not_break_an_ambiguous_binary_tie():
@@ -256,7 +285,7 @@ def test_llm_disabled_preserves_safe_ambiguous_failure(monkeypatch):
     monkeypatch.setattr(
         lab_decision_ledger,
         "get_settings",
-        lambda: SimpleNamespace(decision_agent_enabled=False, decision_agent_api_key=""),
+        lambda: SimpleNamespace(ai_enabled=False),
     )
     frame = pd.DataFrame(
         {

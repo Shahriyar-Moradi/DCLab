@@ -80,6 +80,7 @@ _LEAD_TOOLS = (
     "create_problem_spec",
     "propose_problem_spec",
     "record_decision",
+    "request_agent_review",
     "move_ref",
     "run_experiment",
     "branch_experiment",
@@ -130,6 +131,24 @@ _POINTS = (
 )
 
 REGISTRY: MappingProxyType[str, DecisionPoint] = MappingProxyType({p.key: p for p in _POINTS})
+
+# ADR 0008 §1: the legacy LLM purposes map onto registry keys. Decision records,
+# proposals and events use the registry key; ``llm_invocations.purpose`` keeps the legacy
+# string (observability readers and data filters select on those prefixes).
+LEGACY_PURPOSE_KEYS: MappingProxyType[str, str] = MappingProxyType({
+    "semantic_target": "target.column",
+    "semantic_column_type": "column.semantic_role",
+    "semantic_missing_value": "column.missing_value_action",
+    "semantic_leakage": "feature.leakage_suspect",
+    "pipeline_audit_routine": "experiment.review",
+    "pipeline_audit_deep": "experiment.review",
+})
+
+
+def registry_key_for(purpose: str) -> str | None:
+    """The registry key of a legacy purpose (or of a registry key itself)."""
+
+    return purpose if purpose in REGISTRY else LEGACY_PURPOSE_KEYS.get(purpose)
 
 
 def answer_ceiling(key: str, answer_kind: str | None = None) -> int:

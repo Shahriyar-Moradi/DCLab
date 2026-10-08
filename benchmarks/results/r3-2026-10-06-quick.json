@@ -1,0 +1,2786 @@
+{
+ "ablation": {
+  "method": "rule_replay",
+  "points": {
+   "column.is_identifier": {
+    "ai_off_accuracy": 0.993,
+    "cases": 286,
+    "equal": true,
+    "rule_accuracy": 0.993
+   },
+   "column.semantic_role": {
+    "ai_off_accuracy": 0.9825,
+    "cases": 286,
+    "equal": true,
+    "rule_accuracy": 0.9825
+   },
+   "feature.leakage_suspect": {
+    "ai_off_accuracy": 0.9854,
+    "cases": 274,
+    "equal": true,
+    "rule_accuracy": 0.9854
+   }
+  },
+  "real_path_check": "tests/ai_harness/test_ai_r3.py"
+ },
+ "candidate": "fake:42",
+ "cases": 846,
+ "created_at": "2026-10-06T10:39:25.341915+00:00",
+ "digest": "bad5d6ea175ce4c665fa4ae724d7032be0a28f417756c81c8f0e26b7967c0706",
+ "evaluation_workspace": null,
+ "holm_adjusted_p_values": {
+  "column.is_identifier:sealed": 1.0,
+  "column.semantic_role:sealed": 0.226174,
+  "feature.leakage_suspect:sealed": 1.0
+ },
+ "live": false,
+ "operator": {},
+ "pair": {
+  "model_id": "jev-1.13.0",
+  "release": "column.is_identifier@v1+column.semantic_role@v1+command.intent_route@v1+feature.leakage_suspect@v1+proposal.completeness@v1"
+ },
+ "partition": "both",
+ "points": {
+  "column.is_identifier": {
+   "ai_kind": "jev:column.is_identifier",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": {
+    "ai_off_equals_rule": true,
+    "ai_policy_minus_ai_off": -0.0804
+   },
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "column.is_identifier",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 50000,
+     "p95_latency_ms": 1000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "blind_precision": false,
+      "citation_validity": true,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": true,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "sealed_precision": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 30 answered sealed cases < 100",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p 1.0 > 0.05",
+      "sealed_precision: per-band precision LBs [0.1176, 0.8668] < 0.9",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "blind_precision: per-band precision LBs [None, None] < 0.9",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {
+    "all": {
+     "abstain_rate": 0.1119,
+     "ai_in_band_accuracy": 0.9016,
+     "ai_policy_accuracy": 0.9126,
+     "ai_policy_accuracy_all": 0.9126,
+     "bands": {
+      "no": {
+       "errors": 2,
+       "lb": 0.9679,
+       "n": 223,
+       "n_eff": 223.0,
+       "precision": 0.991,
+       "ub": 0.9975
+      },
+      "yes": {
+       "errors": 23,
+       "lb": 0.137,
+       "n": 31,
+       "n_eff": 31.0,
+       "precision": 0.2581,
+       "ub": 0.4325
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.4138,
+        "confidence": 0.5974,
+        "n": 29
+       },
+       {
+        "accuracy": 0.8276,
+        "confidence": 0.9011,
+        "n": 29
+       },
+       {
+        "accuracy": 0.8621,
+        "confidence": 0.9343,
+        "n": 29
+       },
+       {
+        "accuracy": 0.931,
+        "confidence": 0.945,
+        "n": 29
+       },
+       {
+        "accuracy": 0.8966,
+        "confidence": 0.9531,
+        "n": 29
+       },
+       {
+        "accuracy": 0.9655,
+        "confidence": 0.9624,
+        "n": 29
+       },
+       {
+        "accuracy": 0.8214,
+        "confidence": 0.9714,
+        "n": 28
+       },
+       {
+        "accuracy": 0.8929,
+        "confidence": 0.9786,
+        "n": 28
+       },
+       {
+        "accuracy": 0.9286,
+        "confidence": 0.985,
+        "n": 28
+       },
+       {
+        "accuracy": 0.8929,
+        "confidence": 0.9921,
+        "n": 28
+       }
+      ],
+      "ece": 0.0792,
+      "gate": false,
+      "n": 286,
+      "upper_bound_reported": false
+     },
+     "datasets": 5,
+     "deployed_policy": {
+      "errors": 25,
+      "lb": 0.0206,
+      "n": 27,
+      "n_eff": 27.0,
+      "precision": 0.0741,
+      "ub": 0.2337
+     },
+     "disagreement_rate": 0.0944,
+     "gap": {
+      "clusters": 5,
+      "estimand": "mean of cluster means",
+      "lb": -0.1071,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 0.9985069298394101,
+       "0.05": 0.9781569352263981
+      },
+      "point": -0.0804,
+      "ub": -0.0588
+     },
+     "in_band": {
+      "errors": 25,
+      "lb": 0.8587,
+      "n": 254,
+      "n_eff": 254.0,
+      "precision": 0.9016,
+      "ub": 0.9324
+     },
+     "n": 286,
+     "rule_accuracy": 0.993,
+     "rule_accuracy_all": 0.993,
+     "total": 286,
+     "unavailable_rate": 0.0
+    },
+    "development": {
+     "abstain_rate": 0.125,
+     "ai_in_band_accuracy": 0.9018,
+     "ai_policy_accuracy": 0.9141,
+     "ai_policy_accuracy_all": 0.9141,
+     "bands": {
+      "no": {
+       "errors": 2,
+       "lb": 0.9639,
+       "n": 198,
+       "n_eff": 198.0,
+       "precision": 0.9899,
+       "ub": 0.9972
+      },
+      "yes": {
+       "errors": 20,
+       "lb": 0.1103,
+       "n": 26,
+       "n_eff": 26.0,
+       "precision": 0.2308,
+       "ub": 0.4205
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.4231,
+        "confidence": 0.5881,
+        "n": 26
+       },
+       {
+        "accuracy": 0.7308,
+        "confidence": 0.8699,
+        "n": 26
+       },
+       {
+        "accuracy": 0.8846,
+        "confidence": 0.9345,
+        "n": 26
+       },
+       {
+        "accuracy": 0.9231,
+        "confidence": 0.9449,
+        "n": 26
+       },
+       {
+        "accuracy": 0.8846,
+        "confidence": 0.9531,
+        "n": 26
+       },
+       {
+        "accuracy": 0.9615,
+        "confidence": 0.9631,
+        "n": 26
+       },
+       {
+        "accuracy": 0.8,
+        "confidence": 0.9722,
+        "n": 25
+       },
+       {
+        "accuracy": 0.92,
+        "confidence": 0.9791,
+        "n": 25
+       },
+       {
+        "accuracy": 0.92,
+        "confidence": 0.9848,
+        "n": 25
+       },
+       {
+        "accuracy": 0.92,
+        "confidence": 0.9919,
+        "n": 25
+       }
+      ],
+      "ece": 0.0812,
+      "gate": false,
+      "n": 256,
+      "upper_bound_reported": false
+     },
+     "datasets": 4,
+     "deployed_policy": {
+      "errors": 22,
+      "lb": 0.0232,
+      "n": 24,
+      "n_eff": 24.0,
+      "precision": 0.0833,
+      "ub": 0.2585
+     },
+     "disagreement_rate": 0.0938,
+     "gap": {
+      "clusters": 4,
+      "estimand": "mean of cluster means",
+      "lb": -0.1105,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 0.9926016279002129,
+       "0.05": 0.9378010600229446
+      },
+      "point": -0.0781,
+      "ub": -0.0468
+     },
+     "in_band": {
+      "errors": 22,
+      "lb": 0.8558,
+      "n": 224,
+      "n_eff": 224.0,
+      "precision": 0.9018,
+      "ub": 0.9342
+     },
+     "n": 256,
+     "rule_accuracy": 0.9922,
+     "rule_accuracy_all": 0.9922,
+     "total": 256,
+     "unavailable_rate": 0.0
+    },
+    "sealed": {
+     "abstain_rate": 0.0,
+     "ai_in_band_accuracy": 0.9,
+     "ai_policy_accuracy": 0.9,
+     "ai_policy_accuracy_all": 0.9,
+     "bands": {
+      "no": {
+       "errors": 0,
+       "lb": 0.8668,
+       "n": 25,
+       "n_eff": 25.0,
+       "precision": 1.0,
+       "ub": 1.0
+      },
+      "yes": {
+       "errors": 3,
+       "lb": 0.1176,
+       "n": 5,
+       "n_eff": 5.0,
+       "precision": 0.4,
+       "ub": 0.7693
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9238,
+        "n": 5
+       },
+       {
+        "accuracy": 0.8,
+        "confidence": 0.9342,
+        "n": 5
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9509,
+        "n": 5
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9609,
+        "n": 5
+       },
+       {
+        "accuracy": 0.8,
+        "confidence": 0.9729,
+        "n": 5
+       },
+       {
+        "accuracy": 0.8,
+        "confidence": 0.9912,
+        "n": 5
+       }
+      ],
+      "ece": 0.1104,
+      "gate": false,
+      "n": 30,
+      "upper_bound_reported": false
+     },
+     "datasets": 1,
+     "deployed_policy": {
+      "errors": 3,
+      "lb": 0.0,
+      "n": 3,
+      "n_eff": 3.0,
+      "precision": 0.0,
+      "ub": 0.5615
+     },
+     "disagreement_rate": 0.1,
+     "gap": {
+      "clusters": 1,
+      "estimand": "mean of cluster means",
+      "lb": null,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 1.0,
+       "0.05": 1.0
+      },
+      "point": -0.1,
+      "ub": null
+     },
+     "in_band": {
+      "errors": 3,
+      "lb": 0.7438,
+      "n": 30,
+      "n_eff": 30.0,
+      "precision": 0.9,
+      "ub": 0.9654
+     },
+     "n": 30,
+     "rule_accuracy": 1.0,
+     "rule_accuracy_all": 1.0,
+     "total": 30,
+     "unavailable_rate": 0.0
+    }
+   }
+  },
+  "column.missing_value_action": {
+   "ai_kind": "agent:dataset_investigator",
+   "cap": 2,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "column.missing_value_action",
+   "max_level": 2,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    },
+    "L2": {
+     "allowed": false,
+     "checks": {
+      "blind_cases": false,
+      "blind_non_inferiority": false,
+      "l2_point": true,
+      "no_data_exposure": true,
+      "no_open_incident": true,
+      "one_step": false,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_datasets": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 2,
+     "reasons": [
+      "one_step: from L0 only L1 may be proposed",
+      "sealed_datasets: 0 sealed datasets < 20",
+      "blind_cases: 0 blind cases < 100",
+      "sealed_cases: 0 answered sealed cases < 300",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.01",
+      "blind_non_inferiority: gap LB None < -0.01",
+      "validator_rejection: rate None over 0 proposals (need >= 100, <= 0.02)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "column.semantic_role": {
+   "ai_kind": "jev:column.semantic_role",
+   "cap": 2,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": {
+    "ai_off_equals_rule": true,
+    "ai_policy_minus_ai_off": -0.014
+   },
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "column.semantic_role",
+   "max_level": 2,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 50000,
+     "p95_latency_ms": 1000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_band_edge": false,
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": true,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": true,
+      "sealed_band_edge": true,
+      "sealed_cases": true,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_non_inferiority: gap LB -0.0615 < -0.05",
+      "sealed_holm: Holm-adjusted p 0.226174 > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "blind_band_edge: in-band precision LB None < 0.8",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    },
+    "L2": {
+     "allowed": false,
+     "checks": {
+      "blind_band_edge": false,
+      "blind_cases": false,
+      "blind_non_inferiority": false,
+      "blind_precision": false,
+      "l2_point": true,
+      "no_data_exposure": true,
+      "no_open_incident": true,
+      "one_step": false,
+      "sealed_availability": true,
+      "sealed_band_edge": true,
+      "sealed_cases": false,
+      "sealed_datasets": false,
+      "sealed_non_inferiority": false,
+      "sealed_precision": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 2,
+     "reasons": [
+      "one_step: from L0 only L1 may be proposed",
+      "sealed_datasets: 2 sealed datasets < 20",
+      "blind_cases: 0 blind cases < 100",
+      "sealed_cases: 162 answered sealed cases < 300",
+      "sealed_non_inferiority: gap LB -0.0615 < -0.01",
+      "sealed_precision: deployed-policy precision LB 0.0 < 0.98",
+      "blind_non_inferiority: gap LB None < -0.01",
+      "blind_precision: deployed-policy precision LB None < 0.98",
+      "blind_band_edge: in-band precision LB None < 0.8",
+      "validator_rejection: rate None over 0 proposals (need >= 100, <= 0.02)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {
+    "all": {
+     "abstain_rate": 0.1014,
+     "ai_in_band_accuracy": 0.8988,
+     "ai_policy_accuracy": 0.9685,
+     "ai_policy_accuracy_all": 0.9685,
+     "bands": {
+      "no": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      },
+      "yes": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.931,
+        "confidence": 0.5926,
+        "n": 29
+       },
+       {
+        "accuracy": 0.3793,
+        "confidence": 0.8458,
+        "n": 29
+       },
+       {
+        "accuracy": 0.8966,
+        "confidence": 0.8766,
+        "n": 29
+       },
+       {
+        "accuracy": 0.8621,
+        "confidence": 0.8912,
+        "n": 29
+       },
+       {
+        "accuracy": 0.9655,
+        "confidence": 0.9039,
+        "n": 29
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9196,
+        "n": 29
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9346,
+        "n": 28
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9504,
+        "n": 28
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9638,
+        "n": 28
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9788,
+        "n": 28
+       }
+      ],
+      "ece": 0.1179,
+      "gate": false,
+      "n": 286,
+      "upper_bound_reported": false
+     },
+     "datasets": 5,
+     "deployed_policy": {
+      "errors": 4,
+      "lb": 0.0,
+      "n": 4,
+      "n_eff": 4.0,
+      "precision": 0.0,
+      "ub": 0.4899
+     },
+     "disagreement_rate": 0.1084,
+     "gap": {
+      "clusters": 5,
+      "estimand": "mean of cluster means",
+      "lb": -0.0263,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 0.5639209196466919,
+       "0.05": 0.002685220990306285
+      },
+      "point": -0.014,
+      "ub": 0.0039
+     },
+     "in_band": {
+      "errors": 26,
+      "lb": 0.8559,
+      "n": 257,
+      "n_eff": 257.0,
+      "precision": 0.8988,
+      "ub": 0.93
+     },
+     "n": 286,
+     "rule_accuracy": 0.9825,
+     "rule_accuracy_all": 0.9825,
+     "total": 286,
+     "unavailable_rate": 0.0
+    },
+    "development": {
+     "abstain_rate": 0.0726,
+     "ai_in_band_accuracy": 0.8783,
+     "ai_policy_accuracy": 0.9758,
+     "ai_policy_accuracy_all": 0.9758,
+     "bands": {
+      "no": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      },
+      "yes": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.6923,
+        "confidence": 0.6839,
+        "n": 13
+       },
+       {
+        "accuracy": 0.6923,
+        "confidence": 0.8671,
+        "n": 13
+       },
+       {
+        "accuracy": 0.7692,
+        "confidence": 0.8823,
+        "n": 13
+       },
+       {
+        "accuracy": 0.7692,
+        "confidence": 0.8942,
+        "n": 13
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9068,
+        "n": 12
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.922,
+        "n": 12
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9354,
+        "n": 12
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9498,
+        "n": 12
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9624,
+        "n": 12
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9789,
+        "n": 12
+       }
+      ],
+      "ece": 0.0775,
+      "gate": false,
+      "n": 124,
+      "upper_bound_reported": false
+     },
+     "datasets": 3,
+     "deployed_policy": {
+      "errors": 0,
+      "lb": null,
+      "n": 0,
+      "n_eff": 0.0,
+      "precision": null,
+      "ub": null
+     },
+     "disagreement_rate": 0.1371,
+     "gap": {
+      "clusters": 3,
+      "estimand": "mean of cluster means",
+      "lb": null,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 1.0,
+       "0.05": 1.0
+      },
+      "point": 0.0,
+      "ub": null
+     },
+     "in_band": {
+      "errors": 14,
+      "lb": 0.806,
+      "n": 115,
+      "n_eff": 115.0,
+      "precision": 0.8783,
+      "ub": 0.9261
+     },
+     "n": 124,
+     "rule_accuracy": 0.9758,
+     "rule_accuracy_all": 0.9758,
+     "total": 124,
+     "unavailable_rate": 0.0
+    },
+    "sealed": {
+     "abstain_rate": 0.1235,
+     "ai_in_band_accuracy": 0.9155,
+     "ai_policy_accuracy": 0.963,
+     "ai_policy_accuracy_all": 0.963,
+     "bands": {
+      "no": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      },
+      "yes": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.9412,
+        "confidence": 0.5484,
+        "n": 17
+       },
+       {
+        "accuracy": 0.4118,
+        "confidence": 0.8237,
+        "n": 17
+       },
+       {
+        "accuracy": 0.8125,
+        "confidence": 0.873,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.8893,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.903,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9179,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9341,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9513,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9643,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9786,
+        "n": 16
+       }
+      ],
+      "ece": 0.136,
+      "gate": false,
+      "n": 162,
+      "upper_bound_reported": false
+     },
+     "datasets": 2,
+     "deployed_policy": {
+      "errors": 4,
+      "lb": 0.0,
+      "n": 4,
+      "n_eff": 4.0,
+      "precision": 0.0,
+      "ub": 0.4899
+     },
+     "disagreement_rate": 0.0864,
+     "gap": {
+      "clusters": 2,
+      "estimand": "mean of cluster means",
+      "lb": -0.0615,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 0.9089469981442512,
+       "0.05": 0.07539130213978602
+      },
+      "point": -0.0247,
+      "ub": 0.0055
+     },
+     "in_band": {
+      "errors": 12,
+      "lb": 0.8581,
+      "n": 142,
+      "n_eff": 142.0,
+      "precision": 0.9155,
+      "ub": 0.951
+     },
+     "n": 162,
+     "rule_accuracy": 0.9877,
+     "rule_accuracy_all": 0.9877,
+     "total": 162,
+     "unavailable_rate": 0.0
+    }
+   }
+  },
+  "command.intent_route": {
+   "ai_kind": "jev:command.intent_route",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "command.intent_route",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 50000,
+     "p95_latency_ms": 1000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_band_edge": false,
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": true,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_band_edge": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "sealed_band_edge: in-band precision LB None < 0.8",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "blind_band_edge: in-band precision LB None < 0.8",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "experiment.review": {
+   "ai_kind": "agent:experiment_critic",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "experiment.review",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "feature.leakage_suspect": {
+   "ai_kind": "jev:feature.leakage_suspect",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": {
+    "ai_off_equals_rule": true,
+    "ai_policy_minus_ai_off": -0.0803
+   },
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "feature.leakage_suspect",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 50000,
+     "p95_latency_ms": 1000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "blind_precision": false,
+      "citation_validity": true,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": true,
+      "sealed_cases": true,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "sealed_precision": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_non_inferiority: gap LB -0.0915 < -0.05",
+      "sealed_holm: Holm-adjusted p 1.0 > 0.05",
+      "sealed_precision: per-band precision LBs [0.1018] < 0.9",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "blind_precision: per-band precision LBs [None] < 0.9",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {
+    "all": {
+     "abstain_rate": 0.8832,
+     "ai_in_band_accuracy": 0.3125,
+     "ai_policy_accuracy": 0.9051,
+     "ai_policy_accuracy_all": 0.9051,
+     "bands": {
+      "no": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      },
+      "yes": {
+       "errors": 22,
+       "lb": 0.1795,
+       "n": 32,
+       "n_eff": 32.0,
+       "precision": 0.3125,
+       "ub": 0.4857
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.5,
+        "confidence": 0.6136,
+        "n": 28
+       },
+       {
+        "accuracy": 0.8214,
+        "confidence": 0.9234,
+        "n": 28
+       },
+       {
+        "accuracy": 0.9286,
+        "confidence": 0.9316,
+        "n": 28
+       },
+       {
+        "accuracy": 0.9643,
+        "confidence": 0.9396,
+        "n": 28
+       },
+       {
+        "accuracy": 0.8889,
+        "confidence": 0.9488,
+        "n": 27
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9553,
+        "n": 27
+       },
+       {
+        "accuracy": 0.8889,
+        "confidence": 0.9628,
+        "n": 27
+       },
+       {
+        "accuracy": 0.8889,
+        "confidence": 0.9734,
+        "n": 27
+       },
+       {
+        "accuracy": 0.8889,
+        "confidence": 0.9828,
+        "n": 27
+       },
+       {
+        "accuracy": 0.9259,
+        "confidence": 0.9913,
+        "n": 27
+       }
+      ],
+      "ece": 0.0665,
+      "gate": false,
+      "n": 274,
+      "upper_bound_reported": false
+     },
+     "datasets": 5,
+     "deployed_policy": {
+      "errors": 22,
+      "lb": 0.0,
+      "n": 22,
+      "n_eff": 22.0,
+      "precision": 0.0,
+      "ub": 0.1487
+     },
+     "disagreement_rate": 0.0803,
+     "gap": {
+      "clusters": 5,
+      "estimand": "mean of cluster means",
+      "lb": -0.121,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 0.9943714522792811,
+       "0.05": 0.94689041322967
+      },
+      "point": -0.0803,
+      "ub": -0.0491
+     },
+     "in_band": {
+      "errors": 22,
+      "lb": 0.1795,
+      "n": 32,
+      "n_eff": 32.0,
+      "precision": 0.3125,
+      "ub": 0.4857
+     },
+     "n": 274,
+     "rule_accuracy": 0.9854,
+     "rule_accuracy_all": 0.9854,
+     "total": 274,
+     "unavailable_rate": 0.0
+    },
+    "development": {
+     "abstain_rate": 0.8621,
+     "ai_in_band_accuracy": 0.375,
+     "ai_policy_accuracy": 0.8793,
+     "ai_policy_accuracy_all": 0.8793,
+     "bands": {
+      "no": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      },
+      "yes": {
+       "errors": 10,
+       "lb": 0.1848,
+       "n": 16,
+       "n_eff": 16.0,
+       "precision": 0.375,
+       "ub": 0.6136
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.5833,
+        "confidence": 0.636,
+        "n": 12
+       },
+       {
+        "accuracy": 0.8333,
+        "confidence": 0.9233,
+        "n": 12
+       },
+       {
+        "accuracy": 0.8333,
+        "confidence": 0.9304,
+        "n": 12
+       },
+       {
+        "accuracy": 0.9167,
+        "confidence": 0.9381,
+        "n": 12
+       },
+       {
+        "accuracy": 0.9167,
+        "confidence": 0.9472,
+        "n": 12
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9547,
+        "n": 12
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9617,
+        "n": 11
+       },
+       {
+        "accuracy": 0.8182,
+        "confidence": 0.9684,
+        "n": 11
+       },
+       {
+        "accuracy": 0.9091,
+        "confidence": 0.982,
+        "n": 11
+       },
+       {
+        "accuracy": 0.9091,
+        "confidence": 0.9922,
+        "n": 11
+       }
+      ],
+      "ece": 0.0675,
+      "gate": false,
+      "n": 116,
+      "upper_bound_reported": false
+     },
+     "datasets": 3,
+     "deployed_policy": {
+      "errors": 10,
+      "lb": 0.0,
+      "n": 10,
+      "n_eff": 10.0,
+      "precision": 0.0,
+      "ub": 0.2775
+     },
+     "disagreement_rate": 0.0862,
+     "gap": {
+      "clusters": 3,
+      "estimand": "mean of cluster means",
+      "lb": -0.179,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 0.945465854988863,
+       "0.05": 0.8550857625915719
+      },
+      "point": -0.0862,
+      "ub": -0.0057
+     },
+     "in_band": {
+      "errors": 10,
+      "lb": 0.1848,
+      "n": 16,
+      "n_eff": 16.0,
+      "precision": 0.375,
+      "ub": 0.6136
+     },
+     "n": 116,
+     "rule_accuracy": 0.9655,
+     "rule_accuracy_all": 0.9655,
+     "total": 116,
+     "unavailable_rate": 0.0
+    },
+    "sealed": {
+     "abstain_rate": 0.8987,
+     "ai_in_band_accuracy": 0.25,
+     "ai_policy_accuracy": 0.9241,
+     "ai_policy_accuracy_all": 0.9241,
+     "bands": {
+      "no": {
+       "errors": 0,
+       "lb": null,
+       "n": 0,
+       "n_eff": 0.0,
+       "precision": null,
+       "ub": null
+      },
+      "yes": {
+       "errors": 12,
+       "lb": 0.1018,
+       "n": 16,
+       "n_eff": 16.0,
+       "precision": 0.25,
+       "ub": 0.495
+      }
+     },
+     "calibration": {
+      "bins": [
+       {
+        "accuracy": 0.4375,
+        "confidence": 0.6114,
+        "n": 16
+       },
+       {
+        "accuracy": 0.8125,
+        "confidence": 0.9091,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9327,
+        "n": 16
+       },
+       {
+        "accuracy": 0.9375,
+        "confidence": 0.9408,
+        "n": 16
+       },
+       {
+        "accuracy": 0.9375,
+        "confidence": 0.9499,
+        "n": 16
+       },
+       {
+        "accuracy": 1.0,
+        "confidence": 0.9565,
+        "n": 16
+       },
+       {
+        "accuracy": 0.875,
+        "confidence": 0.9664,
+        "n": 16
+       },
+       {
+        "accuracy": 0.875,
+        "confidence": 0.9769,
+        "n": 16
+       },
+       {
+        "accuracy": 0.8667,
+        "confidence": 0.9838,
+        "n": 15
+       },
+       {
+        "accuracy": 0.9333,
+        "confidence": 0.991,
+        "n": 15
+       }
+      ],
+      "ece": 0.0764,
+      "gate": false,
+      "n": 158,
+      "upper_bound_reported": false
+     },
+     "datasets": 2,
+     "deployed_policy": {
+      "errors": 12,
+      "lb": 0.0,
+      "n": 12,
+      "n_eff": 12.0,
+      "precision": 0.0,
+      "ub": 0.2425
+     },
+     "disagreement_rate": 0.0759,
+     "gap": {
+      "clusters": 2,
+      "estimand": "mean of cluster means",
+      "lb": -0.0915,
+      "method": "t_cluster_means",
+      "p_values": {
+       "0.01": 0.9863820350694772,
+       "0.05": 0.9639829239283486
+      },
+      "point": -0.0759,
+      "ub": -0.0568
+     },
+     "in_band": {
+      "errors": 12,
+      "lb": 0.1018,
+      "n": 16,
+      "n_eff": 16.0,
+      "precision": 0.25,
+      "ub": 0.495
+     },
+     "n": 158,
+     "rule_accuracy": 1.0,
+     "rule_accuracy_all": 1.0,
+     "total": 158,
+     "unavailable_rate": 0.0
+    }
+   }
+  },
+  "improve.next_action": {
+   "ai_kind": "agent:improvement_hypothesis",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "improve.next_action",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.branch_experiment": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.branch_experiment",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.create_problem_spec": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.create_problem_spec",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.move_ref": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.move_ref",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.predict": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.predict",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.propose_problem_spec": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.propose_problem_spec",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.record_decision": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.record_decision",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.request_agent_review": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.request_agent_review",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "lead.run_experiment": {
+   "ai_kind": "agent:lead",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "lead.run_experiment",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "ops.diagnose": {
+   "ai_kind": "agent:dataset_investigator",
+   "cap": 3,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "ops.diagnose",
+   "max_level": 3,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    },
+    "L2": {
+     "allowed": false,
+     "checks": {
+      "blind_cases": false,
+      "blind_non_inferiority": false,
+      "l2_point": false,
+      "no_data_exposure": true,
+      "no_open_incident": true,
+      "one_step": false,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_datasets": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 2,
+     "reasons": [
+      "one_step: from L0 only L1 may be proposed",
+      "l2_point: L2 is allowed only for role / missing-value / families",
+      "sealed_datasets: 0 sealed datasets < 20",
+      "blind_cases: 0 blind cases < 100",
+      "sealed_cases: 0 answered sealed cases < 300",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.01",
+      "blind_non_inferiority: gap LB None < -0.01",
+      "validator_rejection: rate None over 0 proposals (need >= 100, <= 0.02)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    },
+    "L3": {
+     "allowed": false,
+     "checks": {
+      "one_step": false,
+      "ops_diagnose_only": true,
+      "weeks_at_l2": false,
+      "within_cap": true
+     },
+     "level": 3,
+     "reasons": [
+      "one_step: from L0 only L1 may be proposed",
+      "weeks_at_l2: needs >= 4 weeks at L2 and >= 100 applied decisions (no data)"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "ops.release": {
+   "ai_kind": "agent:ops",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "ops.release",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "ops.retrain": {
+   "ai_kind": "agent:ops",
+   "cap": 2,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "ops.retrain",
+   "max_level": 2,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    },
+    "L2": {
+     "allowed": false,
+     "checks": {
+      "blind_cases": false,
+      "blind_non_inferiority": false,
+      "l2_point": false,
+      "no_data_exposure": true,
+      "no_open_incident": true,
+      "one_step": false,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_datasets": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 2,
+     "reasons": [
+      "one_step: from L0 only L1 may be proposed",
+      "l2_point: L2 is allowed only for role / missing-value / families",
+      "sealed_datasets: 0 sealed datasets < 20",
+      "blind_cases: 0 blind cases < 100",
+      "sealed_cases: 0 answered sealed cases < 300",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.01",
+      "blind_non_inferiority: gap LB None < -0.01",
+      "validator_rejection: rate None over 0 proposals (need >= 100, <= 0.02)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "ops.rollback": {
+   "ai_kind": "agent:ops",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "ops.rollback",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "proposal.completeness": {
+   "ai_kind": "jev:proposal.completeness",
+   "cap": 0,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "proposal.completeness",
+   "max_level": 0,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 50000,
+     "p95_latency_ms": 1000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {},
+   "sources": {}
+  },
+  "spec.objective": {
+   "ai_kind": "agent:experiment_planner",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "spec.objective",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "split.strategy": {
+   "ai_kind": "agent:experiment_planner",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "split.strategy",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "target.column": {
+   "ai_kind": "agent:dataset_investigator",
+   "cap": 1,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "target.column",
+   "max_level": 1,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  },
+  "training.families_budget": {
+   "ai_kind": "agent:experiment_planner",
+   "cap": 2,
+   "current_platform_level": 0,
+   "delta_vs_rule_replay": null,
+   "demotion": {
+    "allowed": false,
+    "checks": {},
+    "level": null,
+    "reasons": []
+   },
+   "key": "training.families_budget",
+   "max_level": 2,
+   "open_incidents": {},
+   "operations": {
+    "budget": {
+     "cost_micros_per_1000": 100000000,
+     "p95_latency_ms": 60000
+    },
+    "calls": 0,
+    "citation_validity": null,
+    "cost_micros_per_1000": null,
+    "p95_latency_ms": null,
+    "proposals": 0,
+    "validator_rejection_rate": null,
+    "within_budget": null
+   },
+   "promotion": {
+    "L1": {
+     "allowed": false,
+     "checks": {
+      "blind_holm": false,
+      "blind_in_band": false,
+      "blind_non_inferiority": false,
+      "citation_validity": false,
+      "no_data_exposure": true,
+      "one_step": true,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_holm": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 1,
+     "reasons": [
+      "blind_in_band: 0 blind in-band cases < 30",
+      "sealed_cases: 0 answered sealed cases < 100",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.05",
+      "sealed_holm: Holm-adjusted p None > 0.05",
+      "blind_non_inferiority: gap LB None < -0.05",
+      "blind_holm: Holm-adjusted p None > 0.05",
+      "validator_rejection: rate None over 0 proposals (need >= 50, <= 0.05)",
+      "citation_validity: citation validity None < 0.99",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    },
+    "L2": {
+     "allowed": false,
+     "checks": {
+      "blind_cases": false,
+      "blind_non_inferiority": false,
+      "l2_point": true,
+      "no_data_exposure": true,
+      "no_open_incident": true,
+      "one_step": false,
+      "sealed_availability": false,
+      "sealed_cases": false,
+      "sealed_datasets": false,
+      "sealed_non_inferiority": false,
+      "stability_two_runs": false,
+      "validator_rejection": false,
+      "within_budget": false,
+      "within_cap": true
+     },
+     "level": 2,
+     "reasons": [
+      "one_step: from L0 only L1 may be proposed",
+      "sealed_datasets: 0 sealed datasets < 20",
+      "blind_cases: 0 blind cases < 100",
+      "sealed_cases: 0 answered sealed cases < 300",
+      "sealed_availability: unavailable rate None > 0.05 (harness / provider availability)",
+      "sealed_non_inferiority: gap LB None < -0.01",
+      "blind_non_inferiority: gap LB None < -0.01",
+      "validator_rejection: rate None over 0 proposals (need >= 100, <= 0.02)",
+      "within_budget: p95 latency / cost unknown or over budget",
+      "stability_two_runs: quality gates must hold in two consecutive runs"
+     ]
+    }
+   },
+   "sources": {}
+  }
+ },
+ "run_digest": "0f5b7bdbcfe5914819761d511fdca2bc5a1e9c0192af1bb19bfc93e0cc501d26",
+ "run_id": "af6a6214-5d3f-4481-9c67-7419cb3a43f2",
+ "schema_version": 1,
+ "sealed_datasets": 2,
+ "workspace_evidence": {},
+ "workspaces_not_opted_in": 0
+}

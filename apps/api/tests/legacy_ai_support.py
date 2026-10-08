@@ -1,8 +1,8 @@
 """Test support for the legacy LLM paths on the AI gateway (ADR 0009 §4).
 
-``enable_legacy_ai`` seeds governance, syncs the code-owned prompt releases, turns the
-legacy flags and ``AI_ENABLED`` on for the writers and installs a gateway whose only
-provider is the deterministic fake (no network). ``label_dataset`` publishes ADR 0005
+``enable_legacy_ai`` seeds governance, syncs the code-owned prompt releases, turns
+``AI_ENABLED`` on for the writers (P6.9-A retired the legacy flags; kill switches act per
+call) and installs a gateway whose only provider is the deterministic fake (no network). ``label_dataset`` publishes ADR 0005
 labels so an upload's columns may reach a model; ``sent`` reads back what one provider
 call carried.
 """
@@ -34,8 +34,7 @@ class LegacyAI:
     settings: SimpleNamespace
 
 
-def enable_legacy_ai(monkeypatch, db, *, handler=None, responses=(), ai_enabled: bool = True,
-                     decision_agent: bool = True, verifier: bool = False) -> LegacyAI:
+def enable_legacy_ai(monkeypatch, db, *, handler=None, responses=(), ai_enabled: bool = True) -> LegacyAI:
     seed_platform_governance(db, environment="test")
     sync_prompt_releases(db)
     db.commit()
@@ -44,8 +43,7 @@ def enable_legacy_ai(monkeypatch, db, *, handler=None, responses=(), ai_enabled:
         providers={"openai": fake}, limits=GatewayLimits(),
         settings=lambda: SimpleNamespace(ai_enabled=ai_enabled, dclab_env="test"),
     )
-    settings = SimpleNamespace(decision_agent_enabled=decision_agent, ai_enabled=ai_enabled, dclab_env="test",
-                               pipeline_llm_verifier_enabled=verifier, pipeline_llm_timeout_seconds=1.0)
+    settings = SimpleNamespace(ai_enabled=ai_enabled, dclab_env="test", pipeline_llm_timeout_seconds=1.0)
     monkeypatch.setattr("app.agents.legacy.gateway_service", lambda: service)
     monkeypatch.setattr("app.services.lab_decision_ledger.get_settings", lambda: settings)
     monkeypatch.setattr("app.engine.lab.llm_client.get_settings", lambda: settings)

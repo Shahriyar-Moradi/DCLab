@@ -556,7 +556,11 @@ def extract_sdk_v1_paths(source: str) -> list[str]:
 
 # /v1 paths the bearer-authenticated SDK can never call: service-token management
 # is session-only (any Authorization header is 403 session_required, P3.2-A).
-SDK_EXEMPT_V1_PATHS = frozenset({"/v1/service-tokens", "/v1/service-tokens/{}/revoke"})
+SDK_EXEMPT_V1_PATHS = frozenset({
+    "/v1/service-tokens", "/v1/service-tokens/{}/revoke",
+    # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required); agents use MCP.
+    "/v1/assistant/threads", "/v1/assistant/threads/{}", "/v1/assistant/threads/{}/messages",
+})
 
 
 def check_sdk_routes(

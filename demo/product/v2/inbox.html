@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Inbox · Northwind Telecom</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="inbox.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Inbox</b></div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Inbox</h1><p class="sub">Everything that needs a person: L1 proposals waiting for a decision, questions from agents, and L2 decisions applied automatically that you can revert. Each item shows its evidence, the rule's answer and the trust level.</p></div>
+  <div class="toolbar"><select class="input"><option>All projects</option><option>Northwind churn</option><option>Invoice late payment</option><option>Lead scoring</option></select><select class="input"><option>Needs me (7)</option><option>Auto-applied, revertable (12)</option><option>Done</option></select><span class="switch"><i></i>only mine to approve</span></div>
+</div>
+
+<div class="tabs" data-tabs="inbox">
+  <button data-tab="needs" aria-selected="true">Needs a decision · 7</button>
+  <button data-tab="auto">Applied automatically · 12</button>
+  <button data-tab="done">Done · 41</button>
+</div>
+
+<div data-tabpanel="inbox:needs" class="on">
+  <div class="grid">
+    <div class="card" style="border-left:4px solid var(--ai)">
+      <h3>Approve release R-15 (MV v5 replaces MV v4)? <span class="sp">Northwind churn · Ops agent · <span class="lvl l1">L1</span> · 09:12</span></h3>
+      <p>Churn-model drift: new customers from the March campaign look different. Precision fell to 48%. I retrained on the new data and it's back to 59%, tested on the same kind of split. <span class="pill gray">agent text, untrusted</span></p>
+      <div class="grid cols-3">
+        <div class="cite"><span>W-7–W-9 labeled precision: v4 0.48 · v5 0.59 @ recall 0.80</span><span>Critic ar-1102: promote · no segment worse by &gt; 0.01</span><span>E9 verifier: 20 ✓ · SP-2 temporal · holdout once</span></div>
+        <div class="rule-note"><b>Rule</b> (release.gate.v1): all gates pass; release allowed. Rollback policy: precision −0.05 on 2 labeled weeks → MV v4.</div>
+        <div class="small muted">Revert after approval: move champion ref back to MV v4 (one record). Cost so far: compute 6 m · LLM $0.21.</div>
+      </div>
+      <div class="toolbar"><button class="btn primary" data-mock="approve → release R-15 active, champion MV v5, d-410">Approve release</button><a class="btn" href="experiments.html">See comparison</a><button class="btn" data-mock="reject with reason">Reject</button><button class="btn" data-mock="snooze 1 week">Ignore for now</button></div>
+    </div>
+    <div class="card" style="border-left:4px solid var(--ai)">
+      <h3>Promote E7 winner to champion? <span class="sp">Northwind churn · from IL-2 · <span class="lvl l1">L1</span> · Mon</span></h3>
+      <p class="small">Already done (d-340). Shown as an example of a resolved item that stays until dismissed.</p>
+      <div class="toolbar"><button class="btn sm" data-mock="dismiss">Dismiss</button></div>
+    </div>
+    <div class="card" style="border-left:4px solid var(--ai)">
+      <h3>Question: does <code>family_5g</code> behave like <code>family</code>? <span class="sp">Northwind churn · DatasetInvestigator · question · 09:10</span></h3>
+      <p class="small">New value in 6% of DS v3 rows, churns 2× average. Your answer becomes a decision record and a note in the recipe; it does not change features by itself.</p>
+      <div class="toolbar"><button class="btn primary" data-mock="answer: yes, a new family tier">Yes, same product family</button><button class="btn" data-mock="answer: no, treat separately">No, separate</button><button class="btn" data-mock="free-text answer">Explain…</button></div>
+    </div>
+    <div class="card" style="border-left:4px solid var(--ai)">
+      <h3>Target for Lead scoring: <code>converted_90d</code>? <span class="sp">Lead scoring · Planner · <span class="lvl l1">L1</span> · 3 days ago</span></h3>
+      <div class="grid cols-2"><div class="cite"><span>Planner: converted_90d (p 0.91); alternatives: won (0.06), stage_closed (0.03)</span><span>rule: 3 boolean candidates, none named target</span></div><div class="rule-note"><b>Rule</b>: cannot choose; needs input. Task type inferred from values only after you confirm.</div></div>
+      <div class="toolbar"><button class="btn primary" data-mock="accept target → spec proposed">Accept converted_90d</button><button class="btn" data-mock="choose another column">Choose another</button></div>
+    </div>
+    <div class="card" style="border-left:4px solid var(--warn)">
+      <h3>Policy change: raise <code>feature.leakage_suspect</code> back to L1 <span class="sp">workspace · governance · needs approver · Tue</span></h3>
+      <div class="cite"><span>incident i-31 resolved: prompt v7 → v8</span><span>R3 re-run: AI 90.4% vs rule 71.0% on 301 cases</span></div>
+      <div class="toolbar"><button class="btn primary" data-mock="approve policy change d-221">Approve</button><button class="btn" data-mock="reject">Reject</button></div>
+    </div>
+    <div class="card"><h3>2 more</h3><p class="small muted">Invoice late payment: drift finding needs a label upload · Lead scoring: Investigator question about <code>lead_source</code> encoding.</p></div>
+  </div>
+</div>
+
+<div data-tabpanel="inbox:auto">
+  <div class="tbl card"><table>
+    <thead><tr><th>When</th><th>Project</th><th>Decision point</th><th>AI value</th><th>Rule value</th><th>Level</th><th>Validator</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>Mon 02:14</td><td>Northwind churn</td><td>ops.retrain</td><td>branch E7 on DS v3</td><td>n/a (no rule retrains)</td><td><span class="lvl l2">L2</span></td><td><span class="pill ok">policy ≤ 2/week</span></td><td><button class="btn sm" data-mock="revert = cancel E9">revert</button></td></tr>
+      <tr><td>Thu 09:03</td><td>Northwind churn</td><td>column.semantic_role · region_code</td><td>categorical</td><td>numeric</td><td><span class="lvl l2">L2</span></td><td><span class="pill ok">12 distinct ints</span></td><td><button class="btn sm" data-mock="revert">revert</button></td></tr>
+      <tr><td>Thu 09:03</td><td>Northwind churn</td><td>column.is_identifier · customer_id</td><td>yes</td><td>yes</td><td><span class="lvl l2">L2</span></td><td><span class="pill ok">agree</span></td><td></td></tr>
+      <tr><td>Thu 09:04</td><td>Northwind churn</td><td>training.families</td><td>lgbm, catboost, logistic</td><td>portfolio</td><td><span class="lvl l2">L2</span></td><td><span class="pill ok">allowlist</span></td><td><button class="btn sm" data-mock="revert">revert</button></td></tr>
+      <tr><td>Mon</td><td>Northwind churn</td><td>improve.next_action · it.1</td><td>family_include catboost</td><td>threshold_objective</td><td><span class="lvl l2">L2</span></td><td><span class="pill ok">action space</span></td><td></td></tr>
+      <tr><td>Wed</td><td>Invoice late payment</td><td>column.semantic_role · vendor_code</td><td>categorical</td><td>categorical</td><td><span class="lvl l2">L2</span></td><td><span class="pill ok">agree</span></td><td></td></tr>
+      <tr class="dim"><td>last week</td><td>Invoice late payment</td><td>column.semantic_role · amount_band</td><td>categorical</td><td>numeric</td><td><span class="lvl l2">L2</span></td><td><span class="pill warn">reverted by you</span></td><td>d-288</td></tr>
+      <tr class="dim"><td colspan="8">… 5 more</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="inbox:done">
+  <div class="empty">41 resolved items in the last 30 days · 61% of agent proposals accepted · median time to decision 2 h 10 m</div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>L1 proposals, agent questions, policy changes, L2 auto-decisions with revert</li><li>Evidence, rule answer and cost on every item</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Assignment and approvers per project vs workspace</li><li>Batch actions (approve several role decisions at once)?</li><li>Expiry of stale proposals (dataset moved on)</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>"Done" tab if Decisions already lists resolved records</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v2"></script>
+</body>
+</html>

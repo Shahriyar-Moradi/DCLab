@@ -48,6 +48,10 @@ FORBIDDEN_OPERATIONS = (
     "move_ref",  # forbidden without a human actor; there is no agent tool for it
     "promote_champion",
 )
+# P6.3-B2: ref moves the assistant surface never proposes (``record_decision.ref_moves``): a
+# champion move is a human's promote decision (Studio forms / MCP hand-off), so a lead-loop
+# call naming one is a ``rejected_by_validator`` proposal (``champion_move_human_only``).
+ASSISTANT_REFUSED_REF_MOVES = frozenset({"champion_model"})
 
 
 class ToolError(Exception):

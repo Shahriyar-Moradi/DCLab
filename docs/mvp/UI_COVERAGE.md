@@ -20,7 +20,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]` | planned P4.1-A |
 | Upload, list, inspect datasets | `GET/POST /v1/datasets`, `GET /v1/datasets/{id}` | `inspect_dataset` | New-project wizard step 1; Data tab | planned P4.1-B |
 | Problem spec (propose / create) | `POST /v1/projects/{id}/problem-specs` | `propose_problem_spec`, `create_problem_spec` | New-project wizard step 2 (target, task, objective, constraints) | planned P4.1-B |
-| Target confirmation | `POST /v1/execution-requests/{id}/target-confirmation` | — | wizard step 2 confirm | planned P4.1-B |
+| Target / split confirmation | `POST /v1/execution-requests/{id}/target-confirmation|split-confirmation` | — | wizard step 2 confirm | planned P4.1-B |
 | Run an experiment | `POST /v1/experiments`, `POST /v1/execution-requests`, `GET …/{id}` | `run_experiment` | wizard "Train" + Experiments tab "New run" | planned P4.1-B |
 | Live run progress | `GET /v1/model-builds/{id}`, `…/events`, `…/artifacts`, `…/visualizations` | — | experiment page progress + charts | exists (legacy `/lab/runs/[run_id]`), moved in P4.1-A |
 | Cancel a run | `POST /v1/experiments/{id}/cancel` | — | experiment page "Cancel" | planned P4.4-A |
@@ -47,8 +47,10 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Activity feed | `GET /v1/activity` | — | Home "Activity" | planned P4.15-A / P4.15-UI |
 | Inbox | `GET /v1/inbox`, counts | `list_proposals` (P6.6-A) | `/inbox`, sidebar badge, Home preview | planned P4.16-A / P4.16-UI |
 | Pipeline evidence | `GET /v1/model-builds/{id}`, `/events`, `/artifacts` | — | `/projects/[id]/pipeline/[experimentId]` | planned P4.17-UI |
-| In-app assistant | `POST /v1/assistant/threads`, `…/messages` (SSE) | — (external agents use MCP itself) | Lab page + assistant panel on every project page | backend P6.3-B; screen planned A3-UI |
-| Assistant and agent proposals | `GET /v1/proposals`, `POST /v1/proposals/{id}/accept|reject|revert` (one proposal model, P6.6-A) | `list_proposals` | confirm cards in the Lab/panel, Inbox | planned A4-A, P4.16-UI |
+| In-app assistant | `GET/POST /v1/assistant/threads`, `GET /v1/assistant/threads/{id}`, `POST …/messages` (SSE) | — (external agents use MCP itself) | Lab page + assistant panel on every project page | backend P6.3-B; screen planned A3-UI |
+| Assistant and agent proposals | `GET /v1/proposals`, `GET /v1/proposals/{id}`, `POST /v1/proposals/{id}/accept|reject|revert` (human only; one proposal model) | `list_proposals` | confirm cards in the Lab/panel, Inbox | backend P6.6-A; screens planned A4-A, P4.16-UI |
+| Agent runs and review requests | `GET /v1/agent-runs`, `GET /v1/agent-runs/{id}`, `POST /v1/agent-reviews` | `request_agent_review` | Inbox "Ask for a review", agent run detail | backend P6.6-A; screens planned P4.16-UI |
+| Governance console | `GET /v1/governance`, `POST /v1/governance/policy`, `POST /v1/governance/policy/{id}/accept` (owner/admin; body: reviewed `policy_digest`, consent acknowledgement), `POST /v1/governance/switches` (workspace kill switches), `POST /v1/agent-runs/{id}/replay` (human only) | `inspect_governance` (read-only) | `/governance`: Policy, Decision points & trust levels (R3 links), Budgets & spend, Kill switches, Incidents, Audit & replay | backend P6.11-A; screen planned P6.11-UI |
 
 ## Later phases (screen ships in the same phase as the backend)
 
@@ -60,7 +62,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Agent runs and proposals | P6.4-A, P6.6-A, P6.10-A | A2-UI (Agent runs, Tool registry), A4-A, P4.16-UI (+ assistant skills, A6) |
 | Jev answers at decision points | P6.7-A, P6.9-A | P6.7-UI (development role only), P4.17-UI decision points |
 | Agent trust levels (R3) | P6.8-A | P6.8-UI (Agents & tools → Agent catalog) |
-| Governance | P6.11-A | P6.11-UI (`/governance`) |
+| Governance | P6.11-A (shipped) | P6.11-UI (`/governance`) |
 | Business Outcomes | P7.6-A | P7.6-A (`/outcomes`) |
 | Per-row reasons | P7.7-A | Outcomes list, Models → Batch predictions |
 | Notifications, webhooks | P8.8-A | Settings → Notifications, Integrations |

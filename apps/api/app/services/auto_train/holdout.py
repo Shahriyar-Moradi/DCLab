@@ -22,6 +22,7 @@ from app.engine.modeling.holdout_planner import (
 )
 from app.engine.validation.splits import split_holdout_by_assignment, split_train_test_holdout
 from app.services.auto_train.context import RunContext, StageHalt
+from app.services.auto_train.plan_points import resolve_split_point
 from app.services.auto_train.split_plan import partition_source
 from app.services.split_plan_service import (
     StoredHoldout,
@@ -83,6 +84,9 @@ def run_holdout_lock(ctx: RunContext, inp: HoldoutLockInput) -> HoldoutLockOutpu
         if inp.upload is not None
         else None
     )
+    # P6.9-A split.strategy: the run plan's answer, tighten-only (may stop at needs_input).
+    holdout_plan = resolve_split_point(ctx, frame=frame, rule=holdout_plan, source=source, target=target,
+                                       failure_extra=failure_extra)
     stored: StoredHoldout | None = None
     branch = ctx.branch
     if branch is not None and (source is not None or not _locked(ctx, inp.upload)):

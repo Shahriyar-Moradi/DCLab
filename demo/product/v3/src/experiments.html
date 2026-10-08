@@ -1,0 +1,74 @@
+<!-- title: Experiments · Northwind churn -->
+<!-- crumbs: Northwind churn › <b>Experiments</b> -->
+<div class="page-head">
+  <div><h1>Experiments</h1><p class="sub">Every run, what changed in it and how it scored on the same test months.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="start new run">New run</button></div>
+</div>
+
+<div class="tabs" data-tabs="exp">
+  <button data-tab="runs" aria-selected="true">Runs</button>
+  <button data-tab="compare">Compare</button>
+  <button data-tab="improve">Improve</button>
+</div>
+
+<div data-tabpanel="exp:runs" class="on">
+  <div class="card">
+    <div class="tbl"><table>
+      <thead><tr><th>Run</th><th>What changed</th><th class="r">Churners caught</th><th class="r">Precision</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><a href="pipeline.html"><b>E1</b></a></td><td>First model</td><td class="r">82%</td><td class="r">61%</td><td><span class="tag">Completed</span></td></tr>
+        <tr><td><a href="pipeline.html"><b>E2</b></a></td><td>Gave churners more weight</td><td class="r">85%</td><td class="r">58%</td><td><span class="tag">Completed</span></td></tr>
+        <tr class="win"><td><a href="pipeline.html"><b>E7</b></a></td><td>Tuned the threshold for the 80% goal<small>best result of the improve loop</small></td><td class="r"><b>81%</b></td><td class="r"><b>63%</b></td><td><span class="tag ok">In use as model v4</span></td></tr>
+        <tr><td><b>E9</b></td><td>Retrained on newer data<small>started by the assistant after drift</small></td><td class="r">—</td><td class="r">—</td><td><span class="tag info">Running · fold 4 of 5</span></td></tr>
+        <tr class="dim"><td>E8</td><td>Put <code>churned_at</code> back in, as a test</td><td class="r">—</td><td class="r">—</td><td>Stopped: leakage check failed</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">E1, E2 and E7 share the same test months, so their numbers can be compared directly.</p>
+  </div>
+</div>
+
+<div data-tabpanel="exp:compare">
+  <div class="card">
+    <div class="head"><h2>Compare two runs</h2>
+      <div class="toolbar"><select class="input" aria-label="First run"><option>E1 · First model</option><option>E2</option></select><span class="muted">with</span><select class="input" aria-label="Second run"><option>E7 · In use</option><option>E2</option></select></div>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th></th><th class="r">E1</th><th class="r">E7</th><th class="r">Change</th></tr></thead>
+      <tbody>
+        <tr><td>Churners caught (test months)</td><td class="r">82%</td><td class="r">81%</td><td class="r">−1</td></tr>
+        <tr><td>Precision (test months)</td><td class="r">61%</td><td class="r">63%</td><td class="r"><span class="tag ok">+2</span></td></tr>
+        <tr><td>Validation score</td><td class="r">0.69</td><td class="r">0.71</td><td class="r"><span class="tag ok">+0.02</span></td></tr>
+        <tr><td>Training time</td><td class="r">4 min</td><td class="r">4 min</td><td class="r">—</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><div><b>What is different in E7</b><span class="muted">Churners get more weight, and the threshold is tuned to keep at least 80% of them.</span></div></div>
+  </div>
+</div>
+
+<div data-tabpanel="exp:improve">
+  <div class="card">
+    <div class="head"><h2>Improve a run</h2><p>Set a goal. The assistant tries one change at a time and stops when nothing helps.</p></div>
+    <div class="form-row">
+      <label class="field">Improve<select class="input"><option>Precision</option><option>Churners caught</option></select></label>
+      <label class="field">While keeping<input class="input" value="Churners caught ≥ 80%"></label>
+      <label class="field">Starting from<select class="input"><option>Run E7</option><option>Run E2</option></select></label>
+      <label class="field">Budget<select class="input"><option>30 minutes</option><option>1 hour</option></select></label>
+      <button class="btn primary" data-mock="start improve loop">Start</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head"><h2>Last loop <span class="tag ok">Goal met</span></h2><p>Started from E2 · 5 steps · 4 minutes</p></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Step</th><th>Change tried</th><th>Suggested by</th><th class="r">Churners caught</th><th class="r">Precision</th><th></th></tr></thead>
+      <tbody>
+        <tr class="dim"><td>Start</td><td>Run E2</td><td>—</td><td class="r">79%</td><td class="r">60%</td><td>Below the 80% goal</td></tr>
+        <tr><td>1</td><td>Add CatBoost</td><td>Assistant</td><td class="r">80%</td><td class="r">62%</td><td><span class="tag ok">Kept</span></td></tr>
+        <tr><td>2</td><td>Add month and weekday of signup</td><td>Assistant</td><td class="r">81%</td><td class="r">65%</td><td><span class="tag ok">Kept</span></td></tr>
+        <tr><td>3</td><td>Re-tune the threshold</td><td>Assistant and rule</td><td class="r">82%</td><td class="r">66%</td><td><span class="tag ok">Kept</span></td></tr>
+        <tr><td>4</td><td>Heavier weight on churners</td><td>Rule</td><td class="r">80%</td><td class="r">64%</td><td>No gain · stopped</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint">Steps are judged on validation data. The test months were used once, at the end, for the run you accepted (E7).</p>
+  </div>
+</div>

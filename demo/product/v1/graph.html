@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Graph · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="graph.html" data-role="developer">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Graph</b></div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>State graph</h1><p class="sub">Every artifact of the project as a node with its lineage. ★ marks the current refs. Orange nodes are stale: an upstream ref moved. Click a node to inspect its reason, evidence and code.</p></div>
+  <div class="toolbar"><span class="switch on"><i></i>show AI decisions</span><span class="switch"><i></i>show archived</span><select class="input"><option>Layout: by stage</option><option>Layout: timeline</option></select><button class="btn" data-mock="impact preview of moving dataset ref to DS v3">Preview ref move</button><button class="btn" data-mock="export graph JSON (GET /v1/projects/p_7Q2/graph)">Export</button></div>
+</div>
+
+<div class="banner warn"><b>Ref move pending:</b> moving <code>dataset</code> → DS v3 would mark 5 nodes stale (E1–E7, MV v4). The Ops agent retrain E9 already runs on DS v3. <span class="sp"></span><a class="btn sm" href="decisions.html">see impact</a></div>
+
+<div class="side">
+  <div class="card" style="overflow-x:auto">
+    <div class="graph">
+      <div class="gcol"><div class="gh">Problem spec</div>
+        <div class="node ref" data-insp="spec"><b>Spec v1 ★</b><small>churned_next_30d · recall ≥ 0.80 · PR-AUC</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Dataset</div>
+        <div class="node ref" data-insp="ds1"><b>DS v1 ★</b><small>48,210 × 31 · Jan 25–Jun 26 · 7f3a…</small></div>
+        <div class="node" data-insp="ds3"><b>DS v3</b><small>51,330 × 31 · +Jul–Sep 26 · new plan family_5g</small><span class="pill warn">ref move = 5 stale</span></div>
+      </div>
+      <div class="gcol"><div class="gh">Split plan</div>
+        <div class="node ref" data-insp="sp1"><b>SP-1 ★</b><small>temporal · last 3 mo · 5 folds · a3f9…</small></div>
+        <div class="node" data-insp="sp2"><b>SP-2</b><small>temporal on DS v3 · used by E9</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Feature recipe</div>
+        <div class="node ref" data-insp="fr"><b>FR v3 ★</b><small>29 features · 2 excluded · datetime_extract</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Experiments</div>
+        <div class="node" data-insp="e1"><b>E1 · root</b><small>lightgbm__tuned · PR-AUC 0.69</small></div>
+        <div class="node branch" data-insp="e2"><b>E2 ← E1</b><small>class_weighting balanced</small></div>
+        <div class="node branch" data-insp="e7"><b>E7 ← E2</b><small>threshold recall ≥ 0.80 · IL-2 best</small></div>
+        <div class="node ai" data-insp="e9"><b>E9 ← E7 · Ops agent</b><small>DS v3 · SP-2 · running</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Models</div>
+        <div class="node ref" data-insp="mv4"><b>MV v4 ★ champion</b><small>from E7 · holdout recall 0.81</small></div>
+        <div class="node ai" data-insp="mv5"><b>MV v5 · proposed</b><small>from E9 · waits for release approval</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Releases</div>
+        <div class="node" data-insp="r12"><b>R-12</b><small>MV v4 · batch daily 02:00 · 38 runs</small></div>
+        <div class="node ai" data-insp="r15"><b>R-15 · proposed</b><small>MV v5 · L1 in inbox</small></div>
+      </div>
+      <div class="gcol"><div class="gh">Monitoring</div>
+        <div class="node" data-insp="w"><b>W-1 … W-9</b><small>weekly · W-9 PSI 0.22 ⚠</small></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer">
+    <div data-insp-panel="e7"><h3>E7 · experiment <span class="sp">branch of E2</span></h3>
+      <dl class="kv"><dt>Intent</dt><dd>meet recall ≥ 0.80 (improve loop IL-2, iteration 3)</dd><dt>Change set</dt><dd class="mono">threshold_objective: recall ≥ 0.80</dd><dt>Split</dt><dd>SP-1 (shared holdout with E1, E2)</dd><dt>Winner</dt><dd>lightgbm__tuned · CV PR-AUC 0.71 ± 0.02</dd><dt>Holdout</dt><dd>recall 0.81 · precision 0.63</dd><dt>Verifier</dt><dd>19 ✓ · 1 ⚠</dd><dt>Critic</dt><dd>needs_work · 1 open question</dd><dt>Decisions</dt><dd>winner_locked d-331 · champion_promoted d-340</dd></dl>
+      <div class="toolbar"><a class="btn sm" href="experiments.html">Open</a><a class="btn sm" href="pipeline.html">Pipeline</a><button class="btn sm" data-mock="branch from E7">Branch</button><button class="btn sm" data-mock="compare E7 with E1">Compare</button><button class="btn sm" data-mock="export code">Code</button></div>
+    </div>
+    <div data-insp-panel="spec" hidden><h3>Spec v1 <span class="sp">problem spec · ref</span></h3><dl class="kv"><dt>Target</dt><dd>churned_next_30d (binary)</dd><dt>Definition</dt><dd>"no payment for 60 days" (user text, untrusted)</dd><dt>Objective</dt><dd>PR-AUC; constraint recall ≥ 0.80</dd><dt>Decided</dt><dd>d-301 · you · 09:04 · proposed by Planner</dd></dl><div class="toolbar"><button class="btn sm" data-mock="propose spec v2 (new root)">New version</button></div></div>
+    <div data-insp-panel="ds1" hidden><h3>DS v1 <span class="sp">dataset · ref</span></h3><dl class="kv"><dt>Rows × cols</dt><dd>48,210 × 31</dd><dt>Window</dt><dd>Jan 2025 – Jun 2026 · 18 snapshots</dd><dt>Policy</dt><dd>internal_training · published</dd><dt>Digest</dt><dd class="mono">7f3a…c21</dd><dt>Used by</dt><dd>E1, E2, E7 · SP-1</dd></dl><div class="toolbar"><a class="btn sm" href="data.html">Profile</a></div></div>
+    <div data-insp-panel="ds3" hidden><h3>DS v3 <span class="sp">dataset</span></h3><dl class="kv"><dt>Rows</dt><dd>51,330 (+3,120)</dd><dt>Diff vs v1</dt><dd>+3 months · plan_type gains family_5g (6%) · 0 schema changes</dd><dt>Impact if ref moves</dt><dd>E1, E2, E7, MV v4, R-12 stale</dd></dl><div class="toolbar"><button class="btn sm" data-mock="propose dataset ref move → decision record">Propose ref move</button></div></div>
+    <div data-insp-panel="sp1" hidden><h3>SP-1 <span class="sp">split plan · ref · immutable</span></h3><dl class="kv"><dt>Holdout</dt><dd>latest 3 months · 8,904 rows</dd><dt>Folds</dt><dd>TimeSeriesSplit 5 (fold 0 warm-up)</dd><dt>Assignment</dt><dd class="mono">a3f9…d10 (row map in object storage)</dd><dt>Shared by</dt><dd>E1, E2, E7 (comparable)</dd></dl></div>
+    <div data-insp-panel="sp2" hidden><h3>SP-2 <span class="sp">split plan</span></h3><dl class="kv"><dt>Dataset</dt><dd>DS v3</dd><dt>Holdout</dt><dd>Jul–Sep 2026</dd><dt>Note</dt><dd>E9 is not comparable with E7 by CV (different plan); compare on labeled production weeks instead</dd></dl></div>
+    <div data-insp-panel="fr" hidden><h3>FR v3 <span class="sp">feature recipe · ref</span></h3><dl class="kv"><dt>Features</dt><dd>29 (17 num, 11 cat, 2 from signup_date)</dd><dt>Excluded</dt><dd>churned_at (leak), customer_id (id)</dd><dt>Fit scope</dt><dd>all fold_fitted or stateless · no as_of aggregates yet</dd></dl><div class="toolbar"><a class="btn sm" href="data.html">Columns</a></div></div>
+    <div data-insp-panel="e1" hidden><h3>E1 · root experiment</h3><dl class="kv"><dt>Winner</dt><dd>lightgbm__tuned · CV 0.69</dd><dt>Holdout</dt><dd>recall 0.82 · precision 0.61</dd><dt>Children</dt><dd>E2</dd></dl><div class="toolbar"><a class="btn sm" href="pipeline.html">Pipeline</a></div></div>
+    <div data-insp-panel="e2" hidden><h3>E2 ← E1</h3><dl class="kv"><dt>Change</dt><dd class="mono">class_weighting: balanced</dd><dt>Δ vs E1</dt><dd>recall +0.05 · precision −0.03</dd></dl></div>
+    <div data-insp-panel="e9" hidden><h3>E9 ← E7 <span class="sp">by Ops agent · L2</span></h3><dl class="kv"><dt>Trigger</dt><dd>drift W-9 (PSI 0.22 on plan_type)</dd><dt>Dataset</dt><dd>DS v3 · SP-2</dd><dt>Status</dt><dd>running · fold 4/5</dd><dt>Record</dt><dd class="mono">d-402 (retrain_started, actor ops_agent, revert: cancel)</dd></dl><div class="toolbar"><button class="btn sm danger" data-mock="cancel E9">Cancel</button></div></div>
+    <div data-insp-panel="mv4" hidden><h3>MV v4 ★ champion</h3><dl class="kv"><dt>From</dt><dd>E7 · lightgbm__tuned · threshold 0.31</dd><dt>Package</dt><dd>skops · manifest · feature contract 29 cols</dd><dt>Promoted</dt><dd>d-340 · you · Mon</dd><dt>Release</dt><dd>R-12 batch daily</dd></dl><div class="toolbar"><a class="btn sm" href="models.html">Open</a></div></div>
+    <div data-insp-panel="mv5" hidden><h3>MV v5 · proposed</h3><dl class="kv"><dt>From</dt><dd>E9 (when complete)</dd><dt>Critic</dt><dd>pending</dd></dl></div>
+    <div data-insp-panel="r12" hidden><h3>R-12 · release</h3><dl class="kv"><dt>Model</dt><dd>MV v4</dd><dt>Schedule</dt><dd>batch daily 02:00 · last 51,330 rows · 0 contract violations</dd></dl><div class="toolbar"><a class="btn sm" href="models.html">Batch runs</a></div></div>
+    <div data-insp-panel="r15" hidden><h3>R-15 · proposed release</h3><dl class="kv"><dt>By</dt><dd>Ops agent · L1</dd><dt>Waits for</dt><dd>your approval in the inbox</dd></dl><div class="toolbar"><a class="btn sm" href="inbox.html">Inbox</a></div></div>
+    <div data-insp-panel="w" hidden><h3>Monitoring windows</h3><dl class="kv"><dt>W-9</dt><dd>PSI 0.22 plan_type · precision 0.48 (labeled)</dd><dt>Finding</dt><dd>drift_detected (rule) + cause (Data agent)</dd></dl><div class="toolbar"><a class="btn sm" href="monitoring.html">Open</a></div></div>
+  </div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>All node kinds, refs, staleness, AI-created nodes, inspector drawer</li><li>Impact preview before a ref move</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Graph library (React Flow vs SVG) and how many experiments before it needs paging</li><li>Should the feature recipe be a visible node when it is excluded from staleness (ADR 0006)?</li><li>Cross-project nodes (shared datasets) in Phase 9?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Timeline layout toggle</li><li>Archived nodes toggle until there is archiving</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v1"></script>
+</body>
+</html>

@@ -107,6 +107,11 @@ def run_finalize(ctx: RunContext, inp: FinalizeInput) -> FinalizeOutput:
         encoding="utf-8",
     )
     experiment.result = result
+    from app.services.run_plan_service import supersede_for_results
+
+    # ADR 0008 §2: a pending objective plan cannot follow results of its spec (or, for the
+    # Planner's dataset-subject plans, of its dataset).
+    supersede_for_results(db, experiment, inp.workflow_run)
     ctx.finish_stage()
     store_report_artifacts(db, experiment)
     svc._mark(db, upload, status=COMPLETED, log=log, experiment_id=experiment.id)
@@ -120,4 +125,5 @@ def run_finalize(ctx: RunContext, inp: FinalizeInput) -> FinalizeOutput:
         },
     )
     ctx.request_routine_advisory_verification()
+    ctx.request_experiment_review(experiment.id)
     return FinalizeOutput(status=COMPLETED, experiment=experiment, result=result)

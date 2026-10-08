@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DCLab Plan Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="demo.css">
+<style>
+  .vs-card.hyb { border-top: 4px solid var(--ok); }
+  td.hyb, th.hyb { background: color-mix(in srgb, var(--ok) 7%, transparent); }
+  svg .bar-hyb { fill: var(--ok); }
+  svg .ms-hyb { fill: var(--ok); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <nav class="views" aria-label="Views">
+    <a href="current-plan.html">Previous plan</a>
+    <a href="ai-first.html">AI-first proposal</a>
+    <a href="hybrid-plan.html">Hybrid plan (adopted)</a>
+    <a href="comparison.html" aria-current="page">Compare + cost</a>
+  </nav>
+  <div class="eyebrow">DCLab · roadmap comparison · 2 Oct 2026 · week 0 = today, Phases 0–3 done</div>
+  <h1>Previous plan, AI-first, and the adopted hybrid plan</h1>
+  <p class="muted">All three share the finished Phases 0–3: a correct engine, the state graph and the agent interface (MCP). They differ in when agents arrive, how much they decide, and what keeps them honest. Cost and performance figures are estimates from stated assumptions, to be replaced by R1–R3 measurements.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#summary">Summary</a>
+    <a href="#phases">Phases</a>
+    <a href="#timing">Timing</a>
+    <a href="#diff">Differences</a>
+    <a href="#cost">Cost</a>
+    <a href="#performance">Performance</a>
+    <a href="#assumptions">Assumptions</a>
+  </nav>
+</header>
+
+<!-- SUMMARY -->
+<section id="summary" class="stack-lg">
+  <div class="versus">
+    <div class="vs-card cur">
+      <div class="eyebrow">Previous plan</div>
+      <h3>Correct ML first, agents later</h3>
+      <ul>
+        <li>Studio next; built-in agents and Jev only in Phase 6</li>
+        <li>AI advises; rules always decide</li>
+        <li>No ops agents</li>
+      </ul>
+      <div class="kv"><span class="muted">LLM / project</span><span class="big" style="color:var(--accent)">$0.43</span><span class="muted">Beta</span><span>≈ week 16</span></div>
+    </div>
+    <div class="vs-card aif">
+      <div class="eyebrow">AI-first proposal</div>
+      <h3>Agents decide wherever they can</h3>
+      <ul>
+        <li>Agent core next, then AI pipeline and chat</li>
+        <li>AI value used once trusted; rules as fallback</li>
+        <li>Opus lead agent by default</li>
+      </ul>
+      <div class="kv"><span class="muted">LLM / project</span><span class="big" style="color:var(--ai)">$6.50</span><span class="muted">Beta</span><span>≈ week 19</span></div>
+    </div>
+    <div class="vs-card hyb">
+      <div class="eyebrow">Hybrid plan · adopted</div>
+      <h3>AI drives, rules cross-check, code decides what counts</h3>
+      <ul>
+        <li>Phase 6 (hybrid AI core: governance → gateway → harness → agents) next, then agent-first Studio</li>
+        <li>Rule always runs beside the AI; disagreements go to review</li>
+        <li>Jev under a fixed policy; levels earned per decision point; checkpoint G6</li>
+      </ul>
+      <div class="kv"><span class="muted">LLM / project</span><span class="big" style="color:var(--ok)">$3.83</span><span class="muted">Beta</span><span>≈ week 19</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- PHASES -->
+<section id="phases" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Order of work after Phase 3</div>
+    <h2>Same foundation, three ways forward</h2>
+  </div>
+  <div class="window"><div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Step</th><th class="cur">Previous</th><th class="aif">AI-first</th><th class="hyb">Hybrid (adopted)</th></tr></thead>
+      <tbody>
+        <tr><td>Done</td><td class="cur" colspan="3">Phases 0–3: engine, state graph, decision records, /v1, service tokens, SDK/CLI, MCP</td></tr>
+        <tr><td>1st</td><td class="cur">4 · Studio (forms, graph, inspectors)</td><td class="aif">Agent core: tables, gateway, runtimes, Jev shadow, R3, Critic</td><td class="hyb">6 · Hybrid AI core: + Jev policy, decision points in auto-train, lead-agent runtime, budgets</td></tr>
+        <tr><td>2nd</td><td class="cur">5 · Verify &amp; Improve (rule proposer)</td><td class="aif">AI pipeline + agent-first Studio</td><td class="hyb">4 · Agent-first Studio: chat, pipeline evidence view, inbox, dashboard, graph</td></tr>
+        <tr><td>3rd</td><td class="cur">6 · Internal agents + Jev shadow</td><td class="aif">Agentic improve loop</td><td class="hyb">5 · Feature-leakage contract + improve loop with agent and rule proposers</td></tr>
+        <tr><td>4th</td><td class="cur">7 · Release, drift, rollback</td><td class="aif">Agentic MLOps</td><td class="hyb">7 · Release, drift, rollback + Ops agent</td></tr>
+        <tr><td>5th</td><td class="cur">8 · Hosted beta</td><td class="aif">Hosted beta</td><td class="hyb">8 · Hosted beta</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</section>
+
+<!-- TIMING -->
+<section id="timing" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Timing (roadmap-style estimates, midpoints, weeks from today)</div>
+    <h2>Agents about 6 weeks sooner, beta about 3 weeks later</h2>
+    <p class="muted">Phases 0–3 ran much faster than their estimates, so absolute weeks will likely shrink. The differences between rows are the useful part.</p>
+  </div>
+  <div class="scroll-x">
+    <svg class="diagram" viewBox="0 0 740 262" role="img" aria-label="Timeline: previous plan reaches beta at week 16 with its first built-in agent at week 8.5; AI-first and hybrid reach beta at week 19 with first agents at weeks 2 and 2.5" style="min-width:700px">
+      <text class="ink" x="10" y="52">Previous</text>
+      <text class="ink" x="10" y="122">AI-first</text>
+      <text class="ink" x="10" y="192">Hybrid (adopted)</text>
+      <rect class="bar-cur" x="160" y="34" width="83" height="26" rx="3" opacity="0.55"/>
+      <rect class="bar-cur" x="244" y="34" width="97" height="26" rx="3" opacity="0.8"/>
+      <rect class="bar-cur" x="342" y="34" width="83" height="26" rx="3" opacity="0.55"/>
+      <rect class="bar-cur" x="426" y="34" width="83" height="26" rx="3" opacity="0.8"/>
+      <rect class="bar-cur" x="510" y="34" width="97" height="26" rx="3" opacity="0.55"/>
+      <text class="bar-lbl" x="201.5" y="51" text-anchor="middle">4 Studio</text>
+      <text class="bar-lbl" x="292.5" y="51" text-anchor="middle">5 Improve</text>
+      <text class="bar-lbl" x="383.5" y="51" text-anchor="middle">6 Agents</text>
+      <text class="bar-lbl" x="467.5" y="51" text-anchor="middle">7 MLOps</text>
+      <text class="bar-lbl" x="558.5" y="51" text-anchor="middle">8 Beta</text>
+      <text class="axis" x="607" y="28" text-anchor="end">beta ≈ wk 16</text>
+      <path class="ms-cur" d="M398,64 L404,74 L392,74 Z"/>
+      <text class="axis" x="398" y="87" text-anchor="middle">1st built-in agent ≈ wk 8.5</text>
+      <rect class="bar-ai" x="160" y="104" width="83" height="26" rx="3" opacity="0.55"/>
+      <rect class="bar-ai" x="244" y="104" width="125" height="26" rx="3" opacity="0.8"/>
+      <rect class="bar-ai" x="370" y="104" width="97" height="26" rx="3" opacity="0.55"/>
+      <rect class="bar-ai" x="468" y="104" width="125" height="26" rx="3" opacity="0.8"/>
+      <rect class="bar-ai" x="594" y="104" width="97" height="26" rx="3" opacity="0.55"/>
+      <text class="bar-lbl" x="201.5" y="121" text-anchor="middle">Agent core</text>
+      <text class="bar-lbl" x="306.5" y="121" text-anchor="middle">AI pipeline+chat</text>
+      <text class="bar-lbl" x="418.5" y="121" text-anchor="middle">AI loop</text>
+      <text class="bar-lbl" x="530.5" y="121" text-anchor="middle">Agentic MLOps</text>
+      <text class="bar-lbl" x="642.5" y="121" text-anchor="middle">Beta</text>
+      <text class="axis" x="691" y="98" text-anchor="end">beta ≈ wk 19</text>
+      <path class="ms-ai" d="M216,134 L222,144 L210,144 Z"/>
+      <text class="axis" x="216" y="157" text-anchor="middle">1st agent ≈ wk 2</text>
+      <rect class="bar-hyb" x="160" y="174" width="97" height="26" rx="3" opacity="0.55"/>
+      <rect class="bar-hyb" x="258" y="174" width="125" height="26" rx="3" opacity="0.8"/>
+      <rect class="bar-hyb" x="384" y="174" width="97" height="26" rx="3" opacity="0.55"/>
+      <rect class="bar-hyb" x="482" y="174" width="111" height="26" rx="3" opacity="0.8"/>
+      <rect class="bar-hyb" x="594" y="174" width="97" height="26" rx="3" opacity="0.55"/>
+      <text class="bar-lbl" x="208.5" y="191" text-anchor="middle">6 AI core</text>
+      <text class="bar-lbl" x="320.5" y="191" text-anchor="middle">4 Agent Studio</text>
+      <text class="bar-lbl" x="432.5" y="191" text-anchor="middle">5 Improve</text>
+      <text class="bar-lbl" x="537.5" y="191" text-anchor="middle">7 MLOps+Ops</text>
+      <text class="bar-lbl" x="642.5" y="191" text-anchor="middle">8 Beta</text>
+      <text class="axis" x="691" y="168" text-anchor="end">beta ≈ wk 19</text>
+      <path class="ms-hyb" d="M230,204 L236,214 L224,214 Z"/>
+      <text class="axis" x="230" y="227" text-anchor="middle">1st agent ≈ wk 2.5</text>
+      <path class="ms-hyb" d="M370,204 L376,214 L364,214 Z"/>
+      <text class="axis" x="370" y="227" text-anchor="middle">G6 ≈ wk 7.5</text>
+      <text class="axis" x="160" y="254" text-anchor="middle">wk 0</text>
+      <text class="axis" x="272" y="254" text-anchor="middle">4</text>
+      <text class="axis" x="384" y="254" text-anchor="middle">8</text>
+      <text class="axis" x="496" y="254" text-anchor="middle">12</text>
+      <text class="axis" x="608" y="254" text-anchor="middle">16</text>
+      <text class="axis" x="720" y="254" text-anchor="middle">20</text>
+    </svg>
+  </div>
+  <div class="window"><div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Milestone</th><th class="num cur">Previous</th><th class="num aif">AI-first</th><th class="num hyb">Hybrid</th></tr></thead>
+      <tbody>
+        <tr><td>Claude Code drives DCLab via MCP</td><td class="num cur" colspan="3">done (Phase 3)</td></tr>
+        <tr><td>Jev answering at decision points (L0)</td><td class="num cur">wk 9</td><td class="num aif">wk 2</td><td class="num hyb">wk 1.5</td></tr>
+        <tr><td>Critic reviews every run</td><td class="num cur">wk 8.5 (on demand)</td><td class="num aif">wk 2</td><td class="num hyb">wk 2.5</td></tr>
+        <tr><td>AI + rule recorded at every auto-train decision</td><td class="num cur">not planned</td><td class="num aif">wk 6</td><td class="num hyb">wk 2.5</td></tr>
+        <tr><td>Studio usable (forms, pipeline view)</td><td class="num cur">wk 3</td><td class="num aif">wk 7.5</td><td class="num hyb">wk 6</td></tr>
+        <tr><td>Lead-agent chat for users</td><td class="num cur">not planned</td><td class="num aif">wk 7.5</td><td class="num hyb">wk 8, after G6</td></tr>
+        <tr><td>Improve loop with an AI proposer</td><td class="num cur">wk 9.5 (optional)</td><td class="num aif">wk 11</td><td class="num hyb">wk 11.5, cross-checked</td></tr>
+        <tr><td>Agentic MLOps</td><td class="num cur">not planned</td><td class="num aif">wk 15.5</td><td class="num hyb">wk 15.5</td></tr>
+        <tr><td>Hosted beta</td><td class="num cur">wk 16</td><td class="num aif">wk 19</td><td class="num hyb">wk 19</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</section>
+
+<!-- DIFFERENCES -->
+<section id="diff" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">What differs</div>
+    <h2>The hybrid plan keeps AI-first's reach and the previous plan's checks</h2>
+  </div>
+  <div class="window"><div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Area</th><th class="cur">Previous</th><th class="aif">AI-first</th><th class="hyb">Hybrid (adopted)</th></tr></thead>
+      <tbody>
+        <tr><td>Main user surface</td><td class="cur">Forms, pages, graph</td><td class="aif">Chat + inbox</td><td class="hyb">Chat + inbox + pipeline evidence view + graph + dashboard; forms when AI is off</td></tr>
+        <tr><td>Who decides at a pipeline step</td><td class="cur">Rule</td><td class="aif">AI where trusted, rule on fallback</td><td class="hyb">Both answer every time; level decides which value is used; disagreements reviewed</td></tr>
+        <tr><td>Where AI sits</td><td class="cur">Beside the pipeline (advice)</td><td class="aif">At decision points</td><td class="hyb">Before (proposes inputs) or after (reviews outputs) each step, never inside</td></tr>
+        <tr><td>Jev</td><td class="cur">Shadow only</td><td class="aif">Shadow → advisory/auto</td><td class="hyb">Pinned, cached, thresholds in code, fixed agreement table; never numeric</td></tr>
+        <tr><td>Agents</td><td class="cur">One LLM call each</td><td class="aif">Lead-agent loops everywhere</td><td class="hyb">Specialists one call; lead agent loops only when needed, through validated tools</td></tr>
+        <tr><td>Proof of correctness shown to users</td><td class="cur">Run report</td><td class="aif">Decision trace</td><td class="hyb">Pipeline view: every stage, decision, artifact digest and check</td></tr>
+        <tr><td>Improve proposer</td><td class="cur">Rule</td><td class="aif">Agent first</td><td class="hyb">Agent and rule both; agent used only where R2 shows it wins</td></tr>
+        <tr><td>Operations</td><td class="cur">Deterministic drift + manual steps</td><td class="aif">Ops agent</td><td class="hyb">Ops agent with per-step levels; release stays L1 by default</td></tr>
+        <tr><td>Feature-leakage contract</td><td class="cur">Gap</td><td class="aif">Phase 4</td><td class="hyb">P5.0, before any agent proposes features</td></tr>
+        <tr><td>Governance, gateway, harness</td><td class="cur">LLM gateway + budgets in Phase 6/8</td><td class="aif">gateway + budgets early; no governance layer</td><td class="hyb">Governance policies as data → gateway as the only door to models → harness as the only way to run agents; replay; governance console</td></tr>
+        <tr><td>Go/no-go on AI exposure</td><td class="cur">Phase 6 gate</td><td class="aif">Per decision point</td><td class="hyb">Per decision point + checkpoint G6 before chat reaches users</td></tr>
+        <tr><td>Never AI</td><td class="cur" colspan="3">Training, metrics, selection, holdout scoring, splits; every path works with AI off</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</section>
+
+<!-- COST -->
+<section id="cost" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Cost</div>
+    <h2>Hybrid costs about 9× the previous plan in LLM spend, and 40% less than AI-first</h2>
+    <p class="muted">The rule side of each cross-check costs nothing; the savings against AI-first come from a Sonnet lead agent by default, Batch API for Critic reviews and Jev for small judgments. Training compute is the same few tens of cents per project in all three.</p>
+  </div>
+  <div class="cols">
+    <div class="panel">
+      <h4>Unit costs used</h4>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Unit</th><th>Assumption</th><th class="num">Cost</th></tr></thead>
+        <tbody>
+          <tr><td>Specialist call, Sonnet 5.5</td><td>8k in (60% cached), 2k out incl. thinking</td><td class="num">$0.027</td></tr>
+          <tr><td>Same via Batch API</td><td>non-interactive, 50% off</td><td class="num">$0.014</td></tr>
+          <tr><td>Lead-agent session, Opus 5.5</td><td>20 steps, 300k in (85% cached), 30k out</td><td class="num">$0.83</td></tr>
+          <tr><td>Lead-agent session, Sonnet 5.5</td><td>same session</td><td class="num">$0.44</td></tr>
+          <tr><td>Jev question</td><td>≈ 300 tokens at $0.042 / 1M</td><td class="num">$0.00001</td></tr>
+          <tr><td>Training compute / project</td><td>≈ 6 vCPU-h at ≈ $0.04 (+30% runs with agents)</td><td class="num">$0.25–0.33</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h4>Cost per project</h4>
+      <svg viewBox="0 0 600 170" role="img" aria-label="Per-project cost: previous $0.68, hybrid $4.16, AI-first $6.83" style="width:100%;height:auto;display:block">
+        <line class="grid" x1="150" y1="14" x2="150" y2="138"/>
+        <line class="grid" x1="212.9" y1="14" x2="212.9" y2="138"/>
+        <line class="grid" x1="275.7" y1="14" x2="275.7" y2="138"/>
+        <line class="grid" x1="338.6" y1="14" x2="338.6" y2="138"/>
+        <line class="grid" x1="401.4" y1="14" x2="401.4" y2="138"/>
+        <line class="grid" x1="464.3" y1="14" x2="464.3" y2="138"/>
+        <line class="grid" x1="527.1" y1="14" x2="527.1" y2="138"/>
+        <line class="grid" x1="590" y1="14" x2="590" y2="138"/>
+        <text class="ink" x="140" y="40" text-anchor="end">Previous</text>
+        <rect class="bar-comp" x="150" y="24" width="15.7" height="24"/>
+        <rect class="bar-cur" x="165.7" y="24" width="27" height="24"/>
+        <text class="axis" x="200" y="40">$0.68</text>
+        <text class="ink" x="140" y="80" text-anchor="end">Hybrid</text>
+        <rect class="bar-comp" x="150" y="64" width="20.7" height="24"/>
+        <rect class="bar-hyb" x="170.7" y="64" width="240.7" height="24"/>
+        <text class="axis" x="418" y="80">$4.16</text>
+        <text class="ink" x="140" y="120" text-anchor="end">AI-first</text>
+        <rect class="bar-comp" x="150" y="104" width="20.7" height="24"/>
+        <rect class="bar-ai" x="170.7" y="104" width="408.6" height="24"/>
+        <text class="axis" x="575" y="99" text-anchor="end">$6.83</text>
+        <text class="axis" x="150" y="156" text-anchor="middle">$0</text>
+        <text class="axis" x="275.7" y="156" text-anchor="middle">$2</text>
+        <text class="axis" x="401.4" y="156" text-anchor="middle">$4</text>
+        <text class="axis" x="527.1" y="156" text-anchor="middle">$6</text>
+      </svg>
+      <div class="legend" style="font-size:0.82rem"><span><i class="dot" style="background:var(--muted)"></i>compute</span><span><i class="dot det"></i>LLM previous</span><span><i class="dot" style="background:var(--ok)"></i>LLM hybrid</span><span><i class="dot ai"></i>LLM AI-first</span></div>
+    </div>
+  </div>
+  <div class="window"><div class="tbl-wrap">
+    <table>
+      <thead><tr><th>LLM spend per project</th><th class="num cur">Previous</th><th class="num aif">AI-first</th><th class="num hyb">Hybrid</th></tr></thead>
+      <tbody>
+        <tr><td>Lead-agent sessions (6)</td><td class="num cur">—</td><td class="num aif">$4.98 (Opus)</td><td class="num hyb">$2.64 (Sonnet; Opus only if G6 shows it pays)</td></tr>
+        <tr><td>Critic reviews</td><td class="num cur">5 on demand · $0.14</td><td class="num aif">25 · $0.68</td><td class="num hyb">25 via Batch · $0.34</td></tr>
+        <tr><td>Improve-loop proposals</td><td class="num cur">8 optional · $0.22</td><td class="num aif">24 · $0.65</td><td class="num hyb">24 · $0.65 (rule proposer free)</td></tr>
+        <tr><td>Investigator, Planner, report</td><td class="num cur">3 · $0.08</td><td class="num aif">7 · $0.19</td><td class="num hyb">7 · $0.19</td></tr>
+        <tr><td>Jev questions</td><td class="num cur">≈ 190 · &lt; $0.01</td><td class="num aif">≈ 400 · &lt; $0.01</td><td class="num hyb">≈ 400 · &lt; $0.01 (cached repeats free)</td></tr>
+        <tr><td><b>Total LLM per project</b></td><td class="num cur"><b>$0.43</b></td><td class="num aif"><b>$6.50</b></td><td class="num hyb"><b>$3.83</b></td></tr>
+        <tr><td>Per live model per month</td><td class="num cur">≈ $0.03</td><td class="num aif">≈ $0.42</td><td class="num hyb">≈ $0.30</td></tr>
+        <tr><td>Beta month: 10 workspaces · 50 projects · 20 models (LLM + compute)</td><td class="num cur">≈ $35</td><td class="num aif">≈ $350</td><td class="num hyb">≈ $214</td></tr>
+        <tr><td>Growth month: 100 workspaces · 500 projects · 200 models</td><td class="num cur">≈ $350</td><td class="num aif">≈ $3,500</td><td class="num hyb">≈ $2,140</td></tr>
+        <tr><td>Share of a $200 / workspace / month price</td><td class="num cur">≈ 2%</td><td class="num aif">≈ 18%</td><td class="num hyb">≈ 11%</td></tr>
+        <tr><td>With AI switched off</td><td class="num cur" colspan="3">compute only, ≈ $0.25–0.33 per project, in every plan</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+  <p class="note">Excludes fixed hosting, which is the same in all three. Real token use may be 0.5×–3× these figures; Phase 6 measures it in <span class="mono">llm_invocations</span> and the workspace budget caps it.</p>
+</section>
+
+<!-- PERFORMANCE -->
+<section id="performance" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Performance</div>
+    <h2>Same accuracy floor; hybrid trades a little latency for fewer silent mistakes</h2>
+  </div>
+  <div class="window"><div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Dimension</th><th class="cur">Previous</th><th class="aif">AI-first</th><th class="hyb">Hybrid</th><th>How to measure</th></tr></thead>
+      <tbody>
+        <tr><td>Holdout quality, clean benchmarks</td><td class="cur">engine floor</td><td class="aif">same</td><td class="hyb">same</td><td>R1 suite</td></tr>
+        <tr><td>Messy data (semantic leaks, coded categories)</td><td class="cur">rules miss name-only leaks</td><td class="aif">AI catches more; wrong AI calls can slip through at L2</td><td class="hyb">AI catches more; disagreement with the rule is always surfaced</td><td>R3 per decision point</td></tr>
+        <tr><td>Improve loop</td><td class="cur">rule proposer</td><td class="aif">agent proposer</td><td class="hyb">best of both, chosen by R2</td><td>R2 feasible rate, iterations, cost</td></tr>
+        <tr><td>User time to first trusted model</td><td class="cur">forms</td><td class="aif">goal + review</td><td class="hyb">goal + review, with the pipeline evidence view</td><td>timed design-partner sessions</td></tr>
+        <tr><td>Run latency</td><td class="cur">1–5 min</td><td class="aif">+10–60 s</td><td class="hyb">+10–60 s (rule runs in parallel; Jev cached)</td><td><span class="mono">ml_jobs</span> timings</td></tr>
+        <tr><td>Availability</td><td class="cur">own infra</td><td class="aif">+ LLM and Jev; fallback to rule</td><td class="hyb">same as AI-first; rule answer is always already computed</td><td>fallback rate</td></tr>
+        <tr><td>Reproducibility</td><td class="cur">full</td><td class="aif">full if replayed from records</td><td class="hyb">full: cached Jev answers + recorded agent outputs</td><td>replay from decision records</td></tr>
+        <tr><td>Correctness risk</td><td class="cur">lowest</td><td class="aif">higher (unchecked L2 calls, many iterations)</td><td class="hyb">close to previous: cross-check + validator + P5.0 contract</td><td>R3 error rate at L2</td></tr>
+        <tr><td>Engineering complexity</td><td class="cur">lowest</td><td class="aif">high</td><td class="hyb">high (two answers per decision point to maintain)</td><td>prompt count, CI time</td></tr>
+        <tr><td>Product story</td><td class="cur">"correct AutoML agents can drive"</td><td class="aif">"AI data scientist"</td><td class="hyb">"AI data scientist that shows its proof"</td><td>design-partner interviews</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</section>
+
+<!-- ASSUMPTIONS -->
+<section id="assumptions" class="gaps">
+  <div class="eyebrow">Assumptions and limits</div>
+  <h3>Read the numbers with these in mind</h3>
+  <ul>
+    <li>Week 0 is 2 October 2026 with Phases 0–3 merged (PR #18). Phase lengths are roadmap-style estimates; the AI-first and hybrid lengths are my estimates.</li>
+    <li>Token sizes and calls per project are assumptions; real use may be 0.5×–3×.</li>
+    <li>Prices are Anthropic list prices cached 25 Sep 2026 (Opus 5.5 $4 / $20, Sonnet 5.5 $2 / $10 per 1M tokens, cache reads $0.20). NOOA can route to other providers through LiteLLM. Jev's input price is from <span class="mono">AGENTS_NOOA_JEV.md</span>; its output pricing is not documented there and is treated as negligible.</li>
+    <li>Compute assumes CPU training at about $0.04 per vCPU-hour.</li>
+    <li>Accuracy, iteration and user-time effects are hypotheses for R1–R3 and design partners, not results.</li>
+  </ul>
+</section>
+
+<footer>
+  Updated 2 October 2026 when the hybrid plan was adopted. Authority: <span class="mono">docs/mvp/ROADMAP.md</span>.
+</footer>
+
+</div>
+</body>
+</html>

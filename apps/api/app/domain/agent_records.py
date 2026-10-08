@@ -87,7 +87,11 @@ PROPOSAL_TYPES = (
     "ImprovementActionProposal",
     "ToolCallProposal",
     "ReleaseProposal",
+    # P6.9-A (Alembic 0075): a Jev L1 disagreement at a decision point; no agent run.
+    "SemanticReviewProposal",
 )
+# Proposal types only DCLab code writes (never an agent's draft).
+SERVICE_ONLY_PROPOSAL_TYPES = frozenset({"ToolCallProposal", "SemanticReviewProposal"})
 VALIDATOR_VERDICTS = ("accepted", "rejected")
 PROPOSAL_STATUSES = (
     "shadow",
@@ -327,6 +331,13 @@ CK_AGENT_PROPOSALS_LEVEL_STATUS = (
 # ADR 0008: every lead write tool is L1 (confirm card), never auto-applied.
 CK_AGENT_PROPOSALS_TOOL_CALL_LEVEL = "proposal_type <> 'ToolCallProposal' OR level_at_proposal <= 1"
 CK_AGENT_PROPOSALS_IDEMPOTENCY = CK_AGENT_RUNS_IDEMPOTENCY
+# Alembic 0075: an agent run's proposal or a Jev answer's review item (exactly one source);
+# a Jev review item is always L1.
+CK_AGENT_PROPOSALS_SOURCE = (
+    "num_nonnulls(run_id, semantic_answer_id) = 1 "
+    "AND (semantic_answer_id IS NOT NULL) = (proposal_type = 'SemanticReviewProposal') "
+    "AND (semantic_answer_id IS NULL OR level_at_proposal = 1)"
+)
 # Columns the transition trigger lets an UPDATE change (payload is immutable).
 AGENT_PROPOSALS_MUTABLE_COLUMNS = (
     "status",

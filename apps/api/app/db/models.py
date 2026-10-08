@@ -190,6 +190,11 @@ from app.domain.ai_governance import (
     CK_SWITCHES_CHAIN,
     CK_SWITCHES_KEY,
     CK_SWITCHES_REASON,
+    CK_R3_RUNS_CANDIDATE,
+    CK_R3_RUNS_CREATED_AT,
+    CK_R3_RUNS_DIGESTS,
+    CK_R3_RUNS_LIVE,
+    CK_R3_RUNS_REPORT,
     CK_SWITCHES_RULE_OFF,
     CK_SWITCHES_STATE,
 )
@@ -204,6 +209,7 @@ from app.domain.agent_records import (
     CK_AGENT_PROPOSALS_DECISION_POINT,
     CK_AGENT_PROPOSALS_ESTIMATES,
     CK_AGENT_PROPOSALS_IDEMPOTENCY,
+    CK_AGENT_PROPOSALS_SOURCE,
     CK_AGENT_PROPOSALS_LEVEL_STATUS,
     CK_AGENT_PROPOSALS_LEVELS,
     CK_AGENT_PROPOSALS_PAYLOAD,
@@ -1849,6 +1855,21 @@ class ExecutionRequest(Base):
             "pipeline_run_id",
             postgresql_where=text("initiated_by_service_token_id IS NOT NULL"),
         ),
+        # P6.9-A (0075): the ``plan`` input is single use; this request consumed the proposal.
+        ForeignKeyConstraint(
+            ["workspace_id", "plan_proposal_id"],
+            ["agent_proposals.workspace_id", "agent_proposals.id"],
+            name="fk_execution_requests_workspace_plan_proposal",
+            ondelete="SET NULL (plan_proposal_id)",
+            use_alter=True,
+        ),
+        Index(
+            "uq_execution_requests_plan_proposal",
+            "workspace_id",
+            "plan_proposal_id",
+            unique=True,
+            postgresql_where=text("plan_proposal_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1867,6 +1888,7 @@ class ExecutionRequest(Base):
     initiated_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
+    plan_proposal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
     source_surface: Mapped[str] = mapped_column(String(32), nullable=False)
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -6642,7 +6664,8 @@ class AgentRun(Base):
             postgresql_where=text("kind = 'assistant'"),
         ),
         # One active run per agent and subject; NULLS NOT DISTINCT so a NULL
-        # subject column still collides (otherwise the index never fires).
+        # subject column still collides (otherwise the index never fires). Assistant
+        # thread turns (lead runs with a parent) are bounded per thread instead (0076).
         Index(
             "uq_agent_runs_active_subject",
             "workspace_id",
@@ -6656,7 +6679,15 @@ class AgentRun(Base):
             "model_version_id",
             unique=True,
             postgresql_nulls_not_distinct=True,
-            postgresql_where=text("status IN ('queued', 'running') AND kind <> 'assistant'"),
+            postgresql_where=text("status IN ('queued', 'running') AND kind <> 'assistant' "
+                                  "AND (kind <> 'lead' OR parent_run_id IS NULL)"),
+        ),
+        Index(
+            "uq_agent_runs_live_turn",
+            "workspace_id",
+            "parent_run_id",
+            unique=True,
+            postgresql_where=text("kind = 'lead' AND parent_run_id IS NOT NULL AND status IN ('queued', 'running')"),
         ),
         Index(
             "uq_agent_runs_workspace_idempotency_key",
@@ -6837,6 +6868,15 @@ class AgentProposal(Base):
             CK_AGENT_PROPOSALS_TOOL_CALL_LEVEL, name="ck_agent_proposals_tool_call_level"
         ),
         CheckConstraint(CK_AGENT_PROPOSALS_IDEMPOTENCY, name="ck_agent_proposals_idempotency"),
+        CheckConstraint(CK_AGENT_PROPOSALS_SOURCE, name="ck_agent_proposals_source"),
+        _agent_fk("agent_proposals", "semantic_answer_id", "semantic_decision_answers"),
+        Index(
+            "uq_agent_proposals_semantic_answer",
+            "workspace_id",
+            "semantic_answer_id",
+            unique=True,
+            postgresql_where=text("semantic_answer_id IS NOT NULL"),
+        ),
         Index(
             "ix_agent_proposals_workspace_project_status_created_at",
             "workspace_id",
@@ -6866,7 +6906,9 @@ class AgentProposal(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # Exactly one of run_id (an agent run) / semantic_answer_id (a Jev L1 review item; 0075).
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    semantic_answer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     decision_point_key: Mapped[str] = mapped_column(String(64), nullable=False)
     level_at_proposal: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     answer_ceiling: Mapped[int] = mapped_column(SmallInteger, nullable=False)
@@ -7307,6 +7349,37 @@ class AiSwitch(Base):
         UUID(as_uuid=True), ForeignKey("ai_switches.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class R3Run(Base):
+    """One stored R3 evaluation run (P6.8-A; ADR 0008 §4). Platform rows, append-only
+    (``r3_runs_append_only`` trigger): the only promotion evidence a platform level may cite.
+    ``report`` is the digest-covered content (tenant-derived aggregates only, never tenant rows;
+    bounded, see 0077); ``live`` = a real-provider run; ``recorded_at`` is the database clock."""
+
+    __tablename__ = "r3_runs"
+    __table_args__ = (
+        CheckConstraint(CK_R3_RUNS_CANDIDATE, name="ck_r3_runs_candidate"),
+        CheckConstraint(CK_R3_RUNS_DIGESTS, name="ck_r3_runs_digests"),
+        CheckConstraint(CK_R3_RUNS_REPORT, name="ck_r3_runs_report"),
+        CheckConstraint(CK_R3_RUNS_LIVE, name="ck_r3_runs_live"),
+        CheckConstraint(CK_R3_RUNS_CREATED_AT, name="ck_r3_runs_created_at"),
+        Index("ix_r3_runs_pair_recorded_at", "pair_release", "model_id", desc("recorded_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    candidate: Mapped[str] = mapped_column(String(128), nullable=False)
+    live: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    pair_release: Mapped[str] = mapped_column(String(512), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    run_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    cases: Mapped[int] = mapped_column(Integer, nullable=False)
+    report: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 

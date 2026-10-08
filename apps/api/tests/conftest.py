@@ -28,6 +28,10 @@ ADMIN_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/decisionai"
 )
 TEST_URL = ADMIN_URL.rsplit("/", 1)[0] + f"/{TEST_DB_NAME}"
+# Test databases are throwaway: skip the WAL flush on every commit (the per-test
+# TRUNCATE and fixture commits dominate run time). Session-level setting only;
+# never applied to the admin or application database.
+TEST_URL += ("&" if "?" in TEST_URL else "?") + "options=-c%20synchronous_commit%3Doff"
 
 # Isolate object storage before any app.config.get_settings() call can cache
 # the repository default (data/object_store). Local development still uses that

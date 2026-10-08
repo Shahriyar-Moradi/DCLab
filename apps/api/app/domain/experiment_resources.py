@@ -47,6 +47,14 @@ class ExperimentCreateRequest(BaseModel):
     intent: str | None = Field(
         default=None, max_length=INTENT_MAX_CHARS, description='Why this run ("untrusted" free text).'
     )
+    plan: UUID | None = Field(
+        default=None,
+        description=(
+            "An ExperimentPlanProposal of this project (accepted by a person, or applied at L2 for L2 kinds "
+            "only); single use. Its answers are re-validated when the run starts; a plan that cannot be used "
+            "makes the run rule-only and the refusal is recorded (never an error)."
+        ),
+    )
 
 
 class ExperimentBranchCreateRequest(BaseModel):

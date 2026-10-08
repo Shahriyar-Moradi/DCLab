@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DCLab product preview</title>
+<style>
+  :root { color-scheme: light; --bg:#F4F8F8; --surface:#fff; --ink:#15211E; --muted:#586864; --faint:#8B9A96; --line:#E3EAE9; --accent:#1B88AE; --ok:#1F8A42; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  main { max-width: 880px; margin: 0 auto; padding: 48px 20px 72px; display: grid; gap: 36px; }
+  .brand { display:flex; align-items:center; gap:12px; font-weight:700; font-size:1.15rem; }
+  .logo { width:34px; height:34px; border-radius:10px; background:linear-gradient(145deg,#2D9C67,#1F8A42); color:#fff; display:grid; place-items:center; font-weight:800; font-size:.85rem; }
+  h1 { margin:0; font-size:clamp(2rem,5vw,2.8rem); letter-spacing:-.03em; line-height:1.1; text-wrap:balance; }
+  .sub { margin:12px 0 0; color:var(--muted); font-size:1.1rem; max-width:56ch; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:28px 30px; display:grid; gap:14px; }
+  .latest { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+  h2 { margin:0; font-size:1.4rem; letter-spacing:-.02em; display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+  .tag { font-size:.85rem; font-weight:650; color:var(--ok); background:color-mix(in srgb,var(--ok) 12%,#fff); border-radius:999px; padding:2px 11px; }
+  .meta { color:var(--faint); font-size:.95rem; }
+  p { margin:0; color:var(--muted); }
+  .btn { justify-self:start; font-weight:600; padding:11px 20px; border-radius:10px; background:var(--accent); color:#fff; text-decoration:none; }
+  .btn:hover, .btn:focus-visible { background:#16779A; outline:none; }
+  h3 { margin:0 0 4px; font-size:1rem; color:var(--faint); font-weight:600; }
+  .row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 24px; align-items:center; padding:20px 0; border-top:1px solid var(--line); }
+  .row:first-of-type { border-top:none; padding-top:6px; }
+  .row:last-child { padding-bottom:0; }
+  .row b { font-weight:650; font-size:1.08rem; }
+  .row p { grid-column:1; }
+  .row a { grid-column:2; grid-row:1 / span 2; font-weight:600; color:var(--accent); text-decoration:none; white-space:nowrap; }
+  .row a:hover { text-decoration:underline; }
+  footer { color:var(--faint); font-size:.92rem; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.9em; background:#EBF2F2; padding:1px 6px; border-radius:6px; }
+  @media (max-width:560px) { .row { grid-template-columns:1fr; } .row a { grid-column:1; grid-row:auto; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><span class="logo">DC</span>DCLab</div>
+  <div>
+    <h1>Product preview</h1>
+    <p class="sub">Every version of the prototype is kept. Open the latest, or go back to an earlier one to compare.</p>
+  </div>
+  <section class="card latest">
+    <h2>Version 3 · Clean <span class="tag">Latest</span></h2>
+    <span class="meta">5 October 2026</span>
+    <p>The product look: 10 screens, one job each, details behind tabs, plain words.</p>
+    <a class="btn" href="v3/index.html">Open version 3</a>
+  </section>
+  <section class="card">
+    <h3>Earlier versions</h3>
+    <div class="row"><b>Version 2 · Detailed, tabbed</b><p>3 October 2026 · Every detail kept. 16 screens, larger type, dense cards split into section tabs, review notes on each page.</p><a href="v2/index.html">Open →</a></div>
+    <div class="row"><b>Version 1 · Detailed</b><p>3 October 2026 · The first full walkthrough. 16 screens showing every field, id and review note.</p><a href="v1/index.html">Open →</a></div>
+  </section>
+  <footer>Sample data only. You can also switch versions from the button in the bottom-right corner of any screen.</footer>
+</main>
+</body>
+</html>
