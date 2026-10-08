@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#edf5f5">
+  <title>DCLab · Product preview</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="launch-page">
+  <main class="launch-shell">
+    <header class="launch-topbar">
+      <a class="brand" href="index.html"><span class="logo">DC</span><b>DCLab</b><span class="brand-sub">PRODUCT PREVIEW</span></a>
+      <span class="pill demo-pill">Synthetic data · local only</span>
+    </header>
+
+    <section class="launch-intro">
+      <p class="eyebrow">DCLab MVP · demo based on docs/mvp</p>
+      <h1>An ML lab your AI agent can drive, which proves every model is correct.</h1>
+      <p class="sub">Three roles, three landing routes, one truth (STUDIO_DESIGN.md §3). Every screen shows its Studio route, the phase and prompt that build it, and whether it exists today. Switch <b>Built today</b> in the top bar to hide what the backend does not have yet, or turn <b>AI off</b> to see the deterministic path.</p>
+    </section>
+
+    <section class="role-grid" aria-label="Choose a product workspace">
+      <article class="role-card developer-card">
+        <div class="role-mark" aria-hidden="true">⌘</div>
+        <div class="role-kicker"><span class="pill det">One audience (P4.12-A)</span><span>developer / admin · lands on <code>/home</code></span></div>
+        <h2>Developer Studio</h2>
+        <p>Bring a dataset and goal; inspect the proposed plan, run a reproducible experiment, review evidence, compare versions, and decide what to promote.</p>
+        <div class="journey" aria-label="Developer journey">
+          <span>Data</span><i>→</i><span>Lab</span><i>→</i><span>Run</span><i>→</i><span>Evidence</span><i>→</i><span>Decision</span>
+        </div>
+        <ul class="route-preview">
+          <li><a href="home.html">Workspace home</a><small>projects · activity · approvals · usage</small></li>
+          <li><a href="lab.html">Agent-assisted Lab</a><small>goal · bounded tools · human approval</small></li>
+          <li><a href="pipeline.html">Pipeline evidence</a><small>stages · checks · artifacts · decision record</small></li>
+          <li><a href="data.html">Data &amp; lineage</a><small>versions · profile · leakage · policy</small></li>
+          <li><a href="experiments.html">Experiments &amp; models</a><small>compare · improve · batch score · release</small></li>
+          <li><a href="agents.html">Agents, MCP &amp; API</a><small>NOOA · Jev · SDK · CLI · scoped tokens</small></li>
+        </ul>
+        <a class="btn primary role-cta" href="home.html">Enter Studio at /home <span aria-hidden="true">→</span></a>
+      </article>
+
+      <article class="role-card business-card">
+        <div class="role-mark business-mark" aria-hidden="true">◉</div>
+        <div class="role-kicker"><span class="pill warn">Phase 7 · P7.6-A</span><span>client · lands on <code>/outcomes</code> (Phase 7)</span></div>
+        <h2>Business Outcomes</h2>
+        <p>See model results in plain language, understand how much to trust them, review a sample prediction list, answer a data question, and download a report.</p>
+        <div class="journey" aria-label="Business user journey">
+          <span>Outcome</span><i>→</i><span>Trust</span><i>→</i><span>Review</span><i>→</i><span>Question</span>
+        </div>
+        <ul class="route-preview">
+          <li><a href="client.html">Churn outcome overview</a><small>performance · last scoring run · plain-language update</small></li>
+          <li><a href="client.html#predictions">Prediction list</a><small>risk score · stored reasons · sample filters</small></li>
+          <li><a href="client.html#questions">Questions &amp; reports</a><small>answer a question · ask about an outcome · download</small></li>
+        </ul>
+        <p class="scope-note"><b>Boundary:</b> this view explains results; it does not contact customers, execute business actions, or expose experiment internals.</p>
+        <a class="btn primary role-cta" href="client.html">Enter Business Outcomes <span aria-hidden="true">→</span></a>
+      </article>
+
+      <article class="role-card operator-card">
+        <div class="role-mark operator-mark" aria-hidden="true">▣</div>
+        <div class="role-kicker"><span class="pill warn">Phase 8 · P8.5-UI</span><span>operator · lands on <code>/operator</code> (Phase 8)</span></div>
+        <h2>Operator Console</h2>
+        <p>Inspect service health, job queues, worker pools, quarantine metadata, platform-wide guardrails, and evaluation gates. No customer rows are exposed.</p>
+        <div class="journey" aria-label="Operator journey">
+          <span>Health</span><i>→</i><span>Jobs</span><i>→</i><span>Safety</span><i>→</i><span>Gates</span>
+        </div>
+        <ul class="route-preview compact-route">
+          <li><a href="operator.html">Open platform operations</a><small>workspaces · workers · quarantine · caps · benchmarks</small></li>
+        </ul>
+        <a class="btn role-cta" href="operator.html">Enter Operator Console <span aria-hidden="true">→</span></a>
+      </article>
+    </section>
+
+    <section class="launch-bottom">
+      <div class="card coverage-card">
+        <div><p class="eyebrow">THE PLAN</p><h2>What this demo follows</h2><p class="small muted">Phase order, hybrid AI model, state graph, screen map and status, all from <code>docs/mvp</code>. <a href="map.html"><b>Open the plan page →</b></a></p></div>
+        <div class="coverage-columns">
+          <div><span class="pill ok">MVP direction</span><p>Structured-data ML; deterministic training and evaluation; project lineage; API, SDK/CLI, MCP; gated AI proposals; transparent evidence; human decisions; batch-first model operations.</p></div>
+          <div><span class="pill warn">After MVP / demand-gated</span><p>Online serving, persistent Jupyter, external GPU marketplaces, dual-cloud parity, general-purpose connectors, automatic business actions, and unrestricted code-running agents.</p></div>
+          <div><span class="pill det">Review the gaps</span><p>Each product screen has “Review notes.” The <a href="map.html">product map</a> collects roadmap coverage, open questions, and features deliberately left out.</p></div>
+        </div>
+      </div>
+      <aside class="demo-boundary">
+        <b>Safe demo mode</b>
+        <p>All records are invented. Buttons open a preview and may mark an action “simulated” in this browser. No backend, model, compute worker, token, customer file, or external service is contacted.</p>
+        <button class="btn sm" type="button" id="reset-demo">Reset local demo state</button>
+        <span id="reset-message" class="small" role="status" aria-live="polite"></span>
+      </aside>
+    </section>
+
+    <footer class="launch-footer"><span>DCLab product concept · aligned to the active plan in <code>docs/mvp/</code></span><a href="map.html">Open full screen map &amp; review →</a></footer>
+  </main>
+  <script>
+    (function () {
+      var button = document.getElementById('reset-demo');
+      button.addEventListener('click', function () {
+        try { localStorage.removeItem('dclab-product-prototype-v1'); } catch (_) {}
+        document.getElementById('reset-message').textContent = 'Prototype-only activity and switches cleared.';
+      });
+    })();
+  </script>
+<script src="../versions.js" data-version="v5_based_plans"></script>
+</body>
+</html>

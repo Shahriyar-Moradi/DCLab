@@ -1,6 +1,24 @@
 {
-  "latest": "v3",
+  "latest": "v5_based_plans",
   "versions": [
+    {
+      "id": "v5_based_plans",
+      "name": "Based on the plans",
+      "date": "2026-10-08",
+      "summary": "Every screen mapped to its route, phase and prompt from docs/mvp: the state graph as the plan names it, the hybrid AI decision model at every decision point, AI on/off and a built-today view, roles per STUDIO_DESIGN, and a Plan page."
+    },
+    {
+      "id": "v5",
+      "name": "Flow",
+      "date": "2026-10-07",
+      "summary": "The state graph becomes the navigation: a flow bar on every project screen, cleaner surfaces, plainer tags and a lighter guide. All of version 2's detail kept."
+    },
+    {
+      "id": "v4",
+      "name": "Guided",
+      "date": "2026-10-05",
+      "summary": "Version 2's full detail, reorganized: a workflow sidebar, a guide on every screen, explained terms and a clear next step."
+    },
     {
       "id": "v3",
       "name": "Clean",

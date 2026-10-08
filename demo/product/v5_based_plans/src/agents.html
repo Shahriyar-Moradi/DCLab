@@ -1,0 +1,140 @@
+<!-- title: Agents & tools · Northwind Telecom -->
+<!-- crumbs: Northwind Telecom › <b>Agents &amp; tools</b> -->
+<div class="page-head">
+  <div><h1>Agents &amp; tools</h1><p class="sub">The agents DCLab runs, the tools they (and external agents) may call, agent runs with their harness records, and how developers connect: MCP, SDK, CLI, API.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="create service token (scoped, expiring)">New service token</button><button class="btn" data-mock="download .mcp.json example">MCP setup</button><a class="btn" href="governance.html">Governance</a></div>
+</div>
+
+<div class="tabs" data-tabs="ag">
+  <button data-tab="catalog" aria-selected="true" data-arrives="Stage 4 · P6.8-UI">Agent catalog</button>
+  <button data-tab="tools" data-arrives="Stage 4 · A2-UI">Tool registry</button>
+  <button data-tab="runs" data-arrives="Stage 4 · A2-UI">Agent runs</button>
+  <button data-tab="connect">Connect: MCP · SDK · CLI · API</button>
+  <button data-tab="tokens">Service tokens</button>
+</div>
+
+<div data-tabpanel="ag:catalog" class="on" data-arrives="Stage 4 · P6.8-UI">
+  <div class="tbl card"><table>
+    <thead><tr><th>Agent</th><th>Kind</th><th>Pattern</th><th>Input (envelope)</th><th>Output</th><th>Validator</th><th>Prompt release</th><th>Model</th><th class="r">Runs 30 d</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><b>Lead agent</b> "AI data scientist"</td><td>bounded tool loop</td><td>orchestrates</td><td>goal, data summary, graph, levels, tool registry</td><td>tool calls, L1 proposals, replies</td><td>every tool's own validator</td><td>lead v3</td><td>gpt-6.1-sol</td><td class="r">31</td><td><span class="pill ok">on</span></td></tr>
+      <tr><td><b>ExperimentCritic</b></td><td>NOOA Predict · 1 call</td><td>AI-after</td><td>CV/holdout metrics, folds, findings, verifier</td><td>ExperimentReviewProposal (verdict + cited findings)</td><td>cited metrics exist; no new stats</td><td>critic v8</td><td>gpt-6.1-sol · Batch</td><td class="r">96</td><td><span class="pill ok">on · L1</span></td></tr>
+      <tr><td><b>DatasetInvestigator</b></td><td>NOOA Predict</td><td>AI-after (profile) · AI-before (roles)</td><td>profile, column stats, deterministic findings</td><td>DatasetInvestigationProposal (findings, questions, role hints)</td><td>cited columns exist; stats match profile</td><td>investigator v6</td><td>gpt-6-luna</td><td class="r">28</td><td><span class="pill ok">on · L3 display / L1 roles</span></td></tr>
+      <tr><td><b>ExperimentPlanner</b></td><td>NOOA Predict</td><td>AI-before</td><td>spec draft, profile summary, allowlists, budgets</td><td>ExperimentPlanProposal (metric, split, families, budget)</td><td>allowlists; holdout planner rules</td><td>planner v4</td><td>gpt-6.1-sol</td><td class="r">16</td><td><span class="pill ok">on · L1 / L2 families</span></td></tr>
+      <tr><td><b>ImprovementHypothesis</b></td><td>NOOA Predict</td><td>cross-check with rule proposer</td><td>constraint gap, diagnostics, prior iterations</td><td>ImprovementActionProposal (one typed action)</td><td>action space; budget; never holdout</td><td>improve v5</td><td>gpt-6.1-sol</td><td class="r">58</td><td><span class="pill ok">on · L2</span></td></tr>
+      <tr><td><b>Ops agent</b></td><td>bounded tool loop</td><td>AI-before (retrain, release) · AI-after (status)</td><td>monitoring windows, findings, champion evidence</td><td>retrain branch, release proposal, rollback</td><td>autonomy policy; release gate</td><td>ops v2</td><td>gpt-6.1-sol</td><td class="r">6</td><td><span class="pill ok">on · L2/L1/L3</span></td></tr>
+      <tr><td><b>Jev purposes</b> (5)</td><td>typed judgments</td><td>AI-before · cross-check</td><td>column metadata bands, user text</td><td>yes/no, choice, score + confidence</td><td>deterministic agreement policy</td><td>releases pinned</td><td>jev-1.13.0</td><td class="r">42,110 q</td><td><span class="pill ok">on · L0–L2</span></td></tr>
+      <tr class="dim"><td>Report agent (plain-language summary)</td><td>NOOA Predict</td><td>AI-after</td><td>result.json</td><td>text</td><td>numbers must match result</td><td>—</td><td>—</td><td class="r">—</td><td><span class="pill gray">planned (Phase 4)</span></td></tr>
+      <tr class="dim"><td>CodeAct feature-engineering lane</td><td>sandbox container</td><td>AI-before</td><td>—</td><td>feature code re-run under CV</td><td>P5.0 contract</td><td>—</td><td>—</td><td class="r">—</td><td><span class="pill gray">Phase 9, needs ADR</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Rules that apply to every agent: runs only via the harness; model calls only via the gateway; NOOA Predict strategy only (CodeAct banned in API/worker by a CI test); one instance per run; metadata and aggregates only.</p>
+</div>
+
+<div data-tabpanel="ag:tools" data-arrives="Stage 4 · A2-UI">
+  <div class="banner">One registry serves three callers: the MCP server (external agents), the lead/Ops agents (in-process) and the Studio forms. Each tool = schema + required capability + validator + service call.</div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Tool</th><th>Effect</th><th>Capability</th><th>Level</th><th>Validator</th><th>MCP</th><th>Lead agent</th><th class="r">Calls 30 d</th></tr></thead>
+    <tbody>
+      <tr><td><code>inspect_project</code> · <code>inspect_dataset</code> · <code>get_evidence</code> · <code>list_decisions</code> · <code>get_model</code> · <code>get_experiment_code</code> · <code>inspect_governance</code></td><td>read</td><td>read</td><td>—</td><td>tenant scope; outputs bounded, no raw rows</td><td>✓</td><td>✓</td><td class="r">2,140</td></tr>
+      <tr><td><code>upload_dataset</code></td><td>write</td><td>upload</td><td>budgeted</td><td>size/type limits; publication policy</td><td>✓ (write switch)</td><td>✓</td><td class="r">14</td></tr>
+      <tr><td><code>propose_problem_spec</code></td><td>proposal</td><td>decisions:propose</td><td><span class="lvl l1">L1</span></td><td>objective schema; metric allowlist</td><td>✓</td><td>✓</td><td class="r">22</td></tr>
+      <tr><td><code>create_problem_spec</code></td><td>write</td><td>ML write</td><td>human</td><td>same + accepted proposal</td><td>✓ (write)</td><td>via proposal</td><td class="r">9</td></tr>
+      <tr><td><code>run_experiment</code></td><td>job</td><td>run</td><td>budgeted</td><td>published dataset; quota; idempotency</td><td>✓ (write)</td><td>✓</td><td class="r">41</td></tr>
+      <tr><td><code>branch_experiment</code></td><td>job</td><td>run</td><td>budgeted</td><td>typed change set; allowlists; same split plan</td><td>✓ (write)</td><td>✓</td><td class="r">36</td></tr>
+      <tr><td><code>compare_experiments</code></td><td>read</td><td>read</td><td>—</td><td>same split plan (409 otherwise)</td><td>✓</td><td>✓</td><td class="r">88</td></tr>
+      <tr><td><code>cancel_experiment</code></td><td>write</td><td>run</td><td>—</td><td>never after final_test_started</td><td>✓ (write)</td><td>✓</td><td class="r">3</td></tr>
+      <tr><td><code>improve</code> · <code>get_improve_run</code></td><td>job</td><td>run</td><td>budgeted</td><td>action space; budgets</td><td>✓ (write)</td><td>✓</td><td class="r">12</td></tr>
+      <tr><td><code>request_agent_review</code> · <code>list_proposals</code></td><td>proposal</td><td>read</td><td>—</td><td>—</td><td>✓</td><td>✓</td><td class="r">60</td></tr>
+      <tr><td><code>accept_proposal</code> · <code>record_decision</code> · <code>move_ref</code></td><td>write</td><td>decisions:accept</td><td>human</td><td>decision record service rules</td><td>✓ (write, human token only)</td><td><span class="pill crit">no</span></td><td class="r">31</td></tr>
+      <tr><td><code>propose_release</code> · <code>batch_predict</code></td><td>proposal / job</td><td>release</td><td><span class="lvl l1">L1</span></td><td>release gate; feature contract</td><td>✓ (write)</td><td>Ops only</td><td class="r">41</td></tr>
+      <tr class="dim"><td>read holdout rows · select winner · compute metric · build split · load model in API</td><td colspan="7"><span class="pill crit">no such tool exists</span> (property-tested in CI)</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="ag:runs" data-arrives="Stage 4 · A2-UI">
+  <div class="toolbar"><input class="input" placeholder="filter by agent, project, status…"><select class="input"><option>Status: all</option><option>completed</option><option>rejected_by_validator</option><option>failed</option><option>over_budget</option></select><span class="sp"></span><span class="small muted">235 runs · 30 d</span></div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Run</th><th>When</th><th>Agent · release</th><th>Project · subject</th><th>Runtime</th><th class="r">Steps / calls</th><th class="r">Tokens</th><th class="r">Cost</th><th>Outcome</th><th>Harness</th><th></th></tr></thead>
+    <tbody>
+      <tr><td class="mono">ar-1102</td><td>Mon 02:41</td><td>Critic v8</td><td>Northwind · E9 vs MV v4</td><td>nooa_predict</td><td class="r">1 / 1</td><td class="r">9.2k / 1.1k</td><td class="r">$0.01</td><td><span class="pill ok">promote · 4/4 citations</span></td><td><span class="pill ok">recorded · replayable</span></td><td><button class="btn sm" data-mock="replay ar-1102">replay</button></td></tr>
+      <tr><td class="mono">ar-1098</td><td>Mon 02:14</td><td>Ops v2</td><td>Northwind · W-9</td><td>lead_loop</td><td class="r">9 / 4</td><td class="r">41k / 3k</td><td class="r">$0.09</td><td><span class="pill ok">retrain E9 (L2) · release proposed (L1)</span></td><td><span class="pill ok">recorded</span></td><td><button class="btn sm" data-mock="trace">trace</button></td></tr>
+      <tr><td class="mono">ar-1041</td><td>Mon</td><td>Critic v8</td><td>Northwind · E7</td><td>nooa_predict</td><td class="r">1 / 1</td><td class="r">8.8k / 1.0k</td><td class="r">$0.01</td><td><span class="pill warn">needs_work · 1 question</span></td><td><span class="pill ok">recorded</span></td><td></td></tr>
+      <tr><td class="mono">ar-1021</td><td>Thu 09:02</td><td>Lead v3</td><td>Northwind · session s-88</td><td>lead_loop</td><td class="r">7 / 3</td><td class="r">58k / 4k</td><td class="r">$0.19</td><td><span class="pill ok">4 L1 proposals · 3 L2 applied</span></td><td><span class="pill ok">recorded</span></td><td><button class="btn sm" data-mock="trace">trace</button></td></tr>
+      <tr><td class="mono">ar-0990</td><td>Tue</td><td>Planner v4</td><td>Lead scoring · DS v1</td><td>nooa_predict</td><td class="r">1 / 1</td><td class="r">7.1k / 0.8k</td><td class="r">$0.01</td><td><span class="pill crit">rejected_by_validator: column days_to_cancellation missing</span></td><td><span class="pill ok">recorded</span></td><td></td></tr>
+      <tr><td class="mono">ar-0971</td><td>last week</td><td>Investigator v6</td><td>Invoice · DS v2</td><td>nooa_predict</td><td class="r">0 / 0</td><td class="r">—</td><td class="r">$0</td><td><span class="pill warn">over_budget → rule fallback</span></td><td><span class="pill ok">recorded</span></td><td></td></tr>
+    </tbody>
+  </table></div>
+  <div class="card"><h3>Trace · ar-1098 (Ops agent) <span class="sp">harness lifecycle</span></h3>
+    <div class="events">
+      <div class="ev det"><span class="when">00.0 s · pre-run</span><br>envelope built (window W-9 profile, findings f-77, champion evidence) · digest 5a1e… · redaction: aggregates only · budget reserved $0.30</div>
+      <div class="ev ai"><span class="when">01.2 s · call 1 · ops v2 · gpt-6.1-sol</span><br>plan: diagnose → retrain → review → propose. 2 tool calls requested.</div>
+      <div class="ev det"><span class="when">01.3 s · pre-tool · request_agent_review(investigator, W-9)</span><br>capability ✓ · validator ✓ → ar-1097 (child run)</div>
+      <div class="ev det"><span class="when">08.9 s · pre-tool · branch_experiment(E7, dataset=DS v3)</span><br>policy: ops.retrain L2, 1 of 2 this week ✓ · typed change ✓ · new split plan SP-2 → job queued (E9) · decision record d-402</div>
+      <div class="ev det"><span class="when">09.1 s · pre-tool · propose_release(MV v5)</span><br>ops.release L1 → pending proposal p-430 (no action)</div>
+      <div class="ev det"><span class="when">09.4 s · post-run</span><br>output validated · events 14 · usage settled $0.09 · eval sample emitted · replay fixture stored</div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="ag:connect">
+  <div class="card sect">
+<div class="sect-head"><h2>Connect</h2></div>
+<section data-tab="Claude Code / Cursor via MCP">
+<pre class="code"><span class="c">// .mcp.json (no secrets in the file)</span>
+{ "mcpServers": { "dclab": {
+    "command": "python", "args": ["-m", "dclab_mcp"],
+    "env": { "DCLAB_API_URL": "https://app.dclab.io",
+             "DCLAB_TOKEN": "${DCLAB_TOKEN}",
+             "DCLAB_MCP_WRITE_ENABLED": "true" } } } }</pre>
+      <p class="small muted">14 tools · read tools on by default · write tools behind the switch · outputs bounded, never raw rows · token scope decides what the external agent may do (no promote without decisions:accept).</p>
+      <div class="toolbar"><button class="btn sm" data-mock="copy">Copy</button><button class="btn sm" data-mock="open quickstart">Quickstart</button><button class="btn sm" data-mock="golden transcripts">Golden transcripts (3)</button></div>
+</section>
+<section data-tab="Python SDK">
+<pre class="code">from dclab_client import DCLab
+lab = DCLab(token=os.environ["DCLAB_TOKEN"])
+p  = lab.projects.create(name="Northwind churn")
+ds = lab.datasets.upload(p.id, "customers.csv")        <span class="c"># ingests + publishes</span>
+sp = lab.projects.create_problem_spec(p.id, target="churned_next_30d",
+        constraints=[{"metric": "recall", "op": ">=", "value": 0.8}])
+e1 = lab.experiments.run(p.id, dataset=ds.id, spec=sp.id)   <span class="c"># 202 + job</span>
+e2 = lab.experiments.branch(e1.id, changes=[{"kind": "class_weighting", "mode": "balanced"}])
+print(lab.experiments.compare([e1.id, e2.id]))
+print(lab.experiments.code(e2.id).script)</pre>
+</section>
+<section data-tab="CLI">
+<pre class="code">$ dclab login --token-env DCLAB_TOKEN
+$ dclab data upload customers.csv --project p_7Q2 --json
+$ dclab experiments run --project p_7Q2 --spec ps_1 --wait
+$ dclab experiments compare E1 E2 --json
+$ dclab experiments code E7 > reproduce_e7.py
+$ dclab decisions list --project p_7Q2 --actor agent
+$ dclab governance show</pre>
+</section>
+<section data-tab="REST API · /v1">
+<dl class="kv"><dt>Auth</dt><dd>service token (Bearer) or Studio session cookie</dd><dt>Conventions</dt><dd>error envelope · opaque cursors · ETag / If-Match · Idempotency-Key on every POST</dd><dt>OpenAPI</dt><dd class="mono">contracts/v1_openapi.json</dd><dt>Webhooks</dt><dd><span class="pill gray">planned</span> run completed · proposal created · drift alert</dd></dl>
+      <div class="toolbar"><button class="btn sm" data-mock="open API reference">API reference</button></div>
+</section>
+</div>
+</div>
+
+<div data-tabpanel="ag:tokens">
+  <div class="tbl card"><table>
+    <thead><tr><th>Token</th><th>Owner</th><th>Scopes</th><th>Workspace</th><th>Expires</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <tr><td class="mono">dclab_st_••••3kd</td><td>developer@dclab.io · Claude Code</td><td>read, upload, run, branch, decisions:propose</td><td>Northwind Telecom</td><td>in 27 days</td><td>today 08:51</td><td><span class="pill ok">active</span></td><td><button class="btn sm danger" data-mock="revoke">revoke</button></td></tr>
+      <tr><td class="mono">dclab_st_••••9ab</td><td>ci-bot · nightly benchmark</td><td>read, run</td><td>Northwind Telecom</td><td>in 80 days</td><td>03:17</td><td><span class="pill ok">active</span></td><td><button class="btn sm danger" data-mock="revoke">revoke</button></td></tr>
+      <tr class="dim"><td class="mono">dclab_st_••••1f0</td><td>developer · old laptop</td><td>read</td><td>—</td><td>expired</td><td>2 months ago</td><td><span class="pill gray">revoked</span></td><td></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Tokens are hashed; they never use cookie/CSRF paths; audit events on create, use, revoke. Agent runs stay bound to the human or token that started them.</p>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Agent catalog with pattern, I/O, validator, prompt release, model, level</li><li>Tool registry with capability, level, validator and caller matrix</li><li>Agent runs with harness trace and replay; MCP/SDK/CLI/API; tokens</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Custom agents by customers (own prompts) or only DCLab's catalog?</li><li>Webhooks and event subscriptions for external agents</li><li>Per-token budgets separate from workspace budgets?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Showing NOOA/runtime internals to non-developers</li><li>CLI tab if the SDK covers scripting</li></ul></div>
+  </div>
+</details>

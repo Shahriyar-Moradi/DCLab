@@ -7,8 +7,10 @@ one exists. versions.json is the list. This script keeps the generated files in 
       Rebuild every version's pages, versions.js (the switcher shown on every page)
       and the landing page index.html.
 
-  python3 demo/product/versions.py new "Name" "One-line summary"
-      Freeze the latest version and start the next one as a copy of it.
+  python3 demo/product/versions.py new "Name" "One-line summary" [--from vN] [--id vX]
+      Freeze the latest version and start the next one as a copy of it
+      (or of version vN, to build on an older one). --id names the folder
+      (default: next number); ids are "v" + letters, digits, _ or -.
       Edit the new folder; the old ones stay as they were.
 """
 from __future__ import annotations
@@ -55,7 +57,7 @@ SWITCHER = r"""
 (function () {
   var data = window.DCLAB_VERSIONS;
   var script = document.currentScript;
-  var match = location.pathname.match(/\/(v\d+)\/([^\/]*)$/);
+  var match = location.pathname.match(/\/(v[\w-]+)\/([^\/]*)$/);
   var current = (match && match[1]) || (script && script.getAttribute('data-version'));
   var file = (match && match[2]) || 'index.html';
   var here = data.versions.filter(function (v) { return v.id === current; })[0];
@@ -81,7 +83,7 @@ SWITCHER = r"""
 
   var box = document.createElement('div');
   box.className = 'dcv' + (current === data.latest ? '' : ' dcv-old');
-  var number = current.replace('v', '');
+  var number = current.replace(/^v/, '').replace(/_/g, ' ');
   var items = data.versions.map(function (v) {
     var target = '../' + v.id + '/' + (v.pages.indexOf(file) > -1 ? file : 'index.html');
     return '<a href="' + target + '"' + (v.id === current ? ' aria-current="true"' : '') + '><b>Version ' + v.id.replace('v', '') + ' · ' + v.name +
@@ -181,28 +183,39 @@ def build() -> None:
     )
     latest = next(v for v in data["versions"] if v["id"] == data["latest"])
     rows = "\n".join(
-        f'    <div class="row"><b>Version {v["id"][1:]} · {html.escape(v["name"])}</b>'
+        f'    <div class="row"><b>Version {label(v["id"])} · {html.escape(v["name"])}</b>'
         f'<p>{nice_date(v["date"])} · {html.escape(v["summary"])}</p>'
         f'<a href="{v["id"]}/index.html">Open →</a></div>'
         for v in data["versions"] if v["id"] != data["latest"]
     )
     (ROOT / "index.html").write_text(LANDING.format(
-        latest_id=latest["id"], latest_number=latest["id"][1:], latest_name=html.escape(latest["name"]),
+        latest_id=latest["id"], latest_number=label(latest["id"]), latest_name=html.escape(latest["name"]),
         latest_date=nice_date(latest["date"]), latest_summary=html.escape(latest["summary"]), rows=rows,
     ))
     print("built", ", ".join(v["id"] for v in data["versions"]), "· latest", data["latest"])
 
 
-def new(name: str, summary: str) -> None:
+def label(version_id: str) -> str:
+    return version_id[1:].replace("_", " ")
+
+
+def new(name: str, summary: str, source: str | None = None, new_id: str | None = None) -> None:
     data = load()
     latest = data["latest"]
-    new_id = f"v{max(int(v['id'][1:]) for v in data['versions']) + 1}"
-    shutil.copytree(ROOT / latest, ROOT / new_id)
+    source = source or latest
+    if not (ROOT / source).is_dir():
+        sys.exit(f"no version folder {source}")
+    if new_id is None:
+        numbers = [int(m.group(1)) for v in data["versions"] if (m := re.match(r"v(\d+)$", v["id"]))]
+        new_id = f"v{max(numbers) + 1}"
+    if not re.match(r"^v[\w-]+$", new_id) or (ROOT / new_id).exists():
+        sys.exit(f"bad or existing version id {new_id}")
+    shutil.copytree(ROOT / source, ROOT / new_id)
     data["versions"].insert(0, {"id": new_id, "name": name, "date": datetime.date.today().isoformat(), "summary": summary})
     data["latest"] = new_id
     LIST.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     build()
-    print(f"{latest} is now frozen. Work in demo/product/{new_id}/ and run 'versions.py build' after changes.")
+    print(f"{new_id} starts as a copy of {source}; {latest} is frozen. Work in demo/product/{new_id}/ and run 'versions.py build' after changes.")
 
 
 if __name__ == "__main__":
@@ -210,6 +223,17 @@ if __name__ == "__main__":
     if command == "build":
         build()
     elif command == "new" and len(sys.argv) >= 3:
-        new(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "")
+        args = sys.argv[2:]
+        source = None
+        custom_id = None
+        if "--from" in args:
+            i = args.index("--from")
+            source = args[i + 1]
+            del args[i:i + 2]
+        if "--id" in args:
+            i = args.index("--id")
+            custom_id = args[i + 1]
+            del args[i:i + 2]
+        new(args[0], args[1] if len(args) > 1 else "", source, custom_id)
     else:
         sys.exit(__doc__)

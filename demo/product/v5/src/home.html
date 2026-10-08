@@ -1,0 +1,97 @@
+<!-- title: Home · DCLab Studio -->
+<!-- crumbs: Northwind Telecom › <b>Home</b> -->
+<div class="page-head">
+  <div><h1>Good morning, Dana</h1><p class="sub">Seven decisions are waiting. E9 is retraining the churn model after drift; the Ops agent started it on its own and will ask before releasing.</p></div>
+  <div class="toolbar"><a class="btn ai" href="lab.html">✦ Ask the assistant</a><a class="btn" href="data.html">Upload data</a><a class="btn primary" href="lab.html">+ New project</a></div>
+</div>
+
+<div class="grid cols-4">
+  <a class="card stat kpi" href="inbox.html"><span class="l">Decisions waiting for you</span><span class="v">7</span><span class="small muted">most urgent: release R-15 · Northwind churn</span></a>
+  <a class="card stat kpi" href="experiments.html"><span class="l">Runs in progress · 1 queued</span><span class="v">2</span><span class="small muted">E9 training · fold 4 of 5</span><span class="meter"><i style="width:62%"></i></span></a>
+  <a class="card stat kpi" href="governance.html"><span class="l">Applied by AI automatically this month</span><span class="v">38</span><span class="small muted">L2 · 2 reverted · 0 incidents open</span></a>
+  <a class="card stat kpi" href="governance.html#budget"><span class="l">AI spend of the $25 budget</span><span class="v">$9.40</span><span class="small muted">compute 142 min</span><span class="meter ai"><i style="width:38%"></i></span></a>
+</div>
+
+<div class="card sect" id="projects">
+<div class="sect-head"><h2>Northwind churn</h2><span class="pill run">E9 running</span><span class="sp">catch ≥ 80% of churners in the next 30 days · champion MV v4 · recall 0.81 · precision 0.63</span><a class="btn sm" href="lab.html">Open project</a></div>
+<section data-tab="Where it stands">
+<ol class="flow-home">
+  <li class="done"><a href="data.html"><span class="k">1 Data</span><b>DS v1 ★</b><small>48,210 rows · v3 new</small></a></li>
+  <li class="done"><a href="lab.html"><span class="k">2 Goal</span><b>Spec v1</b><small>recall ≥ 0.80</small></a></li>
+  <li class="done"><a href="pipeline.html"><span class="k">3 Split · features</span><b>SP-1 · FR v3</b><small>last 3 mo · 29 features</small></a></li>
+  <li class="run"><a href="experiments.html"><span class="k">4 Experiments</span><b>E9 · 62%</b><small>E7 best · 0.71</small></a></li>
+  <li class="done"><a href="improve.html"><span class="k">5 Improve</span><b>IL-2 done</b><small>goal met</small></a></li>
+  <li class="done"><a href="models.html"><span class="k">6 Champion</span><b>MV v4</b><small>in use since Mon</small></a></li>
+  <li class="wait"><a href="models.html#releases"><span class="k">7 Release</span><b>R-15</b><small>waits for you</small></a></li>
+  <li class="alert"><a href="monitoring.html"><span class="k">8 Monitoring</span><b>W-9 drift</b><small>retrain started</small></a></li>
+</ol>
+<p class="small muted">Green is done, violet is running, amber needs you. Click a step to open it. Anything downstream of a change is marked stale in the <a href="graph.html">graph</a>.</p>
+</section>
+<section data-tab="Last 24 hours">
+<div class="events">
+  <div class="ev ai"><span class="when">09:12 · Ops agent · L2</span><br>Retrain E9 started on DS v3 after drift on <code>plan_type</code> (PSI 0.22). <a href="monitoring.html">chain</a></div>
+  <div class="ev ai"><span class="when">09:10 · DatasetInvestigator · L3</span><br>Cause: new plan <code>family_5g</code>, 6% of rows, churns 2× average.</div>
+  <div class="ev hum"><span class="when">yesterday 17:40 · you</span><br>Accepted proposal p-412 (exclude <code>retention_offer_sent</code>, leakage) on E7.</div>
+  <div class="ev ai"><span class="when">yesterday 17:33 · Critic · L1</span><br>Verdict needs_work: <code>last_login_days</code> carries 41% of gain; confirm availability at prediction time.</div>
+  <div class="ev det"><span class="when">yesterday 17:31 · rule</span><br>winner_locked on E7: lightgbm__tuned, CV PR-AUC 0.71 ± 0.02.</div>
+  <div class="ev crit"><span class="when">Tue 11:02 · governance · auto</span><br><code>feature.leakage_suspect</code> demoted L1 → L0 after 5 validator rejections (incident i-31, resolved).</div>
+</div>
+</section>
+<section data-tab="AI health">
+<dl class="kv">
+  <dt>Trust levels</dt><dd>2 decision points at L2 · 2 at L1 · 2 at L0</dd>
+  <dt>Fallbacks to rule</dt><dd>3 of 1,948 calls (timeouts)</dd>
+  <dt>Validator rejections</dt><dd>9 this month</dd>
+  <dt>Replay check</dt><dd>212 / 212 identical (nightly)</dd>
+  <dt>Kill switches</dt><dd>all on · <a href="governance.html">governance</a></dd>
+</dl>
+</section>
+</div>
+
+<div class="card sect">
+<div class="sect-head"><h2>All projects</h2><span class="sp">4 active · 1 archived</span></div>
+<section data-tab="Projects">
+<div class="tbl"><table>
+  <thead><tr><th>Project</th><th>Goal</th><th>Model in use</th><th>Status</th><th>Last activity</th><th></th></tr></thead>
+  <tbody>
+    <tr><td><a href="lab.html"><b>Northwind churn</b></a><br><small class="muted">48,210 rows · DS v1 ★ · v3 new</small></td><td>churn in next 30 d · recall ≥ 0.80</td><td>MV v4<br><small class="muted">recall 0.81 · precision 0.63</small></td><td><span class="pill run">E9 running</span></td><td>2 min ago<br><small class="muted">Ops agent retrain</small></td><td><a class="btn sm" href="pipeline.html">Pipeline</a></td></tr>
+    <tr><td><b>Invoice late payment</b><br><small class="muted">12,004 rows · DS v1</small></td><td>paid &gt; 30 d late · PR-AUC</td><td>MV v2<br><small class="muted">PR-AUC 0.58</small></td><td><span class="pill warn">1 drift window</span></td><td>yesterday</td><td><a class="btn sm" href="monitoring.html">Monitor</a></td></tr>
+    <tr><td><b>Lead scoring</b><br><small class="muted">9,870 rows</small></td><td>converts in 90 d · precision ≥ 0.5</td><td class="muted">none yet</td><td><span class="pill crit">needs a target</span></td><td>3 days ago<br><small class="muted">1 question for you</small></td><td><a class="btn sm" href="inbox.html">Answer</a></td></tr>
+    <tr class="dim"><td><b>Demand forecast</b> (test)</td><td>weekly units · MAE</td><td>—</td><td><span class="pill gray">unsupported task</span></td><td>forecasting arrives in Phase 9</td><td></td></tr>
+  </tbody>
+</table></div>
+</section>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Needs your decision <span class="sp"><a href="inbox.html">Inbox · all 7 →</a></span></h2>
+    <div class="dlist">
+      <div class="drow"><span class="ic ai">✦</span><div><b>Put the retrained churn model (MV v5) into use?</b><p class="small muted">Precision back to 59% from 48% after new customers changed the data. MV v4 stays for rollback.</p><span class="mono small muted">Ops agent · L1 · evidence E9, W-7–W-9</span></div><a class="btn sm primary" href="inbox.html">Review</a></div>
+      <div class="drow"><span class="ic q">?</span><div><b>Is <code>family_5g</code> the same product family as <code>family</code>?</b><p class="small muted">A question from the data investigator. Your answer changes one feature in the next retrain.</p><span class="mono small muted">DatasetInvestigator · L3</span></div><a class="btn sm" href="inbox.html">Answer</a></div>
+      <div class="drow"><span class="ic ai">✦</span><div><b>Promote E7 winner to champion?</b><p class="small muted">Critic says needs work: one open question about <code>last_login_days</code>.</p><span class="mono small muted">IL-2 · L1</span></div><a class="btn sm" href="experiments.html">Review</a></div>
+      <div class="drow"><span class="ic q">?</span><div><b>Use <code>converted_90d</code> as the target for Lead scoring?</b><p class="small muted">Planner suggests it (p 0.91); the rule-based pick agrees.</p><span class="mono small muted">Planner · L1</span></div><a class="btn sm" href="inbox.html">Review</a></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Quick actions <span class="sp">one click each</span></h2>
+    <div class="chips">
+      <a class="btn sm" href="experiments.html#compare">Compare E7 vs E9</a>
+      <a class="btn sm" href="improve.html">Start improve loop</a>
+      <a class="btn sm" href="agents.html">Connect Claude Code (MCP)</a>
+      <a class="btn sm" href="models.html#batch">Score a file</a>
+      <a class="btn sm" href="data.html">Add dataset version</a>
+      <a class="btn sm" href="governance.html">Check AI budget</a>
+    </div>
+    <h3>Other workspaces</h3>
+    <p class="small muted">You are in <b>Northwind Telecom</b> (EU). Switch from the workspace button in the sidebar. Each workspace keeps its own data, agents and budget.</p>
+  </div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Decisions waiting, running jobs, L2 auto-decisions, spend vs budget</li><li>The active project as its state graph, with status per step</li><li>Projects with goal, champion, status</li><li>Unified activity of agents, rules and people; AI health summary</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Should home be per workspace or per user (multiple workspaces)?</li><li>Do business users ever land here, or always on the client view?</li><li>Notifications: email/Slack for L1 items?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Quick actions duplicate the sidebar</li><li>AI health may belong only in governance</li></ul></div>
+  </div>
+</details>

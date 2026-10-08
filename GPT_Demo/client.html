@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#edf5f5">
+<title>Client view · Northwind churn</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="client.html" data-role="client">
+<div class="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Client view</b> (demo@client.io)</div>
+    <div class="cmd">⌕ Search this workspace or jump to…<kbd>⌘K</kbd></div>
+    <div class="right"><span class="ai-state"><i></i>Workspace preview</span><button class="pill demo-status" type="button" data-demo-status>Synthetic data · local demo</button></div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Churn prediction · Northwind churn</h1><p class="sub">What a business user sees: the question, the answer, how much to trust it, this week's list, and what the system did on its own. No experiment internals.</p></div>
+  <div class="toolbar"><button class="btn primary" data-mock="download this week's predictions CSV">Download this week's list</button><button class="btn" data-mock="upload a file to score">Score my file</button><a class="btn ai" href="#questions">Ask a question</a></div>
+</div>
+
+<div class="banner ai"><b>Update, Monday:</b> customers from the March campaign look different from what the model learned. Precision fell to 48%. A retrained model is ready and tested on the same kind of split: back to 59%. Your admin needs to approve it. <span class="sp"></span><span class="small muted">Ops agent · plain-language summary of release proposal R-15</span></div>
+
+<div class="banner"><b>Business boundary:</b> this workspace explains model outputs and lets you review or download them. It does not contact customers, make business decisions, or execute CRM actions.</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">6,412</span><span class="l">customers flagged this week (12.5%)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">8 of 10</span><span class="l">real churners caught (recall 0.81, last tested)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">6 of 10</span><span class="l">flagged customers really churn (precision 0.63 at launch · 0.48 last 3 weeks)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">Mon 02:00</span><span class="l">last scoring run · 51,330 customers · 0 data problems</span></div></div>
+</div>
+
+<div class="side">
+  <div class="grid">
+    <div class="card"><h3>How the model was built <span class="sp">in plain words</span></h3>
+      <ul style="margin:0;padding-left:18px;display:grid;gap:6px;font-size:0.92rem">
+        <li><b>Question:</b> which customers will churn in the next 30 days? Churn means no payment for 60 days (your definition).</li>
+        <li><b>Data:</b> 18 months of monthly customer snapshots, 48,210 rows. Two columns were left out because they would leak the answer (<code>churned_at</code>, customer id).</li>
+        <li><b>Test:</b> the model was tested on the latest 3 months it had never seen, not on random rows, so the numbers above reflect real conditions.</li>
+        <li><b>Goal you set:</b> catch at least 80% of churners. Met (81%). Then be as precise as possible (63%).</li>
+        <li><b>Compared with:</b> a simple "always say average" baseline; the model is 34 points better.</li>
+        <li><b>Biggest signal:</b> days since last login (confirmed by you as known daily).</li>
+      </ul>
+      <div class="toolbar"><button class="btn sm" data-mock="download report.html">Full report</button><button class="btn sm" data-mock="what changed since launch">What changed since launch</button></div>
+    </div>
+    <div class="card" id="predictions"><h3>This week's list <span class="sp">bp-212 · sorted by risk</span></h3>
+      <div class="tbl"><table><thead><tr><th>Customer</th><th class="r">Risk</th><th>Why (top reasons)</th><th>Plan</th><th>Team follow-up label</th></tr></thead><tbody>
+        <tr><td class="mono">C-48112</td><td class="r">0.91</td><td>no login 61 d · 3 tickets · fee up</td><td>family_5g</td><td>call</td></tr>
+        <tr><td class="mono">C-10377</td><td class="r">0.87</td><td>no login 44 d · contract ends in 12 d</td><td>premium</td><td>renewal offer</td></tr>
+        <tr><td class="mono">C-22930</td><td class="r">0.84</td><td>2 tickets · fee up 9%</td><td>basic</td><td>call</td></tr>
+        <tr><td class="mono">C-31504</td><td class="r">0.79</td><td>no login 38 d</td><td>family</td><td>email</td></tr>
+        <tr class="dim"><td colspan="5">… 6,408 more · threshold 0.31 · follow-up labels are sample team-owned metadata, not model output or an executed action</td></tr>
+      </tbody></table></div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Questions for you <span class="sp">1 open</span></h3>
+      <p class="small">Is the new plan <code>family_5g</code> the same product family as <code>family</code>? Your answer helps the next model.</p>
+      <div class="toolbar"><button class="btn primary sm" data-mock="answer yes">Yes</button><button class="btn sm" data-mock="answer no">No</button><button class="btn sm" data-mock="explain">Explain…</button></div>
+    </div>
+    <div class="card"><h3>Trust and limits</h3>
+      <dl class="kv"><dt>Tested on</dt><dd>unseen months, once</dd><dt>Checks</dt><dd>19 passed, 1 warning (single strong signal)</dd><dt>Data sent to AI</dt><dd>summaries only, never customer rows</dd><dt>Who approved</dt><dd>developer@dclab.io · Mon</dd><dt>Can be undone</dt><dd>yes, one click by your admin</dd></dl>
+    </div>
+    <div class="card" id="questions"><h3>Ask a question <span class="sp">plain language</span></h3>
+      <div class="chat"><div class="msg user">Why is customer C-48112 flagged?</div><div class="msg agent"><span class="from">Lab agent · reads the stored prediction and explanation only</span>No login for 61 days (the strongest churn signal in your data), 3 support tickets in 90 days, and a fee increase. Risk 0.91, well above the 0.31 threshold.</div></div>
+      <div class="composer"><textarea placeholder="e.g. 'How many premium customers are flagged?'"></textarea><div class="acts"><button class="btn primary" data-mock="send">Send</button></div></div>
+    </div>
+  </div>
+</div>
+
+<details class="review"><summary>Review notes for this screen</summary>
+  <div class="grid cols-3">
+    <div><h4>Covered</h4><ul><li>Plain-language outcome, trust figures, weekly list with reasons, questions, limits, plain-language Q&amp;A</li></ul></div>
+    <div><h4>Open questions</h4><ul><li>Per-row explanations: SHAP-style reasons need a deterministic explainer in the engine (not planned yet)</li><li>"Suggested action" rules: part of DCLab or the customer's CRM?</li><li>Should clients be allowed to start a project themselves via chat?</li><li>Precision drop shown as "6 of 10 → 5 of 10": is the simplification honest enough?</li></ul></div>
+    <div><h4>Maybe unnecessary</h4><ul><li>Scoring their own file (if batch covers it)</li></ul></div>
+  </div>
+</details>
+  </div>
+</main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

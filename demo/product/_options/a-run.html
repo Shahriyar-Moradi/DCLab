@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>A · Editorial · Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#FBFAF7;--paper:#FFFFFF;--ink:#1B1F1D;--ink-2:#4A524E;--mute:#7A827E;--hair:#E6E4DD;--hair-2:#D5D2C8;--accent:#1E5F46;--accent-soft:#E6F0EB;--ok:#1E7A4D;--warn:#9A6A12;--crit:#B4382F;--ai:#4B5BAA;--serif:"Fraunces",Georgia,serif;--sans:"Inter",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}h1,h2,h3{margin:0;font-weight:500;line-height:1.15}h1{font-family:var(--serif);font-size:38px;letter-spacing:-.01em}h2{font-family:var(--serif);font-size:22px}h3{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);font-weight:600}
+.mono{font-family:var(--mono);font-size:12.5px}.mute{color:var(--mute)}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;min-height:100vh}
+nav{padding:28px 22px;border-right:1px solid var(--hair);display:flex;flex-direction:column;gap:30px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:baseline;gap:8px}.brand b{font-family:var(--serif);font-size:20px;font-weight:600}.brand small{color:var(--mute);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.ws{font-size:13px;color:var(--ink-2);display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
+.group{display:grid;gap:2px}.group h3{margin-bottom:8px}
+nav a{display:flex;align-items:center;gap:10px;padding:6px 8px;margin:0 -8px;border-radius:6px;color:var(--ink-2);font-size:14px}nav a:hover{background:var(--accent-soft)}nav a.on{color:var(--accent);font-weight:600;background:var(--accent-soft)}
+nav a .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--mute)}nav a .step{width:18px;height:18px;border-radius:50%;border:1px solid var(--hair-2);display:grid;place-items:center;font-size:10px;color:var(--mute);font-family:var(--mono)}nav a .step.done{background:var(--accent);border-color:var(--accent);color:#fff}
+nav .user{margin-top:auto;font-size:13px;color:var(--ink-2);border-top:1px solid var(--hair);padding-top:14px}
+main{padding:36px 56px 80px;max-width:1040px}
+.top{display:flex;align-items:center;gap:20px;font-size:13px;color:var(--mute);margin-bottom:34px}.top .crumb b{color:var(--ink);font-weight:500}.top .search{margin-left:auto;border:1px solid var(--hair);background:var(--paper);border-radius:6px;padding:6px 12px;width:300px;display:flex;justify-content:space-between}.top kbd{font-family:var(--mono);font-size:11px}
+.eyebrow{font-family:var(--mono);font-size:12px;color:var(--mute);margin-bottom:8px}
+.lede{color:var(--ink-2);font-size:17px;max-width:62ch;margin-top:10px}
+.actions{display:flex;gap:10px;margin:22px 0 28px}.btn{font:inherit;font-size:14px;font-weight:500;padding:8px 14px;border-radius:6px;border:1px solid var(--hair-2);background:var(--paper);color:var(--ink);cursor:pointer}.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.tabs{display:flex;gap:26px;border-bottom:1px solid var(--hair);margin-bottom:34px}.tabs a{padding:10px 0;font-size:14px;color:var(--mute);border-bottom:2px solid transparent;margin-bottom:-1px}.tabs a.on{color:var(--ink);border-color:var(--ink);font-weight:500}
+.figures{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--ink);border-bottom:1px solid var(--hair);margin-bottom:44px}.figures div{padding:18px 18px 18px 0;border-right:1px solid var(--hair)}.figures div:last-child{border-right:0}.figures div+div{padding-left:18px}.figures .v{font-family:var(--serif);font-size:36px;line-height:1;font-weight:500}.figures .v.ok{color:var(--ok)}.figures .l{font-size:13px;color:var(--ink-2);margin-top:8px}.figures .s{font-size:12px;color:var(--mute);margin-top:4px}
+section{margin-bottom:44px}section>header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}section>header a{font-size:13px;color:var(--accent);font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}th{text-align:left;font-weight:500;color:var(--mute);font-size:12px;padding:0 10px 10px 0;border-bottom:1px solid var(--ink)}td{padding:12px 10px 12px 0;border-bottom:1px solid var(--hair);vertical-align:top}td b{font-weight:600}td small{display:block;color:var(--mute);font-size:12.5px;margin-top:2px}td.r,th.r{text-align:right}tr.win td{background:var(--accent-soft)}tr.win td:first-child{border-left:3px solid var(--accent);padding-left:8px}
+.st{font-size:13px;font-weight:500}.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.crit{color:var(--crit)}.st.ai{color:var(--ai)}.st::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px;vertical-align:1px}
+.stages{display:grid;grid-template-columns:repeat(6,1fr);gap:0;border-top:1px solid var(--hair)}.stages div{padding:14px 14px 14px 0;border-right:1px solid var(--hair);font-size:13px}.stages div:last-child{border-right:0}.stages div+div{padding-left:14px}.stages .k{font-family:var(--mono);font-size:11px;color:var(--mute)}.stages b{display:block;font-size:14px;margin:4px 0 3px}.stages .ok{color:var(--ok)}.stages p{margin:0;color:var(--ink-2)}
+.finding{display:grid;grid-template-columns:150px 1fr;gap:16px;padding:12px 0;border-bottom:1px solid var(--hair);font-size:14px}.finding .n{font-weight:500}.finding p{margin:0;color:var(--ink-2)}
+.bars{display:grid;gap:9px;font-size:13px}.bar{display:grid;grid-template-columns:150px 1fr 46px;gap:12px;align-items:center}.bar i{display:block;height:8px;background:var(--accent);border-radius:2px}.bar .mono{color:var(--mute);text-align:right}
+aside.rail{border-left:1px solid var(--hair);padding:36px 26px;position:sticky;top:0;height:100vh;font-size:13.5px;display:grid;gap:30px;align-content:start}aside.rail h3{margin-bottom:10px}aside.rail p{margin:0 0 8px;color:var(--ink-2)}aside.rail ol{margin:0;padding-left:18px;color:var(--ink-2);display:grid;gap:6px}
+.next{background:var(--paper);border:1px solid var(--hair);border-radius:8px;padding:14px 16px}.next b{display:block;font-size:14px;margin-bottom:4px}.next a{color:var(--accent);font-weight:500}
+.critic{border-left:2px solid var(--ai);padding:4px 0 4px 14px;color:var(--ink-2)}.critic .k{font-family:var(--mono);font-size:11px;color:var(--ai);text-transform:uppercase;letter-spacing:.06em}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:28px}.vs h3{margin-bottom:8px}.vs p{margin:0;color:var(--ink-2);font-size:14px}
+</style></head><body><div class="shell">
+<nav><div class="brand"><b>DCLab</b><small>Studio</small></div><div class="ws"><span>Northwind Telecom</span><span class="mono">⌘K</span></div>
+<div class="group"><h3>Workspace</h3><a href="#">Home</a><a href="#">Inbox<span class="n">7</span></a><a href="#">Governance</a><a href="#">Agents &amp; tools</a><a href="#">Settings</a></div>
+<div class="group"><h3>Northwind churn</h3><a href="#"><span class="step done">1</span>Data</a><a href="#"><span class="step done">2</span>Lab</a><a href="#"><span class="step done">3</span>Pipeline</a><a class="on" href="#"><span class="step done">4</span>Experiments<span class="n">9</span></a><a href="#"><span class="step">5</span>Improve</a><a href="#"><span class="step">6</span>Models</a><a href="#"><span class="step">7</span>Monitoring</a><a href="#"><span class="step">·</span>Decisions</a></div>
+<div class="user">Dana Whitfield<br><span class="mute">developer</span></div></nav>
+<main>
+<div class="top"><span class="crumb">Northwind churn › Experiments › <b>E7</b></span><span class="search"><span>Search or jump to…</span><kbd>⌘K</kbd></span></div>
+<div class="eyebrow">EXPERIMENT E7 · dataset v3 · split SP-1 · completed 17:31 yesterday · 4 min 12 s</div>
+<h1>Churn, tuned gradient boosting</h1>
+<p class="lede">Six models tried on the same split. LightGBM won on a fixed rule. The holdout was scored once, after the winner was locked.</p>
+<div class="actions"><button class="btn p">Make champion</button><button class="btn">Branch with a change</button><button class="btn">Compare with E9</button><button class="btn">Download report</button></div>
+<div class="tabs"><a class="on" href="#">Summary</a><a href="#">Candidates</a><a href="#">Stages</a><a href="#">Findings <span class="mono">1</span></a><a href="#">Features</a><a href="#">Code</a><a href="#">Decisions</a></div>
+<div class="figures"><div><div class="v">82%</div><div class="l">of churners caught</div><div class="s">recall on holdout · 3 months never seen</div></div><div><div class="v">61%</div><div class="l">of flagged customers really churn</div><div class="s">precision at threshold 0.42</div></div><div><div class="v">+47 pts</div><div class="l">better than a simple baseline</div><div class="s">PR-AUC 0.71 vs 0.24</div></div><div><div class="v ok">19 / 20</div><div class="l">checks passed</div><div class="s">1 warning: feature availability</div></div></div>
+<section><header><h2>How this run went</h2><a href="#">Pipeline evidence →</a></header>
+<div class="stages"><div><span class="k">1 · Data</span><b class="ok">Checked</b><p>48,210 rows, 2 columns left out</p></div><div><span class="k">2 · Split</span><b class="ok">Locked</b><p>Latest 3 months set aside</p></div><div><span class="k">3 · Features</span><b class="ok">Built</b><p>31 features, fit inside folds</p></div><div><span class="k">4 · Train</span><b class="ok">6 models</b><p>5-fold CV each</p></div><div><span class="k">5 · Select</span><b class="ok">LightGBM</b><p>rule: best mean CV PR-AUC</p></div><div><span class="k">6 · Holdout</span><b class="ok">Scored once</b><p>after winner locked</p></div></div></section>
+<section><header><h2>Candidates</h2><a href="#">All 6 with folds →</a></header>
+<table><thead><tr><th>Model</th><th class="r">CV PR-AUC</th><th class="r">± fold</th><th class="r">Holdout</th><th class="r">Train time</th><th>Note</th></tr></thead><tbody>
+<tr class="win"><td><b>LightGBM, tuned</b><small>winner · locked by rule</small></td><td class="r">0.712</td><td class="r">0.02</td><td class="r">0.69</td><td class="r">48 s</td><td>80 trials, early stop</td></tr>
+<tr><td>XGBoost, tuned</td><td class="r">0.704</td><td class="r">0.03</td><td class="r mute">—</td><td class="r">61 s</td><td>within fold noise of winner</td></tr>
+<tr><td>Random forest</td><td class="r">0.671</td><td class="r">0.02</td><td class="r mute">—</td><td class="r">22 s</td><td></td></tr>
+<tr><td>Logistic regression</td><td class="r">0.588</td><td class="r">0.01</td><td class="r mute">—</td><td class="r">4 s</td><td>interpretable fallback</td></tr>
+<tr><td class="mute">Baseline (prior)</td><td class="r mute">0.241</td><td class="r mute">—</td><td class="r mute">—</td><td class="r mute">—</td><td class="mute">reference</td></tr>
+</tbody></table></section>
+<section><header><h2>Findings</h2><a href="#">All 20 checks →</a></header>
+<div class="finding"><span class="n"><span class="st warn">Warning</span></span><p><b>last_login_days</b> carries 41% of the model's gain. Confirm it is available at prediction time, or the model will look better here than in use.</p></div>
+<div class="finding"><span class="n"><span class="st ok">Passed</span></span><p>No leakage found. <span class="mono">retention_offer_sent</span> was excluded after proposal p-412.</p></div>
+<div class="finding"><span class="n"><span class="st ok">Passed</span></span><p>Holdout untouched until selection. Fold-local preprocessing confirmed in the pipeline.</p></div>
+<div class="critic" style="margin-top:18px"><div class="k">Critic review · level 1 · advisory</div>Verdict: needs work. The warning above is the only blocker. The rule-based review agrees on all 19 other checks.</div>
+</section>
+<section><header><h2>What the model uses</h2><a href="#">All 31 features →</a></header>
+<div class="bars"><div class="bar"><span>last_login_days</span><i style="width:100%"></i><span class="mono">41%</span></div><div class="bar"><span>plan_type</span><i style="width:44%"></i><span class="mono">18%</span></div><div class="bar"><span>support_tickets_90d</span><i style="width:29%"></i><span class="mono">12%</span></div><div class="bar"><span>tenure_months</span><i style="width:22%"></i><span class="mono">9%</span></div><div class="bar"><span>monthly_charge</span><i style="width:15%"></i><span class="mono">6%</span></div></div></section>
+</main>
+<aside class="rail">
+<div><h3>About this screen</h3><p>One experiment: what it achieved, how it got there, and what you can trust.</p></div>
+<div><h3>How to use it</h3><ol><li>Read the four figures: catch rate, precision, lift, checks.</li><li>Open Findings if any check is not green.</li><li>Make champion, or branch with one change.</li></ol></div>
+<div class="next"><b>Next step</b>Resolve the availability warning on <span class="mono">last_login_days</span>, then make E7 the champion. <a href="#">Open finding →</a></div>
+<div><h3>Terms</h3><p><b>Holdout</b> · the latest months, scored once, never used to choose.</p><p><b>PR-AUC</b> · how well the model ranks churners above non-churners when churn is rare.</p></div>
+</aside>
+</div></body></html>

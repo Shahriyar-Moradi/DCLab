@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>A · Editorial · Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#FBFAF7;--paper:#FFFFFF;--ink:#1B1F1D;--ink-2:#4A524E;--mute:#7A827E;--hair:#E6E4DD;--hair-2:#D5D2C8;--accent:#1E5F46;--accent-soft:#E6F0EB;--ok:#1E7A4D;--warn:#9A6A12;--crit:#B4382F;--ai:#4B5BAA;--serif:"Fraunces",Georgia,serif;--sans:"Inter",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}h1,h2,h3{margin:0;font-weight:500;line-height:1.15}h1{font-family:var(--serif);font-size:38px;letter-spacing:-.01em}h2{font-family:var(--serif);font-size:22px}h3{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);font-weight:600}
+.mono{font-family:var(--mono);font-size:12.5px}.mute{color:var(--mute)}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;min-height:100vh}
+nav{padding:28px 22px;border-right:1px solid var(--hair);display:flex;flex-direction:column;gap:30px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:baseline;gap:8px}.brand b{font-family:var(--serif);font-size:20px;font-weight:600}.brand small{color:var(--mute);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.ws{font-size:13px;color:var(--ink-2);display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
+.group{display:grid;gap:2px}.group h3{margin-bottom:8px}
+nav a{display:flex;align-items:center;gap:10px;padding:6px 8px;margin:0 -8px;border-radius:6px;color:var(--ink-2);font-size:14px}nav a:hover{background:var(--accent-soft)}nav a.on{color:var(--accent);font-weight:600;background:var(--accent-soft)}
+nav a .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--mute)}nav a .step{width:18px;height:18px;border-radius:50%;border:1px solid var(--hair-2);display:grid;place-items:center;font-size:10px;color:var(--mute);font-family:var(--mono)}nav a .step.done{background:var(--accent);border-color:var(--accent);color:#fff}
+nav .user{margin-top:auto;font-size:13px;color:var(--ink-2);border-top:1px solid var(--hair);padding-top:14px}
+main{padding:36px 56px 80px;max-width:1040px}
+.top{display:flex;align-items:center;gap:20px;font-size:13px;color:var(--mute);margin-bottom:34px}.top .crumb b{color:var(--ink);font-weight:500}.top .search{margin-left:auto;border:1px solid var(--hair);background:var(--paper);border-radius:6px;padding:6px 12px;width:300px;display:flex;justify-content:space-between}.top kbd{font-family:var(--mono);font-size:11px}
+.lede{color:var(--ink-2);font-size:17px;max-width:62ch;margin-top:10px}
+.actions{display:flex;gap:10px;margin:22px 0 40px}.btn{font:inherit;font-size:14px;font-weight:500;padding:8px 14px;border-radius:6px;border:1px solid var(--hair-2);background:var(--paper);color:var(--ink);cursor:pointer}.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.figures{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--ink);border-bottom:1px solid var(--hair);margin-bottom:44px}.figures div{padding:18px 18px 18px 0;border-right:1px solid var(--hair)}.figures div:last-child{border-right:0}.figures div+div{padding-left:18px}.figures .v{font-family:var(--serif);font-size:36px;line-height:1;font-weight:500}.figures .l{font-size:13px;color:var(--ink-2);margin-top:8px}.figures .s{font-size:12px;color:var(--mute);margin-top:4px}
+section{margin-bottom:44px}section>header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}section>header a{font-size:13px;color:var(--accent);font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;font-weight:500;color:var(--mute);font-size:12px;padding:0 10px 10px 0;border-bottom:1px solid var(--ink)}td{padding:13px 10px 13px 0;border-bottom:1px solid var(--hair);vertical-align:top}td b{font-weight:600}td small{display:block;color:var(--mute);font-size:12.5px;margin-top:2px}.st{font-size:13px;font-weight:500}.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.crit{color:var(--crit)}.st.ai{color:var(--ai)}.st::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px;vertical-align:1px}
+.dec{display:grid;gap:0}.dec .row{display:grid;grid-template-columns:1fr auto;gap:20px;padding:14px 0;border-bottom:1px solid var(--hair);align-items:center}.dec .t{font-weight:500;font-size:15px}.dec .d{color:var(--ink-2);font-size:13.5px;margin-top:3px}.dec .who{font-family:var(--mono);font-size:11.5px;color:var(--mute);margin-top:6px}
+.events{display:grid}.ev{display:grid;grid-template-columns:118px 1fr;gap:16px;padding:10px 0;border-bottom:1px solid var(--hair);font-size:14px}.ev .w{font-family:var(--mono);font-size:11.5px;color:var(--mute);padding-top:3px}.ev .tag{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-right:8px}.ev .tag.ai{color:var(--ai)}.ev .tag.rule{color:var(--mute)}.ev .tag.you{color:var(--ok)}
+aside.rail{border-left:1px solid var(--hair);padding:36px 26px;position:sticky;top:0;height:100vh;font-size:13.5px;display:grid;gap:30px;align-content:start}aside.rail h3{margin-bottom:10px}aside.rail p{margin:0 0 8px;color:var(--ink-2)}aside.rail ol{margin:0;padding-left:18px;color:var(--ink-2);display:grid;gap:6px}
+.next{background:var(--paper);border:1px solid var(--hair);border-radius:8px;padding:14px 16px}.next b{display:block;font-size:14px;margin-bottom:4px}.next a{color:var(--accent);font-weight:500}
+.pillai{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--ai);border:1px solid currentColor;border-radius:4px;padding:1px 6px;margin-left:8px;vertical-align:middle}
+</style></head><body><div class="shell">
+<nav><div class="brand"><b>DCLab</b><small>Studio</small></div><div class="ws"><span>Northwind Telecom</span><span class="mono">⌘K</span></div>
+<div class="group"><h3>Workspace</h3><a class="on" href="#">Home</a><a href="#">Inbox<span class="n">7</span></a><a href="#">Governance</a><a href="#">Agents &amp; tools</a><a href="#">Settings</a></div>
+<div class="group"><h3>Northwind churn</h3><a href="#"><span class="step done">1</span>Data</a><a href="#"><span class="step done">2</span>Lab</a><a href="#"><span class="step done">3</span>Pipeline</a><a href="#"><span class="step">4</span>Experiments<span class="n">9</span></a><a href="#"><span class="step">5</span>Improve</a><a href="#"><span class="step">6</span>Models</a><a href="#"><span class="step">7</span>Monitoring</a><a href="#"><span class="step">·</span>Decisions</a></div>
+<div class="user">Dana Whitfield<br><span class="mute">developer · dark mode off</span></div></nav>
+<main>
+<div class="top"><span class="crumb">Northwind Telecom › <b>Home</b></span><span class="search"><span>Search or jump to…</span><kbd>⌘K</kbd></span></div>
+<h1>Wednesday, 7 October</h1>
+<p class="lede">Seven decisions are waiting for you. One run is in progress, and the assistant retrained the churn model on its own this morning after drift.</p>
+<div class="actions"><button class="btn p">New project</button><button class="btn">Upload data</button><button class="btn">Ask the assistant</button></div>
+<div class="figures"><div><div class="v">7</div><div class="l">decisions waiting</div><div class="s">most urgent: release R-15</div></div><div><div class="v">2</div><div class="l">runs in progress</div><div class="s">E9 training · fold 4 of 5</div></div><div><div class="v">38</div><div class="l">automatic AI decisions this month</div><div class="s">2 reverted · 0 incidents</div></div><div><div class="v">$9.40</div><div class="l">of $25 AI budget used</div><div class="s">compute 142 min</div></div></div>
+<section><header><h2>Projects</h2><a href="#">All projects →</a></header>
+<table><thead><tr><th>Project</th><th>Goal</th><th>Model in use</th><th>Status</th><th>Last activity</th></tr></thead><tbody>
+<tr><td><b>Northwind churn</b><small>48,210 customers · dataset v3</small></td><td>Catch ≥ 80% of churners in the next 30 days</td><td>Version 4<small>recall 0.81 · precision 0.63</small></td><td><span class="st ai">E9 running</span></td><td>2 min ago<small>Ops agent retrain</small></td></tr>
+<tr><td><b>Invoice late payment</b><small>12,004 invoices · dataset v1</small></td><td>Predict payments more than 30 days late</td><td>Version 2<small>PR-AUC 0.58</small></td><td><span class="st warn">1 drift window</span></td><td>yesterday</td></tr>
+<tr><td><b>Lead scoring</b><small>9,870 leads</small></td><td>Find leads likely to convert in 90 days</td><td class="mute">None yet</td><td><span class="st crit">Needs a target</span></td><td>3 days ago<small>1 question for you</small></td></tr>
+</tbody></table></section>
+<section><header><h2>Needs your decision</h2><a href="#">Open inbox (7) →</a></header>
+<div class="dec">
+<div class="row"><div><div class="t">Put the retrained churn model (v5) into use?<span class="pillai">AI proposal</span></div><div class="d">Precision is back to 59% from 48% after new customers changed the data. Version 4 stays available for rollback.</div><div class="who">Ops agent · level 1 · evidence: E9 holdout, drift window DW-7</div></div><button class="btn">Review</button></div>
+<div class="row"><div><div class="t">Is the plan <span class="mono">family_5g</span> the same product family as <span class="mono">family</span>?</div><div class="d">A question from the data investigator. Your answer changes one feature.</div><div class="who">DatasetInvestigator · level 3</div></div><button class="btn">Answer</button></div>
+<div class="row"><div><div class="t">Use <span class="mono">converted_90d</span> as the target for Lead scoring?</div><div class="d">Three candidate targets were found; this one is suggested with 91% confidence. The rule-based pick agrees.</div><div class="who">Planner · level 1 · rule agrees</div></div><button class="btn">Review</button></div>
+</div></section>
+<section><header><h2>Last 24 hours</h2><a href="#">Full activity →</a></header>
+<div class="events">
+<div class="ev"><span class="w">09:12 today</span><span><span class="tag ai">Assistant</span>Started retraining E9 on dataset v3 after drift on <span class="mono">plan_type</span> (PSI 0.22).</span></div>
+<div class="ev"><span class="w">09:10 today</span><span><span class="tag ai">Investigator</span>Cause found: new plan <span class="mono">family_5g</span>, 6% of rows, churns twice the average.</span></div>
+<div class="ev"><span class="w">17:40 yesterday</span><span><span class="tag you">You</span>Accepted proposal p-412: exclude <span class="mono">retention_offer_sent</span> (leakage) on E7.</span></div>
+<div class="ev"><span class="w">17:31 yesterday</span><span><span class="tag rule">Rule</span>Winner locked on E7: LightGBM tuned, CV PR-AUC 0.71 ± 0.02.</span></div>
+</div></section>
+</main>
+<aside class="rail">
+<div><h3>About this screen</h3><p>Everything that needs you across all projects: decisions, running jobs, and what the AI did on its own.</p></div>
+<div><h3>How to use it</h3><ol><li>Start with the four figures.</li><li>Open a project to continue where it stands.</li><li>Check the last 24 hours for what agents, rules and people did.</li></ol></div>
+<div class="next"><b>Next step</b>Approve or reject release R-15 for Northwind churn. <a href="#">Open →</a></div>
+<div><h3>Legend</h3><p><span class="st ai">AI</span> &nbsp; <span class="st ok">You</span> &nbsp; <span class="st" style="color:var(--mute)">Rule</span></p></div>
+</aside>
+</div></body></html>
