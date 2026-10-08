@@ -185,7 +185,7 @@ export function ModelCard({ projectId, modelVersionId }: { projectId: string; mo
           </ul>
         ) : null}
         {risks.state === "none_run" ? <div className="empty" role="note"><p>The trust checks have not run for this experiment.</p></div> : null}
-        {findings && safeInternalHref(findings) ? <p className="mc-noprint"><Link href={findings}>Open the experiment&apos;s Findings card</Link></p> : null}
+        {findings && safeInternalHref(findings) ? <p className="mc-noprint"><Link href={findings}>Open the run&apos;s Trust checks card</Link></p> : null}
       </Card>
 
       <Card title="Data and split" aside={<Pill tone="gray">counts only</Pill>}>

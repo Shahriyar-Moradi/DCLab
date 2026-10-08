@@ -4,6 +4,7 @@
  * the model card split and the decision records). A value the API did not return is omitted, never guessed.
  * No final test set value is read here: only the strategy, the fraction and row counts.
  */
+import { plainText } from "./command-search.ts";
 import { stageConfig, type BuildLike } from "./studio-inspect.ts";
 
 const str = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
@@ -29,7 +30,7 @@ const METRICS: Record<string, MetricInfo> = {
 export function metricInfo(metric: string | null | undefined): MetricInfo | null {
   const name = (metric ?? "").trim();
   if (!name) return null;
-  return Object.hasOwn(METRICS, name) ? METRICS[name] : { label: name.replaceAll("_", " "), about: null };
+  return Object.hasOwn(METRICS, name) ? METRICS[name] : { label: plainText(name.replaceAll("_", " "), 40), about: null };
 }
 
 export function taskLabel(task: string | null | undefined): string | null {
@@ -51,6 +52,12 @@ export function constraintText(status: string | null | undefined): string | null
     case "not_verifiable": return "The business rule could not be checked for this run.";
     default: return null;
   }
+}
+
+/** The business-rule answer in words. Only `not_requested` is "Not requested"; a missing or unknown value is "Not recorded". */
+export function ruleStatusText(status: string | null | undefined): string {
+  if (status === "not_requested") return "Not requested";
+  return constraintText(status) ?? "Not recorded";
 }
 
 export type RunDetailLike = { target_column?: string | null; task_type?: string | null; metrics?: { selection_metric?: string | null; constraint_status?: string | null } | null } | null | undefined;

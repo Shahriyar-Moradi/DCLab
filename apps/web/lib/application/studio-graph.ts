@@ -7,6 +7,7 @@
  */
 import { projectHref } from "./command-search.ts";
 import type { GraphEdgeLike } from "./studio-data.ts";
+import { actorWords } from "./studio-goal.ts";
 
 export type NodeRefLike = { kind: string; id: string; key?: string };
 export type StaleReasonLike = { ref_kind: string; expected: NodeRefLike; actual: NodeRefLike };
@@ -230,7 +231,7 @@ export type DecisionLike = {
   effective_state: string;
   recorded_at: string;
   subject: { kind: string; id: string };
-  actor: { kind: string; rule?: string | null };
+  actor: { kind: string; rule?: string | null; agent_run_id?: string | null; service_token_id?: string | null };
   details?: Record<string, unknown>;
   details_truncated?: boolean;
   facts?: Record<string, unknown>;
@@ -243,6 +244,8 @@ export type DecisionMarker = {
   agreement: string | null;
   counts: Array<[string, number]>;
   actor: string;
+  /** Who recorded it, in words: an access-token record is "a connected tool (access token)", never "the assistant". */
+  actorLabel: string;
   state: string;
   recordedAt: string;
   answers: PointAnswer[];
@@ -269,6 +272,7 @@ export function decisionMarkers(records: DecisionLike[]): Map<string, DecisionMa
       agreement: typeof details.agreement === "string" ? details.agreement : null,
       counts: counts.filter((entry): entry is [string, number] => typeof entry[1] === "number").sort(([a], [b]) => a.localeCompare(b)),
       actor: record.actor.kind,
+      actorLabel: actorWords(record.actor),
       state: record.effective_state,
       recordedAt: record.recorded_at,
       answers: columns.slice(0, ANSWER_LIMIT).filter((c): c is Record<string, unknown> => !!c && typeof c === "object").map((c) => ({

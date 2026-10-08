@@ -89,13 +89,20 @@ test("findings panel: severity, numbers, badge and a pre-filled Branch link", as
     await expect(plainCard).toContainText("What to do");
     await expect(plainCard.getByTestId("finding-branch-link")).toHaveCount(0);
   }
-  await expect(page.getByText(new RegExp(`${attention.length} findings? needs? attention`))).toBeVisible();
+  await expect(page.getByText(new RegExp(`${attention.length} trust checks? to review`)).first()).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "1-panel");
 
   // Badge on the Experiments list matches the API's count.
   await page.goto(`/projects/${projectId}/experiments`);
-  await expect(page.getByRole("link", { name: `${attention.length} to review` })).toBeVisible();
+  const sm = findings.summary as unknown as { passed: number; warnings: number; failures: number; not_evaluated: number };
+  const sentence = [`${sm.passed} passed`, sm.warnings ? `${sm.warnings} to review` : null, sm.failures ? `${sm.failures} failed` : null, sm.not_evaluated ? `${sm.not_evaluated} not checked` : null].filter(Boolean).join(" · ");
+  const badge = page.getByRole("link", { name: new RegExp(`: ${sentence.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) });
+  await expect(badge).toBeVisible();
+  await expect(badge).toContainText(`${sm.passed} ✓`);
+  if (sm.warnings) await expect(badge).toContainText(`${sm.warnings} ⚠`);
+  if (sm.failures) await expect(badge).toContainText(`${sm.failures} failed`);
+  if (sm.not_evaluated) await expect(badge).toContainText(`${sm.not_evaluated} not checked`);
   await shot(page, "2-list-badge");
 
   // "What to do" opens the Branch form pre-filled; nothing starts until the person presses the button.
@@ -103,14 +110,14 @@ test("findings panel: severity, numbers, badge and a pre-filled Branch link", as
   await panel.locator(`article[data-check="${branchable!.check}"]`).getByTestId("finding-branch-link").click();
   await expect(page).toHaveURL(/prefill=/);
   const sent = page.getByLabel("Change set that will be sent");
-  await expect(page.getByText("Pre-filled from a finding")).toBeVisible();
-  await expect(page.getByLabel("Why are you branching?", { exact: false })).toHaveValue(/Address finding/);
+  await expect(page.getByText("Pre-filled from a trust check")).toBeVisible();
+  await expect(page.getByLabel("Why are you trying this change?", { exact: false })).toHaveValue(/Address the trust check/);
   await expect(sent).toContainText(/"kind"/);
   await shot(page, "3-branch-prefilled");
 
   // A hostile query is ignored, not rendered as markup.
   await page.goto(`/projects/${projectId}/experiments/${experimentId}?prefill=<script>&intent=%3Cimg%20src%3Dx%3E`);
-  await expect(page.getByText("Pre-filled from a finding")).toHaveCount(0);
+  await expect(page.getByText("Pre-filled from a trust check")).toHaveCount(0);
 
   // Data page tab uses the same panel with its provenance label.
   await page.goto(`/projects/${projectId}/data`);

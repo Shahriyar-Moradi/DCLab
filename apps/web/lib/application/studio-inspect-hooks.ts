@@ -1,7 +1,7 @@
 "use client";
 
 /** Node inspector reads (P4.3-A). Every read is a typed /v1 call; nothing is written. */
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { v1Get } from "@/lib/infrastructure/v1/client";
@@ -32,6 +32,8 @@ export const ExperimentDetailSchema = z.object({
     family: nullableString,
     selected_score: nullableNumber,
     selection_metric: nullableString,
+    /** The winner against the dummy baseline on the selection metric (cross-validation only). */
+    baseline_comparison: anyRecord.nullable().optional(),
   }).nullable().optional(),
   untrusted_fields: z.array(z.string()).optional(),
 });
@@ -120,6 +122,22 @@ export function useExperimentDetail(experimentId: string | null | undefined) {
     enabled: isUuid(experimentId),
     retry: false,
   });
+}
+
+/** Run reads for a list (family, score, baseline), one per completed run, capped and cached 60 s; shares the cache of `useExperimentDetail`. */
+export const RUN_LIST_CAP = 25;
+export function useRunDetails(experimentIds: string[], cap = RUN_LIST_CAP) {
+  const ids = experimentIds.filter((id) => isUuid(id)).slice(0, cap);
+  const results = useQueries({
+    queries: ids.map((experimentId) => ({
+      queryKey: workspaceQueryKey("v1", "experiment-detail", experimentId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => v1Get("/v1/experiments/{experiment_id}", ExperimentDetailSchema, { params: { experiment_id: experimentId }, signal }),
+      staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
+    })),
+  });
+  const byId = new Map<string, (typeof results)[number]>();
+  ids.forEach((experimentId, index) => byId.set(experimentId, results[index]));
+  return byId;
 }
 
 export function useExperimentCode(experimentId: string | null | undefined, enabled = true) {

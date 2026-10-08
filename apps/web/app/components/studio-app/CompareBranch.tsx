@@ -15,6 +15,7 @@ import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 import { projectHref } from "@/lib/application/command-search";
+import { TRANSFORM_WORDS, changeSentences } from "@/lib/application/studio-runs";
 import { useProjectRefs } from "@/lib/application/studio-hooks";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
 import { cancelExperiment, createBranch, makeChampion, useWriteInvalidation } from "@/lib/application/studio-compare-hooks";
@@ -45,16 +46,16 @@ function ChangeFields({ draft, onChange }: { draft: ChangeDraft; onChange: (patc
   );
   switch (draft.kind) {
     case "hyperparameter_override":
-      return <>{text("Model family", "family", "for example random_forest")}{area("Parameters (one name=value per line)", "params", "max_depth=4")}</>;
+      return <>{text("Model family", "family", "for example random_forest")}{area("Settings (one name=value per line)", "params", "max_depth=4")}</>;
     case "family_include":
     case "family_exclude":
       return text("Model family", "family", "for example logistic_regression");
     case "class_weighting":
       return (
         <>
-          <label className="field"><span>Mode</span>
+          <label className="field"><span>Class weights</span>
             <select value={draft.mode} onChange={(e) => onChange({ mode: e.target.value as ChangeDraft["mode"] })}>
-              <option value="none">none</option><option value="balanced">balanced</option><option value="custom">custom</option>
+              <option value="none">no weights</option><option value="balanced">balanced (every class counts the same)</option><option value="custom">my own weights</option>
             </select>
           </label>
           {draft.mode === "custom" ? area("Weights (one class=weight per line)", "weights", "yes=3") : null}
@@ -64,28 +65,28 @@ function ChangeFields({ draft, onChange }: { draft: ChangeDraft; onChange: (patc
       return (
         <>
           <div className="toolbar">
-            <label className="field"><span>Constraint metric</span><input value={draft.constraint.metric} placeholder="recall" onChange={(e) => onChange({ constraint: { ...draft.constraint, metric: e.target.value } })} /></label>
-            <label className="field"><span>Operator</span>
+            <label className="field"><span>Rule: score</span><input value={draft.constraint.metric} placeholder="recall" onChange={(e) => onChange({ constraint: { ...draft.constraint, metric: e.target.value } })} /></label>
+            <label className="field"><span>Rule: at least or at most</span>
               <select value={draft.constraint.op} onChange={(e) => onChange({ constraint: { ...draft.constraint, op: e.target.value as ">=" | "<=" } })}><option value=">=">at least (&gt;=)</option><option value="<=">at most (&lt;=)</option></select>
             </label>
-            <label className="field"><span>Value</span><input inputMode="decimal" value={draft.constraint.value} onChange={(e) => onChange({ constraint: { ...draft.constraint, value: e.target.value } })} /></label>
+            <label className="field"><span>Rule: value</span><input inputMode="decimal" value={draft.constraint.value} onChange={(e) => onChange({ constraint: { ...draft.constraint, value: e.target.value } })} /></label>
           </div>
           <div className="toolbar">
-            <label className="field"><span>Cost of a false positive</span><input inputMode="decimal" value={draft.costFp} onChange={(e) => onChange({ costFp: e.target.value })} /></label>
-            <label className="field"><span>Cost of a false negative</span><input inputMode="decimal" value={draft.costFn} onChange={(e) => onChange({ costFn: e.target.value })} /></label>
+            <label className="field"><span>Cost of a wrong alarm (flagged, but not positive)</span><input inputMode="decimal" value={draft.costFp} onChange={(e) => onChange({ costFp: e.target.value })} /></label>
+            <label className="field"><span>Cost of a miss (positive, but not flagged)</span><input inputMode="decimal" value={draft.costFn} onChange={(e) => onChange({ costFn: e.target.value })} /></label>
           </div>
         </>
       );
     case "metric_override":
-      return <>{text("Primary metric", "metric", "for example pr_auc")}{text("Reason", "reason")}</>;
+      return <>{text("Score to rank models on", "metric", "for example pr_auc")}{text("Reason", "reason")}</>;
     case "feature_transform_add":
     case "feature_transform_remove":
       return (
         <>
           {text("Column", "column")}
-          <label className="field"><span>Transform</span>
+          <label className="field"><span>Treatment</span>
             <select value={draft.transform} onChange={(e) => onChange({ transform: e.target.value as ChangeDraft["transform"] })}>
-              {TRANSFORMS.map((t) => <option key={t} value={t}>{t}</option>)}
+              {TRANSFORMS.map((t) => <option key={t} value={t}>{Object.hasOwn(TRANSFORM_WORDS, t) ? TRANSFORM_WORDS[t].replace(/^./, (c) => c.toUpperCase()) : t}</option>)}
             </select>
           </label>
         </>
@@ -126,19 +127,19 @@ export function BranchPanel({ projectId, experimentId, initial }: { projectId: s
   };
   return (
     <Card title="Try a change" aside={<Pill tone="det">one change on top</Pill>}>
-      {initial ? <Banner tone="info">Pre-filled from a finding. Review the change, add your reason if you want to change it, then start the branch; nothing runs until you do.</Banner> : null}
+      {initial ? <Banner tone="info">Pre-filled from a trust check. Review the change, edit the reason if you want, then start the new run; nothing runs until you do.</Banner> : null}
       <p className="muted">
-        Re-run this run with <Term definition="A list of changes applied on top of this run. The test design and data stay the same, so the new run can be compared with this one.">changes</Term> on top.
-        Pick the changes below; the API validates them when you start the branch and its answer is shown here unchanged.
+        Start a new run from this one with <Term definition="The new run keeps this run's data and test design, so the two can be compared fairly. This run is never changed.">one or more changes</Term> on top.
+        Pick the changes below; the app checks them when you start the run and shows its answer here unchanged.
       </p>
       <form className="form" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-        <label className="field"><span>Why are you branching? (recorded with the run)</span>
+        <label className="field"><span>Why are you trying this change? (saved with the run)</span>
           <textarea rows={2} value={intent} maxLength={2000} onChange={(e) => setIntent(e.target.value)} disabled={busy} />
         </label>
         {drafts.map((draft, index) => (
           <fieldset key={draft.id} className="card flat" disabled={busy}>
             <legend>Change {index + 1}</legend>
-            <label className="field"><span>Kind of change</span>
+            <label className="field"><span>What to change</span>
               <select value={draft.kind} onChange={(e) => patch(draft.id, { ...emptyDraft(draft.id, e.target.value as ChangeKind) })}>
                 {CHANGE_KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}</option>)}
               </select>
@@ -151,14 +152,17 @@ export function BranchPanel({ projectId, experimentId, initial }: { projectId: s
         <div className="toolbar">
           <button type="button" className="btn" disabled={busy || drafts.length >= 32} onClick={() => setDrafts((all) => [...all, emptyDraft(nextId.current++)])}>Add another change</button>
         </div>
-        <h3>What will be sent</h3>
+        <h3>What the new run will do differently</h3>
         {typeof body === "string" ? <p className="muted" role="status">{body}</p> : (
-          <pre className="code" aria-label="Change set that will be sent">{preview}</pre>
+          <>
+            <ul className="plain-list" aria-label="Changes that will be made">{changeSentences({ changes: body.changes }).map((line, i) => <li key={i}>{line}</li>)}</ul>
+            <details><summary>Exact request (technical)</summary><pre className="code" aria-label="Change set that will be sent">{preview}</pre></details>
+          </>
         )}
-        <p className="muted">There is no client-side rule check: the API refuses an unknown family, a bad class, a leakage column or a duplicate change with its own message, and nothing is started.</p>
+        <p className="muted">This page does not judge your change. The app refuses an unknown model family, a class that does not exist, a column that would give away the answer or a repeated change, with its own message, and nothing is started.</p>
         {error ? <Problem error={error} /> : null}
         <div className="toolbar">
-          <button type="submit" className="btn primary" disabled={busy || typeof body === "string"}>{busy ? "Starting…" : "Start branch"}</button>
+          <button type="submit" className="btn primary" disabled={busy || typeof body === "string"}>{busy ? "Starting…" : "Start the new run"}</button>
         </div>
       </form>
     </Card>

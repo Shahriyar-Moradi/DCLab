@@ -39,6 +39,9 @@ export const STATUS_TONE: Record<string, PillTone> = {
   failed: "crit", cancelled: "gray", skipped: "gray", accepted: "ok", proposed: "warn", rejected: "crit", superseded: "gray",
 };
 
+/** Pill tone of a run status; own keys only (a status such as `__proto__` is gray). */
+export const statusTone = (status: string): PillTone => (Object.hasOwn(STATUS_TONE, status) ? STATUS_TONE[status] : "gray");
+
 const REF_LABEL: Record<string, string> = {
   champion_model: "Model in use", problem_spec: "Goal", split_plan: "Test design", dataset: "Data", feature_recipe: "Features",
 };

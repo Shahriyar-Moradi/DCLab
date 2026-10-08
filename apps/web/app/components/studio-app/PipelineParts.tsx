@@ -17,6 +17,7 @@ import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { plainText } from "@/lib/application/command-search";
 import { safeFilename } from "@/lib/application/studio-inspect";
+import { anyAiAnswer, pointLabel } from "@/lib/application/studio-runs";
 import { downloadArtifactBlob, replayAgentRun, type RunAgentRun, type RunArtifact } from "@/lib/application/studio-pipeline-hooks";
 import {
   canDownloadArtifact, canReplay, costLabel, decisionHref, replayErrorText, replayView, sizeLabel, answerSummary,
@@ -26,11 +27,11 @@ import { ActionKeys } from "@/lib/application/studio-wizard";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 export const PIPELINE_TERMS = {
-  digest: "A fingerprint of the exact content (a hash). If one byte changes, the digest changes, so equal digests mean identical files.",
-  stage: "One step the engine runs in a fixed order, such as profiling the data or locking the final test set. Each stage records what it did.",
-  deterministic: "Decided by code that gives the same answer every time for the same inputs. No AI model is involved.",
-  decisionPoint: "A place where an AI answer could be compared with the rule's answer. The level says how much the AI may do: Shadow, the rules decided and the AI's answer is only recorded; Ask first, a person accepts it; Automatic, you can undo, it is applied and one click undoes it; Automatic, by policy.",
-  replay: "Runs the agent again from its stored record with a stand-in model and stubbed tools, and checks it produces the same tool calls, output digest and proposals.",
+  digest: "A checksum: a short code worked out from the exact content. If one byte changes, the code changes, so equal checksums mean identical files.",
+  stage: "One step the run takes, in a fixed order, such as profiling the data or setting the final test set aside. Each step records what it did.",
+  deterministic: "Worked out by fixed rules that give the same answer every time for the same inputs. No AI model is involved.",
+  decisionPoint: "A choice the rules make, such as which column to predict. When AI is on, its answer is saved next to the rule's answer. How much the AI may do: it only advises and the rules decide; it asks first and a person accepts; it acts automatically and you can undo it; or it acts automatically.",
+  replay: "Runs the AI again from its saved record with a stand-in model and stubbed tools, and checks it makes the same tool calls and gives the same answer.",
 };
 
 export function DigestLine({ label, value }: { label: string; value: string }) {
@@ -38,7 +39,7 @@ export function DigestLine({ label, value }: { label: string; value: string }) {
     <div className="digest-row">
       <span className="muted">{label}</span>
       <span className="mono" data-testid="digest">{plainText(value, 200)}</span>
-      <CopyButton text={value} label={`Copy ${label} digest`} />
+      <CopyButton text={value} label={`Copy ${label} checksum`} />
     </div>
   );
 }
@@ -47,9 +48,9 @@ export function AnswerTable({ row }: { row: PointRow }) {
   if (!row.answers.length) return null;
   return (
     <details>
-      <summary>Rule answer beside AI answer ({row.answersTotal ?? row.answers.length} column{(row.answersTotal ?? row.answers.length) === 1 ? "" : "s"})</summary>
+      <summary>The rule&apos;s answer beside the AI&apos;s ({row.answersTotal ?? row.answers.length} column{(row.answersTotal ?? row.answers.length) === 1 ? "" : "s"})</summary>
       <table className="graph-answers">
-        <caption className="sr-only">Rule answer beside AI answer for {row.key}</caption>
+        <caption className="sr-only">Rule answer beside AI answer for {pointLabel(row.key)}</caption>
         <thead><tr><th scope="col">Column</th><th scope="col">Rule</th><th scope="col">AI</th><th scope="col">Used</th></tr></thead>
         <tbody>{row.answers.map((a, i) => <tr key={`${a.column}-${i}`}><td className="mono">{plainText(a.column, 60)}</td><td>{plainText(a.rule, 40)}</td><td>{plainText(a.ai, 40)}</td><td>{plainText(a.used, 40)}</td></tr>)}</tbody>
       </table>
@@ -58,26 +59,28 @@ export function AnswerTable({ row }: { row: PointRow }) {
 }
 
 export function DecisionPoints({ projectId, rows, pending }: { projectId: string; rows: PointRow[]; pending: boolean }) {
+  // With AI off every choice was made by a rule, so the AI columns would only repeat "no answer": they are hidden.
+  const withAi = anyAiAnswer(rows);
   const columns: Column<PointRow>[] = [
-    { key: "point", header: "Decision point", sortValue: (r) => r.key, render: (r) => <span className="mono">{plainText(r.key, 60)}</span> },
-    { key: "ai", header: "AI answer", render: (r) => (r.aiOff ? <Pill tone="gray">AI off</Pill> : <>{plainText(answerSummary(r, "ai"), 80)}<AnswerTable row={r} /></>) },
-    { key: "rule", header: "Rule answer", render: (r) => plainText(answerSummary(r, "rule"), 80) },
+    { key: "point", header: "Choice", sortValue: (r) => r.key, render: (r) => pointLabel(r.key) },
+    ...(withAi ? [{ key: "ai", header: "AI answer", render: (r: PointRow) => (r.aiOff ? <span className="muted">none</span> : <>{plainText(answerSummary(r, "ai"), 80)}<AnswerTable row={r} /></>) }] : []),
+    { key: "rule", header: "Rule's answer", render: (r) => plainText(answerSummary(r, "rule"), 80) },
     { key: "used", header: "Value used", render: (r) => plainText(answerSummary(r, "used"), 80) },
-    { key: "level", header: "Level", render: (r) => (r.level === null ? "—" : <Level level={r.level} />) },
-    { key: "who", header: "Decided by", render: (r) => <><Pill tone={r.actor === "agent" ? "ai" : "det"}>{r.actor === "agent" ? "agent" : r.actor === "human" ? "person" : "rule"}</Pill>{r.agreement ? <span className="muted"> {plainText(r.agreement.replaceAll("_", " "), 40)}</span> : null}</> },
+    ...(withAi ? [{ key: "level", header: "How much the AI may do", render: (r: PointRow) => (r.level === null ? "—" : <Level level={r.level} />) }] : []),
+    { key: "who", header: "Decided by", render: (r) => <><Pill tone={r.actor === "agent" ? "ai" : "det"}>{r.actorLabel ?? (r.aiOff ? "the rules" : "not saved")}</Pill>{r.agreement ? <span className="muted"> {plainText(r.agreement.replaceAll("_", " "), 40)}</span> : null}</> },
     {
-      key: "record", header: "Record",
+      key: "record", header: "History entry",
       render: (r) => {
         const href = r.recordId ? decisionHref(projectId, r.recordId) : null;
-        return href ? <Link href={href} data-testid="decision-link">Open record <span className="mono">{r.recordId!.slice(0, 8)}</span></Link> : <span className="muted">none written{r.aiOff ? " (AI off)" : ""}</span>;
+        return href ? <Link href={href} data-testid="decision-link">Open entry <span className="mono">{r.recordId!.slice(0, 8)}</span></Link> : <span className="muted">none saved</span>;
       },
     },
   ];
   return (
-    <Card title={<Term definition={PIPELINE_TERMS.decisionPoint}>Decision points in this run</Term>} aside={`${rows.length} point${rows.length === 1 ? "" : "s"}`}>
-      <p className="muted">The AI never decides alone here: each row shows its answer next to the rule&apos;s answer and which value the stage used. With AI off, the rule answer is used and no AI answer exists.</p>
-      {pending ? <p role="status">Loading decision points…</p> : null}
-      <DataTable caption="Decision points in this run" columns={columns} rows={rows} rowKey={(r) => r.key} emptyMessage="No decision points were recorded for this run." />
+    <Card title={<Term definition={PIPELINE_TERMS.decisionPoint}>Choices made in this run</Term>} aside={`${rows.length} choice${rows.length === 1 ? "" : "s"}`}>
+      <p className="muted">{withAi ? "The AI never decides alone here: each row shows its answer next to the rule's answer and which value the step used." : "Each row is a choice the rules made, with the value the step used."}</p>
+      {pending ? <p role="status">Loading the choices…</p> : null}
+      <DataTable caption="Choices made in this run" columns={columns} rows={rows} rowKey={(r) => r.key} emptyMessage="No choices were recorded for this run." />
     </Card>
   );
 }
@@ -116,18 +119,18 @@ export function AgentRuns({ runs, pending, error }: { runs: RunAgentRun[]; pendi
   };
 
   return (
-    <Card title="AI agent runs on this run" aside={`${cost.calls} · ${cost.cost}`}>
+    <Card title="AI runs on this run" aside={`${cost.calls} · ${cost.cost}`}>
       <p className="muted">
-        Agents only advise. Each run below is stored with its tool calls and output digest, so you can <Term definition={PIPELINE_TERMS.replay}>replay</Term> it
-        and check that it reproduces. Replay changes nothing in the project.
+        The AI only advises. Each run below is saved with its tool calls, so you can <Term definition={PIPELINE_TERMS.replay}>replay</Term> it
+        and check that it gives the same answer. Replay changes nothing in the project.
       </p>
       {error ? <QueryNotice error={error} what="agent runs" /> : null}
       {pending ? <p role="status">Loading agent runs…</p> : null}
-      {!pending && !error && runs.length === 0 ? <div className="empty" role="note">No AI runs are recorded for this run (AI was off, or no agent reviewed it). Everything on this page works without them.</div> : null}
+      
       {runs.map((run) => {
         const result = results[run.id];
         return (
-          <article key={run.id} className="card flat" aria-label={`Agent run ${run.agent_key} ${run.id.slice(0, 8)}`} data-testid="agent-run">
+          <article key={run.id} className="card flat" aria-label={`AI run ${run.agent_key} ${run.id.slice(0, 8)}`} data-testid="agent-run">
             <p className="toolbar">
               <Pill tone="ai"><span aria-hidden="true">◆ </span>{plainText(run.agent_key.replaceAll("_", " "), 60)}</Pill>
               <span className="muted">{plainText(run.status, 24)} · {formatWhen(run.created_at)} · cost {(run.cost_micros / 1_000_000).toFixed(4)} {plainText(run.currency, 6)} · run <span className="mono">{run.id.slice(0, 8)}</span></span>
@@ -171,18 +174,18 @@ export function Artifacts({ workspaceId, artifacts, pending, error, reproduction
   };
   const columns: Column<RunArtifact>[] = [
     { key: "type", header: "Artifact", sortValue: (a) => a.artifact_type, render: (a) => plainText(a.artifact_type.replaceAll("_", " "), 40) },
-    { key: "digest", header: "Digest", render: (a) => <DigestLine label={plainText(a.artifact_type, 30)} value={a.content_digest} /> },
+    { key: "digest", header: "Checksum", render: (a) => <DigestLine label={plainText(a.artifact_type, 30)} value={a.content_digest} /> },
     { key: "size", header: "Size", numeric: true, render: (a) => sizeLabel(a.size_bytes) },
     {
       key: "get", header: "Download",
       render: (a) => (canDownloadArtifact(a)
         ? <button type="button" className="btn sm" disabled={busy !== null} onClick={() => void run(a.id, async () => { const { blob, filename } = await downloadArtifactBlob(workspaceId, a.id); saveBlob(blob, safeFilename(filename, `${a.artifact_type}-${a.id.slice(0, 8)}`)); })}>Download<span className="sr-only"> {a.artifact_type.replaceAll("_", " ")}</span></button>
-        : <span className="muted">digest only</span>),
+        : <span className="muted">checksum only</span>),
     },
   ];
   return (
     <Card title="Artifacts and downloads" aside={`${artifacts.length} stored`}>
-      <p className="muted">Every stored output of this run, named by its digest. There is no single bundle download: download the pieces you need. Model files, prediction files and run reports are listed by digest only; the model page and the run report open them with their labels.</p>
+      <p className="muted">Every saved output of this run, listed with its checksum. There is no single bundle to download: download the pieces you need. Model files, prediction files and run reports are listed by checksum only; the model page and the run report open them with their labels.</p>
       <div className="toolbar">
         {reproduction.map((item) => <button key={item.kind} type="button" className="btn" disabled={busy !== null} onClick={() => void run(item.kind, item.run)}>{item.label}</button>)}
       </div>
@@ -194,13 +197,13 @@ export function Artifacts({ workspaceId, artifacts, pending, error, reproduction
   );
 }
 
-export function Provenance({ rows, aiCost }: { rows: ProvenanceRow[]; aiCost: { cost: string; calls: string } }) {
+export function Provenance({ rows, aiCost }: { rows: ProvenanceRow[]; aiCost: { cost: string; calls: string } | null }) {
   return (
-    <Card title="Cost and provenance">
-      <p className="muted">Only fields the API returns for this run. A field that was not recorded is not shown.</p>
+    <Card title="How this run can be reproduced">
+      <p className="muted">Only what was saved for this run. Anything that was not saved is not shown.</p>
       <KeyValue items={[
         ...rows.map((r) => ({ key: r.key, label: r.label, value: r.mono ? <span className="mono">{plainText(r.value, 200)}</span> : plainText(r.value, 200) })),
-        { key: "ai-cost", label: "AI cost", value: `${aiCost.cost} (${aiCost.calls})` },
+        ...(aiCost ? [{ key: "ai-cost", label: "AI cost", value: `${aiCost.cost} (${aiCost.calls})` }] : []),
       ]} />
     </Card>
   );

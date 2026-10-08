@@ -77,7 +77,7 @@ test("checks: verification attempts on their stage, trust checks mapped to stage
   assert.deepEqual(byStage.get("leakage_audit")?.map((c) => c.status), ["fail"]);
   assert.deepEqual(byStage.get("deterministic_verification")?.map((c) => c.status), ["pass", "warn", "other", "fail"]);
   assert.ok(byStage.get("deterministic_verification")?.[0].text.includes("final test set"));
-  assert.deepEqual(loose.map((c) => c.label), ["Duplicate rows", "Class imbalance"]);
+  assert.deepEqual(loose.map((c) => c.label), ["Duplicates", "Class imbalance"]);
   const totals = checkTotals([...byStage.values()].flat().concat(loose));
   assert.deepEqual(totals, { pass: 2, warn: 1, fail: 2, other: 2, total: 7 });
   assert.deepEqual(checksByStage([], undefined), { byStage: new Map(), loose: [] });

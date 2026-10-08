@@ -90,7 +90,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await expect(page.getByText(/(Time-ordered|Grouped|Random)/).first()).toBeVisible();
   await expect(page.getByText("Training rows", { exact: true })).toBeVisible();
   await page.goto(hrefs[1]);
-  await expect(page.getByRole("table", { name: "Features of this recipe" })).toContainText("tenure");
+  await expect(page.getByRole("table", { name: "Features of this run" })).toContainText("tenure");
   await page.getByRole("button", { name: /^monthly_spend/ }).click();
   await expect(page.locator("pre.code").first()).toContainText("Fitted inside each CV fold");
   await expect(page.getByRole("table", { name: "Preprocessing steps" })).toContainText("StandardScaler");
@@ -102,7 +102,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
 
   // Experiment inspector tabs.
   await page.goto(`/projects/${projectId}/experiments/${experimentId}`);
-  const tabs = ["Overview", "Candidates", "Per-fold and threshold", "Feature importance", "Code", "Evidence"];
+  const tabs = ["Overview", "Models tried", "Per fold", "Feature importance", "Code", "Evidence"];
   for (const name of tabs) {
     await page.getByRole("tab", { name: new RegExp(`^${name}`) }).click();
     await expect(page.getByRole("tab", { name: new RegExp(`^${name}`) })).toHaveAttribute("aria-selected", "true");
@@ -110,12 +110,12 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
     expect(await axeViolations(page)).toEqual([]);
     await shot(page, `3-tab-${name.toLowerCase().replace(/\W+/g, "-")}`);
   }
-  await page.getByRole("tab", { name: /^Candidates/ }).click();
-  await expect(page.getByRole("table", { name: "Candidates and their CV scores" }).getByRole("row")).not.toHaveCount(1);
-  await page.getByRole("tab", { name: /^Per-fold/ }).click();
-  await expect(page.getByRole("table", { name: "Per-fold CV metrics" })).toBeVisible();
+  await page.getByRole("tab", { name: /^Models tried/ }).click();
+  await expect(page.getByRole("table", { name: "Models tried and their cross-validation scores" }).getByRole("row")).not.toHaveCount(1);
+  await page.getByRole("tab", { name: /^Per fold/ }).click();
+  await expect(page.getByRole("table", { name: "Cross-validation scores per fold" })).toBeVisible();
   await page.getByRole("tab", { name: /^Overview/ }).click();
-  await expect(page.getByText("No Critic review for this run")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /AI reviewer/ })).toHaveCount(0);
   await expect(page.getByTestId("findings-summary")).toContainText(/trust checks/);
 
   // Code: copy and download are plain text, nothing runs.
@@ -132,7 +132,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "4-code-dark");
-  await page.getByRole("tab", { name: /^Candidates/ }).click();
+  await page.getByRole("tab", { name: /^Models tried/ }).click();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "5-candidates-dark");
 

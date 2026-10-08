@@ -68,25 +68,43 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   const rootId = page.url().split("/experiments/")[1];
   await completed(page, rootId);
 
+  // The run page in plain words: its steps with the time each took, and the facts without raw ids as names.
+  await page.goto(`/projects/${projectId}/experiments/${rootId}`);
+  await expect(page.getByRole("heading", { name: "Steps of this run" })).toBeVisible();
+  const steps = page.getByRole("table", { name: "Steps of this run and the time each took" });
+  await expect(steps).toContainText("Train the models, fold by fold");
+  await expect(steps).toContainText("Final test, once");
+  await expect(steps.getByRole("row", { name: /Final test, once/ })).not.toContainText(/\d\.\d{3,}/);
+  await expect(page.getByRole("heading", { name: "About this run" })).toBeVisible();
+  await expect(page.getByText("Column to predict").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trust checks", exact: true }).first()).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(/Fingerprint|Critic review|Split plan|Feature recipe|champion/);
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    expect(await axeViolations(page)).toEqual([]);
+    await shot(page, `0-run-${scheme}`);
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+
   // A run in progress offers Cancel, a finished one does not (checked on the root later).
   // Branch: an invalid change set is refused by the API with its own message and starts nothing.
   await page.goto(`/projects/${projectId}/experiments/${rootId}`);
   const branch = page.getByRole("region", { name: "Try a change" }).or(page.locator("section", { has: page.getByRole("heading", { name: "Try a change" }) }));
   await expect(branch).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start branch" })).toBeDisabled();
-  await page.getByLabel("Why are you branching?", { exact: false }).fill("Try balanced class weights");
-  await page.getByLabel("Kind of change", { exact: false }).selectOption("family_include");
+  await expect(page.getByRole("button", { name: "Start the new run" })).toBeDisabled();
+  await page.getByLabel("Why are you trying this change?", { exact: false }).fill("Try balanced class weights");
+  await page.getByLabel("What to change", { exact: false }).selectOption("family_include");
   await page.getByRole("textbox", { name: "Model family" }).fill("no_such_family");
-  await page.getByRole("button", { name: "Start branch" }).click();
+  await page.getByRole("button", { name: "Start the new run" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "refused" }).first()).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "1-branch-refused");
 
   // A valid change set starts a branch and lands on its page.
-  await page.getByLabel("Kind of change", { exact: false }).selectOption("class_weighting");
-  await page.getByRole("combobox", { name: /^Mode/ }).selectOption("balanced");
+  await page.getByLabel("What to change", { exact: false }).selectOption("class_weighting");
+  await page.getByRole("combobox", { name: /^Class weights/ }).selectOption("balanced");
   await expect(page.getByLabel("Change set that will be sent")).toContainText("balanced");
-  await page.getByRole("button", { name: "Start branch" }).click();
+  await page.getByRole("button", { name: "Start the new run" }).click();
   await page.waitForURL((url) => /\/experiments\/[0-9a-f-]{36}$/.test(url.pathname) && !url.pathname.endsWith(rootId));
   const branchId = page.url().split("/experiments/")[1];
   expect(branchId).not.toBe(rootId);
@@ -94,6 +112,35 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await completed(page, branchId);
 
   // Compare from the list: tick both, open the comparison.
+  await page.goto(`/projects/${projectId}/experiments`);
+  const runs = page.getByRole("table", { name: "Runs" });
+  for (const header of ["Model", "What changed", "Cross-validation score ± spread", "Beats the baseline?", "Trust checks"]) await expect(runs.getByRole("columnheader", { name: header })).toBeVisible();
+  // The list shows the API's own numbers: the cross-validation score in natural units and the baseline answer.
+  const detail = await page.request.get(`/api/backend/v1/experiments/${rootId}`).then((r) => r.json()) as { metrics: { selection_metric: string; cv: Record<string, number>; holdout?: Record<string, number>; baseline_comparison: { beats_baseline: boolean } | null } };
+  const rootRow = runs.getByRole("row").filter({ hasText: "Started from scratch" });
+  await expect(rootRow).toContainText(detail.metrics.cv[detail.metrics.selection_metric].toFixed(2));
+  await expect(rootRow).toContainText(detail.metrics.baseline_comparison?.beats_baseline ? "Yes" : detail.metrics.baseline_comparison ? "No" : "Not recorded");
+  const listText = await page.locator("main").innerText();
+  for (const value of Object.values(detail.metrics.holdout ?? {})) if (typeof value === "number") expect(listText).not.toContain(value.toFixed(4));
+  await expect(runs).toContainText("Balanced class weights");
+  await expect(runs).toContainText("Based on Run 1");
+  await expect(runs).toContainText(/✓/);
+  await expect(runs).not.toContainText(/E\d|SP-\d|fingerprint/i);
+  await page.getByLabel("Show").selectOption("failed");
+  await expect(page.getByText("No run matches this filter.")).toBeVisible();
+  await page.getByLabel("Show").selectOption("all");
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    expect(await axeViolations(page)).toEqual([]);
+    await shot(page, `1b-list-${scheme}`);
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  // A phone-width screen does not scroll the page sideways (the table scrolls inside its own keyboard-focusable box).
+  await page.setViewportSize({ width: 390, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.goto(`/projects/${projectId}/experiments/${rootId}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`/projects/${projectId}/experiments`);
   await page.getByRole("checkbox", { name: /Try balanced class weights to compare/ }).check();
   await page.getByRole("checkbox", { name: /Select Run 1\b.* to compare/ }).check().catch(async () => {
@@ -104,7 +151,8 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await expect(page.getByText("Comparable.")).toBeVisible();
   const table = page.getByRole("table", { name: "Cross-validation metric comparison" });
   await expect(table).toBeVisible();
-  await expect(page.getByText("Cost", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Based on", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Balanced class weights/).first()).toBeVisible();
   const compared = await page.request.get(`/api/backend/v1/experiments/compare?ids=${rootId},${branchId}`).then((r) => r.json());
   expect(compared.split_plan_id).toBeTruthy();
   expect(await page.locator("main, body").first().innerText()).not.toMatch(/holdout_/i);
@@ -116,7 +164,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await page.emulateMedia({ colorScheme: "light" });
 
   // Accept the branch: it becomes the champion; one decision is recorded.
-  const decide = page.locator("section", { has: page.getByRole("heading", { name: "Accept Run A" }) }).first();
+  const decide = page.locator("section", { has: page.getByRole("heading", { name: /Use the model of .*Try balanced class weights/ }) }).first();
   await decide.getByRole("button", { name: /Put this model in use/ }).click();
   await decide.getByLabel("Why (saved with the change)").fill("Balanced weights improved recall on CV");
   await decide.getByRole("button", { name: "Put in use" }).click();

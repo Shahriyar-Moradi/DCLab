@@ -100,7 +100,7 @@ test("Model card: drivers, baseline, labelled final evaluation, risks, Markdown 
   await expect(final).toContainText("never used for selection");
   // Risks and the link to the experiment's Findings card.
   await expect(card.getByRole("heading", { name: "Known risks" })).toBeVisible();
-  await expect(card.getByRole("link", { name: /Findings card/ })).toHaveAttribute("href", `/projects/${projectId}/experiments/${experimentId}#findings`);
+  await expect(card.getByRole("link", { name: /Trust checks card/ })).toHaveAttribute("href", `/projects/${projectId}/experiments/${experimentId}#findings`);
   await expect(card.getByText("LLM used: no")).toBeVisible();
   await expect(card.getByRole("heading", { name: "Data and split" })).toBeVisible();
   await expect(card.getByText("counts only")).toBeVisible();

@@ -57,11 +57,18 @@ export function metricRows(items: CompareItem[], common: string[]): MetricRow[] 
 }
 
 /** Higher is better for every metric except errors and losses (used only to word a delta, never to choose). */
-const LOWER_IS_BETTER = /(^|_)(mae|rmse|mse|log_loss|brier|brier_score|gap|calibration_gap|median_absolute_error|mape|smape|loss|error)(_|$)/;
+/** Mirrors the backend's `LOWER_IS_BETTER` (engine/evaluation/metrics.py): the scores where a smaller number is better. */
+const LOWER_IS_BETTER = new Set(["mae", "mse", "rmse", "mape", "smape", "log_loss", "brier", "brier_score", "median_absolute_error", "calibration_gap"]);
+export const lowerIsBetter = (metric: string): boolean => LOWER_IS_BETTER.has(metric);
+/**
+ * The API stores a run's `selected_score` so that larger is always better: error scores are negated. This gives the number
+ * back in the metric's own units (RMSE 2.0 is stored as -2.0). Cross-validation values in `cv` are already natural.
+ */
+export const naturalScore = (metric: string | null | undefined, score: number): number => (metric && lowerIsBetter(metric) ? -score : score);
 export function deltaWording(metric: string, delta: number | null): string {
   if (delta === null) return "not comparable";
   if (delta === 0) return "no change";
-  const better = LOWER_IS_BETTER.test(metric) ? delta < 0 : delta > 0;
+  const better = lowerIsBetter(metric) ? delta < 0 : delta > 0;
   return better ? "better" : "worse";
 }
 
@@ -101,14 +108,14 @@ export function changeSetDiff(left: string[], right: string[]): { onlyLeft: stri
 
 /** The API's closed set of change kinds and the transform allowlist (a mirror: the API re-validates). */
 export const CHANGE_KINDS = [
-  { kind: "hyperparameter_override", label: "Hyperparameter override", help: "Fix named parameters of one model family, for example max_depth=4." },
-  { kind: "family_include", label: "Include a model family", help: "Add a model family to the search." },
-  { kind: "family_exclude", label: "Exclude a model family", help: "Drop a model family from the search. The dummy baselines always stay." },
-  { kind: "class_weighting", label: "Class weighting", help: "Weight classes: none, balanced or custom weights per class." },
-  { kind: "threshold_objective", label: "Threshold objective", help: "Constraints and error costs used to choose the decision threshold on CV." },
-  { kind: "metric_override", label: "Metric override", help: "Select on a different primary metric (a reason is required)." },
-  { kind: "feature_transform_add", label: "Add a column treatment", help: "Apply a transform to one column." },
-  { kind: "feature_transform_remove", label: "Remove a column treatment", help: "Undo a transform on one column." },
+  { kind: "hyperparameter_override", label: "Fix model settings", help: "Fix named settings of one model family, for example max_depth=4." },
+  { kind: "family_include", label: "Add a model family", help: "Also try one more model family." },
+  { kind: "family_exclude", label: "Drop a model family", help: "Stop trying one model family. The baselines always stay." },
+  { kind: "class_weighting", label: "Change class weights", help: "Give the rare answer more weight while the model learns: none, balanced or your own weights per class." },
+  { kind: "threshold_objective", label: "Change the threshold rule", help: "A rule (for example recall at least 0.80) and the cost of each kind of mistake, used to choose the threshold on cross-validation." },
+  { kind: "metric_override", label: "Rank models on a different score", help: "Choose models on another score (a reason is required)." },
+  { kind: "feature_transform_add", label: "Add a column treatment", help: "Apply one treatment to one column, for example leave it out or fill missing values." },
+  { kind: "feature_transform_remove", label: "Remove a column treatment", help: "Undo one treatment of one column." },
 ] as const;
 export type ChangeKind = (typeof CHANGE_KINDS)[number]["kind"];
 export const TRANSFORMS = ["drop_column", "keep", "impute_median", "impute_most_frequent", "datetime_extract"] as const;
@@ -221,10 +228,10 @@ export function branchProblem(error: unknown): PlainError {
     const reason = typeof details.reason === "string" ? details.reason : "";
     const where = typeof details.path === "string" ? details.path : "";
     const message = typeof body?.error?.message === "string" ? body.error.message : "";
-    return { title: "The API refused this change set", detail: [message, reason && `Reason: ${reason}`, where && `At: ${where}`].filter(Boolean).join(" "), fixable: true };
+    return { title: "This change was refused", detail: [message, reason && `Reason: ${reason}`, where && `At: ${where}`].filter(Boolean).join(" "), fixable: true };
   }
   if (code === "experiment_not_branchable" || (status === 409 && code.includes("branch"))) {
-    return { title: "This run cannot be branched yet", detail: typeof body?.error?.message === "string" ? body.error.message : "Only a completed run with a locked winner can be branched.", fixable: false };
+    return { title: "You cannot try a change on this run yet", detail: typeof body?.error?.message === "string" ? body.error.message : "Only a finished run with a chosen best model can be used as a starting point.", fixable: false };
   }
   return mapWizardError(error);
 }
@@ -242,7 +249,7 @@ export function mapActionError(error: unknown, noun: "champion" | "decision" | "
   }
   if (status === 428) return { title: "The page is out of date", detail: "Reload the page and try again.", fixable: false };
   if (code.includes("split_plan_mismatch") || code === "champion_split_plan_mismatch") {
-    return { title: "Not comparable with the model in use", detail: "This model was not tested on the same test design as the model in use, so its final test set is different rows. Branch from the run of the model in use to stay on the same design.", fixable: false };
+    return { title: "Not comparable with the model in use", detail: "This model was not tested on the same test design as the model in use, so its final test set is different rows. Try a change on the run of the model in use to stay on the same design.", fixable: false };
   }
   if (code.startsWith("champion_") || code === "ref_target_not_found") {
     return { title: "This model cannot be put in use yet", detail: message || "It needs a chosen best run with its final test, and its features must move with it.", fixable: false };

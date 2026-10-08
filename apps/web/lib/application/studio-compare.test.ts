@@ -39,7 +39,7 @@ test("duration and change-set lines", () => {
   assert.equal(durationText("2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z"), "10 min");
   assert.equal(durationText(null, "2026-01-01T00:00:30Z"), "—");
   const l = describeChanges({ changes: [{ kind: "family_exclude", family: "xgboost" }] });
-  assert.deepEqual(l, ["Exclude a model family: family xgboost"]);
+  assert.deepEqual(l, ["Drop a model family: family xgboost"]);
   const d = changeSetDiff(["a", "b"], ["b", "c"]);
   assert.deepEqual([d.onlyLeft, d.onlyRight, d.shared], [["a"], ["c"], ["b"]]);
 });
