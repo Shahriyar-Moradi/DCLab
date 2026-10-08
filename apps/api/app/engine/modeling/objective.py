@@ -208,20 +208,35 @@ def objective_from_dict(payload: Any, *, task_type: str | None = None) -> Object
     )
 
 
-def _rates_at(y: np.ndarray, scores: np.ndarray, thresholds: np.ndarray) -> dict[str, np.ndarray]:
-    """Confusion counts and threshold metrics for every candidate threshold at once."""
-    pred = scores[None, :] >= thresholds[:, None]
-    positives = y.astype(bool)[None, :]
-    tp = (pred & positives).sum(axis=1).astype(float)
-    fp = (pred & ~positives).sum(axis=1).astype(float)
-    fn = (~pred & positives).sum(axis=1).astype(float)
-    tn = (~pred & ~positives).sum(axis=1).astype(float)
+def confusion_counts(
+    y: np.ndarray, scores: np.ndarray, thresholds: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(tp, fp, fn, tn) as floats for every threshold: a row is flagged when its score is
+    >= the threshold (a NaN score never is). Counted on sorted scores (O(n log n)), the
+    same integers as comparing every row with every threshold."""
+
+    positives = np.asarray(y).astype(bool)
+    values = np.asarray(scores, dtype=float)
+    cuts = np.asarray(thresholds, dtype=float)
+
+    def flagged(part: np.ndarray) -> np.ndarray:
+        ordered = np.sort(part[~np.isnan(part)])
+        return (len(ordered) - np.searchsorted(ordered, cuts, side="left")).astype(float)
+
+    tp, fp = flagged(values[positives]), flagged(values[~positives])
+    return tp, fp, float(positives.sum()) - tp, float((~positives).sum()) - fp
+
+
+def rates_from_counts(
+    tp: np.ndarray, fp: np.ndarray, fn: np.ndarray, tn: np.ndarray, total: int
+) -> dict[str, np.ndarray]:
+    """Threshold metrics from confusion counts (``total`` = rows, at least 1)."""
+
     with np.errstate(divide="ignore", invalid="ignore"):
         precision = np.where(tp + fp > 0, tp / (tp + fp), 0.0)
         recall = np.where(tp + fn > 0, tp / (tp + fn), 0.0)
         specificity = np.where(tn + fp > 0, tn / (tn + fp), 0.0)
         f1 = np.where(precision + recall > 0, 2 * precision * recall / (precision + recall), 0.0)
-    total = max(len(y), 1)
     return {
         "tp": tp,
         "fp": fp,
@@ -234,6 +249,18 @@ def _rates_at(y: np.ndarray, scores: np.ndarray, thresholds: np.ndarray) -> dict
         "accuracy": (tp + tn) / total,
         "balanced_accuracy": (recall + specificity) / 2.0,
     }
+
+
+def _rates_at(y: np.ndarray, scores: np.ndarray, thresholds: np.ndarray) -> dict[str, np.ndarray]:
+    """Confusion counts and threshold metrics for every candidate threshold at once."""
+    return rates_from_counts(*confusion_counts(y, scores, thresholds), total=max(len(y), 1))
+
+
+def candidate_thresholds(scores: np.ndarray) -> np.ndarray:
+    """The decision-threshold candidates of a score vector (shared by the lock and the
+    P5.2-A operating curve: there is one threshold search)."""
+
+    return _candidate_thresholds(np.asarray(scores, dtype=float))
 
 
 def _candidate_thresholds(scores: np.ndarray) -> np.ndarray:
@@ -255,6 +282,49 @@ def constraint_status(rows: list[dict[str, Any]], key: str = "oof_satisfied") ->
     if any(value is None for value in values):
         return "not_verifiable"
     return "satisfied"
+
+
+def lock_goal(
+    rates: dict[str, np.ndarray], objective: Objective, primary_metric: str | None
+) -> tuple[np.ndarray, str, str, np.ndarray | None]:
+    """(goal to maximise, goal metric, source, total cost or None) of the threshold lock:
+    the expected cost with a cost matrix, else a threshold-dependent primary metric, else F1."""
+
+    tunable = any(item.metric in THRESHOLD_METRICS for item in objective.constraints)
+    if objective.has_cost_matrix:
+        cost = rates["fp"] * float(objective.cost_false_positive) + rates["fn"] * float(
+            objective.cost_false_negative
+        )
+        return -cost, "expected_cost", "cost_matrix", cost
+    if primary_metric in THRESHOLD_METRICS:
+        return rates[str(primary_metric)], str(primary_metric), "constraints" if tunable else "primary_metric", None
+    return rates["f1"], "f1", "constraints", None
+
+
+def select_index(
+    thresholds: np.ndarray,
+    rates: dict[str, np.ndarray],
+    constraints: list[MetricConstraint],
+    goal: np.ndarray,
+) -> tuple[int, bool, float]:
+    """The one threshold search (lock and operating-point optimizer): among the candidates
+    meeting every constraint (or, when none does, those with the smallest total shortfall)
+    the highest goal; ties go to the threshold closest to 0.5, then to the higher one.
+    Returns (index, whether any candidate meets every constraint, its total shortfall)."""
+
+    feasible = np.ones(len(thresholds), dtype=bool)
+    shortfall = np.zeros(len(thresholds), dtype=float)
+    for item in constraints:
+        observed = rates[item.metric]
+        gap = (item.value - observed) if item.op == ">=" else (observed - item.value)
+        feasible &= gap <= 1e-12
+        shortfall += np.clip(gap, 0.0, None)
+    closeness = -np.abs(thresholds - DEFAULT_THRESHOLD)
+    any_feasible = bool(feasible.any())
+    pool = np.flatnonzero(feasible) if any_feasible else np.flatnonzero(np.isclose(shortfall, shortfall.min()))
+    order = np.lexsort((closeness[pool], goal[pool]))
+    index = int(pool[order[-1]])
+    return index, any_feasible, float(shortfall[index])
 
 
 def select_decision_threshold(
@@ -297,33 +367,12 @@ def select_decision_threshold(
     if requested and len(y) and len(np.unique(y)) == 2:
         thresholds = _candidate_thresholds(scores)
         rates = _rates_at(y, scores, thresholds)
-        feasible = np.ones(len(thresholds), dtype=bool)
-        shortfall = np.zeros(len(thresholds), dtype=float)
-        for item in tunable:
-            observed = rates[item.metric]
-            gap = (item.value - observed) if item.op == ">=" else (observed - item.value)
-            feasible &= gap <= 1e-12
-            shortfall += np.clip(gap, 0.0, None)
-        closeness = -np.abs(thresholds - DEFAULT_THRESHOLD)
-        cost = None
-        if objective.has_cost_matrix:
-            cost = rates["fp"] * float(objective.cost_false_positive) + rates["fn"] * float(
-                objective.cost_false_negative
-            )
-            goal, goal_metric, source = -cost, "expected_cost", "cost_matrix"
-        elif primary_tunable:
-            goal, goal_metric = rates[str(primary_metric)], str(primary_metric)
-            source = "constraints" if tunable else "primary_metric"
-        else:
-            goal, goal_metric, source = rates["f1"], "f1", "constraints"
-        if feasible.any():
-            pool = np.flatnonzero(feasible)
+        goal, goal_metric, source, cost = lock_goal(rates, objective, primary_metric)
+        index, any_feasible, _shortfall = select_index(thresholds, rates, tunable, goal)
+        if any_feasible:
             threshold_status = "satisfied" if tunable else "not_requested"
         else:
-            pool = np.flatnonzero(np.isclose(shortfall, shortfall.min()))
             threshold_status = "unsatisfiable"
-        order = np.lexsort((closeness[pool], goal[pool]))
-        index = int(pool[order[-1]])
         verb = "minimises expected cost" if source == "cost_matrix" else f"maximises {goal_metric}"
         decision.update(
             {

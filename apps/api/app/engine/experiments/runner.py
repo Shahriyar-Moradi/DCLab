@@ -465,6 +465,49 @@ def _tuning_axes(
     return None, None
 
 
+def _lock_rows(
+    oof: tuple[list[np.ndarray], list[np.ndarray]] | None, last_fold_only: bool
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """The out-of-fold folds the threshold lock uses: every validation fold, or only the
+    most recent one under TimeSeriesSplit."""
+
+    fold_index = list(oof[0]) if oof else []
+    fold_scores = list(oof[1]) if oof else []
+    if last_fold_only and fold_index:
+        fold_index, fold_scores = fold_index[-1:], fold_scores[-1:]
+    return fold_index, fold_scores
+
+
+def _winner_operating_curve(
+    task_type: str,
+    winner: dict[str, Any],
+    oof: tuple[list[np.ndarray], list[np.ndarray]] | None,
+    y_pool: np.ndarray,
+    *,
+    last_fold_only: bool,
+) -> dict[str, Any] | None:
+    """P5.2-A: the winner's out-of-fold operating curve on the threshold lock's own rows
+    (training pool only), built before the holdout is scored. Binary only. Advisory: an
+    error is logged and stored as ``not_available`` / ``curve_failed``; it never fails the run."""
+
+    if task_type != "binary":
+        return None
+    from app.engine.modeling.operating_points import build_operating_curve, curve_failed
+
+    oof_folds = "last_fold" if last_fold_only else "all_folds"
+    try:
+        fold_index, fold_scores = _lock_rows(oof, last_fold_only)
+        index = np.concatenate(fold_index) if fold_index else np.asarray([], dtype=int)
+        scores = np.concatenate(fold_scores) if fold_scores else np.asarray([], dtype=float)
+        every_fold = [(y_pool[idx], fold_score) for idx, fold_score in zip(oof[0], oof[1])] if oof else []
+        return build_operating_curve(
+            y_pool[index], scores, every_fold, oof_folds=oof_folds, candidate_id=winner.get("candidate_id"),
+        )
+    except Exception:  # noqa: BLE001 - diagnostics never fail the run
+        logger.exception("operating curve failed for candidate %s", winner.get("candidate_id"))
+        return curve_failed(oof_folds=oof_folds, candidate_id=winner.get("candidate_id"))
+
+
 def _lock_decision_threshold(
     task_type: str,
     winner: dict[str, Any],
@@ -483,10 +526,7 @@ def _lock_decision_threshold(
     the most recent validation fold is used.
     """
     cv_metrics = dict(winner.get("cv_mean") or {})
-    fold_index = list(oof[0]) if oof else []
-    fold_scores = list(oof[1]) if oof else []
-    if last_fold_only and fold_index:
-        fold_index, fold_scores = fold_index[-1:], fold_scores[-1:]
+    fold_index, fold_scores = _lock_rows(oof, last_fold_only)
     index = np.concatenate(fold_index) if fold_index else np.asarray([], dtype=int)
     if task_type == "binary":
         scores = np.concatenate(fold_scores) if fold_scores else np.asarray([], dtype=float)
@@ -1420,6 +1460,7 @@ def _run_open_ingest_candidates(
     parsed_objective = objective_from_dict(objective, task_type=task.task_type)
     decision_threshold: dict[str, Any] | None = None
     oof_summary: dict[str, Any] | None = None
+    operating_curve: dict[str, Any] | None = None
     threshold = DEFAULT_THRESHOLD
     if best_single is not None:
         oof_summary = _winner_oof_evidence(
@@ -1444,6 +1485,14 @@ def _run_open_ingest_candidates(
         if decision_threshold.get("value") is not None:
             threshold = float(decision_threshold["value"])
         selection["decision_threshold"] = decision_threshold.get("value")
+        # P5.2-A: the same out-of-fold rows at the same candidate thresholds; before the holdout.
+        operating_curve = _winner_operating_curve(
+            task.task_type,
+            best_single,
+            oof_scores.get(best_single["candidate_id"]),
+            y_pool,
+            last_fold_only=validation_plan.strategy == _TIME_SERIES_SPLIT,
+        )
         _emit_event(
             on_event,
             "decision_threshold_locked",
@@ -1584,6 +1633,7 @@ def _run_open_ingest_candidates(
         "decision_threshold": decision_threshold,
         "feature_importance": feature_importance,
         "oof_evidence": oof_summary,
+        "operating_curve": operating_curve,
     }
 
 
@@ -1835,6 +1885,8 @@ def _run_open_ingest_experiment(
         "feature_importance": outcome.get("feature_importance"),
         # P5.1-A: aggregates of the winner's CV validation-row predictions (no holdout).
         "oof_evidence": outcome.get("oof_evidence"),
+        # P5.2-A: the winner's out-of-fold operating curve (aggregate counts; no rows, no scores).
+        "operating_curve": outcome.get("operating_curve"),
     }
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")

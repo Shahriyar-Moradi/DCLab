@@ -1,5 +1,6 @@
-"""The catalog's tool definitions: the 15 read tools MCP registers (incl. ``get_impact``, ``list_proposals``
-and the MCP-only ``accept_proposal`` hand-off) and the 7 write tools (proposals)."""
+"""The catalog's tool definitions: the 16 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
+the MCP-only ``get_operating_points`` (P5.2-A) and the MCP-only ``accept_proposal`` hand-off) and the 7 write
+tools (proposals)."""
 
 from __future__ import annotations
 
@@ -76,6 +77,13 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           "plain-language message and the training-side numbers behind it.", r.ExperimentInput,
           ("GET /v1/experiments/{experiment_id}/findings",),
           (f"{_EXP}.experiment_findings",), r._findings_fetch, r._findings_shape, aggregates=True),
+    _read("get_operating_points", "Operating points of a binary experiment, all from the locked winner's "
+          "out-of-fold predictions: the threshold curve summary, up to 20 Pareto points over precision and recall "
+          "(and expected cost) with 95% intervals and fold spread, the locked threshold and the chosen operating "
+          "point with its reason. Never a final-evaluation value; choosing a point is a person's act in DCLab "
+          "Studio.", r.ExperimentInput, ("GET /v1/experiments/{experiment_id}/operating-points",),
+          ("app.services.operating_point_service.operating_points_read",), r._operating_points_fetch,
+          r._operating_points_shape, surfaces=frozenset({"mcp"}), aggregates=True),
     _read("list_decisions", "Append-only decision records of a project, newest first (next_cursor pages).",
           r.ListDecisionsInput, ("GET /v1/projects/{project_id}/decisions",),
           ("app.services.decision_record_service.list_decisions",), r._decisions_fetch, r._decisions_shape,

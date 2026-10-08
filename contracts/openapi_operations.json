@@ -151,6 +151,8 @@
   "POST /v1/experiments/{experiment_id}/cancel",
   "GET /v1/experiments/{experiment_id}/code",
   "GET /v1/experiments/{experiment_id}/findings",
+  "POST /v1/experiments/{experiment_id}/operating-point",
+  "GET /v1/experiments/{experiment_id}/operating-points",
   "GET /v1/governance",
   "POST /v1/governance/policy",
   "POST /v1/governance/policy/{proposal_id}/accept",

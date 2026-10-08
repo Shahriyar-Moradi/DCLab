@@ -824,6 +824,58 @@
         "successSchema": "ExperimentFindingsRead"
       }
     },
+    "/v1/experiments/{experiment_id}/operating-point": {
+      "POST": {
+        "operationId": "choose_operating_point_v1_v1_experiments__experiment_id__operating_point_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "OperatingPointChoiceRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatingPointChoiceRead"
+      }
+    },
+    "/v1/experiments/{experiment_id}/operating-points": {
+      "GET": {
+        "operationId": "read_operating_points_v1_experiments__experiment_id__operating_points_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatingPointsRead"
+      }
+    },
     "/v1/governance": {
       "GET": {
         "operationId": "read_governance_v1_governance_get",

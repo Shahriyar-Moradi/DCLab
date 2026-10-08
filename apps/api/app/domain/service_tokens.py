@@ -76,6 +76,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/experiments/{experiment_id}",
             "/v1/experiments/{experiment_id}/code",
             "/v1/experiments/{experiment_id}/findings",
+            # P5.2-A: out-of-fold operating points only (no final-evaluation figure at any point).
+            "/v1/experiments/{experiment_id}/operating-points",
             "/v1/decisions/{decision_id}",
             "/v1/model-versions/{model_version_id}",
             "/v1/model-versions/{model_version_id}/card",
@@ -122,6 +124,9 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/decisions/{decision_id}/reject"),
         ("POST", "/v1/decisions/{decision_id}/supersede"),
         ("POST", "/v1/projects/{project_id}/refs/{ref_kind}"),
+        # P5.2-A: choosing an operating point records a person's decision (tokens: 403
+        # service_token_not_permitted; the route refuses any token again as human_session_required).
+        ("POST", "/v1/experiments/{experiment_id}/operating-point"),
         # P6.9-A: a split confirmation is a person's answer (ADR 0008 §2).
         ("POST", "/v1/execution-requests/{request_id}/split-confirmation"),
         # P6.6-A: deciding a proposal is a person's act (403 human_session_required for any bearer).

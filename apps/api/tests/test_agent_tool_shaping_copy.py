@@ -43,6 +43,7 @@ from app.domain.governance_console import GovernanceRead
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.model_card import ModelCardRead
+from app.domain.operating_points import OperatingPointsRead
 from app.domain.project_graph import NodeImpactRead, ProjectGraphRead
 from app.domain.proposal_reviews import ProposalPage
 from app.domain.reproducibility import ArtifactRead
@@ -118,6 +119,9 @@ class CorpusReads:
 
     def findings(self, eid):
         return self._get(f"/v1/experiments/{eid}/findings", ExperimentFindingsRead)
+
+    def operating_points(self, eid):
+        return self._get(f"/v1/experiments/{eid}/operating-points", OperatingPointsRead)
 
     def decisions(self, pid, **filters):
         return self._get(f"/v1/projects/{pid}/decisions", DecisionRecordPage)
@@ -221,6 +225,8 @@ def _adversarial(corpus: dict) -> dict:
         record["evidence_refs"] = [*record.get("evidence_refs", []),
                                    {"kind": "model_version", "id": ids["model_version"],
                                     "key": f"model_version:{ids['model_version']}", "scope": "final_holdout"}]
+    points = r[f"GET /v1/experiments/{ids['root']}/operating-points"]  # a person's reason is data
+    points["chosen"]["rationale"] = f"{INJECTION} {SECRET} " + points["chosen"]["rationale"]
     for item in r["GET /v1/proposals"]["items"]:  # an agent's payload / arguments / text are data
         item["payload"] = {**item["payload"], **leak}
         item["tool_arguments"] = None if item["tool_arguments"] is None else {**item["tool_arguments"], **leak}
@@ -327,6 +333,7 @@ def test_record_corpus(client, db_session, st, tmp_path):  # noqa: F811
         f"/v1/projects/{pid}/decisions": "?limit=20", f"/v1/decisions/{t.decision}": None,
         f"/v1/model-versions/{t.root_mv}": None, f"/v1/model-versions/{t.root_mv}/card": None,
         f"/v1/predictions/{t.prediction}": None, f"/v1/nodes/experiment/{r}/impact": None,
+        f"/v1/experiments/{r}/operating-points": None,
     }  # no model build of the root run: get_evidence on it covers "no build"
     responses = {}
     for key, query in paths.items():
@@ -335,6 +342,8 @@ def test_record_corpus(client, db_session, st, tmp_path):  # noqa: F811
         responses[f"GET {key}"] = got.json()
     code = responses[f"GET /v1/experiments/{b}/code"]
     code["notebook"]["source"] = code["notebook"]["source"][:2000]  # no scenario reads the notebook
+    curve = responses[f"GET /v1/experiments/{r}/operating-points"]
+    curve["points"] = curve["points"][:3]  # no tool reads the full curve
     for stage in responses[f"GET /v1/model-builds/{b}"]["stages"]:  # fields no tool reads, trimmed for size
         stage.update(evidence_references=[], related_candidate_ids=[], related_fold_ids=[], generated_code=None)
         if stage["key"] != "final_holdout":  # its configuration carries the holdout metrics tools must drop

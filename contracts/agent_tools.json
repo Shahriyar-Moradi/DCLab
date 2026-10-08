@@ -627,6 +627,46 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
+      "description": "Operating points of a binary experiment, all from the locked winner's out-of-fold predictions: the threshold curve summary, up to 20 Pareto points over precision and recall (and expected cost) with 95% intervals and fold spread, the locked threshold and the chosen operating point with its reason. Never a final-evaluation value; choosing a point is a person's act in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "experiment_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id"
+        ],
+        "title": "ExperimentInput",
+        "type": "object"
+      },
+      "name": "get_operating_points",
+      "notes": [],
+      "operations": [
+        "GET /v1/experiments/{experiment_id}/operating-points"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.operating_point_service.operating_points_read"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
       "description": "Batch prediction: status, row counts, feature-contract check (required / missing / ignored columns), error code; never predicted rows or storage locations.",
       "effect": "read",
       "input_schema": {

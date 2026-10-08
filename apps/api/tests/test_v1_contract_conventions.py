@@ -82,6 +82,8 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"target_id": UUID_ZERO, "rationale": "x", "evidence_refs": [{"kind": "experiment", "id": UUID_ZERO}]}
         elif path.endswith("/predictions"):
             body = {"dataset_id": UUID_ZERO}
+        elif path.endswith("/operating-point"):
+            body = {"threshold": 0.5, "reason": "x"}
         kwargs.setdefault("json", body)
         # P3.1-B commands require a key; supply one so the resource checks answer.
         kwargs["headers"] = {"Idempotency-Key": f"conv-{uuid4().hex}", **(kwargs.get("headers") or {})}
@@ -146,6 +148,8 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/experiments/compare",
         "GET /v1/experiments/{experiment_id}",
         "GET /v1/experiments/{experiment_id}/findings",
+        "GET /v1/experiments/{experiment_id}/operating-points",
+        "POST /v1/experiments/{experiment_id}/operating-point",
         "POST /v1/experiments/{experiment_id}/branches",
         "POST /v1/experiments/{experiment_id}/cancel",
         "POST /v1/projects/{project_id}/decisions",

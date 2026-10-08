@@ -197,6 +197,25 @@ def test_experiment_findings_table_json_and_old_runs(tmp_path):
     assert code == 0 and "no trust checks recorded" in out
 
 
+def test_experiment_operating_points_table_json_and_not_available(tmp_path):
+    point = {"threshold": 0.31, "tp": 30, "fp": 20, "fn": 10, "tn": 140, "precision": 0.6, "recall": 0.75,
+             "specificity": 0.875, "f1": 0.667, "accuracy": 0.85, "balanced_accuracy": 0.81, "flagged_share": 0.25,
+             "expected_cost": None, "what_this_means": "At threshold 0.31 the model flags 25% of rows"}
+    payload = {"experiment_id": EID, "status": "available", "min_class_rows": 20, "tie_break": "t",
+               "points": [point], "pareto": [point], "locked": {"threshold": 0.5}}
+    handler = lambda r: httpx.Response(200, json=payload)  # noqa: E731
+    code, out, _ = _run(["experiments", "operating-points", EID], handler, tmp_path, env=_env())
+    assert code == 0 and out.splitlines()[0].split()[:3] == ["THRESHOLD", "PRECISION", "RECALL"]
+    assert "0.31" in out
+    code, out, _ = _run(["experiments", "operating-points", EID, "--json"], handler, tmp_path, env=_env())
+    assert code == 0 and json.loads(out)["locked"]["threshold"] == 0.5
+    old = {"experiment_id": EID, "status": "not_available", "reason": "no_operating_curve", "min_class_rows": 20,
+           "tie_break": "t"}
+    code, out, _ = _run(["experiments", "operating-points", EID], lambda r: httpx.Response(200, json=old), tmp_path,
+                        env=_env())
+    assert code == 0 and "not_available (no_operating_curve)" in out
+
+
 def test_branch_requires_one_change_source_and_valid_json(tmp_path):
     handler = lambda r: httpx.Response(200, json={})  # noqa: E731
     code, _, err = _run(["experiments", "branch", EID, "--intent", "x"], handler, tmp_path, env=_env())

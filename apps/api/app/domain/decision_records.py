@@ -36,6 +36,7 @@ DECISION_TYPES = (
     "proposal_rejected",
     "decision_point_resolved",
     "proposal_reverted",
+    "operating_point_chosen",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
 DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
@@ -47,9 +48,12 @@ DECISION_CHAMPION_PROMOTED = "champion_promoted"
 RULE_ONLY_DECISION_TYPES = frozenset(
     {DECISION_WINNER_LOCKED, DECISION_SPLIT_PLAN_CREATED, DECISION_REF_INITIALIZED}
 )
-# Written only by their owning service (the ProblemSpec lock path), never via
-# the generic ``record()``.
-SERVICE_ONLY_DECISION_TYPES = RULE_ONLY_DECISION_TYPES | {"problem_spec_locked"}
+# P5.2-A: a person's choice of a binary run's operating point (threshold on its stored
+# out-of-fold curve), written and corrected only by ``operating_point_service``.
+DECISION_OPERATING_POINT_CHOSEN = "operating_point_chosen"
+# Written only by their owning service (the ProblemSpec lock path, the operating-point
+# service), never via the generic ``record()`` / ``supersede()``.
+SERVICE_ONLY_DECISION_TYPES = RULE_ONLY_DECISION_TYPES | {"problem_spec_locked", DECISION_OPERATING_POINT_CHOSEN}
 # Phase 6 reserves these for agent proposals and AI decision points (ADR 0008 §7);
 # only their owning services (P6.6-A and later) write them.
 RESERVED_DECISION_TYPES = frozenset(
@@ -321,6 +325,7 @@ DecisionType = Literal[
     "proposal_rejected",
     "decision_point_resolved",
     "proposal_reverted",
+    "operating_point_chosen",
 ]
 
 _UNTRUSTED = (

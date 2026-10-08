@@ -330,6 +330,17 @@ def _exp_findings(c: Ctx, a: argparse.Namespace) -> None:
         c[1].emit(result, table=("check", "status", "severity", "message"), rows=result.checks)
 
 
+def _exp_operating_points(c: Ctx, a: argparse.Namespace) -> None:
+    result = c[0].experiments.operating_points(a.experiment_id)
+    if c[1].as_json:
+        c[1].emit(result)
+    elif result.status != "available":
+        c[1].text(f"experiment {result.experiment_id}: operating points {result.status} ({result.reason})")
+    else:
+        c[1].emit(result, table=("threshold", "precision", "recall", "flagged_share", "f1", "expected_cost"),
+                  rows=result.pareto)
+
+
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
@@ -511,6 +522,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", "-o", help="write the source to this file")
     leaf(exps, "findings", _exp_findings, help="trust checks of a run (leakage, overfit, duplicates, "
          "imbalance, too-good score)").add_argument("experiment_id")
+    leaf(exps, "operating-points", _exp_operating_points, help="out-of-fold operating points of a binary run "
+         "(Pareto points; --json for the full curve, locked and chosen points)").add_argument("experiment_id")
     leaf(exps, "cancel", _exp_cancel, key=True).add_argument("experiment_id")
 
     models = top.add_parser("models", help="model versions").add_subparsers(dest="cmd", required=True, parser_class=_Parser)

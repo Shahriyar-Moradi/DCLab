@@ -910,6 +910,121 @@ class ExperimentFindings(BaseModel):
     summary: ExperimentFindingsSummary = Field(default_factory=ExperimentFindingsSummary)
 
 
+class OperatingInterval(BaseModel):
+    low: float
+    high: float
+
+
+class OperatingFoldSpread(BaseModel):
+    folds: int
+    recall_folds: int
+    precision_folds: int
+    min_fold_positives: int
+    min_fold_flagged: int
+    min_denominator: int
+    includes_folds_outside_curve: bool
+    recall_min: float | None = None
+    recall_max: float | None = None
+    precision_min: float | None = None
+    precision_max: float | None = None
+
+
+class OperatingPoint(BaseModel):
+    """One candidate threshold on the out-of-fold curve (flagged = score >= threshold); the
+    detail fields are set on Pareto, locked and chosen points."""
+
+    threshold: float
+    tp: int
+    fp: int
+    fn: int
+    tn: int
+    precision: float
+    recall: float
+    specificity: float
+    f1: float
+    accuracy: float
+    balanced_accuracy: float
+    flagged_share: float
+    expected_cost: float | None = None
+    precision_interval: OperatingInterval | None = None
+    recall_interval: OperatingInterval | None = None
+    fold_spread: OperatingFoldSpread | None = None
+    what_this_means: str | None = None
+
+
+class OperatingCostMatrix(BaseModel):
+    false_positive: float
+    false_negative: float
+
+
+class LockedOperatingPoint(BaseModel):
+    threshold: float | None = None
+    source: str | None = None
+    constraint_status: str | None = None
+    reproduced_from_curve: bool | None = None
+    point: OperatingPoint | None = None
+    note: str | None = None
+
+
+class ChosenOperatingPoint(BaseModel):
+    """A person's choice (a decision record); ``rationale`` is user-authored text."""
+
+    decision_id: UUID
+    threshold: float
+    method: str
+    objective: dict[str, Any] | None = None
+    rationale: str
+    chosen_by_user_id: UUID | None = None
+    recorded_at: datetime
+    supersedes_id: UUID | None = None
+    point: OperatingPoint | None = None
+    curve_changed: bool | None = None
+    applies_to_scoring: bool = False
+
+
+class OperatingScoring(BaseModel):
+    threshold: float | None = None
+    uses: str
+    note: str | None = None
+
+
+class OperatingPoints(BaseModel):
+    """Operating points of a binary run (P5.2-A): out-of-fold figures only (``outcome_scope``
+    ``cv``); ``status`` available | not_applicable | not_available | not_evaluated."""
+
+    experiment_id: UUID
+    status: str
+    reason: str | None = None
+    message: str | None = None
+    task_type: str | None = None
+    version: str | None = None
+    outcome_scope: str = "cv"
+    basis: str = "out_of_fold_cv"
+    oof_folds: str | None = None
+    rows: int | None = None
+    positives: int | None = None
+    negatives: int | None = None
+    min_class_rows: int
+    cost_matrix: OperatingCostMatrix | None = None
+    points: list[OperatingPoint] = Field(default_factory=list)
+    pareto: list[OperatingPoint] = Field(default_factory=list)
+    locked: LockedOperatingPoint | None = None
+    chosen: ChosenOperatingPoint | None = None
+    scoring: OperatingScoring | None = None
+    tie_break: str
+    optimism_note: str | None = None
+    final_evaluation_note: str | None = None
+
+
+class OperatingPointChoice(_Versioned):
+    """The decision a person's operating-point choice recorded (P5.2-A)."""
+
+    experiment_id: UUID
+    chosen: ChosenOperatingPoint
+    decision: DecisionRecord
+    scoring: OperatingScoring
+
+
 class ExperimentLineage(BaseModel):
     parent_experiment_id: UUID | None = None
     split_plan_id: UUID | None = None

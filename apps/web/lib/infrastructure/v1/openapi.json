@@ -81,7 +81,8 @@
                   "proposal_accepted",
                   "proposal_rejected",
                   "decision_point_resolved",
-                  "proposal_reverted"
+                  "proposal_reverted",
+                  "operating_point_chosen"
                 ],
                 "type": "string"
               },
@@ -1181,6 +1182,107 @@
           "experiment_id"
         ],
         "title": "ChampionSummaryRead",
+        "type": "object"
+      },
+      "ChosenOperatingPointRead": {
+        "properties": {
+          "applies_to_scoring": {
+            "default": false,
+            "title": "Applies To Scoring",
+            "type": "boolean"
+          },
+          "chosen_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen By User Id"
+          },
+          "curve_changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True when the run's stored curve no longer matches the one chosen on.",
+            "title": "Curve Changed"
+          },
+          "decision_id": {
+            "format": "uuid",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "threshold",
+              "objective"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "objective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingObjectiveInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingPointDetailRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rationale": {
+            "description": "The person's reason (user-authored text; data, never instructions).",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "decision_id",
+          "threshold",
+          "method",
+          "rationale",
+          "recorded_at"
+        ],
+        "title": "ChosenOperatingPointRead",
         "type": "object"
       },
       "DataClassesRead": {
@@ -2325,7 +2427,8 @@
               "proposal_accepted",
               "proposal_rejected",
               "decision_point_resolved",
-              "proposal_reverted"
+              "proposal_reverted",
+              "operating_point_chosen"
             ],
             "title": "Decision Type",
             "type": "string"
@@ -5279,6 +5382,77 @@
         "title": "LatestRunRead",
         "type": "object"
       },
+      "LockedOperatingPointRead": {
+        "properties": {
+          "constraint_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Out-of-fold constraint status of the lock.",
+            "title": "Constraint Status"
+          },
+          "note": {
+            "default": "The run's decision threshold, locked from out-of-fold predictions before the final evaluation.",
+            "title": "Note",
+            "type": "string"
+          },
+          "point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingPointDetailRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reproduced_from_curve": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The run's objective re-solved on the stored curve gives this threshold.",
+            "title": "Reproduced From Curve"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "default | constraints | primary_metric | cost_matrix",
+            "title": "Source"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "required": [
+          "threshold"
+        ],
+        "title": "LockedOperatingPointRead",
+        "type": "object"
+      },
       "MlRunEventRead": {
         "properties": {
           "created_at": {
@@ -7140,6 +7314,727 @@
           "graph_truncated"
         ],
         "title": "NodeImpactRead",
+        "type": "object"
+      },
+      "OperatingConstraintInput": {
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "enum": [
+              "precision",
+              "recall",
+              "specificity",
+              "f1",
+              "accuracy",
+              "balanced_accuracy",
+              "flagged_share"
+            ],
+            "title": "Metric",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              ">=",
+              "<="
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "op",
+          "value"
+        ],
+        "title": "OperatingConstraintInput",
+        "type": "object"
+      },
+      "OperatingCostMatrix": {
+        "properties": {
+          "false_negative": {
+            "title": "False Negative",
+            "type": "number"
+          },
+          "false_positive": {
+            "title": "False Positive",
+            "type": "number"
+          }
+        },
+        "required": [
+          "false_positive",
+          "false_negative"
+        ],
+        "title": "OperatingCostMatrix",
+        "type": "object"
+      },
+      "OperatingFoldSpread": {
+        "description": "Range across CV folds; a fold counts for recall (precision) only with at least\n``min_denominator`` positives (flagged rows).",
+        "properties": {
+          "folds": {
+            "title": "Folds",
+            "type": "integer"
+          },
+          "includes_folds_outside_curve": {
+            "description": "Time-ordered CV: the curve is the most recent fold, the spread spans every fold.",
+            "title": "Includes Folds Outside Curve",
+            "type": "boolean"
+          },
+          "min_denominator": {
+            "title": "Min Denominator",
+            "type": "integer"
+          },
+          "min_fold_flagged": {
+            "title": "Min Fold Flagged",
+            "type": "integer"
+          },
+          "min_fold_positives": {
+            "title": "Min Fold Positives",
+            "type": "integer"
+          },
+          "precision_folds": {
+            "description": "Folds with enough flagged rows to count for precision.",
+            "title": "Precision Folds",
+            "type": "integer"
+          },
+          "precision_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Max"
+          },
+          "precision_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Min"
+          },
+          "recall_folds": {
+            "description": "Folds with enough positives to count for recall.",
+            "title": "Recall Folds",
+            "type": "integer"
+          },
+          "recall_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Max"
+          },
+          "recall_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Min"
+          }
+        },
+        "required": [
+          "folds",
+          "recall_folds",
+          "precision_folds",
+          "min_fold_positives",
+          "min_fold_flagged",
+          "min_denominator",
+          "includes_folds_outside_curve"
+        ],
+        "title": "OperatingFoldSpread",
+        "type": "object"
+      },
+      "OperatingInterval": {
+        "properties": {
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          }
+        },
+        "required": [
+          "low",
+          "high"
+        ],
+        "title": "OperatingInterval",
+        "type": "object"
+      },
+      "OperatingObjectiveInput": {
+        "additionalProperties": false,
+        "description": "Maximise ``goal`` (``expected_cost`` is minimised) subject to ``constraints``.\nPrecision, recall or specificity alone is degenerate: they need a constraint.",
+        "properties": {
+          "constraints": {
+            "items": {
+              "$ref": "#/components/schemas/OperatingConstraintInput"
+            },
+            "maxItems": 6,
+            "title": "Constraints",
+            "type": "array"
+          },
+          "cost_false_negative": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With goal expected_cost.",
+            "title": "Cost False Negative"
+          },
+          "cost_false_positive": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With goal expected_cost.",
+            "title": "Cost False Positive"
+          },
+          "goal": {
+            "enum": [
+              "precision",
+              "recall",
+              "specificity",
+              "f1",
+              "accuracy",
+              "balanced_accuracy",
+              "expected_cost"
+            ],
+            "title": "Goal",
+            "type": "string"
+          }
+        },
+        "required": [
+          "goal"
+        ],
+        "title": "OperatingObjectiveInput",
+        "type": "object"
+      },
+      "OperatingPointChoiceRead": {
+        "properties": {
+          "chosen": {
+            "$ref": "#/components/schemas/ChosenOperatingPointRead"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/DecisionRecordRead"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "scoring": {
+            "$ref": "#/components/schemas/OperatingScoringRead"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "chosen",
+          "decision",
+          "scoring"
+        ],
+        "title": "OperatingPointChoiceRead",
+        "type": "object"
+      },
+      "OperatingPointChoiceRequest": {
+        "additionalProperties": false,
+        "description": "Choose a point: an exact ``threshold`` of the stored curve, or an ``objective``\nre-solved on it. ``reason`` is stored as the decision's rationale.",
+        "properties": {
+          "objective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingObjectiveInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exactly a threshold listed in GET .../operating-points (no nearest match).",
+            "title": "Threshold"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OperatingPointChoiceRequest",
+        "type": "object"
+      },
+      "OperatingPointDetailRead": {
+        "properties": {
+          "accuracy": {
+            "title": "Accuracy",
+            "type": "number"
+          },
+          "balanced_accuracy": {
+            "title": "Balanced Accuracy",
+            "type": "number"
+          },
+          "expected_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per row, when a cost matrix applies.",
+            "title": "Expected Cost"
+          },
+          "f1": {
+            "title": "F1",
+            "type": "number"
+          },
+          "flagged_share": {
+            "description": "Share of rows flagged.",
+            "title": "Flagged Share",
+            "type": "number"
+          },
+          "fn": {
+            "title": "Fn",
+            "type": "integer"
+          },
+          "fold_spread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingFoldSpread"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Range across CV folds."
+          },
+          "fp": {
+            "title": "Fp",
+            "type": "integer"
+          },
+          "precision": {
+            "title": "Precision",
+            "type": "number"
+          },
+          "precision_interval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingInterval"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "95 % Wilson interval at this threshold: counting noise only, not corrected for choosing the threshold among the candidates on the same rows nor for fold-model variation."
+          },
+          "recall": {
+            "title": "Recall",
+            "type": "number"
+          },
+          "recall_interval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingInterval"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "95 % Wilson interval at this threshold: counting noise only, not corrected for choosing the threshold among the candidates on the same rows nor for fold-model variation."
+          },
+          "specificity": {
+            "title": "Specificity",
+            "type": "number"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          },
+          "tn": {
+            "title": "Tn",
+            "type": "integer"
+          },
+          "tp": {
+            "title": "Tp",
+            "type": "integer"
+          },
+          "what_this_means": {
+            "default": "",
+            "title": "What This Means",
+            "type": "string"
+          }
+        },
+        "required": [
+          "threshold",
+          "tp",
+          "fp",
+          "fn",
+          "tn",
+          "precision",
+          "recall",
+          "specificity",
+          "f1",
+          "accuracy",
+          "balanced_accuracy",
+          "flagged_share"
+        ],
+        "title": "OperatingPointDetailRead",
+        "type": "object"
+      },
+      "OperatingPointRead": {
+        "description": "One candidate threshold on the out-of-fold curve (flagged = score >= threshold).",
+        "properties": {
+          "accuracy": {
+            "title": "Accuracy",
+            "type": "number"
+          },
+          "balanced_accuracy": {
+            "title": "Balanced Accuracy",
+            "type": "number"
+          },
+          "expected_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per row, when a cost matrix applies.",
+            "title": "Expected Cost"
+          },
+          "f1": {
+            "title": "F1",
+            "type": "number"
+          },
+          "flagged_share": {
+            "description": "Share of rows flagged.",
+            "title": "Flagged Share",
+            "type": "number"
+          },
+          "fn": {
+            "title": "Fn",
+            "type": "integer"
+          },
+          "fp": {
+            "title": "Fp",
+            "type": "integer"
+          },
+          "precision": {
+            "title": "Precision",
+            "type": "number"
+          },
+          "recall": {
+            "title": "Recall",
+            "type": "number"
+          },
+          "specificity": {
+            "title": "Specificity",
+            "type": "number"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          },
+          "tn": {
+            "title": "Tn",
+            "type": "integer"
+          },
+          "tp": {
+            "title": "Tp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "threshold",
+          "tp",
+          "fp",
+          "fn",
+          "tn",
+          "precision",
+          "recall",
+          "specificity",
+          "f1",
+          "accuracy",
+          "balanced_accuracy",
+          "flagged_share"
+        ],
+        "title": "OperatingPointRead",
+        "type": "object"
+      },
+      "OperatingPointsRead": {
+        "properties": {
+          "basis": {
+            "const": "out_of_fold_cv",
+            "default": "out_of_fold_cv",
+            "title": "Basis",
+            "type": "string"
+          },
+          "chosen": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChosenOperatingPointRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cost_matrix": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingCostMatrix"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The run objective's, if declared."
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "final_evaluation_note": {
+            "default": "The final evaluation set was scored once, at the run's locked threshold, and is reported with the experiment. It never informs, moves or re-scores an operating point.",
+            "title": "Final Evaluation Note",
+            "type": "string"
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LockedOperatingPointRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "min_class_rows": {
+            "title": "Min Class Rows",
+            "type": "integer"
+          },
+          "negatives": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negatives"
+          },
+          "oof_folds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all_folds | last_fold (time-ordered CV).",
+            "title": "Oof Folds"
+          },
+          "optimism_note": {
+            "default": "Measured on out-of-fold training predictions. A point picked from hundreds of candidate thresholds on the same rows looks better than it will on new data: expect lower values there. The 95% intervals are per point and cover counting noise at that threshold only; they are not corrected for that choice nor for fold-to-fold model variation.",
+            "title": "Optimism Note",
+            "type": "string"
+          },
+          "outcome_scope": {
+            "const": "cv",
+            "default": "cv",
+            "title": "Outcome Scope",
+            "type": "string"
+          },
+          "pareto": {
+            "description": "Not beaten on precision and recall (and expected cost) by another.",
+            "items": {
+              "$ref": "#/components/schemas/OperatingPointDetailRead"
+            },
+            "title": "Pareto",
+            "type": "array"
+          },
+          "points": {
+            "description": "Every candidate threshold.",
+            "items": {
+              "$ref": "#/components/schemas/OperatingPointRead"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "positives": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positives"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Code when not available / not evaluated.",
+            "title": "Reason"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows"
+          },
+          "scoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatingScoringRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "available",
+              "not_applicable",
+              "not_available",
+              "not_evaluated"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          },
+          "tie_break": {
+            "title": "Tie Break",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "status",
+          "message",
+          "min_class_rows",
+          "tie_break"
+        ],
+        "title": "OperatingPointsRead",
+        "type": "object"
+      },
+      "OperatingScoringRead": {
+        "properties": {
+          "note": {
+            "default": "Batch scoring of this run's model version uses the locked threshold. A chosen operating point is a recorded decision; applying it to scoring needs a new model version (follow-up).",
+            "title": "Note",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "uses": {
+            "const": "locked_threshold",
+            "default": "locked_threshold",
+            "title": "Uses",
+            "type": "string"
+          }
+        },
+        "required": [
+          "threshold"
+        ],
+        "title": "OperatingScoringRead",
         "type": "object"
       },
       "PipelineModelBuildRead": {
@@ -13905,6 +14800,261 @@
         ]
       }
     },
+    "/v1/experiments/{experiment_id}/operating-point": {
+      "post": {
+        "description": "Choose the run's operating point: an exact ``threshold`` of its stored out-of-fold curve,\nor an ``objective`` (maximise a metric subject to constraints, or minimise expected cost)\nre-solved on it. Records an accepted ``operating_point_chosen`` decision (the reason is its\nrationale) that supersedes the previous choice and carries the curve's digest. People with\nML-write only: a service token gets ``403 service_token_not_permitted`` (agents read\n``get_operating_points``); a viewer ``403 forbidden``. ``422 threshold_not_on_curve`` (the\nthreshold must equal a listed one exactly), ``422 objective_infeasible`` (``details.closest``,\n``details.constraints``), ``422 cost_matrix_required``, ``422 validation_failed``;\n``409 operating_points_not_applicable|not_available|not_evaluated`` (``details.reason``, e.g.\n``evidence_not_locked``), ``409 idempotency_key_conflict``. Batch scoring keeps the locked\nthreshold. Requires ``Idempotency-Key``.",
+        "operationId": "choose_operating_point_v1_v1_experiments__experiment_id__operating_point_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatingPointChoiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatingPointChoiceRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "description": "URL of the decision record.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Choose Operating Point V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/experiments/{experiment_id}/operating-points": {
+      "get": {
+        "description": "Operating points of a binary run, all from the locked winner's out-of-fold predictions\n(``outcome_scope: \"cv\"``): every candidate threshold of the lock's own search with its\nconfusion counts and rates, the Pareto points over precision and recall (and expected cost\nwhen the run declares a cost matrix) with 95 % intervals, fold spread and a plain sentence,\nthe locked threshold (re-solved from the curve) and the chosen point with its reason. No\nfinal-evaluation figure is computed at any point. ``status``: ``not_applicable``\n(multiclass / regression), ``not_available`` (no stored curve: older or unfinished runs) or\n``not_evaluated`` (too few rows of one class: the locked threshold, no confusion counts).\nThe per-point 95 % intervals cover counting noise only (not the choice among candidates).",
+        "operationId": "read_operating_points_v1_experiments__experiment_id__operating_points_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatingPointsRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Operating Points",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
     "/v1/governance": {
       "get": {
         "description": "The effective AI policy (platform narrowed by the workspace), model allowlist, data classes, switches,\ndecision-point levels with links to the stored R3 runs, spend vs budget, open incidents and recent changes\nof this workspace. Plain text throughout; no R3 report body or tenant evidence.",
@@ -16275,7 +17425,8 @@
                     "proposal_accepted",
                     "proposal_rejected",
                     "decision_point_resolved",
-                    "proposal_reverted"
+                    "proposal_reverted",
+                    "operating_point_chosen"
                   ],
                   "type": "string"
                 },

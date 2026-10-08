@@ -800,6 +800,1333 @@
    ],
    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
   },
+  "GET /v1/experiments/59c35e71-34a0-462b-996e-abc42cb4842a/operating-points": {
+   "basis": "out_of_fold_cv",
+   "chosen": {
+    "applies_to_scoring": false,
+    "chosen_by_user_id": null,
+    "curve_changed": false,
+    "decision_id": "5a5a5a5a-0000-4000-8000-000000000052",
+    "method": "objective",
+    "objective": {
+     "constraints": [
+      {
+       "metric": "recall",
+       "op": ">=",
+       "value": 0.6
+      }
+     ],
+     "cost_false_negative": null,
+     "cost_false_positive": null,
+     "goal": "precision"
+    },
+    "point": {
+     "accuracy": 0.740625,
+     "balanced_accuracy": 0.785857321652065,
+     "expected_cost": 0.353125,
+     "f1": 0.6437768240343348,
+     "flagged_share": 0.4625,
+     "fn": 10,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 27,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.6896551724137931,
+      "precision_min": 0.4,
+      "recall_folds": 5,
+      "recall_max": 0.9523809523809523,
+      "recall_min": 0.7647058823529411
+     },
+     "fp": 73,
+     "precision": 0.5067567567567568,
+     "precision_interval": {
+      "high": 0.5861072604774118,
+      "low": 0.4270643727216723
+     },
+     "recall": 0.8823529411764706,
+     "recall_interval": {
+      "high": 0.9348264242544683,
+      "low": 0.7968139704759628
+     },
+     "specificity": 0.6893617021276596,
+     "threshold": 0.3022,
+     "tn": 162,
+     "tp": 75,
+     "what_this_means": "At threshold 0.3022 the model flags 46% of rows and catches 88% of the positive class; 51% of flagged rows are positives; expected cost 0.3531 per row (out-of-fold training predictions)."
+    },
+    "rationale": "Catch most positives at a precision we can staff.",
+    "recorded_at": "2026-10-08T06:00:00Z",
+    "supersedes_id": null,
+    "threshold": 0.3022
+   },
+   "cost_matrix": {
+    "false_negative": 4.0,
+    "false_positive": 1.0
+   },
+   "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "final_evaluation_note": "The final evaluation set was scored once, at the run's locked threshold, and is reported with the experiment. It never informs, moves or re-scores an operating point.",
+   "locked": {
+    "constraint_status": "not_requested",
+    "note": "The run's decision threshold, locked from out-of-fold predictions before the final evaluation.",
+    "point": {
+     "accuracy": 0.859375,
+     "balanced_accuracy": 0.7690863579474343,
+     "expected_cost": 0.478125,
+     "f1": 0.6853146853146852,
+     "flagged_share": 0.18125,
+     "fn": 36,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 9,
+      "min_fold_positives": 13,
+      "precision_folds": 4,
+      "precision_max": 0.9333333333333333,
+      "precision_min": 0.75,
+      "recall_folds": 5,
+      "recall_max": 0.6923076923076923,
+      "recall_min": 0.4117647058823529
+     },
+     "fp": 9,
+     "precision": 0.8448275862068966,
+     "precision_interval": {
+      "high": 0.9161550804698196,
+      "low": 0.730660191401075
+     },
+     "recall": 0.5764705882352941,
+     "recall_interval": {
+      "high": 0.6759645768712104,
+      "low": 0.47036350207487576
+     },
+     "specificity": 0.9617021276595744,
+     "threshold": 0.5,
+     "tn": 226,
+     "tp": 49,
+     "what_this_means": "At threshold 0.5 the model flags 18% of rows and catches 58% of the positive class; 84% of flagged rows are positives; expected cost 0.4781 per row (out-of-fold training predictions)."
+    },
+    "reproduced_from_curve": false,
+    "source": "default",
+    "threshold": 0.5
+   },
+   "message": "Operating points from the locked winner's out-of-fold predictions.",
+   "min_class_rows": 20,
+   "negatives": 235,
+   "oof_folds": "all_folds",
+   "optimism_note": "Measured on out-of-fold training predictions. A point picked from hundreds of candidate thresholds on the same rows looks better than it will on new data: expect lower values there. The 95% intervals are per point and cover counting noise at that threshold only; they are not corrected for that choice nor for fold-to-fold model variation.",
+   "outcome_scope": "cv",
+   "pareto": [
+    {
+     "accuracy": 0.265625,
+     "balanced_accuracy": 0.5,
+     "expected_cost": 0.734375,
+     "f1": 0.41975308641975306,
+     "flagged_share": 1.0,
+     "fn": 0,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 64,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.328125,
+      "precision_min": 0.203125,
+      "recall_folds": 5,
+      "recall_max": 1.0,
+      "recall_min": 1.0
+     },
+     "fp": 235,
+     "precision": 0.265625,
+     "precision_interval": {
+      "high": 0.31658881452757975,
+      "low": 0.22022157242459664
+     },
+     "recall": 1.0,
+     "recall_interval": {
+      "high": 1.0,
+      "low": 0.9567605161859486
+     },
+     "specificity": 0.0,
+     "threshold": 0.0,
+     "tn": 0,
+     "tp": 85,
+     "what_this_means": "At threshold 0 the model flags 100% of rows and catches 100% of the positive class; 27% of flagged rows are positives; expected cost 0.7344 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.475,
+     "balanced_accuracy": 0.6387984981226533,
+     "expected_cost": 0.534375,
+     "f1": 0.5,
+     "flagged_share": 0.784375,
+     "fn": 1,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 47,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.40816326530612246,
+      "precision_min": 0.22807017543859648,
+      "recall_folds": 5,
+      "recall_max": 1.0,
+      "recall_min": 0.9523809523809523
+     },
+     "fp": 167,
+     "precision": 0.3346613545816733,
+     "precision_interval": {
+      "high": 0.39514173170883843,
+      "low": 0.27916557925974844
+     },
+     "recall": 0.9882352941176471,
+     "recall_interval": {
+      "high": 0.997920212865336,
+      "low": 0.9363282911750611
+     },
+     "specificity": 0.28936170212765955,
+     "threshold": 0.1111,
+     "tn": 68,
+     "tp": 84,
+     "what_this_means": "At threshold 0.1111 the model flags 78% of rows and catches 99% of the positive class; 33% of flagged rows are positives; expected cost 0.5344 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.534375,
+     "balanced_accuracy": 0.6754693366708385,
+     "expected_cost": 0.484375,
+     "f1": 0.526984126984127,
+     "flagged_share": 0.71875,
+     "fn": 2,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 43,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.45454545454545453,
+      "precision_min": 0.23636363636363636,
+      "recall_folds": 5,
+      "recall_max": 1.0,
+      "recall_min": 0.9411764705882353
+     },
+     "fp": 147,
+     "precision": 0.36086956521739133,
+     "precision_interval": {
+      "high": 0.42475169806052027,
+      "low": 0.30155859643232186
+     },
+     "recall": 0.9764705882352941,
+     "recall_interval": {
+      "high": 0.9935234887740522,
+      "low": 0.9182130031207928
+     },
+     "specificity": 0.37446808510638296,
+     "threshold": 0.1655,
+     "tn": 88,
+     "tp": 83,
+     "what_this_means": "At threshold 0.1655 the model flags 72% of rows and catches 98% of the positive class; 36% of flagged rows are positives; expected cost 0.4844 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.54375,
+     "balanced_accuracy": 0.6780976220275344,
+     "expected_cost": 0.484375,
+     "f1": 0.5290322580645161,
+     "flagged_share": 0.703125,
+     "fn": 3,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 41,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.45454545454545453,
+      "precision_min": 0.24074074074074073,
+      "recall_folds": 5,
+      "recall_max": 1.0,
+      "recall_min": 0.9375
+     },
+     "fp": 143,
+     "precision": 0.36444444444444446,
+     "precision_interval": {
+      "high": 0.42911673059038136,
+      "low": 0.30432317879336457
+     },
+     "recall": 0.9647058823529412,
+     "recall_interval": {
+      "high": 0.987924958145358,
+      "low": 0.9012995216039354
+     },
+     "specificity": 0.39148936170212767,
+     "threshold": 0.1728,
+     "tn": 92,
+     "tp": 82,
+     "what_this_means": "At threshold 0.1728 the model flags 70% of rows and catches 96% of the positive class; 36% of flagged rows are positives; expected cost 0.4844 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.553125,
+     "balanced_accuracy": 0.6807259073842302,
+     "expected_cost": 0.484375,
+     "f1": 0.5311475409836065,
+     "flagged_share": 0.6875,
+     "fn": 4,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 40,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.46511627906976744,
+      "precision_min": 0.24074074074074073,
+      "recall_folds": 5,
+      "recall_max": 1.0,
+      "recall_min": 0.8823529411764706
+     },
+     "fp": 139,
+     "precision": 0.36818181818181817,
+     "precision_interval": {
+      "high": 0.43366820269084455,
+      "low": 0.30721983339696396
+     },
+     "recall": 0.9529411764705882,
+     "recall_interval": {
+      "high": 0.9815497391669292,
+      "low": 0.8851627284368122
+     },
+     "specificity": 0.4085106382978723,
+     "threshold": 0.1793,
+     "tn": 96,
+     "tp": 81,
+     "what_this_means": "At threshold 0.1793 the model flags 69% of rows and catches 95% of the positive class; 37% of flagged rows are positives; expected cost 0.4844 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.59375,
+     "balanced_accuracy": 0.704630788485607,
+     "expected_cost": 0.453125,
+     "f1": 0.5517241379310345,
+     "flagged_share": 0.640625,
+     "fn": 5,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 38,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.5128205128205128,
+      "precision_min": 0.2708333333333333,
+      "recall_folds": 5,
+      "recall_max": 1.0,
+      "recall_min": 0.875
+     },
+     "fp": 125,
+     "precision": 0.3902439024390244,
+     "precision_interval": {
+      "high": 0.45845210135432496,
+      "low": 0.3260734413510828
+     },
+     "recall": 0.9411764705882353,
+     "recall_interval": {
+      "high": 0.9746148399665875,
+      "low": 0.8695856154916024
+     },
+     "specificity": 0.46808510638297873,
+     "threshold": 0.2088,
+     "tn": 110,
+     "tp": 80,
+     "what_this_means": "At threshold 0.2088 the model flags 64% of rows and catches 94% of the positive class; 39% of flagged rows are positives; expected cost 0.4531 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.675,
+     "balanced_accuracy": 0.7561952440550688,
+     "expected_cost": 0.38125,
+     "f1": 0.6030534351145038,
+     "flagged_share": 0.553125,
+     "fn": 6,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 30,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.5714285714285714,
+      "precision_min": 0.35135135135135137,
+      "recall_folds": 5,
+      "recall_max": 1.0,
+      "recall_min": 0.875
+     },
+     "fp": 98,
+     "precision": 0.4463276836158192,
+     "precision_interval": {
+      "high": 0.5199291066131331,
+      "low": 0.37500648988170243
+     },
+     "recall": 0.9294117647058824,
+     "recall_interval": {
+      "high": 0.9672490368873332,
+      "low": 0.8544394064253049
+     },
+     "specificity": 0.5829787234042553,
+     "threshold": 0.2624,
+     "tn": 137,
+     "tp": 79,
+     "what_this_means": "At threshold 0.2624 the model flags 55% of rows and catches 93% of the positive class; 45% of flagged rows are positives; expected cost 0.3812 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.709375,
+     "balanced_accuracy": 0.7720901126408011,
+     "expected_cost": 0.365625,
+     "f1": 0.6234817813765182,
+     "flagged_share": 0.50625,
+     "fn": 8,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 29,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.6060606060606061,
+      "precision_min": 0.375,
+      "recall_folds": 5,
+      "recall_max": 0.9523809523809523,
+      "recall_min": 0.8235294117647058
+     },
+     "fp": 85,
+     "precision": 0.47530864197530864,
+     "precision_interval": {
+      "high": 0.5518875878438012,
+      "low": 0.3998735697286879
+     },
+     "recall": 0.9058823529411765,
+     "recall_interval": {
+      "high": 0.9515349387077823,
+      "low": 0.8251294803137523
+     },
+     "specificity": 0.6382978723404256,
+     "threshold": 0.2818,
+     "tn": 150,
+     "tp": 77,
+     "what_this_means": "At threshold 0.2818 the model flags 51% of rows and catches 91% of the positive class; 48% of flagged rows are positives; expected cost 0.3656 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.7125,
+     "balanced_accuracy": 0.7704630788485607,
+     "expected_cost": 0.371875,
+     "f1": 0.6229508196721312,
+     "flagged_share": 0.496875,
+     "fn": 9,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 29,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.625,
+      "precision_min": 0.375,
+      "recall_folds": 5,
+      "recall_max": 0.9523809523809523,
+      "recall_min": 0.8235294117647058
+     },
+     "fp": 83,
+     "precision": 0.4779874213836478,
+     "precision_interval": {
+      "high": 0.5552294702871228,
+      "low": 0.4017839337274671
+     },
+     "recall": 0.8941176470588236,
+     "recall_interval": {
+      "high": 0.9432875928801936,
+      "low": 0.8108648139957895
+     },
+     "specificity": 0.6468085106382979,
+     "threshold": 0.2835,
+     "tn": 152,
+     "tp": 76,
+     "what_this_means": "At threshold 0.2835 the model flags 50% of rows and catches 89% of the positive class; 48% of flagged rows are positives; expected cost 0.3719 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.7875,
+     "balanced_accuracy": 0.8177722152690863,
+     "expected_cost": 0.30625,
+     "f1": 0.6880733944954129,
+     "flagged_share": 0.415625,
+     "fn": 10,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 23,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.6896551724137931,
+      "precision_min": 0.48,
+      "recall_folds": 5,
+      "recall_max": 0.9523809523809523,
+      "recall_min": 0.7647058823529411
+     },
+     "fp": 58,
+     "precision": 0.5639097744360902,
+     "precision_interval": {
+      "high": 0.6452218836456789,
+      "low": 0.47900947245434217
+     },
+     "recall": 0.8823529411764706,
+     "recall_interval": {
+      "high": 0.9348264242544683,
+      "low": 0.7968139704759628
+     },
+     "specificity": 0.7531914893617021,
+     "threshold": 0.3261,
+     "tn": 177,
+     "tp": 75,
+     "what_this_means": "At threshold 0.3261 the model flags 42% of rows and catches 88% of the positive class; 56% of flagged rows are positives; expected cost 0.3063 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.7875,
+     "balanced_accuracy": 0.814017521902378,
+     "expected_cost": 0.315625,
+     "f1": 0.6851851851851852,
+     "flagged_share": 0.409375,
+     "fn": 11,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 23,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.6785714285714286,
+      "precision_min": 0.5,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.7647058823529411
+     },
+     "fp": 57,
+     "precision": 0.5648854961832062,
+     "precision_interval": {
+      "high": 0.6467367691161402,
+      "low": 0.47933721546308206
+     },
+     "recall": 0.8705882352941177,
+     "recall_interval": {
+      "high": 0.9261764720187473,
+      "low": 0.7829519105661322
+     },
+     "specificity": 0.7574468085106383,
+     "threshold": 0.3286,
+     "tn": 178,
+     "tp": 74,
+     "what_this_means": "At threshold 0.3286 the model flags 41% of rows and catches 87% of the positive class; 56% of flagged rows are positives; expected cost 0.3156 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.803125,
+     "balanced_accuracy": 0.8209011264080099,
+     "expected_cost": 0.309375,
+     "f1": 0.6985645933014354,
+     "flagged_share": 0.3875,
+     "fn": 12,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 22,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.7307692307692307,
+      "precision_min": 0.52,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.7647058823529411
+     },
+     "fp": 51,
+     "precision": 0.5887096774193549,
+     "precision_interval": {
+      "high": 0.6713833648952484,
+      "low": 0.5007047839959217
+     },
+     "recall": 0.8588235294117647,
+     "recall_interval": {
+      "high": 0.9173576706727329,
+      "low": 0.7692586997665947
+     },
+     "specificity": 0.7829787234042553,
+     "threshold": 0.3389,
+     "tn": 184,
+     "tp": 73,
+     "what_this_means": "At threshold 0.3389 the model flags 39% of rows and catches 86% of the positive class; 59% of flagged rows are positives; expected cost 0.3094 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.815625,
+     "balanced_accuracy": 0.825657071339174,
+     "expected_cost": 0.30625,
+     "f1": 0.7093596059113301,
+     "flagged_share": 0.36875,
+     "fn": 13,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 20,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.7307692307692307,
+      "precision_min": 0.5416666666666666,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.7058823529411765
+     },
+     "fp": 46,
+     "precision": 0.6101694915254238,
+     "precision_interval": {
+      "high": 0.6933648267150546,
+      "low": 0.5200272341782942
+     },
+     "recall": 0.8470588235294118,
+     "recall_interval": {
+      "high": 0.9083861950546959,
+      "low": 0.7557181632390801
+     },
+     "specificity": 0.8042553191489362,
+     "threshold": 0.3529,
+     "tn": 189,
+     "tp": 72,
+     "what_this_means": "At threshold 0.3529 the model flags 37% of rows and catches 85% of the positive class; 61% of flagged rows are positives; expected cost 0.3063 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.8125,
+     "balanced_accuracy": 0.8122653316645807,
+     "expected_cost": 0.3375,
+     "f1": 0.6969696969696969,
+     "flagged_share": 0.353125,
+     "fn": 16,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 18,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.72,
+      "precision_min": 0.5454545454545454,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.5882352941176471
+     },
+     "fp": 44,
+     "precision": 0.6106194690265486,
+     "precision_interval": {
+      "high": 0.6954715485407025,
+      "low": 0.518493599210193
+     },
+     "recall": 0.8117647058823529,
+     "recall_interval": {
+      "high": 0.8806785655511508,
+      "low": 0.7158897563059702
+     },
+     "specificity": 0.8127659574468085,
+     "threshold": 0.3589,
+     "tn": 191,
+     "tp": 69,
+     "what_this_means": "At threshold 0.3589 the model flags 35% of rows and catches 81% of the positive class; 61% of flagged rows are positives; expected cost 0.3375 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.8375,
+     "balanced_accuracy": 0.8255319148936171,
+     "expected_cost": 0.321875,
+     "f1": 0.723404255319149,
+     "flagged_share": 0.321875,
+     "fn": 17,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 17,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.782608695652174,
+      "precision_min": 0.5294117647058824,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.5294117647058824
+     },
+     "fp": 35,
+     "precision": 0.6601941747572816,
+     "precision_interval": {
+      "high": 0.7444299148553299,
+      "low": 0.5644389490131616
+     },
+     "recall": 0.8,
+     "recall_interval": {
+      "high": 0.8712100185598731,
+      "low": 0.7028462911516961
+     },
+     "specificity": 0.851063829787234,
+     "threshold": 0.3731,
+     "tn": 200,
+     "tp": 68,
+     "what_this_means": "At threshold 0.3731 the model flags 32% of rows and catches 80% of the positive class; 66% of flagged rows are positives; expected cost 0.3219 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.84375,
+     "balanced_accuracy": 0.8260325406758449,
+     "expected_cost": 0.325,
+     "f1": 0.7282608695652174,
+     "flagged_share": 0.309375,
+     "fn": 18,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 17,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.7727272727272727,
+      "precision_min": 0.5294117647058824,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.5294117647058824
+     },
+     "fp": 32,
+     "precision": 0.6767676767676768,
+     "precision_interval": {
+      "high": 0.7607999935660275,
+      "low": 0.5795296789352458
+     },
+     "recall": 0.788235294117647,
+     "recall_interval": {
+      "high": 0.8616376400119344,
+      "low": 0.689906657554083
+     },
+     "specificity": 0.8638297872340426,
+     "threshold": 0.3871,
+     "tn": 203,
+     "tp": 67,
+     "what_this_means": "At threshold 0.3871 the model flags 31% of rows and catches 79% of the positive class; 68% of flagged rows are positives; expected cost 0.325 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.846875,
+     "balanced_accuracy": 0.8206508135168962,
+     "expected_cost": 0.340625,
+     "f1": 0.7262569832402235,
+     "flagged_share": 0.29375,
+     "fn": 20,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 15,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.7727272727272727,
+      "precision_min": 0.6,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.5294117647058824
+     },
+     "fp": 29,
+     "precision": 0.6914893617021277,
+     "precision_interval": {
+      "high": 0.775799054541026,
+      "low": 0.592143129006893
+     },
+     "recall": 0.7647058823529411,
+     "recall_interval": {
+      "high": 0.8422046127430125,
+      "low": 0.6643156605319014
+     },
+     "specificity": 0.8765957446808511,
+     "threshold": 0.3986,
+     "tn": 206,
+     "tp": 65,
+     "what_this_means": "At threshold 0.3986 the model flags 29% of rows and catches 76% of the positive class; 69% of flagged rows are positives; expected cost 0.3406 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.859375,
+     "balanced_accuracy": 0.82540675844806,
+     "expected_cost": 0.3375,
+     "f1": 0.7398843930635838,
+     "flagged_share": 0.275,
+     "fn": 21,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 13,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.8,
+      "precision_min": 0.6153846153846154,
+      "recall_folds": 5,
+      "recall_max": 0.9230769230769231,
+      "recall_min": 0.47058823529411764
+     },
+     "fp": 24,
+     "precision": 0.7272727272727273,
+     "precision_interval": {
+      "high": 0.8093452010054668,
+      "low": 0.6261879505104914
+     },
+     "recall": 0.7529411764705882,
+     "recall_interval": {
+      "high": 0.8323537883842203,
+      "low": 0.6516544727451419
+     },
+     "specificity": 0.8978723404255319,
+     "threshold": 0.4114,
+     "tn": 211,
+     "tp": 64,
+     "what_this_means": "At threshold 0.4114 the model flags 28% of rows and catches 75% of the positive class; 73% of flagged rows are positives; expected cost 0.3375 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.859375,
+     "balanced_accuracy": 0.8178973717146433,
+     "expected_cost": 0.35625,
+     "f1": 0.7337278106508874,
+     "flagged_share": 0.2625,
+     "fn": 23,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 12,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.7857142857142857,
+      "precision_min": 0.6666666666666666,
+      "recall_folds": 5,
+      "recall_max": 0.8461538461538461,
+      "recall_min": 0.47058823529411764
+     },
+     "fp": 22,
+     "precision": 0.7380952380952381,
+     "precision_interval": {
+      "high": 0.8202152162127446,
+      "low": 0.6351506273993223
+     },
+     "recall": 0.7294117647058823,
+     "recall_interval": {
+      "high": 0.8124038333751293,
+      "low": 0.6265804034631293
+     },
+     "specificity": 0.9063829787234042,
+     "threshold": 0.4186,
+     "tn": 213,
+     "tp": 62,
+     "what_this_means": "At threshold 0.4186 the model flags 26% of rows and catches 73% of the positive class; 74% of flagged rows are positives; expected cost 0.3563 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.859375,
+     "balanced_accuracy": 0.8141426783479349,
+     "expected_cost": 0.365625,
+     "f1": 0.7305389221556886,
+     "flagged_share": 0.25625,
+     "fn": 24,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 12,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.8,
+      "precision_min": 0.6666666666666666,
+      "recall_folds": 5,
+      "recall_max": 0.8461538461538461,
+      "recall_min": 0.47058823529411764
+     },
+     "fp": 21,
+     "precision": 0.7439024390243902,
+     "precision_interval": {
+      "high": 0.8259642384673737,
+      "low": 0.6400110670496505
+     },
+     "recall": 0.7176470588235294,
+     "recall_interval": {
+      "high": 0.8023114653651233,
+      "low": 0.6141607593275837
+     },
+     "specificity": 0.9106382978723404,
+     "threshold": 0.4198,
+     "tn": 214,
+     "tp": 61,
+     "what_this_means": "At threshold 0.4198 the model flags 26% of rows and catches 72% of the positive class; 74% of flagged rows are positives; expected cost 0.3656 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.8625,
+     "balanced_accuracy": 0.8125156445556947,
+     "expected_cost": 0.371875,
+     "f1": 0.7317073170731707,
+     "flagged_share": 0.246875,
+     "fn": 25,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 11,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.8,
+      "precision_min": 0.6842105263157895,
+      "recall_folds": 5,
+      "recall_max": 0.8461538461538461,
+      "recall_min": 0.47058823529411764
+     },
+     "fp": 19,
+     "precision": 0.759493670886076,
+     "precision_interval": {
+      "high": 0.8402781990238368,
+      "low": 0.6546430708772921
+     },
+     "recall": 0.7058823529411765,
+     "recall_interval": {
+      "high": 0.7921447292111781,
+      "low": 0.6018154833359772
+     },
+     "specificity": 0.9191489361702128,
+     "threshold": 0.4293,
+     "tn": 216,
+     "tp": 60,
+     "what_this_means": "At threshold 0.4293 the model flags 25% of rows and catches 71% of the positive class; 76% of flagged rows are positives; expected cost 0.3719 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.859375,
+     "balanced_accuracy": 0.7991239048811014,
+     "expected_cost": 0.403125,
+     "f1": 0.7169811320754716,
+     "flagged_share": 0.23125,
+     "fn": 28,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 11,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.8571428571428571,
+      "precision_min": 0.6470588235294118,
+      "recall_folds": 5,
+      "recall_max": 0.8461538461538461,
+      "recall_min": 0.47058823529411764
+     },
+     "fp": 17,
+     "precision": 0.7702702702702703,
+     "precision_interval": {
+      "high": 0.8513281288915803,
+      "low": 0.6625368552184813
+     },
+     "recall": 0.6705882352941176,
+     "recall_interval": {
+      "high": 0.7612222638578385,
+      "low": 0.5652019122526615
+     },
+     "specificity": 0.9276595744680851,
+     "threshold": 0.4501,
+     "tn": 218,
+     "tp": 57,
+     "what_this_means": "At threshold 0.4501 the model flags 23% of rows and catches 67% of the positive class; 77% of flagged rows are positives; expected cost 0.4031 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.859375,
+     "balanced_accuracy": 0.795369211514393,
+     "expected_cost": 0.4125,
+     "f1": 0.7133757961783439,
+     "flagged_share": 0.225,
+     "fn": 29,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 11,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.8571428571428571,
+      "precision_min": 0.6666666666666666,
+      "recall_folds": 5,
+      "recall_max": 0.8461538461538461,
+      "recall_min": 0.47058823529411764
+     },
+     "fp": 16,
+     "precision": 0.7777777777777778,
+     "precision_interval": {
+      "high": 0.858325564604242,
+      "low": 0.6690904506199482
+     },
+     "recall": 0.6588235294117647,
+     "recall_interval": {
+      "high": 0.75078077803026,
+      "low": 0.5531313859346882
+     },
+     "specificity": 0.9319148936170213,
+     "threshold": 0.4538,
+     "tn": 219,
+     "tp": 56,
+     "what_this_means": "At threshold 0.4538 the model flags 22% of rows and catches 66% of the positive class; 78% of flagged rows are positives; expected cost 0.4125 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.853125,
+     "balanced_accuracy": 0.7723404255319148,
+     "expected_cost": 0.465625,
+     "f1": 0.6845637583892616,
+     "flagged_share": 0.2,
+     "fn": 34,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 10,
+      "min_fold_positives": 13,
+      "precision_folds": 5,
+      "precision_max": 0.8823529411764706,
+      "precision_min": 0.6923076923076923,
+      "recall_folds": 5,
+      "recall_max": 0.7692307692307693,
+      "recall_min": 0.4117647058823529
+     },
+     "fp": 13,
+     "precision": 0.796875,
+     "precision_interval": {
+      "high": 0.8772658218081634,
+      "low": 0.6828636426898583
+     },
+     "recall": 0.6,
+     "recall_interval": {
+      "high": 0.6976376750117981,
+      "low": 0.4937144282253916
+     },
+     "specificity": 0.9446808510638298,
+     "threshold": 0.4862,
+     "tn": 222,
+     "tp": 51,
+     "what_this_means": "At threshold 0.4862 the model flags 20% of rows and catches 60% of the positive class; 80% of flagged rows are positives; expected cost 0.4656 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.85625,
+     "balanced_accuracy": 0.7707133917396747,
+     "expected_cost": 0.471875,
+     "f1": 0.684931506849315,
+     "flagged_share": 0.190625,
+     "fn": 35,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 9,
+      "min_fold_positives": 13,
+      "precision_folds": 4,
+      "precision_max": 0.9375,
+      "precision_min": 0.6923076923076923,
+      "recall_folds": 5,
+      "recall_max": 0.7142857142857143,
+      "recall_min": 0.4117647058823529
+     },
+     "fp": 11,
+     "precision": 0.819672131147541,
+     "precision_interval": {
+      "high": 0.8962085987594665,
+      "low": 0.7052584365187894
+     },
+     "recall": 0.5882352941176471,
+     "recall_interval": {
+      "high": 0.6868299449467584,
+      "low": 0.4820101461448797
+     },
+     "specificity": 0.9531914893617022,
+     "threshold": 0.4977,
+     "tn": 224,
+     "tp": 50,
+     "what_this_means": "At threshold 0.4977 the model flags 19% of rows and catches 59% of the positive class; 82% of flagged rows are positives; expected cost 0.4719 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.865625,
+     "balanced_accuracy": 0.7733416770963704,
+     "expected_cost": 0.471875,
+     "f1": 0.6950354609929078,
+     "flagged_share": 0.175,
+     "fn": 36,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 8,
+      "min_fold_positives": 13,
+      "precision_folds": 4,
+      "precision_max": 1.0,
+      "precision_min": 0.75,
+      "recall_folds": 5,
+      "recall_max": 0.6923076923076923,
+      "recall_min": 0.4117647058823529
+     },
+     "fp": 7,
+     "precision": 0.875,
+     "precision_interval": {
+      "high": 0.9381093130428289,
+      "low": 0.7637452344180986
+     },
+     "recall": 0.5764705882352941,
+     "recall_interval": {
+      "high": 0.6759645768712104,
+      "low": 0.47036350207487576
+     },
+     "specificity": 0.9702127659574468,
+     "threshold": 0.5133,
+     "tn": 228,
+     "tp": 49,
+     "what_this_means": "At threshold 0.5133 the model flags 18% of rows and catches 58% of the positive class; 88% of flagged rows are positives; expected cost 0.4719 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.853125,
+     "balanced_accuracy": 0.7460575719649563,
+     "expected_cost": 0.53125,
+     "f1": 0.6518518518518519,
+     "flagged_share": 0.15625,
+     "fn": 41,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 7,
+      "min_fold_positives": 13,
+      "precision_folds": 3,
+      "precision_max": 1.0,
+      "precision_min": 0.8,
+      "recall_folds": 5,
+      "recall_max": 0.625,
+      "recall_min": 0.35294117647058826
+     },
+     "fp": 6,
+     "precision": 0.88,
+     "precision_interval": {
+      "high": 0.9438239984906773,
+      "low": 0.7619518261679701
+     },
+     "recall": 0.5176470588235295,
+     "recall_interval": {
+      "high": 0.6207925632093185,
+      "low": 0.4129754550090092
+     },
+     "specificity": 0.9744680851063829,
+     "threshold": 0.5417,
+     "tn": 229,
+     "tp": 44,
+     "what_this_means": "At threshold 0.5417 the model flags 16% of rows and catches 52% of the positive class; 88% of flagged rows are positives; expected cost 0.5312 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.85625,
+     "balanced_accuracy": 0.7444305381727159,
+     "expected_cost": 0.5375,
+     "f1": 0.6515151515151516,
+     "flagged_share": 0.146875,
+     "fn": 42,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 5,
+      "min_fold_positives": 13,
+      "precision_folds": 3,
+      "precision_max": 1.0,
+      "precision_min": 0.8,
+      "recall_folds": 5,
+      "recall_max": 0.625,
+      "recall_min": 0.29411764705882354
+     },
+     "fp": 4,
+     "precision": 0.9148936170212766,
+     "precision_interval": {
+      "high": 0.9664058765420744,
+      "low": 0.8006846221303541
+     },
+     "recall": 0.5058823529411764,
+     "recall_interval": {
+      "high": 0.609591647987286,
+      "low": 0.4016643580854897
+     },
+     "specificity": 0.9829787234042553,
+     "threshold": 0.5678,
+     "tn": 231,
+     "tp": 43,
+     "what_this_means": "At threshold 0.5678 the model flags 15% of rows and catches 51% of the positive class; 91% of flagged rows are positives; expected cost 0.5375 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.840625,
+     "balanced_accuracy": 0.7112640801001251,
+     "expected_cost": 0.609375,
+     "f1": 0.592,
+     "flagged_share": 0.125,
+     "fn": 48,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 2,
+      "min_fold_positives": 13,
+      "precision_folds": 1,
+      "precision_max": 1.0,
+      "precision_min": 1.0,
+      "recall_folds": 5,
+      "recall_max": 0.6190476190476191,
+      "recall_min": 0.11764705882352941
+     },
+     "fp": 3,
+     "precision": 0.925,
+     "precision_interval": {
+      "high": 0.9741639742254119,
+      "low": 0.8013576647568946
+     },
+     "recall": 0.43529411764705883,
+     "recall_interval": {
+      "high": 0.5412261589275046,
+      "low": 0.33495777427196094
+     },
+     "specificity": 0.9872340425531915,
+     "threshold": 0.6002,
+     "tn": 232,
+     "tp": 37,
+     "what_this_means": "At threshold 0.6002 the model flags 12% of rows and catches 44% of the positive class; 92% of flagged rows are positives; expected cost 0.6094 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.796875,
+     "balanced_accuracy": 0.6214017521902377,
+     "expected_cost": 0.803125,
+     "f1": 0.3925233644859813,
+     "flagged_share": 0.06875,
+     "fn": 64,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 2,
+      "min_fold_positives": 13,
+      "precision_folds": 0,
+      "precision_max": null,
+      "precision_min": null,
+      "recall_folds": 5,
+      "recall_max": 0.38461538461538464,
+      "recall_min": 0.11764705882352941
+     },
+     "fp": 1,
+     "precision": 0.9545454545454546,
+     "precision_interval": {
+      "high": 0.991930572378736,
+      "low": 0.7820195416134267
+     },
+     "recall": 0.24705882352941178,
+     "recall_interval": {
+      "high": 0.34834552725485807,
+      "low": 0.1676462116157798
+     },
+     "specificity": 0.9957446808510638,
+     "threshold": 0.6662,
+     "tn": 234,
+     "tp": 21,
+     "what_this_means": "At threshold 0.6662 the model flags 7% of rows and catches 25% of the positive class; 95% of flagged rows are positives; expected cost 0.8031 per row (out-of-fold training predictions)."
+    },
+    {
+     "accuracy": 0.784375,
+     "balanced_accuracy": 0.5941176470588235,
+     "expected_cost": 0.8625,
+     "f1": 0.31683168316831684,
+     "flagged_share": 0.05,
+     "fn": 69,
+     "fold_spread": {
+      "folds": 5,
+      "includes_folds_outside_curve": false,
+      "min_denominator": 10,
+      "min_fold_flagged": 1,
+      "min_fold_positives": 13,
+      "precision_folds": 0,
+      "precision_max": null,
+      "precision_min": null,
+      "recall_folds": 5,
+      "recall_max": 0.2857142857142857,
+      "recall_min": 0.058823529411764705
+     },
+     "fp": 0,
+     "precision": 1.0,
+     "precision_interval": {
+      "high": 1.0,
+      "low": 0.8063923194655637
+     },
+     "recall": 0.18823529411764706,
+     "recall_interval": {
+      "high": 0.2841102436940299,
+      "low": 0.1193214344488493
+     },
+     "specificity": 1.0,
+     "threshold": 0.6919,
+     "tn": 235,
+     "tp": 16,
+     "what_this_means": "At threshold 0.6919 the model flags 5% of rows and catches 19% of the positive class; 100% of flagged rows are positives; expected cost 0.8625 per row (out-of-fold training predictions)."
+    }
+   ],
+   "points": [
+    {
+     "accuracy": 0.265625,
+     "balanced_accuracy": 0.5,
+     "expected_cost": 0.734375,
+     "f1": 0.41975308641975306,
+     "flagged_share": 1.0,
+     "fn": 0,
+     "fp": 235,
+     "precision": 0.265625,
+     "recall": 1.0,
+     "specificity": 0.0,
+     "threshold": 0.0,
+     "tn": 0,
+     "tp": 85
+    },
+    {
+     "accuracy": 0.359375,
+     "balanced_accuracy": 0.5600750938673342,
+     "expected_cost": 0.65,
+     "f1": 0.450402144772118,
+     "flagged_share": 0.9,
+     "fn": 1,
+     "fp": 204,
+     "precision": 0.2916666666666667,
+     "recall": 0.9882352941176471,
+     "specificity": 0.13191489361702127,
+     "threshold": 0.0006,
+     "tn": 31,
+     "tp": 84
+    },
+    {
+     "accuracy": 0.3625,
+     "balanced_accuracy": 0.5622027534418023,
+     "expected_cost": 0.646875,
+     "f1": 0.45161290322580644,
+     "flagged_share": 0.896875,
+     "fn": 1,
+     "fp": 203,
+     "precision": 0.2926829268292683,
+     "recall": 0.9882352941176471,
+     "specificity": 0.13617021276595745,
+     "threshold": 0.0031,
+     "tn": 32,
+     "tp": 84
+    }
+   ],
+   "positives": 85,
+   "reason": null,
+   "rows": 320,
+   "scoring": {
+    "note": "Batch scoring of this run's model version uses the locked threshold. A chosen operating point is a recorded decision; applying it to scoring needs a new model version (follow-up).",
+    "threshold": 0.5,
+    "uses": "locked_threshold"
+   },
+   "status": "available",
+   "task_type": "binary",
+   "tie_break": "highest goal among the eligible thresholds; ties: the threshold closest to 0.5, then the higher threshold",
+   "version": "dclab.operating_curve.v1"
+  },
   "GET /v1/experiments/compare": {
    "authoritative": false,
    "common": {
@@ -3228,6 +4555,12 @@
   {
    "args": {},
    "tool": "inspect_governance"
+  },
+  {
+   "args": {
+    "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a"
+   },
+   "tool": "get_operating_points"
   }
  ]
 }

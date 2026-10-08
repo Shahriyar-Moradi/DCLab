@@ -30,6 +30,8 @@ from dclab_client.types import (
     ExperimentCode,
     ExperimentComparison,
     ExperimentFindings,
+    OperatingPointChoice,
+    OperatingPoints,
     ExperimentPage,
     Governance,
     GovernanceSwitch,
@@ -1154,6 +1156,49 @@ class ExperimentsClient:
             request_id=request_id,
         )
         return ExperimentFindings.model_validate(payload)
+
+    def operating_points(
+        self, experiment_id: UUID | str, *, request_id: str | None = None
+    ) -> OperatingPoints:
+        """Operating points of a binary run (P5.2-A): the out-of-fold threshold curve, Pareto
+        points, the locked threshold and the chosen point with its reason. Choosing one is a
+        person's act (``POST .../operating-point`` refuses service tokens)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/operating-points",
+            request_id=request_id,
+        )
+        return OperatingPoints.model_validate(payload)
+
+    def choose_operating_point(
+        self,
+        experiment_id: UUID | str,
+        *,
+        reason: str,
+        threshold: float | None = None,
+        objective: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> OperatingPointChoice:
+        """Choose the run's operating point (exactly a ``threshold`` of its curve, or an
+        ``objective``) as a person with ML-write: records an ``operating_point_chosen`` decision.
+        A service token gets 403 ``service_token_not_permitted``; scoring keeps the locked
+        threshold."""
+
+        body: dict[str, Any] = {"reason": reason}
+        if threshold is not None:
+            body["threshold"] = threshold
+        if objective is not None:
+            body["objective"] = dict(objective)
+        payload, headers = self._transport.request_with_headers(
+            "POST",
+            f"/v1/experiments/{_id(experiment_id)}/operating-point",
+            json=body,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+        )
+        return _versioned(OperatingPointChoice, payload, headers)
 
 
 class PredictionsClient:

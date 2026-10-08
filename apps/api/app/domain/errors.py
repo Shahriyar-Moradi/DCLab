@@ -292,6 +292,19 @@ class BatchPredictionError(ExperimentRequestError):
     """A batch prediction cannot be created or downloaded (P4.9-A): stable ``code``."""
 
 
+class OperatingPointError(ExperimentRequestError):
+    """An operating point cannot be chosen (P5.2-A): stable ``code``, 409/422, typed ``details``
+    (e.g. the closest point of an infeasible objective)."""
+
+    def __init__(self, code: str, message: str, *, status_code: int = 422,
+                 details: dict[str, object] | None = None) -> None:
+        super().__init__(code, message, status_code=status_code)
+        self.details = dict(details or {})
+
+    def public_detail(self) -> dict[str, object]:
+        return {**self.details, "code": self.code, "message": self.detail_message}
+
+
 class RunQuotaExceededError(Exception):
     """The workspace already holds its maximum of queued/running runs (P3.1-B2). 429."""
 

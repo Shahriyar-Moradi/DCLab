@@ -43,6 +43,12 @@ GRAPH_NODE_LIMIT = 40
 RECENT_EXPERIMENTS = 10
 FINDING_LIMIT = 20  # every trust check (15 since P5.1-A) fits
 FINDING_EVIDENCE_CHARS = 1500
+OPERATING_PARETO_LIMIT = 20
+OPERATING_POINT_KEYS = ("threshold", "tp", "fp", "fn", "tn", "precision", "recall", "specificity", "f1",
+                        "flagged_share", "expected_cost", "precision_interval", "recall_interval", "fold_spread",
+                        "what_this_means")
+OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked from many thresholds); never a "
+                  "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 GraphKind = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"]
 
@@ -234,6 +240,11 @@ class ServiceReads:
 
         # Agent view: holdout-scoped evidence stripped, fixed messages for the split checks.
         return experiment_findings(self.db, **self._who, experiment_id=experiment_id, agent=True)
+
+    def operating_points(self, experiment_id: UUID) -> Any:
+        from app.services.operating_point_service import operating_points_read
+
+        return operating_points_read(self.db, **self._who, experiment_id=experiment_id)
 
     def decisions(self, project_id: UUID, **filters: Any) -> Any:
         from app.services.decision_record_service import list_decisions
@@ -533,6 +544,52 @@ def _findings_shape(raw: dict[str, Any]) -> Shaped:
                        "note": "Trust checks use training rows and CV folds; checks comparing training and test "
                                "rows report status only. Never a final-holdout value."},
                       raw["experiment"], "checks")
+
+
+def spread_sample(items: list[Any], limit: int) -> list[Any]:
+    """At most ``limit`` items, evenly spaced, both ends kept (deterministic)."""
+
+    if len(items) <= limit:
+        return list(items)
+    picks = dict.fromkeys(round(i * (len(items) - 1) / (limit - 1)) for i in range(limit))
+    return [items[i] for i in picks]
+
+
+def operating_point_summary(p: Any) -> dict[str, Any] | None:
+    if p is None:
+        return None
+    data = p.model_dump(mode="json")
+    return {key: data.get(key) for key in OPERATING_POINT_KEYS}
+
+
+def _operating_points_fetch(reads: Any, a: ExperimentInput) -> dict[str, Any]:
+    return {"points": reads.operating_points(a.experiment_id), "experiment": reads.experiment(a.experiment_id)}
+
+
+def _operating_points_shape(raw: dict[str, Any]) -> Shaped:
+    o = raw["points"]
+    locked, chosen = o.locked, o.chosen
+    payload = {
+        "experiment_id": o.experiment_id, "status": code(o.status), "reason": code(o.reason),
+        "task_type": code(o.task_type), "outcome_scope": code(o.outcome_scope), "basis": code(o.basis),
+        "oof_folds": code(o.oof_folds), "rows": o.rows, "positives": o.positives, "negatives": o.negatives,
+        "min_class_rows": o.min_class_rows, "cost_matrix": o.cost_matrix and o.cost_matrix.model_dump(mode="json"),
+        "candidate_count": len(o.points), "pareto_total": len(o.pareto),
+        "pareto": [operating_point_summary(p) for p in spread_sample(o.pareto, OPERATING_PARETO_LIMIT)],
+        "locked": locked and {
+            "threshold": locked.threshold, "source": code(locked.source),
+            "constraint_status": code(locked.constraint_status),
+            "reproduced_from_curve": locked.reproduced_from_curve, "point": operating_point_summary(locked.point)},
+        "chosen": chosen and {
+            "decision_id": chosen.decision_id, "threshold": chosen.threshold, "method": code(chosen.method),
+            "objective": chosen.objective and chosen.objective.model_dump(mode="json"),
+            "rationale": text(chosen.rationale), "recorded_at": chosen.recorded_at,
+            "point": operating_point_summary(chosen.point), "curve_changed": chosen.curve_changed,
+            "applies_to_scoring": chosen.applies_to_scoring},
+        "scoring": o.scoring and {"threshold": o.scoring.threshold, "uses": code(o.scoring.uses)},
+        "tie_break": o.tie_break, "note": OPERATING_NOTE,
+    }
+    return _cv_shaped({"operating_points": payload}, raw["experiment"], "operating_points")
 
 
 def _decisions_fetch(reads: Any, a: ListDecisionsInput) -> dict[str, Any]:
