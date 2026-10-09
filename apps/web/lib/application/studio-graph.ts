@@ -5,8 +5,10 @@
  * (ref badges, stale text, AI decision-point markers from decision records).
  * Every value shown comes from an API field; nothing is invented here.
  */
-import { projectHref } from "./command-search.ts";
+import { plainText, projectHref } from "./command-search.ts";
 import type { GraphEdgeLike } from "./studio-data.ts";
+import { actorWords } from "./studio-goal.ts";
+import { dataVersionName, designLabels, modelName, runOrdinals } from "./studio-names.ts";
 
 export type NodeRefLike = { kind: string; id: string; key?: string };
 export type StaleReasonLike = { ref_kind: string; expected: NodeRefLike; actual: NodeRefLike };
@@ -28,19 +30,26 @@ export type GraphNodeLike = NodeRefLike & {
 };
 
 export const KIND_ORDER = ["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"] as const;
+/** What each kind of item is called on screen (V7-A5): a person knows runs, data, test designs and models, not "nodes". */
 export const KIND_LABEL: Record<string, string> = {
-  problem_spec: "Problem spec", dataset_version: "Dataset version", split_plan: "Split plan",
-  feature_recipe: "Feature recipe", experiment: "Experiment", model_version: "Model version",
+  problem_spec: "Goal", dataset_version: "Data", split_plan: "Test design",
+  feature_recipe: "Features", experiment: "Run", model_version: "Model",
 };
 export const REF_BADGE: Record<string, string> = {
-  champion_model: "★ champion", problem_spec: "★ spec", dataset: "★ data", split_plan: "★ split", feature_recipe: "★ features",
+  champion_model: "★ in use", problem_spec: "★ goal", dataset: "★ data", split_plan: "★ test design", feature_recipe: "★ features",
 };
-export const RELATION_LABEL: Record<string, string> = {
-  uses_problem_spec: "uses spec", uses_dataset: "trained on", prepared_as: "prepared as", uses_split_plan: "uses split",
-  branch_of: "branch of", partitions: "partitions", produced_by: "produced by", uses_feature_recipe: "uses features",
+const own = <T>(table: Record<string, T>, key: string): T | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
+/** What each project version is called in a sentence ("the model in use", "the data in use"). */
+const REF_NAME: Record<string, string> = { champion_model: "model", problem_spec: "goal", dataset: "data", split_plan: "test design", feature_recipe: "features" };
+/** How one item relates to the item it was built from, in words. Unknown relations are shown cleaned, never hidden. */
+const RELATION_WORDS: Record<string, string> = {
+  uses_problem_spec: "uses the goal", uses_dataset: "trained on", prepared_as: "prepared as", uses_split_plan: "uses the test design",
+  branch_of: "a change of", partitions: "splits", produced_by: "built by", uses_feature_recipe: "uses the features",
 };
+export const relationLabel = (relation: string): string => own(RELATION_WORDS, relation) ?? plainText(relation.replaceAll("_", " "), 40);
+export const refBadge = (kind: string): string => own(REF_BADGE, kind) ?? `★ ${plainText(kind.replaceAll("_", " "), 40)}`;
 
-export const kindLabel = (kind: string) => KIND_LABEL[kind] ?? kind.replaceAll("_", " ");
+export const kindLabel = (kind: string) => own(KIND_LABEL, kind) ?? plainText(kind.replaceAll("_", " "), 40);
 export const shortId = (id: string) => id.slice(0, 8);
 export const nodeKey = (ref: NodeRefLike) => ref.key ?? `${ref.kind}:${ref.id}`;
 
@@ -175,14 +184,77 @@ export function layoutGraph(nodes: GraphNodeLike[], edges: GraphEdgeLike[]): Gra
 // --- view model -------------------------------------------------------------------
 
 export function refBadges(node: GraphNodeLike): string[] {
-  return (node.ref_kinds ?? []).map((kind) => REF_BADGE[kind] ?? `★ ${kind.replaceAll("_", " ")}`);
+  return (node.ref_kinds ?? []).map(refBadge);
 }
 
-/** "data ref points at dataset version 1a2b3c4d; this was built from 5e6f7a8b" — one line per reason. */
-export function staleLines(node: GraphNodeLike): string[] {
-  return (node.stale_reasons ?? []).map((reason) =>
-    `${(REF_BADGE[reason.ref_kind] ?? reason.ref_kind).replace("★ ", "")} ref points at ${kindLabel(reason.expected.kind).toLowerCase()} ${shortId(reason.expected.id)}; this was built from ${shortId(reason.actual.id)}`);
+/** The name of a node that is not loaded: its kind and a short id (the only handle there is), never a made-up number. */
+export type NameOf = (ref: NodeRefLike) => string;
+const unloadedName: NameOf = (ref) => `${kindLabel(ref.kind)} ${shortId(ref.id)}`;
+
+/** One line per reason: which version in use moved, and which version this item was built from. A version that is not drawn is not named. */
+export function staleLines(node: GraphNodeLike, names?: ReadonlyMap<string, string>): string[] {
+  const known = (ref: NodeRefLike) => names?.get(ref.key ?? `${ref.kind}:${ref.id}`);
+  return (node.stale_reasons ?? []).map((reason) => {
+    const what = own(REF_NAME, reason.ref_kind) ?? plainText(reason.ref_kind.replaceAll("_", " "), 40);
+    const now = known(reason.expected);
+    const was = known(reason.actual);
+    return `Built on an older version: the ${what} in use ${now ? `is now ${now}` : "differs from the one this was built from"}${was ? `; this was built from ${was}` : ""}.`;
+  });
 }
+
+/**
+ * The name of every loaded item, by key: "Run 3", "Model v2", "Test design 1", "orders.csv · 12 Jun 2026", "Goal", "Features".
+ * Runs are numbered like the Experiments page (oldest first); with a partial run list, or a run outside it, the short id is used
+ * so a number never changes from page to page. Names of data are the file's own name, as given.
+ */
+export function graphNodeNames(
+  nodes: readonly GraphNodeLike[], runs: ReadonlyArray<{ id: string; created_at: string; split_plan_id?: string | null }>, partial: boolean,
+  edges: ReadonlyArray<{ from: NodeRefLike; to: NodeRefLike; relation: string }> = [],
+): Map<string, string> {
+  const ordinals = runOrdinals(runs);
+  const designs = designLabels([...runs].sort((a, b) => a.created_at.localeCompare(b.created_at)).map((r) => r.split_plan_id));
+  const numbered = (kind: string, word: string) => {
+    const same = nodes.filter((n) => n.kind === kind).sort(compareNodes);
+    return new Map(same.map((n, i) => [n.key, same.length > 1 ? `${word} ${i + 1}` : word]));
+  };
+  const goals = numbered("problem_spec", "Goal");
+  const features = numbered("feature_recipe", "Features");
+  const out = new Map<string, string>();
+  const nodeName = (key: string) => out.get(key);
+  // Runs first, so a table a run prepared can be named after its run.
+  const ordered = [...nodes].sort((a, b) => Number(b.kind === "experiment") - Number(a.kind === "experiment"));
+  for (const node of ordered) {
+    let name: string;
+    switch (node.kind) {
+      case "experiment": {
+        // Same rule as the Models page: with a partial run list, or a run outside it, the short id keeps the number stable.
+        const ordinal = ordinals.get(node.id);
+        name = partial || ordinal === undefined ? `Run ${shortId(node.id)}` : `Run ${ordinal}`;
+        break;
+      }
+      case "model_version": name = node.version ? plainText(modelName(plainText(node.version, 40)), 60) : "Model"; break;
+      case "split_plan": name = designs.get(node.id) ?? "Test design"; break;
+      case "dataset_version": {
+        if (node.derived) {
+          const run = edges.find((e) => e.relation === "prepared_as" && nodeKey(e.to) === node.key && e.from.kind === "experiment");
+          const runName = run ? nodeName(nodeKey(run.from)) : undefined;
+          name = runName ? `Data prepared by ${runName}` : "Prepared data";
+        } else {
+          // The graph labels a data version "<name> <version>" (for example "churn v1"); the label is used as given.
+          name = dataVersionName(plainText(node.label, 80), node.created_at);
+        }
+        break;
+      }
+      case "problem_spec": name = goals.get(node.key) ?? "Goal"; break;
+      case "feature_recipe": name = features.get(node.key) ?? "Features"; break;
+      default: name = kindLabel(node.kind);
+    }
+    out.set(node.key, name);
+  }
+  return out;
+}
+/** Looks a name up by key; a node that is not loaded gets its kind and short id. */
+export const nameLookup = (names: ReadonlyMap<string, string>): NameOf => (ref) => names.get(ref.key ?? `${ref.kind}:${ref.id}`) ?? unloadedName(ref);
 
 export type BuiltFrom = { relation: string; attribute: boolean; node: NodeRefLike };
 
@@ -212,8 +284,8 @@ export function groupByKind<T extends GraphNodeLike>(nodes: T[]): Array<{ kind: 
 /** Drawer links: the full inspector of the node (experiment, dataset, split, features, model). Ids must be UUIDs. */
 export function nodeLink(projectId: string, node: NodeRefLike): { href: string; label: string } | null {
   const sections: Record<string, [string, string]> = {
-    experiment: ["experiments", "Open the experiment"], dataset_version: ["data", "Open the dataset version"],
-    split_plan: ["splits", "Open the split plan"], feature_recipe: ["features", "Open the feature recipe"], model_version: ["models", "Open the model version"],
+    experiment: ["experiments", "Open the run"], dataset_version: ["data", "Open the data"],
+    split_plan: ["splits", "Open the test design"], feature_recipe: ["features", "Open the features"], model_version: ["models", "Open the model"],
   };
   const entry = Object.hasOwn(sections, node.kind) ? sections[node.kind] : null;
   const href = entry ? projectHref(projectId, entry[0], node.id) : null;
@@ -228,7 +300,7 @@ export type DecisionLike = {
   effective_state: string;
   recorded_at: string;
   subject: { kind: string; id: string };
-  actor: { kind: string; rule?: string | null };
+  actor: { kind: string; rule?: string | null; agent_run_id?: string | null; service_token_id?: string | null };
   details?: Record<string, unknown>;
   details_truncated?: boolean;
   facts?: Record<string, unknown>;
@@ -241,6 +313,8 @@ export type DecisionMarker = {
   agreement: string | null;
   counts: Array<[string, number]>;
   actor: string;
+  /** Who recorded it, in words: an access-token record is "a connected tool (access token)", never "the assistant". */
+  actorLabel: string;
   state: string;
   recordedAt: string;
   answers: PointAnswer[];
@@ -267,6 +341,7 @@ export function decisionMarkers(records: DecisionLike[]): Map<string, DecisionMa
       agreement: typeof details.agreement === "string" ? details.agreement : null,
       counts: counts.filter((entry): entry is [string, number] => typeof entry[1] === "number").sort(([a], [b]) => a.localeCompare(b)),
       actor: record.actor.kind,
+      actorLabel: actorWords(record.actor),
       state: record.effective_state,
       recordedAt: record.recorded_at,
       answers: columns.slice(0, ANSWER_LIMIT).filter((c): c is Record<string, unknown> => !!c && typeof c === "object").map((c) => ({
@@ -296,8 +371,8 @@ export function graphSummary(graph: { nodes: GraphNodeLike[]; edges: unknown[]; 
   let note: string | null = null;
   if (graph.truncated) {
     const kinds = (graph.truncated_kinds ?? []).map((kind) => kindLabel(kind).toLowerCase());
-    note = `Showing ${graph.nodes.length} nodes: the newest ${experiments} experiments (window of ${graph.experiment_limit})`
-      + (kinds.length ? `; capped kinds: ${kinds.join(", ")}` : "")
+    note = `Showing ${graph.nodes.length} items: the newest ${experiments} runs (window of ${graph.experiment_limit})`
+      + (kinds.length ? `; some ${kinds.join(", ")} items are left out` : "")
       + ". Older lineage is not drawn on this page.";
   }
   return { nodes: graph.nodes.length, edges: graph.edges.length, stale, truncated: graph.truncated, note };

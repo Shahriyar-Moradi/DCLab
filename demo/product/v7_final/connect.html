@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Connect · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="connect.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Admin › <b>Connect</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Connect</h1><p class="sub">Use DCLab from your own code, from a terminal, or from a coding assistant such as Claude Code or Cursor.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="create">Create an access token</button></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="tabs" data-tabs="con">
+  <button data-tab="sdk" aria-selected="true">Python</button>
+  <button data-tab="cli">Terminal</button>
+  <button data-tab="mcp">Claude Code &amp; Cursor</button>
+  <button data-tab="tok">Access tokens</button>
+</div>
+
+<div data-tabpanel="con:sdk" class="on">
+  <div class="card">
+    <h3>Python</h3>
+    <pre class="snip"><code>from dclab_client import DCLabClient
+
+with DCLabClient("https://dclab.example/api/backend", token="dclab_st_...") as api:
+    project = api.projects.create(name="Churn")
+    upload = api.datasets.upload(project.id, "customers.csv")
+    run = api.experiments.create(project_id=project.id, dataset_id=upload.id, target_column="churned_next_30d")
+    for check in api.experiments.findings(run.id).checks:   # once the run is completed
+        print(check.check, check.status, check.message)
+    print(api.model_versions.card("&lt;model version id&gt;").markdown)
+    rows = api.datasets.upload(project.id, "new_customers.csv", purpose="scoring")
+    pred = api.predictions.create(model_version_id="&lt;model version id&gt;", dataset_id=rows.id)
+    if api.predictions.get(pred.id).status == "completed":
+        api.predictions.download(pred.id, to="predictions.csv")</code></pre>
+    <p class="small muted"><code>dclab.example</code> is a placeholder host: use your own DCLab address. Scoring runs in the background, so check the status before downloading.</p>
+  </div>
+</div>
+<div data-tabpanel="con:cli">
+  <div class="card">
+    <h3>Terminal</h3>
+    <pre class="snip"><code>dclab-cli login --api-url https://dclab.example/api/backend --workspace &lt;id&gt;
+dclab-cli data upload customers.csv --project &lt;id&gt;
+dclab-cli experiments run --project P --dataset D --target churned_next_30d
+dclab-cli experiments findings &lt;run id&gt;
+dclab-cli models card &lt;model id&gt;
+dclab-cli predict create --model-version MV --dataset D --wait</code></pre>
+    <p class="small muted">The command is <code>dclab-cli</code>. Add <code>--json</code> to any command for machine-readable output. <code>dclab.example</code> is a placeholder host.</p>
+  </div>
+</div>
+<div data-tabpanel="con:mcp">
+  <div class="card">
+    <h3>Claude Code and Cursor</h3>
+    <pre class="snip"><code>{
+  "mcpServers": {
+    "dclab": {
+      "command": "dclab-mcp",
+      "env": {
+        "DCLAB_TOKEN": "dclab_st_...",
+        "DCLAB_API_URL": "https://dclab.example"
+      }
+    }
+  }
+}</code></pre>
+    <p class="small muted">Tools that read are on by default. Tools that change things are listed only when you also set <code>DCLAB_MCP_WRITE_ENABLED=1</code>. A token can only <b>propose</b> decisions; a person accepts them in DCLab. <code>dclab.example</code> is a placeholder host.</p>
+  </div>
+</div>
+<div data-tabpanel="con:tok">
+  <div class="tbl card"><table>
+    <thead><tr><th>Name</th><th>What it can do</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>Maya’s notebook</td><td><span class="pill det">read</span> <span class="pill det">run experiments</span></td><td>3 weeks ago</td><td>Today</td><td><button class="btn sm danger" type="button" data-mock="revoke">Revoke</button></td></tr>
+      <tr><td>Cursor on Maya’s laptop</td><td><span class="pill det">read</span> <span class="pill det">propose decisions</span></td><td>1 week ago</td><td>Yesterday</td><td><button class="btn sm danger" type="button" data-mock="revoke">Revoke</button></td></tr>
+      <tr><td>Weekly report script</td><td><span class="pill det">read</span></td><td>2 months ago</td><td>Mon</td><td><button class="btn sm danger" type="button" data-mock="revoke">Revoke</button></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">An access token can read, run experiments and propose decisions. It cannot accept a decision or choose a model for use: that stays with people. Proposals land in your Inbox.</p>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v7_final"></script>
+<script src="guide.js"></script>
+</body>
+</html>

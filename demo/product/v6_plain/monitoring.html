@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Monitoring · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="monitoring.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Monitoring</b></div>
+    <div class="right">
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Monitoring <span class="pill warn">drift · week of 1 Sep</span></h1><p class="sub">Watches the incoming data every week and, once real outcomes arrive (about 4 weeks late), how good the predictions really are.</p></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><div class="stat"><span class="v">0.22</span><span class="l">drift (PSI) on <code>plan_type</code> · alert at 0.20</span></div></div>
+  <div class="card"><div class="stat"><span class="v">0.48</span><span class="l">real precision · was 0.63 in the final test</span></div></div>
+  <div class="card"><div class="stat"><span class="v">0.80</span><span class="l">real recall · still meets the rule</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="mon">
+  <button data-tab="drift" aria-selected="true">Input drift</button>
+  <button data-tab="real">Real results</button>
+</div>
+
+<div data-tabpanel="mon:drift" class="on">
+  <div class="card">
+    <h3>Drift of <code>plan_type</code>, by week <span class="sp">week of 7 Jul to week of 1 Sep</span></h3>
+    <svg class="chart" viewBox="0 0 460 170" role="img" aria-label="Weekly drift (PSI) of plan_type. It rises from 0.04 to 0.22, crossing the alert line of 0.20 in the week of 1 September."><line class="grid-l" x1="44" y1="140.0" x2="440" y2="140.0"/><text class="axis" x="38" y="144.0" text-anchor="end">0</text><line class="grid-l" x1="44" y1="100.0" x2="440" y2="100.0"/><text class="axis" x="38" y="104.0" text-anchor="end">0.1</text><line class="grid-l" x1="44" y1="60.0" x2="440" y2="60.0"/><text class="axis" x="38" y="64.0" text-anchor="end">0.2</text><line class="grid-l" x1="44" y1="20.0" x2="440" y2="20.0"/><text class="axis" x="38" y="24.0" text-anchor="end">0.3</text><line class="lim" x1="44" y1="60.0" x2="440" y2="60.0"/><text class="axis" x="48" y="55.0">alert 0.20</text><line class="lim-w" x1="44" y1="100.0" x2="440" y2="100.0"/><text class="axis" x="48" y="95.0">watch 0.10</text><path class="area" d="M60.0,140 L60.0,124.0 L105.5,120.0 L151.0,120.0 L196.5,112.0 L242.0,104.0 L287.5,92.0 L333.0,80.0 L378.5,64.0 L424.0,52.0 L424.0,140 Z"/><polyline class="ln-a" points="60.0,124.0 105.5,120.0 151.0,120.0 196.5,112.0 242.0,104.0 287.5,92.0 333.0,80.0 378.5,64.0 424.0,52.0"/><circle class="pt-a" cx="424.0" cy="52.0" r="4.5"/><text class="axis" x="60.0" y="160" text-anchor="middle">7 Jul</text><text class="axis" x="242.0" y="160" text-anchor="middle">4 Aug</text><text class="axis" x="424.0" y="160" text-anchor="middle">1 Sep</text></svg>
+  </div>
+</div>
+<div data-tabpanel="mon:real">
+  <div class="card">
+    <h3>Real precision and recall, by week <span class="sp">outcomes arrive about 4 weeks late</span></h3>
+    <svg class="chart" viewBox="0 0 460 170" role="img" aria-label="Real precision and recall by week once outcomes arrived. Recall stays near 0.80 while precision falls from 0.62 to 0.48."><line class="grid-l" x1="44" y1="140.0" x2="440" y2="140.0"/><text class="axis" x="38" y="144.0" text-anchor="end">0.4</text><line class="grid-l" x1="44" y1="116.0" x2="440" y2="116.0"/><text class="axis" x="38" y="120.0" text-anchor="end">0.5</text><line class="grid-l" x1="44" y1="92.0" x2="440" y2="92.0"/><text class="axis" x="38" y="96.0" text-anchor="end">0.6</text><line class="grid-l" x1="44" y1="68.0" x2="440" y2="68.0"/><text class="axis" x="38" y="72.0" text-anchor="end">0.7</text><line class="grid-l" x1="44" y1="44.0" x2="440" y2="44.0"/><text class="axis" x="38" y="48.0" text-anchor="end">0.8</text><line class="grid-l" x1="44" y1="20.0" x2="440" y2="20.0"/><text class="axis" x="38" y="24.0" text-anchor="end">0.9</text><line class="ln-c" x1="44" y1="84.8" x2="440" y2="84.8"/><text class="axis" x="440" y="79.8" text-anchor="end">0.63 in the final test</text><polyline class="ln-a" points="60.0,41.6 105.5,41.6 151.0,44.0 196.5,41.6 242.0,44.0 287.5,44.0 333.0,41.6 378.5,44.0 424.0,44.0"/><polyline class="ln-d" points="60.0,87.2 105.5,87.2 151.0,89.6 196.5,94.4 242.0,99.2 287.5,104.0 333.0,111.2 378.5,116.0 424.0,120.8"/><circle class="pt-d" cx="424.0" cy="120.8" r="4.5"/><text class="axis" x="50" y="12"><tspan class="k-a">■</tspan> recall   <tspan class="k-d">■</tspan> precision</text><text class="axis" x="60.0" y="160" text-anchor="middle">7 Jul</text><text class="axis" x="242.0" y="160" text-anchor="middle">4 Aug</text><text class="axis" x="424.0" y="160" text-anchor="middle">1 Sep</text></svg>
+  </div>
+</div>
+
+<div class="card">
+  <h3>What changed</h3>
+  <p>After the March marketing campaign, a new plan type, <code>family_5g</code>, appeared. It is now 6% of customers and churns about twice as often as the average. The model barely saw it in training, so it flags the wrong people: recall holds at 0.80, but precision fell from 0.63 to 0.48.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Column</th><th class="r">Drift (PSI)</th><th>Status</th><th>What moved</th></tr></thead>
+    <tbody>
+      <tr><td><code>plan_type</code></td><td class="r">0.22</td><td><span class="pill crit">alert</span></td><td>new value <code>family_5g</code>, 6% of customers</td></tr>
+      <tr><td><code>monthly_fee</code></td><td class="r">0.11</td><td><span class="pill warn">watch</span></td><td>average fee up 4%</td></tr>
+      <tr><td><code>region_code</code></td><td class="r">0.03</td><td><span class="pill ok">ok</span></td><td></td></tr>
+      <tr><td><code>last_login_days</code></td><td class="r">0.02</td><td><span class="pill ok">ok</span></td><td></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="pair">
+  <div class="card">
+    <h3>Churn model (in use)</h3>
+    <p class="small muted">Trained on data up to Jun 2026</p>
+    <dl class="kv"><dt>Precision</dt><dd><b>0.48</b> on recent weeks</dd><dt>Recall</dt><dd>0.80</dd><dt>PR-AUC</dt><dd>0.64</dd></dl>
+  </div>
+  <div class="card pick">
+    <h3>Churn model · retrained <span class="pill ok">better</span></h3>
+    <p class="small muted">Trained on data up to Sep 2026 · same test design</p>
+    <dl class="kv"><dt>Precision</dt><dd><b>0.59</b> on the same kind of test</dd><dt>Recall</dt><dd>0.81</dd><dt>PR-AUC</dt><dd>0.69</dd></dl>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Your decision</h3>
+  <p class="small muted">Precision goes from 0.48 to 0.59 with the retrained model, and recall stays above 0.80. The current model is kept, so you can switch back.</p>
+  <div class="toolbar" id="decision-buttons"><button class="btn primary" type="button" data-decide="switch">Switch to the retrained model</button><button class="btn" type="button" data-decide="keep">Keep the current model</button></div>
+  <div id="decision-result" class="banner" hidden></div>
+  <h4>History</h4>
+  <ul class="hist" id="history"><li>The model flagged a drop in precision to 0.48 · Mon</li><li>Retrained model was trained on data up to Sep 2026 · Mon</li></ul>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v6_plain"></script>
+<script src="guide.js"></script>
+</body>
+</html>

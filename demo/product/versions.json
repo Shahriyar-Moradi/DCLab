@@ -1,6 +1,18 @@
 {
-  "latest": "v5_based_plans",
+  "latest": "v7_final",
   "versions": [
+    {
+      "id": "v7_final",
+      "name": "Final product",
+      "date": "2026-10-08",
+      "summary": "The whole planned product in plain words: 17 screens, an honest status tag on every screen and item (working today / partly / built, switched off / planned), assistant panel, roles, and a What's real today page. This is the target for the real product."
+    },
+    {
+      "id": "v6_plain",
+      "name": "Plain",
+      "date": "2026-10-08",
+      "summary": "The core six-step churn story in plain data-science words: data, goal and test design, experiments, model, predictions, monitoring. No internal codes or AI-governance jargon."
+    },
     {
       "id": "v5_based_plans",
       "name": "Based on the plans",

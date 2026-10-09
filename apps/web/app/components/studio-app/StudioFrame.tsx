@@ -8,10 +8,13 @@ import { STUDIO_BACKEND_FEATURES, studioNavigationForUser } from "@/app/componen
 import { CommandBar } from "@/components/studio/CommandBar";
 import { Crumbs, type Crumb } from "@/components/studio/Crumbs";
 import { Shell } from "@/components/studio/Shell";
-import { useCommandSearch, useSession, useStudioProject } from "@/lib/application";
+import { useCommandSearch, useProjectRefs, useSession, useStudioProject } from "@/lib/application";
+import { useProjectGraph } from "@/lib/application/studio-data-hooks";
+import { projectModelId } from "@/lib/application/studio-flow";
 import { useInboxCounts } from "@/lib/application/studio-inbox-hooks";
 import { badgeText } from "@/lib/application/studio-inbox";
-import { isUuid, MIN_QUERY_LENGTH } from "@/lib/application/command-search";
+import { offSidebarCrumb } from "@/lib/application/studio-names";
+import { isUuid, MIN_QUERY_LENGTH, plainText } from "@/lib/application/command-search";
 import { displayName } from "@/lib/infrastructure/session";
 
 function StudioCommandBar({ projectId }: { projectId?: string }) {
@@ -44,20 +47,32 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   const projectId = pathname.startsWith("/projects/") && isUuid(params.id) ? params.id : undefined;
   const { user, loaded, activeWorkspace, activeWorkspaceId, workspaceSwitching } = useSession();
   const project = useStudioProject(projectId);
-  const nav = studioNavigationForUser(user, projectId);
+  const refs = useProjectRefs(projectId);
+  const graph = useProjectGraph(projectId);
+  const targetOf = (kind: string) => refs.data?.items.find((ref) => ref.ref_kind === kind)?.target.id ?? null;
+  // The Goal and Predictions pages need an id (the test design, the model in use); they are listed once the project has one (Predictions: any model, the one in use preferred).
+  const nav = studioNavigationForUser(user, projectId, { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) }).map((group) =>
+    group.id === "project" && project.data?.name ? { ...group, label: `Project · ${plainText(project.data.name, 60)}` } : group,
+  );
   // One cheap counts read (refetched once a minute); the sidebar badge never needs the list.
   const counts = useInboxCounts(!!user && nav.some((group) => group.items.some((item) => item.id === "inbox")), true);
   const items = nav.flatMap((group) => group.items);
+  const projectItems = new Set(nav.filter((group) => group.id === "project").flatMap((group) => group.items.map((item) => item.id)));
   const current = items
-    .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
-    .sort((a, b) => b.href.length - a.href.length)[0];
+    .map((item) => ({ item, path: item.href.split("?")[0] }))
+    // Inside a project only the project's own items can be "current"; the workspace Projects item would match every project page.
+    .filter(({ item, path }) => item.href.includes("?") ? false : projectId && !projectItems.has(item.id) ? pathname === path : pathname === path || pathname.startsWith(`${path}/`))
+    .sort((a, b) => b.path.length - a.path.length)[0]?.item;
 
   const crumbs: Crumb[] = [{ label: activeWorkspace?.name ?? "Workspace", href: "/home" }];
   if (projectId) {
     crumbs.push({ label: "Projects", href: "/projects" });
-    crumbs.push({ label: project.data?.name ?? "Project", href: `/projects/${projectId}/experiments` });
+    crumbs.push({ label: project.data?.name ? plainText(project.data.name, 60) : "Project", href: `/projects/${projectId}/experiments` });
   }
+  // Pages reached from other pages rather than from the sidebar still get a name in the breadcrumb.
+  const extra = projectId ? offSidebarCrumb(pathname.split("/")[3]) : undefined;
   if (current && (projectId || current.href !== crumbs.at(-1)?.href)) crumbs.push({ label: current.label });
+  else if (extra) crumbs.push({ label: extra });
 
   let body: ReactNode = children;
   if (!loaded) body = <p role="status">Loading your workspace…</p>;

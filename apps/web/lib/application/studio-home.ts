@@ -22,7 +22,7 @@ export type AiHealth = { state: "off" | "attention" | "on" | "unavailable"; labe
 /** A failed governance read says nothing about whether AI is on or off. */
 export function aiHealthUnavailable(error: unknown): AiHealth {
   const status = (error as { status?: unknown } | null)?.status;
-  if (status === 403) return { state: "unavailable", label: "AI health unavailable", detail: "Your role cannot read governance, so AI health is not shown here." };
+  if (status === 403) return { state: "unavailable", label: "AI health unavailable", detail: "Your role cannot read the AI settings, so AI health is not shown here." };
   return { state: "unavailable", label: "AI health unavailable", detail: "AI health could not be loaded." };
 }
 
@@ -33,7 +33,7 @@ export function aiHealth(governance: GovernanceLike): AiHealth {
   if (!governance.ai_enabled_setting) return { state: "off", label: "AI is off", detail: "AI is off for this workspace. Every step still works with rules." };
   const incidents = governance.open_incidents.length;
   const switchedOff = governance.switches.workspace.filter((s) => s.state === "off").length;
-  if (incidents > 0) return { state: "attention", label: `${incidents} open incident${incidents === 1 ? "" : "s"}`, detail: "An AI feature was held after a problem. Open Governance to see which." };
+  if (incidents > 0) return { state: "attention", label: `${incidents} open problem report${incidents === 1 ? "" : "s"}`, detail: "An AI feature was held after a problem. Ask a workspace admin to review it." };
   if (switchedOff > 0) return { state: "attention", label: `${switchedOff} AI switch${switchedOff === 1 ? "" : "es"} off`, detail: "Part of the AI is switched off in this workspace." };
   return { state: "on", label: "AI is on", detail: "No open incidents." };
 }
@@ -64,7 +64,7 @@ export function spendSummary(governance: GovernanceLike): { value: string; hint:
 
 type ActivityLike = { kind: string; project_id?: string | null; link: { kind: string; id: string } };
 
-/** Where an activity row goes: a decision record or an experiment inside its project. Agent runs have no page yet. */
+/** Where an activity row goes: a History entry or an experiment inside its project. Agent runs have no page yet. */
 export function activityHref(item: ActivityLike): string | null {
   if (!isUuid(item.project_id) || !isUuid(item.link.id)) return null;
   if (item.link.kind === "decision_record") return safeInternalHref(`/projects/${item.project_id}/decisions?record=${item.link.id}`);
@@ -73,8 +73,8 @@ export function activityHref(item: ActivityLike): string | null {
 }
 
 export function actorLabel(actor: { kind: string; rule?: string | null; agent_key?: string | null; is_you?: boolean }): { text: string; tone: PillToneName } {
-  if (actor.kind === "rule") return { text: "rule", tone: "det" };
-  if (actor.kind === "agent") return { text: "agent", tone: "ai" };
+  if (actor.kind === "rule") return { text: "rules", tone: "det" };
+  if (actor.kind === "agent") return { text: "connected tool", tone: "ai" };
   return { text: actor.is_you ? "you" : "person", tone: "gray" };
 }
 

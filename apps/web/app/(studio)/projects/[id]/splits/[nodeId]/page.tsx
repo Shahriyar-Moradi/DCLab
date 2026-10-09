@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { projectHref } from "@/lib/application/command-search";
 import { PageHead } from "@/components/studio/PageHead";
-import { SplitInspector } from "@/app/components/studio-app/Inspectors";
+import { GoalTestDesign } from "@/app/components/studio-app/GoalTestDesign";
 
 export default function SplitInspectorPage() {
   const { id, nodeId } = useParams<{ id: string; nodeId: string }>();
   return (
     <>
-      <PageHead title="Split plan" eyebrow={`${nodeId.slice(0, 8)}`} subtitle="How rows were assigned to the final holdout and the cross-validation folds. Counts only." actions={<Link className="btn" href={`/projects/${id}/graph`}>Back to the graph</Link>} />
-      <SplitInspector projectId={id} nodeId={nodeId} />
+      <PageHead title="Goal & test design" subtitle="What we want to predict, what “good” means, and how we test it fairly." actions={projectHref(id, "graph") ? <Link className="btn" href={projectHref(id, "graph")!}>Back to lineage</Link> : null} />
+      <GoalTestDesign projectId={id} nodeId={nodeId} />
     </>
   );
 }

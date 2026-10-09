@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { contractSentences, contractView, failureError, mapScoringError, parseSessionScorings, pollDelay, safeDownloadId } from "./studio-scoring.ts";
+import {
+  contractSentences, contractView, downloadWords, failureError, historyRows, mapScoringError, modelChoiceLabel, parseSessionScorings, pickModel, pollDelay, safeDownloadId, scoringStatusWords, sessionStoreKey, type ReadState,
+} from "./studio-scoring.ts";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
@@ -55,4 +57,65 @@ test("a warning status and empty columns are never an empty banner; scoring_fail
   assert.match(warn.lines.join(" "), /could not be read and were treated as missing in: a\./);
   assert.match(contractSentences(contractView({ status: "failed", empty_columns: ["z"] })!).lines.join(" "), /empty in the file: z/);
   assert.equal(failureError("scoring_failed", "the input file could not be read as a table").detail, "the input file could not be read as a table.");
+});
+
+const M1 = "22222222-2222-4222-8222-222222222222";
+const M2 = "33333333-3333-4333-8333-333333333333";
+
+test("the model to score with: asked-for if it is this project's, else the model in use, else the newest, else none", () => {
+  const models = [{ id: M1, champion: false }, { id: M2, champion: true }];
+  assert.equal(pickModel(models, M1), M1);
+  assert.equal(pickModel(models, null), M2);
+  assert.equal(pickModel(models, "44444444-4444-4444-8444-444444444444"), M2);
+  assert.equal(pickModel([{ id: M1, champion: false }], undefined), M1);
+  assert.equal(pickModel([], M1), null);
+  assert.equal(modelChoiceLabel({ version: "2", champion: true }, "Run 3"), "Model v2 · Run 3 (in use)");
+  assert.equal(modelChoiceLabel({ version: "v1", champion: false }, null), "Model v1");
+});
+
+test("words for status and for the downloaded file claim only what the API says", () => {
+  assert.equal(scoringStatusWords("completed"), "done");
+  assert.equal(scoringStatusWords("queued"), "waiting");
+  assert.equal(scoringStatusWords("__proto__"), "proto");
+  assert.equal(scoringStatusWords("toString"), "toString");
+  assert.match(downloadWords(0.5), /one row for each row of your file.*row number.*entity column when your file has one.*0\/1 label.*locked threshold/);
+  assert.doesNotMatch(downloadWords(0.5), /reason|why|top/i);
+  assert.match(downloadWords(null), /predicted number/);
+  assert.doesNotMatch(downloadWords(null), /threshold/);
+});
+
+test("history: newest first, you, the model by name, a file name is never reworded", () => {
+  const entries = [
+    { id: ID, fileName: "holdout_next-month.csv", modelVersionId: M1 },
+    { id: "55555555-5555-4555-8555-555555555555", fileName: "__proto__.csv", modelVersionId: M2 },
+    { id: "66666666-6666-4666-8666-666666666666", fileName: "late.csv", modelVersionId: M2 },
+  ];
+  const reads = new Map<string, ReadState>([
+    [ID, { data: { id: ID, model_version_id: M1, status: "completed", created_at: "2026-10-01T10:00:00Z", rows_in: 40, rows_out: 40 } }],
+    [entries[1].id, { data: { id: entries[1].id, model_version_id: M2, status: "failed", created_at: "2026-10-02T10:00:00Z", rows_in: null, rows_out: null } }],
+    // a read that belongs to another model than the entry says is not trusted
+    [entries[2].id, { data: { id: entries[2].id, model_version_id: M1, status: "completed", created_at: "2026-10-03T10:00:00Z", rows_in: 1, rows_out: 1 } }],
+  ]);
+  const rows = historyRows(entries, reads, (mv) => (mv === M1 ? "Model v1 · Run 1" : null), (mv) => `/m/${mv}`);
+  assert.deepEqual(rows.map((r) => r.file), ["__proto__.csv", "holdout_next-month.csv", "late.csv"]);
+  assert.equal(rows[1].rows, "40 of 40");
+  assert.equal(rows[1].model, "Model v1 · Run 1");
+  assert.equal(rows[0].model, "A model of this project");
+  assert.equal(rows[0].status, "failed");
+  assert.equal(rows[0].rows, "—");
+  assert.equal(rows[2].status, "not this model's");
+  assert.equal(rows[2].rows, "—");
+  assert.ok(rows.every((r) => r.by === "You, in this browser tab"));
+  // loading, failed read and no data are three different texts
+  const three = historyRows(entries, new Map<string, ReadState>([[ID, undefined], [entries[1].id, { failed: true }]]), () => null, () => null);
+  assert.deepEqual(three.map((r) => r.status), ["loading", "could not be read", "loading"]);
+  assert.equal(three[1].statusKey, "failed");
+});
+
+test("the session list is kept per workspace and per person, never shared on one tab", () => {
+  const a = sessionStoreKey({ userId: "user-a", workspaceId: "ws-1" }, M1);
+  assert.notEqual(a, sessionStoreKey({ userId: "user-b", workspaceId: "ws-1" }, M1));
+  assert.notEqual(a, sessionStoreKey({ userId: "user-a", workspaceId: "ws-2" }, M1));
+  assert.notEqual(a, sessionStoreKey({ userId: "user-a", workspaceId: "ws-1" }, M2));
+  assert.equal(a, `dclab.scorings.ws-1.user-a.${M1}`);
 });

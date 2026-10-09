@@ -1,0 +1,40 @@
+<!-- title: History · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>History</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>History</h1><p class="sub">Every decision in this project: who made it, what it was, the evidence, and how to undo or correct it.</p></div>
+</div>
+
+<div class="tabs" data-tabs="hist">
+  <button data-tab="log" aria-selected="true">Log</button>
+  <button data-tab="lineage">Lineage</button>
+</div>
+
+<div data-tabpanel="hist:log" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Evidence</th><th>Undo or correct</th></tr></thead>
+    <tbody data-hist-top></tbody>
+    <tbody>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Found drift on <code>plan_type</code> <span class="pill plan">Planned · Phase 7</span></td><td>Drift 0.22, alert at 0.20</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill asst">The assistant</span></td><td>Explained the drift in plain words <span class="pill off">Built, switched off</span> <span class="pill plan">Planned · Phase 7</span></td><td>New plan type <code>family_5g</code>, 6% of customers</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Retrained on data up to Sep 2026 <span class="pill plan">Planned · Phase 7</span></td><td>Precision 0.59 on the same test design</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Weekly scoring: 6,412 customers flagged <span class="pill plan">Planned · Phase 7</span></td><td>51,296 scored</td><td>—</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill asst">The assistant</span></td><td>Left <code>customer_id</code> out · the rules agreed <span class="pill off">Built, switched off</span></td><td>Every value is different</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Kept <code>region_code</code> after the assistant and the rules disagreed <span class="pill off">Built, switched off</span></td><td>12 regions, enough rows</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Approved Version 1 for predictions</td><td>Final test: recall 0.81, precision 0.63</td><td><button class="btn sm" type="button" data-mock="undo">Undo</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Ran the final test set once</td><td>8,904 rows · 1,731 caught of 2,137 churners</td><td>Cannot be repeated</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Chose Run 3 on cross-validation · you confirmed</td><td>PR-AUC 0.70 ± 0.02</td><td><button class="btn sm" type="button" data-mock="edit">Correct</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Confirmed the goal and the test design</td><td>Time-ordered because churn rises over time</td><td><button class="btn sm" type="button" data-mock="edit">Correct</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Uploaded <code>customers_2026Q3.csv</code></td><td>48,210 rows, 31 columns</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Corrections add a new entry; nothing is deleted.</p>
+</div>
+
+<div data-tabpanel="hist:lineage">
+  <div class="card">
+    <h3>How the pieces connect <span class="sp">file → test design → runs → model → predictions</span></h3>
+    {{chart:lineage}}
+    <div class="banner warn"><div class="sp"><b>Built on old data.</b> <span class="pill plan">Planned · Phase 7</span> A newer file (Sep 2026) exists. The model in use and this week’s predictions were built on the Jun 2026 file.</div><a class="btn sm" href="monitoring.html">Open Monitoring</a></div>
+  </div>
+</div>

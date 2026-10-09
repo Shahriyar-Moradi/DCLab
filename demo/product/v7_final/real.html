@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>What’s real today · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="real.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>What’s real today</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>What’s real today</h1><p class="sub">Every screen in this demo, with its status. Nothing here is hidden: planned screens are marked as previews.</p></div>
+</div>
+
+<div class="banner"><div class="sp"><b>The core flow — data, goal, experiments, trust checks, model, scoring a file — works today. Improve, monitoring, releases, the business view and the assistant come next.</b></div></div>
+
+<div class="chips">
+  <span class="chip"><b><span class="pill ok">Working today</span></b><small>You can use it now</small></span>
+  <span class="chip"><b><span class="pill warn">Partly working</span></b><small>Some parts are missing, listed below</small></span>
+  <span class="chip"><b><span class="pill off">Built, switched off</span></b><small>AI pieces, shown after testing</small></span>
+  <span class="chip"><b><span class="pill plan">Planned · Phase N</span></b><small>Not built yet</small></span>
+</div>
+
+<div class="tbl card"><table>
+  <thead><tr><th>Screen</th><th>Status</th><th>What is missing</th></tr></thead>
+  <tbody>
+    <tr><td><a href="index.html">Home</a></td><td><span class="pill ok">Working today</span></td><td>Nothing</td></tr>
+    <tr><td><a href="inbox.html">Inbox</a></td><td><span class="pill ok">Working today</span> <span class="pill off">AI items: Built, switched off</span></td><td>Items suggested by the assistant appear after AI is switched on</td></tr>
+    <tr><td><a href="projects.html">Projects</a></td><td><span class="pill ok">Working today</span></td><td>Nothing</td></tr>
+    <tr><td><a href="data.html">Data</a></td><td><span class="pill ok">Working today</span></td><td>Nothing</td></tr>
+    <tr><td><a href="goal.html">Goal &amp; test design</a></td><td><span class="pill ok">Working today</span></td><td>Nothing</td></tr>
+    <tr><td><a href="experiments.html">Experiments</a></td><td><span class="pill ok">Working today</span></td><td>Nothing</td></tr>
+    <tr><td><a href="improve.html">Improve</a></td><td><span class="pill plan">Planned · Phase 5</span></td><td>The engine is being built; the result shown is an example</td></tr>
+    <tr><td><a href="model.html">Model</a></td><td><span class="pill ok">Working today</span> <span class="pill plan">Releases: Planned · Phase 7</span></td><td>Approving a version for scheduled scoring and one-click roll back</td></tr>
+    <tr><td><a href="predictions.html">Predictions</a></td><td><span class="pill warn">Partly working</span></td><td>Scoring a file works. Per-row reasons and the weekly schedule: Planned · Phase 7</td></tr>
+    <tr><td><a href="monitoring.html">Monitoring</a></td><td><span class="pill plan">Planned · Phase 7</span></td><td>Weekly drift, real results, automatic retrain and the decision flow</td></tr>
+    <tr><td><a href="history.html">History</a></td><td><span class="pill ok">Working today</span></td><td>Nothing</td></tr>
+    <tr><td>Assistant panel</td><td><span class="pill off">Built, switched off</span></td><td>Shown to users after testing</td></tr>
+    <tr><td><a href="settings.html">Settings</a></td><td><span class="pill warn">Partly working</span></td><td>Usage &amp; cost and notifications: Planned · Phase 8. Integrations: Planned</td></tr>
+    <tr><td><a href="ai-settings.html">AI settings</a></td><td><span class="pill off">Built, switched off</span> <span class="pill plan">Screen: Planned</span></td><td>The rules exist; the screen to change them is planned</td></tr>
+    <tr><td><a href="connect.html">Connect</a></td><td><span class="pill ok">Working today</span></td><td>Nothing</td></tr>
+    <tr><td><a href="business.html">Business view</a></td><td><span class="pill plan">Planned · Phase 7</span></td><td>The whole screen</td></tr>
+    <tr><td><a href="console.html">Platform console</a></td><td><span class="pill plan">Planned · Phase 8</span></td><td>The whole screen (DCLab staff only)</td></tr>
+  </tbody>
+</table></div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v7_final"></script>
+<script src="guide.js"></script>
+</body>
+</html>

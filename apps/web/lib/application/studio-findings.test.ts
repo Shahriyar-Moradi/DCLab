@@ -20,7 +20,7 @@ test("status is text as well as colour", () => {
   assert.equal(findingTone("pass"), "ok");
   assert.equal(findingTone("not_evaluated"), "gray");
   assert.equal(findingStatusLabel("fail", "critical"), "Failed (critical)");
-  assert.equal(findingStatusLabel("not_evaluated", "info"), "Not evaluated");
+  assert.equal(findingStatusLabel("not_evaluated", "info"), "Not checked");
   assert.equal(findingStatusLabel("weird_new", "info"), "weird new");
 });
 
@@ -50,7 +50,7 @@ test("evidence formatting is unit aware and keeps unknown keys as plain text", (
   assert.deepEqual(evidenceRows(undefined), []);
   const nested = evidenceRows({ holdout_rows: 40, holdout_comparison: { drifted_columns: ["amount"], max_psi: 0.31 } });
   assert.deepEqual(nested.map((r) => [r.key, r.label, r.value]), [
-    ["holdout_rows", "Holdout rows", "40"],
+    ["holdout_rows", "Final test set rows", "40"],
     ["holdout_comparison.drifted_columns", "Test rows: drifted columns", "amount"],
     ["holdout_comparison.max_psi", "Test rows: max psi", "0.31"],
   ]);

@@ -16,7 +16,11 @@ import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { plainText, projectHref } from "@/lib/application/command-search";
 import { useCompare } from "@/lib/application/studio-compare-hooks";
-import { changeSetDiff, compareRefusal, deltaWording, describeChanges, durationText, formatDelta, metricRows, parseCompareIds, type MetricRow } from "@/lib/application/studio-compare";
+import { changeSetDiff, compareRefusal, deltaWording, durationText, formatDelta, metricRows, parseCompareIds, type MetricRow } from "@/lib/application/studio-compare";
+import { useProjectExperiments } from "@/lib/application";
+import { metricInfo, ruleStatusText } from "@/lib/application/studio-goal";
+import { designLabels, runName, runOrdinals } from "@/lib/application/studio-names";
+import { changeSentences, familyLabel, selectionScore } from "@/lib/application/studio-runs";
 import { formatNumber } from "@/lib/application/studio-inspect";
 import { ExperimentDetailSchema } from "@/lib/application/studio-inspect-hooks";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
@@ -37,6 +41,13 @@ function useDetails(ids: string[]) {
 function CompareBody({ projectId, ids }: { projectId: string; ids: string[] }) {
   const compare = useCompare(ids);
   const details = useDetails(ids);
+  const siblings = useProjectExperiments(projectId);
+  const runs = siblings.data?.items ?? [];
+  const partial = !!siblings.data?.next_cursor;
+  const ordinals = runOrdinals(runs);
+  const intentOf = (experimentId: string) => runs.find((r) => r.id === experimentId)?.intent;
+  const runLabel = (experimentId: string) => runName(partial ? undefined : ordinals.get(experimentId), intentOf(experimentId) ? plainText(intentOf(experimentId), 60) : null, partial || !ordinals.has(experimentId) ? experimentId.slice(0, 8) : undefined);
+  const designName = (planId: string) => designLabels([...runs].sort((a, b) => a.created_at.localeCompare(b.created_at)).map((r) => r.split_plan_id)).get(planId) ?? "one shared test design";
   const back = projectHref(projectId, "experiments");
   if (compare.isPending) return <p role="status">Comparing…</p>;
   if (compare.isError) {
@@ -48,23 +59,24 @@ function CompareBody({ projectId, ids }: { projectId: string; ids: string[] }) {
   const data = compare.data;
   const items = [...data.experiments].sort((a, b) => ids.indexOf(a.experiment_id) - ids.indexOf(b.experiment_id));
   const rows = metricRows(items.map((i) => ({ ...i, cv: i.cv })), data.common.cv);
-  const label = (i: number) => `Run ${String.fromCharCode(65 + i)}`;
+  const label = (i: number) => runLabel(items[i].experiment_id);
+  const tag = (i: number) => runName(partial ? undefined : ordinals.get(items[i].experiment_id), null, partial || !ordinals.has(items[i].experiment_id) ? short(items[i].experiment_id) : undefined);
   const columns: Column<MetricRow>[] = [
-    { key: "metric", header: "Metric (cross-validation)", render: (r) => <span className="mono">{plainText(r.metric, 60)}</span> },
-    ...items.map((item, i) => ({ key: item.experiment_id, header: `${label(i)} (${short(item.experiment_id)})`, numeric: true, render: (r: MetricRow) => (r.values[i] === null ? "—" : formatNumber(r.values[i] as number)) })),
-    { key: "delta", header: `Change (${label(items.length - 1)} minus ${label(0)})`, numeric: true, render: (r) => <>{formatDelta(r.delta)} <span className="muted">{deltaWording(r.metric, r.delta)}</span></> },
+    { key: "metric", header: "Score (cross-validation)", render: (r) => plainText(metricInfo(r.metric)?.label ?? r.metric, 60) },
+    ...items.map((item, i) => ({ key: item.experiment_id, header: tag(i), numeric: true, render: (r: MetricRow) => (r.values[i] === null ? "—" : formatNumber(r.values[i] as number)) })),
+    { key: "delta", header: `Difference (${tag(items.length - 1)} minus ${tag(0)})`, numeric: true, render: (r) => <>{formatDelta(r.delta)} <span className="muted">{deltaWording(r.metric, r.delta)}</span></> },
   ];
-  const lines = details.map((d) => describeChanges(d.data?.change_set));
+  const lines = details.map((d) => changeSentences(d.data?.change_set));
   const diff = items.length === 2 ? changeSetDiff(lines[0] ?? [], lines[1] ?? []) : null;
   return (
     <>
       <Banner tone="info">
-        <b>Comparable.</b> All {items.length} runs use split plan <span className="mono">{short(data.split_plan_id)}</span>, so they were scored on the same folds and the same holdout rows.
+        <b>Comparable.</b> All {items.length} runs use {designName(data.split_plan_id)}, so they were scored on the same folds and the same final test set rows.
       </Banner>
       <h2>Scores</h2>
       <DataTable caption="Cross-validation metric comparison" columns={columns} rows={rows} rowKey={(r) => r.metric}
         emptyMessage="These runs share no cross-validation metric." />
-      <p className="muted">Wording of a change (better, worse) is only a reading aid for the direction of the metric. A model is chosen on cross-validation by the fixed selection rule; the final holdout is not shown here.</p>
+      <p className="muted">&ldquo;Better&rdquo; and &ldquo;worse&rdquo; only describe the direction of the score. A model is chosen on cross-validation by a fixed rule; the final test set is not shown here.</p>
       <h2>Runs</h2>
       <div className="grid">
         {items.map((item, i) => {
@@ -73,22 +85,21 @@ function CompareBody({ projectId, ids }: { projectId: string; ids: string[] }) {
           return (
             <Card key={item.experiment_id} title={<>{label(i)} <span className="mono">{short(item.experiment_id)}</span></>} aside={href ? <Link href={href}>Open</Link> : null}>
               <KeyValue items={[
-                { key: "intent", label: "Intent", value: detail?.intent ? <span>{plainText(detail.intent, 200)} <span className="muted">(written by a person or agent)</span></span> : "—" },
-                { key: "family", label: "Winning family", value: item.family ? plainText(item.family, 60) : "—" },
-                { key: "sel", label: "Selection metric", value: <>{item.selection_metric ? <span className="mono">{plainText(item.selection_metric, 40)}</span> : "—"}{item.selected_score != null ? <> = {formatNumber(item.selected_score)} <span className="muted">(CV)</span></> : null}</> },
+                { key: "intent", label: "Why this run", value: detail?.intent ? <span>{plainText(detail.intent, 200)} <span className="muted">(written by a person or agent)</span></span> : "—" },
+                { key: "family", label: "Model", value: familyLabel(item.family) ?? "—" },
+                { key: "sel", label: "Ranked on", value: <>{item.selection_metric ? plainText(metricInfo(item.selection_metric)?.label ?? item.selection_metric, 40) : "—"}{selectionScore(item.selection_metric, item.cv, item.selected_score) !== null ? <> = {formatNumber(selectionScore(item.selection_metric, item.cv, item.selected_score))} <span className="muted">(cross-validation)</span></> : null}</> },
                 { key: "thr", label: <Term definition="The probability above which a row is predicted positive. Chosen on cross-validation.">Decision threshold</Term>, value: item.decision_threshold != null ? formatNumber(item.decision_threshold) : "—" },
-                { key: "constraint", label: "Constraint status", value: item.constraint_status ?? "—" },
+                { key: "constraint", label: "Business rule", value: ruleStatusText(item.constraint_status) },
                 { key: "time", label: "Time", value: <>{durationText(detail?.started_at, detail?.ended_at)} <span className="muted">(started {formatWhen(detail?.started_at)})</span></> },
-                { key: "cost", label: "Cost", value: <span className="muted">Not recorded: the API has no cost field for a run yet.</span> },
-                { key: "parent", label: "Parent", value: item.parent_experiment_id ? <span className="mono">{short(item.parent_experiment_id)}</span> : "root run" },
-                { key: "split", label: "Split plan", value: <span className="mono">{short(data.split_plan_id)}</span> },
+                { key: "parent", label: "Based on", value: item.parent_experiment_id ? runLabel(item.parent_experiment_id) : "Started from scratch" },
+                { key: "split", label: "Test design", value: designName(data.split_plan_id) },
               ]} />
             </Card>
           );
         })}
       </div>
-      <h2><Term definition="A typed list of changes applied on top of a parent experiment.">Change sets</Term></h2>
-      {details.some((d) => d.isError) ? <p className="muted">Some run details could not be read.</p> : null}
+      <h2><Term definition="What was changed on top of the run each one is based on.">What changed</Term></h2>
+      {details.some((d) => d.isError) ? <p className="muted">Some run details could not be read, so their changes are not listed.</p> : null}
       {diff ? (
         <Card flat>
           <KeyValue items={[
@@ -98,13 +109,13 @@ function CompareBody({ projectId, ids }: { projectId: string; ids: string[] }) {
           ]} />
         </Card>
       ) : (
-        <KeyValue items={items.map((item, i) => ({ key: item.experiment_id, label: label(i), value: lines[i]?.length ? <ul className="plain-list">{lines[i].map((l) => <li key={l}>{plainText(l, 300)}</li>)}</ul> : "No change set (a root run)" }))} />
+        <KeyValue items={items.map((item, i) => ({ key: item.experiment_id, label: label(i), value: lines[i]?.length ? <ul className="plain-list">{lines[i].map((l) => <li key={l}>{plainText(l, 300)}</li>)}</ul> : "No changes: started from scratch" }))} />
       )}
-      <h2>Decide</h2>
-      <p className="muted">Accepting a run makes its model version the project&apos;s champion: one recorded decision. You can change your mind later; the earlier decision stays in the record.</p>
+      <h2>Put a model in use</h2>
+      <p className="muted">Putting a run&apos;s model in use switches the model the project uses and is saved in History. You can change your mind later; the earlier entry stays.</p>
       <div className="grid">
         {items.map((item, i) => (
-          <Card key={item.experiment_id} title={`Accept ${label(i)}`}>
+          <Card key={item.experiment_id} title={`Use the model of ${label(i)}`}>
             <ChampionPanel projectId={projectId} experimentId={item.experiment_id} compact />
           </Card>
         ))}
@@ -119,18 +130,18 @@ function ComparePageInner() {
   const back = projectHref(id, "experiments");
   return (
     <>
-      <PageHead title="Compare experiments" subtitle="Side-by-side cross-validation scores, change sets, time and split plan of two or more runs."
-        actions={back ? <Link className="btn" href={back}>All experiments</Link> : null} />
+      <PageHead title="Compare runs" subtitle="Side-by-side cross-validation scores, what changed, time and test design of two or more runs."
+        actions={back ? <Link className="btn" href={back}>All runs</Link> : null} />
       <PageGuide
         purpose="Decide which run to keep."
-        howTo={<>Runs are comparable only on the same <Term definition="The fixed assignment of rows to folds and the final holdout. Runs on one split plan are scored on the same rows.">split plan</Term>. Read the metric table, check what each change set did, then accept the run you want as champion.</>}
-        youGet="Metric deltas on cross-validation, the change-set difference, time and the split-plan identity."
+        howTo={<>Runs are comparable only on the same <Term definition="How the rows are split into folds and a final test set. Runs on one test design are scored on the same rows.">test design</Term>. Read the score table, check what each change did, then put the run you want in use.</>}
+        youGet="Score differences on cross-validation, what changed, time and the shared test design."
         attention="If the runs are not comparable, the reason is shown and nothing is compared."
       />
       {ids ? <CompareBody projectId={id} ids={ids} /> : (
-        <Banner tone="warn" actions={back ? <Link className="btn" href={back}>Choose runs</Link> : null}>Choose two to ten runs on the experiments page, then press Compare. The link needs 2 to 10 distinct experiment ids.</Banner>
+        <Banner tone="warn" actions={back ? <Link className="btn" href={back}>Choose runs</Link> : null}>Choose two to ten runs on the Experiments page, then press Compare selected. The link needs 2 to 10 different runs.</Banner>
       )}
-      <Pill tone="gray">Final holdout values are not shown on this page</Pill>
+      <Pill tone="gray">Final test set values are not shown on this page</Pill>
     </>
   );
 }

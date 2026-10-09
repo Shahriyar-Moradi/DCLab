@@ -1,5 +1,6 @@
 /** Score new data (P4.9-UI): pure view-model logic. Every sentence is built from API fields of the prediction read. */
-import { isUuid } from "./command-search.ts";
+import { isUuid, plainText } from "./command-search.ts";
+import { modelName } from "./studio-names.ts";
 import { envelope, mapWizardError, type PlainError } from "./studio-wizard.ts";
 
 export type ContractView = {
@@ -132,4 +133,80 @@ export function parseSessionScorings(raw: string | null): SessionScoring[] {
   } catch {
     return [];
   }
+}
+
+// --- V7-A5: Predictions screen -------------------------------------------------------------
+
+const own = <T>(table: Record<string, T>, key: string): T | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
+
+/** Status of a scoring in words; an unknown status keeps its own cleaned text. */
+const STATUS_WORDS: Record<string, string> = { queued: "waiting", running: "scoring", completed: "done", failed: "failed" };
+export const scoringStatusWords = (status: string): string => own(STATUS_WORDS, status) ?? plainText(status.replaceAll("_", " "), 30);
+
+type ModelPick = { id: string; champion: boolean };
+/** The model to score with: the one asked for if this project has it, else the model in use, else the newest. null = no model yet. */
+export function pickModel(models: readonly ModelPick[], requested: string | null | undefined): string | null {
+  if (requested && models.some((m) => m.id === requested)) return requested;
+  return (models.find((m) => m.champion) ?? models[0])?.id ?? null;
+}
+
+/** "Model v2 · Run 3 (in use)" for the picker and the history. */
+export function modelChoiceLabel(row: { version: string; champion: boolean }, run: string | null): string {
+  return `${plainText(modelName(plainText(row.version, 40)), 60)}${run ? ` · ${run}` : ""}${row.champion ? " (in use)" : ""}`;
+}
+
+/** What the downloaded file holds, from the API's own description of it. Only a binary model has a threshold. */
+export function downloadWords(threshold: number | null | undefined): string {
+  const answer = threshold != null
+    ? "the probability and a 0/1 label (1 = flagged at the model's locked threshold)"
+    : "the model's answer (one probability per class with a label, or a predicted number)";
+  return `The file has one row for each row of your file, in the same order: its row number, the entity column when your file has one, and ${answer}.`;
+}
+
+type PredictionLike = { id: string; model_version_id: string; status: string; created_at: string; rows_in?: number | null; rows_out?: number | null };
+/** What the page knows of one scoring's read: its data, or that the read failed, or neither yet (still loading). */
+export type ReadState = { data?: PredictionLike; failed?: boolean } | undefined;
+
+/** Where this browser tab keeps its list: per workspace and per signed-in user, so another person on the same tab never sees it. */
+export type SessionScope = { userId: string; workspaceId: string };
+export const sessionStoreKey = (scope: SessionScope, modelVersionId: string): string => `dclab.scorings.${scope.workspaceId}.${scope.userId}.${modelVersionId}`;
+export type HistoryRow = { id: string; file: string; model: string; when: string | null; status: string; statusKey: string; rows: string; by: string; href: string | null };
+export type SessionEntry = SessionScoring & { modelVersionId: string };
+
+/**
+ * One row per scoring started in this browser tab by the signed-in person (the list is stored per workspace and user), newest first;
+ * scorings still loading go last. A read that failed or belongs to another model says so instead of "loading". Scorings started by
+ * a connected tool, by someone else or in another tab have no list read yet and are not in it.
+ */
+export function historyRows(
+  entries: readonly SessionEntry[],
+  reads: ReadonlyMap<string, ReadState>,
+  modelLabel: (modelVersionId: string) => string | null,
+  hrefFor: (modelVersionId: string) => string | null,
+): HistoryRow[] {
+  const rows = entries.map((entry, index) => {
+    const state = reads.get(entry.id);
+    const read = state?.data;
+    const mismatch = !!read && read.model_version_id !== entry.modelVersionId;
+    const p = read && !mismatch ? read : undefined;
+    const done = p?.status === "completed";
+    return {
+      index,
+      created: p?.created_at ?? null,
+      row: {
+        id: entry.id,
+        file: plainText(entry.fileName, 80),
+        model: modelLabel(entry.modelVersionId) ?? "A model of this project",
+        when: p?.created_at ?? null,
+        status: p ? scoringStatusWords(p.status) : mismatch ? "not this model's" : state?.failed ? "could not be read" : "loading",
+        // tone keys: a failed read is shown like a failed scoring, a mismatch like a neutral state
+        statusKey: p ? p.status : mismatch ? "skipped" : state?.failed ? "failed" : "loading",
+        rows: done ? `${p.rows_out ?? "—"} of ${p.rows_in ?? "—"}` : "—",
+        by: "You, in this browser tab",
+        href: hrefFor(entry.modelVersionId),
+      } satisfies HistoryRow,
+    };
+  });
+  rows.sort((a, b) => (a.created && b.created ? b.created.localeCompare(a.created) : a.created ? -1 : b.created ? 1 : a.index - b.index));
+  return rows.map((r) => r.row);
 }

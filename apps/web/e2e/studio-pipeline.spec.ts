@@ -73,7 +73,7 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
   await expect(cards).toHaveCount(stages.length);
   const keys = await cards.evaluateAll((els) => els.map((el) => el.getAttribute("data-stage")));
   expect(keys).toEqual(stages.map((s) => s.key));
-  await expect(page.getByRole("heading", { name: "Pipeline", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run evidence", level: 1 })).toBeVisible();
   await expect(page.getByLabel("Run summary")).toContainText(`${stages.filter((s) => ["completed", "complete", "succeeded"].includes(s.status.toLowerCase())).length} / ${stages.length}`);
 
   // Digests come from the API: every shown digest is one the API returned for this run.
@@ -81,7 +81,7 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
   const shown = await page.getByTestId("digest").allTextContents();
   expect(shown.length).toBeGreaterThan(0);
   for (const digest of shown) expect(apiText).toContain(digest);
-  await expect(page.getByRole("button", { name: /Copy .* digest/ }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Copy .* checksum/ }).first()).toBeVisible();
 
   // The final holdout stage shows its status and a locked note, never the holdout metric values.
   const holdout = page.locator('[data-stage="final_holdout"]');
@@ -92,10 +92,11 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
   }
 
   // Decision points: one row per point from the pipeline events; AI is off in this stack, so the rule answer is used.
-  const points = page.getByRole("table", { name: "Decision points in this run" });
+  const points = page.getByRole("table", { name: "Choices made in this run" });
   await expect(points).toBeVisible();
-  await expect(points.getByText("AI off").first()).toBeVisible();
-  await expect(page.getByText("No AI runs are recorded for this run")).toBeVisible();
+  await expect(points.getByText("the rules").first()).toBeVisible();
+  await expect(points.getByRole("columnheader", { name: "AI answer" })).toHaveCount(0);
+  await expect(page.getByText("AI runs on this run")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Replay AI/ })).toHaveCount(0);
 
   // Decision links open the Decisions page with that record selected.
@@ -107,11 +108,12 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
   await shot(page, "1-run");
   await link.click();
   await expect(page).toHaveURL(new RegExp(`/decisions\\?record=${recordId}`));
-  await expect(page.locator("#decision-drawer-title")).toContainText(recordId.slice(0, 8));
+  await expect(page.locator("#decision-drawer-title")).toBeVisible();
+  await expect(page.locator("aside.graph-drawer")).toContainText(recordId);
 
   // A hostile record parameter is ignored.
   await page.goto(`/projects/${projectId}/decisions?record=<script>alert(1)</script>`);
-  await expect(page.getByRole("heading", { name: "Decisions", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "History", level: 1 })).toBeVisible();
   await expect(page.locator("#decision-drawer-title")).toHaveCount(0);
 
   // Artifacts: digest only for model files, a real download for source code; the reproduction script downloads too.

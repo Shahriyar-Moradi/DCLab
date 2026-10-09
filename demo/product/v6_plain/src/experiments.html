@@ -1,0 +1,57 @@
+<!-- title: Experiments · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Experiments</b> -->
+<div class="page-head">
+  <div><h1>Experiments</h1><p class="sub">Four runs on the same test design. Each run changes one thing, and the best one is chosen on cross-validation only.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="edit">New run</button></div>
+</div>
+
+<div class="tabs" data-tabs="exp">
+  <button data-tab="runs" aria-selected="true">Runs</button>
+  <button data-tab="trust">Trust checks</button>
+  <button data-tab="compare">Compare two runs</button>
+</div>
+
+<div data-tabpanel="exp:runs" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Run</th><th>Model</th><th>What changed</th><th class="r">PR-AUC (CV) ± std</th><th>Beats baseline?</th><th>Trust checks</th></tr></thead>
+    <tbody>
+      <tr><td><b>Run 1</b> · Baseline (always predicts “no”)</td><td>Baseline</td><td>Starting point</td><td class="r">0.22 ± 0.01</td><td>—</td><td><span class="pill ok">8 ✓</span> <span class="pill warn">1 ⚠</span></td></tr>
+      <tr><td><b>Run 2</b> · LightGBM</td><td>LightGBM</td><td>First real model</td><td class="r">0.66 ± 0.02</td><td>Yes, +0.44</td><td><span class="pill ok">7 ✓</span> <span class="pill warn">2 ⚠</span></td></tr>
+      <tr class="win"><td><b>Run 3</b> · LightGBM + balanced class weights <br><span class="pill det">Best on cross-validation</span></td><td>LightGBM</td><td>Added balanced class weights</td><td class="r"><b>0.70 ± 0.02</b></td><td>Yes, +0.48</td><td><span class="pill ok">8 ✓</span> <span class="pill warn">1 ⚠</span></td></tr>
+      <tr><td><b>Run 4</b> · CatBoost</td><td>CatBoost</td><td>Different model, same settings as Run 3</td><td class="r">0.68 ± 0.03</td><td>Yes, +0.46</td><td><span class="pill ok">7 ✓</span> <span class="pill warn">2 ⚠</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">PR-AUC is averaged over the 5 time-ordered folds. The final test set was not used to choose anything.</p>
+</div>
+
+<div data-tabpanel="exp:trust">
+  <div class="card">
+    <h3>Trust checks for Run 3 <span class="sp">8 passed · 1 warning</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Check</th><th>Result</th><th>In plain words</th></tr></thead>
+      <tbody>
+        <tr><td>Leakage</td><td><span class="pill ok">pass</span></td><td>No column gives away the answer. <code>churned_at</code> was left out.</td></tr>
+        <tr><td>Overfitting gap</td><td><span class="pill ok">pass</span></td><td>Training score 0.78, cross-validation score 0.70. The gap is small.</td></tr>
+        <tr><td>Duplicates</td><td><span class="pill ok">pass</span></td><td>14 repeated customer-months were removed before training.</td></tr>
+        <tr><td>Class imbalance</td><td><span class="pill ok">pass</span></td><td>Churners are 21% of rows; balanced class weights handle it.</td></tr>
+        <tr><td>Too good to be true</td><td><span class="pill ok">pass</span></td><td>The best single column alone reaches PR-AUC 0.38, far from the model’s 0.70.</td></tr>
+        <tr><td>Calibration</td><td><span class="pill warn">warning</span></td><td>Class weights push scores up, so a score of 0.3 does not mean a 30% chance. Ranking and the threshold are fine.</td></tr>
+        <tr><td>Fold stability</td><td><span class="pill ok">pass</span></td><td>Fold scores range from 0.68 to 0.72.</td></tr>
+        <tr><td>Drift between train and test</td><td><span class="pill ok">pass</span></td><td>The last months have more churn (24% vs 21%), which is expected. No column moved much.</td></tr>
+        <tr><td>Enough data per fold</td><td><span class="pill ok">pass</span></td><td>Every fold has at least 1,500 churners to check against.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="exp:compare">
+  <div class="card" data-compare>
+    <h3>Compare two runs <span class="sp">same folds, side by side</span></h3>
+    <div class="toolbar">
+      <select class="input" data-cmp-a aria-label="First run"><option value="1">Run 1 · Baseline</option><option value="2" selected>Run 2 · LightGBM</option><option value="3">Run 3 · LightGBM + balanced class weights</option><option value="4">Run 4 · CatBoost</option></select>
+      <span class="muted">vs</span>
+      <select class="input" data-cmp-b aria-label="Second run"><option value="1">Run 1 · Baseline</option><option value="2">Run 2 · LightGBM</option><option value="3" selected>Run 3 · LightGBM + balanced class weights</option><option value="4">Run 4 · CatBoost</option></select>
+    </div>
+    <div data-cmp-out></div>
+  </div>
+</div>

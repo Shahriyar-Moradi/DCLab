@@ -36,7 +36,7 @@ export function findingStatusLabel(status: string, severity: string): string {
   if (status === "fail") return severity === "critical" ? "Failed (critical)" : "Failed";
   if (status === "warning") return "Warning";
   if (status === "pass") return "Passed";
-  if (status === "not_evaluated") return "Not evaluated";
+  if (status === "not_evaluated") return "Not checked";
   return status.replaceAll("_", " ");
 }
 
@@ -63,16 +63,13 @@ export function findingsState(findings: FindingsLike | null | undefined): Findin
 }
 
 export const CHECK_LABEL: Record<string, string> = {
-  target_leakage: "Target leakage", overfit_gap: "Overfit gap (training vs CV)", duplicate_rows: "Duplicate rows",
-  class_imbalance: "Class imbalance", implausible_score: "Too-good-to-be-true score",
-  // P5.1-A
-  fold_instability: "Fold-to-fold instability", calibration: "Probability calibration", subgroup_gap: "Subgroup performance gap",
-  multicollinearity: "Repeated (collinear) columns", feature_drift: "Feature drift (training vs test)",
-  temporal_shift: "Time order of the split", missingness_shift: "Missing-value shift (training vs test)",
-  contamination: "Train/test contamination", time_travel: "Time travel (future rows in features)",
-  new_feature: "Single new feature jump",
+  target_leakage: "Leakage", overfit_gap: "Overfitting gap", duplicate_rows: "Duplicates", class_imbalance: "Class imbalance", implausible_score: "Too good to be true",
+  fold_instability: "Fold stability", calibration: "Calibration", subgroup_gap: "Weak group", multicollinearity: "Repeated columns",
+  feature_drift: "Drift between train and test", temporal_shift: "Time order of the split", missingness_shift: "Missing values: train vs test",
+  contamination: "Train rows in the test set", time_travel: "Future rows in the features", new_feature: "One new column's jump",
 };
-export const checkLabel = (check: string) => CHECK_LABEL[check] ?? check.replaceAll("_", " ");
+/** Plain name of a check; own keys only (a check named `__proto__` is shown as text). */
+export const checkLabel = (check: string) => (Object.hasOwn(CHECK_LABEL, check) ? CHECK_LABEL[check] : check.replaceAll("_", " "));
 
 export const RECOMMENDATION_TEXT: Record<string, string> = {
   review_columns: "Review the flagged columns: confirm each one is known at prediction time, and drop it if not.",
@@ -82,7 +79,7 @@ export const RECOMMENDATION_TEXT: Record<string, string> = {
   deduplicate: "Remove duplicate records before splitting. This is a data change: upload a cleaned file as a new dataset version.",
   class_weights: "Train with class weights so the rare class is not ignored.",
   collect_more_data: "Collect more examples of the rare class. This is a data change, not a branch.",
-  calibrate: "Recalibrate the scores (for example Platt or isotonic scaling on out-of-fold predictions) before reading them as probabilities; decisions at the locked threshold are unaffected.",
+  calibrate: "Recalibrate the scores (for example Platt or isotonic scaling) before reading them as chances; decisions at the chosen threshold are unaffected.",
   review_subgroups: "Look at the weakest group: check whether it has too few rows or behaves differently, and collect more examples of it if it matters.",
   drop_correlated: "Drop one column of each repeated pair; the model loses almost nothing and becomes easier to explain.",
   review_split: "Review how the rows were split (by time or by group) and what differs between training and test rows. This is a split or data decision, not a branch.",
@@ -120,7 +117,7 @@ export function formatEvidenceValue(key: string, value: unknown): string {
 }
 
 export function evidenceLabel(key: string): string {
-  const text = key.replaceAll("_", " ");
+  const text = key.replaceAll("_", " ").replace(/\bholdout\b/gi, "final test set");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
@@ -159,7 +156,7 @@ type PrefillParams = { prefill: ChangeKind; intent: string; family?: string; col
 /** The Branch change a finding's recommendation maps to, or null (data changes and unknown kinds show text only). */
 export function prefillFor(finding: FindingLike): PrefillParams | null {
   const ev = finding.evidence;
-  const why = `Address finding: ${checkLabel(finding.check)}.`;
+  const why = `Address the trust check: ${checkLabel(finding.check)}.`;
   switch (finding.recommendation_kind) {
     case "class_weights": return { prefill: "class_weighting", mode: "balanced", intent: why };
     case "regularize": return { prefill: "hyperparameter_override", family: firstString(ev, ["winner_family"]), intent: why };

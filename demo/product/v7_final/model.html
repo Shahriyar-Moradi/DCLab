@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Model · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="model.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Model</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Model <span class="pill ok">Churn model (in use)</span></h1><p class="sub">LightGBM with balanced class weights, from Run 3. It scores each customer; a threshold turns the score into yes or no.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-use-model>Use this model for predictions</button></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a><a class="stag plan" href="real.html" title="See what is real today">Releases: Planned · Phase 7</a></div>
+
+<div class="tabs" data-tabs="model">
+  <button data-tab="threshold" aria-selected="true">Threshold</button>
+  <button data-tab="final">Final test</button>
+  <button data-tab="card">Model card</button>
+  <button data-tab="versions">Versions</button>
+  <button data-tab="releases">Approved for scoring</button>
+  <button data-tab="file">Saved file &amp; checks</button>
+</div>
+
+<div data-tabpanel="model:threshold" class="on">
+  <div class="card">
+    <p class="big-sentence">At threshold 0.31 the model flags 27% of customers and catches 81% of churners.</p>
+    <h3>Precision and recall by threshold <span class="sp">from the 5 cross-validation folds</span></h3>
+    <svg class="chart" viewBox="0 0 520 226" role="img" aria-label="Precision and recall for each threshold, from cross-validation. Recall stays above 0.80 up to threshold 0.31, the chosen point."><line class="grid-l" x1="54" y1="190.0" x2="504" y2="190.0"/><text class="axis" x="48" y="194.0" text-anchor="end">0</text><line class="grid-l" x1="54" y1="147.5" x2="504" y2="147.5"/><text class="axis" x="48" y="151.5" text-anchor="end">0.25</text><line class="grid-l" x1="54" y1="105.0" x2="504" y2="105.0"/><text class="axis" x="48" y="109.0" text-anchor="end">0.5</text><line class="grid-l" x1="54" y1="62.5" x2="504" y2="62.5"/><text class="axis" x="48" y="66.5" text-anchor="end">0.75</text><line class="grid-l" x1="54" y1="20.0" x2="504" y2="20.0"/><text class="axis" x="48" y="24.0" text-anchor="end">1</text><line class="lim" x1="54" y1="54.0" x2="504" y2="54.0"/><text class="axis" x="504" y="49.0" text-anchor="end">recall 0.80 (our rule)</text><line class="ln-c" x1="211.5" y1="20" x2="211.5" y2="190"/><polyline class="ln-a" points="54.0,26.7 69.0,27.8 84.0,29.2 99.0,30.7 114.0,32.5 129.0,34.6 144.0,37.0 159.0,39.7 174.0,42.8 189.0,46.3 204.0,50.2 219.0,54.5 234.0,59.4 249.0,64.6 264.0,70.3 279.0,76.4 294.0,82.9 309.0,89.6 324.0,96.5 339.0,103.6 354.0,110.7 369.0,117.7 384.0,124.5 399.0,131.1 414.0,137.3 429.0,143.2 444.0,148.6 459.0,153.6 474.0,158.1 489.0,162.2 504.0,165.9"/><polyline class="ln-d" points="54.0,121.2 69.0,118.2 84.0,115.0 99.0,111.6 114.0,108.1 129.0,104.5 144.0,100.8 159.0,97.0 174.0,93.1 189.0,89.1 204.0,85.2 219.0,81.2 234.0,77.3 249.0,73.5 264.0,69.8 279.0,66.2 294.0,62.7 309.0,59.3 324.0,56.1 339.0,53.1 354.0,50.3 369.0,47.6 384.0,45.1 399.0,42.8 414.0,40.6 429.0,38.7 444.0,36.9 459.0,35.2 474.0,33.7 489.0,32.3 504.0,31.1"/><circle class="pt-a" cx="211.5" cy="52.3" r="5"/><circle class="pt-d" cx="211.5" cy="83.2" r="5"/><text class="axis" x="219.5" y="184">chosen: 0.31</text><text class="axis" x="60" y="14"><tspan class="k-a">■</tspan> recall   <tspan class="k-d">■</tspan> precision</text><text class="axis" x="279" y="222" text-anchor="middle">threshold</text><text class="axis" x="54.0" y="208" text-anchor="middle">0.1</text><text class="axis" x="129.0" y="208" text-anchor="middle">0.2</text><text class="axis" x="204.0" y="208" text-anchor="middle">0.3</text><text class="axis" x="279.0" y="208" text-anchor="middle">0.4</text><text class="axis" x="354.0" y="208" text-anchor="middle">0.5</text><text class="axis" x="429.0" y="208" text-anchor="middle">0.6</text><text class="axis" x="504.0" y="208" text-anchor="middle">0.7</text></svg>
+    <p class="small muted">A lower threshold flags more customers: recall goes up, precision goes down. 0.31 is the highest threshold that still keeps recall above our 0.80 rule.</p>
+  </div>
+</div>
+
+<div data-tabpanel="model:final">
+  <div class="grid cols-4">
+    <div class="card"><div class="stat"><span class="v">0.81</span><span class="l">recall · rule was ≥ 0.80</span></div></div>
+    <div class="card"><div class="stat"><span class="v">0.63</span><span class="l">precision</span></div></div>
+    <div class="card"><div class="stat"><span class="v">0.71</span><span class="l">PR-AUC (CV was 0.70)</span></div></div>
+    <div class="card"><div class="stat"><span class="v">8,904</span><span class="l">rows · Apr – Jun 2026</span></div></div>
+  </div>
+  <div class="card">
+    <h3>Final test set (used once) <span class="sp">customers counted at threshold 0.31</span></h3>
+    <div class="cm">
+      <div></div><div class="h">Model says: cancels</div><div class="h">Model says: stays</div>
+      <div class="h">Really cancelled</div><div class="good"><b>1,731</b><small>caught (true positives)</small></div><div class="bad"><b>406</b><small>missed (false negatives)</small></div>
+      <div class="h">Really stayed</div><div class="bad"><b>1,017</b><small>flagged by mistake (false positives)</small></div><div class="good"><b>5,750</b><small>correctly left alone</small></div>
+    </div>
+    <p class="small muted">On this set it flags 2,748 of 8,904 customers (31%), more than the 27% in cross-validation, because churn is higher in the last 3 months (24%). 1,731 of 2,137 churners caught = recall 0.81. 1,731 of 2,748 flagged were real = precision 0.63. This set was looked at once and never used to choose the model or the threshold.</p>
+  </div>
+</div>
+
+<div data-tabpanel="model:card">
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Columns that matter most</h3>
+      <svg class="chart" viewBox="0 0 460 244" role="img" aria-label="The eight columns that matter most to the model, with their share of importance. Days since last login is first at 19 percent."><text class="lbl" x="170" y="26" text-anchor="end">last_login_days</text><rect class="bar" x="180" y="12" width="180" height="18" rx="4"/><text class="axis" x="366" y="26">19%</text><text class="lbl" x="170" y="54" text-anchor="end">monthly_fee_change_3m</text><rect class="bar" x="180" y="40" width="142" height="18" rx="4"/><text class="axis" x="328" y="54">15%</text><text class="lbl" x="170" y="82" text-anchor="end">contract_end (days left)</text><rect class="bar" x="180" y="68" width="124" height="18" rx="4"/><text class="axis" x="310" y="82">13%</text><text class="lbl" x="170" y="110" text-anchor="end">support_tickets_90d</text><rect class="bar" x="180" y="96" width="95" height="18" rx="4"/><text class="axis" x="281" y="110">10%</text><text class="lbl" x="170" y="138" text-anchor="end">tenure_months</text><rect class="bar" x="180" y="124" width="85" height="18" rx="4"/><text class="axis" x="272" y="138">9%</text><text class="lbl" x="170" y="166" text-anchor="end">plan_type</text><rect class="bar" x="180" y="152" width="76" height="18" rx="4"/><text class="axis" x="262" y="166">8%</text><text class="lbl" x="170" y="194" text-anchor="end">late_payments_6m</text><rect class="bar" x="180" y="180" width="57" height="18" rx="4"/><text class="axis" x="243" y="194">6%</text><text class="lbl" x="170" y="222" text-anchor="end">data_usage_change</text><rect class="bar" x="180" y="208" width="48" height="18" rx="4"/><text class="axis" x="234" y="222">5%</text></svg>
+    </div>
+    <div class="card">
+      <h3>Model card</h3>
+      <dl class="kv">
+        <dt>Built from</dt><dd>Customer data · Jun 2026 · 39,306 training rows</dd>
+        <dt>Features</dt><dd>29 used, 2 left out</dd>
+        <dt>Model</dt><dd>LightGBM, balanced class weights</dd>
+        <dt>Threshold</dt><dd>0.31</dd>
+        <dt>Tested on</dt><dd>5 time-ordered folds, then the last 3 months once</dd>
+      </dl>
+      <h4>Known limits</h4>
+      <ul class="hist">
+        <li>New files must have the same columns as the training file.</li>
+        <li>It has never seen plan types that started after June 2026.</li>
+        <li>Scores rank customers; they are not exact chances (see the calibration warning).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="model:versions">
+  <div class="tbl card"><table>
+    <thead><tr><th>Version</th><th>Built from</th><th class="r">Precision</th><th class="r">Recall</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr class="win"><td><b>Version 1</b> · Churn model</td><td>Customer data · Jun 2026 · Run 3</td><td class="r">0.63 final test · 0.48 now</td><td class="r">0.81</td><td><span class="pill ok">in use</span></td></tr>
+      <tr><td><b>Version 2</b> · Churn model · retrained</td><td>Customer data · Sep 2026</td><td class="r">0.59 same kind of test</td><td class="r">0.81</td><td><span class="pill warn">waiting for your approval</span> <span class="pill plan">Planned · Phase 7</span> <a href="inbox.html">Decide in the Inbox</a></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Version 1 stays saved when Version 2 is approved, so you can go back.</p>
+</div>
+
+<div data-tabpanel="model:releases">
+  <div class="card">
+    <div class="notice-planned"><span class="pill plan">Planned · Phase 7</span><span>Preview of a planned screen. Numbers are examples.</span></div>
+    <h3>Approved for scoring</h3>
+    <p>Only the version approved here is used by the weekly scoring. Today: <b>Version 1</b>.</p>
+    <div class="toolbar"><button class="btn primary" type="button" data-mock="edit">Approve Version 2 for scheduled scoring</button><button class="btn" type="button" data-mock="edit">Roll back to the previous version</button></div>
+    <p class="small muted">Rolling back is one click and adds a History entry. The version you leave is kept.</p>
+    <ul class="hist"><li>Version 1 approved for scoring · you · 12 weeks ago</li></ul>
+  </div>
+</div>
+
+<div data-tabpanel="model:file">
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Saved file</h3>
+      <dl class="kv"><dt>Format</dt><dd>A safe format that cannot run code when it is opened</dd><dt>Size</dt><dd>4.2 MB</dd><dt>Includes</dt><dd>The model, the feature steps and the threshold 0.31</dd></dl>
+      <h4>Checks on the file</h4>
+      <ul class="hist"><li><span class="pill ok">pass</span> It opens in a clean environment.</li><li><span class="pill ok">pass</span> 100 sample rows score exactly as in the run.</li><li><span class="pill ok">pass</span> The file has not changed since it was saved.</li></ul>
+    </div>
+    <div class="card">
+      <h3>Columns new data must have</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Column</th><th>Type</th></tr></thead>
+        <tbody>
+          <tr><td><code>snapshot_month</code></td><td>date</td></tr>
+          <tr><td><code>plan_type</code></td><td>category</td></tr>
+          <tr><td><code>monthly_fee</code></td><td>number</td></tr>
+          <tr><td><code>last_login_days</code></td><td>number</td></tr>
+          <tr class="dim"><td colspan="2">… 25 more, 29 in total</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small muted">A file with missing or renamed columns is refused with a message that names them.</p>
+    </div>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v7_final"></script>
+<script src="guide.js"></script>
+</body>
+</html>

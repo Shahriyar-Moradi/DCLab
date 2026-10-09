@@ -99,9 +99,11 @@ test("ref versions cover every ref kind, null where the project has none", () =>
 
 test("428 ref_versions_required, owner_only (generic) and prototype-key lookups", () => {
   const err = (status: number, code: string) => ({ status, body: { error: { code, message: "" } } });
-  assert.match(mapInboxError(err(428, "ref_versions_required")).detail, /versions of the refs/);
+  assert.match(mapInboxError(err(428, "ref_versions_required")).detail, /versions currently in use/);
   assert.doesNotMatch(mapInboxError(err(403, "owner_only")).detail, /accept/);
-  assert.equal(lookup(PROPOSED_BY_LABEL, "agent", "x"), "agent");
+  assert.equal(lookup(PROPOSED_BY_LABEL, "agent", "x"), "connected tool (access token)");
+  assert.equal(lookup(PROPOSED_BY_LABEL, "assistant", "x"), "the assistant");
+  assert.equal(lookup(PROPOSED_BY_LABEL, "jev", "x"), "AI reviewer");
   for (const key of ["__proto__", "constructor", "toString", "hasOwnProperty"]) assert.equal(lookup(PROPOSED_BY_LABEL, key, "fallback"), "fallback", key);
   assert.equal(lookup(PROPOSED_BY_LABEL, null, "fallback"), "fallback");
   assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "constructor", id: A }] }))[0].label, `constructor ${A.slice(0, 8)}`);

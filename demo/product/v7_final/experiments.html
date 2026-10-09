@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Experiments · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="experiments.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Experiments</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Experiments</h1><p class="sub">Six runs on the same test design. Each run changes one thing, and the best one is chosen on cross-validation only.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="edit">New run</button><button class="btn" type="button" data-mock="edit">Try a change</button></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="tabs" data-tabs="exp">
+  <button data-tab="runs" aria-selected="true">Runs</button>
+  <button data-tab="detail">Run detail</button>
+  <button data-tab="trust">Trust checks</button>
+  <button data-tab="compare">Compare two runs</button>
+  <button data-tab="change">Try a change</button>
+</div>
+
+<div data-tabpanel="exp:runs" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Run</th><th>Model</th><th>What changed</th><th class="r">PR-AUC (CV) ± std</th><th>Beats baseline?</th><th>Trust checks</th></tr></thead>
+    <tbody>
+      <tr><td><b>Run 1</b> · Baseline (always predicts “no”)</td><td>Baseline</td><td>Starting point</td><td class="r">0.22 ± 0.01</td><td>—</td><td><span class="pill ok">14 ✓</span> <span class="pill warn">1 ⚠</span></td></tr>
+      <tr><td><b>Run 2</b> · LightGBM</td><td>LightGBM</td><td>First real model</td><td class="r">0.66 ± 0.02</td><td>Yes, +0.44</td><td><span class="pill ok">13 ✓</span> <span class="pill warn">2 ⚠</span></td></tr>
+      <tr class="win"><td><b>Run 3</b> · LightGBM + balanced class weights <br><span class="pill det">Best on cross-validation</span></td><td>LightGBM</td><td>Added balanced class weights</td><td class="r"><b>0.70 ± 0.02</b></td><td>Yes, +0.48</td><td><span class="pill ok">14 ✓</span> <span class="pill warn">1 ⚠</span></td></tr>
+      <tr><td><b>Run 4</b> · CatBoost</td><td>CatBoost</td><td>Different model, same settings as Run 3</td><td class="r">0.68 ± 0.03</td><td>Yes, +0.46</td><td><span class="pill ok">13 ✓</span> <span class="pill warn">2 ⚠</span></td></tr>
+      <tr><td><b>Run 5</b> · Run 3 with more trees <br><span class="pill crit">failed once: out of memory</span> <span class="pill ok">retried</span></td><td>LightGBM</td><td>500 trees instead of 300. The first attempt ran out of memory; the retry used a smaller batch and finished.</td><td class="r">0.70 ± 0.02</td><td>Yes, +0.48</td><td><span class="pill ok">14 ✓</span> <span class="pill warn">1 ⚠</span></td></tr>
+      <tr class="tr-row-run"><td><b>Run 6</b> · CatBoost + balanced class weights <br><span class="pill run">running · fold 3 of 5</span></td><td>CatBoost</td><td>Adds the weights from Run 3 to Run 4</td><td class="r">—</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">PR-AUC is averaged over the 5 time-ordered folds. Run 5 ties Run 3 and costs more time, so Run 3 stays the best. The final test set was not used to choose anything.</p>
+</div>
+
+<div data-tabpanel="exp:detail">
+  <div class="card">
+    <h3>Steps of the first training job <span class="sp">Runs 1–4 · 16 min 14 s in total</span></h3>
+    <svg class="chart" viewBox="0 0 470 232" role="img" aria-label="Time spent in each step of the first training job, minutes and seconds. Training takes 14 minutes 12 seconds of the 16 minutes 14 seconds in total."><text class="lbl" x="198" y="22" text-anchor="end">Upload and read the file</text><rect class="bar" x="206" y="8" width="5" height="18" rx="4"/><text class="axis" x="217" y="22">0:08</text><text class="lbl" x="198" y="49" text-anchor="end">Profile the data</text><rect class="bar" x="206" y="35" width="5" height="18" rx="4"/><text class="axis" x="217" y="49">0:21</text><text class="lbl" x="198" y="76" text-anchor="end">Split: 5 folds + final test</text><rect class="bar" x="206" y="62" width="5" height="18" rx="4"/><text class="axis" x="217" y="76">0:03</text><text class="lbl" x="198" y="103" text-anchor="end">Build features</text><rect class="bar" x="206" y="89" width="11" height="18" rx="4"/><text class="axis" x="223" y="103">0:46</text><text class="lbl" x="198" y="130" text-anchor="end">Train 5 folds × 4 model families</text><rect class="bar-hi" x="206" y="116" width="200" height="18" rx="4"/><text class="axis" x="412" y="130">14:12</text><text class="lbl" x="198" y="157" text-anchor="end">Choose best on cross-validation</text><rect class="bar" x="206" y="143" width="5" height="18" rx="4"/><text class="axis" x="217" y="157">0:01</text><text class="lbl" x="198" y="184" text-anchor="end">Final test, once</text><rect class="bar" x="206" y="170" width="5" height="18" rx="4"/><text class="axis" x="217" y="184">0:09</text><text class="lbl" x="198" y="211" text-anchor="end">Write the report</text><rect class="bar" x="206" y="197" width="8" height="18" rx="4"/><text class="axis" x="220" y="211">0:34</text></svg>
+    <p class="small muted">Training is almost all of the time: 5 folds × 4 model families. The final test is run once, after the best run has been chosen on cross-validation.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Step</th><th class="r">Time</th><th>What happened</th></tr></thead>
+      <tbody>
+        <tr><td>Upload and read the file</td><td class="r">0:08</td><td><span class="pill ok">done</span> 48,210 rows, 31 columns</td></tr>
+        <tr><td>Profile the data</td><td class="r">0:21</td><td><span class="pill ok">done</span> types, missing values, churn by month</td></tr>
+        <tr><td>Split</td><td class="r">0:03</td><td><span class="pill ok">done</span> 5 time-ordered folds; last 3 months set aside</td></tr>
+        <tr><td>Build features</td><td class="r">0:46</td><td><span class="pill ok">done</span> 29 used, 2 left out</td></tr>
+        <tr><td>Train 5 folds × 4 model families</td><td class="r">14:12</td><td><span class="pill ok">done</span> baseline, LightGBM, LightGBM + class weights, CatBoost</td></tr>
+        <tr><td>Choose best on cross-validation</td><td class="r">0:01</td><td><span class="pill ok">done</span> Run 3</td></tr>
+        <tr><td>Final test, once</td><td class="r">0:09</td><td><span class="pill ok">done</span> recall 0.81, precision 0.63</td></tr>
+        <tr><td>Write the report</td><td class="r">0:34</td><td><span class="pill ok">done</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h3>Run 5 on its own <span class="sp">a failure, shown honestly</span></h3>
+    <ul class="timeline">
+      <li><span class="dotk fail"></span><span>Attempt 1 stopped in training, fold 2: <b>out of memory</b></span><span class="t">3:41</span></li>
+      <li><span class="dotk run"></span><span>Retried automatically with a smaller batch</span><span class="t">0:02</span></li>
+      <li><span class="dotk"></span><span>Attempt 2 finished all 5 folds · CV PR-AUC 0.70 ± 0.02</span><span class="t">9:57</span></li>
+    </ul>
+  </div>
+</div>
+
+<div data-tabpanel="exp:trust">
+  <div class="card">
+    <h3>Trust checks for Run 3 <span class="sp">14 passed · 1 warning</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Check</th><th>Result</th><th>In plain words</th></tr></thead>
+      <tbody>
+        <tr><td>Leakage</td><td><span class="pill ok">pass</span></td><td>No column gives away the answer. <code>churned_at</code> was left out.</td></tr>
+        <tr><td>Overfitting gap</td><td><span class="pill ok">pass</span></td><td>Training score 0.78, cross-validation score 0.70. The gap is small.</td></tr>
+        <tr><td>Duplicates</td><td><span class="pill ok">pass</span></td><td>14 repeated customer-months were removed before training.</td></tr>
+        <tr><td>Class imbalance</td><td><span class="pill ok">pass</span></td><td>Churners are 21% of rows; balanced class weights handle it.</td></tr>
+        <tr><td>Too good to be true</td><td><span class="pill ok">pass</span></td><td>The best single column alone reaches PR-AUC 0.38, far from the model’s 0.70.</td></tr>
+        <tr><td>Calibration</td><td><span class="pill warn">warning</span></td><td>Class weights push scores up, so a score of 0.3 does not mean a 30% chance. Ranking and the threshold are fine.</td></tr>
+        <tr><td>Fold stability</td><td><span class="pill ok">pass</span></td><td>Fold scores range from 0.68 to 0.72.</td></tr>
+        <tr><td>Drift between train and test</td><td><span class="pill ok">pass</span></td><td>The last months have more churn (24% vs 21%), which is expected. No column moved much.</td></tr>
+        <tr><td>Enough data per fold</td><td><span class="pill ok">pass</span></td><td>Every fold has at least 1,500 churners to check against.</td></tr>
+        <tr><td>Preprocessing inside folds</td><td><span class="pill ok">pass</span></td><td>Filling and encoding were learned on each fold’s training rows only.</td></tr>
+        <tr><td>Final test set untouched</td><td><span class="pill ok">pass</span></td><td>Nothing was chosen using the last 3 months.</td></tr>
+        <tr><td>Time order respected</td><td><span class="pill ok">pass</span></td><td>Every fold is checked on months after the months it learned from.</td></tr>
+        <tr><td>Different random seeds</td><td><span class="pill ok">pass</span></td><td>Three seeds give scores within ±0.01 of each other.</td></tr>
+        <tr><td>Row count matches the file</td><td><span class="pill ok">pass</span></td><td>48,210 rows in the file, 48,196 used after removing 14 duplicates.</td></tr>
+        <tr><td>Column types</td><td><span class="pill ok">pass</span></td><td>Every column has the same type in training and in the final test.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div data-tabpanel="exp:compare">
+  <div class="card" data-compare>
+    <h3>Compare two runs <span class="sp">same folds, side by side</span></h3>
+    <div class="toolbar">
+      <select class="input" data-cmp-a aria-label="First run"><option value="1">Run 1 · Baseline</option><option value="2" selected>Run 2 · LightGBM</option><option value="3">Run 3 · LightGBM + balanced class weights</option><option value="4">Run 4 · CatBoost</option><option value="5">Run 5 · Run 3 with more trees</option></select>
+      <span class="muted">vs</span>
+      <select class="input" data-cmp-b aria-label="Second run"><option value="1">Run 1 · Baseline</option><option value="2">Run 2 · LightGBM</option><option value="3" selected>Run 3 · LightGBM + balanced class weights</option><option value="4">Run 4 · CatBoost</option><option value="5">Run 5 · Run 3 with more trees</option></select>
+    </div>
+    <div data-cmp-out></div>
+  </div>
+</div>
+
+<div data-tabpanel="exp:change">
+  <div class="card">
+    <h3>Try a change <span class="sp">starts a branch of Run 3; the original is never changed</span></h3>
+    <div class="fields">
+      <label class="field">Start from<select aria-label="Start from"><option>Run 3 · LightGBM + balanced class weights</option><option>Run 4 · CatBoost</option></select></label>
+      <label class="field">Change<select aria-label="Change"><option>Change class weights</option><option>Add a feature</option><option>Remove a feature</option><option>Change the model families</option></select></label>
+    </div>
+    <div class="toolbar"><button class="btn primary" type="button" data-mock="edit">Start the run</button></div>
+    <p class="small muted">The new run is compared with Run 3 on the same folds. To let this happen automatically with a budget, see <a href="improve.html">Improve</a>.</p>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v7_final"></script>
+<script src="guide.js"></script>
+</body>
+</html>

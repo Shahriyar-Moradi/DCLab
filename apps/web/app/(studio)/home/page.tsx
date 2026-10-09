@@ -28,7 +28,7 @@ function ProjectRow({ project }: { project: StudioProjectListItem }) {
     <tr>
       <td>{href ? <Link href={href}>{plainText(project.name, 80)}</Link> : plainText(project.name, 80)}</td>
       <td>{goal ? <>{goal.target_column ? <span className="mono">{plainText(goal.target_column, 40)}</span> : null}{goal.objective ? <span className="muted"> {plainText(goal.objective, 120)}</span> : null}{!goal.target_column && !goal.objective ? <span className="muted">Goal set, no target yet</span> : null}</> : <span className="muted">No goal yet</span>}</td>
-      <td className="r">{metric ? <><span className="mono">{metric.value.toFixed(3)}</span> <span className="muted">{plainText(metric.name, 24)} (cross-validation)</span></> : <span className="muted">No champion yet</span>}</td>
+      <td className="r">{metric ? <><span className="mono">{metric.value.toFixed(3)}</span> <span className="muted">{plainText(metric.name, 24)} (cross-validation)</span></> : <span className="muted">No model in use yet</span>}</td>
       <td>{run ? <Pill tone={lookup(STATUS_TONE, run.status, "gray")}>{run.status.replaceAll("_", " ")}</Pill> : <span className="muted">No runs yet</span>}</td>
       <td>{formatWhen(project.updated_at)}</td>
     </tr>
@@ -54,13 +54,13 @@ export default function StudioHomePage() {
   return (
     <>
       <PageHead
-        eyebrow="Developer Studio" title="Home" subtitle="Where your workspace stands: projects, what changed, and what waits for you."
+        eyebrow="Workspace" title="Home" subtitle="Where your workspace stands: projects, what changed, and what waits for you."
         actions={<><Link className="btn primary" href="/projects/new">New project</Link><Link className="btn" href="/projects">All projects</Link></>}
       />
       <PageGuide
         purpose="A starting point for your workspace."
-        howTo={<>Start with the numbers, then open a project or the inbox. Press ⌘K (Ctrl+K) to jump to a project, run, model or decision by name or id. Every value here is read from the API; nothing is estimated.</>}
-        youGet="Counts for projects, decisions waiting, runs in progress and AI health; your projects; the latest activity from rules, agents and people."
+        howTo={<>Start with the numbers, then open a project or the inbox. Press ⌘K (Ctrl+K) to jump to a project, run or model by name. Every value here is read from your workspace; nothing is estimated.</>}
+        youGet="Counts for projects, decisions waiting, runs in progress and AI health; your projects; the latest activity from the rules, the assistant and people."
         attention={waiting ? `${waiting} item${waiting === 1 ? " is" : "s are"} waiting for a decision in the inbox.` : undefined}
       />
 
@@ -86,7 +86,7 @@ export default function StudioHomePage() {
           <div className="tbl">
             <table>
               <caption className="sr-only">Projects, most recently changed first</caption>
-              <thead><tr><th scope="col">Project</th><th scope="col">Goal</th><th scope="col" className="r">Champion metric</th><th scope="col">Latest run</th><th scope="col">Changed</th></tr></thead>
+              <thead><tr><th scope="col">Project</th><th scope="col">Goal</th><th scope="col" className="r">Best score (model in use)</th><th scope="col">Latest run</th><th scope="col">Changed</th></tr></thead>
               <tbody>{recent.map((project) => <ProjectRow key={project.id} project={project} />)}</tbody>
             </table>
           </div>
@@ -97,7 +97,7 @@ export default function StudioHomePage() {
         <Card title="Activity" aside="newest first">
           {activity.isError ? <QueryNotice error={activity.error} what="activity feed" /> : null}
           {activity.isPending ? <p role="status">Loading activity…</p> : null}
-          {activity.data && feed.length === 0 ? <div className="empty">Nothing has happened yet. Decisions, runs and agent work appear here.</div> : null}
+          {activity.data && feed.length === 0 ? <div className="empty">Nothing has happened yet. Decisions, runs and assistant work appear here.</div> : null}
           {feed.length > 0 ? (
             <ul className="plain-list" aria-label="Recent activity">
               {feed.map((item) => {
@@ -132,7 +132,7 @@ export default function StudioHomePage() {
             <div className="toolbar">
               <Link className="btn primary" href="/projects/new">New project</Link>
               <Link className="btn" href="/projects/new">Upload data</Link>
-              <Link className="btn" href="/agents">Agents &amp; tools</Link>
+              <Link className="btn" href="/agents">Connect</Link>
             </div>
           </Card>
         </div>

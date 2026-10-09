@@ -58,30 +58,37 @@ test("Model card: drivers, baseline, labelled final evaluation, risks, Markdown 
 
   // Models list: the version, the champion marker, a link to the card.
   await page.goto(`/projects/${projectId}/models`);
-  await expect(page.getByRole("heading", { name: "Models", level: 1 })).toBeVisible();
-  const row = page.getByRole("table", { name: "Model versions" }).getByRole("row").nth(1);
-  await expect(row).toContainText("★ champion");
+  await expect(page.getByRole("heading", { name: "Model", level: 1 })).toBeVisible();
+  const row = page.getByRole("table", { name: "Models" }).getByRole("row").nth(1);
+  await expect(row).toContainText("In use");
   await expect(row).toContainText("Open card");
+  await expect(row).toContainText("Run 1");
+  await expect(row).toContainText("In use"); // the only model is the one in use
+  await expect(row).not.toContainText("Not in use");
   await shot(page, "1-models-list");
   await page.getByRole("link", { name: /^Open the card of/ }).click();
   await expect(page).toHaveURL(/\/models\/[0-9a-f-]{36}\?tab=card$/);
   const modelId = page.url().split("/models/")[1].split("?")[0];
 
-  // The Version tab no longer promises the card later and shows no final evaluation.
+  // The Summary tab shows no final test and points to the Model card tab.
   await page.goto(`/projects/${projectId}/models/${modelId}`);
-  await expect(page.getByText("is on the Card tab")).toBeVisible();
+  await expect(page.getByText("is on the Model card tab")).toBeVisible();
+  // The summary is one plain sentence that names the run and says whether the model is in use.
+  await expect(page.getByRole("heading", { name: /^Model v\d+$/, level: 1 })).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "Summary" }).locator(".mc-words")).toContainText(/built by Run 1.*It is the model in use\./);
+  await expect(page.getByRole("tabpanel", { name: "Summary" })).not.toContainText(/champion|holdout|fingerprint|lineage/i);
   await expect(page.getByText(/P4\.11-UI/)).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /Final evaluation/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /Final test/ })).toHaveCount(0);
   const apiCard = (await (await page.request.get(`/api/backend/v1/model-versions/${modelId}/card`)).json()) as { final_evaluation: { value: number } };
-  await expect(page.getByRole("tabpanel", { name: "Version" })).not.toContainText(String(Number(apiCard.final_evaluation.value.toPrecision(3))));
+  await expect(page.getByRole("tabpanel", { name: "Summary" })).not.toContainText(String(Number(apiCard.final_evaluation.value.toPrecision(3))));
 
-  await page.getByRole("tab", { name: "Card" }).click();
+  await page.getByRole("tab", { name: "Model card" }).click();
   const card = page.locator(".model-card-print");
   await expect(card.getByRole("heading", { name: /^Model card:/ })).toBeVisible();
   await expect(card.getByRole("heading", { name: "What it predicts" })).toBeVisible();
 
   // Drivers from stored importance.
-  const drivers = card.getByRole("list", { name: "Top drivers by importance" });
+  const drivers = card.getByRole("list", { name: "Columns that matter most, by importance" });
   await expect(drivers).toBeVisible();
   const api = (await (await page.request.get(`/api/backend/v1/model-versions/${modelId}/card`)).json()) as { drivers: { features: Array<{ rank: number; column: string }> }; final_evaluation: { value: number } };
   const top = [...api.drivers.features].sort((a, b) => a.rank - b.rank);
@@ -91,18 +98,21 @@ test("Model card: drivers, baseline, labelled final evaluation, risks, Markdown 
   await expect(card.getByRole("heading", { name: /dummy baseline/ })).toBeVisible();
   await expect(card.getByText(/Dummy baseline \(.*cross-validation\)/)).toBeVisible();
   // The labelled single final evaluation, in its own section.
-  const final = page.getByRole("region", { name: /^Final evaluation — one look at rows the model never trained on or was selected with/ });
+  const final = page.getByRole("region", { name: /^Final test \(used once per run\)/ });
   await expect(final).toBeVisible();
-  await expect(final).toContainText("Scored once, for the locked winner only");
+  await expect(final).toContainText("scored them once, for its chosen model only");
   await expect(final).toContainText("not a cross-validation score");
-  await expect(final).toContainText("on the final evaluation");
+  await expect(final).toContainText("on the final test");
   await expect(final).toContainText(String(Number(api.final_evaluation.value.toPrecision(3))));
   await expect(final).toContainText("never used for selection");
+  await expect(final).toContainText("Do not compare final tests across models to pick one");
+  // Plain words: no holdout or code words anywhere on the card.
+  await expect(card).not.toContainText(/hold-?out|out-of-fold|feature contract|Pareto/i);
   // Risks and the link to the experiment's Findings card.
-  await expect(card.getByRole("heading", { name: "Known risks" })).toBeVisible();
-  await expect(card.getByRole("link", { name: /Findings card/ })).toHaveAttribute("href", `/projects/${projectId}/experiments/${experimentId}#findings`);
-  await expect(card.getByText("LLM used: no")).toBeVisible();
-  await expect(card.getByRole("heading", { name: "Data and split" })).toBeVisible();
+  await expect(card.getByRole("heading", { name: "Known limits and risks" })).toBeVisible();
+  await expect(card.getByRole("link", { name: /Trust checks card/ })).toHaveAttribute("href", `/projects/${projectId}/experiments/${experimentId}#findings`);
+  await expect(card.getByText("AI used: no")).toBeVisible();
+  await expect(card.getByRole("heading", { name: "Data and test design" })).toBeVisible();
   await expect(card.getByText("counts only")).toBeVisible();
   await shot(page, "2-card");
   expect(await axeViolations(page)).toEqual([]);
@@ -139,4 +149,30 @@ test("Model card: drivers, baseline, labelled final evaluation, risks, Markdown 
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "4-dark");
+
+  // A link that is not a model id never shows a name, an in-use badge or a loading state.
+  const bad = await page.goto(`/projects/${projectId}/models/not-a-model`);
+  if (bad?.status() !== 404) {
+    await expect(page.getByRole("heading", { name: "Model not found", level: 1 })).toBeVisible();
+    await expect(page.getByText("not found", { exact: true })).toBeVisible();
+    await expect(page.getByText(/^Loading/)).toHaveCount(0);
+  }
+
+  // Mobile: no horizontal scroll on the summary, threshold, card and score tabs.
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const tab of ["version", "threshold", "card", "score"]) {
+    await page.goto(`/projects/${projectId}/models/${modelId}?tab=${tab}`);
+    await expect(page.getByRole("heading", { name: /^Model v\d+$/, level: 1 })).toBeVisible();
+    await expect(page.getByText(/^Loading/)).toHaveCount(0);
+    // Charts size themselves after layout, so give the page a moment to settle before judging.
+    await expect.poll(async () => page.evaluate(() => {
+      if (document.documentElement.scrollWidth <= window.innerWidth) return [];
+      const clipped = (el: HTMLElement) => { for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(p).overflowX)) return true; return false; };
+      return [...document.querySelectorAll<HTMLElement>("main *")]
+        .filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1 && !clipped(el) && !el.classList.contains("sr-only") && ![...el.children].some((c) => c.getBoundingClientRect().right > window.innerWidth + 1))
+        .map((el) => `${el.tagName.toLowerCase()}.${el.className}@${Math.round(el.getBoundingClientRect().right)}w${Math.round(el.getBoundingClientRect().width)}`);
+    }), { message: `no horizontal scroll on ${tab}`, timeout: 8_000 }).toEqual([]);
+    expect(await axeViolations(page)).toEqual([]);
+  }
 });

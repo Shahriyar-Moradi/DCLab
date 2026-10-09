@@ -1,0 +1,28 @@
+<!-- title: Goal & test design · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Goal &amp; test design</b> -->
+<div class="page-head">
+  <div><h1>Goal &amp; test design</h1><p class="sub">What we want to predict, what “good” means, and how we will test it fairly.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="edit">Edit goal</button></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><h3>What we predict</h3>
+    <p class="big-sentence"><code>churned_next_30d</code></p>
+    <p class="small muted">Yes or no: will this customer cancel in the next 30 days? A yes/no (classification) task.</p></div>
+  <div class="card"><h3>How we rank models</h3>
+    <p class="big-sentence">PR-AUC</p>
+    <p class="small muted">Only about 1 in 5 customers cancel, and PR-AUC rewards finding them without flagging many others.</p></div>
+  <div class="card"><h3>Business rule</h3>
+    <p class="big-sentence">Recall ≥ 0.80</p>
+    <p class="small muted">Catch at least 80% of the customers who will cancel. Anything below that is not acceptable.</p></div>
+</div>
+
+<div class="card">
+  <h3>How we test <span class="sp">the same design is used for every run</span></h3>
+  {{chart:cv_timeline}}
+  <div class="chips">
+    <span class="chip"><b>Train: Jan 2025 – Mar 2026</b><small>39,306 rows · 5 time-ordered cross-validation folds</small></span>
+    <span class="chip"><b>Final test set: Apr – Jun 2026</b><small>8,904 rows · the last 3 months · used once, at the end</small></span>
+  </div>
+  <p class="small muted">Why time-ordered? The churn rate rises over time, so each fold learns from the past and is checked on the months right after it. Shuffled rows would let the model peek at the future.</p>
+</div>

@@ -25,6 +25,9 @@ const str = (value: unknown): string | null => (typeof value === "string" && val
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const stage = (build: BuildLike | undefined, key: string): StageLike | undefined => build?.stages.find((s) => s.key === key);
 
+/** The recorded configuration of one model-build stage (empty when the stage is missing). */
+export const stageConfig = (build: BuildLike | undefined, key: string): Record<string, unknown> => rec(stage(build, key)?.configuration);
+
 // --- graph helpers --------------------------------------------------------------------
 
 type NodeLike = { kind: string; id: string; created_at?: string | null; outside_window?: boolean };

@@ -1,0 +1,41 @@
+<!-- title: AI settings · DCLab demo -->
+<!-- crumbs: Northwind Telecom › Admin › <b>AI settings</b> -->
+<!-- status: off | Built, switched off -->
+<!-- status: plan | Screen: Planned -->
+<div class="page-head">
+  <div><h1>AI settings</h1><p class="sub">Whether the assistant is on, what it may do by itself, and what it must ask you first. Everything works with AI off.</p></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><h3>AI for this workspace</h3>
+    <div class="switch-row"><span><b>AI on or off</b><small>Off means every action is a button.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="false" data-toggle><span>AI: <b>off</b></span><i aria-hidden="true"></i></button></div></div>
+  <div class="card"><div class="stat"><span class="v">$9.40</span><span class="l">spent of the $25 monthly AI budget</span></div><div class="meter ai"><i style="width:38%"></i></div></div>
+  <div class="card"><h3>AI model used</h3><p class="big-sentence">Standard model</p><p class="small muted">A larger model is used only for complex questions.</p></div>
+</div>
+
+<div class="card">
+  <h3>What the assistant may do <span class="sp">per kind of decision</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Kind of decision</th><th>Setting</th><th>How it was earned</th></tr></thead>
+    <tbody>
+      <tr><td>Leave out ID-like columns</td><td><select class="input" data-demo-select aria-label="Setting"><option>Ask first</option><option selected>Automatic, you can undo</option><option>Automatic</option></select></td><td>The assistant matched the rule’s answer in 97% of 500 tested past cases.</td></tr>
+      <tr><td>Fill empty values</td><td><select class="input" data-demo-select aria-label="Setting"><option selected>Ask first</option><option>Automatic, you can undo</option><option>Automatic</option></select></td><td>Matched the rule’s answer in 88% of 500 tested past cases. Needs 95% to be offered as automatic.</td></tr>
+      <tr><td>Suggest the next run</td><td><select class="input" data-demo-select aria-label="Setting"><option selected>Ask first</option><option>Automatic, you can undo</option></select></td><td>Matched in 91% of 500 tested past cases.</td></tr>
+      <tr><td>Change the test design</td><td><select class="input" data-demo-select aria-label="Setting"><option selected>Ask first</option></select></td><td>Always ask. This can never be automatic.</td></tr>
+      <tr><td>Switch the model used for scoring</td><td><select class="input" data-demo-select aria-label="Setting"><option selected>Ask first</option></select></td><td>Always ask. This can never be automatic.</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>What AI is allowed to see</h3>
+    <p class="big-sentence">Raw rows are never sent to an AI model.</p>
+    <p class="small muted">Only column names and summary statistics are sent. Every question and answer is logged, with its cost.</p>
+  </div>
+  <div class="card">
+    <h3>Problem reports</h3>
+    <div class="empty">None. Nothing has gone wrong with AI in this workspace.</div>
+    <div class="toolbar"><button class="btn danger" type="button" data-mock="edit">Turn AI off now</button></div>
+  </div>
+</div>

@@ -6,7 +6,7 @@
  * plain text. The API has no list read for scorings, so history is the ones started in this browser session.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatWhen } from "@/app/components/studio-app/StudioParts";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
@@ -18,35 +18,22 @@ import { Term } from "@/components/studio/Term";
 import { plainText } from "@/lib/application/command-search";
 import { safeFilename } from "@/lib/application/studio-inspect";
 import {
-  contractSentences, contractView, failureError, isTerminal, mapScoringError, parseSessionScorings, type SessionScoring,
+  contractSentences, contractView, downloadWords, failureError, isTerminal, mapScoringError, scoringStatusWords, type SessionScoring,
 } from "@/lib/application/studio-scoring";
-import { createPrediction, downloadPredictions, uploadScoringFile, usePrediction, type StudioPrediction } from "@/lib/application/studio-scoring-hooks";
+import {
+  createPrediction, downloadPredictions, readSessionScorings, uploadScoringFile, usePrediction, useScoringScope, writeSessionScorings, type StudioPrediction,
+} from "@/lib/application/studio-scoring-hooks";
+import { useSession } from "@/lib/application/session-provider";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { ActionKeys, singleFlight, type PlainError } from "@/lib/application/studio-wizard";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 const TERMS = {
-  contract: "The feature contract: the list of columns the model was trained on. A file can be scored only if it has every one of them, with the same names.",
-  threshold: "Set when the model was built: picked on cross-validation predictions when the project declared a cost, a constraint or a threshold-based metric, otherwise the default 0.5. Rows at or above it are labelled positive. It is applied as stored and cannot be changed here.",
-  operating: "The operating point is the threshold the model runs at. It decides how many rows are labelled positive, trading missed positives against false alarms.",
+  contract: "New files must have the same columns as the training data. A file can be scored only if it has every column the model was trained on, with the same names.",
+  threshold: "Set when the model was built: picked on cross-validation predictions when the project declared a cost, a constraint or a threshold-based metric, otherwise the default 0.5. Rows at or above it are labelled positive. It is applied as stored and cannot be changed here.", // see also GLOSSARY.threshold
+  operating: "The threshold decides how many rows are labelled positive, trading missed positives against false alarms.",
 };
-
-const STORE = "dclab.scorings.";
-
-function readSession(modelVersionId: string): SessionScoring[] {
-  try {
-    return parseSessionScorings(window.sessionStorage.getItem(STORE + modelVersionId));
-  } catch {
-    return [];
-  }
-}
-function writeSession(modelVersionId: string, rows: SessionScoring[]) {
-  try {
-    window.sessionStorage.setItem(STORE + modelVersionId, JSON.stringify(rows));
-  } catch {
-    /* storage can be blocked; the list then lives in memory only */
-  }
-}
 
 function ErrorBanner({ error }: { error: PlainError | null }) {
   return error ? <Banner tone="crit"><b>{error.title}.</b> {error.detail}</Banner> : null;
@@ -66,7 +53,7 @@ function stepsFor(prediction: StudioPrediction | undefined, busy: boolean): Step
   ];
 }
 
-function ScoringCard({ item, current, modelVersionId }: { item: SessionScoring; current: boolean; modelVersionId: string }) {
+function ScoringCard({ item, current, modelVersionId, modelLabel }: { item: SessionScoring; current: boolean; modelVersionId: string; modelLabel: string | null }) {
   const read = usePrediction(item.id);
   const [error, setError] = useState<PlainError | null>(null);
   const [saving, setSaving] = useState(false);
@@ -100,7 +87,7 @@ function ScoringCard({ item, current, modelVersionId }: { item: SessionScoring; 
   return (
     <Card
       title={`Scoring of ${plainText(item.fileName, 80)}`}
-      aside={p ? <Pill tone={STATUS_TONE[p.status]}>{p.status}</Pill> : <span className="muted">loading</span>}
+      aside={p ? <Pill tone={STATUS_TONE[p.status]}>{scoringStatusWords(p.status)}</Pill> : <span className="muted">loading</span>}
     >
       {current ? <StepBar label="Scoring progress" steps={stepsFor(p, false)} /> : null}
       {read.isError ? <Banner tone="crit">Could not read this scoring. {read.error instanceof Error ? read.error.message : ""}</Banner> : null}
@@ -117,14 +104,15 @@ function ScoringCard({ item, current, modelVersionId }: { item: SessionScoring; 
       {p?.status === "completed" ? (
         <>
           <KeyValue items={[
+            ...(modelLabel ? [{ key: "model", label: "Model", value: modelLabel }] : []),
             { key: "rows", label: "Rows scored", value: `${p.rows_out ?? "—"} of ${p.rows_in ?? "—"}` },
-            { key: "thr", label: <Term definition={TERMS.threshold}>Threshold applied</Term>, value: p.decision_threshold != null ? p.decision_threshold : "Not used (this model predicts a number or several classes)" },
-            { key: "fmt", label: "File", value: `${p.output_format.toUpperCase()}${p.output ? `, ${p.output.size_bytes} bytes` : ""}` },
+            { key: "thr", label: <Term definition={TERMS.threshold}>Threshold used</Term>, value: p.decision_threshold != null ? p.decision_threshold : "Not used (this model predicts a number or several classes)" },
+            { key: "fmt", label: "Predictions file", value: `${p.output_format.toUpperCase()}${p.output ? `, ${p.output.size_bytes} bytes` : ""}` },
             { key: "done", label: "Completed", value: formatWhen(p.completed_at) },
-            { key: "id", label: "Scoring id", value: <span className="mono">{p.id}</span> },
+            { key: "id", label: "Reference", value: <span className="mono">{p.id}</span> },
           ]} />
           <p className="toolbar"><button type="button" className="btn primary" onClick={() => void download()} disabled={saving}>{saving ? "Preparing…" : "Download predictions"}</button></p>
-          <p className="muted">One row per input row, in the same order, with the row number and the model&apos;s prediction columns{p.decision_threshold != null ? " (the probability and the label at the stored threshold)" : ""}.</p>
+          <p className="muted">{downloadWords(p.decision_threshold)}</p>
         </>
       ) : null}
       <ErrorBanner error={error} />
@@ -132,8 +120,20 @@ function ScoringCard({ item, current, modelVersionId }: { item: SessionScoring; 
   );
 }
 
-export function ScoreNewData({ projectId, modelVersionId }: { projectId: string; modelVersionId: string }) {
+export function ScoreNewData({ projectId, modelVersionId, modelLabel = null, before, onScored, showPast = true }: {
+  projectId: string; modelVersionId: string;
+  /** "Model v2 · Run 3", shown on every result so a wrong pick is visible. */
+  modelLabel?: string | null;
+  /** Extra content between the guide and the upload form (the Predictions page puts the model picker here). */
+  before?: ReactNode;
+  /** Called after a scoring was started, so a list kept outside this component can refresh. */
+  onScored?: () => void;
+  showPast?: boolean;
+}) {
   const client = useQueryClient();
+  const { user } = useSession();
+  const scope = useScoringScope();
+  const canScore = hasCapability(user, CAPABILITIES.workspaceExecuteMl);
   const keys = useRef(new ActionKeys(newIdempotencyKey)).current;
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<SessionScoring[]>([]);
@@ -142,7 +142,7 @@ export function ScoreNewData({ projectId, modelVersionId }: { projectId: string;
   const busyRef = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => setRows(readSession(modelVersionId)), [modelVersionId]);
+  useEffect(() => setRows(scope ? readSessionScorings(scope, modelVersionId) : []), [scope, modelVersionId]);
 
   const work = useRef<() => Promise<void>>(async () => {});
   const flight = useRef(singleFlight(() => work.current())).current;
@@ -160,9 +160,10 @@ export function ScoreNewData({ projectId, modelVersionId }: { projectId: string;
           keys.done("upload");
           keys.done("score");
           client.setQueryData(workspaceQueryKey("v1", "prediction", created.id), created);
-          const next = [{ id: created.id, fileName: file.name }, ...readSession(modelVersionId).filter((r) => r.id !== created.id)].slice(0, 20);
-          writeSession(modelVersionId, next);
+          const next = [{ id: created.id, fileName: file.name }, ...(scope ? readSessionScorings(scope, modelVersionId) : []).filter((r) => r.id !== created.id)].slice(0, 20);
+          if (scope) writeSessionScorings(scope, modelVersionId, next);
           setRows(next);
+          onScored?.();
           setFile(null);
           if (fileInput.current) fileInput.current.value = "";
         } catch (caught) {
@@ -181,11 +182,13 @@ export function ScoreNewData({ projectId, modelVersionId }: { projectId: string;
     <>
       <PageGuide
         purpose="Run this model on new rows and get a prediction for each one."
-        howTo={<>Upload a file with the same feature columns the model was trained on (the <Term definition={TERMS.contract}>feature contract</Term>). The column you predict is not needed and is ignored if present.</>}
-        youGet={<>A predictions file with one row per input row. For a yes/no model the labels use the stored <Term definition={TERMS.threshold}>threshold</Term> at the model&apos;s <Term definition={TERMS.operating}>operating point</Term>.</>}
+        howTo={<>Upload a file with <Term definition={TERMS.contract}>the same columns as the training data</Term>. The column you predict is not needed and is ignored if present.</>}
+        youGet={<>A predictions file with one row per input row. For a yes/no model the labels use the model&apos;s locked <Term definition={TERMS.threshold}>threshold</Term>, which cannot be changed here. <Term definition={TERMS.operating}>What the threshold does</Term>.</>}
         attention="Use rows the model has not seen. Only an exact copy of the training file (the same upload or identical bytes) is refused. A re-saved, re-ordered or edited copy is not detected, so check yourself that the rows are new."
       />
-      <Card title="Score a file" aside={<span className="muted">CSV, TSV, JSON, Parquet or XLSX</span>}>
+      {before}
+      {!canScore ? <Banner tone="info">Only people who can change this workspace can answer, correct or score files. You can still read the results below.</Banner> : null}
+      {canScore ? <Card title="Score a file" aside={<span className="muted">CSV, TSV, JSON, Parquet or XLSX</span>}>
         <form onSubmit={(event) => { event.preventDefault(); void score(); }}>
           <label className="field"><span>Scoring file</span>
             <input ref={fileInput} type="file" accept=".csv,.tsv,.json,.jsonl,.parquet,.xlsx" disabled={busy} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setError(null); }} />
@@ -195,11 +198,13 @@ export function ScoreNewData({ projectId, modelVersionId }: { projectId: string;
         <ErrorBanner error={error} />
         {busy ? <p role="status">Uploading the file, then asking the model to score it…</p> : null}
         {idle && !busy ? <StepBar label="Scoring steps" steps={stepsFor(undefined, false)} /> : null}
-      </Card>
-      {rows.map((item, index) => <ScoringCard key={item.id} item={item} current={index === 0} modelVersionId={modelVersionId} />)}
-      <Card title="Past scorings" aside={<span className="muted">this browser session</span>}>
-        <p className="muted">History needs a list read: the API can read one scoring by id but cannot yet list a model&apos;s scorings, so only the files scored in this session are kept above.</p>
-      </Card>
+      </Card> : null}
+      {rows.map((item, index) => <ScoringCard key={item.id} item={item} current={index === 0} modelVersionId={modelVersionId} modelLabel={modelLabel} />)}
+      {showPast ? (
+        <Card title="Past scorings" aside={<span className="muted">this browser tab</span>}>
+          <p className="muted">Only the files you scored in this browser tab are listed above. Earlier scorings, and those started by a connected tool, by someone else or in another tab, cannot be listed yet.</p>
+        </Card>
+      ) : null}
     </>
   );
 }

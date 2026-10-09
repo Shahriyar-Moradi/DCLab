@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Start · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="index.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Start</b></div>
+    <div class="right">
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Start</h1><p class="sub">Your projects. Each one goes through the same six steps, from a customer file to a model you can trust.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="upload">Upload data</button></div>
+</div>
+
+<div class="card project-card">
+  <div class="toolbar"><h2>Northwind churn</h2><span class="pill warn">1 decision waiting</span></div>
+  <p class="muted">Which customers will cancel in the next 30 days? We must catch at least 80% of them.</p>
+  <ol class="steps">
+    <li><span class="n">✓</span><span><a class="t" href="data.html">1 · Data</a><small>customers_2026Q3.csv · 48,210 rows · 31 columns</small></span><span class="pill ok">done</span></li>
+    <li><span class="n">✓</span><span><a class="t" href="goal.html">2 · Goal &amp; test design</a><small>Predict churned_next_30d · rule: recall ≥ 0.80</small></span><span class="pill ok">done</span></li>
+    <li><span class="n">✓</span><span><a class="t" href="experiments.html">3 · Experiments</a><small>4 runs · Run 3 is best on cross-validation (PR-AUC 0.70)</small></span><span class="pill ok">done</span></li>
+    <li><span class="n">✓</span><span><a class="t" href="model.html">4 · Model</a><small>LightGBM with class weights · threshold 0.31 · final test recall 0.81</small></span><span class="pill ok">done</span></li>
+    <li><span class="n">✓</span><span><a class="t" href="predictions.html">5 · Predictions</a><small>Scored every Monday · last run 6,412 customers flagged</small></span><span class="pill ok">done</span></li>
+    <li><span class="n todo">!</span><span><a class="t" href="monitoring.html">6 · Monitoring</a><small>The data has changed and precision fell to 0.48. A retrained model is ready.</small></span><span class="pill warn">needs you</span></li>
+  </ol>
+  <div class="toolbar"><a class="btn primary" href="data.html">Open project</a><button class="btn" type="button" data-mock="upload">Upload data</button></div>
+</div>
+
+<div class="card">
+  <h3>How to read this demo</h3>
+  <p class="small muted">Follow the steps in order and press <b>Next step</b> at the bottom of each screen. Switch <b>AI suggestions</b> on in the top bar to see ideas on each screen; everything works with it off.</p>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v6_plain"></script>
+<script src="guide.js"></script>
+</body>
+</html>

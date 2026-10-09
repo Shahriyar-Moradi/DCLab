@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Goal & test design · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="goal.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Goal &amp; test design</b></div>
+    <div class="right">
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Goal &amp; test design</h1><p class="sub">What we want to predict, what “good” means, and how we will test it fairly.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="edit">Edit goal</button></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><h3>What we predict</h3>
+    <p class="big-sentence"><code>churned_next_30d</code></p>
+    <p class="small muted">Yes or no: will this customer cancel in the next 30 days? A yes/no (classification) task.</p></div>
+  <div class="card"><h3>How we rank models</h3>
+    <p class="big-sentence">PR-AUC</p>
+    <p class="small muted">Only about 1 in 5 customers cancel, and PR-AUC rewards finding them without flagging many others.</p></div>
+  <div class="card"><h3>Business rule</h3>
+    <p class="big-sentence">Recall ≥ 0.80</p>
+    <p class="small muted">Catch at least 80% of the customers who will cancel. Anything below that is not acceptable.</p></div>
+</div>
+
+<div class="card">
+  <h3>How we test <span class="sp">the same design is used for every run</span></h3>
+  <svg class="chart" viewBox="0 0 760 236" role="img" aria-label="Test design on a time line. Five cross-validation folds each learn on earlier months and check on the next two months, between January 2025 and March 2026. The last three months, April to June 2026, are the final test set, used once."><line class="lim-w" x1="636.0" y1="22" x2="636.0" y2="214"/><text class="axis" x="366.0" y="16" text-anchor="middle">training period · Jan 2025 – Mar 2026 · 39,306 rows</text><text class="axis" x="690.0" y="16" text-anchor="middle">last 3 months · 8,904 rows</text><text class="lbl" x="86" y="48" text-anchor="end">Fold 1</text><rect class="tl-train" x="96" y="34" width="180.0" height="20" rx="4"/><rect class="tl-val" x="276.0" y="34" width="72.0" height="20" rx="4"/><text class="tl-t" x="104" y="48">learn</text><text class="tl-t tl-tv" x="312.0" y="48" text-anchor="middle">check</text><text class="lbl" x="86" y="76" text-anchor="end">Fold 2</text><rect class="tl-train" x="96" y="62" width="252.0" height="20" rx="4"/><rect class="tl-val" x="348.0" y="62" width="72.0" height="20" rx="4"/><text class="tl-t" x="104" y="76">learn</text><text class="tl-t tl-tv" x="384.0" y="76" text-anchor="middle">check</text><text class="lbl" x="86" y="104" text-anchor="end">Fold 3</text><rect class="tl-train" x="96" y="90" width="324.0" height="20" rx="4"/><rect class="tl-val" x="420.0" y="90" width="72.0" height="20" rx="4"/><text class="tl-t" x="104" y="104">learn</text><text class="tl-t tl-tv" x="456.0" y="104" text-anchor="middle">check</text><text class="lbl" x="86" y="132" text-anchor="end">Fold 4</text><rect class="tl-train" x="96" y="118" width="396.0" height="20" rx="4"/><rect class="tl-val" x="492.0" y="118" width="72.0" height="20" rx="4"/><text class="tl-t" x="104" y="132">learn</text><text class="tl-t tl-tv" x="528.0" y="132" text-anchor="middle">check</text><text class="lbl" x="86" y="160" text-anchor="end">Fold 5</text><rect class="tl-train" x="96" y="146" width="468.0" height="20" rx="4"/><rect class="tl-val" x="564.0" y="146" width="72.0" height="20" rx="4"/><text class="tl-t" x="104" y="160">learn</text><text class="tl-t tl-tv" x="600.0" y="160" text-anchor="middle">check</text><text class="lbl" x="86" y="202" text-anchor="end">Final test</text><rect class="tl-test" x="636.0" y="188" width="108.0" height="20" rx="4"/><text class="tl-t tl-tt" x="690.0" y="202" text-anchor="middle">used once</text><text class="axis" x="96.0" y="226" text-anchor="middle">Jan 25</text><text class="axis" x="312.0" y="226" text-anchor="middle">Jul 25</text><text class="axis" x="528.0" y="226" text-anchor="middle">Jan 26</text><text class="axis" x="636.0" y="226" text-anchor="middle">Apr 26</text><text class="axis" x="744.0" y="226" text-anchor="middle">Jun 26</text></svg>
+  <div class="chips">
+    <span class="chip"><b>Train: Jan 2025 – Mar 2026</b><small>39,306 rows · 5 time-ordered cross-validation folds</small></span>
+    <span class="chip"><b>Final test set: Apr – Jun 2026</b><small>8,904 rows · the last 3 months · used once, at the end</small></span>
+  </div>
+  <p class="small muted">Why time-ordered? The churn rate rises over time, so each fold learns from the past and is checked on the months right after it. Shuffled rows would let the model peek at the future.</p>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v6_plain"></script>
+<script src="guide.js"></script>
+</body>
+</html>

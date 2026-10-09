@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  FINAL_EVAL_HEADING, baselineView, cardFilename, cardNumber, cardTitle, dataRows, driversView, finalView, findingsHref, llmLine, markdownDownload, thresholdSourceText, modelRows, risksView, splitRows,
+  FINAL_EVAL_HEADING, FINAL_EVAL_SUBHEADING, baselineView, cardFilename, cardNumber, cardTitle, dataRows, driversView, finalView, findingsHref, llmLine, markdownDownload, thresholdSourceText, modelRows, risksView, splitRows,
 } from "./studio-card.ts";
 
 const P = "11111111-1111-4111-8111-111111111111";
@@ -55,9 +55,9 @@ test("final evaluation renders only when the API reports it, labelled, as a sing
   const binary = finalView({ status: "reported", metric: "roc_auc", value: 0.81234, metrics: { roc_auc: 0.81234, f1: 0.7, recall: 0.65, decision_threshold: 0.42 }, decision_threshold: 0.42 });
   assert.equal(binary.state, "reported");
   if (binary.state === "reported") {
-    assert.equal(binary.metric, "roc auc");
+    assert.equal(binary.metric, "ROC-AUC");
     assert.equal(binary.value, "0.812");
-    assert.deepEqual(binary.others.map((o) => o.key), ["f1", "recall"]);
+    assert.deepEqual(binary.others.map((o) => o.key), ["F1", "recall"]);
     assert.equal(binary.threshold, "0.42");
   }
   const regression = finalView({ status: "reported", metric: "rmse", value: 12.5, metrics: { rmse: 12.5, mae: 9.1 } });
@@ -73,7 +73,9 @@ test("final evaluation renders only when the API reports it, labelled, as a sing
   assert.equal(finalView({ status: "missing", note: "No evaluation stored." }).state, "missing");
   // "reported" without any number must not render an empty-looking result.
   assert.equal(finalView({ status: "reported", metrics: {}, value: null }).state, "missing");
-  assert.match(FINAL_EVAL_HEADING, /one look at rows the model never trained on or was selected with/);
+  assert.match(FINAL_EVAL_HEADING, /Final test \(used once per run\)/);
+  assert.doesNotMatch(FINAL_EVAL_SUBHEADING, /holdout/i);
+  assert.match(FINAL_EVAL_SUBHEADING, /did not choose the model, its settings or its threshold/);
 });
 
 test("risks: worst first, counts need-attention, not-investigated and clean states", () => {
@@ -97,7 +99,7 @@ test("findings link needs both ids to be UUIDs", () => {
 });
 
 test("data and split rows are counts only and skip missing values", () => {
-  assert.deepEqual(dataRows({ name: "churn.csv", row_count: 240, column_count: 6 }).map((r) => [r.label, r.value]), [["Source dataset", "churn.csv"], ["Rows", "240"], ["Columns", "6"]]);
+  assert.deepEqual(dataRows({ name: "churn.csv", row_count: 240, column_count: 6 }).map((r) => [r.label, r.value]), [["Data file", "churn.csv"], ["Rows", "240"], ["Columns", "6"]]);
   const rows = splitRows({ train_rows: 192, evaluation_rows: 48, evaluation_split_strategy: "random_stratified", evaluation_fraction: 0.2, validation_strategy: "stratified_kfold", validation_folds: 5, stratified: true });
   assert.deepEqual(rows.map((r) => r.key), ["train", "eval", "strategy", "fraction", "validation", "strat"]);
   assert.equal(rows.find((r) => r.key === "fraction")?.value, "20.0%");
@@ -105,9 +107,9 @@ test("data and split rows are counts only and skip missing values", () => {
 });
 
 test("LLM line and title", () => {
-  assert.equal(llmLine({ used: false, purposes: [] }), "LLM used: no");
-  assert.equal(llmLine({ used: true, purposes: ["plan_advice"] }), "LLM used: yes (plan advice)");
-  assert.equal(cardTitle({ family: "logistic_regression", version: "v1" }), "Model card: logistic_regression v1");
+  assert.equal(llmLine({ used: false, purposes: [] }), "AI used: no");
+  assert.equal(llmLine({ used: true, purposes: ["plan_advice"] }), "AI used: yes (plan advice)");
+  assert.equal(cardTitle({ family: "logistic_regression", version: "v1" }), "Model card: Logistic regression · Model v1");
 });
 
 test("markdown download: short-id filename, plain text, none when empty or id invalid", () => {
@@ -140,4 +142,20 @@ test("models list: champion first then newest, UUID ids only, links to the card"
   assert.deepEqual(rows.map((r) => r.id), [M, B, A]);
   assert.equal(rows[0].champion, true);
   assert.equal(rows[0].href, `/projects/${P}/models/${M}`);
+  assert.equal(rows[0].experimentId, null);
+});
+
+test("models list: the run that built each model comes from the produced_by edge", () => {
+  const node = { kind: "model_version", id: M, label: "m", version: "v2", created_at: "2026-03-01", ref_kinds: [] };
+  const edges = [
+    { from: { kind: "model_version", id: M }, to: { kind: "experiment", id: E }, relation: "produced_by" },
+    { from: { kind: "model_version", id: M }, to: { kind: "experiment", id: P }, relation: "derived_from" },
+  ];
+  assert.equal(modelRows(P, [node], edges)[0].experimentId, E);
+});
+
+test("metric names use the plain label and fall back to cleaned text", () => {
+  assert.equal(cardNumber(0.5), "0.5");
+  assert.equal(finalView({ status: "reported", metric: "pr_auc", value: 0.7, metrics: { pr_auc: 0.7, recall: 0.6 } }).state === "reported" && (finalView({ status: "reported", metric: "pr_auc", value: 0.7, metrics: { pr_auc: 0.7 } }) as { metric: string }).metric, "PR-AUC");
+  assert.equal(finalView({ status: "reported", metric: "__proto__", value: 1 }).state === "reported" && (finalView({ status: "reported", metric: "__proto__", value: 1 }) as { metric: string }).metric, "proto");
 });

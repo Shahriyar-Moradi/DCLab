@@ -1,0 +1,64 @@
+<!-- title: Model · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Model</b> -->
+<div class="page-head">
+  <div><h1>Model <span class="pill ok">Churn model (in use)</span></h1><p class="sub">LightGBM with balanced class weights, from Run 3. It scores each customer; a threshold turns the score into yes or no.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-use-model>Use this model for predictions</button></div>
+</div>
+
+<div class="tabs" data-tabs="model">
+  <button data-tab="threshold" aria-selected="true">Threshold</button>
+  <button data-tab="final">Final test</button>
+  <button data-tab="card">Model card</button>
+</div>
+
+<div data-tabpanel="model:threshold" class="on">
+  <div class="card">
+    <p class="big-sentence">At threshold 0.31 the model flags 27% of customers and catches 81% of churners.</p>
+    <h3>Precision and recall by threshold <span class="sp">from the 5 cross-validation folds</span></h3>
+    {{chart:pr_by_threshold}}
+    <p class="small muted">A lower threshold flags more customers: recall goes up, precision goes down. 0.31 is the highest threshold that still keeps recall above our 0.80 rule.</p>
+  </div>
+</div>
+
+<div data-tabpanel="model:final">
+  <div class="grid cols-4">
+    <div class="card"><div class="stat"><span class="v">0.81</span><span class="l">recall · rule was ≥ 0.80</span></div></div>
+    <div class="card"><div class="stat"><span class="v">0.63</span><span class="l">precision</span></div></div>
+    <div class="card"><div class="stat"><span class="v">0.71</span><span class="l">PR-AUC (CV was 0.70)</span></div></div>
+    <div class="card"><div class="stat"><span class="v">8,904</span><span class="l">rows · Apr – Jun 2026</span></div></div>
+  </div>
+  <div class="card">
+    <h3>Final test set (used once) <span class="sp">customers counted at threshold 0.31</span></h3>
+    <div class="cm">
+      <div></div><div class="h">Model says: cancels</div><div class="h">Model says: stays</div>
+      <div class="h">Really cancelled</div><div class="good"><b>1,731</b><small>caught (true positives)</small></div><div class="bad"><b>406</b><small>missed (false negatives)</small></div>
+      <div class="h">Really stayed</div><div class="bad"><b>1,017</b><small>flagged by mistake (false positives)</small></div><div class="good"><b>5,750</b><small>correctly left alone</small></div>
+    </div>
+    <p class="small muted">On this set it flags 2,748 of 8,904 customers (31%), more than the 27% in cross-validation, because churn is higher in the last 3 months (24%). 1,731 of 2,137 churners caught = recall 0.81. 1,731 of 2,748 flagged were real = precision 0.63. This set was looked at once and never used to choose the model or the threshold.</p>
+  </div>
+</div>
+
+<div data-tabpanel="model:card">
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Columns that matter most</h3>
+      {{chart:importance_bars}}
+    </div>
+    <div class="card">
+      <h3>Model card</h3>
+      <dl class="kv">
+        <dt>Built from</dt><dd>Customer data · Jun 2026 · 39,306 training rows</dd>
+        <dt>Features</dt><dd>29 used, 2 left out</dd>
+        <dt>Model</dt><dd>LightGBM, balanced class weights</dd>
+        <dt>Threshold</dt><dd>0.31</dd>
+        <dt>Tested on</dt><dd>5 time-ordered folds, then the last 3 months once</dd>
+      </dl>
+      <h4>Known limits</h4>
+      <ul class="hist">
+        <li>New files must have the same columns as the training file.</li>
+        <li>It has never seen plan types that started after June 2026.</li>
+        <li>Scores rank customers; they are not exact chances (see the calibration warning).</li>
+      </ul>
+    </div>
+  </div>
+</div>

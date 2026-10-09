@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Improve · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="improve.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Improve</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Improve</h1><p class="sub">Say what “better” means and how much it may cost. DCLab tries changes one at a time and keeps the current model unless something clearly beats the noise.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="edit">Start improving</button></div>
+</div>
+<div class="statusrow"><a class="stag plan" href="real.html" title="See what is real today">Planned · Phase 5 (engine being built)</a><span class="preview-banner"><b>Preview of a planned screen.</b> Numbers are examples.</span></div>
+
+<div class="tabs" data-tabs="imp">
+  <button data-tab="goal" aria-selected="true">Goal and budget</button>
+  <button data-tab="tries">Tries and outcome</button>
+</div>
+
+<div data-tabpanel="imp:goal" class="on">
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Goal</h3>
+      <p class="big-sentence">Best precision while recall ≥ 0.80</p>
+      <p class="small muted">Measured with cross-validation on the same folds as every other run.</p>
+      <h3>Budget</h3>
+      <div class="fields">
+        <label class="field">Most runs<input type="text" value="6" aria-label="Most runs"></label>
+        <label class="field">Most time<input type="text" value="2 h" aria-label="Most time"></label>
+        <label class="field">Most AI cost<input type="text" value="$2" aria-label="Most AI cost"></label>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Who suggests the changes</h3>
+      <div class="switch-row"><span><b>The rule table</b><small>Always on. Each rule links a trust check or a result to one change.</small></span><span class="pill ok">always</span></div>
+      <div class="switch-row"><span><b>Suggestions from the assistant</b><small>Optional. Built, but switched off until it passes testing.</small></span><span class="pill off">switched off</span></div>
+      <div class="banner"><div class="sp"><b>Rule:</b> each try is compared on the same folds; the final test set is used once, only for an accepted result.</div></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="imp:tries">
+  <div class="card">
+    <h3>Outcome <span class="sp">4 of 6 runs · 1 h 12 min of 2 h · AI cost $0.04 of $2</span></h3>
+    <div class="banner warn"><div class="sp"><b>No change beyond noise; current model kept.</b> The best try reached cross-validation precision 0.65 against 0.63 now, and the spread between folds is ±0.02. The final test set was not used.</div></div>
+    <svg class="chart" viewBox="0 0 470 180" role="img" aria-label="Cross-validation precision at recall 0.80 for the current model and four tries, with the spread across folds. The best try, 0.65, is inside the shaded band of normal variation around the current 0.63."><line class="grid-l" x1="54" y1="124.0" x2="450" y2="124.0"/><text class="axis" x="48" y="128.0" text-anchor="end">0.60</text><line class="grid-l" x1="54" y1="98.0" x2="450" y2="98.0"/><text class="axis" x="48" y="102.0" text-anchor="end">0.62</text><line class="grid-l" x1="54" y1="72.0" x2="450" y2="72.0"/><text class="axis" x="48" y="76.0" text-anchor="end">0.64</text><line class="grid-l" x1="54" y1="46.0" x2="450" y2="46.0"/><text class="axis" x="48" y="50.0" text-anchor="end">0.66</text><line class="grid-l" x1="54" y1="20.0" x2="450" y2="20.0"/><text class="axis" x="48" y="24.0" text-anchor="end">0.68</text><rect class="tst" x="54" y="59.0" width="396" height="52.0"/><text class="axis" x="450" y="55.0" text-anchor="end">shaded: normal variation, ±0.02</text><line class="ln-c" x1="98.0" y1="59.0" x2="98.0" y2="111.0"/><circle class="pt-d" cx="98.0" cy="85.0" r="5"/><text class="axis" x="98.0" y="53.0" text-anchor="middle">0.63</text><text class="axis" x="98.0" y="168" text-anchor="middle">Current model</text><line class="ln-c" x1="175.0" y1="46.0" x2="175.0" y2="98.0"/><circle class="pt-a" cx="175.0" cy="72.0" r="5"/><text class="axis" x="175.0" y="40.0" text-anchor="middle">0.64</text><text class="axis" x="175.0" y="168" text-anchor="middle">Try 1</text><line class="ln-c" x1="252.0" y1="72.0" x2="252.0" y2="124.0"/><circle class="pt-a" cx="252.0" cy="98.0" r="5"/><text class="axis" x="252.0" y="66.0" text-anchor="middle">0.62</text><text class="axis" x="252.0" y="168" text-anchor="middle">Try 2</text><line class="ln-c" x1="329.0" y1="33.0" x2="329.0" y2="85.0"/><circle class="pt-a" cx="329.0" cy="59.0" r="5"/><text class="axis" x="329.0" y="27.0" text-anchor="middle">0.65</text><text class="axis" x="329.0" y="168" text-anchor="middle">Try 3</text><line class="ln-c" x1="406.0" y1="46.0" x2="406.0" y2="124.0"/><circle class="pt-a" cx="406.0" cy="85.0" r="5"/><text class="axis" x="406.0" y="40.0" text-anchor="middle">0.63</text><text class="axis" x="406.0" y="168" text-anchor="middle">Try 4</text></svg>
+    <p class="small muted">Precision at recall 0.80 on the cross-validation folds. A try must beat the current model by more than the spread to be accepted.</p>
+  </div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Try</th><th>Change tried</th><th>Why</th><th>Suggested by</th><th class="r">CV precision ± spread</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><b>Try 1</b></td><td>Add a feature: monthly fee change as a share of the fee</td><td>Fold 5 scored lowest, and fee change is the second most useful column</td><td>The rules</td><td class="r">0.64 ± 0.02</td><td><span class="pill gray">within noise</span></td></tr>
+      <tr><td><b>Try 2</b></td><td>Leave out <code>region_code</code></td><td>Low importance; fewer columns can reduce noise</td><td>The rules</td><td class="r">0.62 ± 0.02</td><td><span class="pill gray">worse</span></td></tr>
+      <tr><td><b>Try 3</b></td><td>Use weaker class weights (1 : 3 instead of balanced)</td><td>The calibration warning on Run 3</td><td>The rules</td><td class="r">0.65 ± 0.02</td><td><span class="pill gray">within noise</span></td></tr>
+      <tr><td><b>Try 4</b></td><td>Switch to CatBoost with the same features and weights</td><td>Several columns are categories</td><td>The assistant · the rules agreed</td><td class="r">0.63 ± 0.03</td><td><span class="pill gray">no gain</span></td></tr>
+    </tbody>
+  </table></div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v7_final"></script>
+<script src="guide.js"></script>
+</body>
+</html>

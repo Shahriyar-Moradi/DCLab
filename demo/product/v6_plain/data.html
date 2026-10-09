@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Data · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="data.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Data</b></div>
+    <div class="right">
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Data <span class="pill ok">Customer data · Jun 2026</span></h1><p class="sub">The file you uploaded, what is in it, and which columns the model will use.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="upload">Upload a newer file</button></div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">48,210</span><span class="l">rows (one per customer-month)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">31</span><span class="l">columns · 29 used, 2 left out</span></div></div>
+  <div class="card"><div class="stat"><span class="v">9,412</span><span class="l">customers · Jan 2025 – Jun 2026</span></div></div>
+  <div class="card"><div class="stat"><span class="v">21.3%</span><span class="l">cancelled within 30 days</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="data">
+  <button data-tab="columns" aria-selected="true">Columns</button>
+  <button data-tab="balance">Churn over time</button>
+  <button data-tab="checks">Data checks</button>
+</div>
+
+<div data-tabpanel="data:columns" class="on">
+  <div class="toolbar"><input class="input" placeholder="filter columns…" style="min-width:220px"><span class="small muted">Showing 14 of 31 columns · features: 29 used, 2 left out</span></div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Column</th><th>Type</th><th class="r">Missing</th><th>Used?</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><code>customer_id</code></td><td>text</td><td class="r">0%</td><td><span class="pill gray">no</span></td><td>ID column, not a predictor</td></tr>
+      <tr><td><code>churned_next_30d</code></td><td>yes / no</td><td class="r">0%</td><td><span class="pill det">target</span></td><td>This is what we predict</td></tr>
+      <tr><td><code>churned_at</code></td><td>date</td><td class="r">79%</td><td><span class="pill crit">no</span></td><td>Filled in only after the customer cancelled, so it would leak the answer</td></tr>
+      <tr><td><code>snapshot_month</code></td><td>date</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Used to order the data in time</td></tr>
+      <tr><td><code>signup_date</code></td><td>date</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Gives customer age (tenure)</td></tr>
+      <tr><td><code>plan_type</code></td><td>category</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Which plan the customer is on (6 values)</td></tr>
+      <tr><td><code>monthly_fee</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Known at the start of each month</td></tr>
+      <tr><td><code>monthly_fee_change_3m</code></td><td>number</td><td class="r">1%</td><td><span class="pill ok">yes</span></td><td>Change in fee over 3 months</td></tr>
+      <tr><td><code>last_login_days</code></td><td>number</td><td class="r">1%</td><td><span class="pill ok">yes</span></td><td>Days since last login, as of the month start</td></tr>
+      <tr><td><code>contract_end</code></td><td>date</td><td class="r">38%</td><td><span class="pill ok">yes</span></td><td>Empty means no fixed contract; turned into “days left”</td></tr>
+      <tr><td><code>support_tickets_90d</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Tickets in the last 90 days</td></tr>
+      <tr><td><code>tenure_months</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Months since signup</td></tr>
+      <tr><td><code>late_payments_6m</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Late payments in 6 months</td></tr>
+      <tr><td><code>region_code</code></td><td>category</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>12 regions</td></tr>
+      <tr class="dim"><td colspan="5">… 17 more columns, all used</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="data:balance">
+  <div class="card">
+    <h3>Share of customers who cancelled, by month <span class="sp">the shaded months become the final test set</span></h3>
+    <svg class="chart" viewBox="0 0 470 184" role="img" aria-label="Share of customers who cancelled, by month. It rises from about 18 percent in January 2025 to about 24 percent in June 2026. The last three months are the final test set."><rect class="tst" x="391.4" y="14" width="62.6" height="136"/><line class="grid-l" x1="50" y1="140.7" x2="452" y2="140.7"/><text class="axis" x="44" y="144.7" text-anchor="end">15%</text><line class="grid-l" x1="50" y1="94.3" x2="452" y2="94.3"/><text class="axis" x="44" y="98.3" text-anchor="end">20%</text><line class="grid-l" x1="50" y1="47.9" x2="452" y2="47.9"/><text class="axis" x="44" y="51.9" text-anchor="end">25%</text><line class="ln-c" x1="50" y1="82.2" x2="452" y2="82.2"/><text class="axis" x="54" y="77.2">overall 21.3%</text><path class="area" d="M50.0,150 L50.0,114.7 L73.3,111.1 L96.6,107.4 L119.9,103.7 L143.2,100.1 L166.5,96.4 L189.8,92.8 L213.1,89.1 L236.4,85.4 L259.6,81.8 L282.9,78.1 L306.2,74.5 L329.5,70.8 L352.8,67.1 L376.1,63.5 L399.4,59.8 L422.7,56.2 L446.0,52.5 L446.0,150 Z"/><polyline class="ln-a" points="50.0,114.7 73.3,111.1 96.6,107.4 119.9,103.7 143.2,100.1 166.5,96.4 189.8,92.8 213.1,89.1 236.4,85.4 259.6,81.8 282.9,78.1 306.2,74.5 329.5,70.8 352.8,67.1 376.1,63.5 399.4,59.8 422.7,56.2 446.0,52.5"/><circle class="pt-a" cx="446.0" cy="52.5" r="4.5"/><text class="axis" x="422.7" y="30" text-anchor="middle">final test</text><text class="axis" x="50.0" y="172" text-anchor="middle">Jan 25</text><text class="axis" x="189.8" y="172" text-anchor="middle">Jul 25</text><text class="axis" x="329.5" y="172" text-anchor="middle">Jan 26</text><text class="axis" x="446.0" y="172" text-anchor="middle">Jun 26</text></svg>
+    <p class="small muted">The churn rate climbs from about 18% to about 24%. That is why the test design looks forward in time instead of shuffling rows.</p>
+  </div>
+</div>
+
+<div data-tabpanel="data:checks">
+  <div class="card">
+    <h3>Data checks <span class="sp">run automatically on every upload</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Check</th><th>Result</th><th>What we found</th></tr></thead>
+      <tbody>
+        <tr><td>Duplicates</td><td><span class="pill ok">ok</span></td><td>14 customer-months appear twice. The second copy is dropped.</td></tr>
+        <tr><td>Missing values</td><td><span class="pill ok">ok</span></td><td><code>contract_end</code> is empty for 38% of rows (no contract); <code>churned_at</code> is empty for 79% (not yet cancelled).</td></tr>
+        <tr><td>Leakage</td><td><span class="pill warn">1 fixed</span></td><td><code>churned_at</code> is only filled after the customer cancelled. It is left out.</td></tr>
+        <tr><td>Dates</td><td><span class="pill ok">ok</span></td><td>No dates in the future; 18 months in a row.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v6_plain"></script>
+<script src="guide.js"></script>
+</body>
+</html>

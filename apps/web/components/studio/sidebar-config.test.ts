@@ -13,8 +13,8 @@ test("with no backend capabilities every item is hidden", () => {
 });
 
 test("items need both the role and the backend feature", () => {
-  const caps = { graph: true, client_outcomes: true, home: false };
-  assert.deepEqual(ids(resolveSidebar("developer", { capabilities: caps })), ["graph"]);
+  const caps = { data: true, client_outcomes: true, home: false };
+  assert.deepEqual(ids(resolveSidebar("developer", { capabilities: caps })), ["data"]);
   assert.deepEqual(ids(resolveSidebar("client", { capabilities: caps })), ["client-outcomes"]);
   assert.deepEqual(ids(resolveSidebar("operator", { capabilities: caps })), []);
 });
@@ -23,13 +23,13 @@ test("showUnavailable keeps role scoping and names the phase that ships the item
   const groups = resolveSidebar("client", { showUnavailable: true });
   assert.deepEqual(ids(groups), ["client-outcomes", "client-predictions", "client-questions"]);
   assert.ok(groups.every((g) => g.items.every((i) => !i.available && /^P\d/.test(i.phase))));
-  assert.ok(!ids(resolveSidebar("client", { showUnavailable: true })).includes("graph"));
+  assert.ok(!ids(resolveSidebar("client", { showUnavailable: true })).includes("data"));
 });
 
 test("project-relative hrefs take the project base; workspace hrefs stay absolute", () => {
-  const groups = resolveSidebar("developer", { capabilities: { home: true, graph: true }, projectBase: "/projects/p1/" });
+  const groups = resolveSidebar("developer", { capabilities: { home: true, data: true }, projectBase: "/projects/p1/" });
   const hrefs = Object.fromEntries(groups.flatMap((g) => g.items.map((i) => [i.id, i.href])));
-  assert.deepEqual(hrefs, { home: "/home", graph: "/projects/p1/graph" });
+  assert.deepEqual(hrefs, { home: "/home", data: "/projects/p1/data" });
 });
 
 test("config ids are unique and every item has a phase", () => {
@@ -40,7 +40,36 @@ test("config ids are unique and every item has a phase", () => {
 
 test("an unsafe project base drops project-scoped items instead of building a hostile href", () => {
   for (const base of ["javascript:alert(1)", "//evil.example", "/p?x=1", "/p#y"]) {
-    const groups = resolveSidebar("developer", { capabilities: { home: true, graph: true }, projectBase: base });
+    const groups = resolveSidebar("developer", { capabilities: { home: true, data: true }, projectBase: base });
     assert.deepEqual(groups.flatMap((g) => g.items.map((i) => i.href)), ["/home"], base);
   }
+});
+
+const SPLIT = "22222222-2222-4222-8222-222222222222";
+const MODEL = "33333333-3333-4333-8333-333333333333";
+const allOn = { home: true, inbox: true, projects: true, data: true, goal: true, experiments: true, models: true, predictions: true, decisions: true, agents: true };
+
+test("v7 sidebar: grouped, in the v7 order and words", () => {
+  const groups = resolveSidebar("developer", { capabilities: allOn, projectBase: "/projects/p1", targets: { split_plan: SPLIT, project_model: MODEL } });
+  assert.deepEqual(groups.map((g) => [g.label, g.items.map((i) => i.label)]), [
+    ["Workspace", ["Home", "Inbox", "Projects"]],
+    ["Project", ["Data", "Goal & test design", "Experiments", "Model", "Predictions", "History"]],
+    ["Admin", ["Connect"]],
+  ]);
+});
+
+test("Goal and Predictions need the id of the test design / model of the project, else they are left out", () => {
+  const without = resolveSidebar("developer", { capabilities: allOn, projectBase: "/projects/p1" });
+  assert.ok(!ids(without).includes("goal") && !ids(without).includes("predictions"));
+  const bad = resolveSidebar("developer", { capabilities: allOn, projectBase: "/projects/p1", targets: { split_plan: "../x", project_model: null } });
+  assert.ok(!ids(bad).includes("goal") && !ids(bad).includes("predictions"));
+  const hrefs = Object.fromEntries(resolveSidebar("developer", { capabilities: allOn, projectBase: "/projects/p1", targets: { split_plan: SPLIT, project_model: MODEL } }).flatMap((g) => g.items.map((i) => [i.id, i.href])));
+  assert.equal(hrefs.goal, `/projects/p1/splits/${SPLIT}`);
+  assert.equal(hrefs.predictions, "/projects/p1/predictions");
+});
+
+test("pages that are not built (Improve, Monitoring, AI settings, Settings) stay hidden with the default capabilities", async () => {
+  const { STUDIO_BACKEND_FEATURES } = await import("../../lib/application/studio-navigation.ts");
+  const shown = ids(resolveSidebar("developer", { capabilities: STUDIO_BACKEND_FEATURES, projectBase: "/projects/p1", targets: { split_plan: SPLIT, project_model: MODEL } }));
+  for (const hidden of ["improve", "monitoring", "governance", "settings", "lab", "pipeline", "graph"]) assert.ok(!shown.includes(hidden), hidden);
 });

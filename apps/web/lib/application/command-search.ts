@@ -86,10 +86,10 @@ export async function searchStudio(rawQuery: string, context: SearchContext, sou
   out.push(...projects.filter((p) => matches(query, p.name, p.slug, p.id)).slice(0, PER_KIND)
     .map((p) => hit("Project", p.id, p.name, projectHref(p.id, "experiments"), p.status)));
   out.push(...experiments.filter((e) => matches(query, e.intent, e.id, e.status)).slice(0, PER_KIND)
-    .map((e) => hit("Experiment", e.id, e.intent || `Experiment ${shortId(e.id)}`, projectHref(e.project_id, "experiments", e.id), e.status)));
+    .map((e) => hit("Experiment", e.id, e.intent || `Run ${shortId(e.id)}`, projectHref(e.project_id, "experiments", e.id), e.status)));
   const models: ModelRow[] = refs
-    .filter((r) => r.target.kind === "model_version" && matches(query, "champion model", r.target.id))
-    .map((r) => ({ id: r.target.id, version: "champion", project_id: projectId }));
+    .filter((r) => r.target.kind === "model_version" && matches(query, "model in use champion model", r.target.id))
+    .map((r) => ({ id: r.target.id, version: "in use", project_id: projectId }));
   if (model && !models.some((m) => m.id === model.id)) models.push(model);
   out.push(...models.slice(0, PER_KIND).map((m) => hit("Model", m.id, `Model ${shortId(m.id)}`, projectHref(m.project_id, "models"), m.version)));
   out.push(...decisions.filter((d) => matches(query, d.decision_type, d.id, d.state)).slice(0, PER_KIND)

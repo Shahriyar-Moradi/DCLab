@@ -7,9 +7,13 @@
  */
 import { isUuid, plainText, projectHref } from "./command-search.ts";
 import { sortFindings } from "./studio-findings.ts";
+import { familyLabel } from "./studio-runs.ts";
+import { metricInfo } from "./studio-goal.ts";
+import { modelName } from "./studio-names.ts";
+import { experimentOfModel } from "./studio-model.ts";
 
-export const FINAL_EVAL_HEADING = "Final evaluation — one look at rows the model never trained on or was selected with";
-export const FINAL_EVAL_SUBHEADING = "Scored once, for the locked winner only. It did not choose the model, the settings or the threshold. It is not a cross-validation score.";
+export const FINAL_EVAL_HEADING = "Final test (used once per run)";
+export const FINAL_EVAL_SUBHEADING = "These rows were set aside before any modelling. This run scored them once, for its chosen model only. They did not choose the model, its settings or its threshold, and this is not a cross-validation score.";
 
 export type CardDriverLike = { rank: number; column: string; importance_mean?: number | null; importance_std?: number | null; importance_se?: number | null; distinguishable?: boolean | null };
 export type CardDriversLike = { status: string; text: string; features?: CardDriverLike[]; clear_drivers?: string[]; columns_tested?: number | null; folds?: number | null };
@@ -19,7 +23,8 @@ export type CardFinalLike = { status: string; label?: string | null; metric?: st
 const TITLE_MAX = 80;
 
 export function cardTitle(card: { family?: string | null; algorithm?: string | null; version: string }): string {
-  return `Model card: ${plainText(card.family || card.algorithm || "model", TITLE_MAX)} ${plainText(card.version, 40)}`;
+  const kind = familyLabel(card.family || card.algorithm) ?? "model";
+  return `Model card: ${plainText(kind, TITLE_MAX)} · ${modelName(plainText(card.version, 40))}`;
 }
 
 /** `model-card-<first 8 of the model version id>.md`; null when the id is not a UUID. */
@@ -34,7 +39,7 @@ export function markdownDownload(card: { markdown?: string | null }): { text: st
 }
 
 export function metricName(name: string | null | undefined): string {
-  return name ? plainText(name.replaceAll("_", " "), 60) : "metric";
+  return name ? (metricInfo(name)?.label ?? plainText(name.replaceAll("_", " "), 60)) : "score";
 }
 
 /** Compact number: integers as is, ratios with 3 significant digits. */
@@ -86,9 +91,9 @@ export function baselineView(b: { available: boolean; text: string; metric?: str
   const text = plainText(b.text, 600);
   if (!b.available) return { tone: "gray", badge: "No baseline available", text, rows: [] };
   const rows = [
-    { key: "winner", label: `Winner (${metricName(b.metric)}, cross-validation)`, value: cardNumber(b.winner_score) },
+    { key: "winner", label: `Chosen model (${metricName(b.metric)}, cross-validation)`, value: cardNumber(b.winner_score) },
     { key: "baseline", label: `Dummy baseline (${metricName(b.metric)}, cross-validation)`, value: cardNumber(b.baseline_score) },
-    { key: "margin", label: "Improvement over the baseline (cross-validation)", value: cardNumber(b.margin) },
+    { key: "margin", label: "Gain over the baseline (cross-validation)", value: cardNumber(b.margin) },
   ];
   if (b.beats_baseline === true && b.clear_margin !== false) return { tone: "ok", badge: "Clearly beats the baseline", text, rows };
   if (b.beats_baseline === true) return { tone: "warn", badge: "Beats the baseline by a small margin", text, rows };
@@ -104,7 +109,7 @@ export type FinalView =
 
 /** The labelled single evaluation. Renders numbers only when the API says "reported" and sends a value. */
 export function finalView(final: CardFinalLike): FinalView {
-  if (final.status === "withheld") return { state: "withheld", text: "Withheld: this view of the card is for agents, which never see final-evaluation values." };
+  if (final.status === "withheld") return { state: "withheld", text: "Withheld: this view of the card is for connected tools and the assistant, which never see final test values." };
   const metrics = Object.entries(final.metrics ?? {}).filter((e): e is [string, number] => typeof e[1] === "number" && Number.isFinite(e[1]));
   const hasValue = typeof final.value === "number" && Number.isFinite(final.value);
   if (final.status !== "reported" || (!hasValue && metrics.length === 0)) {
@@ -145,7 +150,7 @@ export type FactRow = { key: string; label: string; value: string };
 
 export function dataRows(data: { name?: string | null; row_count?: number | null; column_count?: number | null; modeled_feature_count?: number | null }): FactRow[] {
   const rows: FactRow[] = [];
-  if (data.name) rows.push({ key: "name", label: "Source dataset", value: plainText(data.name, 120) });
+  if (data.name) rows.push({ key: "name", label: "Data file", value: plainText(data.name, 120) });
   if (data.row_count != null) rows.push({ key: "rows", label: "Rows", value: cardNumber(data.row_count) });
   if (data.column_count != null) rows.push({ key: "cols", label: "Columns", value: cardNumber(data.column_count) });
   if (data.modeled_feature_count != null) rows.push({ key: "feat", label: "Columns the model uses", value: cardNumber(data.modeled_feature_count) });
@@ -155,11 +160,11 @@ export function dataRows(data: { name?: string | null; row_count?: number | null
 export function splitRows(split: { evaluation_split_strategy?: string | null; evaluation_fraction?: number | null; validation_strategy?: string | null; validation_folds?: number | null; train_rows?: number | null; evaluation_rows?: number | null; stratified?: boolean | null; group_column?: string | null; time_column?: string | null }): FactRow[] {
   const rows: FactRow[] = [];
   if (split.train_rows != null) rows.push({ key: "train", label: "Training rows", value: cardNumber(split.train_rows) });
-  if (split.evaluation_rows != null) rows.push({ key: "eval", label: "Final-evaluation rows (count only)", value: cardNumber(split.evaluation_rows) });
-  if (split.evaluation_split_strategy) rows.push({ key: "strategy", label: "Final-evaluation split", value: plainText(split.evaluation_split_strategy.replaceAll("_", " "), 60) });
-  if (split.evaluation_fraction != null) rows.push({ key: "fraction", label: "Final-evaluation share of rows", value: `${(split.evaluation_fraction * 100).toFixed(1)}%` });
-  if (split.validation_strategy) rows.push({ key: "validation", label: "Validation", value: `${plainText(split.validation_strategy.replaceAll("_", " "), 60)}${split.validation_folds ? `, ${split.validation_folds} folds` : ""}` });
-  if (split.stratified != null) rows.push({ key: "strat", label: "Stratified", value: split.stratified ? "yes" : "no" });
+  if (split.evaluation_rows != null) rows.push({ key: "eval", label: "Final test set rows (count only)", value: cardNumber(split.evaluation_rows) });
+  if (split.evaluation_split_strategy) rows.push({ key: "strategy", label: "How the final test set was set aside", value: plainText(split.evaluation_split_strategy.replaceAll("_", " "), 60) });
+  if (split.evaluation_fraction != null) rows.push({ key: "fraction", label: "Final test set share of rows", value: `${(split.evaluation_fraction * 100).toFixed(1)}%` });
+  if (split.validation_strategy) rows.push({ key: "validation", label: "Cross-validation", value: `${plainText(split.validation_strategy.replaceAll("_", " "), 60)}${split.validation_folds ? `, ${split.validation_folds} folds` : ""}` });
+  if (split.stratified != null) rows.push({ key: "strat", label: "Same outcome mix in every part (stratified)", value: split.stratified ? "yes" : "no" });
   if (split.group_column) rows.push({ key: "group", label: "Group column", value: plainText(split.group_column, 80) });
   if (split.time_column) rows.push({ key: "time", label: "Time column", value: plainText(split.time_column, 80) });
   return rows;
@@ -174,21 +179,21 @@ export function thresholdSourceText(source: string | null | undefined): string {
 
 export function llmLine(llm: { used: boolean; purposes?: string[] }): string {
   const why = llm.purposes?.length ? ` (${llm.purposes.map((p) => plainText(p.replaceAll("_", " "), 40)).join(", ")})` : "";
-  return `LLM used: ${llm.used ? "yes" : "no"}${why}`;
+  return `AI used: ${llm.used ? "yes" : "no"}${why}`;
 }
 
 // --- models list --------------------------------------------------------------------------
 
 export type ModelNodeLike = { kind: string; id: string; label: string; version?: string | null; digest?: string | null; created_at?: string | null; ref_kinds?: string[] };
-export type ModelRow = { id: string; label: string; version: string; champion: boolean; created: string | null; digest: string | null; href: string | null };
+export type ModelRow = { id: string; label: string; version: string; champion: boolean; created: string | null; digest: string | null; href: string | null; experimentId: string | null };
 
 /** Model versions of the project graph: champion first, then newest first. */
-export function modelRows(projectId: string, nodes: ModelNodeLike[]): ModelRow[] {
+export function modelRows(projectId: string, nodes: ModelNodeLike[], edges: ReadonlyArray<{ from: { kind: string; id: string }; to: { kind: string; id: string }; relation: string }> = []): ModelRow[] {
   return nodes
     .filter((n) => n.kind === "model_version" && isUuid(n.id))
     .map((n) => ({
       id: n.id, label: plainText(n.label, 80), version: plainText(n.version ?? "", 40), champion: (n.ref_kinds ?? []).includes("champion_model"),
-      created: n.created_at ?? null, digest: n.digest ?? null, href: projectHref(projectId, "models", n.id),
+      created: n.created_at ?? null, digest: n.digest ?? null, href: projectHref(projectId, "models", n.id), experimentId: experimentOfModel(edges, n.id),
     }))
     .sort((a, b) => Number(b.champion) - Number(a.champion) || String(b.created ?? "").localeCompare(String(a.created ?? "")));
 }

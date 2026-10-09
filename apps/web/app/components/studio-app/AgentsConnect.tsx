@@ -41,7 +41,7 @@ export function AgentsConnect() {
                 <p>Save this as <code>.mcp.json</code> in your project. Replace <code>dclab_st_…</code> with a token from the Service tokens tab, and do not commit the file with a real token in it.</p>
                 <Snippet code={MCP_JSON} label=".mcp.json example" language="json" />
                 <Snippet code={MCP_INSTALL} label="MCP install commands" language="shell" />
-                <p className="small muted">DCLAB_API_URL is the DCLab API service itself (for example http://localhost:8001 locally), not the address you open in the browser. Read tools are on by default; outputs are bounded and never contain raw rows or final holdout values.</p>
+                <p className="small muted">DCLAB_API_URL is the DCLab API service itself (for example http://localhost:8001 locally), not the address you open in the browser. Read tools are on by default; outputs are bounded and never contain raw rows or final test set values.</p>
               </>
             ),
           },

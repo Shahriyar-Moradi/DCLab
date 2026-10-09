@@ -32,9 +32,9 @@ test("Agents page: Connect snippets, token create (secret once, never stored), r
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await login(page);
   await page.goto("/home");
-  await page.getByRole("link", { name: "Agents & tools" }).click();
+  await page.getByRole("link", { name: "Connect" }).first().click();
   await expect(page).toHaveURL(/\/agents$/);
-  await expect(page.getByRole("heading", { name: "Agents & tools", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connect", level: 1 })).toBeVisible();
 
   // Connect: .mcp.json with a placeholder token only.
   await expect(page.getByText("dclab_st_…").first()).toBeVisible();

@@ -8,11 +8,11 @@ export type PageGuideProps = {
   label?: string;
 };
 
-/** Per-screen orientation: what it is for, how to use it, what you get, what needs attention. */
+/** Per-screen orientation in plain words: what this is, what to do, what you get, what needs attention. */
 export function PageGuide({ purpose, howTo, youGet, attention, label = "About this screen" }: PageGuideProps) {
   const sections: Array<[string, ReactNode]> = [
-    ["What it is for", purpose],
-    ["How to use it", howTo],
+    ["What this is", purpose],
+    ["What to do", howTo],
     ["What you get", youGet],
   ];
   if (attention) sections.push(["Needs attention", attention]);

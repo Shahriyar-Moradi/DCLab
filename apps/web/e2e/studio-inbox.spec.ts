@@ -60,7 +60,7 @@ test("inbox: approve a proposed decision, reject another, read-only and conflict
   await page.getByRole("tab", { name: /^Done/ }).click();
   await expect(page.locator("article.card", { hasText: "Experiment acceptance accepted" }).first()).toBeVisible();
   await page.getByRole("tab", { name: /Applied automatically/ }).click();
-  await expect(page.getByText("Every decision point is below level L2 today")).toBeVisible();
+  await expect(page.getByText("Every kind of decision is set to Ask first today")).toBeVisible();
   await page.getByRole("tab", { name: /Needs a decision/ }).click();
 
   // Conflict: the API says it was already decided -> plain language, nothing else changes.

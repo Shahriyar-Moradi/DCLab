@@ -44,7 +44,7 @@ export type RunArtifact = z.infer<typeof ArtifactSchema>;
 
 const RecordSchema = z.object({
   id: z.string(), decision_type: z.string(), effective_state: z.string(), recorded_at: z.string(),
-  actor: z.object({ kind: z.string(), rule: nullableString, agent_run_id: nullableString }),
+  actor: z.object({ kind: z.string(), rule: nullableString, agent_run_id: nullableString, service_token_id: nullableString }),
   subject: z.object({ kind: z.string(), id: z.string() }),
   details: anyRecord.optional(), details_truncated: z.boolean().optional(),
 });

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Home · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="index.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Home</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch"><span>View as</span><select id="role-switch"><option value="ds">Data scientist</option><option value="admin">Admin</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant</button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Good morning, Sam</h1><p class="sub">Three things need you today. Everything else in Northwind churn is on track or running by itself.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="upload">Upload data</button></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="card">
+  <h2>3 things need you <span class="sp"><a href="inbox.html">Open the Inbox</a></span></h2>
+  <div class="dlist">
+    <div class="drow"><span class="ic">1</span><span><b>Switch to the retrained model?</b> <span class="pill plan">Planned · Phase 7</span><br><small class="muted">Precision goes from 0.48 to 0.59 on the same test design.</small></span><a class="btn sm primary" href="inbox.html">Decide</a></div>
+    <div class="drow"><span class="ic">2</span><span><b>Accept the calibration warning on Run 3?</b><br><small class="muted">Scores rank customers well but are not exact chances.</small></span><a class="btn sm" href="inbox.html">Review</a></div>
+    <div class="drow"><span class="ic">3</span><span><b>One upload was rejected</b><br><small class="muted">3 sheets could not be read. Upload the file again.</small></span><a class="btn sm" href="data.html">Open Data</a></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Northwind churn <span class="sp">catch at least 80% of the customers who will cancel</span></h2>
+  <ol class="flow-home">
+    <li class="done"><a href="data.html"><span class="k">1 Data</span><b>Jun 2026 file</b><small>48,210 rows</small></a></li>
+    <li class="done"><a href="goal.html"><span class="k">2 Goal &amp; test</span><b>Recall ≥ 0.80</b><small>done</small></a></li>
+    <li class="done"><a href="experiments.html"><span class="k">3 Experiments</span><b>6 runs</b><small>Run 3 is best</small></a></li>
+    <li><a href="improve.html"><span class="k">4 Improve</span><b>Planned</b><small>Planned · Phase 5</small></a></li>
+    <li class="done"><a href="model.html"><span class="k">5 Model</span><b>LightGBM</b><small>threshold 0.31</small></a></li>
+    <li class="done"><a href="predictions.html"><span class="k">6 Predictions</span><b>6,412 flagged</b><small>every Monday</small></a></li>
+    <li class="alert"><a href="monitoring.html"><span class="k">7 Monitoring</span><b>Drift found</b><small>Planned · Phase 7</small></a></li>
+    <li class="done"><a href="history.html"><span class="k">8 History</span><b>Every decision</b><small>who, what, why</small></a></li>
+  </ol>
+  <div class="toolbar"><a class="btn primary" href="data.html">Open project</a></div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>Running now</h3>
+    <div class="dlist">
+      <div class="drow"><span class="ic">▶</span><span><b>Run 6 · CatBoost + balanced class weights</b><br><small class="muted">Training fold 3 of 5 · started 4 minutes ago</small><div class="meter ai" style="margin-top:6px"><i style="width:60%"></i></div></span><a class="btn sm" href="experiments.html">Open</a></div>
+    </div>
+    <p class="small muted">Nothing else is running. Weekly scoring starts Monday 02:00.</p>
+  </div>
+  <div class="card">
+    <h3>Recent activity</h3>
+    <ul class="hist">
+      <li>Run 4 finished · CatBoost · CV PR-AUC 0.68</li>
+      <li>Run 5 failed (out of memory), then finished on retry · CV PR-AUC 0.70</li>
+      <li>Weekly scoring finished · 6,412 customers flagged · Mon <span class="pill plan">Planned · Phase 7</span></li>
+      <li>The model was retrained on data up to Sep 2026 · Mon <span class="pill plan">Planned · Phase 7</span></li>
+      <li>Drift found on <code>plan_type</code> (0.22) · Mon <span class="pill plan">Planned · Phase 7</span></li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <h3>All projects <span class="sp"><a href="projects.html">See all</a></span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Project</th><th>Goal</th><th class="r">Best CV score</th><th>Model in use</th><th>Last run</th></tr></thead>
+    <tbody>
+      <tr><td><a href="data.html"><b>Northwind churn</b></a></td><td>Catch ≥ 80% of churners</td><td class="r">PR-AUC 0.70</td><td>LightGBM, threshold 0.31</td><td>Run 6 · running</td></tr>
+      <tr><td><b>Late payment risk</b></td><td>Flag accounts likely to pay late</td><td class="r">—</td><td>None yet</td><td>Data uploaded, no runs</td></tr>
+    </tbody>
+  </table></div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v7_final"></script>
+<script src="guide.js"></script>
+</body>
+</html>

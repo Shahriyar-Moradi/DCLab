@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Predictions · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="predictions.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Predictions</b></div>
+    <div class="right">
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Predictions <span class="pill ok">Churn model (in use)</span></h1><p class="sub">Every Monday the model scores the newest customer file and lists who is likely to cancel, with the reasons.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="download">Download CSV</button></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><div class="stat"><span class="v">6,412</span><span class="l">customers flagged (12.5%)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">51,296</span><span class="l">customers scored this week</span></div></div>
+  <div class="card"><div class="stat"><span class="v">Mon 02:00</span><span class="l">last scored · 28 Sep</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="pred">
+  <button data-tab="list" aria-selected="true">This week’s list</button>
+  <button data-tab="score">Score a new file</button>
+</div>
+
+<div data-tabpanel="pred:list" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Customer</th><th class="r">Chance of cancelling</th><th>Flagged?</th><th>Top 3 reasons</th></tr></thead>
+    <tbody>
+      <tr><td><code>C-48112</code></td><td class="r">0.91</td><td><span class="pill crit">yes</span></td><td>no login for 61 days · monthly fee rose 20% · contract ends this month</td></tr>
+      <tr><td><code>C-10377</code></td><td class="r">0.87</td><td><span class="pill crit">yes</span></td><td>contract ends this month · 3 support tickets in 90 days · no login for 45 days</td></tr>
+      <tr><td><code>C-22930</code></td><td class="r">0.84</td><td><span class="pill crit">yes</span></td><td>3 support tickets in 90 days · 2 late payments · monthly fee rose 20%</td></tr>
+      <tr><td><code>C-31877</code></td><td class="r">0.79</td><td><span class="pill crit">yes</span></td><td>no login for 45 days · on a new plan type · contract ends this month</td></tr>
+      <tr><td><code>C-07429</code></td><td class="r">0.72</td><td><span class="pill crit">yes</span></td><td>monthly fee rose 20% · customer for under 6 months · 2 late payments</td></tr>
+      <tr><td><code>C-55103</code></td><td class="r">0.58</td><td><span class="pill crit">yes</span></td><td>no login for 30 days · contract ends in 6 weeks · 1 support ticket</td></tr>
+      <tr><td><code>C-19846</code></td><td class="r">0.34</td><td><span class="pill crit">yes</span></td><td>monthly fee rose 8% · no login for 21 days · customer for under 12 months</td></tr>
+      <tr><td><code>C-60215</code></td><td class="r">0.27</td><td><span class="pill gray">no</span></td><td>no login for 14 days · 1 support ticket · fee unchanged</td></tr>
+      <tr><td><code>C-02764</code></td><td class="r">0.11</td><td><span class="pill gray">no</span></td><td>logs in daily · 4-year customer · contract runs to 2027</td></tr>
+      <tr class="dim"><td colspan="4">Flagged means a chance of 0.31 or more. Showing 9 of 51,296 customers.</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="pred:score">
+  <div class="card">
+    <h3>Score a new file</h3>
+    <label class="upload-box"><b>Choose a customer file (CSV)</b><span class="small muted">New files must have the same columns as <code>customers_2026Q3.csv</code>.</span><input type="file" accept=".csv"></label>
+    <p class="small muted">Demo only: the file is not read or sent anywhere.</p>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v6_plain"></script>
+<script src="guide.js"></script>
+</body>
+</html>

@@ -8,21 +8,24 @@ import { envelope, type PlainError } from "./studio-wizard.ts";
 
 export const REASON_MAX = 4000;
 export const CHART_MAX_POINTS = 160;
-export const BASIS_LABEL = "on training folds (out-of-fold)";
+export const BASIS_LABEL = "measured on the training folds";
+export const BASIS_EXPLAINED = "measured on the training folds: each training row is predicted by a model that never saw it";
+/** Plain restatement of the server's fixed note: the final test set is scored at the locked threshold and never chooses or moves it. */
+export const FINAL_TEST_NOTE = "The final test set was scored once for this run, at the run's locked threshold. It never chooses or moves the threshold.";
 export const SCORING_COPY = "Choosing a point records a decision only. Scoring still uses the model's locked threshold; applying a chosen point to scoring needs a new model version.";
 
 export const OPERATING_TERMS = {
   threshold: "The score above which a row is flagged as positive. Lower it to flag more rows (catch more positives, more false alarms); raise it to flag fewer.",
   precision: "Of the rows flagged as positive, the share that really are positive.",
   recall: "Of the rows that really are positive, the share that were flagged.",
-  oof: "Out-of-fold: each training row is predicted by a model that did not see it, one cross-validation fold at a time. The final evaluation rows are never used.",
-  pareto: "A point that no other threshold beats on both precision and recall (and expected cost, when there is a cost matrix).",
+  oof: "Measured on the training folds: each training row is predicted by a model that did not see it, one cross-validation fold at a time. The final test set is never used.",
+  pareto: "Best trade-off: no other threshold beats this one on both precision and recall (and on expected cost, when a cost is set).",
 } as const;
 
 export const NO_CURVE_TEXT: Record<string, string> = {
-  not_applicable: "Operating points apply to two-class problems; this run is not binary classification.",
-  not_available: "This run predates operating points, so it has no stored out-of-fold curve. Run it again (branch it) to get one.",
-  not_evaluated: "Too few rows of one class in the out-of-fold predictions to compare thresholds reliably.",
+  not_applicable: "Thresholds apply to yes/no problems; this run is not one.",
+  not_available: "This run predates the threshold curve, so it has no stored threshold curve. Run it again (try a change) to get one.",
+  not_evaluated: "Too few rows of one class in the training-fold predictions to compare thresholds reliably.",
 };
 
 export type OperatingView =
@@ -81,7 +84,7 @@ export function chartSummary(data: StudioOperatingPoints): string {
 
 export type PointRow = { key: string; threshold: number; point: OperatingPoint; tags: string[] };
 
-/** Table rows: the Pareto points plus the locked and chosen thresholds, each tagged. Values are the API's. */
+/** Table rows: the best-trade-off points plus the locked and chosen thresholds, each tagged. Values are the API's. */
 export function pointRows(data: StudioOperatingPoints): PointRow[] {
   const byThreshold = new Map<number, PointRow>();
   const add = (point: OperatingPoint, tag?: string) => {
@@ -89,7 +92,7 @@ export function pointRows(data: StudioOperatingPoints): PointRow[] {
     if (tag && !row.tags.includes(tag)) row.tags.push(tag);
     byThreshold.set(point.threshold, row);
   };
-  for (const p of data.pareto ?? []) add(p, "Pareto");
+  for (const p of data.pareto ?? []) add(p, "Best trade-off");
   const lockedPoint = data.locked?.point ?? (data.locked?.threshold != null ? data.points?.find((p) => p.threshold === data.locked?.threshold) : undefined);
   if (lockedPoint) add(lockedPoint, "Locked");
   const chosenPoint = data.chosen?.point ?? (data.chosen ? data.points?.find((p) => p.threshold === data.chosen?.threshold) : undefined);
@@ -117,7 +120,7 @@ export function pointSentence(focus: { detail: OperatingDetail | null; point: Op
   if (focus.detail?.what_this_means) return focus.detail.what_this_means;
   const p = focus.point;
   if (!p) return "";
-  return `At threshold ${fmtThreshold(p.threshold)}: flagged share ${fmtRate(p.flagged_share)}, recall ${fmtRate(p.recall)}, precision ${fmtRate(p.precision)} (out-of-fold training predictions).`;
+  return `At threshold ${fmtThreshold(p.threshold)}: flagged share ${fmtRate(p.flagged_share)}, recall ${fmtRate(p.recall)}, precision ${fmtRate(p.precision)} (measured on the training folds).`;
 }
 
 export function intervalText(label: string, interval: { low: number; high: number } | null | undefined): string | null {
@@ -140,14 +143,14 @@ export type ChooseGate = { allowed: boolean; reason: string | null };
 
 /** Whether the action shows enabled. A convenience only: the API refuses viewers, agents and tokens itself. */
 export function chooseGate(data: StudioOperatingPoints | undefined, canWriteMl: boolean): ChooseGate {
-  if (!data || data.status !== "available") return { allowed: false, reason: "There is no operating curve to choose from." };
-  if (!canWriteMl) return { allowed: false, reason: "Your role can read operating points but not choose one. Ask a workspace member who can write ML work." };
+  if (!data || data.status !== "available") return { allowed: false, reason: "There is no threshold curve to choose from." };
+  if (!canWriteMl) return { allowed: false, reason: "Your role can read thresholds but not choose one. Ask a workspace member who can write ML work." };
   return { allowed: true, reason: null };
 }
 
 export function reasonProblem(reason: string): string | null {
   const text = reason.trim();
-  if (!text) return "Write why you are choosing this point; it is recorded with the decision.";
+  if (!text) return "Write why you are choosing this threshold; it is recorded in History.";
   if (text.length > REASON_MAX) return `The reason is limited to ${REASON_MAX} characters.`;
   return null;
 }
@@ -201,12 +204,12 @@ export function mapChooseError(error: unknown): ChooseOutcome {
     const summary = closest && typeof closest.threshold === "number"
       ? `Closest candidate: threshold ${fmtThreshold(closest.threshold)} (recall ${fmtRate(closest.recall)}, precision ${fmtRate(closest.precision)}), which does not meet every constraint.`
       : "";
-    return { title: "No threshold meets every constraint", detail: `On out-of-fold predictions no candidate threshold satisfies them all. Relax a constraint or pick a point directly. ${summary}`.trim(), fixable: true, closest: closest && typeof closest.threshold === "number" ? { threshold: closest.threshold, summary } : null };
+    return { title: "No threshold meets every constraint", detail: `On the training-fold predictions no candidate threshold satisfies them all. Relax a constraint or pick a point directly. ${summary}`.trim(), fixable: true, closest: closest && typeof closest.threshold === "number" ? { threshold: closest.threshold, summary } : null };
   }
   if (code === "cost_matrix_required") return { title: "Expected cost needs a cost matrix", detail: "This run declares no cost matrix, so cost cannot be the goal.", fixable: true };
   if (code === "idempotency_key_conflict" || status === 409 && code.includes("idempotency")) return { title: "This request was already used for a different choice", detail: "Reload the page and choose again.", fixable: false };
-  if (code.startsWith("operating_points_")) return { title: "Operating points are not available for this run", detail: plainText(message, 300) || NO_CURVE_TEXT[code.replace("operating_points_", "")] || "Reload the page.", fixable: false };
-  if (code === "human_session_required" || code === "service_token_not_permitted") return { title: "Only people can choose", detail: "An operating point is chosen by a signed-in person, not by an agent or a token.", fixable: false };
+  if (code.startsWith("operating_points_")) return { title: "Thresholds are not available for this run", detail: plainText(message, 300) || NO_CURVE_TEXT[code.replace("operating_points_", "")] || "Reload the page.", fixable: false };
+  if (code === "human_session_required" || code === "service_token_not_permitted") return { title: "Only people can choose", detail: "A threshold is chosen by a signed-in person, not by the assistant or a connected tool.", fixable: false };
   if (status === 403) return { title: "You cannot choose here", detail: "Choosing needs a role that can write ML work in this workspace.", fixable: false };
   if (status === 404) return { title: "Not found", detail: "The experiment is not in this workspace.", fixable: false };
   if (status === 422) return { title: "The choice was not valid", detail: plainText(message, 300) || "Check the reason and the values.", fixable: true };
@@ -224,7 +227,7 @@ export function chosenSummary(data: StudioOperatingPoints | undefined): ChosenSu
   if (!data || data.status !== "available" || !c) return null;
   return {
     threshold: fmtThreshold(c.threshold),
-    method: c.method === "objective" ? "re-solved from an objective" : "picked directly",
+    method: c.method === "objective" ? "solved from a goal" : "picked directly",
     reason: c.rationale,
     when: c.recorded_at,
     by: c.chosen_by_user_id ?? null,

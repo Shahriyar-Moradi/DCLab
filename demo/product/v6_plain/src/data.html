@@ -1,0 +1,66 @@
+<!-- title: Data · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Data</b> -->
+<div class="page-head">
+  <div><h1>Data <span class="pill ok">Customer data · Jun 2026</span></h1><p class="sub">The file you uploaded, what is in it, and which columns the model will use.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="upload">Upload a newer file</button></div>
+</div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">48,210</span><span class="l">rows (one per customer-month)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">31</span><span class="l">columns · 29 used, 2 left out</span></div></div>
+  <div class="card"><div class="stat"><span class="v">9,412</span><span class="l">customers · Jan 2025 – Jun 2026</span></div></div>
+  <div class="card"><div class="stat"><span class="v">21.3%</span><span class="l">cancelled within 30 days</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="data">
+  <button data-tab="columns" aria-selected="true">Columns</button>
+  <button data-tab="balance">Churn over time</button>
+  <button data-tab="checks">Data checks</button>
+</div>
+
+<div data-tabpanel="data:columns" class="on">
+  <div class="toolbar"><input class="input" placeholder="filter columns…" style="min-width:220px"><span class="small muted">Showing 14 of 31 columns · features: 29 used, 2 left out</span></div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Column</th><th>Type</th><th class="r">Missing</th><th>Used?</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><code>customer_id</code></td><td>text</td><td class="r">0%</td><td><span class="pill gray">no</span></td><td>ID column, not a predictor</td></tr>
+      <tr><td><code>churned_next_30d</code></td><td>yes / no</td><td class="r">0%</td><td><span class="pill det">target</span></td><td>This is what we predict</td></tr>
+      <tr><td><code>churned_at</code></td><td>date</td><td class="r">79%</td><td><span class="pill crit">no</span></td><td>Filled in only after the customer cancelled, so it would leak the answer</td></tr>
+      <tr><td><code>snapshot_month</code></td><td>date</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Used to order the data in time</td></tr>
+      <tr><td><code>signup_date</code></td><td>date</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Gives customer age (tenure)</td></tr>
+      <tr><td><code>plan_type</code></td><td>category</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Which plan the customer is on (6 values)</td></tr>
+      <tr><td><code>monthly_fee</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Known at the start of each month</td></tr>
+      <tr><td><code>monthly_fee_change_3m</code></td><td>number</td><td class="r">1%</td><td><span class="pill ok">yes</span></td><td>Change in fee over 3 months</td></tr>
+      <tr><td><code>last_login_days</code></td><td>number</td><td class="r">1%</td><td><span class="pill ok">yes</span></td><td>Days since last login, as of the month start</td></tr>
+      <tr><td><code>contract_end</code></td><td>date</td><td class="r">38%</td><td><span class="pill ok">yes</span></td><td>Empty means no fixed contract; turned into “days left”</td></tr>
+      <tr><td><code>support_tickets_90d</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Tickets in the last 90 days</td></tr>
+      <tr><td><code>tenure_months</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Months since signup</td></tr>
+      <tr><td><code>late_payments_6m</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Late payments in 6 months</td></tr>
+      <tr><td><code>region_code</code></td><td>category</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>12 regions</td></tr>
+      <tr class="dim"><td colspan="5">… 17 more columns, all used</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="data:balance">
+  <div class="card">
+    <h3>Share of customers who cancelled, by month <span class="sp">the shaded months become the final test set</span></h3>
+    {{chart:churn_by_month}}
+    <p class="small muted">The churn rate climbs from about 18% to about 24%. That is why the test design looks forward in time instead of shuffling rows.</p>
+  </div>
+</div>
+
+<div data-tabpanel="data:checks">
+  <div class="card">
+    <h3>Data checks <span class="sp">run automatically on every upload</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Check</th><th>Result</th><th>What we found</th></tr></thead>
+      <tbody>
+        <tr><td>Duplicates</td><td><span class="pill ok">ok</span></td><td>14 customer-months appear twice. The second copy is dropped.</td></tr>
+        <tr><td>Missing values</td><td><span class="pill ok">ok</span></td><td><code>contract_end</code> is empty for 38% of rows (no contract); <code>churned_at</code> is empty for 79% (not yet cancelled).</td></tr>
+        <tr><td>Leakage</td><td><span class="pill warn">1 fixed</span></td><td><code>churned_at</code> is only filled after the customer cancelled. It is left out.</td></tr>
+        <tr><td>Dates</td><td><span class="pill ok">ok</span></td><td>No dates in the future; 18 months in a row.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>

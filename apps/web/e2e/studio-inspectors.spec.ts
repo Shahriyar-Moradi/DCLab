@@ -57,10 +57,10 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   // Graph drawer: compact inspector with a link to the full one, for each kind.
   await page.goto(`/projects/${projectId}/graph`);
   const kinds: Array<[RegExp, RegExp, RegExp]> = [
-    [/^Split plan/, /\/splits\/[0-9a-f-]{36}$/, /Split plan/],
-    [/^Feature recipe/, /\/features\/[0-9a-f-]{36}$/, /Feature recipe/],
-    [/^Dataset version/, /\/data\/[0-9a-f-]{36}$/, /Dataset version/],
-    [/^Model version/, /\/models\/[0-9a-f-]{36}$/, /Model version/],
+    [/^Test design/, /\/splits\/[0-9a-f-]{36}$/, /Test design/],
+    [/^Features/, /\/features\/[0-9a-f-]{36}$/, /Features/],
+    [/^churn\b/, /\/data\/[0-9a-f-]{36}$/, /churn\b/],
+    [/^Model v\d/, /\/models\/[0-9a-f-]{36}$/, /Model v\d/],
   ];
   const hrefs: string[] = [];
   for (const [node, route, title] of kinds) {
@@ -71,34 +71,40 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
     const open = drawer.getByRole("link", { name: "Open full inspector" });
     await expect(open).toHaveAttribute("href", route);
     hrefs.push((await open.getAttribute("href")) ?? "");
-    if (node.source.includes("Split")) await shot(page, "1-drawer");
+    if (node.source.includes("Test design")) await shot(page, "1-drawer");
     await open.click();
     await expect(page).toHaveURL(route);
-    await expect(page.getByRole("heading", { name: "Reason" })).toBeVisible();
+    await expect(node.source.includes("Model")
+      ? page.getByRole("heading", { name: /^Model v\d+$/, level: 1 })
+      : page.getByRole("heading", { name: node.source.includes("Test design") ? "Goal & test design" : "Reason", level: node.source.includes("Test design") ? 1 : undefined })).toBeVisible();
     await expect(page.getByText(/^Loading/)).toHaveCount(0);
     expect(await axeViolations(page)).toEqual([]);
     await shot(page, `2-${hrefs.length}-${title.source.replace(/\W/g, "").toLowerCase()}`);
   }
 
-  // Split plan: counts only, no holdout values; feature recipe: formula and code snippet.
+  // Goal & test design: the target, the picture of the folds and counts only, no final test set values; feature recipe: formula and code snippet.
   await page.goto(hrefs[0]);
-  await expect(page.getByRole("heading", { name: "Rows per partition" })).toBeVisible();
-  await expect(page.getByText("counts only", { exact: true })).toBeVisible();
-  await expect(page.getByText("Strategy", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How we test" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What we predict" })).toBeVisible();
+  await expect(page.getByText("How we rank models")).toBeVisible();
+  await expect(page.getByRole("img", { name: /cross-validation folds/ })).toBeVisible();
+  await expect(page.getByText("Why this design?")).toBeVisible();
+  await expect(page.getByText(/(Time-ordered|Grouped|Random)/).first()).toBeVisible();
+  await expect(page.getByText("Training rows", { exact: true })).toBeVisible();
   await page.goto(hrefs[1]);
-  await expect(page.getByRole("table", { name: "Features of this recipe" })).toContainText("tenure");
+  await expect(page.getByRole("table", { name: "Features of this run" })).toContainText("tenure");
   await page.getByRole("button", { name: /^monthly_spend/ }).click();
   await expect(page.locator("pre.code").first()).toContainText("Fitted inside each CV fold");
   await expect(page.getByRole("table", { name: "Preprocessing steps" })).toContainText("StandardScaler");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "2-2b-feature-code");
   await page.goto(hrefs[3]);
-  await expect(page.getByRole("link", { name: /^[0-9a-f]{8}$/ }).first()).toBeVisible();
-  await expect(page.getByText(/is on the Card tab/)).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Run (\d+|[0-9a-f]{8})$/ }).first()).toBeVisible();
+  await expect(page.getByText(/is on the Model card tab/)).toBeVisible();
 
   // Experiment inspector tabs.
   await page.goto(`/projects/${projectId}/experiments/${experimentId}`);
-  const tabs = ["Overview", "Candidates", "Per-fold and threshold", "Feature importance", "Code", "Evidence"];
+  const tabs = ["Overview", "Models tried", "Per fold", "Feature importance", "Code", "Build record"];
   for (const name of tabs) {
     await page.getByRole("tab", { name: new RegExp(`^${name}`) }).click();
     await expect(page.getByRole("tab", { name: new RegExp(`^${name}`) })).toHaveAttribute("aria-selected", "true");
@@ -106,12 +112,12 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
     expect(await axeViolations(page)).toEqual([]);
     await shot(page, `3-tab-${name.toLowerCase().replace(/\W+/g, "-")}`);
   }
-  await page.getByRole("tab", { name: /^Candidates/ }).click();
-  await expect(page.getByRole("table", { name: "Candidates and their CV scores" }).getByRole("row")).not.toHaveCount(1);
-  await page.getByRole("tab", { name: /^Per-fold/ }).click();
-  await expect(page.getByRole("table", { name: "Per-fold CV metrics" })).toBeVisible();
+  await page.getByRole("tab", { name: /^Models tried/ }).click();
+  await expect(page.getByRole("table", { name: "Models tried and their cross-validation scores" }).getByRole("row")).not.toHaveCount(1);
+  await page.getByRole("tab", { name: /^Per fold/ }).click();
+  await expect(page.getByRole("table", { name: "Cross-validation scores per fold" })).toBeVisible();
   await page.getByRole("tab", { name: /^Overview/ }).click();
-  await expect(page.getByText("No Critic review for this run")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /AI reviewer/ })).toHaveCount(0);
   await expect(page.getByTestId("findings-summary")).toContainText(/trust checks/);
 
   // Code: copy and download are plain text, nothing runs.
@@ -128,7 +134,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "4-code-dark");
-  await page.getByRole("tab", { name: /^Candidates/ }).click();
+  await page.getByRole("tab", { name: /^Models tried/ }).click();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "5-candidates-dark");
 

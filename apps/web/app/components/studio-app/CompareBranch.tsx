@@ -15,6 +15,7 @@ import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 import { projectHref } from "@/lib/application/command-search";
+import { TRANSFORM_WORDS, changeSentences } from "@/lib/application/studio-runs";
 import { useProjectRefs } from "@/lib/application/studio-hooks";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
 import { cancelExperiment, createBranch, makeChampion, useWriteInvalidation } from "@/lib/application/studio-compare-hooks";
@@ -45,16 +46,16 @@ function ChangeFields({ draft, onChange }: { draft: ChangeDraft; onChange: (patc
   );
   switch (draft.kind) {
     case "hyperparameter_override":
-      return <>{text("Model family", "family", "for example random_forest")}{area("Parameters (one name=value per line)", "params", "max_depth=4")}</>;
+      return <>{text("Model family", "family", "for example random_forest")}{area("Settings (one name=value per line)", "params", "max_depth=4")}</>;
     case "family_include":
     case "family_exclude":
       return text("Model family", "family", "for example logistic_regression");
     case "class_weighting":
       return (
         <>
-          <label className="field"><span>Mode</span>
+          <label className="field"><span>Class weights</span>
             <select value={draft.mode} onChange={(e) => onChange({ mode: e.target.value as ChangeDraft["mode"] })}>
-              <option value="none">none</option><option value="balanced">balanced</option><option value="custom">custom</option>
+              <option value="none">no weights</option><option value="balanced">balanced (every class counts the same)</option><option value="custom">my own weights</option>
             </select>
           </label>
           {draft.mode === "custom" ? area("Weights (one class=weight per line)", "weights", "yes=3") : null}
@@ -64,28 +65,28 @@ function ChangeFields({ draft, onChange }: { draft: ChangeDraft; onChange: (patc
       return (
         <>
           <div className="toolbar">
-            <label className="field"><span>Constraint metric</span><input value={draft.constraint.metric} placeholder="recall" onChange={(e) => onChange({ constraint: { ...draft.constraint, metric: e.target.value } })} /></label>
-            <label className="field"><span>Operator</span>
+            <label className="field"><span>Rule: score</span><input value={draft.constraint.metric} placeholder="recall" onChange={(e) => onChange({ constraint: { ...draft.constraint, metric: e.target.value } })} /></label>
+            <label className="field"><span>Rule: at least or at most</span>
               <select value={draft.constraint.op} onChange={(e) => onChange({ constraint: { ...draft.constraint, op: e.target.value as ">=" | "<=" } })}><option value=">=">at least (&gt;=)</option><option value="<=">at most (&lt;=)</option></select>
             </label>
-            <label className="field"><span>Value</span><input inputMode="decimal" value={draft.constraint.value} onChange={(e) => onChange({ constraint: { ...draft.constraint, value: e.target.value } })} /></label>
+            <label className="field"><span>Rule: value</span><input inputMode="decimal" value={draft.constraint.value} onChange={(e) => onChange({ constraint: { ...draft.constraint, value: e.target.value } })} /></label>
           </div>
           <div className="toolbar">
-            <label className="field"><span>Cost of a false positive</span><input inputMode="decimal" value={draft.costFp} onChange={(e) => onChange({ costFp: e.target.value })} /></label>
-            <label className="field"><span>Cost of a false negative</span><input inputMode="decimal" value={draft.costFn} onChange={(e) => onChange({ costFn: e.target.value })} /></label>
+            <label className="field"><span>Cost of a wrong alarm (flagged, but not positive)</span><input inputMode="decimal" value={draft.costFp} onChange={(e) => onChange({ costFp: e.target.value })} /></label>
+            <label className="field"><span>Cost of a miss (positive, but not flagged)</span><input inputMode="decimal" value={draft.costFn} onChange={(e) => onChange({ costFn: e.target.value })} /></label>
           </div>
         </>
       );
     case "metric_override":
-      return <>{text("Primary metric", "metric", "for example pr_auc")}{text("Reason", "reason")}</>;
+      return <>{text("Score to rank models on", "metric", "for example pr_auc")}{text("Reason", "reason")}</>;
     case "feature_transform_add":
     case "feature_transform_remove":
       return (
         <>
           {text("Column", "column")}
-          <label className="field"><span>Transform</span>
+          <label className="field"><span>Treatment</span>
             <select value={draft.transform} onChange={(e) => onChange({ transform: e.target.value as ChangeDraft["transform"] })}>
-              {TRANSFORMS.map((t) => <option key={t} value={t}>{t}</option>)}
+              {TRANSFORMS.map((t) => <option key={t} value={t}>{Object.hasOwn(TRANSFORM_WORDS, t) ? TRANSFORM_WORDS[t].replace(/^./, (c) => c.toUpperCase()) : t}</option>)}
             </select>
           </label>
         </>
@@ -125,20 +126,20 @@ export function BranchPanel({ projectId, experimentId, initial }: { projectId: s
     }
   };
   return (
-    <Card title="Branch this experiment" aside={<Pill tone="det">typed change set</Pill>}>
-      {initial ? <Banner tone="info">Pre-filled from a finding. Review the change, add your reason if you want to change it, then start the branch; nothing runs until you do.</Banner> : null}
+    <Card title="Try a change" aside={<Pill tone="det">one change on top</Pill>}>
+      {initial ? <Banner tone="info">Pre-filled from a trust check. Review the change, edit the reason if you want, then start the new run; nothing runs until you do.</Banner> : null}
       <p className="muted">
-        A branch re-runs this experiment with a <Term definition="A typed list of changes applied on top of a parent experiment. The split plan and source dataset stay the same, so the branch is comparable with its parent.">change set</Term>.
-        Pick the changes below; the API validates them when you start the branch and its answer is shown here unchanged.
+        Start a new run from this one with <Term definition="The new run keeps this run's data and test design, so the two can be compared fairly. This run is never changed.">one or more changes</Term> on top.
+        Pick the changes below; the app checks them when you start the run and shows its answer here unchanged.
       </p>
       <form className="form" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-        <label className="field"><span>Why are you branching? (recorded with the run)</span>
+        <label className="field"><span>Why are you trying this change? (saved with the run)</span>
           <textarea rows={2} value={intent} maxLength={2000} onChange={(e) => setIntent(e.target.value)} disabled={busy} />
         </label>
         {drafts.map((draft, index) => (
           <fieldset key={draft.id} className="card flat" disabled={busy}>
             <legend>Change {index + 1}</legend>
-            <label className="field"><span>Kind of change</span>
+            <label className="field"><span>What to change</span>
               <select value={draft.kind} onChange={(e) => patch(draft.id, { ...emptyDraft(draft.id, e.target.value as ChangeKind) })}>
                 {CHANGE_KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}</option>)}
               </select>
@@ -151,14 +152,17 @@ export function BranchPanel({ projectId, experimentId, initial }: { projectId: s
         <div className="toolbar">
           <button type="button" className="btn" disabled={busy || drafts.length >= 32} onClick={() => setDrafts((all) => [...all, emptyDraft(nextId.current++)])}>Add another change</button>
         </div>
-        <h3>What will be sent</h3>
+        <h3>What the new run will do differently</h3>
         {typeof body === "string" ? <p className="muted" role="status">{body}</p> : (
-          <pre className="code" aria-label="Change set that will be sent">{preview}</pre>
+          <>
+            <ul className="plain-list" aria-label="Changes that will be made">{changeSentences({ changes: body.changes }).map((line, i) => <li key={i}>{line}</li>)}</ul>
+            <details><summary>Exact request (technical)</summary><pre className="code" aria-label="Change set that will be sent">{preview}</pre></details>
+          </>
         )}
-        <p className="muted">There is no client-side rule check: the API refuses an unknown family, a bad class, a leakage column or a duplicate change with its own message, and nothing is started.</p>
+        <p className="muted">This page does not judge your change. The app refuses an unknown model family, a class that does not exist, a column that would give away the answer or a repeated change, with its own message, and nothing is started.</p>
         {error ? <Problem error={error} /> : null}
         <div className="toolbar">
-          <button type="submit" className="btn primary" disabled={busy || typeof body === "string"}>{busy ? "Starting…" : "Start branch"}</button>
+          <button type="submit" className="btn primary" disabled={busy || typeof body === "string"}>{busy ? "Starting…" : "Start the new run"}</button>
         </div>
       </form>
     </Card>
@@ -225,9 +229,9 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
   const flight = useRef(false);
   const decisions = projectHref(projectId, "decisions");
   if (graph.isError) return <QueryNotice error={graph.error} what="project graph" />;
-  if (refs.isError) return <QueryNotice error={refs.error} what="project refs" />;
-  if (graph.isPending || refs.isPending) return <p role="status">Checking the champion…</p>;
-  if (!modelVersionId) return <p className="muted">No model version yet: a run gets one when its winner is locked, and only then can it become the champion.</p>;
+  if (refs.isError) return <QueryNotice error={refs.error} what="versions in use" />;
+  if (graph.isPending || refs.isPending) return <p role="status">Checking the model in use…</p>;
+  if (!modelVersionId) return <p className="muted">No model yet: a run gets one when its best run is chosen, and only then can it be put in use.</p>;
   if (model.isError) return <QueryNotice error={model.error} what="model version" />;
   if (!model.data) return <p role="status">Loading the model version…</p>;
   const m = model.data;
@@ -257,23 +261,23 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
     }
   };
   return (
-    <section aria-label={`Champion state of model version ${m.id.slice(0, 8)}`}>
+    <section aria-label="Is this model in use?">
       <p>
-        Model version <span className="mono">{m.id.slice(0, 8)}</span> {isChampion ? <Pill tone="ok">★ the project&apos;s champion</Pill> : <Pill tone="gray">not the champion</Pill>}
-        {" "}{champion ? <span className="muted">Current champion: <span className="mono">{champion.target.id.slice(0, 8)}</span> (ref version {champion.version}).</span> : <span className="muted">The project has no champion yet.</span>}
+        This run&apos;s model {isChampion ? <Pill tone="ok">★ in use</Pill> : <Pill tone="gray">not in use</Pill>}
+        {" "}{champion && !isChampion ? <span className="muted">Another model is in use now.</span> : !champion ? <span className="muted">No model is in use yet.</span> : null}
       </p>
-      {moved ? <Banner tone="info">The champion ref moved and one decision was recorded.{decisions ? <> <Link href={decisions}>Open the decisions</Link>.</> : null}</Banner> : null}
-      {!isChampion && !open ? <button type="button" className="btn primary" onClick={() => { setOpen(true); setMoved(false); setError(null); }}>Make champion<span className="sr-only"> {m.id.slice(0, 8)}</span></button> : null}
+      {moved ? <Banner tone="info">This model is now in use and the change was saved in History.{decisions ? <> <Link href={decisions}>Open History</Link>.</> : null}</Banner> : null}
+      {!isChampion && !open ? <button type="button" className="btn primary" onClick={() => { setOpen(true); setMoved(false); setError(null); }}>Put this model in use</button> : null}
       {open ? (
         <form className="form card" onSubmit={(event) => { event.preventDefault(); void confirm(); }}>
-          <h3>Make model version {m.id.slice(0, 8)} the champion</h3>
+          <h3>Put this model in use</h3>
           {compact ? null : (
             <p className="muted">
-              This records one accepted decision and moves the champion ref (and the feature recipe with it) from version {champion?.version ?? "none"}. The API checks that this model has a locked winner, its
-              own final evaluation and the <Term definition="The fixed assignment of rows to folds and the final holdout. A new champion must be evaluated on the same split plan as the current one.">same split plan</Term> as the current champion. Nothing is retrained.
+              This is saved in History and switches the model in use (and its features with it). DCLab checks that this model has a chosen best run, its
+              own final test and the <Term definition="The fixed assignment of rows to folds and the final test set (used once). A new model in use must be tested on the same test design as the current one.">same test design</Term> as the model in use now. Nothing is retrained.
             </p>
           )}
-          <label className="field"><span>Why (recorded with the decision)</span>
+          <label className="field"><span>Why (saved with the change)</span>
             <textarea value={rationale} rows={2} maxLength={2000} required disabled={busy} onChange={(e) => setRationale(e.target.value)} />
           </label>
           {error ? (
@@ -281,7 +285,7 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
           ) : null}
           <div className="toolbar">
             <button type="button" className="btn" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
-            <button type="submit" className="btn primary" disabled={busy || !rationale.trim()}>{busy ? "Moving…" : "Move the champion ref"}</button>
+            <button type="submit" className="btn primary" disabled={busy || !rationale.trim()}>{busy ? "Saving…" : "Put in use"}</button>
           </div>
         </form>
       ) : null}

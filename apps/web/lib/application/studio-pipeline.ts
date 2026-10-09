@@ -3,9 +3,9 @@
  *
  * Every row comes from a field of `GET /v1/model-builds/{id}` (stages, in the order the engine returns them),
  * its `/events`, `/artifacts`, the run's decision records, `GET /v1/experiments/{id}/findings` and
- * `GET /v1/agent-runs`. Nothing is computed beyond counting. The final-holdout stage keeps its status and
- * summary but its configuration (the holdout metrics) is never turned into rows: the labelled final evaluation
- * is shown by the model card and the holdout flow, not here.
+ * `GET /v1/agent-runs`. Nothing is computed beyond counting. The final test set stage keeps its status and
+ * summary but its configuration (the final test set metrics) is never turned into rows: the labelled final evaluation
+ * is shown by the model card and the final test set flow, not here.
  */
 import { safeInternalHref } from "../../components/studio/safe-href.ts";
 import { isUuid } from "./command-search.ts";
@@ -92,8 +92,9 @@ export function stageDigests(stage: StageLike): Digest[] {
   return out;
 }
 
-/** Stage whose configuration holds holdout metrics: shown as a locked note, never as rows. */
+/** The step that scores the final test set: shown as a note, never as rows of values. */
 export const HOLDOUT_STAGES = new Set(["final_holdout"]);
+/** Keys that could carry final test set scores or predictions are never listed as rows. */
 const HIDDEN_KEY = /holdout|^test_(?!size)|_test$|y_true|y_pred|prediction|^score_delta$/i;
 const RESULT_CAP = 10;
 const SKIP_KEY = /(^|_)(id|ids)$|digest$/;
@@ -128,7 +129,7 @@ function checkStatus(raw: string): CheckStatus {
   if (["failed", "fail", "error"].includes(value)) return "fail";
   return "other";
 }
-export const checkStatusLabel = (status: CheckStatus): string => ({ pass: "Passed", warn: "Warning", fail: "Failed", other: "Not evaluated" })[status];
+export const checkStatusLabel = (status: CheckStatus): string => ({ pass: "Passed", warn: "Warning", fail: "Failed", other: "Not checked" })[status];
 
 /** Which stage each trust check is shown on. A check whose stage the run does not have is listed under the run's checks instead. */
 export const CHECK_STAGE: Record<string, string> = {
@@ -142,9 +143,9 @@ function attemptChecks(stage: StageLike): CheckRow[] {
     const raw = str(attempt.deterministic_status) ?? "unknown";
     return {
       id: `${stage.key}-attempt-${index}`,
-      label: `Deterministic verification (${human(str(attempt.audit_mode) ?? "audit")})`,
+      label: `Automatic verification (${human(str(attempt.audit_mode) ?? "audit")})`,
       status: checkStatus(raw),
-      text: `Overall status ${raw.toLowerCase()}. The verifier also checks the locked holdout; only this overall result is shown here.`,
+      text: `Overall result: ${raw.toLowerCase()}. The automatic checks also look at the final test set; only this overall result is shown here.`,
     };
   });
 }
@@ -173,7 +174,7 @@ export function checkTotals(rows: CheckRow[]): { pass: number; warn: number; fai
 
 // --- decision records and decision points ------------------------------------------------
 
-export type RecordLike = DecisionLike & { actor: { kind: string; rule?: string | null; agent_run_id?: string | null } };
+export type RecordLike = DecisionLike & { actor: { kind: string; rule?: string | null; agent_run_id?: string | null; service_token_id?: string | null } };
 
 /** Same-origin Decisions link with the record selected; null for an invalid id. */
 export function decisionHref(projectId: string, recordId: string): string | null {
@@ -221,6 +222,7 @@ export type PointRow = {
   recordId: string | null;
   recordState: string | null;
   actor: string | null;
+  actorLabel: string | null;
   answers: DecisionMarker["answers"];
   answersTotal: number | null;
   stage: string | null;
@@ -264,6 +266,7 @@ export function decisionPointRows(events: EventLike[], records: RecordLike[]): P
       agreement: marker?.agreement ?? (event ? str(event.agreement) : null),
       recordId: marker?.id ?? null, recordState: marker?.state ?? null,
       actor: marker?.actor ?? null,
+      actorLabel: marker?.actorLabel ?? null,
       answers: marker?.answers ?? [], answersTotal: marker?.answersTotal ?? null,
       stage: place?.stage ?? null, when: place?.when ?? null,
       aiOff: ai === "off" || (!marker && ai !== "on" && ai !== "inherited"),
@@ -373,26 +376,26 @@ export function provenanceRows(input: {
   const rows: ProvenanceRow[] = [];
   const add = (key: string, label: string, value: string | null | undefined, mono = true) => { if (value) rows.push({ key, label, value, mono }); };
   const { build, lineage } = input;
-  add("run", "Model build id (the experiment id)", build.pipeline_run_id);
-  add("generator", "Engine and code generator version", build.generator_version);
-  add("spec", "Reproduction spec digest", build.reproduction_spec_digest);
-  add("locked", "Scientific evidence locked", build.scientific_evidence_locked_at ? input.formatWhen(build.scientific_evidence_locked_at) : null, false);
-  add("dataset", "Dataset version", lineage?.source_dataset_id);
-  add("split", "Split plan", lineage?.split_plan_id);
-  add("spec_id", "Problem spec", lineage?.problem_spec_id);
-  add("parent", "Parent run", lineage?.parent_experiment_id);
+  add("run", "Run id", build.pipeline_run_id);
+  add("generator", "Software version that built this run", build.generator_version);
+  add("spec", "Recipe checksum (changes if any setting changes)", build.reproduction_spec_digest);
+  add("locked", "Evidence locked at", build.scientific_evidence_locked_at ? input.formatWhen(build.scientific_evidence_locked_at) : null, false);
+  add("dataset", "Data version id", lineage?.source_dataset_id);
+  add("split", "Test design id", lineage?.split_plan_id);
+  add("spec_id", "Goal id", lineage?.problem_spec_id);
+  add("parent", "Based on (run id)", lineage?.parent_experiment_id);
   const runtime = input.stages.flatMap((s) => list(rec(s.configuration).runtime_environments)).map(rec);
   runtime.forEach((env, i) => {
-    add(`env-${i}`, `Runtime environment digest${runtime.length > 1 ? ` ${i + 1}` : ""}`, str(env.environment_digest));
+    add(`env-${i}`, `Software environment checksum${runtime.length > 1 ? ` ${i + 1}` : ""}`, str(env.environment_digest));
     const detail = [str(env.python_version) && `Python ${str(env.python_version)}`, str(env.os_name), str(env.architecture)].filter(Boolean).join(", ");
-    add(`env-detail-${i}`, `Runtime environment${runtime.length > 1 ? ` ${i + 1}` : ""}`, detail, false);
+    add(`env-detail-${i}`, `Software environment${runtime.length > 1 ? ` ${i + 1}` : ""}`, detail, false);
   });
   const snapshots = input.stages.flatMap((s) => list(rec(s.configuration).code_snapshots)).map(rec);
-  snapshots.forEach((snap, i) => add(`code-${i}`, `Code snapshot digest${snapshots.length > 1 ? ` ${i + 1}` : ""}`, str(snap.code_digest)));
+  snapshots.forEach((snap, i) => add(`code-${i}`, `Code checksum${snapshots.length > 1 ? ` ${i + 1}` : ""}`, str(snap.code_digest)));
   const seed = input.stages.map((s) => rec(s.configuration)).map((c) => c.seed ?? c.random_seed ?? c.random_state).find((v) => typeof v === "number" || typeof v === "string");
   add("seed", "Random seed", seed === undefined ? null : String(seed));
-  add("events", "Pipeline events recorded", String(input.eventCount), false);
-  if (build.compatibility_fallback_used) add("compat", "Evidence source", "Some stages were read from the older run record (compatibility fallback)", false);
+  add("events", "Events recorded", String(input.eventCount), false);
+  if (build.compatibility_fallback_used) add("compat", "Evidence source", "Some steps were read from the older run record", false);
   return rows;
 }
 

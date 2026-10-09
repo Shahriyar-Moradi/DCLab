@@ -20,7 +20,7 @@ export default function AgentsPage() {
   const [tab, setTab] = useState("connect");
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Agents & tools" subtitle="How outside agents and scripts connect to this workspace, and the tokens that let them in." />
+      <PageHead eyebrow="Workspace" title="Connect" subtitle="Use DCLab from code or from tools such as Claude Code: Python SDK, command line and MCP, and the access tokens that let them in." />
       <PageGuide
         purpose="Connect Claude Code, Cursor, scripts or CI to this workspace, and manage the tokens they use."
         howTo="Copy a snippet from Connect, create a token under Service tokens (shown once), paste it where the snippet says dclab_st_…."

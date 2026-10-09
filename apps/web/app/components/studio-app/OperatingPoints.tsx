@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Per-fold and threshold card (P5.2-UI). Every number is a field of `GET /v1/experiments/{id}/operating-points`
- * (out-of-fold training-fold figures); the final evaluation is never recomputed here. "Use this point" records a
+ * Threshold card (P5.2-UI, plain words V7-A4). Every number is a field of `GET /v1/experiments/{id}/operating-points`
+ * (figures measured on the training folds); the final evaluation is never recomputed here. "Use this point" records a
  * decision only: scoring keeps the locked threshold. The reason is untrusted text and is rendered as text.
  */
 import Link from "next/link";
@@ -15,9 +15,10 @@ import { KeyValue } from "@/components/studio/KeyValue";
 import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { plainText, projectHref } from "@/lib/application/command-search";
+import { constraintWords, goalWords, plainWords } from "@/lib/application/studio-model";
 import { useWriteInvalidation } from "@/lib/application/studio-compare-hooks";
 import {
-  BASIS_LABEL, CONSTRAINT_METRICS, OBJECTIVE_GOALS, OPERATING_TERMS, REASON_MAX, SCORING_COPY, buildChoice, chartMode, defaultThreshold, onCurve, chartRows, chartSummary,
+  BASIS_EXPLAINED, FINAL_TEST_NOTE, CONSTRAINT_METRICS, OBJECTIVE_GOALS, OPERATING_TERMS, REASON_MAX, SCORING_COPY, buildChoice, chartMode, defaultThreshold, onCurve, chartRows, chartSummary,
   chooseGate, constraintLines, focusedPoint, foldSpreadText, fmtRate, fmtThreshold, intervalText, mapChooseError, operatingView, pointRows, pointSentence,
   reasonProblem, type ChooseOutcome, type Pick, type PointRow,
 } from "@/lib/application/studio-operating";
@@ -112,13 +113,13 @@ function ChooseForm({ experimentId, data, pick, setPick }: { experimentId: strin
   };
   const live = reasonProblem(reason) === null;
   return (
-    <form className="form card" onSubmit={(e) => { e.preventDefault(); void submit(); }} aria-label="Use this operating point">
-      <h3>Use this point</h3>
+    <form className="form card" onSubmit={(e) => { e.preventDefault(); void submit(); }} aria-label="Choose a threshold">
+      <h3>Choose a threshold</h3>
       <p className="muted">{SCORING_COPY}</p>
       <fieldset className="field" disabled={busy}>
         <legend><b>How to pick</b></legend>
         <label><input type="radio" name="how" checked={pick.kind === "threshold"} onChange={() => setPick(pick.kind === "threshold" ? pick : { kind: "threshold", threshold: defaultThreshold(data) })} /> A threshold from the curve</label>
-        <label><input type="radio" name="how" checked={pick.kind === "objective"} onChange={() => setPick({ kind: "objective", goal: "f1", metric: "recall", op: ">=", value: "" })} /> An objective, solved on the stored curve</label>
+        <label><input type="radio" name="how" checked={pick.kind === "objective"} onChange={() => setPick({ kind: "objective", goal: "f1", metric: "recall", op: ">=", value: "" })} /> A goal, solved on the stored curve</label>
       </fieldset>
       {pick.kind === "threshold" ? (
         <label className="field"><span>Threshold</span>
@@ -128,14 +129,14 @@ function ChooseForm({ experimentId, data, pick, setPick }: { experimentId: strin
         </label>
       ) : (
         <>
-          <label className="field"><span>Goal</span>
+          <label className="field"><span>Aim for</span>
             <select value={pick.goal} onChange={(e) => setPick({ ...pick, goal: e.target.value })}>
-              {goals.map((g) => <option key={g} value={g}>{g === "expected_cost" ? "minimise expected cost" : `maximise ${g.replaceAll("_", " ")}`}</option>)}
+              {goals.map((g) => <option key={g} value={g}>{goalWords(g)}</option>)}
             </select>
           </label>
           <div className="toolbar">
-            <label className="field"><span>Constraint on</span>
-              <select value={pick.metric} onChange={(e) => setPick({ ...pick, metric: e.target.value })}>{CONSTRAINT_METRICS.map((m) => <option key={m} value={m}>{m.replaceAll("_", " ")}</option>)}</select>
+            <label className="field"><span>Requirement on</span>
+              <select value={pick.metric} onChange={(e) => setPick({ ...pick, metric: e.target.value })}>{CONSTRAINT_METRICS.map((m) => <option key={m} value={m}>{constraintWords(m)}</option>)}</select>
             </label>
             <label className="field"><span>Must be</span>
               <select value={pick.op} onChange={(e) => setPick({ ...pick, op: e.target.value as ">=" | "<=" })}><option value=">=">at least</option><option value="<=">at most</option></select>
@@ -151,14 +152,14 @@ function ChooseForm({ experimentId, data, pick, setPick }: { experimentId: strin
       </label>
       {problem ? <Banner tone="warn">{problem}</Banner> : null}
       {error ? <Banner tone="crit"><b>{error.title}.</b> {error.detail}</Banner> : null}
-      {recordedUnread ? <Banner tone="info">Your choice was recorded, but the response could not be read. Refresh the page to see it. Scoring still uses the locked threshold.</Banner> : null}
+      {recordedUnread ? <Banner tone="info">Your choice was recorded, but the reply could not be read. Refresh the page to see it. Scoring still uses the locked threshold.</Banner> : null}
       {done ? (
         <Banner tone="info">
-          Decision recorded: threshold {fmtThreshold(done.threshold)} is now the chosen point. Scoring still uses the locked threshold.{" "}
-          <span>Decision <span className="mono">{done.decisionId.slice(0, 8)}</span>.</span>
+          Decision recorded: threshold {fmtThreshold(done.threshold)} is now the chosen threshold. Scoring still uses the locked threshold.{" "}
+          <span>History entry <span className="mono">{done.decisionId.slice(0, 8)}</span>.</span>
         </Banner>
       ) : null}
-      <div className="toolbar"><button type="submit" className="btn primary" disabled={busy || !live}>{busy ? "Recording…" : "Record this operating point"}</button></div>
+      <div className="toolbar"><button type="submit" className="btn primary" disabled={busy || !live}>{busy ? "Recording…" : "Record this threshold choice"}</button></div>
     </form>
   );
 }
@@ -166,8 +167,8 @@ function ChooseForm({ experimentId, data, pick, setPick }: { experimentId: strin
 export function OperatingPointsPanel({ projectId, experimentId }: { projectId: string; experimentId: string }) {
   const read = useOperatingPoints(experimentId);
   const [pick, setPick] = useState<Pick>({ kind: "threshold", threshold: Number.NaN });
-  if (read.isError) return <QueryNotice error={read.error} what="operating points" />;
-  if (!read.data) return <p role="status">Loading operating points…</p>;
+  if (read.isError) return <QueryNotice error={read.error} what="threshold curve" />;
+  if (!read.data) return <p role="status">Loading the threshold curve…</p>;
   const data = read.data;
   const view = operatingView(data);
   if (view.state === "empty") return <div className="empty" role="note"><p>{view.text}</p></div>;
@@ -184,7 +185,7 @@ export function OperatingPointsPanel({ projectId, experimentId }: { projectId: s
     { key: "tags", header: "Marks", render: (r) => <>{r.tags.map((t) => <Pill key={t} tone={t === "Chosen" ? "ok" : t === "Locked" ? "gray" : "det"}>{t}</Pill>)}</> },
     { key: "precision", header: "Precision", numeric: true, sortValue: (r) => r.point.precision, render: (r) => fmtRate(r.point.precision) },
     { key: "recall", header: "Recall", numeric: true, sortValue: (r) => r.point.recall, render: (r) => fmtRate(r.point.recall) },
-    { key: "flagged", header: "Flagged share", numeric: true, sortValue: (r) => r.point.flagged_share, render: (r) => fmtRate(r.point.flagged_share) },
+    { key: "flagged", header: "Share flagged", numeric: true, sortValue: (r) => r.point.flagged_share, render: (r) => fmtRate(r.point.flagged_share) },
     ...(cost ? [{ key: "cost", header: "Expected cost", numeric: true, render: (r: PointRow) => fmtRate(r.point.expected_cost) }] : []),
     { key: "use", header: "Pick", render: (r) => <button type="button" className="btn" onClick={() => setPick({ kind: "threshold", threshold: r.threshold })}>Select<span className="sr-only"> threshold {fmtThreshold(r.threshold)}</span></button> },
   ];
@@ -193,34 +194,34 @@ export function OperatingPointsPanel({ projectId, experimentId }: { projectId: s
   const chosen = data.chosen;
 
   return (
-    <div className="stack">
-      <p className="muted">All figures {BASIS_LABEL}: each training row is predicted by a model that did not see it. {plainText(data.final_evaluation_note, 500)}</p>
+    <div className="stack tbl-wrap">
+      <p className="muted">All figures are {BASIS_EXPLAINED}. {FINAL_TEST_NOTE}</p>
       {chosen ? (
         <Banner tone="info">
-          Chosen point: threshold <b>{fmtThreshold(chosen.threshold)}</b> ({chosen.method === "objective" ? "solved from an objective" : "picked directly"}), recorded {formatWhen(chosen.recorded_at)}. Reason: {plainText(chosen.rationale, 600)}{" "}
-          {decisionsHref ? <Link href={decisionsHref}>Open the decisions</Link> : null} <span className="muted">(decision <span className="mono">{chosen.decision_id.slice(0, 8)}</span>)</span>
+          Chosen point: threshold <b>{fmtThreshold(chosen.threshold)}</b> ({chosen.method === "objective" ? "solved from a goal" : "picked directly"}), recorded {formatWhen(chosen.recorded_at)}. Reason: {plainText(chosen.rationale, 600)}{" "}
+          {decisionsHref ? <Link href={decisionsHref}>Open History</Link> : null} <span className="muted">(History entry <span className="mono">{chosen.decision_id.slice(0, 8)}</span>)</span>
           {chosen.curve_changed ? <> <Pill tone="warn">the stored curve changed since</Pill></> : null}
         </Banner>
       ) : null}
       <ThresholdChart data={data} />
-      <p className="muted">Dots mark Pareto points, the dashed vertical line the locked threshold{chosen ? " and the solid line the chosen point" : ""}.</p>
+      <p className="muted">Dots mark the best trade-off points, the dashed vertical line the locked threshold{chosen ? " and the solid line the chosen point" : ""}.</p>
       <div role="status" aria-live="polite">
-        <b>{focus.label}.</b> {sentence ? plainText(sentence, 600) : "No description is available for this point."}
+        <b>{focus.label}.</b> {sentence ? plainWords(plainText(sentence, 600)) : "No description is available for this point."}
         {notes.length ? <ul className="plain-list tight" aria-label="Uncertainty of this point">{notes.map((n) => <li key={n}>{n}</li>)}</ul> : null}
       </div>
       <DataTable
-        caption="Operating points: Pareto points, the locked threshold and the chosen threshold, out-of-fold"
+        caption="Thresholds to choose from: best trade-offs, the locked threshold and the chosen threshold, measured on the training folds"
         columns={columns}
         rows={pointRows(data)}
         rowKey={(r) => r.key}
         highlightRow={(r) => r.tags.includes("Chosen")}
       />
       <KeyValue items={[
-        { key: "basis", label: "Basis", value: <>{(data.points?.length ?? 0)} <Term definition={OPERATING_TERMS.threshold}>thresholds</Term>, {data.rows ?? "n/a"} rows ({data.positives ?? "n/a"} positive), <Term definition={OPERATING_TERMS.oof}>out-of-fold</Term></> },
-        { key: "locked", label: "Locked threshold", value: <>{fmtThreshold(data.locked?.threshold)} <span className="muted">used for scoring{data.locked?.source ? ` (from ${plainText(data.locked.source, 40).replaceAll("_", " ")})` : ""}</span></> },
-        { key: "tie", label: "Tie-break", value: plainText(data.tie_break, 300) },
+        { key: "basis", label: "Based on", value: <>{(data.points?.length ?? 0)} <Term definition={OPERATING_TERMS.threshold}>thresholds</Term>, {data.rows ?? "n/a"} rows ({data.positives ?? "n/a"} positive), <Term definition={OPERATING_TERMS.oof}>measured on the training folds</Term></> },
+        { key: "locked", label: "Locked threshold", value: <>{fmtThreshold(data.locked?.threshold)} <span className="muted">the one scoring uses{data.locked?.source ? ` (from ${plainText(data.locked.source, 40).replaceAll("_", " ")})` : ""}</span></> },
+        { key: "tie", label: "If two thresholds tie", value: plainWords(plainText(data.tie_break, 300)) },
       ]} />
-      {data.optimism_note ? <p className="muted">{plainText(data.optimism_note, 800)}</p> : null}
+      {data.optimism_note ? <p className="muted">{plainWords(plainText(data.optimism_note, 800))}</p> : null}
       <ChooseForm experimentId={experimentId} data={data} pick={effectivePick} setPick={setPick} />
     </div>
   );

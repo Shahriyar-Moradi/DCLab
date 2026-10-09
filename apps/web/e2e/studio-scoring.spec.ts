@@ -61,8 +61,8 @@ test("Score new data: upload, column check, progress, download, missing column, 
   await expect.poll(async () => ((await (await page.request.get(`/api/backend/v1/experiments/${experimentId}`)).json()) as { status: string }).status, { timeout: 240_000, intervals: [2_000] }).toBe("completed");
 
   await page.goto(`/projects/${projectId}/graph`);
-  await page.getByRole("button", { name: /^Model version/ }).first().click();
-  await page.getByRole("complementary", { name: /Model version/ }).getByRole("link", { name: "Open full inspector" }).click();
+  await page.getByRole("button", { name: /^Model v\d/ }).first().click();
+  await page.getByRole("complementary", { name: /^Model v\d/ }).getByRole("link", { name: "Open full inspector" }).click();
   await expect(page).toHaveURL(/\/models\/[0-9a-f-]{36}$/);
   await page.getByRole("tab", { name: "Score new data" }).click();
   await expect(page.getByRole("region", { name: "About this screen" })).toBeVisible();
@@ -74,7 +74,7 @@ test("Score new data: upload, column check, progress, download, missing column, 
   await page.getByRole("button", { name: "Score this file" }).click();
   const check = page.getByRole("region", { name: "Column check" }).first();
   const card = page.locator("section.card", { has: page.getByRole("heading", { name: /Scoring of next-month.csv/ }) });
-  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv completed/ })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv done/ })).toBeVisible({ timeout: 120_000 });
   await expect(check).toContainText("The file has all 2 columns the model needs.");
   await expect(check).toContainText("region");
   await expect(card.getByText("40 of 40")).toBeVisible();
@@ -107,7 +107,37 @@ test("Score new data: upload, column check, progress, download, missing column, 
   // 4. The session list survives a reload (ids only; each is re-read from the API).
   await page.reload();
   await page.getByRole("tab", { name: "Score new data" }).click();
-  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv completed/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Scoring of next-month.csv done/ })).toBeVisible();
+
+  // 4b. The Predictions page: from the sidebar and the flow bar; the model in use is the default; this session's files are listed.
+  await page.goto(`/projects/${projectId}/models`);
+  await page.getByRole("navigation", { name: "Studio" }).getByRole("link", { name: "Predictions" }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/predictions$`));
+  await expect(page.getByRole("heading", { name: "Predictions", level: 1 })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Project steps" }).getByRole("link", { name: "Predictions" })).toHaveAttribute("aria-current", "step");
+  const picker = page.getByRole("combobox", { name: "Model" });
+  await expect(picker.locator("option:checked")).toContainText(/^Model v\d+ · Run \d+ \(in use\)$/);
+  const history = page.getByRole("table", { name: "Predictions run in this browser tab" });
+  await expect(history).toContainText("next-month.csv");
+  await expect(history).toContainText("You, in this browser tab");
+  await expect(history).toContainText("40 of 40");
+  // The list is kept per workspace and per person: the storage key carries both ids.
+  expect(await page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => /^dclab\.scorings\.[0-9a-f-]{36}\.[0-9a-f-]{36}\.[0-9a-f-]{36}$/.test(k)).length)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => /^dclab\.scorings\.[0-9a-f-]{36}$/.test(k)).length)).toBe(0);
+  await page.getByLabel("Scoring file").setInputFiles({ name: "page-run.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv(25, { target: false, offset: 9000 })) });
+  await page.getByRole("button", { name: "Score this file" }).click();
+  await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ }).locator("xpath=ancestor::section[1]").getByText("Model v")).toBeVisible();
+  await expect(history).toContainText("page-run.csv");
+  // Only what is built: no schedule, no per-row reasons, no raw terms.
+  await expect(page.locator("main")).not.toContainText(/weekly|every Monday|reasons for each|feature contract|holdout|artifact/i);
+  expect(await axeViolations(page)).toEqual([]);
+  await shot(page, "4b-predictions");
+  // The model page's score tab is the same step of the flow bar.
+  await page.goto(`/projects/${projectId}/models`);
+  await page.getByRole("link", { name: /^Model v\d/ }).first().click();
+  await page.goto(`${page.url()}?tab=score`);
+  await expect(page.getByRole("navigation", { name: "Project steps" }).getByRole("link", { name: "Predictions" })).toHaveAttribute("aria-current", "step");
 
   // 5. Dark mode.
   await page.emulateMedia({ colorScheme: "dark" });
