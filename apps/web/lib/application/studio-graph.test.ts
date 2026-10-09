@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  builtFrom, decisionMarkers, graphSummary, groupByKind, layoutGraph, nodeLink, refBadges, staleLines, type GraphNodeLike,
+  builtFrom, decisionMarkers, graphNodeNames, graphSummary, groupByKind, kindLabel, layoutGraph, nameLookup, nodeLink, refBadge, refBadges, relationLabel, staleLines, type GraphNodeLike,
 } from "./studio-graph.ts";
 
 const P = "99999999-9999-4999-8999-999999999999";
@@ -105,7 +105,7 @@ test("ref badges, stale lines and built-from read the API fields", () => {
   });
   assert.deepEqual(refBadges(stale), ["★ in use", "★ test design"]);
   assert.deepEqual(refBadges(ds), []);
-  assert.deepEqual(staleLines(stale), ["Built on an older version: the data in use is now dataset version 00000000; this was built from 00000000"]);
+  assert.deepEqual(staleLines(stale), ["Built on an older version: the data in use differs from the one this was built from."]);
   assert.deepEqual(staleLines(ds), []);
   assert.deepEqual(builtFrom(EDGES, e1.key).map((b) => b.relation), ["uses_dataset", "uses_split_plan", "uses_problem_spec", "prepared_as"]);
   assert.deepEqual(builtFrom(EDGES, ds.key), []);
@@ -115,9 +115,9 @@ test("ref badges, stale lines and built-from read the API fields", () => {
 });
 
 test("drawer links only for UUID nodes of a kind with an inspector", () => {
-  assert.deepEqual(nodeLink(P, e1), { href: `/projects/${P}/experiments/${e1.id}`, label: "Open the experiment" });
-  assert.deepEqual(nodeLink(P, ds), { href: `/projects/${P}/data/${ds.id}`, label: "Open the dataset version" });
-  assert.deepEqual(nodeLink(P, mv), { href: `/projects/${P}/models/${mv.id}`, label: "Open the model version" });
+  assert.deepEqual(nodeLink(P, e1), { href: `/projects/${P}/experiments/${e1.id}`, label: "Open the run" });
+  assert.deepEqual(nodeLink(P, ds), { href: `/projects/${P}/data/${ds.id}`, label: "Open the data" });
+  assert.deepEqual(nodeLink(P, mv), { href: `/projects/${P}/models/${mv.id}`, label: "Open the model" });
   assert.equal(nodeLink(P, spec), null);
   assert.equal(nodeLink(P, { kind: "constructor", id: e1.id }), null);
   assert.equal(nodeLink(P, { kind: "experiment", id: "../../admin" }), null);
@@ -152,5 +152,47 @@ test("summary states truncation explicitly", () => {
   assert.deepEqual(full, { nodes: 7, edges: 10, stale: 0, truncated: false, note: null });
   const cut = graphSummary({ nodes: [...NODES, node("experiment", 50, { outside_window: true, stale: true })], edges: EDGES, truncated: true, truncated_kinds: ["experiment"], experiment_limit: 2 });
   assert.equal(cut.stale, 1);
-  assert.equal(cut.note, "Showing 8 nodes: the newest 2 experiments (window of 2); capped kinds: experiment. Older lineage is not drawn on this page.");
+  assert.equal(cut.note, "Showing 8 items: the newest 2 runs (window of 2); some run items are left out. Older lineage is not drawn on this page.");
+});
+
+test("plain names for runs, data, test designs, models; unknown and prototype keys never leak", () => {
+  const runs = [
+    { id: e1.id, created_at: "2026-10-01T00:00:05Z", split_plan_id: split.id },
+    { id: e2.id, created_at: "2026-10-01T00:00:06Z", split_plan_id: split.id },
+  ];
+  const model = { ...mv, version: "2" };
+  const names = graphNodeNames([...NODES.filter((n) => n.kind !== "model_version"), model], runs, false);
+  assert.equal(names.get(e1.key), "Run 1");
+  assert.equal(names.get(e2.key), "Run 2");
+  assert.equal(names.get(model.key), "Model v2");
+  assert.equal(names.get(split.key), "Test design 1");
+  assert.equal(names.get(spec.key), "Goal");
+  assert.match(names.get(ds.key)!, /^dataset_version 2 · 1 Oct 2026$/);
+  // the graph labels data "<file> v<version>": the label (name and version) is the name; a prepared table is named after its run
+  const churn = node("dataset_version", 60, { label: "churn v1", version: "v1" });
+  const prep = node("dataset_version", 61, { label: "client-upload-4f1c v1", version: "v1", derived: true });
+  const withPrep = graphNodeNames([prep, churn, e1], runs, false, [edge(e1, prep, "prepared_as", true)]);
+  assert.equal(withPrep.get(churn.key), "churn v1 · 1 Oct 2026");
+  assert.equal(withPrep.get(prep.key), "Data prepared by Run 1");
+  assert.equal(graphNodeNames([prep], runs, false).get(prep.key), "Prepared data");
+  // a partial run list keeps the short id so numbers never shift between pages
+  assert.equal(graphNodeNames([e1], runs, true).get(e1.key), `Run ${e1.id.slice(0, 8)}`);
+  assert.equal(graphNodeNames([node("experiment", 99)], runs, false).get(`experiment:${uuid(99)}`), `Run ${uuid(99).slice(0, 8)}`);
+  assert.equal(graphNodeNames([node("problem_spec", 1), node("problem_spec", 2)], [], false).get(`problem_spec:${uuid(2)}`), "Goal 2");
+  const lookup = nameLookup(names);
+  assert.equal(lookup({ kind: "experiment", id: e1.id }), "Run 1");
+  assert.equal(lookup({ kind: "experiment", id: uuid(77) }), `Run ${uuid(77).slice(0, 8)}`);
+  assert.equal(kindLabel("split_plan"), "Test design");
+  for (const bad of ["__proto__", "constructor", "toString"]) {
+    for (const text of [kindLabel(bad), relationLabel(bad), refBadge(bad)]) {
+      assert.equal(typeof text, "string");
+      assert.ok(text.includes(bad.replaceAll("_", "")), text);
+    }
+  }
+  assert.equal(relationLabel("uses_dataset"), "trained on");
+  assert.equal(relationLabel("some_new_relation"), "some new relation");
+  assert.deepEqual(staleLines({ ...e1, stale: true, stale_reasons: [{ ref_kind: "__proto__", expected: { kind: "dataset_version", id: ds.id }, actual: { kind: "dataset_version", id: uuid(40) } }] }, names),
+    [`Built on an older version: the proto in use is now ${names.get(ds.key)}.`]);
+  assert.deepEqual(staleLines({ ...e1, stale: true, stale_reasons: [{ ref_kind: "dataset", expected: { kind: "dataset_version", id: uuid(40) }, actual: { kind: "dataset_version", id: ds.id } }] }, names),
+    [`Built on an older version: the data in use differs from the one this was built from; this was built from ${names.get(ds.key)}.`]);
 });

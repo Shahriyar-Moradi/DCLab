@@ -38,9 +38,9 @@ export function dataVersionName(fileName: string | null | undefined, createdAt: 
   return when ? `${file} · ${when}` : file;
 }
 
-/** Words for the scope of a piece of evidence: the final test set is always "(used once)". */
+/** Words for the scope of a piece of evidence: the final test set is "(used once per run)". */
 export function evidenceScopeLabel(scope: string): string {
-  return scope === "final_holdout" ? "final test set (used once)" : scope.replaceAll("_", " ");
+  return scope === "final_holdout" ? "final test set (used once per run)" : scope.replaceAll("_", " ");
 }
 
 const OFF_SIDEBAR_CRUMB: Record<string, string> = { graph: "Lineage", pipeline: "Run evidence", features: "Features" };

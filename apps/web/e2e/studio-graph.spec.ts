@@ -62,9 +62,12 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
   await page.goto(`/projects/${projectId}/graph`);
   await expect(page.getByRole("heading", { name: "Lineage", level: 1 })).toBeVisible();
   await expect(page.getByText("nothing built on an older version")).toBeVisible();
-  const experimentNode = page.getByRole("button", { name: new RegExp(`^Experiment ${experimentId.slice(0, 8)}`) });
+  const experimentNode = page.getByRole("button", { name: /^Run 1\b/ });
   await expect(experimentNode).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Model version .*in use/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Model v1.*in use/ })).toBeVisible();
+  // Plain words: items are named (Run 1, Model v1, Test design 1, a file name), never "Experiment 1a2b3c4d" or "Dataset version".
+  await expect(page.locator("main")).not.toContainText(/Dataset version|Split plan|Feature recipe|Problem spec|Experiment [0-9a-f]{8}|decision point|\bnodes?\b|\bedges?\b|\brefs?\b/i);
+  await expect(page.getByRole("button", { name: /^Test design 1/ })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "1-fresh");
 
@@ -78,7 +81,7 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
   await expect(page.getByText("churn-q3", { exact: true })).toBeVisible();
   await page.goto(`/projects/${projectId}/data`);
   await page.getByRole("tab", { name: /Versions/ }).click();
-  await page.getByRole("button", { name: /^Use this data/ }).click();
+  await page.getByRole("button", { name: /^Use this data.*churn-q3/ }).click();
   await page.getByLabel("Why (saved with the change)").fill("Newer quarter of data");
   await page.locator("form").getByRole("button", { name: "Use this data", exact: true }).click();
   await expect(page.getByRole("row", { name: /churn-q3/ })).toContainText("in use");
@@ -88,32 +91,35 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
 
   // The graph marks the old run stale (orange + text); the drawer shows why and what becomes stale.
   await page.goto(`/projects/${projectId}/graph`);
-  await expect(page.getByLabel("Graph summary")).toContainText("built on an older version");
-  const staleNode = page.getByRole("button", { name: new RegExp(`^Experiment ${experimentId.slice(0, 8)}.*, built on an older version`) });
+  await expect(page.getByLabel("Lineage summary")).toContainText("built on an older version");
+  const staleNode = page.getByRole("button", { name: /^Run 1\b.*, built on an older version/ });
   await expect(staleNode).toBeVisible();
   await expect(staleNode).toContainText("built on an older version");
   await staleNode.click();
-  const drawer = page.getByRole("complementary", { name: /Experiment/ });
+  const drawer = page.getByRole("complementary", { name: /^Run 1\b/ });
   await expect(drawer).toBeVisible();
-  await expect(drawer).toContainText("the data in use is now dataset version");
-  await expect(drawer.getByRole("list", { name: "What would be built on an older version" })).toContainText("Model version");
-  await expect(drawer).toContainText("No AI decision point is recorded for this experiment");
+  await expect(drawer).toContainText("Built on an older version: the data in use");
+  await expect(drawer).toContainText(/this was built from churn/);
+  await expect(page.getByRole("region", { name: "About this screen" })).toContainText("Only moving the goal, the data, the test design or the model in use"); // the accurate caveat
+  await expect(drawer.getByRole("list", { name: "What would be built on an older version" })).toContainText("Model v1");
+  // AI is off: nothing about AI answers is shown for this run.
+  await expect(drawer).not.toContainText(/AI answers|decision point/i);
   await expect(drawer.getByRole("link", { name: "Open full inspector" })).toHaveAttribute("href", `/projects/${projectId}/experiments/${experimentId}`);
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "2-stale-drawer");
 
   // The superseded upload: its impact covers the split plan, the run and the model.
-  await drawer.getByRole("button", { name: /^Dataset version/ }).first().click();
-  await expect(page.getByRole("complementary", { name: /Dataset version/ }).getByRole("list", { name: "What would be built on an older version" })).toContainText("Split plan");
+  await drawer.getByRole("button", { name: /^churn\b/ }).first().click();
+  await expect(page.getByRole("complementary", { name: /^churn\b/ }).getByRole("list", { name: "What would be built on an older version" })).toContainText("Test design 1");
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("complementary", { name: /Dataset version/ })).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: /^churn\b/ })).toHaveCount(0);
 
   // Accessible list fallback.
   await page.getByRole("tab", { name: /As a list/ }).click();
-  const experiments = page.getByRole("table", { name: "Experiment nodes" });
+  const experiments = page.getByRole("table", { name: "Run items" });
   await expect(experiments).toContainText("built on an older version");
-  await expect(experiments).toContainText("trained on dataset version");
-  await expect(page.getByRole("table", { name: "Model version nodes" })).toContainText("★ in use");
+  await expect(experiments).toContainText(/trained on churn/);
+  await expect(page.getByRole("table", { name: "Model items" })).toContainText("★ in use");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "3-list");
 
@@ -121,9 +127,9 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "4-list-dark");
-  await page.getByRole("tab", { name: /^Graph/ }).click();
+  await page.getByRole("tab", { name: /^Diagram/ }).click();
   await staleNode.click();
-  await expect(page.getByRole("complementary", { name: /Experiment/ })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: /^Run 1\b/ })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "5-drawer-dark");
 });

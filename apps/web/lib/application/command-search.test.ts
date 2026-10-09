@@ -111,7 +111,7 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   const inside = studioNavigationForUser(developer, P1).find((g) => g.id === "project")!;
   assert.deepEqual(inside.items.map((i) => i.id), ["data", "experiments", "models", "decisions"]);
   const T = "44444444-4444-4444-8444-444444444444";
-  const withTargets = studioNavigationForUser(developer, P1, { split_plan: T, champion_model: T }).find((g) => g.id === "project")!;
+  const withTargets = studioNavigationForUser(developer, P1, { split_plan: T, project_model: T }).find((g) => g.id === "project")!;
   assert.deepEqual(withTargets.items.map((i) => i.id), ["data", "goal", "experiments", "models", "predictions", "decisions"]);
   assert.ok(inside.items.every((i) => i.href.startsWith(`/projects/${P1}/`)));
   for (const hidden of ["lab", "improve", "monitoring"] as const) assert.equal(STUDIO_BACKEND_FEATURES[hidden], false);

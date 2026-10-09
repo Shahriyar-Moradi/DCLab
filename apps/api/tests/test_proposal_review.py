@@ -306,6 +306,11 @@ def test_semantic_item_accept_branches_once_and_revert_restores_the_rule(pr):
     assert record.details["executed"] == {"kind": "experiment", "id": str(child.id)}
     assert record.details["ai_answer"]["ai"] == "categorical_code" and record.details["proposed_by"] == "jev"
     assert _post(pr, item, "accept", key=key).headers["Idempotent-Replayed"] == "true"
+    # The generic decision correction never rewrites the service-owned record (revert is the undo).
+    generic = pr.client.post(f"/v1/decisions/{record.id}/supersede", json={"rationale": "mine now"},
+                             headers=_h(pr.setup, key=_key()))
+    assert _assert_envelope(generic, 403, "decision_actor_not_permitted")["details"]["reason"] == "reserved_decision_type"
+    assert len(_records(pr, "proposal_accepted")) == 1
     _assert_envelope(_post(pr, item, "accept"), 409, "proposal_not_open")
     assert _count(pr, Experiment) == experiments + 1 and len(_records(pr, "proposal_accepted")) == 1
     _assert_envelope(_post(pr, item, "revert"), 409, "parent_not_completed")  # the AI-value run must have finished
@@ -323,6 +328,10 @@ def test_semantic_item_accept_branches_once_and_revert_restores_the_rule(pr):
     assert branch.parent_pipeline_run_id == child.id  # the revert follows the AI-value experiment
     assert branch.change_set["changes"] == undo.details["revert"]["changes"]
     _assert_envelope(_post(pr, item, "revert"), 409, "proposal_not_applied")
+    generic = pr.client.post(f"/v1/decisions/{undo.id}/supersede", json={"rationale": "undo the undo"},
+                             headers=_h(pr.setup, key=_key()))
+    assert _assert_envelope(generic, 403, "decision_actor_not_permitted")["details"]["reason"] == "reserved_decision_type"
+    assert len(_records(pr, "proposal_reverted")) == 1
 
 
 def test_semantic_flag_without_a_change_is_an_acknowledgement(pr):

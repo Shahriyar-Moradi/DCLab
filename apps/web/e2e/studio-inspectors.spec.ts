@@ -57,10 +57,10 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   // Graph drawer: compact inspector with a link to the full one, for each kind.
   await page.goto(`/projects/${projectId}/graph`);
   const kinds: Array<[RegExp, RegExp, RegExp]> = [
-    [/^Split plan/, /\/splits\/[0-9a-f-]{36}$/, /Split plan/],
-    [/^Feature recipe/, /\/features\/[0-9a-f-]{36}$/, /Feature recipe/],
-    [/^Dataset version/, /\/data\/[0-9a-f-]{36}$/, /Dataset version/],
-    [/^Model version/, /\/models\/[0-9a-f-]{36}$/, /Model version/],
+    [/^Test design/, /\/splits\/[0-9a-f-]{36}$/, /Test design/],
+    [/^Features/, /\/features\/[0-9a-f-]{36}$/, /Features/],
+    [/^churn\b/, /\/data\/[0-9a-f-]{36}$/, /churn\b/],
+    [/^Model v\d/, /\/models\/[0-9a-f-]{36}$/, /Model v\d/],
   ];
   const hrefs: string[] = [];
   for (const [node, route, title] of kinds) {
@@ -71,12 +71,12 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
     const open = drawer.getByRole("link", { name: "Open full inspector" });
     await expect(open).toHaveAttribute("href", route);
     hrefs.push((await open.getAttribute("href")) ?? "");
-    if (node.source.includes("Split")) await shot(page, "1-drawer");
+    if (node.source.includes("Test design")) await shot(page, "1-drawer");
     await open.click();
     await expect(page).toHaveURL(route);
     await expect(node.source.includes("Model")
       ? page.getByRole("heading", { name: /^Model v\d+$/, level: 1 })
-      : page.getByRole("heading", { name: node.source.includes("Split") ? "Goal & test design" : "Reason", level: node.source.includes("Split") ? 1 : undefined })).toBeVisible();
+      : page.getByRole("heading", { name: node.source.includes("Test design") ? "Goal & test design" : "Reason", level: node.source.includes("Test design") ? 1 : undefined })).toBeVisible();
     await expect(page.getByText(/^Loading/)).toHaveCount(0);
     expect(await axeViolations(page)).toEqual([]);
     await shot(page, `2-${hrefs.length}-${title.source.replace(/\W/g, "").toLowerCase()}`);

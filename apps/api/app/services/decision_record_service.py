@@ -1075,11 +1075,20 @@ def supersede(
 
     Ref history (``ref_initialized``/``ref_moved``/``champion_promoted``) is
     corrected by a new ``move_ref``, never in place; rule records only by rules.
+    Reserved Phase 6 records (``proposal_accepted``/``proposal_rejected``/
+    ``proposal_reverted``/``decision_point_resolved``) are never corrected here by
+    anyone: their owning services write them directly (an applied AI suggestion is
+    undone by ``proposal_review_service.revert``), so this path refuses them (``403``).
     """
 
     authorize_writer(db, actor, workspace_id=workspace_id)
     load_project(db, workspace_id=workspace_id, project_id=project_id)
     prior = get_record(db, workspace_id=workspace_id, project_id=project_id, record_id=record_id)
+    if prior.decision_type in RESERVED_DECISION_TYPES:
+        # Checked before replay and state so the refusal is stable for every row of these types.
+        raise DecisionActorNotPermittedError(
+            "reserved_decision_type", "this type is written and corrected only by its owning service"
+        )
     if actor.kind == ACTOR_RULE and prior.decision_type not in RULE_ONLY_DECISION_TYPES:
         raise DecisionActorNotPermittedError(
             "rule_not_permitted", "rules only correct records of rule-owned types"

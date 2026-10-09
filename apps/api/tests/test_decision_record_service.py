@@ -19,7 +19,7 @@ from app.db.models import (
     ProjectRef,
     User,
 )
-from app.domain.decision_records import DecisionActor
+from app.domain.decision_records import RESERVED_DECISION_TYPES, DecisionActor, decision_point_rule
 from app.domain.errors import (
     ChampionSplitPlanMismatchError,
     DecisionActorNotPermittedError,
@@ -782,6 +782,61 @@ def test_provenance_reserved_keys_service_only_types_and_secret_text(db_session,
     with pytest.raises(InvalidDecisionRecordError, match="secret_like_text"):
         drs.accept(db, workspace_id=g.ws, project_id=g.project.id, record_id=human.id, actor=g.human,
                    rationale="token Bearer abcdef123")
+
+
+def test_reserved_phase6_records_are_never_corrected_through_generic_supersede(db_session, g):
+    """proposal_accepted / proposal_rejected / proposal_reverted / decision_point_resolved are
+    written (and undone) only by their owning services; the generic supersede refuses every
+    caller with a stable 403 reason, whatever the row's state."""
+
+    db = db_session
+    point_rule = decision_point_rule("spec.objective")
+    rows = {}
+    for decision_type in sorted(RESERVED_DECISION_TYPES):
+        if decision_type == "decision_point_resolved":  # decision_point_service's shape (a rule actor)
+            row = drs.rule_record(
+                workspace_id=g.ws, project_id=g.project.id, decision_type=decision_type, subject_kind="experiment",
+                subject_id=g.exp[0], actor_rule=point_rule, rationale="resolved by policy", schema_version=1,
+                idempotency_key=f"reserved-test:{decision_type}",
+                evidence_refs=[{"kind": "experiment", "id": str(g.exp[0])}],
+            )
+        else:  # proposal_review_service's shape (the deciding human)
+            row = drs.build_record(
+                workspace_id=g.ws, project_id=g.project.id, actor=g.human, decision_type=decision_type,
+                state="rejected" if decision_type == "proposal_rejected" else "accepted", subject_kind="project",
+                subject_id=None, rationale=f"{decision_type} by its service", facts={"proposal_id": str(uuid4())},
+                evidence_refs=[], details={"proposed_by": "jev"},
+                idempotency_key=f"reserved-test:{decision_type}",
+            )
+        rows[decision_type] = drs.insert_record(db, row)
+    db.commit()
+    token, _raw = create_service_token(db, creator=g.actor, workspace_id=g.ws, name="agent",
+                                       scopes=["read", "decisions:propose"], expires_in_days=1,
+                                       current_password="test-password")
+    token_actor = DecisionActor.agent(service_token_id=token.id)
+    g.bindings[token_actor.service_token_id] = g.ws
+    before = _count(db)
+    for decision_type, row in rows.items():
+        for actor in (g.human, DecisionActor.rule_actor(point_rule)):
+            with pytest.raises(DecisionActorNotPermittedError) as caught:
+                drs.supersede(db, workspace_id=g.ws, project_id=g.project.id, record_id=row.id, actor=actor,
+                              rationale="re-attribute", idempotency_key=f"k-{decision_type}")
+            assert (caught.value.status_code, caught.value.reason) == (403, "reserved_decision_type"), decision_type
+        for agent in (g.agent, token_actor):  # agents never correct anything
+            with pytest.raises(DecisionActorNotPermittedError):
+                drs.supersede(db, workspace_id=g.ws, project_id=g.project.id, record_id=row.id, actor=agent,
+                              rationale="re-attribute")
+        assert drs.successor_id(db, row) is None, decision_type
+    assert _count(db) == before
+
+    # Ordinary human decision types stay correctable.
+    accepted = drs.accept(db, workspace_id=g.ws, project_id=g.project.id, record_id=_propose(db, g).id,
+                          actor=g.human, rationale="agreed")
+    db.commit()
+    corrected = drs.supersede(db, workspace_id=g.ws, project_id=g.project.id, record_id=accepted.id,
+                              actor=g.human, rationale="corrected")
+    db.commit()
+    assert (corrected.decision_type, corrected.supersedes_id) == ("experiment_accepted", accepted.id)
 
 
 def test_replay_compares_the_request(db_session, g):

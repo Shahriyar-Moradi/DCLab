@@ -118,5 +118,14 @@ test("Operating points: chart + table, choose a point with a reason, model card 
   await expect(vmodel.getByText(/Your role can read thresholds but not choose one/)).toBeVisible();
   await expect(vmodel.getByRole("button", { name: "Record this threshold choice" })).toHaveCount(0);
   await shot(viewer, "operating-5-viewer");
+  // History and Predictions: a viewer reads, but is offered no Answer / Correct button and no upload.
+  const noWrite = /Only people who can change this workspace can answer, correct or score files/;
+  await viewer.goto(`/projects/${projectId}/predictions`);
+  await expect(viewer.getByText(noWrite).first()).toBeVisible();
+  await expect(viewer.getByLabel("Scoring file")).toHaveCount(0);
+  await expect(viewer.getByRole("button", { name: "Score this file" })).toHaveCount(0);
+  await viewer.goto(`/projects/${projectId}/decisions`);
+  await expect(viewer.getByText(noWrite).first()).toBeVisible();
+  await expect(viewer.getByRole("button", { name: /^(Answer|Correct)/ })).toHaveCount(0);
   await context.close();
 });

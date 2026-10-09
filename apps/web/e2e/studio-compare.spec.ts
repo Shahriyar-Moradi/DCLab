@@ -175,12 +175,13 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
 
   await page.goto(`/projects/${projectId}/decisions`);
   const decisions = page.getByRole("table", { name: "History" });
-  await expect(decisions).toContainText("Model put in use");
-  await decisions.getByRole("row", { name: /Model put in use/ }).first().getByRole("button").click();
+  await expect(decisions).toContainText("Put a model in use");
+  await decisions.getByRole("row", { name: /Put a model in use/ }).first().getByRole("button", { name: /^Open/ }).click();
   const drawer = page.locator("aside.graph-drawer");
   await expect(drawer).toContainText("Balanced weights improved recall on CV");
-  await expect(drawer).toContainText("final test set (used once)");
-  await expect(drawer.getByText("Changing the version in use is corrected by changing it again")).toBeVisible();
+  await expect(drawer).toContainText("final test set (used once per run)");
+  await expect(drawer.getByText("Change the version in use again; that adds a new entry.")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Correct" })).toHaveCount(0);
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     expect(await axeViolations(page)).toEqual([]);
@@ -217,33 +218,40 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await page.goto(`/projects/${projectId}/decisions`);
   await expect(page.getByText("2 suggestions are waiting for your answer.")).toBeVisible();
   const list = page.getByRole("table", { name: "History" });
-  await list.getByRole("row", { name: /Run accepted.*proposed/ }).first().getByRole("button").click();
+  await list.getByRole("row", { name: /Accepted a run.*waiting for your answer/ }).first().getByRole("button", { name: /^Answer/ }).click();
   const drawer2 = page.locator("aside.graph-drawer");
   await drawer2.getByRole("button", { name: /^Accept/ }).click();
   await expect(drawer2.getByRole("button", { name: "Confirm accept" })).toBeDisabled();
   await drawer2.getByLabel("Reason (recorded)").fill("Agreed after review");
   await drawer2.getByRole("button", { name: "Confirm accept" }).click();
-  await expect(drawer2.getByText("Accepted: a new record was appended.")).toBeVisible();
+  await expect(drawer2.getByText("Accepted: a new entry was added.")).toBeVisible();
   await expect(page.getByText("1 suggestion is waiting for your answer.")).toBeVisible();
   await shot(page, "6-accepted-proposal");
 
-  await list.getByRole("row", { name: /Run accepted.*proposed/ }).first().getByRole("button").click();
+  await list.getByRole("row", { name: /Accepted a run.*waiting for your answer/ }).first().getByRole("button", { name: /^Answer/ }).click();
   await drawer2.getByRole("button", { name: /^Reject/ }).click();
   await drawer2.getByLabel("Reason (recorded)").fill("Gain is within noise");
   await drawer2.getByRole("button", { name: "Confirm reject" }).click();
-  await expect(drawer2.getByText("Rejected: a new record was appended.")).toBeVisible();
+  await expect(drawer2.getByText("Rejected: a new entry was added.")).toBeVisible();
 
-  const accepted = list.getByRole("row", { name: /Run accepted.*accepted/ }).first();
-  await accepted.getByRole("button").click();
-  await drawer2.getByRole("button", { name: "Supersede" }).click();
-  await expect(drawer2.getByRole("button", { name: "Confirm supersede" })).toBeDisabled();
+  // "Correct" is the plain word for superseding: it opens the form with a required reason.
+  const accepted = list.getByRole("row", { name: /Accepted a run/ }).filter({ has: page.getByRole("button", { name: /^Correct/ }) }).first();
+  await accepted.getByRole("button", { name: /^Correct/ }).click();
+  await expect(drawer2.getByRole("button", { name: "Confirm correction" })).toBeDisabled();
   await drawer2.getByLabel("Reason (recorded)").fill("Corrected after a second look");
-  await drawer2.getByRole("button", { name: "Confirm supersede" }).click();
-  await expect(drawer2.getByText("Corrected: a new record supersedes this one.")).toBeVisible();
+  await drawer2.getByRole("button", { name: "Confirm correction" }).click();
+  await expect(drawer2.getByText("Corrected: a new entry replaces this one.")).toBeVisible();
   await shot(page, "7-superseded");
 
-  // The engine's own records cannot be corrected by a person: no Supersede is offered.
-  await list.getByRole("row", { name: /Best run chosen/ }).first().getByRole("button").click();
-  await expect(drawer2.getByText("only the engine corrects it")).toBeVisible();
-  await expect(drawer2.getByRole("button", { name: "Supersede" })).toHaveCount(0);
+  // The rules' own records cannot be corrected by a person: no Correct button, in the row or in the drawer.
+  const chosen = list.getByRole("row", { name: /Chose the best model of a run/ }).first();
+  await expect(chosen).toContainText("Recorded by the rules; only the rules change it.");
+  await expect(chosen.getByRole("button", { name: /^Correct/ })).toHaveCount(0);
+  await chosen.getByRole("button", { name: /^Open/ }).click();
+  await expect(drawer2.getByText("only the rules change it")).toBeVisible();
+  await expect(drawer2.getByRole("button", { name: "Correct" })).toHaveCount(0);
+  // Plain words on the page: no codes, no "supersede", no "engine", no "proposal".
+  const banned = /supersede|engine|proposal|decision_|winner_locked|ref_moved|champion_promoted|experiment_accepted|holdout|\bUndo\b/i;
+  await expect(list).not.toContainText(banned);
+  await expect(drawer2).not.toContainText(banned);
 });

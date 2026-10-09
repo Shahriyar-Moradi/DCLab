@@ -37,7 +37,7 @@ test("data versions are a file name and a date, never a code", () => {
 
 test("evidence scope never says holdout", async () => {
   const { evidenceScopeLabel } = await import("./studio-names.ts");
-  assert.equal(evidenceScopeLabel("final_holdout"), "final test set (used once)");
+  assert.equal(evidenceScopeLabel("final_holdout"), "final test set (used once per run)");
   assert.equal(evidenceScopeLabel("cv_aggregate"), "cv aggregate");
 });
 

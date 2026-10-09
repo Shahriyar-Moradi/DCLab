@@ -9,6 +9,8 @@ import { CommandBar } from "@/components/studio/CommandBar";
 import { Crumbs, type Crumb } from "@/components/studio/Crumbs";
 import { Shell } from "@/components/studio/Shell";
 import { useCommandSearch, useProjectRefs, useSession, useStudioProject } from "@/lib/application";
+import { useProjectGraph } from "@/lib/application/studio-data-hooks";
+import { projectModelId } from "@/lib/application/studio-flow";
 import { useInboxCounts } from "@/lib/application/studio-inbox-hooks";
 import { badgeText } from "@/lib/application/studio-inbox";
 import { offSidebarCrumb } from "@/lib/application/studio-names";
@@ -46,9 +48,10 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   const { user, loaded, activeWorkspace, activeWorkspaceId, workspaceSwitching } = useSession();
   const project = useStudioProject(projectId);
   const refs = useProjectRefs(projectId);
+  const graph = useProjectGraph(projectId);
   const targetOf = (kind: string) => refs.data?.items.find((ref) => ref.ref_kind === kind)?.target.id ?? null;
-  // The Goal and Predictions pages need an id (the test design, the model in use); they are listed once the project has one.
-  const nav = studioNavigationForUser(user, projectId, { split_plan: targetOf("split_plan"), champion_model: targetOf("champion_model") }).map((group) =>
+  // The Goal and Predictions pages need an id (the test design, the model in use); they are listed once the project has one (Predictions: any model, the one in use preferred).
+  const nav = studioNavigationForUser(user, projectId, { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) }).map((group) =>
     group.id === "project" && project.data?.name ? { ...group, label: `Project · ${plainText(project.data.name, 60)}` } : group,
   );
   // One cheap counts read (refetched once a minute); the sidebar badge never needs the list.

@@ -240,6 +240,8 @@ const POINT_WORDS: Record<string, string> = {
   "column.semantic_role": "What each column means", "column.missing_value_action": "How to fill missing values", "feature.leakage_suspect": "Columns that may give away the answer",
   "split.strategy": "How to set aside the final test set", "training.families_budget": "Which model families to try", "experiment.review": "A second look at the finished run",
 };
+/** The words for a decision point the registry knows; null for any other key (callers say something generic, never the raw key). */
+export const knownPointLabel = (key: string): string | null => own(POINT_WORDS, key) ?? null;
 export function pointLabel(key: string): string {
   return own(POINT_WORDS, key) ?? plainText(key.replaceAll(".", " ").replaceAll("_", " "), 60);
 }

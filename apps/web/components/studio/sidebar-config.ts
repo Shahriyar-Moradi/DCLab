@@ -37,7 +37,8 @@ export type SidebarItemSpec = {
   target?: SidebarTarget;
 };
 
-export type SidebarTarget = "split_plan" | "champion_model";
+/** `project_model`: any model of the project (the model in use when there is one); Predictions is listed as soon as the project has a model. */
+export type SidebarTarget = "split_plan" | "champion_model" | "project_model";
 
 export type SidebarGroupSpec = { id: string; label: string; items: SidebarItemSpec[] };
 
@@ -63,7 +64,7 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
       { id: "experiments", label: "Experiments", href: "experiments", icon: "⚗", roles: WORK, feature: "experiments", phase: "P4.1-A" },
       { id: "improve", label: "Improve", href: "improve", icon: "↗", roles: WORK, feature: "improve", phase: "P5.5-A" },
       { id: "models", label: "Model", href: "models", icon: "◆", roles: WORK, feature: "models", phase: "P4.11-UI" },
-      { id: "predictions", label: "Predictions", href: "models/{target}?tab=score", target: "champion_model", icon: "▸", roles: WORK, feature: "predictions", phase: "P4.9-UI" },
+      { id: "predictions", label: "Predictions", href: "predictions", target: "project_model", icon: "▸", roles: WORK, feature: "predictions", phase: "P4.9-UI" },
       { id: "monitoring", label: "Monitoring", href: "monitoring", icon: "∿", roles: WORK, feature: "monitoring", phase: "P7.5-A" },
       { id: "decisions", label: "History", href: "decisions", icon: "✓", roles: WORK, feature: "decisions", phase: "P4.4-A" },
     ],

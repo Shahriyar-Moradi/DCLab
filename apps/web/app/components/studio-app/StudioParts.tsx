@@ -8,7 +8,8 @@ import { FlowBar } from "@/components/studio/FlowBar";
 import { Pill, type PillTone } from "@/components/studio/Pill";
 import { useProjectExperiments, useProjectRefs, useStudioProject } from "@/lib/application";
 import { STUDIO_BACKEND_FEATURES } from "@/lib/application/studio-navigation";
-import { buildFlow, flowRunStatuses } from "@/lib/application/studio-flow";
+import { useProjectGraph } from "@/lib/application/studio-data-hooks";
+import { buildFlow, flowRunStatuses, projectModelId } from "@/lib/application/studio-flow";
 import { ApiError } from "@/lib/infrastructure/api-client";
 
 /** "No backend, no element": an explicit empty state that names the prompt that ships it. */
@@ -54,6 +55,7 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
   const project = useStudioProject(projectId);
   const refs = useProjectRefs(projectId);
   const runs = useProjectExperiments(projectId);
+  const graph = useProjectGraph(projectId);
   const pathname = usePathname();
   const tab = useSearchParams().get("tab");
   if (project.isPending) return <p role="status">Loading project…</p>;
@@ -72,7 +74,7 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
     projectId, pathname, available: FLOW_AVAILABLE,
     refKinds: refs.data?.refs_initialized ? items.map((ref) => ref.ref_kind) : refs.data ? [] : null,
     runStatuses: flowRunStatuses(runs.data?.items, !!runs.data?.next_cursor), tab,
-    targets: { split_plan: targetOf("split_plan"), champion_model: targetOf("champion_model") },
+    targets: { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) },
   });
   return (
     <>

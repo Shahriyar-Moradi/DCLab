@@ -309,7 +309,7 @@ export function useBackingRun(projectId: string, kind: "split_plan" | "feature_r
 }
 
 function NotInGraph({ what }: { what: string }) {
-  return <Banner tone="warn">This {what} is not part of this project&apos;s graph window, or you cannot see it. The graph loads the newest experiments only; older nodes open from the Graph page&apos;s older window.</Banner>;
+  return <Banner tone="warn">This {what} is not among the newest runs of this project, or you cannot see it. The lineage page loads the newest runs first; older items open from its &ldquo;Show older runs&rdquo; button.</Banner>;
 }
 
 function NodeFacts({ node }: { node: StudioGraphNode }) {

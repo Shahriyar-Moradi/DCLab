@@ -108,7 +108,8 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
   await shot(page, "1-run");
   await link.click();
   await expect(page).toHaveURL(new RegExp(`/decisions\\?record=${recordId}`));
-  await expect(page.locator("#decision-drawer-title")).toContainText(recordId.slice(0, 8));
+  await expect(page.locator("#decision-drawer-title")).toBeVisible();
+  await expect(page.locator("aside.graph-drawer")).toContainText(recordId);
 
   // A hostile record parameter is ignored.
   await page.goto(`/projects/${projectId}/decisions?record=<script>alert(1)</script>`);

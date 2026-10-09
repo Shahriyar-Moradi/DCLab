@@ -1,12 +1,13 @@
 "use client";
 
 /** Score new data (P4.9-UI): typed /v1 upload (purpose scoring), create, poll and download. Every write carries the action's Idempotency-Key. */
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { v1Download, v1Get, v1Post, v1PostForm } from "@/lib/infrastructure/v1/client";
 import { isUuid } from "./command-search";
-import { isTerminal, pollDelay, safeDownloadId } from "./studio-scoring";
+import { isTerminal, parseSessionScorings, pollDelay, safeDownloadId, sessionStoreKey, type SessionScope, type SessionScoring } from "./studio-scoring";
+import { useSession } from "./session-provider";
 import { UploadedDatasetSchema } from "./studio-wizard-hooks";
 
 const nullableString = z.string().nullable().optional();
@@ -64,4 +65,40 @@ export async function downloadPredictions(prediction: StudioPrediction): Promise
   const id = safeDownloadId(prediction.output?.download_path, prediction.id);
   if (!id) throw new Error("The download link from the API is not a DCLab path, so it was not opened.");
   return v1Download("/v1/predictions/{prediction_id}/download", { params: { prediction_id: id }, accept: "text/csv", fallbackFilename: `predictions-${id}.csv` });
+}
+
+/** Several scorings at once (same cache entries as `usePrediction`), each polled until it finishes. Ids that are not UUIDs are not read. */
+export function usePredictionsById(ids: readonly string[]) {
+  return useQueries({
+    queries: ids.map((predictionId) => ({
+      queryKey: workspaceQueryKey("v1", "prediction", predictionId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => v1Get("/v1/predictions/{prediction_id}", PredictionSchema, { params: { prediction_id: predictionId }, signal }),
+      enabled: isUuid(predictionId),
+      retry: 1,
+      refetchInterval: (query: { state: { error: unknown; data?: StudioPrediction; dataUpdateCount: number } }) =>
+        query.state.error || isTerminal(query.state.data?.status) ? false : pollDelay(query.state.dataUpdateCount),
+    })),
+  });
+}
+
+/** The scorings started in this browser session, per model version (ids and file names only; the API has no list read yet). */
+export function readSessionScorings(scope: SessionScope, modelVersionId: string): SessionScoring[] {
+  try {
+    return parseSessionScorings(window.sessionStorage.getItem(sessionStoreKey(scope, modelVersionId)));
+  } catch {
+    return [];
+  }
+}
+export function writeSessionScorings(scope: SessionScope, modelVersionId: string, rows: SessionScoring[]): void {
+  try {
+    window.sessionStorage.setItem(sessionStoreKey(scope, modelVersionId), JSON.stringify(rows));
+  } catch {
+    /* storage can be blocked; the list then lives in memory only */
+  }
+}
+
+/** The signed-in person and the active workspace, which scope the session list; null until both are known (nothing is read or written then). */
+export function useScoringScope(): SessionScope | null {
+  const { user, activeWorkspaceId } = useSession();
+  return user && activeWorkspaceId ? { userId: user.id, workspaceId: activeWorkspaceId } : null;
 }

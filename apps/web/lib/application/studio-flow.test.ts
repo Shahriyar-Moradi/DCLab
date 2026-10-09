@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildFlow, flowRunStatuses, stepForPath, type FlowInput } from "./studio-flow.ts";
+import { buildFlow, flowRunStatuses, projectModelId, stepForPath, type FlowInput } from "./studio-flow.ts";
 
 const P = "11111111-1111-4111-8111-111111111111";
 const SPLIT = "22222222-2222-4222-8222-222222222222";
@@ -27,10 +27,10 @@ test("unknown reads give no state instead of a guess", () => {
 });
 
 test("steps whose page needs an id link only when the project has one", () => {
-  const steps = buildFlow({ ...base, targets: { split_plan: SPLIT, champion_model: MODEL } });
+  const steps = buildFlow({ ...base, targets: { split_plan: SPLIT, project_model: MODEL } });
   const href = Object.fromEntries(steps.map((s) => [s.id, s.href]));
   assert.equal(href.goal, `/projects/${P}/splits/${SPLIT}`);
-  assert.equal(href.predictions, `/projects/${P}/models/${MODEL}?tab=score`);
+  assert.equal(href.predictions, `/projects/${P}/predictions`);
   assert.equal(href.data, `/projects/${P}/data`);
   const none = buildFlow({ ...base, targets: { split_plan: "not-a-uuid" } });
   assert.equal(none.find((s) => s.id === "goal")?.href, null);
@@ -41,6 +41,7 @@ test("routes map to steps; History and unknown paths belong to none", () => {
   assert.equal(stepForPath(`/projects/${P}/pipeline/abc`, P), "experiments");
   assert.equal(stepForPath(`/projects/${P}/splits/${SPLIT}`, P), "goal");
   assert.equal(stepForPath(`/projects/${P}/models/${MODEL}`, P), "models");
+  assert.equal(stepForPath(`/projects/${P}/predictions`, P), "predictions");
   assert.equal(stepForPath(`/projects/${P}/decisions`, P), null);
   assert.equal(stepForPath("/projects/other/data", P), null);
 });
@@ -57,6 +58,16 @@ test("a partial run list never claims there is no completed run", () => {
 test("the score tab of a model is the Predictions step", () => {
   assert.equal(stepForPath(`/projects/${P}/models/${MODEL}`, P, "score"), "predictions");
   assert.equal(stepForPath(`/projects/${P}/models/${MODEL}`, P, "card"), "models");
-  const steps = buildFlow({ ...base, pathname: `/projects/${P}/models/${MODEL}`, tab: "score", targets: { split_plan: SPLIT, champion_model: MODEL } });
+  const steps = buildFlow({ ...base, pathname: `/projects/${P}/models/${MODEL}`, tab: "score", targets: { split_plan: SPLIT, project_model: MODEL } });
   assert.equal(steps.find((s) => s.id === "predictions")?.state, "current");
+});
+
+test("Predictions opens as soon as the project has any model; the model in use is preferred", () => {
+  const n = (id: string, refs: string[] = []) => ({ kind: "model_version", id, ref_kinds: refs });
+  const A = "44444444-4444-4444-8444-444444444444";
+  assert.equal(projectModelId([n(A), n(MODEL, ["champion_model"])]), MODEL);
+  assert.equal(projectModelId([n(A)]), A);
+  assert.equal(projectModelId([{ kind: "experiment", id: A }]), null);
+  assert.equal(projectModelId([n("not-a-uuid")]), null);
+  assert.equal(projectModelId(undefined), null);
 });

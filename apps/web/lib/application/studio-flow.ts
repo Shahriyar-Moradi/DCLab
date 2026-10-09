@@ -31,6 +31,7 @@ export function stepForPath(pathname: string, projectId: string, tab?: string | 
     case "experiments": case "pipeline": case "features": return "experiments";
     case "improve": return "improve";
     case "models": return tab === "score" ? "predictions" : "models";
+    case "predictions": return "predictions";
     case "monitoring": return "monitoring";
     default: return null;
   }
@@ -45,17 +46,17 @@ export type FlowInput = {
   refKinds: readonly string[] | null;
   /** Run statuses of the project, or null while unknown. */
   runStatuses: readonly string[] | null;
-  /** The `tab` query value of the current page (the score tab of a model is the Predictions step). */
+  /** The `tab` query value of the current page (the score tab of a model is also the Predictions step). */
   tab?: string | null;
   /** Ids behind the two steps whose page needs one; null = the project has none yet. */
-  targets: { split_plan?: string | null; champion_model?: string | null };
+  targets: { split_plan?: string | null; project_model?: string | null };
 };
 
 function hrefFor(id: FlowStepId, projectId: string, targets: FlowInput["targets"]): string | null {
   const base = `/projects/${projectId}`;
   switch (id) {
     case "goal": return isUuid(targets.split_plan) ? safeInternalHref(`${base}/splits/${targets.split_plan}`) : null;
-    case "predictions": return isUuid(targets.champion_model) ? safeInternalHref(`${base}/models/${targets.champion_model}?tab=score`) : null;
+    case "predictions": return isUuid(targets.project_model) ? safeInternalHref(`${base}/predictions`) : null;
     default: return safeInternalHref(`${base}/${id}`);
   }
 }
@@ -94,4 +95,10 @@ export function flowRunStatuses(items: ReadonlyArray<{ status: string }> | undef
   if (!items) return null;
   const statuses = items.map((item) => item.status);
   return hasMore && !statuses.includes("completed") ? null : statuses;
+}
+
+/** The model the Predictions step opens with: the model in use when the graph shows one, else the first model of the project; null = no model yet. */
+export function projectModelId(nodes: ReadonlyArray<{ kind: string; id: string; ref_kinds?: string[] }> | undefined): string | null {
+  const models = (nodes ?? []).filter((n) => n.kind === "model_version" && isUuid(n.id));
+  return (models.find((n) => (n.ref_kinds ?? []).includes("champion_model")) ?? models[0])?.id ?? null;
 }

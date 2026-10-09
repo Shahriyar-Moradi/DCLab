@@ -111,7 +111,7 @@ test("Data page: names only before a split, training-row profile after the first
   await expect(flow.getByRole("link", { name: "Goal & test design" })).toHaveAttribute("href", new RegExp(`/projects/${projectId}/splits/[0-9a-f-]{36}$`));
   await expect(flow.getByRole("link", { name: "Model" })).toBeVisible();
   const sidebarNav = page.getByRole("navigation", { name: "Studio" });
-  await expect(sidebarNav.getByRole("link", { name: "Predictions" })).toHaveAttribute("href", new RegExp(`/projects/${projectId}/models/[0-9a-f-]{36}\\?tab=score$`));
+  await expect(sidebarNav.getByRole("link", { name: "Predictions" })).toHaveAttribute("href", `/projects/${projectId}/predictions`);
   await sidebarNav.getByRole("link", { name: "Goal & test design" }).click();
   await expect(page.getByRole("heading", { name: "Goal & test design", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "How we test" })).toBeVisible();

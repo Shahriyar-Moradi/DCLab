@@ -76,7 +76,7 @@ function ModelPageInner() {
       <TabPanel idPrefix="model" id="version" active={usable && tab === "version"}>{usable ? <ModelInspector projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
       <TabPanel idPrefix="model" id="threshold" active={usable && tab === "threshold"}>{usable && tab === "threshold" ? <ThresholdTab projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
       <TabPanel idPrefix="model" id="card" active={usable && tab === "card"}>{usable && tab === "card" ? <ModelCard projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
-      <TabPanel idPrefix="model" id="score" active={usable && tab === "score"}>{usable ? <ScoreNewData projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
+      <TabPanel idPrefix="model" id="score" active={usable && tab === "score"}>{usable ? <ScoreNewData projectId={id} modelVersionId={modelId} modelLabel={model.data ? title : null} /> : null}</TabPanel>
     </>
   );
 }
