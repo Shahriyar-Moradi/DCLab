@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  actionRoute, answerLines, badgeText, comparableRunIds, disabledReason, evidenceLinks, inboxCompareHref, lookup, mapInboxError, questionHref, refVersionsFor, subjectLink, PROPOSED_BY_LABEL, type InboxItemLike,
+  actionRoute, answerLines, approvalNote, badgeText, comparableRunIds, disabledReason, evidenceLinks, inboxCompareHref, inboxTitle, lookup, mapInboxError, outcomeWords, questionHref, refVersionsFor, subjectLink, suggestedBy, INBOX_TABS, PROPOSED_BY_LABEL, type InboxItemLike,
 } from "./studio-inbox.ts";
 
 const P = "11111111-1111-4111-8111-111111111111";
@@ -106,5 +106,68 @@ test("428 ref_versions_required, owner_only (generic) and prototype-key lookups"
   assert.equal(lookup(PROPOSED_BY_LABEL, "jev", "x"), "AI reviewer");
   for (const key of ["__proto__", "constructor", "toString", "hasOwnProperty"]) assert.equal(lookup(PROPOSED_BY_LABEL, key, "fallback"), "fallback", key);
   assert.equal(lookup(PROPOSED_BY_LABEL, null, "fallback"), "fallback");
-  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "constructor", id: A }] }))[0].label, `constructor ${A.slice(0, 8)}`);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "constructor", id: A }] }))[0].label, "constructor");
+});
+
+test("evidence is named, never by a short id: runs by the caller's name, other kinds by kind", () => {
+  const links = evidenceLinks(item(), (id) => (id === A ? "Run 2" : "Run 3"));
+  assert.deepEqual(links.map((l) => l.label), ["Run 2", "Run 3", "AI agent run"]);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "decision_record", id: A }] }))[0].label, "History entry");
+  assert.equal(subjectLink(item(), () => "Run 2")!.label, "Run 2");
+  for (const link of evidenceLinks(item({ evidence_refs: [{ kind: "agent_run", id: B }, { kind: "semantic_answer", id: A }] }))) assert.doesNotMatch(link.label, /[0-9a-f]{8}/);
+});
+
+test("who suggested it: honest labels, access-token tools are never the assistant", () => {
+  assert.equal(suggestedBy("rule"), "Suggested by the rules");
+  assert.equal(suggestedBy("agent", "decision_proposal"), "Suggested by connected tool (access token)");
+  // A typed suggestion from an agent run: who started the run is unknown, so it is never "access token" nor "the assistant".
+  assert.equal(suggestedBy("agent", "agent_proposal"), "Suggested by an AI agent (review run)");
+  assert.equal(suggestedBy("assistant"), "Suggested by the assistant");
+  assert.equal(suggestedBy("jev"), "Suggested by AI reviewer");
+  assert.equal(suggestedBy("person"), "Suggested by a person");
+  assert.equal(suggestedBy("run"), "Raised by the run");
+  assert.equal(suggestedBy("future_kind"), "Suggested by future kind");
+  assert.equal(suggestedBy("__proto__"), "Suggested by proto");
+  assert.equal(suggestedBy(null), null);
+  assert.notEqual(PROPOSED_BY_LABEL.agent, PROPOSED_BY_LABEL.assistant);
+});
+
+test("titles are plain questions or sentences; unknown kinds are not hidden or guessed", () => {
+  const t = (over: object) => inboxTitle({ kind: "decision_proposal", subject: { kind: "experiment", id: A }, summary: "", status: "proposed", ...over } as Parameters<typeof inboxTitle>[0], "Run 3");
+  assert.equal(t({ decision_type: "champion_promoted" }), "Put this model in use?");
+  assert.equal(t({ decision_type: "__proto__" }), "Decision: proto");
+  assert.equal(t({ decision_type: "some_new_type" }), "Decision: some new type");
+  assert.equal(t({ kind: "agent_proposal", proposal_type: "SemanticReviewProposal" }), "A suggested column change");
+  assert.equal(t({ kind: "agent_proposal", proposal_type: "ImprovementActionProposal" }), "A suggested improvement");
+  assert.equal(t({ kind: "agent_proposal", proposal_type: "constructor" }), "A suggestion");
+  assert.equal(t({ kind: "question", summary: "Run needs a split confirmation" }), "Confirm how this run's test rows are chosen");
+  assert.equal(t({ kind: "question", summary: "Run needs a target column" }), "Choose the column this run predicts");
+  assert.equal(t({ kind: "run_finished", summary: "Run #3 completed" }), "Run 3 finished");
+  assert.equal(t({ kind: "run_finished", summary: "Run #3 failed" }), "Run 3 failed");
+  for (const type of ["ref_moved", "champion_promoted", "winner_locked", "split_plan_created", "ref_initialized"]) assert.doesNotMatch(t({ decision_type: type }), /champion|ref |holdout|proposal|decision point|record/i);
+});
+
+test("outcomes and approval notes say what happens, in plain words", () => {
+  assert.equal(outcomeWords("proposed"), "waiting for your decision");
+  assert.equal(outcomeWords("accepted"), "approved");
+  assert.equal(outcomeWords("applied"), "applied");
+  assert.equal(outcomeWords("reverted"), "undone");
+  assert.equal(outcomeWords("completed"), "finished");
+  assert.equal(outcomeWords("constructor"), "constructor");
+  const none = {};
+  assert.match(approvalNote(none, "ref_move_accept", "accept")!, /which version the project uses/);
+  assert.match(approvalNote(none, "decision_reject", "reject")!, /Nothing else changes/);
+  assert.equal(approvalNote(none, null, "accept"), null);
+  // Suggestion approvals say what the server does for that type, and nothing more.
+  const accept = (proposal_type: string) => approvalNote({ proposal_type }, "proposal_accept", "accept")!;
+  for (const type of ["ExperimentReviewProposal", "DatasetInvestigationProposal", "ImprovementActionProposal"]) assert.equal(accept(type), "Approving records that you read it; nothing changes.");
+  assert.match(accept("ExperimentPlanProposal"), /marks the plan accepted; a run uses it later/);
+  assert.match(accept("SemanticReviewProposal"), /starts a new run/);
+  assert.match(accept("ToolCallProposal"), /runs this action as you/);
+  assert.doesNotMatch(accept("constructor"), /starts|runs|applies/);
+  assert.doesNotMatch(approvalNote(none, "proposal_revert", "revert")!, /branch/);
+});
+
+test("tabs use the v7 names", () => {
+  assert.deepEqual(INBOX_TABS.map((x) => x.label), ["Needs your decision", "Applied automatically", "Done"]);
 });

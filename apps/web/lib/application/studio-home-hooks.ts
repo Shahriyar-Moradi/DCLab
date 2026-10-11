@@ -5,6 +5,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { v1Get } from "@/lib/infrastructure/v1/client";
+import { aiIsOff } from "./studio-home";
 
 const nullableString = z.string().nullable().optional();
 
@@ -57,4 +58,10 @@ export function useGovernance() {
     retry: false,
     staleTime: 60_000,
   });
+}
+
+/** True when AI is known to be switched off, false when known on, null while unknown (loading, or this role cannot read the settings). */
+export function useAiOff(): boolean | null {
+  const governance = useGovernance();
+  return governance.data ? aiIsOff(governance.data) : null;
 }

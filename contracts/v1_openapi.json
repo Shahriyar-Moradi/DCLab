@@ -876,6 +876,34 @@
         "successSchema": "OperatingPointsRead"
       }
     },
+    "/v1/experiments/{experiment_id}/verdict": {
+      "GET": {
+        "operationId": "read_experiment_verdict_v1_experiments__experiment_id__verdict_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "against",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentVerdictRead"
+      }
+    },
     "/v1/governance": {
       "GET": {
         "operationId": "read_governance_v1_governance_get",

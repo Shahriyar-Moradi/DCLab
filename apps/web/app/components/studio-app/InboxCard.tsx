@@ -7,37 +7,38 @@ import { Level, type TrustLevel } from "@/components/studio/Level";
 import { Pill } from "@/components/studio/Pill";
 import { STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { plainText, isUuid } from "@/lib/application/command-search";
-import { useProjectRefs } from "@/lib/application";
+import { useProjectRefs, useStudioProjects } from "@/lib/application";
+import { useAiOff } from "@/lib/application/studio-home-hooks";
 import { acceptRefProposal, resolveDecision, supersedeDecision, useDecisionDetail } from "@/lib/application/studio-compare-hooks";
 import { proposedMoves } from "@/lib/application/studio-compare";
-import { decideProposal, useInboxInvalidation, type StudioInboxItem } from "@/lib/application/studio-inbox-hooks";
+import { decideProposal, useInboxInvalidation, useRunNamer, type StudioInboxItem } from "@/lib/application/studio-inbox-hooks";
 import {
-  PROPOSED_BY_LABEL, actionRoute, answerLines, comparableRunIds, disabledReason, evidenceLinks, findAction, inboxCompareHref, lookup, mapInboxError, questionHref, refVersionsFor, subjectLink,
+  actionRoute, answerLines, approvalNote, comparableRunIds, disabledReason, evidenceLinks, findAction, inboxCompareHref, inboxTitle, lookup, mapInboxError, outcomeWords, questionHref, refVersionsFor, subjectLink, suggestedBy,
 } from "@/lib/application/studio-inbox";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 type Mode = "accept" | "reject" | "revert" | "supersede";
-const MODE_LABEL: Record<Mode, string> = { accept: "Approve", reject: "Reject", revert: "Revert", supersede: "Supersede" };
+const MODE_LABEL: Record<Mode, string> = { accept: "Approve", reject: "Reject", revert: "Undo", supersede: "Correct" };
 const DONE_TEXT: Record<Mode, string> = {
   accept: "Approved. The decision was recorded.", reject: "Rejected. The decision was recorded.",
-  revert: "Reverted. The rule's value is back in place.", supersede: "Corrected. A new record supersedes the old one.",
+  revert: "Undone. The rules' value is back in place.", supersede: "Corrected. A new History entry replaces the old one.",
 };
 
-function Answer({ title, tone, answer }: { title: string; tone: "det" | "ai"; answer: Record<string, unknown> | null | undefined }) {
+function Answer({ title, tone, answer, aiOff }: { title: string; tone: "det" | "ai"; answer: Record<string, unknown> | null | undefined; aiOff?: boolean | null }) {
   const lines = answerLines(answer);
   return (
     <div>
       <h4><Pill tone={tone}>{title}</Pill></h4>
       {lines.length ? (
         <dl className="kv">{lines.map((line, index) => <div key={`${index}:${line.key}`}><dt>{line.key}</dt><dd>{line.value}</dd></div>)}</dl>
-      ) : <p className="muted">{tone === "ai" ? "No AI answer is recorded (AI off or not asked)." : "No rule answer is recorded."}</p>}
+      ) : <p className="muted">{tone === "ai" ? (aiOff ? "AI is switched off, so there is no AI answer." : "No AI answer is recorded.") : "No rule answer is recorded."}</p>}
     </div>
   );
 }
 
 /** The write panel only mounts when a person starts an action, so cards do not fetch details for nothing. */
-function DecidePanel({ item, mode, keys, onClose, onDone }: { item: StudioInboxItem; mode: Mode; keys: ActionKeys; onClose: () => void; onDone: (text: string) => void }) {
+function DecidePanel({ item, title, mode, keys, onClose, onDone }: { item: StudioInboxItem; title: string; mode: Mode; keys: ActionKeys; onClose: () => void; onDone: (text: string) => void }) {
   const action = findAction(item, mode)!;
   const route = actionRoute(item, mode);
   const viaRefs = route === "ref_move_accept";
@@ -83,7 +84,7 @@ function DecidePanel({ item, mode, keys, onClose, onDone }: { item: StudioInboxI
         case "proposal_accept":
         case "proposal_reject":
         case "proposal_revert":
-          if (!isUuid(proposalId)) throw new Error("This item has no proposal to decide.");
+          if (!isUuid(proposalId)) throw new Error("This item has no suggestion to decide.");
           await decideProposal({ action: route === "proposal_accept" ? "accept" : route === "proposal_reject" ? "reject" : "revert", proposalId, rationale, key, refVersions: route === "proposal_accept" && versions ? versions : undefined });
           break;
       }
@@ -99,12 +100,12 @@ function DecidePanel({ item, mode, keys, onClose, onDone }: { item: StudioInboxI
   };
 
   return (
-    <form className="form" aria-label={`${MODE_LABEL[mode]} ${plainText(item.summary, 80)}`} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+    <form className="form" aria-label={`${MODE_LABEL[mode]} ${title}`} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <p className="muted">
-        {mode === "supersede" ? "A correction appends a new record; the old one stays, marked superseded." : mode === "revert" ? "Revert restores the rule's value by branching the run that used the AI value." : "This appends a record; nothing is edited."}
+        {approvalNote(item, route, mode) ?? "This is recorded in History."} Nothing recorded is edited.
         {needsReason ? " A reason is required." : " A reason is optional."}
       </p>
-      {needsRefs && (detail.isError || refs.isError) ? <Banner tone="warn">Could not read the versions currently in use. Reload and try again, or decide it from the project&apos;s History page.</Banner> : null}
+      {needsRefs && (detail.isError || refs.isError) ? <Banner tone="warn">Could not read the versions currently in use. Reload and try again, or decide it from the project&apos;s History.</Banner> : null}
       <label className="field"><span>Reason (recorded)</span><textarea rows={2} maxLength={2000} required={needsReason} value={reason} disabled={busy} onChange={(e) => setReason(e.target.value)} /></label>
       <div className="toolbar">
         <button type="button" className="btn" disabled={busy} onClick={onClose}>Back</button>
@@ -118,38 +119,54 @@ function DecidePanel({ item, mode, keys, onClose, onDone }: { item: StudioInboxI
 }
 
 /** Runs named by the item's own evidence; shown only when two or more exist (the compare view needs two). */
-function CompareLink({ item }: { item: StudioInboxItem }) {
+function CompareLink({ item, title }: { item: StudioInboxItem; title: string }) {
   const href = inboxCompareHref(item.project_id, comparableRunIds(item));
-  return href ? <Link className="btn" href={href}>See comparison<span className="sr-only"> for {plainText(item.summary, 80)}</span></Link> : null;
+  return href ? <Link className="btn" href={href}>See comparison<span className="sr-only"> for {title}</span></Link> : null;
 }
 
 export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; canDecide: boolean; onDone: (text: string) => void }) {
   const [mode, setMode] = useState<Mode | null>(null);
   // Idempotency keys live with the card (per action), so Back and reopen after a timeout reuse the key and replay.
   const keys = useRef(new ActionKeys(newIdempotencyKey)).current;
-  const subject = subjectLink(item);
-  const evidence = evidenceLinks(item);
+  const aiOff = useAiOff();
+  const projects = useStudioProjects();
+  const runName = useRunNamer(item.project_id);
+  const project = isUuid(item.project_id) ? projects.data?.find((p) => p.id === item.project_id) : undefined;
+  const subject = subjectLink(item, runName);
+  const evidence = evidenceLinks(item, runName);
+  const title = inboxTitle(item, item.subject.kind === "experiment" && isUuid(item.subject.id) ? runName(item.subject.id) : null);
+  const by = suggestedBy(item.proposed_by, item.kind);
+  const auto = item.tab === "applied_automatically";
+  // The AI panel is dropped only when AI is known off and nothing was recorded; a recorded AI answer is evidence and stays.
+  const showAi = !(aiOff === true && !item.ai_answer);
   const answered = item.rule_answer || item.ai_answer || item.kind === "agent_proposal";
   const buttons: Mode[] = (["accept", "reject", "revert", "supersede"] as const).filter((name) => findAction(item, name));
   const answerAction = findAction(item, "answer");
   const answerHref = answerAction ? questionHref(item) : null;
   const reasons = [...new Set(buttons.map((name) => disabledReason(item, name, canDecide)).filter((r): r is string => !!r))];
+  const notes = [...new Set(buttons.map((name) => approvalNote(item, actionRoute(item, name), name)).filter((n): n is string => !!n))];
+  const canUndo = !!findAction(item, "revert");
   return (
-    <article className="card" aria-label={plainText(item.summary, 120)}>
+    <article className="card" aria-label={title}>
       <h3>
-        {plainText(item.summary, 160)}
+        {title}
         <span className="sp">
-          {item.proposed_by ? <Pill tone={item.proposed_by === "rule" ? "det" : item.proposed_by === "person" || item.proposed_by === "run" ? "gray" : "ai"}>{lookup(PROPOSED_BY_LABEL, item.proposed_by, plainText(item.proposed_by, 24))}</Pill> : null}{" "}
-          <Pill tone={lookup(STATUS_TONE, item.status, "gray")}>{item.status.replaceAll("_", " ")}</Pill>
+          <Pill tone={lookup(STATUS_TONE, item.status, "gray")}>{outcomeWords(item.status)}</Pill>
           {typeof item.level === "number" && item.level >= 0 && item.level <= 3 ? <> <Level level={item.level as TrustLevel} /></> : null}
         </span>
       </h3>
-      {item.proposed_by === "agent" ? <p className="muted">From a connected tool; its text is not verified.</p> : null}
       <p className="muted">
-        {formatWhen(item.occurred_at)}
-        {item.decision_point_key ? <> · kind of decision <span className="mono">{plainText(item.decision_point_key, 60)}</span></> : null}
+        {project ? <>{plainText(project.name, 80)} · </> : null}{formatWhen(item.occurred_at)}
+        {item.decision_point_key ? <> · about {plainText(item.decision_point_key.replaceAll("_", " "), 60)}</> : null}
         {item.expires_at ? <> · expires {formatWhen(item.expires_at)}</> : null}
       </p>
+      {by ? (
+        <p>
+          <Pill tone={item.proposed_by === "rule" ? "det" : item.proposed_by === "person" || item.proposed_by === "run" ? "gray" : "ai"}>{by}</Pill>
+          {item.proposed_by === "agent" ? <span className="muted"> Its text is not verified.</span> : null}
+        </p>
+      ) : null}
+      {auto ? <p role="note"><b>Applied automatically.</b> {item.status === "reverted" ? "It was undone." : canUndo ? "Nobody approved it first. Undo puts the previous value back." : "Nobody approved it first. No undo is offered for this one here."}</p> : null}
       {subject || evidence.length ? (
         <p>
           <b>Evidence:</b>{" "}
@@ -159,25 +176,28 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
         </p>
       ) : null}
       {answered ? (
-        <div className="grid cols-2" aria-label="Rule answer beside AI answer">
-          <Answer title="Rule answer" tone="det" answer={item.rule_answer} />
-          <Answer title="AI answer (advisory)" tone="ai" answer={item.ai_answer} />
+        <div className={`grid ${showAi ? "cols-2" : ""}`} aria-label="What the rules say beside what the AI says">
+          <Answer title="What the rules say" tone="det" answer={item.rule_answer} />
+          {showAi ? <Answer title="What the AI says (advice only)" tone="ai" answer={item.ai_answer} aiOff={aiOff} /> : null}
         </div>
       ) : null}
       {item.answers_truncated ? <p className="muted">An answer was too large to show in full.</p> : null}
-      {mode ? <DecidePanel item={item} mode={mode} keys={keys} onClose={() => setMode(null)} onDone={(text) => { setMode(null); onDone(text); }} /> : (
-        <div className="toolbar">
-          {buttons.map((name) => {
-            const action = findAction(item, name)!;
-            return (
-              <button key={name} type="button" className={`btn ${name === "accept" ? "primary" : ""}`} disabled={!action.allowed || actionRoute(item, name) === null} onClick={() => setMode(name)}>
-                {MODE_LABEL[name]}<span className="sr-only"> {plainText(item.summary, 80)}</span>
-              </button>
-            );
-          })}
-          {answerHref ? <Link className="btn primary" href={answerHref}>Answer on the run page</Link> : null}
-          <CompareLink item={item} />
-        </div>
+      {mode ? <DecidePanel item={item} title={title} mode={mode} keys={keys} onClose={() => setMode(null)} onDone={(text) => { setMode(null); onDone(text); }} /> : (
+        <>
+          {notes.map((note) => <p key={note} className="muted">{note}</p>)}
+          <div className="toolbar">
+            {buttons.map((name) => {
+              const action = findAction(item, name)!;
+              return (
+                <button key={name} type="button" className={`btn ${name === "accept" ? "primary" : ""}`} disabled={!action.allowed || actionRoute(item, name) === null} onClick={() => setMode(name)}>
+                  {MODE_LABEL[name]}<span className="sr-only"> {title}</span>
+                </button>
+              );
+            })}
+            {answerHref ? <Link className="btn primary" href={answerHref}>Answer on the run page</Link> : null}
+            <CompareLink item={item} title={title} />
+          </div>
+        </>
       )}
       {reasons.map((reason) => <p key={reason} className="muted" role="note">{reason}</p>)}
     </article>

@@ -4350,6 +4350,225 @@
         "title": "ExperimentPage",
         "type": "object"
       },
+      "ExperimentVerdictRead": {
+        "properties": {
+          "against_experiment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Against Experiment Id"
+          },
+          "against_is_parent": {
+            "default": false,
+            "title": "Against Is Parent",
+            "type": "boolean"
+          },
+          "alpha": {
+            "default": 0.05,
+            "title": "Alpha",
+            "type": "number"
+          },
+          "basis": {
+            "const": "locked_cv_fold_evaluations",
+            "default": "locked_cv_fold_evaluations",
+            "title": "Basis",
+            "type": "string"
+          },
+          "comparisons": {
+            "default": 1,
+            "description": "T: comparisons the margin is corrected for (one click).",
+            "title": "Comparisons",
+            "type": "integer"
+          },
+          "comparisons_on_plan": {
+            "default": 0,
+            "description": "Experiments on the split plan that picked (or are picking) a winner, these included.",
+            "title": "Comparisons On Plan",
+            "type": "integer"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "higher_is_better",
+                  "lower_is_better"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "experiment_id": {
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "fold_scores": {
+            "items": {
+              "$ref": "#/components/schemas/VerdictFoldRead"
+            },
+            "title": "Fold Scores",
+            "type": "array"
+          },
+          "folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K, the paired folds.",
+            "title": "Folds"
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "t_{1-0.05/T, K-1} x se_NB (metric units).",
+            "title": "Margin"
+          },
+          "mean_difference": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Difference"
+          },
+          "message": {
+            "description": "One plain sentence.",
+            "title": "Message",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The shared ranking metric.",
+            "title": "Metric"
+          },
+          "minimum_effect": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "δ_min (metric units).",
+            "title": "Minimum Effect"
+          },
+          "multiplicity_note": {
+            "default": "The margin covers this one comparison (T = 1). Trying several families in turn on the same folds multiplies the comparisons, and the best of several tries looks a little better than it is: comparisons_on_plan says how many experiments on this split plan picked a winner.",
+            "title": "Multiplicity Note",
+            "type": "string"
+          },
+          "outcome_scope": {
+            "const": "cv",
+            "default": "cv",
+            "title": "Outcome Scope",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why: no_change | inside_margin | below_minimum_effect (within_the_noise); a not_comparable reason (different_split_plan, different_metric, different_folds, too_few_folds, constant_difference, missing_locked_folds, not_finished, evidence_not_locked, no_winner, no_parent, same_experiment).",
+            "title": "Reason"
+          },
+          "sign_convention": {
+            "default": "mean_difference and each fold's difference are this experiment minus the other one, in the metric's own units. For lower_is_better metrics (errors) a negative difference is an improvement; margin and minimum_effect are magnitudes in the same units.",
+            "title": "Sign Convention",
+            "type": "string"
+          },
+          "split_plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split Plan Id"
+          },
+          "standard_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Nadeau-Bengio corrected: sd_d x sqrt(1/K + 1/(K-1)) (metric units).",
+            "title": "Standard Error"
+          },
+          "t_quantile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Quantile"
+          },
+          "test_set_looks": {
+            "$ref": "#/components/schemas/SplitPlanLooksRead"
+          },
+          "verdict": {
+            "enum": [
+              "beats_the_noise",
+              "within_the_noise",
+              "worse",
+              "not_comparable"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "verdict",
+          "message",
+          "test_set_looks"
+        ],
+        "title": "ExperimentVerdictRead",
+        "type": "object"
+      },
       "ExperimentWinner": {
         "description": "The locked winner, from ``evaluation_metrics`` (never the cached result).",
         "properties": {
@@ -10445,6 +10664,62 @@
         "title": "SpendRead",
         "type": "object"
       },
+      "SplitPlanLooksRead": {
+        "description": "How many times the split plan's final test set has (or may have) been looked at.",
+        "properties": {
+          "against_look": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The other experiment is look k on the plan.",
+            "title": "Against Look"
+          },
+          "counting": {
+            "default": "conservative: every experiment on this split plan that locked a winner or scored the final test set counts as one look, failed or cancelled ones included; ordered by the time the winner was locked",
+            "title": "Counting",
+            "type": "string"
+          },
+          "experiment_look": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This experiment is look k on the plan.",
+            "title": "Experiment Look"
+          },
+          "looks_on_plan": {
+            "description": "Experiments on the split plan counted as a look.",
+            "title": "Looks On Plan",
+            "type": "integer"
+          },
+          "split_plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split Plan Id"
+          }
+        },
+        "required": [
+          "looks_on_plan"
+        ],
+        "title": "SplitPlanLooksRead",
+        "type": "object"
+      },
       "StaleReason": {
         "description": "Ref ``ref_kind`` points at ``expected``; the node was built from ``actual``.",
         "properties": {
@@ -10661,6 +10936,37 @@
           "error"
         ],
         "title": "V1ErrorEnvelope",
+        "type": "object"
+      },
+      "VerdictFoldRead": {
+        "properties": {
+          "against": {
+            "description": "The other experiment's winner on the fold (metric units).",
+            "title": "Against",
+            "type": "number"
+          },
+          "difference": {
+            "description": "experiment minus against (metric units).",
+            "title": "Difference",
+            "type": "number"
+          },
+          "experiment": {
+            "description": "This experiment's winner on the fold (metric units).",
+            "title": "Experiment",
+            "type": "number"
+          },
+          "fold_number": {
+            "title": "Fold Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fold_number",
+          "experiment",
+          "against",
+          "difference"
+        ],
+        "title": "VerdictFoldRead",
         "type": "object"
       },
       "VisualizationRead": {
@@ -15050,6 +15356,127 @@
           }
         },
         "summary": "Read Operating Points",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/experiments/{experiment_id}/verdict": {
+      "get": {
+        "description": "Does this experiment beat the other one beyond noise? Computed from the LOCKED per-fold\ncross-validation scores of both winners on the shared ranking metric (``outcome_scope: \"cv\"``;\nnever a final-evaluation value): paired fold differences on the same folds, Nadeau-Bengio\ncorrected standard error, a one-sided margin ``t_{1-0.05/T, K-1} x se_NB`` with ``T = 1`` (one\ncomparison; ``comparisons_on_plan`` says how many experiments on the split plan picked a winner)\nand a minimum effect. ``verdict``: ``beats_the_noise | within_the_noise | worse | not_comparable``\nwith ``reason`` and a plain ``message``; differences in the metric's own units (``sign_convention``).\n``test_set_looks``: how many experiments on the split plan count as a look at its final test set\n(conservative) and which look each of the two is; counts only. Service tokens get the same body.\nAnother workspace's experiment (either id): 404.",
+        "operationId": "read_experiment_verdict_v1_experiments__experiment_id__verdict_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The experiment to compare with (default: the parent).",
+            "in": "query",
+            "name": "against",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The experiment to compare with (default: the parent).",
+              "title": "Against"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentVerdictRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Experiment Verdict",
         "tags": [
           "v1"
         ]

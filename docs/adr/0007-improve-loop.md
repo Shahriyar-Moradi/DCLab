@@ -1,8 +1,8 @@
 # ADR 0007 — The improve loop
 
-**Status:** Proposed; **engine build gated on the founder's choice A / B / C**
-(§ What v1 is really worth, Q1). The technical design below is the design for
-option A and is built only if the founder accepts A.  
+**Status:** Option **B chosen by the founder on 2026-10-12** (guided Improve over existing
+pieces, no loop engine: P5.5-B only). The technical design below is the design for
+option A, kept on file; it is built only if the founder later chooses A.  
 **Date:** 2026-10-08 (Revision 1: 2026-10-09; Revision 2: 2026-10-09)  
 **Prompt:** P5.3-A (design only; under option A: P5.4-A1a/A1b/A2/A3 implement,
 P6.5-A the optional agent proposer, P5.5-A / A5-A the UX and chat, R2-A the

@@ -48,7 +48,7 @@ const REF_LABEL: Record<string, string> = {
 };
 
 const FLOW_STEPS = ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring"] as const;
-const FLOW_AVAILABLE: ReadonlySet<string> = new Set(FLOW_STEPS.filter((id) => STUDIO_BACKEND_FEATURES[id] === true));
+export const FLOW_AVAILABLE: ReadonlySet<string> = new Set(FLOW_STEPS.filter((id) => STUDIO_BACKEND_FEATURES[id] === true));
 
 /** Project band above every project page: name, the project's steps (flow bar), and the versions in use behind a details row. */
 export function ProjectHeader({ projectId, children }: { projectId: string; children: ReactNode }) {

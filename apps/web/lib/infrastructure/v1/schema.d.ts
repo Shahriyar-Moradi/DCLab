@@ -655,6 +655,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/experiments/{experiment_id}/verdict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Experiment Verdict
+         * @description Does this experiment beat the other one beyond noise? Computed from the LOCKED per-fold
+         *     cross-validation scores of both winners on the shared ranking metric (``outcome_scope: "cv"``;
+         *     never a final-evaluation value): paired fold differences on the same folds, Nadeau-Bengio
+         *     corrected standard error, a one-sided margin ``t_{1-0.05/T, K-1} x se_NB`` with ``T = 1`` (one
+         *     comparison; ``comparisons_on_plan`` says how many experiments on the split plan picked a winner)
+         *     and a minimum effect. ``verdict``: ``beats_the_noise | within_the_noise | worse | not_comparable``
+         *     with ``reason`` and a plain ``message``; differences in the metric's own units (``sign_convention``).
+         *     ``test_set_looks``: how many experiments on the split plan count as a look at its final test set
+         *     (conservative) and which look each of the two is; counts only. Service tokens get the same body.
+         *     Another workspace's experiment (either id): 404.
+         */
+        get: operations["read_experiment_verdict_v1_experiments__experiment_id__verdict_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/governance": {
         parameters: {
             query?: never;
@@ -3112,6 +3141,111 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
+        /** ExperimentVerdictRead */
+        ExperimentVerdictRead: {
+            /** Against Experiment Id */
+            against_experiment_id?: string | null;
+            /**
+             * Against Is Parent
+             * @default false
+             */
+            against_is_parent: boolean;
+            /**
+             * Alpha
+             * @default 0.05
+             */
+            alpha: number;
+            /**
+             * Basis
+             * @default locked_cv_fold_evaluations
+             * @constant
+             */
+            basis: "locked_cv_fold_evaluations";
+            /**
+             * Comparisons
+             * @description T: comparisons the margin is corrected for (one click).
+             * @default 1
+             */
+            comparisons: number;
+            /**
+             * Comparisons On Plan
+             * @description Experiments on the split plan that picked (or are picking) a winner, these included.
+             * @default 0
+             */
+            comparisons_on_plan: number;
+            /** Direction */
+            direction?: ("higher_is_better" | "lower_is_better") | null;
+            /**
+             * Experiment Id
+             * Format: uuid
+             */
+            experiment_id: string;
+            /** Fold Scores */
+            fold_scores?: components["schemas"]["VerdictFoldRead"][];
+            /**
+             * Folds
+             * @description K, the paired folds.
+             */
+            folds?: number | null;
+            /**
+             * Margin
+             * @description t_{1-0.05/T, K-1} x se_NB (metric units).
+             */
+            margin?: number | null;
+            /** Mean Difference */
+            mean_difference?: number | null;
+            /**
+             * Message
+             * @description One plain sentence.
+             */
+            message: string;
+            /**
+             * Metric
+             * @description The shared ranking metric.
+             */
+            metric?: string | null;
+            /**
+             * Minimum Effect
+             * @description δ_min (metric units).
+             */
+            minimum_effect?: number | null;
+            /**
+             * Multiplicity Note
+             * @default The margin covers this one comparison (T = 1). Trying several families in turn on the same folds multiplies the comparisons, and the best of several tries looks a little better than it is: comparisons_on_plan says how many experiments on this split plan picked a winner.
+             */
+            multiplicity_note: string;
+            /**
+             * Outcome Scope
+             * @default cv
+             * @constant
+             */
+            outcome_scope: "cv";
+            /**
+             * Reason
+             * @description Why: no_change | inside_margin | below_minimum_effect (within_the_noise); a not_comparable reason (different_split_plan, different_metric, different_folds, too_few_folds, constant_difference, missing_locked_folds, not_finished, evidence_not_locked, no_winner, no_parent, same_experiment).
+             */
+            reason?: string | null;
+            /**
+             * Sign Convention
+             * @default mean_difference and each fold's difference are this experiment minus the other one, in the metric's own units. For lower_is_better metrics (errors) a negative difference is an improvement; margin and minimum_effect are magnitudes in the same units.
+             */
+            sign_convention: string;
+            /** Split Plan Id */
+            split_plan_id?: string | null;
+            /**
+             * Standard Error
+             * @description Nadeau-Bengio corrected: sd_d x sqrt(1/K + 1/(K-1)) (metric units).
+             */
+            standard_error?: number | null;
+            /** T Quantile */
+            t_quantile?: number | null;
+            test_set_looks: components["schemas"]["SplitPlanLooksRead"];
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "beats_the_noise" | "within_the_noise" | "worse" | "not_comparable";
+        };
         /**
          * ExperimentWinner
          * @description The locked winner, from ``evaluation_metrics`` (never the cached result).
@@ -5550,6 +5684,34 @@ export interface components {
             workspace: components["schemas"]["BudgetPeriodRead"][];
         };
         /**
+         * SplitPlanLooksRead
+         * @description How many times the split plan's final test set has (or may have) been looked at.
+         */
+        SplitPlanLooksRead: {
+            /**
+             * Against Look
+             * @description The other experiment is look k on the plan.
+             */
+            against_look?: number | null;
+            /**
+             * Counting
+             * @default conservative: every experiment on this split plan that locked a winner or scored the final test set counts as one look, failed or cancelled ones included; ordered by the time the winner was locked
+             */
+            counting: string;
+            /**
+             * Experiment Look
+             * @description This experiment is look k on the plan.
+             */
+            experiment_look?: number | null;
+            /**
+             * Looks On Plan
+             * @description Experiments on the split plan counted as a look.
+             */
+            looks_on_plan: number;
+            /** Split Plan Id */
+            split_plan_id?: string | null;
+        };
+        /**
          * StaleReason
          * @description Ref ``ref_kind`` points at ``expected``; the node was built from ``actual``.
          */
@@ -5656,6 +5818,26 @@ export interface components {
         /** V1ErrorEnvelope */
         V1ErrorEnvelope: {
             error: components["schemas"]["V1Error"];
+        };
+        /** VerdictFoldRead */
+        VerdictFoldRead: {
+            /**
+             * Against
+             * @description The other experiment's winner on the fold (metric units).
+             */
+            against: number;
+            /**
+             * Difference
+             * @description experiment minus against (metric units).
+             */
+            difference: number;
+            /**
+             * Experiment
+             * @description This experiment's winner on the fold (metric units).
+             */
+            experiment: number;
+            /** Fold Number */
+            fold_number: number;
         };
         /** VisualizationRead */
         VisualizationRead: {
@@ -8496,6 +8678,87 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperatingPointsRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_experiment_verdict_v1_experiments__experiment_id__verdict_get: {
+        parameters: {
+            query?: {
+                /** @description The experiment to compare with (default: the parent). */
+                against?: string | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentVerdictRead"];
                 };
             };
             /** @description Bad request (error envelope) */

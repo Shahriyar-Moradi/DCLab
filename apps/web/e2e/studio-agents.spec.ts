@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 
-/** P4.8-UI: /agents Connect and Service tokens (create, copy once, revoke) on the real backend. */
+/** P4.8-UI / V7-A6: /agents Connect and Access tokens (create, copy once, revoke) on the real backend, in plain words. */
 const EMAIL = "business-admin-a@verification.invalid";
 const PASSWORD = "VerificationOnly123!";
 const AXE = path.resolve(__dirname, "../node_modules/axe-core/axe.min.js");
@@ -43,17 +43,24 @@ test("Agents page: Connect snippets, token create (secret once, never stored), r
   await page.getByRole("button", { name: "Copy .mcp.json example" }).click();
   await expect(page.getByRole("button", { name: "Copy .mcp.json example" })).toHaveText("Copied");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('"DCLAB_MCP_WRITE_ENABLED"');
-  await page.getByRole("tab", { name: "Python SDK", exact: true }).click();
+  await page.getByRole("tab", { name: "Python", exact: true }).click();
   await expect(page.getByLabel("Python SDK example", { exact: true })).toContainText("DCLabClient");
-  await page.getByRole("tab", { name: "CLI", exact: true }).click();
+  await page.getByRole("tab", { name: "Terminal", exact: true }).click();
   await expect(page.getByLabel("CLI example", { exact: true })).toContainText("dclab-cli login");
-  await page.getByRole("tab", { name: "REST API (/v1)" }).click();
+  await expect(page.getByLabel("CLI example", { exact: true })).toContainText("dclab-cli predict create");
+  await page.getByRole("tab", { name: "Web API", exact: true }).click();
   await expect(page.getByText("Idempotency-Key", { exact: true })).toBeVisible();
+  // Honest claims: what a token can do, what it cannot, and no old jargon or over-claims.
+  await expect(page.getByText("cannot accept a decision or choose a model for use").first()).toBeVisible();
+  const connectText = await page.locator("main").innerText();
+  expect(connectText).not.toMatch(/service token|scopes?\b|governance|raw rows|Tool registry|Agent catalog|Planned in/i);
   await shot(page, "agents-connect-light");
   expect(await axeSeriousOrCritical(page)).toEqual([]);
 
   // Service tokens: create, secret once, list, revoke.
-  await page.getByRole("tab", { name: "Service tokens" }).click();
+  await page.getByRole("tab", { name: "Access tokens" }).click();
+  await expect(page.getByText("What it can do").first()).toBeVisible();
+  await expect(page.getByLabel(/Propose decisions/)).toBeVisible();
   const name = `e2e-token-${Date.now()}`;
   await page.getByLabel("Name", { exact: true }).fill(name);
   await page.getByLabel("Current password").fill(PASSWORD);
@@ -75,7 +82,7 @@ test("Agents page: Connect snippets, token create (secret once, never stored), r
   await secretBox.getByRole("button", { name: "Done" }).click();
   await expect(page.getByText(secret)).toHaveCount(0);
   await page.reload();
-  await page.getByRole("tab", { name: "Service tokens" }).click();
+  await page.getByRole("tab", { name: "Access tokens" }).click();
   await expect(page.getByText(secret)).toHaveCount(0);
   await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
 
@@ -86,21 +93,27 @@ test("Agents page: Connect snippets, token create (secret once, never stored), r
   await shot(page, "agents-tokens-list-light");
   expect(await axeSeriousOrCritical(page)).toEqual([]);
 
-  // Empty states name the phase.
-  await page.getByRole("tab", { name: "Tool registry" }).click();
-  await expect(page.getByText("Planned in A2-UI.").first()).toBeVisible();
-  await page.getByRole("tab", { name: "Agent catalog" }).click();
-  await expect(page.getByText("Planned in P6.8-UI.")).toBeVisible();
+  // Unbuilt tabs are hidden, not shown as "planned".
+  await expect(page.getByRole("tab", { name: "Tool registry" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Agent catalog" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Agent runs" })).toHaveCount(0);
 
   // Dark theme.
   await page.emulateMedia({ colorScheme: "dark" });
-  await page.getByRole("tab", { name: "Connect: MCP · SDK · CLI · API" }).click();
+  await page.getByRole("tab", { name: "Use DCLab from code" }).click();
   await shot(page, "agents-connect-dark");
   expect(await axeSeriousOrCritical(page)).toEqual([]);
 
+
+  // Mobile: no horizontal page scroll.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/agents");
+  await expect(page.getByRole("heading", { level: 1, name: "Connect" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
   // Old location keeps working.
   await page.goto("/app/settings");
-  await expect(page.getByText("Service tokens").first()).toBeVisible();
+  await expect(page.getByText("Access tokens").first()).toBeVisible();
 });
 
 test("Agents page: clients get the forbidden page, unknown sub-paths 404", async ({ page }) => {

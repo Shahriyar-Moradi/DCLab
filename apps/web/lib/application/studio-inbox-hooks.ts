@@ -9,6 +9,9 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { z } from "zod";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { v1Get, v1Post } from "@/lib/infrastructure/v1/client";
+import { runOrdinals } from "./studio-names";
+import { runRef } from "./studio-model";
+import { useProjectExperiments } from "./studio-hooks";
 import { INBOX_BADGE_REFETCH_MS, type InboxTabId } from "./studio-inbox";
 
 const nullableString = z.string().nullable().optional();
@@ -114,4 +117,13 @@ export function useInboxInvalidation() {
       void client.invalidateQueries({ queryKey: workspaceQueryKey("v1", name) });
     }
   };
+}
+
+/** "Run 3" for a run of this project (the short id when the run list is only partly loaded or does not hold the run). */
+export function useRunNamer(projectId: string | null | undefined): (experimentId: string) => string {
+  const runs = useProjectExperiments(projectId ?? undefined);
+  const items = runs.data?.items ?? [];
+  const ordinals = runOrdinals(items);
+  const partial = !runs.data || !!runs.data.next_cursor;
+  return (experimentId) => runRef(ordinals, partial, experimentId) ?? "A run";
 }
