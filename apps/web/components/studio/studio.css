@@ -165,7 +165,7 @@
 .studio .lvl.l3 { color: var(--ok-text); border-color: var(--ok); }
 
 /* tables */
-.studio .tbl { overflow-x: auto; }
+.studio .tbl { overflow-x: auto; position: relative; } /* position: screen-reader-only text inside a wide table stays inside it instead of widening the page */
 .studio .tbl.card { padding: 10px 14px; }
 .studio table { width: 100%; border-collapse: collapse; font-size: 0.97rem; font-variant-numeric: tabular-nums; }
 .studio th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }

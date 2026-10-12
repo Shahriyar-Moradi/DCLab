@@ -7,7 +7,7 @@
  * observed classes, leakage exclusions) is answered by the API's own 422 and shown as it comes back.
  * Compare shows cross-validation numbers only: the schema in the hooks has no final test set field.
  */
-import { isUuid } from "./command-search.ts";
+import { isUuid, plainText } from "./command-search.ts";
 import { mapWizardError, type PlainError } from "./studio-wizard.ts";
 
 export const COMPARE_MIN = 2;
@@ -225,13 +225,13 @@ export function branchProblem(error: unknown): PlainError {
   const code = typeof body?.error?.code === "string" ? body.error.code : "";
   const details = body?.error?.details ?? {};
   if (code === "invalid_change_set" || code === "new_root_required") {
-    const reason = typeof details.reason === "string" ? details.reason : "";
-    const where = typeof details.path === "string" ? details.path : "";
-    const message = typeof body?.error?.message === "string" ? body.error.message : "";
+    const reason = typeof details.reason === "string" ? plainText(details.reason, 80) : "";
+    const where = typeof details.path === "string" ? plainText(details.path, 80) : "";
+    const message = typeof body?.error?.message === "string" ? plainText(body.error.message, 300) : "";
     return { title: "This change was refused", detail: [message, reason && `Reason: ${reason}`, where && `At: ${where}`].filter(Boolean).join(" "), fixable: true };
   }
   if (code === "experiment_not_branchable" || (status === 409 && code.includes("branch"))) {
-    return { title: "You cannot try a change on this run yet", detail: typeof body?.error?.message === "string" ? body.error.message : "Only a finished run with a chosen best model can be used as a starting point.", fixable: false };
+    return { title: "You cannot try a change on this run yet", detail: typeof body?.error?.message === "string" ? plainText(body.error.message, 300) : "Only a finished run with a chosen best model can be used as a starting point.", fixable: false };
   }
   return mapWizardError(error);
 }

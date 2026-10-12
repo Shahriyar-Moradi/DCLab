@@ -62,7 +62,7 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
       { id: "data", label: "Data", href: "data", icon: "▤", roles: WORK, feature: "data", phase: "P4.1-C" },
       { id: "goal", label: "Goal & test design", href: "splits/{target}", target: "split_plan", icon: "◎", roles: WORK, feature: "goal", phase: "P4.3-A" },
       { id: "experiments", label: "Experiments", href: "experiments", icon: "⚗", roles: WORK, feature: "experiments", phase: "P4.1-A" },
-      { id: "improve", label: "Improve", href: "improve", icon: "↗", roles: WORK, feature: "improve", phase: "P5.5-A" },
+      { id: "improve", label: "Improve", href: "improve", icon: "↗", roles: WORK, feature: "improve", phase: "P5.5-B" },
       { id: "models", label: "Model", href: "models", icon: "◆", roles: WORK, feature: "models", phase: "P4.11-UI" },
       { id: "predictions", label: "Predictions", href: "predictions", target: "project_model", icon: "▸", roles: WORK, feature: "predictions", phase: "P4.9-UI" },
       { id: "monitoring", label: "Monitoring", href: "monitoring", icon: "∿", roles: WORK, feature: "monitoring", phase: "P7.5-A" },
