@@ -37,6 +37,7 @@ DECISION_TYPES = (
     "decision_point_resolved",
     "proposal_reverted",
     "operating_point_chosen",
+    "scoring_schedule_changed",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
 DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
@@ -54,10 +55,14 @@ DECISION_OPERATING_POINT_CHOSEN = "operating_point_chosen"
 # Written only by their owning service (the ProblemSpec lock path, the operating-point
 # service), never via the generic ``record()`` / ``supersede()``.
 SERVICE_ONLY_DECISION_TYPES = RULE_ONLY_DECISION_TYPES | {"problem_spec_locked", DECISION_OPERATING_POINT_CHOSEN}
+# A person saving the project's weekly scoring schedule: written only by
+# ``scoring_schedule_service.save_schedule``, never recorded or corrected generically.
+DECISION_SCORING_SCHEDULE_CHANGED = "scoring_schedule_changed"
 # Phase 6 reserves these for agent proposals and AI decision points (ADR 0008 §7);
 # only their owning services (P6.6-A and later) write them.
 RESERVED_DECISION_TYPES = frozenset(
-    {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted"}
+    {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted",
+     DECISION_SCORING_SCHEDULE_CHANGED}
 )
 # Accepted rows of these types exist only together with their ref move
 # (``project_ref_service.move_ref``); they are never corrected in place.
@@ -326,6 +331,7 @@ DecisionType = Literal[
     "decision_point_resolved",
     "proposal_reverted",
     "operating_point_chosen",
+    "scoring_schedule_changed",
 ]
 
 _UNTRUSTED = (

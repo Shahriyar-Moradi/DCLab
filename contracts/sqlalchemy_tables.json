@@ -70,6 +70,8 @@
   "prompt_releases",
   "r3_runs",
   "runtime_environments",
+  "scoring_schedule_runs",
+  "scoring_schedules",
   "semantic_decision_answers",
   "service_tokens",
   "simulation_runs",

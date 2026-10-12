@@ -4368,6 +4368,54 @@
    ],
    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
   },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/scoring-schedule": {
+   "about": "Every week on the chosen day and hour (UTC) DCLab scores the newest file you uploaded for scoring since the last run, with the model in use approved for scoring.",
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "recent_runs": [
+    {
+     "batch_prediction_id": null,
+     "created_at": "2026-10-19T09:00:04Z",
+     "id": "5b0e3c1a-7f2d-4e8b-9c61-2d4f8a1b3e90",
+     "input_dataset_id": null,
+     "message": "Nothing scored: no new file was uploaded for scoring since the last run.",
+     "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "outcome": "skipped_no_new_file",
+     "planned_for": "2026-10-19T09:00:00Z",
+     "reason_code": null
+    },
+    {
+     "batch_prediction_id": "84886b60-18ba-40a1-a73b-e9849ee76c8e",
+     "created_at": "2026-10-12T09:00:03Z",
+     "id": "8c2d4e6f-1a3b-4c5d-8e7f-9a0b1c2d3e4f",
+     "input_dataset_id": "d2a3b364-b20e-4ba0-af89-fcb69fc23d8c",
+     "message": "Scored the newest file uploaded for scoring; the result is this week's list.",
+     "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "outcome": "queued",
+     "planned_for": "2026-10-12T09:00:00Z",
+     "reason_code": null
+    }
+   ],
+   "schedule": {
+    "created_at": "2026-10-10T07:30:00Z",
+    "created_by_user_id": null,
+    "enabled": true,
+    "hour_utc": 9,
+    "id": "3e9a1f2b-6c4d-4a8e-b7f0-1d2c3b4a5e6f",
+    "last_planned_for": "2026-10-19T09:00:00Z",
+    "next_planned_for": "2026-10-26T09:00:00Z",
+    "owner_can_score": true,
+    "timezone": "UTC",
+    "updated_at": "2026-10-10T07:30:00Z",
+    "updated_by_user_id": null,
+    "warning": null,
+    "weekday": 0,
+    "weekday_name": "Monday"
+   },
+   "status": "on",
+   "status_message": null
+  },
   "GET /v1/proposals": {
    "items": [
     {
@@ -4586,6 +4634,12 @@
     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
    },
    "tool": "list_releases"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "get_scoring_schedule"
   }
  ]
 }

@@ -35,14 +35,15 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `GET/POST /v1/projects/{id}/refs/{kind}` (POST = If-Match move) | — | project header ref badges; Data page "Make current" (dataset ref); "Make champion" | dataset ref move done P4.1-C; champion planned P4.4-A |
 | Decisions timeline | `GET/POST /v1/projects/{id}/decisions`, `GET /v1/decisions/{id}` | `list_decisions`, `record_decision` | Decisions tab | planned P4.4-A |
 | Accept / reject / supersede | `POST /v1/decisions/{id}/accept|reject|supersede` | `accept_proposal` | decision card actions | planned P4.4-A |
-| Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI; `saved_format` (`package_v1` / `legacy_quarantined`, P7.1-A) is API-only until the P7.5-A Package & integrity tab; `release` (approval of the model in use, P7.2-A) is API-only until the "Approved for scoring" tab |
-| Approved for scoring (model releases) | `GET /v1/projects/{project_id}/releases` (read only; written by `POST /v1/projects/{project_id}/refs/{ref_kind}` with `champion_model` = "Put this model in use"; tokens get no approver id) | `list_releases` | "Put this model in use" (existing) writes it; list shown in a later "Approved for scoring" tab | API + MCP done P7.2-A; screen planned (P7.5-A rollback) |
+| Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI; `saved_format` (`package_v1` / `legacy_quarantined`, P7.1-A) is API-only until the P7.5-A Package & integrity tab; `release` (approval of the model in use, P7.2-A) is shown on the model page Summary ("Approved for scoring" line, V7-B2-UI) |
+| Approved for scoring (model releases) | `GET /v1/projects/{project_id}/releases` (read only; written by `POST /v1/projects/{project_id}/refs/{ref_kind}` with `champion_model` = "Put this model in use"; tokens get no approver id) | `list_releases` | `/projects/[id]/models` → "Approved for scoring" tab (list newest first, "Approve for scoring", "Go back to this model", both through `POST /v1/projects/{project_id}/refs/{ref_kind}` with `champion_model`); model page Summary "Approved for scoring" line (`GET /v1/model-versions/{model_version_id}` `release`); Predictions "Scored with" (`GET /v1/predictions/{prediction_id}` `release`) | API + MCP done P7.2-A; screen done V7-B2-UI |
 
 ## New in Phase 4 (use and trust the model)
 
 | Capability | `/v1` operation(s) | MCP tool | Studio screen | Status |
 | --- | --- | --- | --- | --- |
 | Score new data with a model | `POST /v1/model-versions/{id}/predictions`, `GET /v1/predictions/{id}`, `…/download` | `predict` | model page "Score new data" + download | shipped P4.9-A, P4.9-UI |
+| Weekly scheduled scoring | `GET /v1/projects/{project_id}/scoring-schedule` (schedule or null, status on / off / paused_by_platform, newest 10 weeks), `PUT /v1/projects/{project_id}/scoring-schedule` (people with ML-write only; weekday + hour in UTC, `enabled`; writes a `scoring_schedule_changed` History entry), `GET /v1/projects/{project_id}/scoring-schedule/runs` (cursor); `GET /v1/predictions/{prediction_id}` carries `scheduled` / `scheduled_for` | `get_scoring_schedule` (read-only) | Predictions screen "weekly schedule; this week's list" (the list is the existing prediction download) | backend done (migration 0079, worker tick); screen planned |
 | Core trust checks (5) | `GET /v1/experiments/{id}/findings` | `get_findings` | findings panel on every experiment | planned P4.10-A / P4.10-UI |
 | Model card | `GET /v1/model-versions/{id}/card` | `get_model_card` | model page "Card" tab, printable | planned P4.11-UI (API + MCP shipped in P4.11-A) |
 | Dataset column profile | `GET /v1/datasets/{id}/profile` | `inspect_dataset` | Data page `/projects/[id]/data`: Columns & roles (rule role vs role used, training-row statistics), Leakage audit (with `GET /v1/experiments/{id}/findings`); New run target dropdown | done P4.1-C |
@@ -67,7 +68,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Agent trust levels (R3) | P6.8-A | P6.8-UI (Agents & tools → Agent catalog) |
 | Governance | P6.11-A (shipped) | P6.11-UI (`/governance`) |
 | Business Outcomes | P7.6-A | P7.6-A (`/outcomes`) |
-| Per-row reasons | P7.7-A | Outcomes list, Models → Batch predictions |
+| Per-row reasons | P7.7-A (done, API-only): `reason_1`..`reason_3` appended to the file of `GET /v1/predictions/{prediction_id}/download`; `reasons` record (`available`, `method`, `additive`, `top_k`, why unavailable) on `GET /v1/predictions/{prediction_id}`; no MCP change (agents never get the file) | Outcomes list, Models → Batch predictions (planned) |
 | Notifications, webhooks | P8.8-A | Settings → Notifications, Integrations |
 | Releases, batch prediction | P7.2-A | P7.5-A |
 | MLflow mirror | P7.3-A | P7.3-A (link + `tracking_degraded` badge on model page) |

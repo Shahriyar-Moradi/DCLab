@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,6 +30,7 @@ from app.db.models import (
     MlJob,
     ModelRelease,
     ModelVersion,
+    ScoringScheduleRun,
     User,
 )
 from app.domain.batch_predictions import (
@@ -37,12 +39,16 @@ from app.domain.batch_predictions import (
     PREDICTION_FAILED,
     PREDICTION_QUEUED,
     PREDICTION_RUNNING,
+    REASONS_NOT_RECORDED,
+    REASONS_TURNED_OFF,
     RELEASE_MISMATCH,
+    SCHEDULE_OWNER_NOT_ALLOWED,
     SCORING_FAILED,
     TERMINAL_PREDICTION_STATUSES,
     UNSUPPORTED_MODEL,
     BatchPredictionOutput,
     BatchPredictionRead,
+    BatchPredictionReasons,
 )
 from app.domain.data_plane import PREDICTIONS_TYPE
 from app.domain.errors import BatchPredictionError, IdentityError
@@ -52,6 +58,7 @@ from app.domain.execution_requests import (
     REQUEST_FAILED,
     REQUEST_RUNNING,
     SOURCE_API,
+    SOURCE_SYSTEM,
 )
 from app.domain.ml_jobs import (
     HANDLER_MODELS_BATCH_PREDICT,
@@ -101,9 +108,13 @@ def create_batch_prediction(
     output_format: str = "csv",
     before_commit: Callable[[BatchPrediction], None] | None = None,
     initiated_by_service_token_id: UUID | None = None,
+    scheduled_run_id: UUID | None = None,
 ) -> BatchPrediction:
     """Queue one scoring of ``dataset_id`` by ``model_version_id``. Commits.
 
+    ``scheduled_run_id`` (``scoring_schedule_service`` only) marks a weekly scheduled scoring:
+    it needs the model in use approved for scoring (409 ``release_required`` otherwise, never an
+    unapproved model) and records ``source_surface=system`` and the run id on the request.
     Raises ``IdentityError`` (403), ``BatchPredictionError`` / ``ExperimentRequestError``
     (404/409/422) and ``RunQuotaExceededError`` (429).
     """
@@ -137,19 +148,23 @@ def create_batch_prediction(
     # P7.2-A: scoring with the model in use carries its approval; any other model scores
     # as before with no release (approval is never claimed for it).
     release = current_release(db, workspace_id=workspace_id, project_id=model_version.project_id)
+    if scheduled_run_id is not None and (release is None or release.model_version_id != model_version.id):
+        raise BatchPredictionError(
+            "release_required", "scheduled scoring needs the model in use, approved for scoring", status_code=409)
     prediction_id = uuid4()
     request = create_execution_request(
         db,
         workspace_id=workspace_id,
         project_id=model_version.project_id,
         operation=OPERATION_MODEL_BATCH_PREDICT,
-        source_surface=SOURCE_API,
+        source_surface=SOURCE_API if scheduled_run_id is None else SOURCE_SYSTEM,
         requested_by_user_id=actor.id,
         initiated_by_service_token_id=initiated_by_service_token_id,
         request_spec={
             "dataset_id": str(dataset.id),
             "model_version_id": str(model_version.id),
             "output_format": output_format,
+            **({} if scheduled_run_id is None else {"scoring_schedule_run_id": str(scheduled_run_id)}),
         },
     )
     job = create_ml_job(
@@ -194,6 +209,22 @@ def _require_read(db: Session, actor: User, workspace_id: UUID) -> None:
         raise IdentityError("not authorized for this workspace", status_code=403)
 
 
+def _reasons(db: Session, row: BatchPrediction) -> BatchPredictionReasons | None:
+    """P7.7-A: what the predictions file holds about per-row reasons (None until completed);
+    the worker records it in the request's result summary."""
+
+    if row.status != PREDICTION_COMPLETED:
+        return None
+    request = _request_for(db, row)
+    summary = request.result_summary if request is not None and isinstance(request.result_summary, dict) else {}
+    if isinstance(summary.get("reasons"), dict):
+        try:
+            return BatchPredictionReasons.model_validate(summary["reasons"])
+        except ValidationError:
+            logger.warning("batch prediction %s has an unreadable reasons record", row.id)
+    return BatchPredictionReasons(available=False, unavailable_reason=REASONS_NOT_RECORDED)
+
+
 def batch_prediction_read(
     db: Session, *, actor: User, workspace_id: UUID, prediction_id: UUID
 ) -> BatchPredictionRead | None:
@@ -216,6 +247,8 @@ def batch_prediction_read(
         )
     release = _scoped(db, ModelRelease, workspace_id, row.model_release_id)
     current = current_release(db, workspace_id=workspace_id, project_id=row.project_id) if release else None
+    slot = db.scalar(select(ScoringScheduleRun.planned_for).where(
+        ScoringScheduleRun.workspace_id == workspace_id, ScoringScheduleRun.batch_prediction_id == row.id))
     return BatchPredictionRead(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -232,11 +265,14 @@ def batch_prediction_read(
         decision_threshold=row.decision_threshold,
         contract_check=row.contract_check,
         output=output,
+        reasons=_reasons(db, row),
         error_code=row.error_code,
         error_message=row.error_message,
         created_at=row.created_at,
         started_at=row.started_at,
         completed_at=row.completed_at,
+        scheduled=slot is not None,
+        scheduled_for=slot.astimezone(UTC) if slot is not None else None,
     )
 
 
@@ -285,6 +321,25 @@ def _mark_failed(db: Session, row: BatchPrediction, code: str, message: str, con
     db.flush()
 
 
+def _recheck_scheduled(db: Session, row: BatchPrediction) -> None:
+    """A weekly scheduled scoring (it has a ``scoring_schedule_runs`` row) runs only while its
+    approval is still the model in use and the person it acts as can still score; otherwise it
+    fails before anything is loaded. Scoring by hand keeps the checks above only."""
+
+    from app.engine.serving.batch_scoring import ScoringError
+
+    scheduled = db.scalar(select(ScoringScheduleRun.id).where(
+        ScoringScheduleRun.workspace_id == row.workspace_id, ScoringScheduleRun.batch_prediction_id == row.id))
+    if scheduled is None:
+        return
+    current = current_release(db, workspace_id=row.workspace_id, project_id=row.project_id)
+    if row.model_release_id is None or current is None or current.id != row.model_release_id:
+        raise ScoringError(RELEASE_MISMATCH, "the model in use changed before this scheduled run started")
+    person = db.get(User, row.requested_by_user_id) if row.requested_by_user_id is not None else None
+    if person is None or not person.is_active or not can_perform_ml_write(db, person, row.workspace_id):
+        raise ScoringError(SCHEDULE_OWNER_NOT_ALLOWED, "the person who set up this schedule can no longer score")
+
+
 def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] | None) -> tuple[Any, Any, int, str]:
     """(ScoredFrame, ScoringSpec, rows_in, saved format) for this row. Raises ``ScoringError``."""
 
@@ -317,6 +372,7 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
                 or manifest is None or manifest.content_digest != release.package_manifest_digest
                 or artifact is None or saved_format(artifact.extra_metadata) != release.saved_format):
             raise ScoringError(RELEASE_MISMATCH, mismatch)
+    _recheck_scheduled(db, row)
     if experiment is None or candidate is None or artifact is None or artifact.artifact_type != "model":
         raise ScoringError(UNSUPPORTED_MODEL, message)
     result = experiment.result if isinstance(experiment.result, dict) else {}
@@ -368,7 +424,13 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
             raise ScoringError(SCORING_FAILED, "the input file could not be read as a table") from exc
     if on_heartbeat is not None:
         on_heartbeat()
-    scored = score_frame(frame, spec, loaded.pipeline, on_progress=on_heartbeat)
+    from app.config import get_settings
+
+    # P7.7-A: per-row reasons are computed after the scores, from the same loaded model and rows.
+    settings = get_settings()
+    scored = score_frame(frame, spec, loaded.pipeline, on_progress=on_heartbeat,
+                         reasons=settings.batch_reasons_enabled,
+                         reasons_deadline_seconds=settings.batch_reasons_deadline_seconds)
     return scored, spec, int(len(frame)), loaded.saved_format
 
 
@@ -424,6 +486,9 @@ def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[
     row.completed_at = now
     request = _request_for(db, row)
     if request is not None:
+        from app.engine.explain import unavailable_summary
+
+        reasons = scored.reasons or unavailable_summary(REASONS_TURNED_OFF)
         request.status = REQUEST_COMPLETED
         request.completed_at = now
         request.result_summary = {
@@ -431,6 +496,8 @@ def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[
             "rows_in": row.rows_in,
             "rows_out": row.rows_out,
             "model_format": saved_format,
+            "reasons_method": reasons["method"] or "unavailable",  # P7.7-A
+            "reasons": reasons,
         }
     db.commit()
 

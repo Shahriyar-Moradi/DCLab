@@ -1,6 +1,7 @@
-"""The catalog's tool definitions: the 17 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
-the MCP-only ``get_operating_points`` (P5.2-A), the MCP-only ``list_releases`` (P7.2-A) and the MCP-only
-``accept_proposal`` hand-off) and the 7 write tools (proposals)."""
+"""The catalog's tool definitions: the 18 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
+the MCP-only ``get_operating_points`` (P5.2-A), the MCP-only ``list_releases`` (P7.2-A), the MCP-only
+``get_scoring_schedule`` (weekly scoring) and the MCP-only ``accept_proposal`` hand-off) and the 7 write
+tools (proposals)."""
 
 from __future__ import annotations
 
@@ -113,6 +114,13 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           "Studio.", r.ListReleasesInput, ("GET /v1/projects/{project_id}/releases",),
           ("app.services.model_release_service.list_releases",), r._releases_fetch, r._releases_shape,
           surfaces=frozenset({"mcp"})),
+    _read("get_scoring_schedule", "A project's weekly scoring schedule, read-only: on / off / paused by the "
+          "platform, weekday and hour (UTC), next and last slot, whether the person it acts as can still score, "
+          "and the newest handled weeks (queued with the week's prediction, or why nothing was scored). Only a "
+          "person turns it on or off, in DCLab Studio.", r.ScoringScheduleInput,
+          ("GET /v1/projects/{project_id}/scoring-schedule",),
+          ("app.services.scoring_schedule_service.schedule_state",), r._scoring_schedule_fetch,
+          r._scoring_schedule_shape, surfaces=frozenset({"mcp"})),
     _read("get_prediction", "Batch prediction: status, row counts, feature-contract check (required / "
           "missing / ignored columns), error code; never predicted rows or storage locations.", r.PredictionInput,
           ("GET /v1/predictions/{prediction_id}",), ("app.services.batch_prediction_service.batch_prediction_read",),

@@ -68,6 +68,9 @@ OPERATING_POINT_KEYS = ("threshold", "tp", "fp", "fn", "tn", "precision", "recal
                         "what_this_means")
 OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked from many thresholds); never a "
                   "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
+SCHEDULE_NOTE = ("Read-only: only a person turns weekly scoring on or off, in DCLab Studio. Each week it scores the "
+                 "newest file uploaded for scoring with the model in use approved for scoring; it never retrains "
+                 "and never fetches data.")
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 
@@ -304,6 +307,30 @@ def _release(r: Any) -> dict[str, Any]:
         "saved_format": r.saved_format, "package_manifest_digest": r.package_manifest_digest,
         "is_current": r.is_current, "rationale": untrusted(rationale),
     }
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _sid(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _scoring_schedule(state: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``_scoring_schedule_shape``: codes, slots and ids
+    only (no people, no free text)."""
+
+    s = state.schedule
+    schedule = s and {"id": str(s.id), "weekday": s.weekday, "weekday_name": s.weekday_name, "hour_utc": s.hour_utc,
+                      "timezone": s.timezone, "enabled": s.enabled, "next_planned_for": _iso(s.next_planned_for),
+                      "last_planned_for": _iso(s.last_planned_for), "owner_can_score": s.owner_can_score}
+    runs = [{"id": str(r.id), "planned_for": r.planned_for.isoformat(), "outcome": r.outcome,
+             "reason_code": r.reason_code, "batch_prediction_id": _sid(r.batch_prediction_id),
+             "model_version_id": _sid(r.model_version_id), "model_release_id": _sid(r.model_release_id),
+             "input_dataset_id": _sid(r.input_dataset_id)} for r in state.recent_runs[:LIST_LIMIT]]
+    return {"project_id": str(state.project_id), "status": state.status, "schedule": schedule, "recent_runs": runs,
+            "note": SCHEDULE_NOTE}
 
 
 def _governance(g: Any) -> dict[str, Any]:
@@ -608,6 +635,11 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
                     "releases": [_release(r) for r in page.items[:LIST_LIMIT]]}
         return run(call)
 
+    def get_scoring_schedule(project_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            return _scoring_schedule(api.scoring_schedules.get(uuid_arg(project_id, "project_id")))
+        return run(call)
+
     def inspect_governance() -> CallToolResult:
         def call() -> dict[str, Any]:
             return _governance(api.governance.get())
@@ -735,6 +767,10 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
              "model version, previous approval, when, saved format, package manifest digest, whether it is current, "
              "and the person's reason as untrusted text (never who). Read-only: only a person puts a model in use, "
              "in DCLab Studio.")
+        tool(get_scoring_schedule, read, "A project's weekly scoring schedule, read-only: on / off / paused by the "
+             "platform, weekday and hour (UTC), next and last slot, whether the person it acts as can still score, "
+             "and the newest handled weeks (queued with the week's prediction, or why nothing was scored). Only a "
+             "person turns it on or off, in DCLab Studio.")
         tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
              "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(get_impact, read, "Downstream closure of one graph node: which specs, datasets, split plans, recipes, "

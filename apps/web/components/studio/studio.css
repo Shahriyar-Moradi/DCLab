@@ -187,6 +187,11 @@
 .studio .composer { display: grid; grid-template-columns: 1fr auto; gap: 12px; border: 1px solid var(--line-strong); border-radius: 14px; padding: 12px; background: var(--surface); box-shadow: var(--shadow); }
 .studio .composer textarea { border: none; background: none; resize: vertical; min-height: 64px; font: inherit; font-size: 1rem; color: var(--ink); padding: 6px; }
 .studio .composer .acts { display: grid; align-content: end; }
+/* "Approved for scoring" list (V7-B2-UI) */
+.studio .approvals { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.studio .approvals > li { padding-top: 12px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.studio .approvals > li:first-child { padding-top: 0; border-top: 0; }
+.studio .approvals p { margin: 4px 0; }
 .studio .events { display: grid; border-left: 2px solid var(--line); margin: 0 0 0 8px; padding: 0; list-style: none; }
 .studio .ev { position: relative; padding: 0 0 18px 20px; font-size: 0.98rem; line-height: 1.5; }
 .studio .ev:last-child { padding-bottom: 4px; }

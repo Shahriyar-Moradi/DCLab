@@ -158,7 +158,10 @@ def download_prediction(
     """The completed predictions file: one row per input row (``row_number`` 1 = the
     first data row, plus the entity column when the run had one). Binary:
     ``probability`` and ``label`` at the locked threshold; multiclass:
-    ``probability_<class>`` and ``label``; regression: ``prediction``. Not completed:
+    ``probability_<class>`` and ``label``; regression: ``prediction``. Then, when per-row
+    reasons are on, ``reason_1``..``reason_3``: the input columns that moved the model's
+    score most for that row, with the direction (what the model used, not causes in the
+    world; see ``reasons`` on the prediction read). Not completed:
     ``409 prediction_not_ready``."""
 
     try:

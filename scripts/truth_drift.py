@@ -83,6 +83,11 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     # P4.9-A batch predictions.
     ("BatchPrediction", "BatchPredictionRead"),
     ("BatchPredictionOutput", "BatchPredictionOutput"),
+    # Weekly scheduled scoring.
+    ("ScoringScheduleState", "ScoringScheduleState"),
+    ("ScoringSchedule", "ScoringScheduleRead"),
+    ("ScoringScheduleRun", "ScoringScheduleRunRead"),
+    ("ScoringScheduleRunPage", "ScoringScheduleRunPage"),
     # P4.10-A trust-check findings.
     ("ExperimentFindings", "ExperimentFindingsRead"),
     ("ExperimentFinding", "ExperimentFindingRead"),

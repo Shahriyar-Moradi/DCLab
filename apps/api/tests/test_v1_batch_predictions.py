@@ -10,6 +10,7 @@ proves the pre-pipeline transforms (here a datetime -> epoch action) are replaye
 from __future__ import annotations
 
 import io
+import re
 from uuid import UUID, uuid4
 
 import numpy as np
@@ -18,7 +19,10 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
+from app.config import get_settings
 from app.db.models import Artifact, BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
+from app.domain.batch_predictions import REASON_METHODS
+from app.engine.explain import REASON_COLUMNS
 from app.engine.lab.auto_prepare import build_preprocessor, engineer_features
 from app.engine.serving.batch_scoring import ScoringError, prepare_features, score_frame, scoring_spec
 from app.engine.serving.model_package import read_package, sha256_hex
@@ -124,6 +128,19 @@ def _download(client, setup, prediction_id: str, headers=None) -> pd.DataFrame: 
     return pd.read_csv(io.BytesIO(response.content), float_precision="round_trip")
 
 
+def _assert_reason_names(out: pd.DataFrame, features: list[str]) -> None:
+    """Every reason names one of the model's input columns (never an encoded column) and
+    says the direction; none shows a number from the row."""
+
+    texts = [text for text in out[list(REASON_COLUMNS)].to_numpy().ravel() if isinstance(text, str)]
+    assert texts
+    for text in texts:
+        name = re.match(r"^(.+?)(?::| =) ", text)
+        assert name and name.group(1) in features, text
+        assert re.search(r", (raised|lowered) the (model's score|predicted value|predicted class's)", text), text
+        assert "__" not in text and not re.search(r"\d\.\d", text), text
+
+
 def _holdout(experiment: Experiment) -> pd.DataFrame:
     """The run's own (single) holdout scoring, keyed by the raw source row."""
 
@@ -214,6 +231,15 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     mine = out.set_index(out["row_number"] - 1).loc[holdout.index]
     np.testing.assert_allclose(mine["probability"], holdout["probability"].astype(float), rtol=0, atol=1e-9)
     assert (mine["label"].to_numpy() == holdout["y_pred"].astype(int).to_numpy()).all()
+    # P7.7-A: per-row reasons appended after every existing column, in the file's own column
+    # names; the read and the request summary say how they were made (no row values there).
+    assert list(out.columns)[-3:] == list(REASON_COLUMNS)
+    reasons = done["reasons"]
+    assert reasons["available"] is True and reasons["top_k"] == 3 and reasons["rows_explained"] == len(frame)
+    assert reasons["method"] in REASON_METHODS and reasons["additive"] is (reasons["method"] != "occlusion")
+    summary = db.get(ExecutionRequest, job.execution_request_id).result_summary
+    assert summary["reasons_method"] == reasons["method"] and summary["reasons"] == reasons
+    _assert_reason_names(out, features)
 
     # A finished prediction is frozen in PostgreSQL.
     with pytest.raises(DBAPIError, match="immutable"):
@@ -278,6 +304,19 @@ def test_regression_scoring_parquet_and_transient_failure(client, db_session, se
     holdout = _holdout(experiment)
     mine = out.set_index(out["row_number"] - 1).loc[holdout.index]
     np.testing.assert_allclose(mine["prediction"], holdout["y_pred"].astype(float), rtol=0, atol=1e-9)
+    assert done["reasons"]["available"] is True and list(out.columns)[-3:] == list(REASON_COLUMNS)
+    _assert_reason_names(out, experiment.result["best_single"]["features"])
+
+    # P7.7-A: reasons turned off -> the same columns as before and a read that says so.
+    with monkeypatch.context() as off_switch:
+        off_switch.setattr(get_settings(), "batch_reasons_enabled", False)
+        off_id = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+        assert _work(db, off_id).status == "completed"
+    off = client.get(f"/v1/predictions/{off_id}", headers=_h(setup)).json()
+    assert off["reasons"]["available"] is False and off["reasons"]["method"] is None
+    assert off["reasons"]["unavailable_reason"] == "per-row reasons are turned off on this server"
+    off_out = _download(client, setup, off_id)
+    assert list(off_out.columns) == list(out.columns)[:-3]
 
     # A transient worker error is retried by the queue, then fails with generic text.
     def storage_down(*_args, **_kwargs):
@@ -316,6 +355,14 @@ def test_multiclass_scoring_maps_labels_back(client, db_session, setup):  # noqa
     mine = out.set_index(out["row_number"] - 1).loc[holdout.index]
     assert (mine["label"].to_numpy() == holdout["y_pred"].to_numpy()).all()
     np.testing.assert_allclose(mine[columns].max(axis=1), holdout["probability"].astype(float), atol=1e-9)
+    texts = [text for text in out[list(REASON_COLUMNS)].to_numpy().ravel() if isinstance(text, str)]
+    assert texts and all("the predicted class's" in text for text in texts)
+    # A scoring finished before P7.7-A recorded nothing about reasons: the read says so.
+    request = db.get(ExecutionRequest, db.get(BatchPrediction, UUID(prediction_id)).execution_request_id)
+    request.result_summary = {k: v for k, v in request.result_summary.items() if k not in {"reasons", "reasons_method"}}
+    db.commit()
+    legacy = client.get(f"/v1/predictions/{prediction_id}", headers=_h(setup)).json()["reasons"]
+    assert legacy["available"] is False and legacy["unavailable_reason"].startswith("not recorded")
 
 
 # --- P7.1-A: a model saved before the package format is quarantined ------------------------

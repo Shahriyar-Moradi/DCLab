@@ -62,9 +62,11 @@ def _concrete(path: str, fill: str = UUID_ZERO) -> str:
 
 
 def _call(client, method: str, path: str, **kwargs):
-    if method == "POST":
+    if method in ("POST", "PUT"):
         body = {}
-        if path.endswith("/split-confirmation"):
+        if path.endswith("/scoring-schedule"):
+            body = {"weekday": 0, "hour_utc": 9}
+        elif path.endswith("/split-confirmation"):
             body = {"answer": "keep_rule_split"}
         elif "confirmation" in path:
             body = {"target_column": "y"}
@@ -169,6 +171,9 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/model-versions/{model_version_id}/predictions",
         "GET /v1/predictions/{prediction_id}",
         "GET /v1/predictions/{prediction_id}/download",
+        "GET /v1/projects/{project_id}/scoring-schedule",
+        "PUT /v1/projects/{project_id}/scoring-schedule",
+        "GET /v1/projects/{project_id}/scoring-schedule/runs",
         "GET /v1/service-tokens",
         "POST /v1/service-tokens",
         "POST /v1/service-tokens/{token_id}/revoke",
@@ -205,7 +210,7 @@ def test_openapi_documents_the_envelope_on_every_v1_operation():
             for status in ("400", "401", "403", "404", "422", "500"):
                 ref = responses[status]["content"]["application/json"]["schema"]["$ref"]
                 assert ref.endswith("/V1ErrorEnvelope"), (method, path, status)
-            if method == "post":
+            if method in ("post", "put"):
                 headers = {p["name"] for p in operation["parameters"] if p["in"] == "header"}
                 assert "Idempotency-Key" in headers, path
                 assert "409" in responses, path

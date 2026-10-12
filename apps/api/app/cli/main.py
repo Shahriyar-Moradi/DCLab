@@ -474,6 +474,7 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
 
     from app.config import get_settings, mark_worker_process
     from app.services.ml_job_service import process_next_job
+    from app.services.scoring_schedule_service import run_scoring_schedule_tick
 
     mark_worker_process()  # P7.1-A: this process may load stored models
     settings = get_settings()
@@ -485,7 +486,18 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
         else get_settings().ml_job_poll_seconds
     )
     claimed_by = f"{socket.gethostname()}:{os.getpid()}"[:128]
+    next_tick = 0.0
     while True:
+        if time.monotonic() >= next_tick:  # weekly scheduled scoring: queues jobs this loop then runs
+            next_tick = time.monotonic() + max(1.0, float(settings.scoring_schedule_tick_seconds))
+            db = _session()
+            try:
+                run_scoring_schedule_tick(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"scoring schedule tick: {exc}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
         db = _session()
         try:
             job = process_next_job(db, claimed_by=claimed_by)

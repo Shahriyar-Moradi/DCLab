@@ -127,6 +127,13 @@ class Settings(BaseSettings):
     # only: tune per image if a limit breaks a library import there.
     model_probe_memory_bytes: int = 6 << 30
     model_probe_timeout_seconds: int = 120
+    # P7.7-A: batch scoring appends per-row reasons (reason_1..reason_3: the input columns that
+    # moved the model's score for the row) to the predictions file. Off: no reason columns and
+    # the prediction read says reasons are turned off. A failure to explain never fails scoring.
+    batch_reasons_enabled: bool = True
+    # Wall-clock limit of the reasons step (seconds); it stops at a chunk / column boundary and
+    # the read notes how many rows were explained (none in time: reasons unavailable).
+    batch_reasons_deadline_seconds: float = 120.0
     # Durable ML jobs. Production default persists a row and returns; a worker
     # process claims with FOR UPDATE SKIP LOCKED. `inline` / `thread` are local
     # adapters only — they must be set explicitly and are not the default.
@@ -134,6 +141,10 @@ class Settings(BaseSettings):
     ml_job_max_attempts: int = 3
     ml_job_heartbeat_timeout_seconds: float = 300.0
     ml_job_poll_seconds: float = 1.0
+    # Weekly scheduled scoring: the worker checks for due schedules every tick. false is the
+    # platform kill switch: schedules still save, every run waits ("paused by the platform").
+    scoring_schedule_enabled: bool = True
+    scoring_schedule_tick_seconds: float = 60.0
 
 
 def is_production_env(settings: Settings) -> bool:

@@ -1,6 +1,7 @@
 /** Score new data (P4.9-UI): pure view-model logic. Every sentence is built from API fields of the prediction read. */
 import { isUuid, plainText } from "./command-search.ts";
 import { modelName } from "./studio-names.ts";
+import { scoringApproval, type ReleaseSummaryLike } from "./studio-releases.ts";
 import { envelope, mapWizardError, type PlainError } from "./studio-wizard.ts";
 
 export type ContractView = {
@@ -76,6 +77,11 @@ const BY_CODE: Record<string, PlainError> = {
   feature_contract_failed: { title: "The file does not match what the model needs", detail: "See the column check for the missing columns.", fixable: true },
   prediction_not_ready: { title: "The predictions are not ready", detail: "The file can be downloaded once scoring has completed.", fixable: false },
   scoring_failed: { title: "Scoring did not finish", detail: "Try again with the same file.", fixable: false },
+  release_mismatch: {
+    title: "The saved model no longer matches the model that was approved",
+    detail: "Nothing was scored. Ask someone who can change this workspace to approve a different model on the Model screen, or to train this one again, then score the file again.",
+    fixable: false,
+  },
   not_found: { title: "Not found", detail: "The model version or the file is not in this workspace.", fixable: false },
   idempotency_key_conflict: { title: "That request was already used with different content", detail: "Reload the page and try again.", fixable: false },
 };
@@ -83,7 +89,7 @@ const BY_CODE: Record<string, PlainError> = {
 /** Backend refusal -> plain language for upload, create and download. Falls back to the wizard's mapping. */
 export function mapScoringError(error: unknown): PlainError {
   const { code } = envelope((error as { body?: unknown } | null)?.body);
-  const known = BY_CODE[code];
+  const known = Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : undefined;
   if (known) return known;
   const status = (error as { status?: unknown } | null)?.status;
   if (status === 403) return { title: "You cannot score files here", detail: "Scoring needs a role that can run ML work in this workspace.", fixable: false };
@@ -96,7 +102,7 @@ export function failureError(code: string | null | undefined, message: string | 
   const key = code?.toLowerCase() ?? "";
   if (key === "feature_contract_failed") return { ...BY_CODE.feature_contract_failed, detail: message ? `${message}.` : BY_CODE.feature_contract_failed.detail };
   if (key === "scoring_failed" && message) return { ...BY_CODE.scoring_failed, detail: `${message}.` };
-  const known = BY_CODE[key];
+  const known = Object.hasOwn(BY_CODE, key) ? BY_CODE[key] : undefined;
   if (known) return known;
   return { title: "Scoring did not finish", detail: message || "Try again with the same file.", fixable: false };
 }
@@ -163,14 +169,20 @@ export function downloadWords(threshold: number | null | undefined): string {
   return `The file has one row for each row of your file, in the same order: its row number, the entity column when your file has one, and ${answer}.`;
 }
 
-type PredictionLike = { id: string; model_version_id: string; status: string; created_at: string; rows_in?: number | null; rows_out?: number | null };
+type PredictionLike = {
+  id: string; model_version_id: string; status: string; created_at: string; rows_in?: number | null; rows_out?: number | null; release?: ReleaseSummaryLike | null;
+};
 /** What the page knows of one scoring's read: its data, or that the read failed, or neither yet (still loading). */
 export type ReadState = { data?: PredictionLike; failed?: boolean } | undefined;
 
 /** Where this browser tab keeps its list: per workspace and per signed-in user, so another person on the same tab never sees it. */
 export type SessionScope = { userId: string; workspaceId: string };
 export const sessionStoreKey = (scope: SessionScope, modelVersionId: string): string => `dclab.scorings.${scope.workspaceId}.${scope.userId}.${modelVersionId}`;
-export type HistoryRow = { id: string; file: string; model: string; when: string | null; status: string; statusKey: string; rows: string; by: string; href: string | null };
+export type HistoryRow = {
+  id: string; file: string; model: string; when: string | null; status: string; statusKey: string; rows: string; by: string; href: string | null;
+  /** The approval the scoring used, from the read's own `release`, or why it is not known (loading, unreadable, other model). */
+  approval: string;
+};
 export type SessionEntry = SessionScoring & { modelVersionId: string };
 
 /**
@@ -183,6 +195,7 @@ export function historyRows(
   reads: ReadonlyMap<string, ReadState>,
   modelLabel: (modelVersionId: string) => string | null,
   hrefFor: (modelVersionId: string) => string | null,
+  used: { when: (iso: string) => string; inUseNow: (modelVersionId: string) => boolean | null } = { when: (iso) => iso, inUseNow: () => null },
 ): HistoryRow[] {
   const rows = entries.map((entry, index) => {
     const state = reads.get(entry.id);
@@ -190,6 +203,7 @@ export function historyRows(
     const mismatch = !!read && read.model_version_id !== entry.modelVersionId;
     const p = read && !mismatch ? read : undefined;
     const done = p?.status === "completed";
+    const approval = p ? scoringApproval(p.status, p.release, used.when, used.inUseNow(entry.modelVersionId)) : null;
     return {
       index,
       created: p?.created_at ?? null,
@@ -204,6 +218,9 @@ export function historyRows(
         rows: done ? `${p.rows_out ?? "—"} of ${p.rows_in ?? "—"}` : "—",
         by: "You, in this browser tab",
         href: hrefFor(entry.modelVersionId),
+        approval: approval
+          ? (approval.approval ? `${approval.approval}${approval.stale ? `. ${approval.stale}` : ""}` : "none (nothing was scored)")
+          : mismatch ? "not this model's" : state?.failed ? "could not be read" : "loading",
       } satisfies HistoryRow,
     };
   });

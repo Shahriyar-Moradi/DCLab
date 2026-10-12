@@ -54,6 +54,8 @@ from dclab_client.types import (
     ProposalPage,
     RefMoveResult,
     Replay,
+    ScoringScheduleRunPage,
+    ScoringScheduleState,
     Visualization,
     Workspace,
     _Versioned,
@@ -792,6 +794,47 @@ class ReleasesClient:
         return ModelReleaseList.model_validate(payload)
 
 
+class ScoringSchedulesClient:
+    """A project's weekly scoring schedule. Any token reads it; ``set`` is a person's act (a user
+    token with ML-write): service tokens get 403 ``service_token_not_permitted``."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def get(self, project_id: UUID | str, *, request_id: str | None = None) -> ScoringScheduleState:
+        """The schedule (``schedule`` None when never set), its status and the newest 10 handled weeks."""
+
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/projects/{_id(project_id)}/scoring-schedule", request_id=request_id)
+        return _versioned(ScoringScheduleState, payload, headers)
+
+    def set(
+        self, project_id: UUID | str, *, weekday: int, hour_utc: int, enabled: bool = True,
+        rationale: str | None = None, idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> ScoringScheduleState:
+        """Turn weekly scoring on (``weekday`` 0 = Monday, ``hour_utc``) or off (``enabled=False``)."""
+
+        body: dict[str, Any] = {"weekday": weekday, "hour_utc": hour_utc, "enabled": enabled}
+        if rationale is not None:
+            body["rationale"] = rationale
+        payload, headers = self._transport.request_with_headers(
+            "PUT", f"/v1/projects/{_id(project_id)}/scoring-schedule", json=body, request_id=request_id,
+            idempotency_key=idempotency_key)
+        return _versioned(ScoringScheduleState, payload, headers)
+
+    def runs(
+        self, project_id: UUID | str, *, cursor: str | None = None, limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ScoringScheduleRunPage:
+        """Every handled week, newest first (``next_cursor`` pages)."""
+
+        params = {key: value for key, value in (("cursor", cursor), ("limit", limit)) if value is not None}
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/scoring-schedule/runs", params=params or None,
+            request_id=request_id)
+        return ScoringScheduleRunPage.model_validate(payload)
+
+
 class NodesClient:
     def __init__(self, transport: V1Transport) -> None:
         self._transport = transport
@@ -1365,6 +1408,7 @@ class DCLabClient:
         self.governance = GovernanceClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)
         self.releases = ReleasesClient(self._transport)
+        self.scoring_schedules = ScoringSchedulesClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)

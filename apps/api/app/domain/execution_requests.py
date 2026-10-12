@@ -102,13 +102,16 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         # person's answer to a split confirmation (``SPLIT_RESOLUTIONS``).
         "plan_refusal",
         "split_resolution",
+        # Weekly scheduled scoring: the schedule run that queued this scoring (server only).
+        "scoring_schedule_run_id",
     }
 )
 
 # Keys only server code writes (branch replay binding, /v1 digest binding); a
 # /v1 caller's request_spec may never carry them.
 SERVER_OWNED_REQUEST_SPEC_KEYS = frozenset(
-    {"parent_experiment_id", "change_set_digest", "request_digest", "model_version_id", "output_format"}
+    {"parent_experiment_id", "change_set_digest", "request_digest", "model_version_id", "output_format",
+     "scoring_schedule_run_id"}
 )
 
 CK_EXECUTION_REQUEST_OPERATION = sql_in_clause("operation", EXECUTION_OPERATIONS)

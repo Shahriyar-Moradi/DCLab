@@ -46,6 +46,7 @@ from app.api.v1_proposals import router as v1_proposals_router
 from app.api.v1_experiments import router as v1_experiments_router
 from app.api.v1_governance import router as v1_governance_router
 from app.api.v1_predictions import router as v1_predictions_router
+from app.api.v1_scoring_schedules import router as v1_scoring_schedules_router
 from app.api.v1_service_tokens import router as v1_service_tokens_router
 from app.api.v1_conventions import install_v1_conventions
 from app.config import get_settings, validate_runtime_settings
@@ -125,6 +126,7 @@ app.include_router(v1_router)
 app.include_router(v1_experiments_router)
 app.include_router(v1_decisions_router)
 app.include_router(v1_predictions_router)
+app.include_router(v1_scoring_schedules_router)
 app.include_router(v1_service_tokens_router)
 app.include_router(v1_assistant_router)
 app.include_router(v1_proposals_router)

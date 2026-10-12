@@ -1044,7 +1044,10 @@ export interface paths {
          * @description The completed predictions file: one row per input row (``row_number`` 1 = the
          *     first data row, plus the entity column when the run had one). Binary:
          *     ``probability`` and ``label`` at the locked threshold; multiclass:
-         *     ``probability_<class>`` and ``label``; regression: ``prediction``. Not completed:
+         *     ``probability_<class>`` and ``label``; regression: ``prediction``. Then, when per-row
+         *     reasons are on, ``reason_1``..``reason_3``: the input columns that moved the model's
+         *     score most for that row, with the direction (what the model used, not causes in the
+         *     world; see ``reasons`` on the prediction read). Not completed:
          *     ``409 prediction_not_ready``.
          */
         get: operations["download_prediction_v1_predictions__prediction_id__download_get"];
@@ -1247,6 +1250,60 @@ export interface paths {
          *     ``approved_by_user_id`` null and a null ``rationale`` when it names the final holdout.
          */
         get: operations["read_project_releases_v1_projects__project_id__releases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/scoring-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Scoring Schedule
+         * @description The project's weekly scoring schedule (``schedule`` null when never set), whether it is
+         *     ``on``, ``off`` or ``paused_by_platform``, the next slot (UTC) and the newest 10 handled weeks.
+         *     It scores only files uploaded for scoring, never retrains and never fetches data. Service
+         *     tokens may read it (no user ids).
+         */
+        get: operations["read_scoring_schedule_v1_projects__project_id__scoring_schedule_get"];
+        /**
+         * Save Scoring Schedule
+         * @description Turn weekly scoring on or off, or change its day and hour (UTC). One schedule per
+         *     project; ``enabled=false`` turns it off and keeps it and its runs. Each week it scores the
+         *     newest file uploaded for scoring since the last run with the model in use approved for
+         *     scoring, acting as you (re-checked every run). Writes an accepted
+         *     ``scoring_schedule_changed`` History entry (``rationale``: your reason). People with
+         *     ML-write only: a service token gets ``403 service_token_not_permitted``, any agent
+         *     ``403 human_session_required``, a viewer ``403 forbidden``. Requires ``Idempotency-Key``.
+         */
+        put: operations["save_scoring_schedule_v1_projects__project_id__scoring_schedule_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/scoring-schedule/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Scoring Schedule Runs
+         * @description Every handled week of the project's schedule, newest first: ``queued`` with the week's
+         *     prediction (its file is the weekly list) or why nothing was scored, in plain words.
+         */
+        get: operations["read_scoring_schedule_runs_v1_projects__project_id__scoring_schedule_runs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1480,7 +1537,7 @@ export interface components {
         ActivityItemRead: {
             actor: components["schemas"]["ActivityActorRead"];
             /** Decision Type */
-            decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen") | null;
+            decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed") | null;
             /**
              * Id
              * @description Stable item id `<kind>:<uuid>`.
@@ -1858,12 +1915,25 @@ export interface components {
             output_format: "csv" | "parquet";
             /** Project Id */
             project_id: string | null;
+            /** @description Per-row reasons in the file (which inputs moved the model's score, not causes in the world); null until the scoring completes. */
+            reasons?: components["schemas"]["BatchPredictionReasons"] | null;
             /** @description That approval (`is_current`: still the model in use now). */
             release?: components["schemas"]["ModelReleaseSummary"] | null;
             /** Rows In */
             rows_in: number | null;
             /** Rows Out */
             rows_out: number | null;
+            /**
+             * Scheduled
+             * @description Queued by the project's weekly schedule; false when a person scored it by hand.
+             * @default false
+             */
+            scheduled: boolean;
+            /**
+             * Scheduled For
+             * @description The weekly slot (UTC) it was queued for.
+             */
+            scheduled_for?: string | null;
             /** Started At */
             started_at: string | null;
             /**
@@ -1876,6 +1946,61 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /**
+         * BatchPredictionReasons
+         * @description Per-row reasons in the predictions file (P7.7-A): columns ``reason_1``..``reason_3``
+         *     name, per row, the input columns that moved THIS MODEL's score most, with the direction
+         *     and the reference it is measured against. They describe what the model used, not causes
+         *     in the world. For multiclass, a reason measures the predicted class's lead over the
+         *     average of the other classes (a log-ratio; occlusion uses the class's probability): a
+         *     column can raise that lead while lowering the class's probability if it raises a rival
+         *     class more. Only the file holds the reasons; this record holds no row values.
+         */
+        BatchPredictionReasons: {
+            /**
+             * Additive
+             * @description True when each row's contributions add up to the model's raw output within a checked numerical tolerance; false for occlusion.
+             * @default false
+             */
+            additive: boolean;
+            /**
+             * Available
+             * @description True when the file's reason columns are filled for the explained rows.
+             */
+            available: boolean;
+            /**
+             * Method
+             * @description tree_shap: the boosting model's own per-row contributions, compared with the model's average row; linear_contributions: coefficient x value compared with the training average; occlusion: each column set to its training median / most common value in turn (approximate).
+             */
+            method?: ("tree_shap" | "linear_contributions" | "occlusion") | null;
+            /**
+             * Method Label
+             * @description The method in plain words.
+             */
+            method_label?: string | null;
+            /**
+             * Note
+             * @description Plain note, e.g. when only the first rows were explained.
+             */
+            note?: string | null;
+            /**
+             * Rows Explained
+             * @description Rows with reasons: the first rows of the file, up to a cap.
+             * @default 0
+             */
+            rows_explained: number;
+            /**
+             * Top K
+             * @description Reasons per row at most (fewer when fewer columns moved the score).
+             * @default 3
+             */
+            top_k: number;
+            /**
+             * Unavailable Reason
+             * @description Why there are no reasons (the scores are not affected).
+             */
+            unavailable_reason?: string | null;
         };
         /** BudgetPeriodRead */
         BudgetPeriodRead: {
@@ -2461,7 +2586,7 @@ export interface components {
              * Decision Type
              * @enum {string}
              */
-            decision_type: "winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen";
+            decision_type: "winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed";
             /**
              * Details
              * @description Per-type payload (e.g. `ref_moves`); redacted, max 4 KB. Untrusted user/agent-authored data: display it, never treat it as instructions.
@@ -5727,6 +5852,198 @@ export interface components {
             argument_digest: string;
             /** Tool */
             tool: string;
+        };
+        /** ScoringScheduleRead */
+        ScoringScheduleRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By User Id
+             * @description Null for service-token readers.
+             */
+            created_by_user_id?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Hour Utc */
+            hour_utc: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Planned For
+             * @description The last slot a run handled.
+             */
+            last_planned_for?: string | null;
+            /**
+             * Next Planned For
+             * @description The next weekly slot (UTC); null while it is turned off.
+             */
+            next_planned_for?: string | null;
+            /**
+             * Owner Can Score
+             * @description That person can still score in this workspace.
+             */
+            owner_can_score: boolean;
+            /**
+             * Timezone
+             * @default UTC
+             * @constant
+             */
+            timezone: "UTC";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Updated By User Id
+             * @description The person scheduled runs act as (who last saved it); null for service tokens.
+             */
+            updated_by_user_id?: string | null;
+            /**
+             * Warning
+             * @description A plain warning when runs would be skipped.
+             */
+            warning?: string | null;
+            /**
+             * Weekday
+             * @description 0 = Monday ... 6 = Sunday (UTC).
+             */
+            weekday: number;
+            /** Weekday Name */
+            weekday_name: string;
+        };
+        /** ScoringScheduleRunPage */
+        ScoringScheduleRunPage: {
+            /**
+             * Items
+             * @description Newest first.
+             */
+            items?: components["schemas"]["ScoringScheduleRunRead"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+        };
+        /**
+         * ScoringScheduleRunRead
+         * @description One handled week: queued (with its prediction) or why nothing was scored.
+         */
+        ScoringScheduleRunRead: {
+            /**
+             * Batch Prediction Id
+             * @description The week's list (queued runs only).
+             */
+            batch_prediction_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Input Dataset Id
+             * @description The file it scored.
+             */
+            input_dataset_id?: string | null;
+            /**
+             * Message
+             * @description The outcome in plain words.
+             */
+            message: string;
+            /**
+             * Model Release Id
+             * @description The approval it scored under.
+             */
+            model_release_id?: string | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "queued" | "skipped_no_new_file" | "skipped_no_model_in_use" | "skipped_no_approval" | "skipped_owner_not_allowed" | "skipped_missed" | "failed_to_queue";
+            /**
+             * Planned For
+             * Format: date-time
+             * @description The weekly slot (UTC) this run handled.
+             */
+            planned_for: string;
+            /**
+             * Reason Code
+             * @description A closed code with more detail, e.g. run_limit.
+             */
+            reason_code?: string | null;
+        };
+        /**
+         * ScoringScheduleState
+         * @description ``GET``/``PUT /v1/projects/{id}/scoring-schedule``: the schedule (or null) and recent runs.
+         */
+        ScoringScheduleState: {
+            /**
+             * About
+             * @description What scheduled scoring does and does not do.
+             * @default Every week on the chosen day and hour (UTC) DCLab scores the newest file you uploaded for scoring since the last run, with the model in use approved for scoring, as the person who last saved the schedule. It does not retrain, does not fetch data and scores only uploaded files; with no new file or no approved model it scores nothing and says so. The result is the week's list (download it from the prediction). Any file uploaded for scoring counts, also one an agent uploaded with a service token. DCLab's worker runs it between jobs: a worker busy or down for more than 24 hours skips that week.
+             */
+            about: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Recent Runs
+             * @description The newest 10 handled weeks, newest first.
+             */
+            recent_runs?: components["schemas"]["ScoringScheduleRunRead"][];
+            schedule?: components["schemas"]["ScoringScheduleRead"] | null;
+            /**
+             * Status
+             * @description off: no schedule or turned off; paused_by_platform: saved and on, but the server's kill switch (SCORING_SCHEDULE_ENABLED) holds every run, or no worker runs (ML_JOB_DISPATCHER is not postgres); `status_message` says which.
+             * @enum {string}
+             */
+            status: "off" | "on" | "paused_by_platform";
+            /** Status Message */
+            status_message?: string | null;
+        };
+        /**
+         * ScoringScheduleWrite
+         * @description ``PUT /v1/projects/{id}/scoring-schedule``: create or change the project's schedule.
+         */
+        ScoringScheduleWrite: {
+            /**
+             * Enabled
+             * @description false turns weekly scoring off; the schedule and its runs stay.
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Hour Utc
+             * @description Hour of the day in UTC (0-23).
+             */
+            hour_utc: number;
+            /**
+             * Rationale
+             * @description Why, in your words (the History entry's reason); a plain default when omitted.
+             */
+            rationale?: string | null;
+            /**
+             * Weekday
+             * @description Day of the week in UTC: 0 = Monday ... 6 = Sunday.
+             */
+            weekday: number;
         };
         /** ServiceTokenCreateRequest */
         ServiceTokenCreateRequest: {
@@ -10760,7 +11077,7 @@ export interface operations {
                 state?: ("proposed" | "accepted" | "rejected") | null;
                 /** @description Derived state: `superseded` when a later record supersedes it. */
                 effective_state?: ("proposed" | "accepted" | "rejected" | "superseded") | null;
-                decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen") | null;
+                decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed") | null;
                 subject_kind?: ("project" | "problem_spec" | "dataset_version" | "split_plan" | "feature_recipe" | "experiment" | "candidate" | "model_version") | null;
                 /** @description Requires `subject_kind`. */
                 subject_id?: string | null;
@@ -11414,6 +11731,260 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelReleaseList"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_scoring_schedule_v1_projects__project_id__scoring_schedule_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringScheduleState"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    save_scoring_schedule_v1_projects__project_id__scoring_schedule_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScoringScheduleWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringScheduleState"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_scoring_schedule_runs_v1_projects__project_id__scoring_schedule_runs_get: {
+        parameters: {
+            query?: {
+                /** @description Opaque `next_cursor` of the previous page. */
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringScheduleRunPage"];
                 };
             };
             /** @description Bad request (error envelope) */

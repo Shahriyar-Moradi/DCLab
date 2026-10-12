@@ -9,6 +9,7 @@ import { isUuid } from "./command-search";
 import { isTerminal, parseSessionScorings, pollDelay, safeDownloadId, sessionStoreKey, type SessionScope, type SessionScoring } from "./studio-scoring";
 import { useSession } from "./session-provider";
 import { UploadedDatasetSchema } from "./studio-wizard-hooks";
+import { ReleaseSummarySchema } from "./studio-releases-hooks";
 
 const nullableString = z.string().nullable().optional();
 const nullableNumber = z.number().nullable().optional();
@@ -25,6 +26,8 @@ export const PredictionSchema = z.object({
   contract_check: z.record(z.string(), z.unknown()).nullable(),
   error_code: nullableString,
   error_message: nullableString,
+  /** P7.2-A: the approval this scoring ran with (only when the approved model in use scored). */
+  release: ReleaseSummarySchema.nullable().optional(),
   created_at: z.string(),
   completed_at: nullableString,
   output: z.object({ artifact_id: z.string(), content_digest: z.string(), download_path: z.string(), size_bytes: z.number(), mime_type: nullableString }).nullable(),

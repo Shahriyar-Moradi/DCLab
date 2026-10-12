@@ -55,11 +55,13 @@ export default function PredictionsPage() {
     new Map<string, ReadState>(entries.map((e, i) => [e.id, { data: reads[i]?.data, failed: !!reads[i]?.isError && !reads[i]?.data }] as const)),
     (mv) => labels.get(mv) ?? null,
     (mv) => { const base = projectHref(id, "models", mv); return base ? `${base}?tab=score` : null; },
+    { when: formatWhen, inUseNow: (mv) => models.find((row) => row.id === mv)?.champion ?? null },
   );
 
   const columns: Column<HistoryRow>[] = [
     { key: "file", header: "File", render: (r) => r.file },
     { key: "model", header: "Model", render: (r) => r.model },
+    { key: "used", header: "Approval used", render: (r) => r.approval },
     { key: "when", header: "Started", sortValue: (r) => r.when ?? "", render: (r) => formatWhen(r.when) },
     { key: "status", header: "Status", render: (r) => <Pill tone={statusTone(r.statusKey)}>{r.status}</Pill> },
     { key: "rows", header: "Rows scored", numeric: true, render: (r) => r.rows },

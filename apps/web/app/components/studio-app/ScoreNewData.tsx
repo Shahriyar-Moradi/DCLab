@@ -24,6 +24,8 @@ import {
   createPrediction, downloadPredictions, readSessionScorings, uploadScoringFile, usePrediction, useScoringScope, writeSessionScorings, type StudioPrediction,
 } from "@/lib/application/studio-scoring-hooks";
 import { useSession } from "@/lib/application/session-provider";
+import { useModelVersionRead } from "@/lib/application/studio-inspect-hooks";
+import { modelLabel as versionLabel, scoredWithText, scoringApproval } from "@/lib/application/studio-releases";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { ActionKeys, singleFlight, type PlainError } from "@/lib/application/studio-wizard";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
@@ -60,6 +62,8 @@ function ScoringCard({ item, current, modelVersionId, modelLabel }: { item: Sess
   const p = read.data && read.data.model_version_id === modelVersionId ? read.data : undefined;
   const contract = contractView(p?.contract_check);
   const sentences = contract ? contractSentences(contract) : null;
+  const version = useModelVersionRead(p?.model_version_id);
+  const used = p ? scoringApproval(p.status, p.release, formatWhen, version.data ? version.data.is_champion : null) : null;
 
   const download = async () => {
     if (!p || saving) return;
@@ -90,6 +94,9 @@ function ScoringCard({ item, current, modelVersionId, modelLabel }: { item: Sess
       aside={p ? <Pill tone={STATUS_TONE[p.status]}>{scoringStatusWords(p.status)}</Pill> : <span className="muted">loading</span>}
     >
       {current ? <StepBar label="Scoring progress" steps={stepsFor(p, false)} /> : null}
+      {used ? (
+        <p className="muted" data-testid="scored-with">{scoredWithText(used, version.data ? versionLabel(version.data.version) : "this model")}.{used.stale ? <> <Pill tone="warn">{used.stale}</Pill></> : null}</p>
+      ) : null}
       {read.isError ? <Banner tone="crit">Could not read this scoring. {read.error instanceof Error ? read.error.message : ""}</Banner> : null}
       {p && !isTerminal(p.status) ? <p role="status">{p.status === "queued" ? "Waiting for a worker to pick this up…" : "Scoring the rows…"}</p> : null}
       {sentences ? (

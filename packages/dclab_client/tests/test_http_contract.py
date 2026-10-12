@@ -432,6 +432,37 @@ def test_choose_operating_point_posts_a_keyed_body():
     assert json.loads(recorded[0].content) == {"reason": "r", "threshold": 0.31}
 
 
+def test_scoring_schedule_get_set_and_runs_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    pid = "66666666-6666-6666-6666-666666666666"
+    run = {"id": "77777777-7777-7777-7777-777777777777", "planned_for": "2030-01-07T09:00:00Z", "outcome": "queued",
+           "message": "m", "batch_prediction_id": "88888888-8888-8888-8888-888888888888",
+           "created_at": "2030-01-07T09:00:02Z"}
+    state = {"project_id": pid, "status": "on", "about": "a", "recent_runs": [run], "schedule": {
+        "id": "99999999-9999-9999-9999-999999999999", "weekday": 0, "weekday_name": "Monday", "hour_utc": 9,
+        "timezone": "UTC", "enabled": True, "next_planned_for": "2030-01-14T09:00:00Z",
+        "created_at": "2030-01-01T00:00:00Z", "updated_at": "2030-01-01T00:00:00Z", "owner_can_score": True}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path.endswith("/runs"):
+            return httpx.Response(200, json={"project_id": pid, "items": [run], "next_cursor": "c1.a.b"})
+        return httpx.Response(200, json=state, headers={"ETag": '"s1"'})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    read = api.scoring_schedules.get(pid)
+    assert read.schedule.weekday_name == "Monday" and read.recent_runs[0].outcome == "queued" and read.etag == '"s1"'
+    api.scoring_schedules.set(pid, weekday=0, hour_utc=9, rationale="weekly list", idempotency_key="k2")
+    page = api.scoring_schedules.runs(pid, cursor="c1.x.y", limit=5)
+    assert page.next_cursor == "c1.a.b" and str(page.items[0].batch_prediction_id).startswith("8888")
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/scoring-schedule"), ("PUT", f"/v1/projects/{pid}/scoring-schedule"),
+        ("GET", f"/v1/projects/{pid}/scoring-schedule/runs")]
+    assert recorded[1].headers["Idempotency-Key"] == "k2"
+    assert json.loads(recorded[1].content) == {"weekday": 0, "hour_utc": 9, "enabled": True, "rationale": "weekly list"}
+    assert recorded[2].url.params["cursor"] == "c1.x.y" and recorded[2].url.params["limit"] == "5"
+
+
 def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
     from datetime import UTC, datetime
 

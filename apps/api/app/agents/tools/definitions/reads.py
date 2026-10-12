@@ -51,6 +51,9 @@ OPERATING_POINT_KEYS = ("threshold", "tp", "fp", "fn", "tn", "precision", "recal
 OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked from many thresholds); never a "
                   "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
+SCHEDULE_NOTE = ("Read-only: only a person turns weekly scoring on or off, in DCLab Studio. Each week it scores the "
+                 "newest file uploaded for scoring with the model in use approved for scoring; it never retrains "
+                 "and never fetches data.")
 GraphKind = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"]
 
 Id = Annotated[UUID, Field(description="Resource UUID.")]
@@ -105,6 +108,10 @@ class ModelInput(BaseModel):
 
 
 class ListReleasesInput(BaseModel):
+    project_id: Id
+
+
+class ScoringScheduleInput(BaseModel):
     project_id: Id
 
 
@@ -261,6 +268,11 @@ class ServiceReads:
 
         # The agent view (as /v1 for service tokens): no approving person's id, no holdout-naming rationale.
         return list_releases(self.db, **self._who, project_id=project_id, agent=True)
+
+    def scoring_schedule(self, project_id: UUID) -> Any:
+        from app.services.scoring_schedule_service import schedule_state
+
+        return schedule_state(self.db, **self._who, project_id=project_id, agent=True)  # no user ids
 
     def decision(self, decision_id: UUID) -> Any:
         from app.services import decision_record_service as drs
@@ -779,6 +791,26 @@ def _releases_fetch(reads: Any, a: ListReleasesInput) -> Any:
 def _releases_shape(page: Any) -> Shaped:
     return Shaped({"current_release_id": page.current_release_id,
                    "releases": [release_summary(r) for r in page.items[:LIST_LIMIT]]})
+
+
+def _scoring_schedule_fetch(reads: Any, a: ScoringScheduleInput) -> Any:
+    return reads.scoring_schedule(a.project_id)
+
+
+def _scoring_schedule_shape(state: Any) -> Shaped:
+    """Codes, slots and ids only (no people, no free text): the server's plain-word messages
+    are not passed on; the note says what an agent may not do."""
+
+    s = state.schedule
+    schedule = s and {"id": s.id, "weekday": s.weekday, "weekday_name": code(s.weekday_name), "hour_utc": s.hour_utc,
+                      "timezone": code(s.timezone), "enabled": s.enabled, "next_planned_for": s.next_planned_for,
+                      "last_planned_for": s.last_planned_for, "owner_can_score": s.owner_can_score}
+    runs = [{"id": r.id, "planned_for": r.planned_for, "outcome": code(r.outcome), "reason_code": code(r.reason_code),
+             "batch_prediction_id": r.batch_prediction_id, "model_version_id": r.model_version_id,
+             "model_release_id": r.model_release_id, "input_dataset_id": r.input_dataset_id}
+            for r in state.recent_runs[:LIST_LIMIT]]
+    return Shaped({"project_id": state.project_id, "status": code(state.status), "schedule": schedule,
+                   "recent_runs": runs, "note": SCHEDULE_NOTE})
 
 
 def _proposal_fetch(reads: Any, a: ProposalInput) -> Any:

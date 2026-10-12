@@ -87,6 +87,9 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/model-versions/{model_version_id}/card",
             "/v1/predictions/{prediction_id}",
             "/v1/predictions/{prediction_id}/download",
+            # Weekly scheduled scoring: the schedule and its runs (no user ids for tokens).
+            "/v1/projects/{project_id}/scoring-schedule",
+            "/v1/projects/{project_id}/scoring-schedule/runs",
             # P6.6-A: proposals and agent runs, read with holdout-free output.
             "/v1/agent-runs",
             "/v1/agent-runs/{run_id}",
@@ -133,6 +136,8 @@ HUMAN_ONLY_ROUTES = frozenset(
         # P5.2-A: choosing an operating point records a person's decision (tokens: 403
         # service_token_not_permitted; the route refuses any token again as human_session_required).
         ("POST", "/v1/experiments/{experiment_id}/operating-point"),
+        # Weekly scheduled scoring is set by people (the route refuses any token as human_session_required).
+        ("PUT", "/v1/projects/{project_id}/scoring-schedule"),
         # P6.9-A: a split confirmation is a person's answer (ADR 0008 §2).
         ("POST", "/v1/execution-requests/{request_id}/split-confirmation"),
         # P6.6-A: deciding a proposal is a person's act (403 human_session_required for any bearer).

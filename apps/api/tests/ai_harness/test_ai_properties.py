@@ -282,7 +282,7 @@ def test_every_read_tool_result_is_holdout_free_on_the_seeded_graph(ac):
             "inspect_dataset": {"dataset_id": g.source.id, "project_id": g.project.id},
             "compare_experiments": {"experiment_ids": [str(g.exp[0]), str(g.exp[1])]},
             "list_decisions": {"project_id": g.project.id}, "list_proposals": {"project_id": g.project.id},
-            "list_releases": {"project_id": g.project.id},
+            "list_releases": {"project_id": g.project.id}, "get_scoring_schedule": {"project_id": g.project.id},
             "get_model": {"model_version_id": model}, "get_model_card": {"model_version_id": model},
             "get_impact": {"kind": "experiment", "node_id": g.exp[1]},
             "accept_proposal": {"proposal_id": proposed.id},

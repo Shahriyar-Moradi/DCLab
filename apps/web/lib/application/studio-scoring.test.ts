@@ -119,3 +119,29 @@ test("the session list is kept per workspace and per person, never shared on one
   assert.notEqual(a, sessionStoreKey({ userId: "user-a", workspaceId: "ws-1" }, M2));
   assert.equal(a, `dclab.scorings.ws-1.user-a.${M1}`);
 });
+
+test("V7-B2-UI: a scoring whose approval no longer matches says so; history says which approval each scoring used", () => {
+  const mismatch = failureError("release_mismatch", "the stored model no longer matches the version approved for scoring");
+  assert.equal(mismatch.title, "The saved model no longer matches the model that was approved");
+  assert.match(mismatch.detail, /^Nothing was scored/);
+  assert.match(mismatch.detail, /approve a different model .* or to train this one again/);
+  assert.doesNotMatch(mismatch.detail, /digest|manifest|package|release|approve it again/i);
+  assert.equal(failureError("__proto__", null).title, "Scoring did not finish");
+  assert.equal(mapScoringError({ status: 422, body: { error: { code: "__proto__" } } }).title, "The request was refused");
+  const ids = ["77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888"];
+  const entries = [{ id: ID, fileName: "a.csv", modelVersionId: M1 }, { id: ids[0], fileName: "b.csv", modelVersionId: M1 }, { id: ids[1], fileName: "c.csv", modelVersionId: M1 }];
+  const release = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", model_version_id: M1, approved_at: "2026-10-01T10:00:00Z", is_current: false };
+  const reads = new Map<string, ReadState>([
+    [ID, { data: { id: ID, model_version_id: M1, status: "completed", created_at: "2026-10-03T10:00:00Z", release } }],
+    [ids[0], { data: { id: ids[0], model_version_id: M1, status: "queued", created_at: "2026-10-02T10:00:00Z", release: null } }],
+    [ids[1], { data: { id: ids[1], model_version_id: M1, status: "failed", created_at: "2026-10-01T10:00:00Z", release } }],
+  ]);
+  const rows = historyRows(entries, reads, () => "Model v1 · Run 1", () => null, { when: (iso) => iso.slice(0, 10), inUseNow: () => false });
+  assert.equal(rows[0].approval, "approved 2026-10-01. This model is no longer the model in use.");
+  assert.match(rows[1].approval, /^no approval recorded/);
+  assert.equal(rows[2].approval, "none (nothing was scored)", "a failed scoring names no approval");
+  assert.ok(rows.every((r) => !r.approval.includes("Model v1")), "the model is its own column");
+  // loading, failed read and another model's read are told apart
+  const states = historyRows(entries, new Map<string, ReadState>([[ID, undefined], [ids[0], { failed: true }], [ids[1], { data: { id: ids[1], model_version_id: M2, status: "completed", created_at: "2026-10-01T10:00:00Z" } }]]), () => null, () => null);
+  assert.deepEqual(states.map((r) => r.approval).sort(), ["could not be read", "loading", "not this model's"]);
+});

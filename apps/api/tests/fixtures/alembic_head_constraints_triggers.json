@@ -1371,6 +1371,36 @@
       "definition": "CHECK (((jsonb_typeof(report) = 'object'::text) AND (octet_length((report)::text) <= 524288)))"
     },
     {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['queued'::character varying, 'skipped_no_new_file'::character varying, 'skipped_no_model_in_use'::character varying, 'skipped_no_approval'::character varying, 'skipped_owner_not_allowed'::character varying, 'skipped_missed'::character varying, 'failed_to_queue'::character varying])::text[])))"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_queued",
+      "definition": "CHECK (((((outcome)::text = 'queued'::text) = (batch_prediction_id IS NOT NULL)) AND (((outcome)::text <> 'queued'::text) OR ((model_release_id IS NOT NULL) AND (input_dataset_id IS NOT NULL)))))"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_reason_code",
+      "definition": "CHECK (((reason_code IS NULL) OR ((reason_code)::text = ANY ((ARRAY['run_limit'::character varying, 'worker_was_down'::character varying, 'owner_missing'::character varying, 'model_not_scoreable'::character varying, 'dataset_unavailable'::character varying, 'release_changed'::character varying, 'internal_error'::character varying])::text[]))))"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_release_version",
+      "definition": "CHECK (((model_release_id IS NULL) OR (model_version_id IS NOT NULL)))"
+    },
+    {
+      "table": "scoring_schedules",
+      "name": "ck_scoring_schedules_hour_utc",
+      "definition": "CHECK (((hour_utc >= 0) AND (hour_utc <= 23)))"
+    },
+    {
+      "table": "scoring_schedules",
+      "name": "ck_scoring_schedules_weekday",
+      "definition": "CHECK (((weekday >= 0) AND (weekday <= 6)))"
+    },
+    {
       "table": "semantic_decision_answers",
       "name": "ck_sda_agreement",
       "definition": "CHECK (((agreement)::text = ANY ((ARRAY['agree'::character varying, 'disagree'::character varying, 'abstain'::character varying, 'unavailable'::character varying])::text[])))"
@@ -1996,6 +2026,11 @@
       "table": "runtime_environments",
       "name": "runtime_environments_immutable",
       "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "scoring_schedule_runs_append_only",
+      "definition": "CREATE TRIGGER scoring_schedule_runs_append_only BEFORE DELETE OR UPDATE ON public.scoring_schedule_runs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "semantic_decision_answers",

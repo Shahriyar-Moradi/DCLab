@@ -316,6 +316,14 @@ from app.domain.model_releases import (
     CK_MODEL_RELEASES_RATIONALE,
     CK_MODEL_RELEASES_SAVED_FORMAT,
 )
+from app.domain.scoring_schedules import (
+    CK_SCORING_SCHEDULE_RUNS_OUTCOME,
+    CK_SCORING_SCHEDULE_RUNS_QUEUED,
+    CK_SCORING_SCHEDULE_RUNS_REASON,
+    CK_SCORING_SCHEDULE_RUNS_RELEASE_VERSION,
+    CK_SCORING_SCHEDULES_HOUR,
+    CK_SCORING_SCHEDULES_WEEKDAY,
+)
 from app.domain.experiment_changes import (
     CK_EXPERIMENTS_CHANGE_SET_BOUNDED,
     CK_EXPERIMENTS_CHANGE_SET_CHANGES,
@@ -6641,6 +6649,122 @@ class BatchPrediction(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ScoringSchedule(Base):
+    """A project's weekly scheduled scoring (``app.domain.scoring_schedules``). Mutable config:
+    one row per project, saved by a person with ML-write (``scoring_schedule_service``); the
+    worker tick only advances ``last_planned_for`` / ``next_planned_for``. Runs act as
+    ``updated_by_user_id`` (who last saved it; an accepted deviation from "the creator"),
+    re-checked when queued and again when the job runs. Known limit: uploads do not record
+    whether a service token made them, so a file an agent uploaded for scoring is scored too."""
+
+    __tablename__ = "scoring_schedules"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_scoring_schedules_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_scoring_schedules_workspace_project_id"),
+        UniqueConstraint("workspace_id", "project_id", name="uq_scoring_schedules_project"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_scoring_schedules_workspace_project",
+        ),
+        CheckConstraint(CK_SCORING_SCHEDULES_WEEKDAY, name="ck_scoring_schedules_weekday"),
+        CheckConstraint(CK_SCORING_SCHEDULES_HOUR, name="ck_scoring_schedules_hour_utc"),
+        # The worker's due scan: enabled AND next_planned_for <= now.
+        Index("ix_scoring_schedules_due", "next_planned_for", postgresql_where=text("enabled")),
+        Index("ix_scoring_schedules_created_by_user_id", "created_by_user_id"),
+        Index("ix_scoring_schedules_updated_by_user_id", "updated_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    hour_utc: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    last_planned_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_planned_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ScoringScheduleRun(Base):
+    """One handled weekly slot of a schedule. Append-only (DB trigger); ``UNIQUE (schedule_id,
+    planned_for)`` handles a slot once across workers and restarts. ``queued`` iff it carries its
+    batch prediction (with the release and file it scored); otherwise ``outcome`` says why
+    nothing was scored. ``created_at`` is ``clock_timestamp()``."""
+
+    __tablename__ = "scoring_schedule_runs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_scoring_schedule_runs_workspace_id"),
+        UniqueConstraint("schedule_id", "planned_for", name="uq_scoring_schedule_runs_slot"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "schedule_id"],
+            ["scoring_schedules.workspace_id", "scoring_schedules.project_id", "scoring_schedules.id"],
+            name="fk_scoring_schedule_runs_workspace_project_schedule",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "batch_prediction_id"], ["batch_predictions.workspace_id", "batch_predictions.id"],
+            name="fk_scoring_schedule_runs_workspace_batch_prediction",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_scoring_schedule_runs_workspace_project_model_version",
+        ),
+        # MATCH SIMPLE: checked when a release is set; it must approve this very version.
+        ForeignKeyConstraint(
+            ["workspace_id", "model_version_id", "model_release_id"],
+            ["model_releases.workspace_id", "model_releases.model_version_id", "model_releases.id"],
+            name="fk_scoring_schedule_runs_workspace_model_release",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "input_dataset_id"],
+            ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_scoring_schedule_runs_workspace_project_input_dataset",
+        ),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_OUTCOME, name="ck_scoring_schedule_runs_outcome"),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_REASON, name="ck_scoring_schedule_runs_reason_code"),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_QUEUED, name="ck_scoring_schedule_runs_queued"),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_RELEASE_VERSION, name="ck_scoring_schedule_runs_release_version"),
+        Index(
+            "uq_scoring_schedule_runs_batch_prediction", "batch_prediction_id", unique=True,
+            postgresql_where=text("batch_prediction_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_scoring_schedule_runs_workspace_input_dataset", "workspace_id", "input_dataset_id",
+            postgresql_where=text("input_dataset_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_scoring_schedule_runs_workspace_model_version", "workspace_id", "model_version_id",
+            postgresql_where=text("model_version_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    schedule_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    planned_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    batch_prediction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    input_dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
 
 
 def _agent_fk(prefix: str, column: str, table: str, *, project: bool = False) -> ForeignKeyConstraint:

@@ -30,6 +30,7 @@ import { changeSentences, familyLabel, selectionScore, statusWords } from "@/lib
 import { useProjectExperiments } from "@/lib/application";
 import { designLabels, dataVersionName, modelName, runOrdinals } from "@/lib/application/studio-names";
 import { modelSentence, runRef, usedAsWords } from "@/lib/application/studio-model";
+import { approvalLine } from "@/lib/application/studio-releases";
 import { useDatasetProfile, useDatasetVersion, useExperimentFindings, useProjectGraph, type StudioGraph, type StudioGraphNode } from "@/lib/application/studio-data-hooks";
 import {
   candidateRows, featureReason, featureRows, foldRows, foldSizes, formatNumber, experimentUsing, inspectorPath, investigationView, metricNames,
@@ -507,6 +508,7 @@ export function ModelInspector({ projectId, modelVersionId }: { projectId: strin
         <KeyValue items={[
           { key: "ver", label: "Model", value: `${modelName(plainText(m.version, 40))} · ${m.algorithm ? plainText(familyLabel(m.family || m.algorithm) ?? m.algorithm, 60) : "kind not recorded"}` },
           { key: "refs", label: "Used as", value: usedAsWords(m.ref_kinds, m.is_champion) },
+          { key: "approved", label: "Approved for scoring", value: approvalLine(m.release, m.is_champion, formatWhen) },
           { key: "created", label: "Trained", value: formatWhen(m.created_at) },
           { key: "metric", label: "Score used to choose it", value: scoreName && score !== null ? <>{scoreName} = {formatNumber(score)} <span className="muted">(cross-validation)</span></> : "Not recorded" },
         ]} />

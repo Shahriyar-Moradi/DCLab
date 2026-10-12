@@ -6,6 +6,7 @@ import { z } from "zod";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { v1Get } from "@/lib/infrastructure/v1/client";
 import { isUuid } from "./command-search";
+import { ReleaseSummarySchema } from "./studio-releases-hooks";
 
 const nullableString = z.string().nullable().optional();
 const nullableNumber = z.number().nullable().optional();
@@ -64,6 +65,8 @@ export const ModelVersionSchema = z.object({
   candidate_key: nullableString,
   is_champion: z.boolean(),
   ref_kinds: z.array(z.string()).optional(),
+  /** P7.2-A: the approval behind this model when it is the model in use and a person approved it. */
+  release: ReleaseSummarySchema.nullable().optional(),
   lineage: z.object({
     candidate_id: z.string(),
     experiment_id: z.string(),

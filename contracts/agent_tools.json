@@ -708,6 +708,46 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
+      "description": "A project's weekly scoring schedule, read-only: on / off / paused by the platform, weekday and hour (UTC), next and last slot, whether the person it acts as can still score, and the newest handled weeks (queued with the week's prediction, or why nothing was scored). Only a person turns it on or off, in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "ScoringScheduleInput",
+        "type": "object"
+      },
+      "name": "get_scoring_schedule",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects/{project_id}/scoring-schedule"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.scoring_schedule_service.schedule_state"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
       "description": "Dataset version summary (row/column counts, digest); never rows. With dataset_id: its upload policy and AI data class, and the column profile (type, rule role vs role used, missing and unique counts over the training rows of the current split plan only, transforms, CV importance). Omit dataset_id to list datasets.",
       "effect": "read",
       "input_schema": {

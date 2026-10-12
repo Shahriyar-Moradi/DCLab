@@ -25,6 +25,9 @@ import {
   CHANGE_KINDS, TRANSFORMS, branchProblem, buildBranchBody, emptyDraft, mapActionError, type ChangeDraft, type ChangeKind,
 } from "@/lib/application/studio-compare";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
+import { REASON_MAX, canPutInUse, confirmWords, mapApprovalError, modelLabel } from "@/lib/application/studio-releases";
+import { useSession } from "@/lib/application/session-provider";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import type { BranchPrefill } from "@/lib/application/studio-findings";
 
 function Problem({ error }: { error: PlainError }) {
@@ -219,6 +222,10 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
   const refs = useProjectRefs(projectId);
   const modelVersionId = graph.data ? modelVersionOf(graph.data.edges, experimentId) : null;
   const model = useModelVersionRead(modelVersionId);
+  const { user } = useSession();
+  const canWrite = hasCapability(user, CAPABILITIES.workspaceExecuteMl);
+  const championId = refs.data?.items.find((r) => r.ref_kind === "champion_model")?.target.id ?? null;
+  const championModel = useModelVersionRead(championId && championId !== modelVersionId ? championId : null);
   const invalidate = useWriteInvalidation();
   const keys = useRef(new ActionKeys(newIdempotencyKey)).current;
   const [open, setOpen] = useState(false);
@@ -238,6 +245,7 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
   const champion = refs.data?.items.find((r) => r.ref_kind === "champion_model");
   const recipe = refs.data?.items.find((r) => r.ref_kind === "feature_recipe");
   const isChampion = m.is_champion || champion?.target.id === m.id;
+  const words = confirmWords("approve", modelLabel(m.version), champion ? (championModel.data ? modelLabel(championModel.data.version) : "The model in use now") : null);
   const confirm = async () => {
     if (flight.current || !rationale.trim()) return;
     flight.current = true;
@@ -254,7 +262,7 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
       setRationale("");
       invalidate();
     } catch (caught) {
-      setError(mapActionError(caught, "champion"));
+      setError(mapApprovalError(caught));
     } finally {
       flight.current = false;
       setBusy(false);
@@ -266,19 +274,21 @@ export function ChampionPanel({ projectId, experimentId, compact }: { projectId:
         This run&apos;s model {isChampion ? <Pill tone="ok">★ in use</Pill> : <Pill tone="gray">not in use</Pill>}
         {" "}{champion && !isChampion ? <span className="muted">Another model is in use now.</span> : !champion ? <span className="muted">No model is in use yet.</span> : null}
       </p>
-      {moved ? <Banner tone="info">This model is now in use and the change was saved in History.{decisions ? <> <Link href={decisions}>Open History</Link>.</> : null}</Banner> : null}
-      {!isChampion && !open ? <button type="button" className="btn primary" onClick={() => { setOpen(true); setMoved(false); setError(null); }}>Put this model in use</button> : null}
+      {moved ? <Banner tone="info">This model is now in use and approved for scoring; the change was saved in History.{decisions ? <> <Link href={decisions}>Open History</Link>.</> : null}</Banner> : null}
+      {canPutInUse(canWrite, isChampion) && !open ? <button type="button" className="btn primary" onClick={() => { setOpen(true); setMoved(false); setError(null); }}>Put this model in use</button> : null}
+      {!canWrite && !isChampion ? <p className="muted">Only people who can change this workspace can put a model in use.</p> : null}
       {open ? (
-        <form className="form card" onSubmit={(event) => { event.preventDefault(); void confirm(); }}>
-          <h3>Put this model in use</h3>
+        <form className="form card" aria-label="Put this model in use and approve it for scoring" onSubmit={(event) => { event.preventDefault(); void confirm(); }}>
+          <h3>Put this model in use and approve it for scoring</h3>
+          <ul className={compact ? "muted" : undefined}>{words.lines.map((line) => <li key={line}>{line}</li>)}</ul>
           {compact ? null : (
             <p className="muted">
-              This is saved in History and switches the model in use (and its features with it). DCLab checks that this model has a chosen best run, its
-              own final test and the <Term definition="The fixed assignment of rows to folds and the final test set (used once). A new model in use must be tested on the same test design as the current one.">same test design</Term> as the model in use now. Nothing is retrained.
+              The <Term definition="The fixed assignment of rows to folds and the final test set (used once). A new model in use must be tested on the same test design as the current one.">same test design</Term> check
+              means both models were tested on the same rows.
             </p>
           )}
           <label className="field"><span>Why (saved with the change)</span>
-            <textarea value={rationale} rows={2} maxLength={2000} required disabled={busy} onChange={(e) => setRationale(e.target.value)} />
+            <textarea value={rationale} rows={2} maxLength={REASON_MAX} required disabled={busy} onChange={(e) => setRationale(e.target.value)} />
           </label>
           {error ? (
             <Banner tone="crit" actions={<button type="button" className="btn" onClick={() => { invalidate(); setError(null); }}>Reload</button>}><b>{error.title}.</b> {error.detail}</Banner>

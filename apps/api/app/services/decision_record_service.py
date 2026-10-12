@@ -889,7 +889,7 @@ def record(
     if decision_type not in DECISION_TYPES:
         raise InvalidDecisionRecordError("unknown_decision_type", "unknown decision type")
     if decision_type in RESERVED_DECISION_TYPES:
-        raise InvalidDecisionRecordError("reserved_decision_type", "reserved for Phase 6 proposals")
+        raise InvalidDecisionRecordError("reserved_decision_type", "this type is written only by its owning service")
     if decision_type in RULE_ONLY_DECISION_TYPES and actor.kind != ACTOR_RULE:
         raise DecisionActorNotPermittedError("rule_only_decision_type", "only engine rules write this type")
     if decision_type in SERVICE_ONLY_DECISION_TYPES - RULE_ONLY_DECISION_TYPES:

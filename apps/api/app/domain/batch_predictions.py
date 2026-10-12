@@ -35,6 +35,8 @@ UNSUPPORTED_MODEL = "unsupported_model"
 SCORING_FAILED = "scoring_failed"
 DATASET_UNAVAILABLE = "dataset_unavailable"
 RELEASE_MISMATCH = "release_mismatch"  # the approval no longer matches the model's package
+# A weekly scheduled scoring whose person lost the right to score before it ran.
+SCHEDULE_OWNER_NOT_ALLOWED = "schedule_owner_not_allowed"
 
 # DB CHECK backstops (models.py; Alembic 0069 inlines the same literal SQL).
 CK_BATCH_PREDICTIONS_STATUS = sql_in_clause("status", PREDICTION_STATUSES)
@@ -70,6 +72,41 @@ class BatchPredictionOutput(BaseModel):
     download_path: str = Field(description="Authorized download of the file (same credentials as this read).")
 
 
+REASON_METHODS = ("tree_shap", "linear_contributions", "occlusion")  # app.engine.explain.METHODS
+REASONS_TURNED_OFF = "per-row reasons are turned off on this server"
+REASONS_NOT_RECORDED = "not recorded: this scoring ran before per-row reasons were added"
+
+
+class BatchPredictionReasons(BaseModel):
+    """Per-row reasons in the predictions file (P7.7-A): columns ``reason_1``..``reason_3``
+    name, per row, the input columns that moved THIS MODEL's score most, with the direction
+    and the reference it is measured against. They describe what the model used, not causes
+    in the world. For multiclass, a reason measures the predicted class's lead over the
+    average of the other classes (a log-ratio; occlusion uses the class's probability): a
+    column can raise that lead while lowering the class's probability if it raises a rival
+    class more. Only the file holds the reasons; this record holds no row values."""
+
+    available: bool = Field(description="True when the file's reason columns are filled for the explained rows.")
+    method: Literal["tree_shap", "linear_contributions", "occlusion"] | None = Field(
+        default=None,
+        description="tree_shap: the boosting model's own per-row contributions, compared with the model's "
+        "average row; linear_contributions: coefficient x value compared with the training average; occlusion: "
+        "each column set to its training median / most common value in turn (approximate).",
+    )
+    method_label: str | None = Field(default=None, description="The method in plain words.")
+    additive: bool = Field(
+        default=False,
+        description="True when each row's contributions add up to the model's raw output within a checked "
+        "numerical tolerance; false for occlusion.",
+    )
+    top_k: int = Field(default=3, description="Reasons per row at most (fewer when fewer columns moved the score).")
+    rows_explained: int = Field(default=0, description="Rows with reasons: the first rows of the file, up to a cap.")
+    note: str | None = Field(default=None, description="Plain note, e.g. when only the first rows were explained.")
+    unavailable_reason: str | None = Field(
+        default=None, description="Why there are no reasons (the scores are not affected)."
+    )
+
+
 class BatchPredictionRead(BaseModel):
     """One scoring run. ``contract_check`` names required/missing/ignored columns
     (the caller's own schema); ``error_message`` is generic text, never internals."""
@@ -93,8 +130,17 @@ class BatchPredictionRead(BaseModel):
     decision_threshold: float | None
     contract_check: dict[str, Any] | None
     output: BatchPredictionOutput | None
+    reasons: BatchPredictionReasons | None = Field(
+        default=None,
+        description="Per-row reasons in the file (which inputs moved the model's score, not causes in the world); "
+        "null until the scoring completes.",
+    )
     error_code: str | None
     error_message: str | None
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    scheduled: bool = Field(
+        default=False, description="Queued by the project's weekly schedule; false when a person scored it by hand."
+    )
+    scheduled_for: datetime | None = Field(default=None, description="The weekly slot (UTC) it was queued for.")

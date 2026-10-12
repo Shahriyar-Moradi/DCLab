@@ -1411,12 +1411,68 @@ class BatchPrediction(_Versioned):
     decision_threshold: float | None = None
     contract_check: dict[str, Any] | None = None
     output: BatchPredictionOutput | None = None
+    # P7.7-A: how the file's reason_1..reason_3 columns were made (which inputs moved the
+    # model's score; not causes in the world), or why there are none.
+    reasons: dict[str, Any] | None = None
     error_code: str | None = None
     error_message: str | None = None
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    scheduled: bool = False  # queued by the project's weekly schedule (False: scored by hand)
+    scheduled_for: datetime | None = None
 
     @property
     def is_terminal(self) -> bool:
         return self.status in {"completed", "failed"}
+
+
+class ScoringScheduleRun(BaseModel):
+    """One handled week of the weekly scoring schedule: queued (with its prediction) or why not."""
+
+    id: UUID
+    planned_for: datetime
+    outcome: str
+    message: str
+    reason_code: str | None = None
+    batch_prediction_id: UUID | None = None
+    model_version_id: UUID | None = None
+    model_release_id: UUID | None = None
+    input_dataset_id: UUID | None = None
+    created_at: datetime
+
+
+class ScoringSchedule(BaseModel):
+    """A project's weekly scoring schedule (weekday 0 = Monday ... 6 = Sunday, hour in UTC)."""
+
+    id: UUID
+    weekday: int
+    weekday_name: str
+    hour_utc: int
+    timezone: str = "UTC"
+    enabled: bool
+    next_planned_for: datetime | None = None
+    last_planned_for: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    created_by_user_id: UUID | None = None  # null for service tokens
+    updated_by_user_id: UUID | None = None
+    owner_can_score: bool
+    warning: str | None = None
+
+
+class ScoringScheduleState(_Versioned):
+    """``status``: off, on or paused_by_platform."""
+
+    project_id: UUID
+    schedule: ScoringSchedule | None = None
+    status: str
+    status_message: str | None = None
+    about: str = ""
+    recent_runs: list[ScoringScheduleRun] = Field(default_factory=list)
+
+
+class ScoringScheduleRunPage(BaseModel):
+    project_id: UUID
+    items: list[ScoringScheduleRun] = Field(default_factory=list)
+    next_cursor: str | None = None

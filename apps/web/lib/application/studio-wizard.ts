@@ -149,7 +149,7 @@ export function mapWizardError(error: unknown): PlainError {
   if (error instanceof WizardInputError) return { title: "Check your answers", detail: error.message, fixable: true };
   const status = (error as { status?: unknown } | null)?.status;
   const { code, message, details } = envelope((error as { body?: unknown } | null)?.body);
-  const known = BY_CODE[code];
+  const known = Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : undefined;
   if (known) return known;
   if (code === "validation_failed") {
     const first = (details.errors as Array<{ loc?: unknown[]; msg?: string }> | undefined)?.[0];
