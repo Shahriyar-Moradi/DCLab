@@ -40,6 +40,7 @@ from dclab_client.types import (
     InboxPage,
     ModelBuild,
     ModelCard,
+    ModelReleaseList,
     ModelVersion,
     NodeImpact,
     PolicyChange,
@@ -776,6 +777,21 @@ class ModelVersionsClient:
         return ModelCard.model_validate(payload)
 
 
+class ReleasesClient:
+    """Approvals of the model in use (P7.2-A), read-only: a person approves by putting a model in
+    use in DCLab Studio (``projects.move_ref`` of ``champion_model`` with a user token); service
+    tokens cannot."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(self, project_id: UUID | str, *, request_id: str | None = None) -> ModelReleaseList:
+        """Newest first; ``current_release_id`` is the approval of the model in use (or None)."""
+
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/releases", request_id=request_id)
+        return ModelReleaseList.model_validate(payload)
+
+
 class NodesClient:
     def __init__(self, transport: V1Transport) -> None:
         self._transport = transport
@@ -1348,6 +1364,7 @@ class DCLabClient:
         self.agent_reviews = AgentReviewsClient(self._transport)
         self.governance = GovernanceClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)
+        self.releases = ReleasesClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)

@@ -292,6 +292,20 @@ def _proposal(p: Any) -> dict[str, Any]:
     }
 
 
+def _release(r: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``release_summary``: never who approved it, and no
+    rationale that names the final holdout (the API already withholds it from tokens)."""
+
+    rationale = None if r.rationale and _HOLDOUT_KEY.search(r.rationale) else r.rationale
+    return {
+        "id": str(r.id), "model_version_id": str(r.model_version_id), "model_version": r.model_version,
+        "previous_release_id": r.previous_release_id and str(r.previous_release_id),
+        "decision_record_id": str(r.decision_record_id), "approved_at": r.approved_at.isoformat(),
+        "saved_format": r.saved_format, "package_manifest_digest": r.package_manifest_digest,
+        "is_current": r.is_current, "rationale": untrusted(rationale),
+    }
+
+
 def _governance(g: Any) -> dict[str, Any]:
     """Same keys and values as the catalog's ``_governance_shape``: no free text, no evidence, no R3 body."""
 
@@ -587,6 +601,13 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             return {"proposals": [_proposal(p) for p in page.items], "next_cursor": page.next_cursor}
         return run(call)
 
+    def list_releases(project_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            page = api.releases.list(uuid_arg(project_id, "project_id"))
+            return {"current_release_id": page.current_release_id and str(page.current_release_id),
+                    "releases": [_release(r) for r in page.items[:LIST_LIMIT]]}
+        return run(call)
+
     def inspect_governance() -> CallToolResult:
         def call() -> dict[str, Any]:
             return _governance(api.governance.get())
@@ -710,6 +731,10 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(get_model_card, read, "One-page model card: primary metric in plain words (cross-validation), dummy-"
              "baseline comparison, top drivers (permutation importance on CV validation folds), known risks from "
              "the trust checks, data and split summary, LLM used yes/no. The final evaluation is always withheld.")
+        tool(list_releases, read, "Approvals of a project's model in use (\"approved for scoring\"), newest first: "
+             "model version, previous approval, when, saved format, package manifest digest, whether it is current, "
+             "and the person's reason as untrusted text (never who). Read-only: only a person puts a model in use, "
+             "in DCLab Studio.")
         tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
              "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(get_impact, read, "Downstream closure of one graph node: which specs, datasets, split plans, recipes, "

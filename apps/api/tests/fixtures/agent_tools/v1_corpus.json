@@ -4349,6 +4349,25 @@
    "truncated": false,
    "truncated_kinds": []
   },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/releases": {
+   "current_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+   "items": [
+    {
+     "approved_at": "2026-10-12T08:00:00Z",
+     "approved_by_user_id": null,
+     "decision_record_id": "c3a5e2a8-1b7d-4c55-8f3e-6a1d2b4e9f70",
+     "id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "is_current": true,
+     "model_version": "v1",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "package_manifest_digest": "baae802c9077c67a7e840209671de9e7b5a9afb315216366e1343e0fe00fe5e5",
+     "previous_release_id": null,
+     "rationale": "Best CV score on the current test design; approved for scoring.",
+     "saved_format": "package_v1"
+    }
+   ],
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+  },
   "GET /v1/proposals": {
    "items": [
     {
@@ -4561,6 +4580,12 @@
     "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a"
    },
    "tool": "get_operating_points"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "list_releases"
   }
  ]
 }

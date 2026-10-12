@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import event, insert, select
 
 from app.db.models import (
+    Artifact,
     Environment,
     Experiment,
     ExperimentCandidate,
@@ -25,6 +26,7 @@ from app.db.models import (
     SplitPlan,
 )
 from app.domain.decision_records import SUBJECT_COLUMNS, DecisionActor
+from app.engine.serving.model_package import PACKAGE_FORMAT
 from app.domain.errors import GraphNodeNotFoundError, IdentityError, InvalidGraphCursorError, ProjectNotFoundError
 from app.domain.state_graph import (
     GRAPH_IMPACT_CAP,
@@ -191,6 +193,18 @@ def _seed_graph(db, tmp_path, setup, side: str, runs: list[dict]) -> SimpleNames
         ],
     )
     if mv_ids:
+        # P7.2-A: a model is put in use only with a stored package (model + manifest artifacts).
+        package = {i: (uuid4(), uuid4()) for i in mv_ids}
+        db.execute(
+            insert(Artifact),
+            [
+                dict(id=package[i][k], workspace_id=ws, project_id=project.id, pipeline_run_id=exp_ids[i],
+                     artifact_type=kind, provider="local", object_key=f"seed/{package[i][k]}",
+                     content_digest=f"{(i + 1) * (k + 7):064x}", size_bytes=10,
+                     extra_metadata={"role": kind, **({"package_format": PACKAGE_FORMAT} if k == 0 else {})})
+                for i in mv_ids for k, kind in enumerate(("model", "feature_manifest"))
+            ],
+        )
         db.execute(
             insert(ModelVersion),
             [
@@ -198,7 +212,8 @@ def _seed_graph(db, tmp_path, setup, side: str, runs: list[dict]) -> SimpleNames
                      project_id=project.id, workflow_id=workflow.id, workflow_run_id=workflow_run.id,
                      pipeline_run_id=exp_ids[i], selected_candidate_id=cand_ids[i],
                      dataset_id=prepared.id, feature_set_version_id=fsv_ids[i],
-                     content_digest=f"{i:064x}", metrics={})
+                     content_digest=f"{i:064x}", metrics={},
+                     model_artifact_id=package[i][0], feature_manifest_artifact_id=package[i][1])
                 for i, mv_id in mv_ids.items()
             ],
         )

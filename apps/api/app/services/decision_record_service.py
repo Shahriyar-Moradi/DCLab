@@ -449,6 +449,25 @@ def clean_json_object(value: Any, *, label: str, caller_details: bool = False) -
     return json.loads(encoded)
 
 
+PROPOSED_RATIONALE_DETAIL_MAX = 1000
+
+
+def with_proposed_rationale(details: dict[str, Any], proposed: Any) -> dict[str, Any]:
+    """``details`` plus an agent's own text as untrusted ``proposed_rationale`` (capped; only
+    ``proposed_rationale_omitted`` when the record refuses it). Never the record's rationale: a
+    person deciding an agent's proposal records their own reason."""
+
+    text = str(proposed or "").strip()
+    if not text:
+        return details
+    try:
+        return clean_json_object(
+            {**details, "proposed_rationale": text[:PROPOSED_RATIONALE_DETAIL_MAX]}, label="details"
+        )
+    except InvalidDecisionRecordError:
+        return {**details, "proposed_rationale_omitted": True}
+
+
 def _evidence_invalid(index: int, message: str) -> InvalidDecisionRecordError:
     return InvalidDecisionRecordError("evidence_ref_invalid", f"evidence_refs[{index}]: {message}")
 

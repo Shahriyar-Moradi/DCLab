@@ -24,7 +24,8 @@ from conftest import browser_login, csrf_headers
 
 # Bearers refused outright with this code (P3.2-A service tokens; P6.3-B2 assistant).
 SESSION_ONLY_GETS = {"/v1/service-tokens": "session_required", "/v1/assistant/threads": "human_session_required",
-                     "/v1/assistant/threads/{thread_id}": "human_session_required"}
+                     "/v1/assistant/threads/{thread_id}": "human_session_required",
+                     "/v1/workspaces/{workspace_id}/members": "session_required"}
 
 
 def _owner_and_workspaces(db_session):

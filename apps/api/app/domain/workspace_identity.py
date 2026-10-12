@@ -133,3 +133,30 @@ class ProblemSpecRead(BaseModel):
     created_by: UUID
     created_at: datetime
     locked_at: datetime | None
+
+
+class WorkspaceMemberRead(BaseModel):
+    """One person in the workspace, for the members screen (administrators only). No ids, no secrets."""
+
+    full_name: str
+    email: str
+    role: str
+    joined_at: datetime
+    is_you: bool
+    legacy_access: bool = False  # access from the old per-user workspace field, no membership row
+
+
+class WorkspaceRoleAbilitiesRead(BaseModel):
+    """What a role can do today, derived from the same role sets the server enforces."""
+
+    role: str
+    can_read: bool
+    can_run_ml: bool
+    can_manage_members: bool
+    can_approve_ai_policy: bool
+
+
+class WorkspaceMembersRead(BaseModel):
+    members: list[WorkspaceMemberRead]
+    more: bool  # true when the workspace has more people than the list cap
+    roles: list[WorkspaceRoleAbilitiesRead]

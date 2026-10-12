@@ -62,6 +62,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/projects/{project_id}/decisions",
             "/v1/projects/{project_id}/refs",
             "/v1/projects/{project_id}/refs/{ref_kind}",
+            # P7.2-A: approvals of the model in use; tokens never get the approving person's id.
+            "/v1/projects/{project_id}/releases",
             "/v1/nodes/{kind}/{node_id}/impact",
             "/v1/datasets",
             "/v1/datasets/{dataset_id}",
@@ -120,6 +122,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
 HUMAN_ONLY_ROUTES = frozenset(
     {
         ("GET", "/v1/service-tokens"),
+        # V7-B6: members' names and emails are for signed-in administrators (session_required for any bearer).
+        ("GET", "/v1/workspaces/{workspace_id}/members"),
         ("POST", "/v1/service-tokens"),
         ("POST", "/v1/service-tokens/{token_id}/revoke"),
         ("POST", "/v1/decisions/{decision_id}/accept"),

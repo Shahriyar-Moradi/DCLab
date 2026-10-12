@@ -2,8 +2,10 @@
 
 The API records intent (``batch_predictions`` row + ``ExecutionRequest`` +
 ``models.batch_predict`` ``ml_jobs`` row); only the worker loads the model.
-``model_release_id`` stays NULL until Phase 7 adds releases. Public reads never
-carry object keys, buckets or providers.
+``model_release_id`` is the approval of the model in use when the scoring was
+queued with it (P7.2-A); scoring with a model that is not in use stays allowed and
+leaves it NULL (no approval is claimed). Public reads never carry object keys,
+buckets or providers.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.data_plane import sql_in_clause
+from app.domain.model_releases import ModelReleaseSummary
 
 PREDICTION_QUEUED = "queued"
 PREDICTION_RUNNING = "running"
@@ -31,6 +34,7 @@ UNSUPPORTED_TRANSFORM = "unsupported_transform"
 UNSUPPORTED_MODEL = "unsupported_model"
 SCORING_FAILED = "scoring_failed"
 DATASET_UNAVAILABLE = "dataset_unavailable"
+RELEASE_MISMATCH = "release_mismatch"  # the approval no longer matches the model's package
 
 # DB CHECK backstops (models.py; Alembic 0069 inlines the same literal SQL).
 CK_BATCH_PREDICTIONS_STATUS = sql_in_clause("status", PREDICTION_STATUSES)
@@ -74,7 +78,12 @@ class BatchPredictionRead(BaseModel):
     workspace_id: UUID
     project_id: UUID | None
     model_version_id: UUID
-    model_release_id: UUID | None = None
+    model_release_id: UUID | None = Field(
+        default=None, description="The approval of the model in use this scoring ran with; null when not in use."
+    )
+    release: ModelReleaseSummary | None = Field(
+        default=None, description="That approval (`is_current`: still the model in use now)."
+    )
     input_dataset_id: UUID
     execution_request_id: UUID | None
     status: Literal["queued", "running", "completed", "failed"]

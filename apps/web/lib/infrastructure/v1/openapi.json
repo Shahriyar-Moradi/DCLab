@@ -956,6 +956,7 @@
                 "type": "null"
               }
             ],
+            "description": "The approval of the model in use this scoring ran with; null when not in use.",
             "title": "Model Release Id"
           },
           "model_version_id": {
@@ -992,6 +993,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelReleaseSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "That approval (`is_current`: still the model in use now)."
           },
           "rows_in": {
             "anyOf": [
@@ -7201,6 +7213,207 @@
         "title": "ModelCardTarget",
         "type": "object"
       },
+      "ModelReleaseList": {
+        "properties": {
+          "current_release_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The approval of the model in use; null when no person has approved it yet.",
+            "title": "Current Release Id"
+          },
+          "items": {
+            "description": "Newest first.",
+            "items": {
+              "$ref": "#/components/schemas/ModelReleaseRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "ModelReleaseList",
+        "type": "object"
+      },
+      "ModelReleaseRead": {
+        "properties": {
+          "approved_at": {
+            "format": "date-time",
+            "title": "Approved At",
+            "type": "string"
+          },
+          "approved_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The person who approved it (null for service-token readers).",
+            "title": "Approved By User Id"
+          },
+          "decision_record_id": {
+            "description": "The `champion_promoted` decision that approved it.",
+            "format": "uuid",
+            "title": "Decision Record Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_current": {
+            "description": "This is the approval of the model in use now.",
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "model_version": {
+            "description": "The model version's label (e.g. v3).",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "model_version_id": {
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "package_manifest_digest": {
+            "description": "Content digest of the version's `feature_manifest` artifact at approval; scoring re-checks it.",
+            "title": "Package Manifest Digest",
+            "type": "string"
+          },
+          "previous_release_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project's approval before this one (rollback = approve that version again).",
+            "title": "Previous Release Id"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, as the approving person wrote it (never an agent's text; accepting an agent's proposal without a reason records a default naming the proposal): untrusted plain text, never markup. Null for service-token readers when it names the final holdout.",
+            "title": "Rationale"
+          },
+          "saved_format": {
+            "enum": [
+              "package_v1",
+              "legacy_quarantined"
+            ],
+            "title": "Saved Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "model_version_id",
+          "decision_record_id",
+          "approved_at",
+          "saved_format",
+          "package_manifest_digest",
+          "is_current",
+          "model_version"
+        ],
+        "title": "ModelReleaseRead",
+        "type": "object"
+      },
+      "ModelReleaseSummary": {
+        "description": "The approval behind a model in use (\"approved for scoring\"); no person ids.",
+        "properties": {
+          "approved_at": {
+            "format": "date-time",
+            "title": "Approved At",
+            "type": "string"
+          },
+          "decision_record_id": {
+            "description": "The `champion_promoted` decision that approved it.",
+            "format": "uuid",
+            "title": "Decision Record Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_current": {
+            "description": "This is the approval of the model in use now.",
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "model_version_id": {
+            "format": "uuid",
+            "title": "Model Version Id",
+            "type": "string"
+          },
+          "package_manifest_digest": {
+            "description": "Content digest of the version's `feature_manifest` artifact at approval; scoring re-checks it.",
+            "title": "Package Manifest Digest",
+            "type": "string"
+          },
+          "previous_release_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project's approval before this one (rollback = approve that version again).",
+            "title": "Previous Release Id"
+          },
+          "saved_format": {
+            "enum": [
+              "package_v1",
+              "legacy_quarantined"
+            ],
+            "title": "Saved Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "model_version_id",
+          "decision_record_id",
+          "approved_at",
+          "saved_format",
+          "package_manifest_digest",
+          "is_current"
+        ],
+        "title": "ModelReleaseSummary",
+        "type": "object"
+      },
       "ModelRoleRead": {
         "additionalProperties": false,
         "properties": {
@@ -7479,6 +7692,17 @@
             },
             "title": "Ref Kinds",
             "type": "array"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelReleaseSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When this version is the model in use and a person approved it: that approval (P7.2-A; \"approved for scoring\"). Null otherwise, including a model in use set by the first-run rule."
           },
           "saved_format": {
             "anyOf": [
@@ -11139,6 +11363,75 @@
         "title": "VisualizationRead",
         "type": "object"
       },
+      "WorkspaceMemberRead": {
+        "description": "One person in the workspace, for the members screen (administrators only). No ids, no secrets.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "is_you": {
+            "title": "Is You",
+            "type": "boolean"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "legacy_access": {
+            "default": false,
+            "title": "Legacy Access",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "email",
+          "role",
+          "joined_at",
+          "is_you"
+        ],
+        "title": "WorkspaceMemberRead",
+        "type": "object"
+      },
+      "WorkspaceMembersRead": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceMemberRead"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "more": {
+            "title": "More",
+            "type": "boolean"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceRoleAbilitiesRead"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "members",
+          "more",
+          "roles"
+        ],
+        "title": "WorkspaceMembersRead",
+        "type": "object"
+      },
       "WorkspaceRead": {
         "properties": {
           "created_at": {
@@ -11188,6 +11481,40 @@
           "max_ml_engineer_seats"
         ],
         "title": "WorkspaceRead",
+        "type": "object"
+      },
+      "WorkspaceRoleAbilitiesRead": {
+        "description": "What a role can do today, derived from the same role sets the server enforces.",
+        "properties": {
+          "can_approve_ai_policy": {
+            "title": "Can Approve Ai Policy",
+            "type": "boolean"
+          },
+          "can_manage_members": {
+            "title": "Can Manage Members",
+            "type": "boolean"
+          },
+          "can_read": {
+            "title": "Can Read",
+            "type": "boolean"
+          },
+          "can_run_ml": {
+            "title": "Can Run Ml",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "can_read",
+          "can_run_ml",
+          "can_manage_members",
+          "can_approve_ai_policy"
+        ],
+        "title": "WorkspaceRoleAbilitiesRead",
         "type": "object"
       }
     }
@@ -18769,7 +19096,7 @@
         ]
       },
       "post": {
-        "description": "Move ``{ref_kind}`` (and ``companion_moves``) under one accepted record\n(``champion_promoted`` when ``champion_model`` moves, else ``ref_moved``).\n\nRequires ``If-Match: \"<version>\"`` of this ref (``428`` when absent, ``412``\nwhen stale) or ``If-None-Match: *`` to create a missing kind, and\n``Idempotency-Key``. A champion must cite its ``final_holdout`` evaluation,\nmove ``feature_recipe`` with it and share the current champion's split plan\n(``409 champion_split_plan_mismatch``). Companion refs carry their own\n``expected_version`` (stale: ``409 ref_version_conflict``).",
+        "description": "Move ``{ref_kind}`` (and ``companion_moves``) under one accepted record\n(``champion_promoted`` when ``champion_model`` moves, else ``ref_moved``).\n\nRequires ``If-Match: \"<version>\"`` of this ref (``428`` when absent, ``412``\nwhen stale) or ``If-None-Match: *`` to create a missing kind, and\n``Idempotency-Key``. A champion must cite its ``final_holdout`` evaluation,\nmove ``feature_recipe`` with it and share the current champion's split plan\n(``409 champion_split_plan_mismatch``). Companion refs carry their own\n``expected_version`` (stale: ``409 ref_version_conflict``). Moving ``champion_model``\nputs the model in use and approves it for scoring: the same transaction writes its\nrelease (``GET /v1/projects/{id}/releases``); a model without a stored package, or a\nquarantined legacy pickle the server does not score with, is ``422``.",
         "operationId": "move_ref_v1_v1_projects__project_id__refs__ref_kind__post",
         "parameters": [
           {
@@ -18983,6 +19310,100 @@
           }
         },
         "summary": "Move Ref V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/releases": {
+      "get": {
+        "description": "Approvals of the model in use (\"approved for scoring\"), newest first (P7.2-A). Each is\nwritten when a person puts a model in use (``POST /v1/projects/{id}/refs/champion_model``);\nthere is no other way to approve. ``rationale`` is untrusted plain text; service tokens get\n``approved_by_user_id`` null and a null ``rationale`` when it names the final holdout.",
+        "operationId": "read_project_releases_v1_projects__project_id__releases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelReleaseList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Project Releases",
         "tags": [
           "v1"
         ]
@@ -20198,6 +20619,100 @@
           }
         },
         "summary": "Read Workspaces",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/members": {
+      "get": {
+        "description": "People in the workspace (name, email, role, joined date, which one is the caller), oldest\nfirst, capped at 200 (`more` says when there are others), plus what each role can do. Signed-in\npeople only (members' emails are never read by service tokens) and only owners and\nadministrators (403 `members_not_permitted`); another workspace is 404. Never cached.",
+        "operationId": "read_workspace_members_v1_workspaces__workspace_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembersRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Workspace Members",
         "tags": [
           "v1"
         ]

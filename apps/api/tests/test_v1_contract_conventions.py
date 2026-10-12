@@ -37,6 +37,7 @@ UUID_ZERO = "00000000-0000-0000-0000-000000000000"
 WORKSPACE_FREE = {"/v1/me", "/v1/workspaces"}
 # Signed-in sessions only; any Authorization header is a 403 with this code (P3.2-A; P6.3-B2).
 SESSION_ONLY = {"/v1/service-tokens": "session_required", "/v1/service-tokens/{token_id}/revoke": "session_required",
+                "/v1/workspaces/{workspace_id}/members": "session_required",
                 **{path: "human_session_required" for path in (
                     "/v1/assistant/threads", "/v1/assistant/threads/{thread_id}",
                     "/v1/assistant/threads/{thread_id}/messages")}}
@@ -120,6 +121,7 @@ def test_inventory_covers_every_current_v1_operation():
     assert ops == {
         "GET /v1/me",
         "GET /v1/workspaces",
+        "GET /v1/workspaces/{workspace_id}/members",
         "GET /v1/projects",
         "POST /v1/projects",
         "GET /v1/activity",
@@ -129,6 +131,7 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/projects/{project_id}/problem-specs",
         "GET /v1/projects/{project_id}/graph",
         "GET /v1/projects/{project_id}/decisions",
+        "GET /v1/projects/{project_id}/releases",
         "GET /v1/nodes/{kind}/{node_id}/impact",
         "GET /v1/datasets",
         "POST /v1/datasets",

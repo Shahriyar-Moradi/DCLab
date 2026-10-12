@@ -96,6 +96,7 @@ from app.domain.ml_jobs import JOB_CANCELLED, JOB_COMPLETED, JOB_FAILED, JOB_QUE
 from app.engine.evaluation.metrics import LOWER_IS_BETTER
 from app.engine.modeling.objective import DEFAULT_THRESHOLD
 from app.engine.serving.model_package import saved_format
+from app.services.model_release_service import release_for_version
 from app.engine.lab.open_ingest import _from_columns as preview_from_columns
 from app.services.audience_projection import public_diagnostic, public_failure
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
@@ -664,6 +665,7 @@ def model_version_read(
             key=lambda ref: ref.role,
         ),
         saved_format=saved_format(model_artifact.extra_metadata) if model_artifact is not None else None,
+        release=release_for_version(db, workspace_id=workspace_id, model_version=row) if ref_kinds else None,
     )
 
 

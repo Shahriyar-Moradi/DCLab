@@ -310,6 +310,12 @@ from app.domain.decision_records import (
     CK_PDR_SUBJECT_MATCHES_KIND,
     CK_PDR_SUPERSEDES_NOT_SELF,
 )
+from app.domain.model_releases import (
+    CK_MODEL_RELEASES_DIGEST,
+    CK_MODEL_RELEASES_PREVIOUS_NOT_SELF,
+    CK_MODEL_RELEASES_RATIONALE,
+    CK_MODEL_RELEASES_SAVED_FORMAT,
+)
 from app.domain.experiment_changes import (
     CK_EXPERIMENTS_CHANGE_SET_BOUNDED,
     CK_EXPERIMENTS_CHANGE_SET_CHANGES,
@@ -6327,6 +6333,91 @@ class ProjectRef(Base):
     )
 
 
+class ModelRelease(Base):
+    """The immutable approval behind "model in use" (P7.2-A; ``app.domain.model_releases``).
+
+    Inserted only by ``project_ref_service.move_ref`` in the transaction that writes the
+    accepted ``champion_promoted`` record and moves ``champion_model``. Append-only (DB
+    trigger). ``previous_release_id`` chains the project's approvals; the two unique
+    indexes keep that chain linear (one first release, one successor per release).
+    The DB only proves ``decision_record_id`` is a record of the same tenant and project
+    (and used once): that it is an ACCEPTED ``champion_promoted`` record moving this version
+    is guaranteed by that single writer. A future second writer must keep that invariant.
+    ``created_at`` is ``clock_timestamp()`` (not the transaction start), so newest-first
+    order follows the approval chain.
+    """
+
+    __tablename__ = "model_releases"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_model_releases_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_model_releases_workspace_project_id"),
+        # Target of batch_predictions' FK: a scoring row's release must approve the version it scores.
+        UniqueConstraint("workspace_id", "model_version_id", "id", name="uq_model_releases_workspace_model_version_id"),
+        UniqueConstraint("decision_record_id", name="uq_model_releases_decision_record_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_model_releases_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_model_releases_workspace_project_model_version",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "previous_release_id"],
+            ["model_releases.workspace_id", "model_releases.project_id", "model_releases.id"],
+            name="fk_model_releases_workspace_project_previous_release",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "decision_record_id"],
+            [
+                "project_decision_records.workspace_id",
+                "project_decision_records.project_id",
+                "project_decision_records.id",
+            ],
+            name="fk_model_releases_workspace_project_decision_record",
+        ),
+        CheckConstraint(CK_MODEL_RELEASES_RATIONALE, name="ck_model_releases_rationale"),
+        CheckConstraint(CK_MODEL_RELEASES_DIGEST, name="ck_model_releases_digest"),
+        CheckConstraint(CK_MODEL_RELEASES_SAVED_FORMAT, name="ck_model_releases_saved_format"),
+        CheckConstraint(CK_MODEL_RELEASES_PREVIOUS_NOT_SELF, name="ck_model_releases_previous_not_self"),
+        Index("ix_model_releases_project_created_at", "workspace_id", "project_id", desc("created_at")),
+        Index("ix_model_releases_workspace_model_version", "workspace_id", "model_version_id"),
+        Index("ix_model_releases_approved_by_user_id", "approved_by_user_id"),
+        Index(
+            "uq_model_releases_previous_release_id",
+            "previous_release_id",
+            unique=True,
+            postgresql_where=text("previous_release_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_model_releases_project_first",
+            "project_id",
+            unique=True,
+            postgresql_where=text("previous_release_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    previous_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    decision_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    approved_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    rationale: Mapped[str] = mapped_column(String(4000), nullable=False)
+    package_manifest_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    saved_format: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
 class IdempotencyKey(Base):
     """Generic /v1 Idempotency-Key binding (P3.1-B1) for resources without a key column.
 
@@ -6439,7 +6530,7 @@ class BatchPrediction(Base):
     ``completed`` (output artifact, ``rows_out = rows_in``) or ``failed``
     (``error_code``). Terminal rows are frozen by a DB trigger (only
     ``requested_by_user_id`` may still become NULL, by its FK). ``model_release_id``
-    has no FK until Phase 7 adds releases.
+    is the approval of the model in use when it was queued (P7.2-A); NULL otherwise.
     """
 
     __tablename__ = "batch_predictions"
@@ -6480,6 +6571,13 @@ class BatchPrediction(Base):
             ["service_tokens.workspace_id", "service_tokens.id"],
             name="fk_batch_predictions_service_token",
         ),
+        # P7.2-A: the release must be of this tenant AND approve this very version (MATCH SIMPLE:
+        # checked only when model_release_id is set).
+        ForeignKeyConstraint(
+            ["workspace_id", "model_version_id", "model_release_id"],
+            ["model_releases.workspace_id", "model_releases.model_version_id", "model_releases.id"],
+            name="fk_batch_predictions_workspace_model_release",
+        ),
         CheckConstraint(CK_BATCH_PREDICTIONS_STATUS, name="ck_batch_predictions_status"),
         CheckConstraint(CK_BATCH_PREDICTIONS_OUTPUT_FORMAT, name="ck_batch_predictions_output_format"),
         CheckConstraint(CK_BATCH_PREDICTIONS_ROWS, name="ck_batch_predictions_rows"),
@@ -6498,6 +6596,12 @@ class BatchPrediction(Base):
         Index("ix_batch_predictions_workspace_input_dataset", "workspace_id", "input_dataset_id"),
         Index("ix_batch_predictions_workspace_output_artifact", "workspace_id", "output_artifact_id"),
         Index("ix_batch_predictions_workspace_ml_job", "workspace_id", "ml_job_id"),
+        Index(
+            "ix_batch_predictions_workspace_model_release",
+            "workspace_id",
+            "model_release_id",
+            postgresql_where=text("model_release_id IS NOT NULL"),
+        ),
         Index(
             "uq_batch_predictions_workspace_execution_request",
             "workspace_id",

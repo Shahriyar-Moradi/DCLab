@@ -105,7 +105,9 @@ from app.services.decision_record_service import (
     scoped_idempotency_key,
     unique_violation,
     validate_evidence_refs,
+    with_proposed_rationale,
 )
+from app.services.model_release_service import insert_release, releasable_package
 from app.services.split_plan_service import is_unique_race
 
 logger = logging.getLogger(__name__)
@@ -432,6 +434,7 @@ _REF_TARGET_TABLES: dict[str, Any] = {
     "champion_model": ModelVersion,
 }
 _REF_KIND_UNIQUE = "uq_project_refs_project_ref_kind"
+_RELEASE_CHAIN_UNIQUES = frozenset({"uq_model_releases_previous_release_id", "uq_model_releases_project_first"})
 
 
 @dataclass(frozen=True)
@@ -873,6 +876,7 @@ def move_ref(
     decision_type: str | None = None,
     proposal_id: UUID | None = None,
     idempotency_key: str | None = None,
+    proposed_rationale: str | None = None,
 ) -> RefMoveResult:
     """Move refs under one accepted decision record, atomically (ADR 0006 §2).
 
@@ -880,7 +884,12 @@ def move_ref(
     expected`` (or INSERTed when ``expected_version`` is None and the kind is
     missing). A 0-row update raises ``RefVersionConflictError`` and the savepoint
     rolls back the record too. With ``proposal_id`` the accepted record
-    supersedes that open proposal, whose moves must match. The caller commits.
+    supersedes that open proposal, whose moves must match. Moving ``champion_model``
+    (putting a model in use) also inserts its ``model_releases`` approval in the same
+    savepoint, after checking the model's package (P7.2-A). ``rationale`` is the acting
+    person's own reason (it becomes the release's); an agent's text from an accepted
+    agent proposal is passed as ``proposed_rationale`` and kept only as untrusted
+    ``details.proposed_rationale``. The caller commits.
     """
 
     # Human only: rules never move refs (bootstrap has its own path), agents propose.
@@ -917,6 +926,8 @@ def move_ref(
         rationale=rationale, evidence_refs=evidence_refs, lock=True, attached=champion and champion[0],
     )
     check_ref_versions(items, current)
+    # P7.2-A: putting a model in use approves it for scoring; its package is checked first.
+    package = releasable_package(db, targets["champion_model"]) if "champion_model" in targets else None
     if proposal is not None:
         require_open_proposal(db, proposal)
         proposed = {
@@ -935,10 +946,14 @@ def move_ref(
     )
     if champion is not None:
         row.details = {**row.details, DETAIL_SERVICE_ATTACHED_EVIDENCE: [{**champion[1], "rechecked_at_accept": True}]}
+    row.details = with_proposed_rationale(row.details, proposed_rationale)
     try:
         with db.begin_nested():
             db.add(row)
             db.flush()
+            if package is not None:
+                insert_release(db, record=row, model=targets["champion_model"],
+                               approved_by_user_id=actor.user_id, package=package)
             for move in items:
                 column = REF_TARGET_COLUMNS[move.ref_kind]
                 existing = current.get(move.ref_kind)
@@ -975,6 +990,11 @@ def move_ref(
                 if moved.rowcount != 1:
                     raise _version_conflict(move, existing)
     except IntegrityError as exc:
+        if unique_violation(exc) in _RELEASE_CHAIN_UNIQUES:
+            raise RefVersionConflictError(
+                "release_created_concurrently", "another model was put in use at the same time",
+                ref_kind="champion_model",
+            ) from exc
         if unique_violation(exc) == _REF_KIND_UNIQUE:
             raise RefVersionConflictError(
                 "ref_created_concurrently", "the ref kind was created concurrently",

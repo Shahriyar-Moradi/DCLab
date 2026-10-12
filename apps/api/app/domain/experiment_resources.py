@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.experiment_changes import CHANGE_SET_MAX_CHANGES, CHANGE_KINDS, INTENT_MAX_CHARS
+from app.domain.model_releases import ModelReleaseSummary
 
 EXPERIMENT_PAGE_DEFAULT = 50
 EXPERIMENT_PAGE_MAX = 200
@@ -236,5 +237,12 @@ class ModelVersionResourceRead(BaseModel):
             "scoring with it works only where the server explicitly allows legacy models (by default only in an "
             "explicitly configured development environment). "
             "Null when the version has no stored model."
+        ),
+    )
+    release: ModelReleaseSummary | None = Field(
+        default=None,
+        description=(
+            "When this version is the model in use and a person approved it: that approval (P7.2-A; "
+            "\"approved for scoring\"). Null otherwise, including a model in use set by the first-run rule."
         ),
     )

@@ -129,6 +129,13 @@ def strip_holdout(value: Any) -> Any:
 
 cv_only = strip_holdout  # the name the tool shapers use: free-form engine dicts, CV only
 
+
+def holdout_free_text(value: str | None) -> str | None:
+    """Free text (a rationale) for an agent reader: withheld (``None``) when it names the final
+    holdout, since a reason may quote a final-evaluation number next to the word."""
+
+    return None if value and HOLDOUT_KEY.search(value) else value
+
 # P6.4-A: the pipeline auditor's stored advisory report (``ml_run_verifications.llm_report``
 # and its ``openai_audit`` / ``verification_attempt`` overlay) is floored with the FULL
 # deterministic status, holdout-derived checks included, so it is holdout-scoped: no agent
@@ -265,12 +272,13 @@ def withhold_model_build(body: Any) -> Any:
 
 
 def withhold_decision(body: Any) -> Any:
-    """A decision record without holdout keys in facts / details and without holdout-scoped
-    evidence refs (e.g. a champion's final-evaluation ref, the service-attached marker)."""
+    """A decision record without holdout keys in facts / details, without holdout-scoped
+    evidence refs (e.g. a champion's final-evaluation ref, the service-attached marker) and
+    without the acting person's id (``actor.user_id`` is null, as a release's approver is)."""
 
     refs = [ref for ref in body.evidence_refs if not holdout_scoped(ref.model_dump(mode="json"))]
     return body.model_copy(update={"facts": strip_holdout(body.facts), "details": strip_holdout(body.details),
-                                   "evidence_refs": refs})
+                                   "evidence_refs": refs, "actor": body.actor.model_copy(update={"user_id": None})})
 
 
 VERDICT_EVENT_STAGES = frozenset({"openai_audit", "deterministic_verification"})

@@ -1231,6 +1231,31 @@ class ModelVersionArtifact(BaseModel):
     mime_type: str | None = None
 
 
+class ModelReleaseSummary(BaseModel):
+    """The approval behind the model in use ("approved for scoring", P7.2-A)."""
+
+    id: UUID
+    model_version_id: UUID
+    previous_release_id: UUID | None = None
+    decision_record_id: UUID
+    approved_at: datetime
+    saved_format: str
+    package_manifest_digest: str
+    is_current: bool
+
+
+class ModelRelease(ModelReleaseSummary):
+    model_version: str
+    approved_by_user_id: UUID | None = None  # null for service tokens
+    rationale: str | None = None  # untrusted text a person wrote; null for tokens when it names the holdout
+
+
+class ModelReleaseList(BaseModel):
+    project_id: UUID
+    current_release_id: UUID | None = None
+    items: list[ModelRelease] = Field(default_factory=list)
+
+
 class ModelVersion(_Versioned):
     id: UUID
     workspace_id: UUID
@@ -1247,6 +1272,7 @@ class ModelVersion(_Versioned):
     is_champion: bool
     ref_kinds: list[str] = Field(default_factory=list)
     artifacts: list[ModelVersionArtifact] = Field(default_factory=list)
+    release: ModelReleaseSummary | None = None
 
 
 class ModelCardMetricInWords(BaseModel):
@@ -1375,6 +1401,7 @@ class BatchPrediction(_Versioned):
     project_id: UUID | None = None
     model_version_id: UUID
     model_release_id: UUID | None = None
+    release: ModelReleaseSummary | None = None
     input_dataset_id: UUID
     execution_request_id: UUID | None = None
     status: str

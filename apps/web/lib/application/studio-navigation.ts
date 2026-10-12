@@ -17,7 +17,7 @@ export const STUDIO_BACKEND_FEATURES: StudioCapabilities = {
   inbox: true, // GET /v1/inbox, /v1/inbox/counts
   governance: false, // page arrives with P6.11-UI
   agents: true, // Connect + Service tokens (/v1/service-tokens); tool registry and runs arrive with A2-UI
-  settings: false,
+  settings: true, // GET /v1/workspaces/{id}/members (owners and administrators; others get an explanation)
   lab: false, // assistant chat arrives with A3-UI
   pipeline: true, // GET /v1/model-builds/{id}
   graph: true, // GET /v1/projects/{id}/graph

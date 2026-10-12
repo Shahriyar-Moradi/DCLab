@@ -27,6 +27,7 @@ from app.db.models import (
     Experiment,
     ExperimentCandidate,
     MlJob,
+    ModelRelease,
     ModelVersion,
     User,
 )
@@ -36,6 +37,7 @@ from app.domain.batch_predictions import (
     PREDICTION_FAILED,
     PREDICTION_QUEUED,
     PREDICTION_RUNNING,
+    RELEASE_MISMATCH,
     SCORING_FAILED,
     TERMINAL_PREDICTION_STATUSES,
     UNSUPPORTED_MODEL,
@@ -61,6 +63,7 @@ from app.domain.ml_jobs import (
 )
 from app.services.artifact_service import ArtifactTooLargeError, get_artifact, read_artifact_bytes, store_artifact
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
+from app.services.model_release_service import current_release, release_summary
 from app.storage._hashing import sha256_bytes
 
 logger = logging.getLogger(__name__)
@@ -131,6 +134,9 @@ def create_batch_prediction(
             "training_dataset_not_scoreable", "score new data, not the dataset this model was trained on",
             status_code=409)
     ensure_run_capacity(db, workspace_id)  # one shared limit for training and scoring jobs
+    # P7.2-A: scoring with the model in use carries its approval; any other model scores
+    # as before with no release (approval is never claimed for it).
+    release = current_release(db, workspace_id=workspace_id, project_id=model_version.project_id)
     prediction_id = uuid4()
     request = create_execution_request(
         db,
@@ -162,6 +168,7 @@ def create_batch_prediction(
         workspace_id=workspace_id,
         project_id=model_version.project_id,
         model_version_id=model_version.id,
+        model_release_id=release.id if release is not None and release.model_version_id == model_version.id else None,
         input_dataset_id=dataset.id,
         execution_request_id=request.id,
         ml_job_id=job.id,
@@ -207,12 +214,15 @@ def batch_prediction_read(
             mime_type=artifact.mime_type,
             download_path=f"/v1/predictions/{row.id}/download",
         )
+    release = _scoped(db, ModelRelease, workspace_id, row.model_release_id)
+    current = current_release(db, workspace_id=workspace_id, project_id=row.project_id) if release else None
     return BatchPredictionRead(
         id=row.id,
         workspace_id=row.workspace_id,
         project_id=row.project_id,
         model_version_id=row.model_version_id,
         model_release_id=row.model_release_id,
+        release=release_summary(release, current_id=current.id if current is not None else None),
         input_dataset_id=row.input_dataset_id,
         execution_request_id=row.execution_request_id,
         status=row.status,
@@ -280,7 +290,12 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
 
     from app.engine.data.loaders import load_table
     from app.engine.serving.batch_scoring import ScoringError, score_frame, scoring_spec
-    from app.engine.serving.model_package import PACKAGE_MAX_BYTES, ModelPackageError, check_manifest_contract
+    from app.engine.serving.model_package import (
+        PACKAGE_MAX_BYTES,
+        ModelPackageError,
+        check_manifest_contract,
+        saved_format,
+    )
     from app.engine.serving.package_loader import load_model  # worker only (P7.1-A)
     from app.services.dataset_materialization import materialize_dataset
 
@@ -290,6 +305,18 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
     candidate = model_version and _scoped(db, ExperimentCandidate, workspace_id, model_version.selected_candidate_id)
     artifact = model_version and _scoped(db, Artifact, workspace_id, model_version.model_artifact_id)
     message = "this model version's stored pipeline cannot be used for batch scoring"
+    manifest = model_version and _scoped(db, Artifact, workspace_id, model_version.feature_manifest_artifact_id)
+    release = None
+    mismatch = "the stored model no longer matches the version approved for scoring"
+    if row.model_release_id is not None:
+        # P7.2-A, no TOCTOU: the approval this scoring was queued with must still name this
+        # version and pin exactly the package manifest AND the saved format (the loader branches
+        # on the artifact's package format) the worker is about to load.
+        release = _scoped(db, ModelRelease, workspace_id, row.model_release_id)
+        if (model_version is None or release is None or release.model_version_id != model_version.id
+                or manifest is None or manifest.content_digest != release.package_manifest_digest
+                or artifact is None or saved_format(artifact.extra_metadata) != release.saved_format):
+            raise ScoringError(RELEASE_MISMATCH, mismatch)
     if experiment is None or candidate is None or artifact is None or artifact.artifact_type != "model":
         raise ScoringError(UNSUPPORTED_MODEL, message)
     result = experiment.result if isinstance(experiment.result, dict) else {}
@@ -307,13 +334,14 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
         raise ScoringError(UNSUPPORTED_MODEL, message) from exc
     # P7.1-A: the loader checks the bytes against the artifact digest, a package against the
     # manifest digest the version references; a pre-package pickle is quarantined.
-    manifest = _scoped(db, Artifact, workspace_id, model_version.feature_manifest_artifact_id)
     loaded = load_model(
         payload,
         expected_digest=artifact.content_digest,
         package_format=(artifact.extra_metadata or {}).get("package_format"),
         manifest_digest=manifest.content_digest if manifest else None,
     )
+    if release is not None and loaded.saved_format != release.saved_format:
+        raise ScoringError(RELEASE_MISMATCH, mismatch)  # what was loaded is not what was approved
     if loaded.saved_format != "package_v1":
         logger.warning(
             "batch prediction %s loaded model version %s (workspace %s) from the QUARANTINED legacy pickle "

@@ -27,6 +27,7 @@ from app.db.models import (
     Experiment,
     LlmInvocation,
     MlJob,
+    ModelRelease,
     ProjectDecisionRecord,
     WorkspaceRole,
 )
@@ -436,6 +437,11 @@ def test_record_decision_and_ref_moves_need_versions_and_promote_authority(pr, m
     assert ok.status_code == 200, ok.text
     assert ok.json()["status"] == "applied"
     assert pr.db.scalar(text("SELECT count(*) FROM project_refs WHERE ref_kind = 'problem_spec'")) == 1
+    # The ref move is the accepting person's (no reason given: the default accept text), never the agent's words.
+    moved = _records(pr, "ref_moved")[-1]
+    assert (moved.actor_user_id, moved.rationale) == (
+        pr.setup["alpha_admin"].id, f"accepted assistant proposal {spec_move.id}")
+    assert moved.details["proposed_rationale"] == "binary target"
 
 
 def test_request_agent_review_queues_a_specialist_run(pr, monkeypatch):
@@ -856,10 +862,18 @@ def test_champion_accept_carries_the_human_only_evaluation_and_refuses_a_failed_
     pr.db.execute(text("UPDATE ml_run_verifications SET deterministic_status = 'PASSED' WHERE experiment_id = :e"),
                   {"e": root})
     pr.db.commit()
-    done = _post(pr, move, "accept", body={"ref_versions": versions})
+    done = _post(pr, move, "accept", body={"ref_versions": versions, "rationale": "I checked the CV report"})
     assert done.status_code == 200, done.text
     record = pr.db.scalar(select(ProjectDecisionRecord).where(ProjectDecisionRecord.decision_type == "champion_promoted"))
     assert record.actor_kind == "human" and any(r.get("scope") == "final_holdout" for r in record.evidence_refs)
+    # P7.2-A: the approval (record + release) is the accepting PERSON's, in their words; the agent's
+    # text is kept only as untrusted details.proposed_rationale.
+    release = pr.db.scalar(select(ModelRelease).where(ModelRelease.decision_record_id == record.id))
+    assert (release.approved_by_user_id, record.actor_user_id) == (pr.setup["alpha_admin"].id,) * 2
+    assert release.rationale == record.rationale == "I checked the CV report"
+    assert record.details["proposed_rationale"] == "promote the first model"
+    assert "promote the first model" not in json.dumps(
+        {k: v for k, v in record.details.items() if k not in ("proposed_rationale", "tool_arguments")})
     raw = create_service_token(pr.db, creator=pr.setup["alpha_admin"], workspace_id=pr.ws, name="t", scopes=["read"],
                                expires_in_days=30, current_password=PASSWORD)[1]
     pr.db.commit()

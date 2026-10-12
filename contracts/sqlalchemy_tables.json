@@ -51,6 +51,7 @@
   "model_assets",
   "model_evaluations",
   "model_hyperparameters",
+  "model_releases",
   "model_selection_decisions",
   "model_versions",
   "opportunities",

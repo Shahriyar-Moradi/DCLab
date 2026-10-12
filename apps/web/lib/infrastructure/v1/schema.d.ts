@@ -1220,9 +1220,35 @@ export interface paths {
          *     ``Idempotency-Key``. A champion must cite its ``final_holdout`` evaluation,
          *     move ``feature_recipe`` with it and share the current champion's split plan
          *     (``409 champion_split_plan_mismatch``). Companion refs carry their own
-         *     ``expected_version`` (stale: ``409 ref_version_conflict``).
+         *     ``expected_version`` (stale: ``409 ref_version_conflict``). Moving ``champion_model``
+         *     puts the model in use and approves it for scoring: the same transaction writes its
+         *     release (``GET /v1/projects/{id}/releases``); a model without a stored package, or a
+         *     quarantined legacy pickle the server does not score with, is ``422``.
          */
         post: operations["move_ref_v1_v1_projects__project_id__refs__ref_kind__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Project Releases
+         * @description Approvals of the model in use ("approved for scoring"), newest first (P7.2-A). Each is
+         *     written when a person puts a model in use (``POST /v1/projects/{id}/refs/champion_model``);
+         *     there is no other way to approve. ``rationale`` is untrusted plain text; service tokens get
+         *     ``approved_by_user_id`` null and a null ``rationale`` when it names the final holdout.
+         */
+        get: operations["read_project_releases_v1_projects__project_id__releases_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1389,6 +1415,29 @@ export interface paths {
         };
         /** Read Workspaces */
         get: operations["read_workspaces_v1_workspaces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Workspace Members
+         * @description People in the workspace (name, email, role, joined date, which one is the caller), oldest
+         *     first, capped at 200 (`more` says when there are others), plus what each role can do. Signed-in
+         *     people only (members' emails are never read by service tokens) and only owners and
+         *     administrators (403 `members_not_permitted`); another workspace is 404. Never cached.
+         */
+        get: operations["read_workspace_members_v1_workspaces__workspace_id__members_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1791,7 +1840,10 @@ export interface components {
              * Format: uuid
              */
             input_dataset_id: string;
-            /** Model Release Id */
+            /**
+             * Model Release Id
+             * @description The approval of the model in use this scoring ran with; null when not in use.
+             */
             model_release_id?: string | null;
             /**
              * Model Version Id
@@ -1806,6 +1858,8 @@ export interface components {
             output_format: "csv" | "parquet";
             /** Project Id */
             project_id: string | null;
+            /** @description That approval (`is_current`: still the model in use now). */
+            release?: components["schemas"]["ModelReleaseSummary"] | null;
             /** Rows In */
             rows_in: number | null;
             /** Rows Out */
@@ -4254,6 +4308,130 @@ export interface components {
             /** Task Type */
             task_type?: string | null;
         };
+        /** ModelReleaseList */
+        ModelReleaseList: {
+            /**
+             * Current Release Id
+             * @description The approval of the model in use; null when no person has approved it yet.
+             */
+            current_release_id?: string | null;
+            /**
+             * Items
+             * @description Newest first.
+             */
+            items?: components["schemas"]["ModelReleaseRead"][];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+        };
+        /** ModelReleaseRead */
+        ModelReleaseRead: {
+            /**
+             * Approved At
+             * Format: date-time
+             */
+            approved_at: string;
+            /**
+             * Approved By User Id
+             * @description The person who approved it (null for service-token readers).
+             */
+            approved_by_user_id?: string | null;
+            /**
+             * Decision Record Id
+             * Format: uuid
+             * @description The `champion_promoted` decision that approved it.
+             */
+            decision_record_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Current
+             * @description This is the approval of the model in use now.
+             */
+            is_current: boolean;
+            /**
+             * Model Version
+             * @description The model version's label (e.g. v3).
+             */
+            model_version: string;
+            /**
+             * Model Version Id
+             * Format: uuid
+             */
+            model_version_id: string;
+            /**
+             * Package Manifest Digest
+             * @description Content digest of the version's `feature_manifest` artifact at approval; scoring re-checks it.
+             */
+            package_manifest_digest: string;
+            /**
+             * Previous Release Id
+             * @description The project's approval before this one (rollback = approve that version again).
+             */
+            previous_release_id?: string | null;
+            /**
+             * Rationale
+             * @description Why, as the approving person wrote it (never an agent's text; accepting an agent's proposal without a reason records a default naming the proposal): untrusted plain text, never markup. Null for service-token readers when it names the final holdout.
+             */
+            rationale?: string | null;
+            /**
+             * Saved Format
+             * @enum {string}
+             */
+            saved_format: "package_v1" | "legacy_quarantined";
+        };
+        /**
+         * ModelReleaseSummary
+         * @description The approval behind a model in use ("approved for scoring"); no person ids.
+         */
+        ModelReleaseSummary: {
+            /**
+             * Approved At
+             * Format: date-time
+             */
+            approved_at: string;
+            /**
+             * Decision Record Id
+             * Format: uuid
+             * @description The `champion_promoted` decision that approved it.
+             */
+            decision_record_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Current
+             * @description This is the approval of the model in use now.
+             */
+            is_current: boolean;
+            /**
+             * Model Version Id
+             * Format: uuid
+             */
+            model_version_id: string;
+            /**
+             * Package Manifest Digest
+             * @description Content digest of the version's `feature_manifest` artifact at approval; scoring re-checks it.
+             */
+            package_manifest_digest: string;
+            /**
+             * Previous Release Id
+             * @description The project's approval before this one (rollback = approve that version again).
+             */
+            previous_release_id?: string | null;
+            /**
+             * Saved Format
+             * @enum {string}
+             */
+            saved_format: "package_v1" | "legacy_quarantined";
+        };
         /** ModelRoleRead */
         ModelRoleRead: {
             /** Allowed */
@@ -4367,6 +4545,8 @@ export interface components {
             project_id?: string | null;
             /** Ref Kinds */
             ref_kinds?: "champion_model"[];
+            /** @description When this version is the model in use and a person approved it: that approval (P7.2-A; "approved for scoring"). Null otherwise, including a model in use set by the first-run rule. */
+            release?: components["schemas"]["ModelReleaseSummary"] | null;
             /**
              * Saved Format
              * @description How the stored model is saved (P7.1-A). `package_v1`: the model package (scikit-learn parts with skops and an explicit type allowlist, boosters in their native formats, no pickle; its manifest is the `feature_manifest` artifact). `legacy_quarantined`: saved with pickle before the package format; scoring with it works only where the server explicitly allows legacy models (by default only in an explicitly configured development environment). Null when the version has no stored model.
@@ -5910,6 +6090,39 @@ export interface components {
              */
             workspace_id: string;
         };
+        /**
+         * WorkspaceMemberRead
+         * @description One person in the workspace, for the members screen (administrators only). No ids, no secrets.
+         */
+        WorkspaceMemberRead: {
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string;
+            /** Is You */
+            is_you: boolean;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /**
+             * Legacy Access
+             * @default false
+             */
+            legacy_access: boolean;
+            /** Role */
+            role: string;
+        };
+        /** WorkspaceMembersRead */
+        WorkspaceMembersRead: {
+            /** Members */
+            members: components["schemas"]["WorkspaceMemberRead"][];
+            /** More */
+            more: boolean;
+            /** Roles */
+            roles: components["schemas"]["WorkspaceRoleAbilitiesRead"][];
+        };
         /** WorkspaceRead */
         WorkspaceRead: {
             /**
@@ -5932,6 +6145,22 @@ export interface components {
             name: string;
             /** Slug */
             slug: string;
+        };
+        /**
+         * WorkspaceRoleAbilitiesRead
+         * @description What a role can do today, derived from the same role sets the server enforces.
+         */
+        WorkspaceRoleAbilitiesRead: {
+            /** Can Approve Ai Policy */
+            can_approve_ai_policy: boolean;
+            /** Can Manage Members */
+            can_manage_members: boolean;
+            /** Can Read */
+            can_read: boolean;
+            /** Can Run Ml */
+            can_run_ml: boolean;
+            /** Role */
+            role: string;
         };
     };
     responses: never;
@@ -11167,6 +11396,82 @@ export interface operations {
             };
         };
     };
+    read_project_releases_v1_projects__project_id__releases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelReleaseList"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_proposals_v1_proposals_get: {
         parameters: {
             query?: {
@@ -11915,6 +12220,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceRead"][];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_workspace_members_v1_workspaces__workspace_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMembersRead"];
                 };
             };
             /** @description Bad request (error envelope) */

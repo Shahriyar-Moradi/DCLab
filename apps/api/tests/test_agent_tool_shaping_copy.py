@@ -43,6 +43,7 @@ from app.domain.governance_console import GovernanceRead
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.model_card import ModelCardRead
+from app.domain.model_releases import ModelReleaseList
 from app.domain.operating_points import OperatingPointsRead
 from app.domain.project_graph import NodeImpactRead, ProjectGraphRead
 from app.domain.proposal_reviews import ProposalPage
@@ -141,6 +142,9 @@ class CorpusReads:
     def model_card(self, mid):
         return self._get(f"/v1/model-versions/{mid}/card", ModelCardRead)
 
+    def releases(self, pid):
+        return self._get(f"/v1/projects/{pid}/releases", ModelReleaseList)
+
     def prediction(self, pid):
         return self._get(f"/v1/predictions/{pid}", BatchPredictionRead)
 
@@ -232,6 +236,12 @@ def _adversarial(corpus: dict) -> dict:
         item["tool_arguments"] = None if item["tool_arguments"] is None else {**item["tool_arguments"], **leak}
         item["proposed_rationale"] = None if item["proposed_rationale"] is None else (
             f"{INJECTION} {SECRET} " + item["proposed_rationale"])
+    releases = r[f"GET /v1/projects/{ids['project']}/releases"]["items"]
+    for item in releases:  # a person's reason is data
+        item["rationale"] = f"{INJECTION} {SECRET} " + item["rationale"]
+    # A reason naming the final holdout (people may write one): both agent views withhold it.
+    releases.append({**releases[0], "id": "00000000-0000-4000-8000-000000000072", "is_current": False,
+                     "rationale": "final_holdout AUC 0.93, ship it"})
     return r
 
 
@@ -334,6 +344,7 @@ def test_record_corpus(client, db_session, st, tmp_path):  # noqa: F811
         f"/v1/model-versions/{t.root_mv}": None, f"/v1/model-versions/{t.root_mv}/card": None,
         f"/v1/predictions/{t.prediction}": None, f"/v1/nodes/experiment/{r}/impact": None,
         f"/v1/experiments/{r}/operating-points": None,
+        f"/v1/projects/{pid}/releases": None,  # empty here (first-run model in use); the committed corpus has one
     }  # no model build of the root run: get_evidence on it covers "no build"
     responses = {}
     for key, query in paths.items():

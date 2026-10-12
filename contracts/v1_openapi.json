@@ -1652,6 +1652,29 @@
         "successSchema": "RefMoveRead"
       }
     },
+    "/v1/projects/{project_id}/releases": {
+      "GET": {
+        "operationId": "read_project_releases_v1_projects__project_id__releases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ModelReleaseList"
+      }
+    },
     "/v1/proposals": {
       "GET": {
         "operationId": "list_proposals_v1_proposals_get",
@@ -1908,6 +1931,29 @@
         ],
         "successSchema": null
       }
+    },
+    "/v1/workspaces/{workspace_id}/members": {
+      "GET": {
+        "operationId": "read_workspace_members_v1_workspaces__workspace_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "WorkspaceMembersRead"
+      }
     }
   },
   "sdk_schemas": {
@@ -1968,6 +2014,7 @@
         "output",
         "output_format",
         "project_id",
+        "release",
         "rows_in",
         "rows_out",
         "started_at",
@@ -2716,6 +2763,7 @@
         "metrics",
         "project_id",
         "ref_kinds",
+        "release",
         "saved_format",
         "version",
         "workspace_id"

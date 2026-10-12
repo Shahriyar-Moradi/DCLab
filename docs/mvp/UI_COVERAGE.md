@@ -15,6 +15,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Capability | `/v1` operation(s) | MCP tool | Studio screen | Status |
 | --- | --- | --- | --- | --- |
 | Who am I, workspaces | `GET /v1/me`, `GET /v1/workspaces` | — | header workspace switcher | exists |
+| Members and roles (read only) | `GET /v1/workspaces/{workspace_id}/members` (people only; owners and administrators; 403 `members_not_permitted`) | — | `/settings` (Members and roles; adding people is not in the screen) | done V7-B6 |
 | Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/agents` → Service tokens tab (also `/app/settings`) | exists |
 | Connect an agent (MCP/CLI) | — | — | `/agents` → Connect tab (copy `.mcp.json`, SDK, CLI, `/v1` conventions) | exists |
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]`; Home Projects table reads the list `summary` (goal, champion CV metrics, latest run; P4.15-A) | planned P4.1-A; list summary backend P4.15-A, screen P4.15-UI |
@@ -34,7 +35,8 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `GET/POST /v1/projects/{id}/refs/{kind}` (POST = If-Match move) | — | project header ref badges; Data page "Make current" (dataset ref); "Make champion" | dataset ref move done P4.1-C; champion planned P4.4-A |
 | Decisions timeline | `GET/POST /v1/projects/{id}/decisions`, `GET /v1/decisions/{id}` | `list_decisions`, `record_decision` | Decisions tab | planned P4.4-A |
 | Accept / reject / supersede | `POST /v1/decisions/{id}/accept|reject|supersede` | `accept_proposal` | decision card actions | planned P4.4-A |
-| Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI; `saved_format` (`package_v1` / `legacy_quarantined`, P7.1-A) is API-only until the P7.5-A Package & integrity tab |
+| Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI; `saved_format` (`package_v1` / `legacy_quarantined`, P7.1-A) is API-only until the P7.5-A Package & integrity tab; `release` (approval of the model in use, P7.2-A) is API-only until the "Approved for scoring" tab |
+| Approved for scoring (model releases) | `GET /v1/projects/{project_id}/releases` (read only; written by `POST /v1/projects/{project_id}/refs/{ref_kind}` with `champion_model` = "Put this model in use"; tokens get no approver id) | `list_releases` | "Put this model in use" (existing) writes it; list shown in a later "Approved for scoring" tab | API + MCP done P7.2-A; screen planned (P7.5-A rollback) |
 
 ## New in Phase 4 (use and trust the model)
 

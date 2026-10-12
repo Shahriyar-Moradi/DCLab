@@ -31,6 +31,7 @@ from app.agents.tools.shaping import (
     cv_only,
     cv_record,
     data_text,
+    holdout_free_text,
     sample_text,
     text,
     withhold_card_risks,
@@ -101,6 +102,10 @@ class InspectGovernanceInput(BaseModel):  # no arguments (no docstring: it would
 
 class ModelInput(BaseModel):
     model_version_id: Id
+
+
+class ListReleasesInput(BaseModel):
+    project_id: Id
 
 
 class PredictionInput(BaseModel):
@@ -251,6 +256,12 @@ class ServiceReads:
 
         return list_decisions(self.db, **self._who, project_id=project_id, **filters)
 
+    def releases(self, project_id: UUID) -> Any:
+        from app.services.model_release_service import list_releases
+
+        # The agent view (as /v1 for service tokens): no approving person's id, no holdout-naming rationale.
+        return list_releases(self.db, **self._who, project_id=project_id, agent=True)
+
     def decision(self, decision_id: UUID) -> Any:
         from app.services import decision_record_service as drs
         from app.services.project_service import get_project
@@ -367,6 +378,20 @@ def prediction_summary(p: Any) -> dict[str, Any]:
         "download": output and {"human_api": f"GET /v1/predictions/{p.id}/download",
                                 "cli": f"dclab-cli predict download {p.id} -o FILE",
                                 "note": "Predicted rows are never returned to agents."},
+    }
+
+
+def release_summary(r: Any) -> dict[str, Any]:
+    """An approval of the model in use (P7.2-A) for an agent reader: ids, codes, digest and the
+    person's reason as untrusted data text (withheld when it names the final holdout); never who
+    approved it."""
+
+    return {
+        "id": r.id, "model_version_id": r.model_version_id, "model_version": code(r.model_version),
+        "previous_release_id": r.previous_release_id, "decision_record_id": r.decision_record_id,
+        "approved_at": r.approved_at, "saved_format": code(r.saved_format),
+        "package_manifest_digest": r.package_manifest_digest, "is_current": r.is_current,
+        "rationale": data_text(holdout_free_text(r.rationale)),
     }
 
 
@@ -745,6 +770,15 @@ def _prediction_shape(raw: dict[str, Any]) -> Shaped:
     return Shaped({"prediction": prediction_summary(p)}, data_class="aggregates", outcome_scope="cv",
                   source_datasets=_ids(p.input_dataset_id, raw["model"].lineage.source_dataset_id),
                   aggregates=("prediction.decision_threshold",))  # locked on out-of-fold training rows
+
+
+def _releases_fetch(reads: Any, a: ListReleasesInput) -> Any:
+    return reads.releases(a.project_id)
+
+
+def _releases_shape(page: Any) -> Shaped:
+    return Shaped({"current_release_id": page.current_release_id,
+                   "releases": [release_summary(r) for r in page.items[:LIST_LIMIT]]})
 
 
 def _proposal_fetch(reads: Any, a: ProposalInput) -> Any:

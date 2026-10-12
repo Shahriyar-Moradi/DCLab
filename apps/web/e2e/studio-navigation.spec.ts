@@ -45,7 +45,8 @@ test("Studio: sidebar, project pages, empty states, command bar and access", asy
   await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Projects" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Inbox" })).toBeVisible();
-  for (const hidden of ["Settings", "AI settings", "Governance", "Agents & tools"]) await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
+  for (const hidden of ["AI settings", "Governance", "Agents & tools"]) await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Connect" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Experiments" })).toHaveCount(0); // outside a project
   expect(await axeViolations(page)).toEqual([]);

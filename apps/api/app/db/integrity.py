@@ -1152,8 +1152,16 @@ R3_RUNS_APPEND_ONLY_TRIGGER_SQL = (
 )
 
 
+# 0078 (P7.2-A): model releases (approvals for scoring) are append-only (identical literal in 0078).
+MODEL_RELEASES_APPEND_ONLY_TRIGGER_SQL = (
+    "CREATE TRIGGER model_releases_append_only BEFORE UPDATE OR DELETE ON model_releases "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077, 0078 install
+    (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -1176,6 +1184,7 @@ def install_immutability_triggers(connection) -> None:
     )
     # 0077 (P6.8-A): stored R3 runs are append-only (identical literal in 0077_r3_runs).
     connection.execute(text(R3_RUNS_APPEND_ONLY_TRIGGER_SQL))
+    connection.execute(text(MODEL_RELEASES_APPEND_ONLY_TRIGGER_SQL))
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():

@@ -19,13 +19,21 @@ from app.db.models import (
     WorkspaceRole,
 )
 from app.domain.errors import IdentityError
-from app.domain.workspace_identity import WorkspaceRead
+from app.domain.workspace_identity import (
+    WorkspaceMemberRead,
+    WorkspaceMembersRead,
+    WorkspaceRead,
+    WorkspaceRoleAbilitiesRead,
+)
 from app.services.authorization_service import (
     AuthorizationError,
     assert_can_assign_workspace_role,
     can_manage_workspace_members,
+    canonical_workspace_role,
     parse_assigned_workspace_role,
     platform_role_for,
+    role_can_manage_members,
+    role_can_run_ml,
 )
 from app.services.auth_service import create_user
 from app.services.workspace_entitlement_service import (
@@ -250,3 +258,82 @@ def add_workspace_member(
 
     invalidate_capability_cache(db, user_id=user.id, workspace_id=workspace_id)
     return membership
+
+
+MEMBER_LIST_CAP = 200
+_CANONICAL_ROLES = (
+    WorkspaceRole.WORKSPACE_OWNER,
+    WorkspaceRole.WORKSPACE_ADMIN,
+    WorkspaceRole.ML_ENGINEER,
+    WorkspaceRole.VIEWER,
+)
+
+
+def list_workspace_members(db: Session, *, actor: User, workspace_id: UUID) -> WorkspaceMembersRead:
+    """Active members of ``workspace_id`` (oldest first, capped) for people who may manage members.
+
+    Same predicate as ``add_workspace_member``. Suspended and deactivated people are not listed. Only the fields
+    the screen shows leave the server: no ids, no password hashes, no token information.
+    Also listed, marked ``legacy_access``: active ``client_user`` accounts of this workspace with no
+    membership row at all, who still get administrator access (``workspace_role_for``). ``create_user``
+    always writes a membership, so these exist only in data from before memberships.
+    """
+
+    if not can_manage_workspace_members(db, actor, workspace_id):
+        raise IdentityError(
+            "the members list requires workspace_owner, workspace_admin, or dclab_admin",
+            status_code=403,
+        )
+    rows = db.execute(
+        select(WorkspaceMembership, User)
+        .join(User, User.id == WorkspaceMembership.user_id)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.suspended_at.is_(None),
+            User.is_active.is_(True),
+        )
+        .order_by(WorkspaceMembership.created_at.asc(), WorkspaceMembership.id.asc())
+        .limit(MEMBER_LIST_CAP + 1)
+    ).all()
+    members = [
+        WorkspaceMemberRead(
+            full_name=person.full_name or "",
+            email=person.email,
+            role=(canonical_workspace_role(WorkspaceRole(membership.role)) or WorkspaceRole(membership.role)).value,
+            joined_at=membership.created_at,
+            is_you=person.id == actor.id,
+        )
+        for membership, person in rows[:MEMBER_LIST_CAP]
+    ]
+    room = MEMBER_LIST_CAP - len(members)
+    legacy_rows = []
+    if room > 0:
+        legacy_rows = db.scalars(
+            select(User)
+            .where(
+                User.workspace_id == workspace_id,
+                User.role == UserRole.CLIENT_USER.value,
+                User.is_active.is_(True),
+                ~select(WorkspaceMembership.id).where(WorkspaceMembership.user_id == User.id).exists(),
+            )
+            .order_by(User.created_at.asc(), User.id.asc())
+            .limit(room + 1)
+        ).all()
+    members += [
+        WorkspaceMemberRead(
+            full_name=person.full_name or "", email=person.email, role=WorkspaceRole.WORKSPACE_ADMIN.value,
+            joined_at=person.created_at, is_you=person.id == actor.id, legacy_access=True,
+        )
+        for person in legacy_rows[:room]
+    ]
+    roles = [
+        WorkspaceRoleAbilitiesRead(
+            role=role.value,
+            can_read=True,
+            can_run_ml=role_can_run_ml(role),
+            can_manage_members=role_can_manage_members(role),
+            can_approve_ai_policy=role_can_manage_members(role),
+        )
+        for role in _CANONICAL_ROLES
+    ]
+    return WorkspaceMembersRead(members=members, more=len(rows) > MEMBER_LIST_CAP or len(legacy_rows) > max(room, 0), roles=roles)

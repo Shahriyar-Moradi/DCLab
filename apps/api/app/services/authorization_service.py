@@ -259,6 +259,18 @@ def can_execute_workspace_ml(db: Session, user: User, workspace_id: UUID) -> boo
     return can_perform_ml_write(db, user, workspace_id)
 
 
+def role_can_run_ml(role: WorkspaceRole) -> bool:
+    """Public view of the ML-write role set (the members screen's role table reads this)."""
+
+    return canonical_workspace_role(role) in _ML_WRITE_ROLES
+
+
+def role_can_manage_members(role: WorkspaceRole) -> bool:
+    """Public view of the member-administration role set (owner and administrator)."""
+
+    return canonical_workspace_role(role) in _MEMBER_ADMIN_ROLES
+
+
 def can_manage_workspace_members(db: Session, user: User, workspace_id: UUID) -> bool:
     platform_role = platform_role_for(db, user)
     if platform_role is not None:

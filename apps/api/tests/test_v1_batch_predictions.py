@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
-from app.db.models import BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
+from app.db.models import Artifact, BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
 from app.engine.lab.auto_prepare import build_preprocessor, engineer_features
 from app.engine.serving.batch_scoring import ScoringError, prepare_features, score_frame, scoring_spec
 from app.engine.serving.model_package import read_package, sha256_hex
@@ -585,3 +585,72 @@ def test_dates_parse_with_the_training_format_and_fail_closed_otherwise():
     assert caught.value.code == "unsupported_transform"
     iso, _facts = prepare_features(pd.DataFrame({"event_date": ["2024-04-03", None]}), legacy_spec)
     assert iso["event_date"].iloc[0] == pd.Timestamp("2024-04-03").timestamp()
+
+
+# --- P7.2-A: scoring with the model in use carries its release --------------------------------
+
+
+def test_scoring_carries_the_release_of_the_model_in_use_and_rechecks_it(client, db_session, setup):  # noqa: F811
+    from app.db.models import ModelRelease
+
+    db = db_session
+    frame = _frame("binary", n=200)
+    experiment, mv_id = _trained(client, db, setup, frame, "label")
+    scoring = _upload(client, setup, frame.drop(columns=["label"]).head(40))
+
+    # The first run's rule put it in use, but no person approved it: no release is claimed.
+    unapproved = _predict(client, setup, mv_id, scoring["id"])
+    assert unapproved.status_code == 202, unapproved.text
+    assert unapproved.json()["model_release_id"] is None and unapproved.json()["release"] is None
+
+    # A person approves the model in use (the existing "Put this model in use" route).
+    project_id = experiment.project_id
+    refs = {r["ref_kind"]: r for r in client.get(f"/v1/projects/{project_id}/refs", headers=_h(setup)).json()["items"]}
+    model = db.get(ModelVersion, mv_id)
+    companions = [{"ref_kind": "feature_recipe", "target_id": str(model.feature_set_version_id),
+                   "expected_version": refs["feature_recipe"]["version"]}] if "feature_recipe" in refs else []
+    approve = client.post(
+        f"/v1/projects/{project_id}/refs/champion_model",
+        json={"target_id": str(mv_id), "rationale": "approved for scoring", "companion_moves": companions,
+              "evidence_refs": [{"kind": "candidate", "id": str(model.selected_candidate_id),
+                                 "scope": "final_holdout"}]},
+        headers=_h(setup, key=_key(), **{"If-Match": refs["champion_model"]["etag"]}),
+    )
+    assert approve.status_code == 200, approve.text
+    release = db.scalar(select(ModelRelease).where(ModelRelease.model_version_id == mv_id))
+    assert release.saved_format == "package_v1"
+
+    approved = _predict(client, setup, mv_id, scoring["id"])
+    assert approved.status_code == 202, approved.text
+    assert approved.json()["model_release_id"] == str(release.id) and approved.json()["release"]["is_current"]
+    assert _work(db, approved.json()["id"]).status == "completed"
+    read = client.get(f"/v1/predictions/{approved.json()['id']}", headers=_h(setup)).json()
+    assert read["status"] == "completed" and read["release"]["id"] == str(release.id)
+
+    # The model artifact's recorded package format (what the loader branches on) no longer matches
+    # the approved saved format: refused before anything is loaded or scored.
+    artifact_id = model.model_artifact_id
+    package_format = db.get(Artifact, artifact_id).extra_metadata["package_format"]
+    queued = _predict(client, setup, mv_id, scoring["id"]).json()
+    db.execute(text("UPDATE artifacts SET metadata = metadata - 'package_format' WHERE id = :id"), {"id": artifact_id})
+    db.commit()
+    _work(db, queued["id"])
+    db.expire_all()
+    flipped = db.get(BatchPrediction, UUID(queued["id"]))
+    assert (flipped.status, flipped.error_code, flipped.output_artifact_id, flipped.rows_out) == (
+        "failed", "release_mismatch", None, None)
+    db.execute(text("UPDATE artifacts SET metadata = jsonb_set(metadata, '{package_format}', to_jsonb(CAST(:f AS text))) "
+                    "WHERE id = :id"), {"f": package_format, "id": artifact_id})
+    db.commit()
+
+    # TOCTOU: the release no longer pins this package (simulated by bypassing the append-only
+    # trigger): the worker refuses with a clear code instead of scoring under the approval.
+    queued = _predict(client, setup, mv_id, scoring["id"]).json()
+    db.execute(text("ALTER TABLE model_releases DISABLE TRIGGER model_releases_append_only"))
+    db.execute(text("UPDATE model_releases SET package_manifest_digest = :d WHERE id = :id"),
+               {"d": "0" * 64, "id": release.id})
+    db.execute(text("ALTER TABLE model_releases ENABLE TRIGGER model_releases_append_only"))
+    db.commit()
+    _work(db, queued["id"])
+    failed = db.get(BatchPrediction, UUID(queued["id"]))
+    assert (failed.status, failed.error_code, failed.model_release_id) == ("failed", "release_mismatch", release.id)

@@ -1036,6 +1036,46 @@
     },
     {
       "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Approvals of a project's model in use (\"approved for scoring\"), newest first: model version, previous approval, when, saved format, package manifest digest, whether it is current, and the person's reason as untrusted text (never who). Read-only: only a person puts a model in use, in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "ListReleasesInput",
+        "type": "object"
+      },
+      "name": "list_releases",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects/{project_id}/releases"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.model_release_service.list_releases"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
         "experiments:write"
       ],
       "decision_point_cap": 1,

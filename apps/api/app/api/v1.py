@@ -30,6 +30,7 @@ from app.api.deps import (
     principal_ref,
     request_service_token,
     request_workspace_id,
+    require_session_workspace_member,
     require_workspace_ml_execution,
     require_workspace_read,
 )
@@ -123,6 +124,7 @@ from app.domain.workspace_identity import (
     ProblemSpecRead,
     ProjectCreateRequest,
     ProjectRead,
+    WorkspaceMembersRead,
     WorkspaceRead,
 )
 from app.services.artifact_service import list_artifacts
@@ -153,7 +155,7 @@ from app.services.project_service import create_project, get_project, list_proje
 from app.services.dataset_profile_service import DatasetNotFoundError, dataset_profile, dataset_read
 from app.services.technical_explorer_service import list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
-from app.services.workspace_service import list_workspaces_for_actor
+from app.services.workspace_service import list_workspace_members, list_workspaces_for_actor
 from app.services.workspace_selection_service import principal_read, service_token_principal_read
 
 router = APIRouter(
@@ -236,6 +238,29 @@ def read_workspaces(
     token = request_service_token(request)
     rows = list_workspaces_for_actor(db, user)
     return rows if token is None else [row for row in rows if row.id == token.workspace_id]
+
+
+@router.get("/workspaces/{workspace_id}/members", response_model=WorkspaceMembersRead)
+def read_workspace_members(
+    workspace_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_session_workspace_member),
+    db: Session = Depends(get_db),
+) -> WorkspaceMembersRead:
+    """People in the workspace (name, email, role, joined date, which one is the caller), oldest
+    first, capped at 200 (`more` says when there are others), plus what each role can do. Signed-in
+    people only (members' emails are never read by service tokens) and only owners and
+    administrators (403 `members_not_permitted`); another workspace is 404. Never cached."""
+
+    del workspace_id  # the path id was matched to the caller's selected workspace by the dependency
+    try:
+        body = list_workspace_members(db, actor=user, workspace_id=request_workspace_id(request))
+    except IdentityError as exc:
+        raise domain_error(exc, code="members_not_permitted" if exc.status_code == 403 else None) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
 
 
 @router.get("/projects", response_model=list[ProjectWithSummaryRead])

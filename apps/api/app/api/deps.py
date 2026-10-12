@@ -384,7 +384,7 @@ def require_session_workspace_member(
     if (request.headers.get("Authorization") or "").strip():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "session_required", "message": "service tokens are managed from a signed-in session"},
+            detail={"code": "session_required", "message": "this route requires a signed-in session"},
         )
     return require_workspace_read(request, get_current_user(request, db), db)
 

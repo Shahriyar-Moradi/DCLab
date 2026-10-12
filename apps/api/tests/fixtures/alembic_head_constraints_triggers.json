@@ -1136,6 +1136,26 @@
       "definition": "CHECK (((source)::text = ANY ((ARRAY['default'::character varying, 'planner'::character varying, 'user'::character varying, 'random_search'::character varying, 'optuna'::character varying, 'other_search'::character varying])::text[])))"
     },
     {
+      "table": "model_releases",
+      "name": "ck_model_releases_digest",
+      "definition": "CHECK (((package_manifest_digest)::text ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "model_releases",
+      "name": "ck_model_releases_previous_not_self",
+      "definition": "CHECK (((previous_release_id IS NULL) OR (previous_release_id <> id)))"
+    },
+    {
+      "table": "model_releases",
+      "name": "ck_model_releases_rationale",
+      "definition": "CHECK (((char_length(btrim((rationale)::text)) > 0) AND (char_length((rationale)::text) <= 4000)))"
+    },
+    {
+      "table": "model_releases",
+      "name": "ck_model_releases_saved_format",
+      "definition": "CHECK (((saved_format)::text = ANY ((ARRAY['package_v1'::character varying, 'legacy_quarantined'::character varying])::text[])))"
+    },
+    {
       "table": "pipeline_stage_runs",
       "name": "ck_pipeline_stage_runs_status_valid",
       "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'skipped'::character varying])::text[])))"
@@ -1891,6 +1911,11 @@
       "table": "model_hyperparameters",
       "name": "model_hyperparameters_evidence_locked",
       "definition": "CREATE TRIGGER model_hyperparameters_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.model_hyperparameters FOR EACH ROW EXECUTE FUNCTION prevent_locked_candidate_evidence_mutation('candidate_id')"
+    },
+    {
+      "table": "model_releases",
+      "name": "model_releases_append_only",
+      "definition": "CREATE TRIGGER model_releases_append_only BEFORE DELETE OR UPDATE ON public.model_releases FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "model_selection_decisions",

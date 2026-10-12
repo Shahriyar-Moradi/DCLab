@@ -42,6 +42,7 @@ test("search covers projects, experiments, models and decisions with safe projec
 
 test("names stay plain text and hostile ids never become hrefs", () => {
   assert.equal(plainText("a\u0000b\nc\u2028d"), "a b c d");
+  assert.equal(plainText("a\u202ebc\u2066d\u2069e\u202ax"), "a bc d e x"); // text-direction controls are removed
   assert.equal(plainText("x".repeat(200)).length, 120);
   for (const bad of ["javascript:alert(1)", "//evil.example", "../admin", `${P1}/../x`, ""]) {
     assert.equal(projectHref(bad, "experiments"), null, bad);
@@ -107,7 +108,7 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   const outside = studioNavigationForUser(developer);
   assert.deepEqual(outside.map((g) => g.id), ["workspace", "admin"]);
   assert.deepEqual(outside[0]!.items.map((i) => i.href), ["/home", "/inbox", "/projects"]);
-  assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/agents"]);
+  assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/settings", "/agents"]);
   const inside = studioNavigationForUser(developer, P1).find((g) => g.id === "project")!;
   assert.deepEqual(inside.items.map((i) => i.id), ["data", "experiments", "improve", "models", "decisions"]);
   const T = "44444444-4444-4444-8444-444444444444";
