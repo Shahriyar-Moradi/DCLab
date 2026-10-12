@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline as SkPipeline
@@ -37,6 +36,18 @@ from app.engine.lab.auto_prepare import (
     split_column_roles,
 )
 from app.engine.models.registry import make_model
+from app.engine.serving.model_package import (
+    PACKAGE_FILENAME,
+    PACKAGE_NOT_SAVED,
+    PACKAGE_UNSAFE_CATEGORY,
+    PUBLIC_PACKAGE_FAILURES,
+    ModelPackageError,
+    build_package,
+    failure_chain,
+    read_package,
+    sha256_hex,
+    unsafe_category_types,
+)
 from app.engine.search.tuning import tune
 from app.engine.modeling.objective import (
     DEFAULT_THRESHOLD,
@@ -877,6 +888,77 @@ def _winner_feature_importance(
     )
 
 
+def _saved_package(
+    pipeline: Any,
+    row: dict[str, Any],
+    task: TaskSpec,
+    pool: pd.DataFrame,
+    selection_metric: str | None,
+    *,
+    classifier: bool,
+    n_classes: int | None,
+    decision_threshold: float | None = None,
+) -> bytes:
+    """The fitted winner as a model package (skops + native booster formats, manifest with
+    the feature contract, CV metrics and the locked decision threshold), loaded back with the
+    worker's loader and checked to reproduce the in-memory predictions on training rows.
+    Raises ``ModelPackageError`` with one of the plain sentences in ``PUBLIC_PACKAGE_FAILURES``
+    (shown to the user); the cause chain goes to the server log."""
+
+    try:
+        return _verified_package(pipeline, row, task, pool, selection_metric, classifier=classifier,
+                                 n_classes=n_classes, decision_threshold=decision_threshold)
+    except (ModelPackageError, TypeError, MemoryError, OSError) as exc:  # serializers, temp files
+        logger.warning("model package for candidate %s refused: %s", row.get("candidate_id"), failure_chain(exc))
+        if isinstance(exc, ModelPackageError) and str(exc) in PUBLIC_PACKAGE_FAILURES:
+            raise
+        raise ModelPackageError(PACKAGE_NOT_SAVED) from exc
+
+
+def _verified_package(
+    pipeline: Any,
+    row: dict[str, Any],
+    task: TaskSpec,
+    pool: pd.DataFrame,
+    selection_metric: str | None,
+    *,
+    classifier: bool,
+    n_classes: int | None,
+    decision_threshold: float | None = None,
+) -> bytes:
+    package = build_package(
+        pipeline,
+        family=str(row.get("model_family") or ""),
+        task_type=task.task_type,
+        candidate_id=str(row["candidate_id"]),
+        training_dtypes={str(name): str(dtype) for name, dtype in pool.dtypes.items()},
+        feature_actions=(task.feature_engineering or {}).get("feature_engineering_actions") or [],
+        target=task.target,
+        cv={
+            "metric": selection_metric,
+            "strategy": row.get("cv_strategy"),
+            "folds": row.get("n_folds"),
+            "mean": row.get("cv_mean"),
+            "std": row.get("cv_std"),
+        },
+        decision_threshold=decision_threshold,
+    )
+    from app.engine.serving.batch_scoring import ScoringError
+    from app.engine.serving.package_loader import load_model_package
+
+    try:
+        loaded = load_model_package(package, manifest_digest=sha256_hex(read_package(package).manifest_bytes))
+    except ScoringError as exc:
+        raise ModelPackageError("the saved model could not be loaded back") from exc
+    sample = pool.loc[:, list(row["features"])].head(64)  # training rows only
+    if not np.array_equal(
+        _predict(pipeline, sample, classifier, n_classes), _predict(loaded.pipeline, sample, classifier, n_classes),
+        equal_nan=True,
+    ):
+        raise ModelPackageError("the saved model does not reproduce the trained model's predictions")
+    return package
+
+
 def _fit_and_score_holdout(
     row: dict[str, Any],
     pool: pd.DataFrame,
@@ -889,6 +971,7 @@ def _fit_and_score_holdout(
     threshold: float = DEFAULT_THRESHOLD,
     selection_metric: str | None = None,
     validation_plan: ValidationPlan | None = None,
+    before_test: Callable[[Any], None] | None = None,
 ) -> tuple[
     Any,
     dict[str, Any],
@@ -899,7 +982,10 @@ def _fit_and_score_holdout(
     dict[str, Any],
     dict[str, Any],
 ]:
-    """Fit on the full training pool and score train + untouched test. Not used for ranking."""
+    """Fit on the full training pool and score train + untouched test. Not used for ranking.
+
+    ``before_test`` gets the fitted pipeline after the final fit and before any test row is
+    read (P7.1-A: the model package is saved there, so a failure does not spend the look)."""
     cols = list(row["features"])
     X_train = pool.loc[:, cols]
     y_train = pool[task.target].to_numpy()
@@ -969,6 +1055,8 @@ def _fit_and_score_holdout(
         fit_row_count=int(len(X_train)),
         duration_ms=final_fit["duration_ms"],
     )
+    if before_test is not None:
+        before_test(pipeline)
     X_test = test.loc[:, cols]
     y_test = test[task.target].to_numpy()
     if on_stage:
@@ -1066,6 +1154,14 @@ def _run_open_ingest_candidates(
     oof_scores: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] = {}
     stage_timings: list[dict[str, Any]] = []
 
+    # P7.1-A: a categorical input whose values the model package cannot store (Decimal,
+    # date or Timestamp objects from Parquet) fails here, before any fit or holdout look.
+    used = {column for candidate in candidates for column in candidate.features}
+    for column in (task.column_roles or {}).get("categorical", []):
+        unsafe = unsafe_category_types(pool[column].dropna().unique()) if column in pool.columns and column in used else []
+        if unsafe:
+            logger.warning("categorical column %r holds %s values; refusing the run", column, ", ".join(unsafe))
+            raise ValueError(PACKAGE_UNSAFE_CATEGORY)
     if on_stage:
         on_stage(CROSS_VALIDATION)
     cv_started = datetime.now(UTC)
@@ -1539,6 +1635,25 @@ def _run_open_ingest_candidates(
         stage_timings.append(
             _timing("feature_importance", importance_started, importance_timer, status=feature_importance["status"])
         )
+        saved: dict[str, bytes] = {}
+
+        def _save_package(fitted: Any) -> None:
+            started, timer = datetime.now(UTC), time.perf_counter()
+            saved["package"] = _saved_package(
+                fitted, best_single, task, pool, selection_metric, classifier=classifier, n_classes=n_classes,
+                decision_threshold=threshold if task.task_type == "binary" else None,
+            )
+            stage_timings.append(_timing("model_packaging", started, timer))
+            _emit_event(  # also a heartbeat: packaging a large model can take a while
+                on_event,
+                "model_package_saved",
+                stage="model_packaging",
+                status="completed",
+                candidate_id=best_single.get("candidate_id"),
+                size_bytes=len(saved["package"]),
+                duration_ms=stage_timings[-1]["duration_ms"],
+            )
+
         (
             winner_pipeline,
             train_metrics,
@@ -1560,6 +1675,7 @@ def _run_open_ingest_candidates(
             threshold=threshold,
             selection_metric=selection_metric,
             validation_plan=validation_plan,
+            before_test=_save_package,
         )
         stage_timings.extend([final_fit, {key: value for key, value in final_test_evaluation.items() if key != "metrics"}])
         if decision_threshold is not None:
@@ -1593,18 +1709,9 @@ def _run_open_ingest_candidates(
         )
         artifact_started = datetime.now(UTC)
         artifact_timer = time.perf_counter()
-        joblib.dump(winner_pipeline, members_dir / f"{best_single['candidate_id']}.joblib")
-        joblib.dump(
-            {
-                "fusion": None,
-                "members": selected_ids,
-                "weights": {},
-                "task_id": task.id,
-                # Scoring a positive needs probability >= decision_threshold (binary).
-                "decision_threshold": (decision_threshold or {}).get("value"),
-            },
-            artifact_dir / "model.joblib",
-        )
+        # P7.1-A: the model package built before the final test (no pickle is written; the
+        # decision threshold and selected ids live in the result).
+        (artifact_dir / PACKAGE_FILENAME).write_bytes(saved["package"])
         pd.DataFrame(test_predictions).to_csv(artifact_dir / "test_predictions.csv", index=False)
         stage_timings.append(_timing("artifact_persistence", artifact_started, artifact_timer))
         _emit_event(
@@ -1613,7 +1720,7 @@ def _run_open_ingest_candidates(
             stage="artifact_persistence",
             status="completed",
             candidate_id=best_single.get("candidate_id"),
-            artifact_names=["model.joblib", "test_predictions.csv"],
+            artifact_names=[PACKAGE_FILENAME, "test_predictions.csv"],
             duration_ms=stage_timings[-1]["duration_ms"],
         )
 

@@ -164,6 +164,7 @@ HEARTBEAT_PROGRESS_EVENTS = frozenset(
         "cv_fold_started",
         "cv_fold_completed",
         "feature_importance_fold_completed",
+        "model_package_saved",
     }
 )
 

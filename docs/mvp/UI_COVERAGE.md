@@ -34,7 +34,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Refs (current spec/data/split/champion) | `GET /v1/projects/{id}/refs`, `GET/POST /v1/projects/{id}/refs/{kind}` (POST = If-Match move) | — | project header ref badges; Data page "Make current" (dataset ref); "Make champion" | dataset ref move done P4.1-C; champion planned P4.4-A |
 | Decisions timeline | `GET/POST /v1/projects/{id}/decisions`, `GET /v1/decisions/{id}` | `list_decisions`, `record_decision` | Decisions tab | planned P4.4-A |
 | Accept / reject / supersede | `POST /v1/decisions/{id}/accept|reject|supersede` | `accept_proposal` | decision card actions | planned P4.4-A |
-| Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI |
+| Model version | `GET /v1/model-versions/{id}` | `get_model` | Models tab, model page | planned P4.11-UI; `saved_format` (`package_v1` / `legacy_quarantined`, P7.1-A) is API-only until the P7.5-A Package & integrity tab |
 
 ## New in Phase 4 (use and trust the model)
 

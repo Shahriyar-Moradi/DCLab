@@ -17,6 +17,10 @@ dependencies = [
   "pyarrow>=15,<30",
   "scikit-learn>=1.5,<2",
   "joblib>=1.4",
+  # P7.1-A model package: scikit-learn objects saved/loaded without pickle (explicit
+  # trusted-type allowlist). Imported only by the engine's package writer and the
+  # worker's package loader, never by the API process.
+  "skops>=0.16,<0.17",
   "pyyaml>=6.0",
   "python-multipart>=0.0.9",
   "pyjwt>=2.9,<3",

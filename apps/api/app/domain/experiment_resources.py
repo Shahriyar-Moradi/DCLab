@@ -227,3 +227,14 @@ class ModelVersionResourceRead(BaseModel):
     is_champion: bool = Field(description="The project's `champion_model` ref points at this model version.")
     ref_kinds: list[Literal["champion_model"]] = Field(default_factory=list)
     artifacts: list[ModelVersionArtifactRef] = Field(default_factory=list)
+    saved_format: Literal["package_v1", "legacy_quarantined"] | None = Field(
+        default=None,
+        description=(
+            "How the stored model is saved (P7.1-A). `package_v1`: the model package (scikit-learn parts with "
+            "skops and an explicit type allowlist, boosters in their native formats, no pickle; its manifest is "
+            "the `feature_manifest` artifact). `legacy_quarantined`: saved with pickle before the package format; "
+            "scoring with it works only where the server explicitly allows legacy models (by default only in an "
+            "explicitly configured development environment). "
+            "Null when the version has no stored model."
+        ),
+    )

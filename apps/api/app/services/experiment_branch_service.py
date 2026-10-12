@@ -69,6 +69,7 @@ from app.engine.modeling.objective import (
     objective_from_dict,
 )
 from app.engine.models.registry import HYPERPARAMETER_OVERRIDES, available_families
+from app.engine.serving.model_package import ESTIMATOR_MAX_BYTES, FOREST_BYTES_PER_ROW_TREE
 from app.engine.search.generator import (
     CUSTOM_CLASS_WEIGHT_FAMILIES,
     DUMMY_FAMILIES,
@@ -337,7 +338,12 @@ def _bad(reason: str, message: str, index: int, field: str | None = None) -> Inv
     return InvalidChangeSetError(reason, message, path=path)
 
 
-def _hyperparameter(change, index: int, task_type: str, portfolio: list[str]) -> dict[str, Any]:
+_FORESTS = frozenset({"random_forest", "extra_trees", "random_forest_regressor", "extra_trees_regressor"})
+
+
+def _hyperparameter(
+    change, index: int, task_type: str, portfolio: list[str], n_train: int | None = None
+) -> dict[str, Any]:
     family = change.family
     if family not in available_families(task_type):
         raise _bad("unknown_family", f"{family!r} is not a registry family for {task_type}", index, "family")
@@ -363,6 +369,18 @@ def _hyperparameter(change, index: int, task_type: str, portfolio: list[str]) ->
                 f"parameters.{key}",
             )
         values[key] = value
+    # P7.1-A: a forest's saved size grows with trees x training rows; refuse an override whose
+    # worst case cannot be saved now, before any training (instead of after cross-validation).
+    trees = values.get("n_estimators")
+    if family in _FORESTS and trees and n_train and trees * n_train * FOREST_BYTES_PER_ROW_TREE > ESTIMATOR_MAX_BYTES:
+        limit = max(1, ESTIMATOR_MAX_BYTES // (n_train * FOREST_BYTES_PER_ROW_TREE))
+        raise _bad(
+            "invalid_hyperparameter_value",
+            f"{trees} trees on {n_train} training rows would make a model too large to save safely; "
+            f"use at most {limit} trees",
+            index,
+            "parameters.n_estimators",
+        )
     return values
 
 
@@ -634,7 +652,8 @@ def materialize_branch(
     hyperparameters = dict(overrides.get("hyperparameters") or {})
     for index, change in enumerate(change_set.changes):
         if change.kind == "hyperparameter_override":
-            values = _hyperparameter(change, index, ctx.task_type, portfolio)
+            n_train = ((ctx.experiment.result or {}).get("split") or {}).get("n_train")
+            values = _hyperparameter(change, index, ctx.task_type, portfolio, int(n_train) if n_train else None)
             hyperparameters[change.family] = {**dict(hyperparameters.get(change.family) or {}), **values}
         elif change.kind == "class_weighting":
             overrides["class_weighting"] = _class_weighting(change, index, replace(ctx, portfolio=portfolio))

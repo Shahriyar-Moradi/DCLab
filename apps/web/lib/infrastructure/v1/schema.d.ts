@@ -4367,6 +4367,11 @@ export interface components {
             project_id?: string | null;
             /** Ref Kinds */
             ref_kinds?: "champion_model"[];
+            /**
+             * Saved Format
+             * @description How the stored model is saved (P7.1-A). `package_v1`: the model package (scikit-learn parts with skops and an explicit type allowlist, boosters in their native formats, no pickle; its manifest is the `feature_manifest` artifact). `legacy_quarantined`: saved with pickle before the package format; scoring with it works only where the server explicitly allows legacy models (by default only in an explicitly configured development environment). Null when the version has no stored model.
+             */
+            saved_format?: ("package_v1" | "legacy_quarantined") | null;
             /** Version */
             version: string;
             /**

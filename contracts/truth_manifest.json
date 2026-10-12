@@ -10,10 +10,10 @@
       "sha256": "045baa34caf06134837a37b92988d80116c292c0d81064aaf8efd87ec92a0a32"
     },
     "contracts/truth_baseline.json": {
-      "sha256": "e5d982fe3960965926b391b10d1bed3cd6d644098a3e110ed64a6df7072588e1"
+      "sha256": "e676b7a112e2d3040c4c328fed1e0482e21a538d44ea3ba597770f3bb2f0f59a"
     },
     "contracts/v1_openapi.json": {
-      "sha256": "099c364527e7e14f110b5577bd84a7c15131be3faaa497b9d7b1016870f73ac8"
+      "sha256": "f4ebeda425f178ba7703c9af96cded7934e6d64f742fe9a3e440e1c58ac6ecf3"
     }
   },
   "generator": {
@@ -21,6 +21,6 @@
     "version": "1.0.0"
   },
   "schema_version": 1,
-  "source_sha": "203f9b916419f9d77cffbcce602562e142831ee55afafc66386a58a13a2161c3",
+  "source_sha": "be2aef750c9940093acd367a634b7c6aa29c4760c18202eaa5b4be5637be0440",
   "source_sha_algorithm": "sha256"
 }

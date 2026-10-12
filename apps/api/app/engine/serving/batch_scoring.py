@@ -94,17 +94,6 @@ class ScoredFrame:
     contract: dict[str, Any]
 
 
-def load_pipeline(payload: bytes) -> Any:
-    """Unpickle the stored winner Pipeline. Worker only; the caller verified the digest."""
-
-    import joblib
-
-    try:
-        return joblib.load(io.BytesIO(payload))
-    except Exception as exc:  # noqa: BLE001
-        raise ScoringError(UNSUPPORTED_MODEL, _MODEL_MESSAGE) from exc
-
-
 def _unsupported(code: str = UNSUPPORTED_TRANSFORM) -> ScoringError:
     return ScoringError(code, _TRANSFORM_MESSAGE if code == UNSUPPORTED_TRANSFORM else _MODEL_MESSAGE)
 

@@ -6,10 +6,8 @@ engine is never mocked. Spies only observe (and call through to) real code.
 
 from __future__ import annotations
 
-import io
 from datetime import datetime
 
-import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,6 +20,8 @@ from app.db.models import (
     ExperimentTestPrediction,
     ModelSelectionDecision,
 )
+from app.engine.serving.model_package import read_package, sha256_hex
+from app.engine.serving.package_loader import load_model_package
 from app.services import auto_train_service
 from app.services.auto_train import training as training_stage
 from app.services.artifact_service import read_artifact_bytes
@@ -65,7 +65,8 @@ def _winner_pipeline(db_session, upload: ClientLabUpload):
     )
     assert row is not None, "the winner model is published as an artifact"
     payload = read_artifact_bytes(db_session, workspace_id=row.workspace_id, artifact_id=row.id)
-    return joblib.load(io.BytesIO(payload))
+    manifest = read_package(payload).manifest_bytes  # P7.1-A: a model package, never a pickle
+    return load_model_package(payload, manifest_digest=sha256_hex(manifest)).pipeline
 
 
 def _classification(n: int = 260, seed: int = 11) -> pd.DataFrame:

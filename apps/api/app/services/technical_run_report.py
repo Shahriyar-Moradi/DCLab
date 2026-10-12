@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ClientLabUpload, Experiment, LabDecisionRecord
+from app.engine.serving.model_package import PACKAGE_FILENAME
 
 
 def _jsonable(value: Any) -> Any:
@@ -103,7 +104,7 @@ def build_technical_run_report(
             "prediction_evidence": predictions,
             "artifacts": {
                 "input": upload.stored_path,
-                "model": f"{artifact_root}/model.joblib" if artifact_root else None,
+                "model": f"{artifact_root}/{PACKAGE_FILENAME}" if artifact_root else None,
                 "result": f"{artifact_root}/result.json" if artifact_root else None,
                 "predictions": f"{artifact_root}/test_predictions.csv" if artifact_root else None,
             },

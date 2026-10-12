@@ -95,6 +95,7 @@ from app.domain.model_card import (
 from app.domain.ml_jobs import JOB_CANCELLED, JOB_COMPLETED, JOB_FAILED, JOB_QUEUED, JOB_RUNNING
 from app.engine.evaluation.metrics import LOWER_IS_BETTER
 from app.engine.modeling.objective import DEFAULT_THRESHOLD
+from app.engine.serving.model_package import saved_format
 from app.engine.lab.open_ingest import _from_columns as preview_from_columns
 from app.services.audience_projection import public_diagnostic, public_failure
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
@@ -621,10 +622,11 @@ def model_version_read(
     )
     artifact_ids = {getattr(row, column): role for role, column in _MODEL_ARTIFACT_ROLES if getattr(row, column)}
     artifacts = (
-        db.scalars(select(Artifact).where(Artifact.workspace_id == workspace_id, Artifact.id.in_(artifact_ids)))
+        list(db.scalars(select(Artifact).where(Artifact.workspace_id == workspace_id, Artifact.id.in_(artifact_ids))))
         if artifact_ids
         else []
     )
+    model_artifact = next((item for item in artifacts if artifact_ids[item.id] == "model"), None)
     return ModelVersionResourceRead(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -661,6 +663,7 @@ def model_version_read(
             ),
             key=lambda ref: ref.role,
         ),
+        saved_format=saved_format(model_artifact.extra_metadata) if model_artifact is not None else None,
     )
 
 

@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
@@ -117,6 +118,15 @@ class Settings(BaseSettings):
     legacy_marketing_pages_enabled: bool = False
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
+    # P7.1-A: model versions saved before the safe package format (joblib/pickle) are
+    # quarantined. Loaded only when this is true, or when unset AND the DCLAB_ENV variable is
+    # a development value (fail safe: unset, staging, a typo or APP_ENV/ENVIRONMENT refuse).
+    legacy_pickle_models_enabled: bool | None = None
+    # P7.1-A: limits of the child processes that rebuild and probe native boosters (address
+    # space in bytes, wall-clock seconds; CPU time is the timeout + 10 s). Validated on macOS
+    # only: tune per image if a limit breaks a library import there.
+    model_probe_memory_bytes: int = 6 << 30
+    model_probe_timeout_seconds: int = 120
     # Durable ML jobs. Production default persists a row and returns; a worker
     # process claims with FOR UPDATE SKIP LOCKED. `inline` / `thread` are local
     # adapters only — they must be set explicitly and are not the default.
@@ -134,6 +144,35 @@ def publication_enforced(settings: Settings) -> bool:
     if settings.dataset_publication_enforced is not None:
         return settings.dataset_publication_enforced
     return is_production_env(settings)
+
+
+def dclab_env_is_development() -> bool:
+    """``DCLAB_ENV`` in the process environment names a development environment. Only that
+    variable counts (not ``APP_ENV``/``ENVIRONMENT``, not ``.env``, not the settings default):
+    an unset variable, staging or a typo is treated as production (fail safe)."""
+
+    from app.agents.governance.platform_default import is_development_env
+
+    return is_development_env(os.environ.get("DCLAB_ENV", ""))
+
+
+def legacy_pickle_models_allowed(settings: Settings) -> bool:
+    if settings.legacy_pickle_models_enabled is not None:
+        return settings.legacy_pickle_models_enabled
+    return dclab_env_is_development()
+
+
+# P7.1-A: ``dclab worker run`` marks its process; outside an explicit development
+# environment only a marked process loads models (``package_loader.load_model``).
+_PROCESS_ROLE = {"worker": False}
+
+
+def mark_worker_process() -> None:
+    _PROCESS_ROLE["worker"] = True
+
+
+def is_worker_process() -> bool:
+    return _PROCESS_ROLE["worker"]
 
 
 def cookie_secure(settings: Settings) -> bool:

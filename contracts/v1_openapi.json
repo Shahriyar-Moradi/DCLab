@@ -2716,6 +2716,7 @@
         "metrics",
         "project_id",
         "ref_kinds",
+        "saved_format",
         "version",
         "workspace_id"
       ],

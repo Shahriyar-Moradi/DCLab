@@ -472,9 +472,13 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     import socket
     import time
 
-    from app.config import get_settings
+    from app.config import get_settings, mark_worker_process
     from app.services.ml_job_service import process_next_job
 
+    mark_worker_process()  # P7.1-A: this process may load stored models
+    settings = get_settings()
+    print(json.dumps({"model_probe_limits": {"memory_bytes": settings.model_probe_memory_bytes,
+                                             "timeout_seconds": settings.model_probe_timeout_seconds}}), file=sys.stderr)
     poll = (
         args.poll_seconds
         if args.poll_seconds is not None

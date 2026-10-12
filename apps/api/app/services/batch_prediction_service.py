@@ -59,7 +59,7 @@ from app.domain.ml_jobs import (
     JOB_QUEUED,
     JOB_TYPE_BATCH_PREDICT,
 )
-from app.services.artifact_service import get_artifact, read_artifact_bytes, store_artifact
+from app.services.artifact_service import ArtifactTooLargeError, get_artifact, read_artifact_bytes, store_artifact
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
 from app.storage._hashing import sha256_bytes
 
@@ -275,11 +275,13 @@ def _mark_failed(db: Session, row: BatchPrediction, code: str, message: str, con
     db.flush()
 
 
-def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] | None) -> tuple[Any, Any, int]:
-    """(ScoredFrame, ScoringSpec, rows_in) for this row. Raises ``ScoringError``."""
+def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] | None) -> tuple[Any, Any, int, str]:
+    """(ScoredFrame, ScoringSpec, rows_in, saved format) for this row. Raises ``ScoringError``."""
 
     from app.engine.data.loaders import load_table
-    from app.engine.serving.batch_scoring import ScoringError, load_pipeline, score_frame, scoring_spec
+    from app.engine.serving.batch_scoring import ScoringError, score_frame, scoring_spec
+    from app.engine.serving.model_package import PACKAGE_MAX_BYTES, ModelPackageError, check_manifest_contract
+    from app.engine.serving.package_loader import load_model  # worker only (P7.1-A)
     from app.services.dataset_materialization import materialize_dataset
 
     workspace_id = row.workspace_id
@@ -297,11 +299,33 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
     ).get("candidate_id")
     if experiment.scientific_evidence_locked_at is None or selected != candidate.candidate_key:
         raise ScoringError(UNSUPPORTED_MODEL, message)  # the evidence must describe this model
-    payload = read_artifact_bytes(db, workspace_id=workspace_id, artifact_id=artifact.id)
-    if sha256_bytes(payload) != artifact.content_digest:
-        raise ScoringError(UNSUPPORTED_MODEL, "the stored model does not match its recorded digest")
-    pipeline = load_pipeline(payload)
-    spec = scoring_spec(result, pipeline)
+    if not 0 < int(artifact.size_bytes or 0) <= PACKAGE_MAX_BYTES:  # before reading the object
+        raise ScoringError(UNSUPPORTED_MODEL, message)
+    try:  # streamed with a byte cap: the stored object is never read past the limit
+        payload = read_artifact_bytes(db, workspace_id=workspace_id, artifact_id=artifact.id, max_bytes=PACKAGE_MAX_BYTES)
+    except ArtifactTooLargeError as exc:
+        raise ScoringError(UNSUPPORTED_MODEL, message) from exc
+    # P7.1-A: the loader checks the bytes against the artifact digest, a package against the
+    # manifest digest the version references; a pre-package pickle is quarantined.
+    manifest = _scoped(db, Artifact, workspace_id, model_version.feature_manifest_artifact_id)
+    loaded = load_model(
+        payload,
+        expected_digest=artifact.content_digest,
+        package_format=(artifact.extra_metadata or {}).get("package_format"),
+        manifest_digest=manifest.content_digest if manifest else None,
+    )
+    if loaded.saved_format != "package_v1":
+        logger.warning(
+            "batch prediction %s loaded model version %s (workspace %s) from the QUARANTINED legacy pickle "
+            "format because LEGACY_PICKLE_MODELS_ENABLED allows it; train the model again to replace it",
+            row.id, model_version.id, workspace_id,
+        )
+    spec = scoring_spec(result, loaded.pipeline)
+    if loaded.manifest is not None:
+        try:
+            check_manifest_contract(loaded.manifest, spec)
+        except ModelPackageError as exc:
+            raise ScoringError(UNSUPPORTED_MODEL, "the stored model does not match its recorded feature contract") from exc
     # Re-check at run time: the dataset may have been unpublished or removed since it was queued.
     from app.services.experiment_service import ExperimentRequestError, uploaded_dataset
 
@@ -316,7 +340,8 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
             raise ScoringError(SCORING_FAILED, "the input file could not be read as a table") from exc
     if on_heartbeat is not None:
         on_heartbeat()
-    return score_frame(frame, spec, pipeline, on_progress=on_heartbeat), spec, int(len(frame))
+    scored = score_frame(frame, spec, loaded.pipeline, on_progress=on_heartbeat)
+    return scored, spec, int(len(frame)), loaded.saved_format
 
 
 def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[[], None] | None = None) -> None:
@@ -339,11 +364,14 @@ def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[
         request.started_at = request.started_at or now
     db.commit()
     try:
-        scored, spec, rows_in = _score(db, row, on_heartbeat)
+        scored, spec, rows_in, saved_format = _score(db, row, on_heartbeat)
         data, mime_type, extension = serialize_predictions(scored.predictions, row.output_format)
     except ScoringError as exc:
         db.rollback()
-        logger.info("batch prediction %s failed: %s", row.id, exc.code)
+        from app.engine.serving.model_package import failure_chain
+
+        log = logger.warning if exc.code == UNSUPPORTED_MODEL else logger.info  # server-side cause chain
+        log("batch prediction %s failed: %s (%s)", row.id, exc.code, failure_chain(exc.__cause__))
         _mark_failed(db, row, exc.code, exc.public_message, exc.contract)
         db.commit()
         return
@@ -374,6 +402,7 @@ def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[
             "batch_prediction_id": str(row.id),
             "rows_in": row.rows_in,
             "rows_out": row.rows_out,
+            "model_format": saved_format,
         }
     db.commit()
 

@@ -21,6 +21,8 @@ from sqlalchemy.exc import DBAPIError
 from app.db.models import BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
 from app.engine.lab.auto_prepare import build_preprocessor, engineer_features
 from app.engine.serving.batch_scoring import ScoringError, prepare_features, score_frame, scoring_spec
+from app.engine.serving.model_package import read_package, sha256_hex
+from app.services.artifact_service import read_artifact_bytes
 from app.services.ml_job_service import process_next_job
 from app.services.service_token_service import create_service_token
 from test_v1_contract_conventions import _assert_envelope, _headers
@@ -150,11 +152,12 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     refused = _root(client, setup, scoring["id"])
     _assert_envelope(refused, 409, "dataset_purpose_scoring")
 
-    # The API only queues: it never unpickles a model.
+    # The API only queues: it never loads a model (package or pickle).
     def no_model_load(*_args, **_kwargs):
         raise AssertionError("the API process must not load a model")
 
     monkeypatch.setattr("joblib.load", no_model_load)
+    monkeypatch.setattr("skops.io.loads", no_model_load)
     key = _key()
     created = _predict(client, setup, mv_id, scoring["id"], key=key)
     assert created.status_code == 202, created.text
@@ -190,6 +193,17 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     assert contract["target_column"] == "label" and contract["target_column_ignored"] is True
     assert done["output"]["download_path"] == f"/v1/predictions/{body['id']}/download"
     assert db.get(ExecutionRequest, job.execution_request_id).status == "completed"
+    # P7.1-A: scored from the model package, whose manifest is the version's pinned feature manifest.
+    assert db.get(ExecutionRequest, job.execution_request_id).result_summary["model_format"] == "package_v1"
+    version = client.get(f"/v1/model-versions/{mv_id}", headers=_h(setup)).json()
+    assert version["saved_format"] == "package_v1"
+    refs = {ref["role"]: ref for ref in version["artifacts"]}
+    assert refs["model"]["mime_type"] == "application/zip" and refs["preprocessor"]["artifact_type"] == "preprocessor"
+    package = read_artifact_bytes(db, workspace_id=setup["alpha"].id, artifact_id=UUID(refs["model"]["id"]))
+    manifest = read_package(package).manifest
+    assert sha256_hex(read_package(package).manifest_bytes) == refs["feature_manifest"]["content_digest"]
+    assert manifest["training_run_id"] == str(experiment.id) and manifest["features"] == features
+    assert manifest["cv_metrics"]["mean"] == experiment.result["best_single"]["cv_mean"]
 
     out = _download(client, setup, body["id"])
     assert len(out) == len(frame) and list(out["row_number"]) == list(range(1, len(frame) + 1))
@@ -302,6 +316,144 @@ def test_multiclass_scoring_maps_labels_back(client, db_session, setup):  # noqa
     mine = out.set_index(out["row_number"] - 1).loc[holdout.index]
     assert (mine["label"].to_numpy() == holdout["y_pred"].to_numpy()).all()
     np.testing.assert_allclose(mine[columns].max(axis=1), holdout["probability"].astype(float), atol=1e-9)
+
+
+# --- P7.1-A: a model saved before the package format is quarantined ------------------------
+
+
+def test_legacy_pickle_model_is_quarantined(client, db_session, setup, monkeypatch, caplog):  # noqa: F811
+    """A run written the pre-P7.1-A way (a pickle, no package) is stored as a quarantined model:
+    the read says so, the worker loads it only where legacy models are allowed (with a
+    warning and a ``legacy_quarantined`` result), and refuses it otherwise."""
+
+    import joblib
+
+    from app.config import get_settings
+
+    def legacy_writer(pipeline, *_args, **_kwargs):
+        buffer = io.BytesIO()
+        joblib.dump(pipeline, buffer)
+        return buffer.getvalue()
+
+    monkeypatch.setattr("app.engine.experiments.runner._saved_package", legacy_writer)
+    monkeypatch.setattr("app.engine.experiments.runner.PACKAGE_FILENAME", "model.joblib")
+    db = db_session
+    frame = _frame("regression", seed=8)
+    experiment, mv_id = _trained(client, db, setup, frame, "amount")
+    monkeypatch.undo()
+    version = client.get(f"/v1/model-versions/{mv_id}", headers=_h(setup)).json()
+    assert version["saved_format"] == "legacy_quarantined"
+    scoring = _upload(client, setup, frame.drop(columns=["amount"]))
+
+    with caplog.at_level("WARNING", logger="app.services.batch_prediction_service"):
+        allowed = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+        assert _work(db, allowed).status == "completed"  # tests/dev: legacy models allowed by default
+    assert any("QUARANTINED legacy pickle" in record.getMessage() for record in caplog.records)
+    request = db.get(ExecutionRequest, db.get(BatchPrediction, UUID(allowed)).execution_request_id)
+    assert request.result_summary["model_format"] == "legacy_quarantined"
+
+    monkeypatch.setattr(get_settings(), "legacy_pickle_models_enabled", False)  # as production by default
+    refused = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+    job = _work(db, refused)
+    assert (job.status, job.attempts) == ("failed", 1)  # deterministic: never retried
+    body = client.get(f"/v1/predictions/{refused}", headers=_h(setup)).json()
+    assert body["status"] == "failed" and body["error_code"] == "unsupported_model"
+    assert body["error_message"] == (
+        "this model version was saved in an older format that this server does not load; "
+        "train it again to score new data"
+    )
+
+
+def test_parquet_decimal_and_date_columns_train_into_a_package_and_score(client, db_session, setup):  # noqa: F811
+    """P7.1-A (review SF-4): Parquet decimal / date32 columns (Python objects in pandas) reach
+    training through the prepared CSV as numbers and dates, so the winner is packaged; a
+    Parquet scoring file with the same columns scores."""
+
+    import datetime
+    import decimal
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    db = db_session
+    frame = _frame("regression", seed=6)
+
+    def parquet(rows: pd.DataFrame) -> bytes:
+        table = pa.table({
+            **{name: rows[name].tolist() for name in ("customer_id", "plan", "code", "visits")},
+            "spend": pa.array([None if pd.isna(v) else decimal.Decimal(f"{v:.2f}") for v in rows["spend"]],
+                              pa.decimal128(8, 2)),
+            "signup_date": pa.array([datetime.date.fromisoformat(v) for v in rows["signup_date"]], pa.date32()),
+            **({"amount": rows["amount"].tolist()} if "amount" in rows else {}),
+        })
+        buffer = io.BytesIO()
+        pq.write_table(table, buffer)
+        return buffer.getvalue()
+
+    def upload(data: bytes, purpose: str) -> dict:
+        response = client.post(
+            "/v1/datasets", headers=_h(setup, setup["alpha_admin"], key=_key(), workspace=setup["alpha"]),
+            data={"project_id": str(setup["alpha_project"].id), "purpose": purpose},
+            files={"file": ("rows.parquet", data, "application/vnd.apache.parquet")},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    dataset = upload(parquet(frame), "training")
+    root = _root(client, setup, dataset["id"], target_column="amount")
+    assert root.status_code == 202, root.text
+    job = db.scalar(select(MlJob).where(MlJob.pipeline_run_id == UUID(root.json()["id"])))
+    assert process_next_job(db, job_id=job.id, claimed_by="p71-test").status == "completed"
+    db.expire_all()
+    mv_id = db.scalar(select(ModelVersion.id).where(ModelVersion.pipeline_run_id == UUID(root.json()["id"])))
+    assert client.get(f"/v1/model-versions/{mv_id}", headers=_h(setup)).json()["saved_format"] == "package_v1"
+    scoring = upload(parquet(frame.drop(columns=["amount"])), "scoring")
+    prediction_id = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+    assert _work(db, prediction_id).status == "completed"
+    done = client.get(f"/v1/predictions/{prediction_id}", headers=_h(setup)).json()
+    assert done["status"] == "completed" and done["rows_out"] == len(frame), done
+
+
+def test_a_packaging_failure_fails_the_run_without_spending_the_final_test(client, db_session, setup, monkeypatch):  # noqa: F811
+    """P7.1-A (ML review): the package is built between the final fit and the final test, so a
+    run whose winner cannot be saved fails with a plain reason and leaves no selection decision,
+    no final evaluation and no extra look on its split plan."""
+
+    from app.db.models import ModelEvaluation, ModelSelectionDecision
+    from app.engine.serving.model_package import PACKAGE_NOT_SAVED, ModelPackageError
+    from app.services.experiment_verdict_service import plan_looks
+
+    def no_safe_format(*_args, **_kwargs):
+        raise ModelPackageError("internal detail at /tmp/run")
+
+    monkeypatch.setattr("app.engine.experiments.runner.build_package", no_safe_format)
+    db = db_session
+    dataset = _upload(client, setup, _frame("binary", seed=12), purpose="training")
+    root = _root(client, setup, dataset["id"], target_column="label")
+    assert root.status_code == 202, root.text
+    experiment_id = UUID(root.json()["id"])
+    job = db.scalar(select(MlJob).where(MlJob.pipeline_run_id == experiment_id))
+    job.max_attempts = 1  # (the queue retries training failures; one attempt is enough here)
+    db.commit()
+    assert process_next_job(db, job_id=job.id, claimed_by="p71-test").status == "failed"
+    db.expire_all()
+    experiment = db.get(Experiment, experiment_id)
+    assert experiment.status == "FAILED"
+    read = client.get(f"/v1/experiments/{experiment_id}", headers=_h(setup)).json()
+    assert read["failure_reason"] == PACKAGE_NOT_SAVED  # the allowlisted plain sentence, no internals
+    for model in (ModelSelectionDecision, ModelEvaluation):
+        column = model.pipeline_run_id if model is ModelSelectionDecision else model.candidate_id
+        query = select(model).where(model.workspace_id == experiment.workspace_id)
+        if model is ModelSelectionDecision:
+            query = query.where(column == experiment_id)
+        else:
+            from app.db.models import ExperimentCandidate
+
+            query = query.join(ExperimentCandidate, ExperimentCandidate.id == column).where(
+                ExperimentCandidate.experiment_id == experiment_id)
+        assert db.scalars(query).first() is None
+    looks, _comparisons = plan_looks(db, experiment.workspace_id, experiment.split_plan_id)
+    assert experiment_id not in looks  # no look spent on the plan
 
 
 # --- upload purpose and fail-closed replay (no training) ----------------------------------

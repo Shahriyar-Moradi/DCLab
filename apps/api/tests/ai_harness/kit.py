@@ -675,6 +675,12 @@ REVIEWED_REFERENCES = frozenset({"platform.system"})  # an OS name, not a shell
 # Reviewed exception: the git revision probe, exactly this argv, no shell / input / stdin.
 EXEC_ALLOWED_FILE = "services/lab_service.py"
 EXEC_ALLOWED_ARGV = ("git", "rev-parse", "HEAD")
+# Reviewed exception 2 (P7.1-A): the sandboxed model-load child of the worker-only loader. Allowed only when the
+# file has exactly one `subprocess.Popen(command, ...)`, every assignment to `command` is the list
+# `[sys.executable, "-I", "-c", _CHILD, ...]`, `_CHILD` is a module-level plain string constant (fixed code, never
+# built from data), the keywords are limited to the set below and there is no shell / executable / preexec_fn.
+EXEC_CHILD_FILE = "engine/serving/package_loader.py"
+EXEC_CHILD_KEYWORDS = frozenset({"stdin", "stdout", "stderr", "env", "cwd", "start_new_session"})
 SANDBOX_FLAG = re.compile(r"sandbox|codeact|code_?exec|exec(?:ute)?_?code|generated_code|python_exec", re.I)
 REVIEWED_RUNTIMES = frozenset({"fake", "nooa_predict", "lead_loop"})
 
@@ -720,6 +726,38 @@ def _allowed_probe(call: ast.Call) -> bool:
     return (isinstance(argv, (ast.List, ast.Tuple)) and len(call.args) == 1
             and tuple(e.value if isinstance(e, ast.Constant) else None for e in argv.elts) == EXEC_ALLOWED_ARGV
             and not any(k.arg in (None, "shell", "input", "stdin", "executable", "env") for k in call.keywords))
+
+
+def _reviewed_child_ids(tree: ast.Module, aliases: Mapping[str, str]) -> set[int]:
+    """Node ids of the one reviewed ``subprocess.Popen(command, ...)`` reference, or empty when the file's shape
+    differs in any way from the reviewed one (see EXEC_CHILD_FILE)."""
+
+    fixed_code = any(
+        isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_CHILD" for t in n.targets)
+        and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+        for n in tree.body)
+    other_assignment = any(  # `_CHILD` must not be assigned anywhere else (no rebinding from data)
+        isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_CHILD" for t in n.targets)
+        and n not in tree.body for n in ast.walk(tree))
+    commands = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "command" for t in n.targets)]
+
+    def shaped(assign: ast.Assign) -> bool:
+        value = assign.value
+        return (isinstance(value, ast.List) and len(value.elts) >= 4
+                and _dotted(value.elts[0]) == "sys.executable"
+                and isinstance(value.elts[1], ast.Constant) and value.elts[1].value == "-I"
+                and isinstance(value.elts[2], ast.Constant) and value.elts[2].value == "-c"
+                and isinstance(value.elts[3], ast.Name) and value.elts[3].id == "_CHILD")
+
+    popens = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+              and _resolve(n.func, aliases).startswith("subprocess.")]
+    ok = (fixed_code and not other_assignment and commands and all(shaped(c) for c in commands)
+          and len(popens) == 1 and _resolve(popens[0].func, aliases) == "subprocess.Popen"
+          and len(popens[0].args) == 1 and isinstance(popens[0].args[0], ast.Name)
+          and popens[0].args[0].id == "command"
+          and all(k.arg in EXEC_CHILD_KEYWORDS for k in popens[0].keywords))
+    return {id(popens[0].func)} if ok else set()
 
 
 def _call_hit(node: ast.Call, aliases: Mapping[str, str]) -> str | None:
@@ -787,11 +825,13 @@ def codeact_findings(root: Path = APP_ROOT, *, settings_fields: Mapping[str, Any
         found += [f"{rel}: nooa {name}" for name in nooa_violations(tree)]
         probes = {id(n.func) for n in ast.walk(tree) if rel == EXEC_ALLOWED_FILE and isinstance(n, ast.Call)
                   and _resolve(n.func, aliases).startswith("subprocess.") and _allowed_probe(n)}
+        child = _reviewed_child_ids(tree, aliases) if rel == EXEC_CHILD_FILE else set()
+        probes |= child
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 modules = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""]
                 hit = next((m for m in modules if m.split(".")[0] in EXEC_MODULES), None)
-                if hit == "subprocess" and rel == EXEC_ALLOWED_FILE:
+                if hit == "subprocess" and (rel == EXEC_ALLOWED_FILE or (rel == EXEC_CHILD_FILE and child)):
                     hit = None
             elif isinstance(node, ast.Call):
                 hit = _call_hit(node, aliases)

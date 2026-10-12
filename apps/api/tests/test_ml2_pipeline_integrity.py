@@ -4,7 +4,6 @@ from io import BytesIO
 from types import SimpleNamespace
 from zipfile import ZipFile
 
-import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -12,6 +11,8 @@ import pytest
 from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, Experiment
 from app.agents.gateway.contract import CompletionResponse, Refusal
 from app.engine.lab.llm_client import MissingValueDecision
+from app.engine.serving.model_package import PACKAGE_FILENAME, read_package, sha256_hex
+from app.engine.serving.package_loader import load_model_package
 from app.engine.types import SearchConfig, TaskSpec
 from app.engine.validation.splits import SOURCE_ROW_COLUMN, split_train_test_holdout
 from app.services.auto_train_service import run_auto_train_job
@@ -92,9 +93,9 @@ def test_holdout_cannot_fit_preprocessing_or_enter_cv_and_winner_is_locked_first
     winner_id = result["selection"]["selected_candidate_id"]
     assert all(row["test_metrics"] is None for row in trained if row["candidate_id"] != winner_id)
 
-    pipelines = list((tmp_path / "members").glob("*.joblib"))
-    assert len(pipelines) == 1
-    pipeline = joblib.load(pipelines[0])
+    payload = (tmp_path / PACKAGE_FILENAME).read_bytes()  # P7.1-A: the winner's model package, no pickle
+    assert not list((tmp_path / "members").glob("*.joblib"))
+    pipeline = load_model_package(payload, manifest_digest=sha256_hex(read_package(payload).manifest_bytes)).pipeline
     prep = pipeline.named_steps["prep"]
     numeric = prep.named_transformers_["num"]
     imputer = numeric.named_steps["imputer"]

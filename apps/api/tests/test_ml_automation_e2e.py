@@ -305,12 +305,12 @@ class Test2And3MissingAndCategorical:
         assert n_full not in sizes
         assert all(size <= n_train for size in sizes)
 
-        import joblib
+        from app.engine.serving.model_package import PACKAGE_FILENAME, read_package, sha256_hex
+        from app.engine.serving.package_loader import load_model_package
 
-        members = Path(experiment.artifact_dir) / "members"
-        pipelines = list(members.glob("*.joblib"))
-        assert pipelines
-        pipeline = joblib.load(pipelines[0])
+        payload = (Path(experiment.artifact_dir) / PACKAGE_FILENAME).read_bytes()
+        manifest = read_package(payload).manifest_bytes
+        pipeline = load_model_package(payload, manifest_digest=sha256_hex(manifest)).pipeline
         prep = pipeline.named_steps["prep"]
         encoder = prep.named_transformers_["cat"].named_steps["onehot"]
         assert encoder.handle_unknown == "ignore"

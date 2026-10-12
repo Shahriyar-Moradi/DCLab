@@ -137,6 +137,31 @@ def test_codeact_check_catches_planted_violations(tmp_path):
                                       "subprocess.run(['git', 'log'])\n"}
     found = codeact_findings(_tree(tmp_path / "lab", lab), **none)
     assert sorted(int(f.split(":")[1]) for f in found) == [3, 4, 5, 6, 7, 8]  # only the exact probe passes
+    good_child = ("import json\n_CHILD = 'print(1)'\n\ndef run(mode, payload):\n    import subprocess\n    import sys\n"
+                  "    command = [sys.executable, '-I', '-c', _CHILD, mode]\n"
+                  "    return subprocess.Popen(command, stdin=subprocess.PIPE, stdout=None, env={}, cwd='.',\n"
+                  "                            start_new_session=True)\n")
+    child_file = "engine/serving/package_loader.py"
+    variants = {
+        "good": good_child,
+        "shell": good_child.replace("start_new_session=True", "shell=True"),
+        "executable": good_child.replace("start_new_session=True", "executable='/bin/sh'"),
+        "preexec": good_child.replace("start_new_session=True", "preexec_fn=f"),
+        "other_argv": good_child.replace("Popen(command,", "Popen(argv,"),
+        "no_dash_i": good_child.replace("'-I', ", ""),
+        "code_from_data": good_child.replace("_CHILD, mode]", "payload, mode]"),
+        "child_computed": good_child.replace("_CHILD = 'print(1)'", "_CHILD = 'print(' + str(1) + ')'"),
+        "child_rebound": good_child + "\ndef rebind(x):\n    global _CHILD\n    _CHILD = x\n",
+        "command_other_shape": good_child + "\ndef other(x):\n    command = ['sh', '-c', x]\n",
+        "second_popen": good_child + "\ndef again(x):\n    import subprocess\n    subprocess.Popen(x)\n",
+        "run_instead": good_child.replace("subprocess.Popen(command,", "subprocess.run(command,"),
+    }
+    results = {name: codeact_findings(_tree(tmp_path / f"child_{name}", {child_file: body}), **none)
+               for name, body in variants.items()}
+    assert results["good"] == []  # the reviewed model-load child passes
+    assert {name for name, found in results.items() if not found} == {"good"}, results  # every deviation is flagged
+    elsewhere = codeact_findings(_tree(tmp_path / "elsewhere", {"services/other.py": good_child}), **none)
+    assert elsewhere  # the exception is bound to the one file
     empty = tmp_path / "empty"
     empty.mkdir()
     assert codeact_findings(empty, settings_fields={"agents_sandbox_lane_enabled": True, "sandbox_image": "",

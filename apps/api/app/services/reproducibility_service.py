@@ -105,6 +105,7 @@ def _store_bytes(
     data: bytes,
     mime_type: str,
     role: str,
+    metadata: dict[str, Any] | None = None,
 ) -> Artifact:
     return store_artifact(
         db,
@@ -116,6 +117,7 @@ def _store_bytes(
         data=data,
         mime_type=mime_type,
         extra_metadata={
+            **(metadata or {}),
             "pipeline_run_id": str(experiment.id),
             "role": role,
         },
@@ -130,6 +132,7 @@ def _store_path_if_exists(
     artifact_type: str,
     role: str,
     mime_type: str,
+    metadata: dict[str, Any] | None = None,
 ) -> Artifact | None:
     if not path.is_file():
         return None
@@ -141,30 +144,53 @@ def _store_path_if_exists(
         data=path.read_bytes(),
         mime_type=mime_type,
         role=role,
+        metadata=metadata,
     )
 
 
-def _preprocessor_bytes(experiment: Experiment, winner_key: str | None) -> bytes | None:
-    artifact_dir = Path(experiment.artifact_dir or "")
-    if not artifact_dir.is_dir() or not winner_key:
-        return None
-    member = artifact_dir / "members" / f"{winner_key}.joblib"
-    if not member.is_file():
-        return None
-    try:
-        import joblib
-    except Exception:  # noqa: BLE001
-        return None
-    try:
-        pipeline = joblib.load(member)
-        prep = getattr(pipeline, "named_steps", {}).get("prep")
-        if prep is None:
-            return None
-        buffer = io.BytesIO()
-        joblib.dump(prep, buffer)
-        return buffer.getvalue()
-    except Exception:  # noqa: BLE001
-        return None
+def _feature_availability(result: dict[str, Any]) -> dict[str, str]:
+    plan = result.get("model_development_plan") if isinstance(result.get("model_development_plan"), dict) else {}
+    rows = plan.get("feature_availability") if isinstance(plan.get("feature_availability"), list) else []
+    return {str(row["column"]): str(row.get("status") or "unknown") for row in rows if isinstance(row, dict) and row.get("column")}
+
+
+def _store_model_package(
+    db: Session, experiment: Experiment, path: Path, result: dict[str, Any], feature_set_version_id: UUID | None
+) -> tuple[Artifact, Artifact, Artifact]:
+    """(model, preprocessor, manifest) artifacts of a P7.1-A model package. The run's
+    lineage is stamped into the manifest; members are copied, never deserialized."""
+
+    from app.engine.serving.model_package import (
+        PACKAGE_FORMAT,
+        PACKAGE_FILENAME,
+        PREPROCESSOR_MEMBER,
+        finalize_package,
+        read_package,
+    )
+
+    package, manifest_bytes = finalize_package(
+        path.read_bytes(),
+        training_run_id=str(experiment.id),
+        feature_set_version_id=str(feature_set_version_id) if feature_set_version_id else None,
+        availability=_feature_availability(result),
+    )
+    contents = read_package(package)
+    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
+    tag = {"package_format": PACKAGE_FORMAT, "manifest_digest": manifest_digest}
+    model = _store_bytes(
+        db, experiment, artifact_type="model", filename=PACKAGE_FILENAME, data=package,
+        mime_type="application/zip", role="model", metadata=tag,
+    )
+    preprocessor = _store_bytes(
+        db, experiment, artifact_type="preprocessor", filename=PREPROCESSOR_MEMBER,
+        data=contents.members[PREPROCESSOR_MEMBER], mime_type="application/octet-stream", role="preprocessor",
+        metadata={**tag, "member_format": "skops"},
+    )
+    manifest = _store_bytes(
+        db, experiment, artifact_type="feature_manifest", filename="feature_manifest.json", data=manifest_bytes,
+        mime_type="application/json", role="feature_manifest", metadata={"package_format": PACKAGE_FORMAT},
+    )
+    return model, preprocessor, manifest
 
 
 def capture_runtime_environment(
@@ -270,47 +296,48 @@ def persist_reproducibility(
             )
         )
     artifact_dir = Path(experiment.artifact_dir or "")
-    model_path = artifact_dir / "model.joblib"
-    member_path = artifact_dir / "members" / f"{winner_key}.joblib" if winner_key else None
-    model_file = member_path if member_path is not None and member_path.is_file() else model_path
-    model_artifact = _store_path_if_exists(
-        db,
-        experiment,
-        model_file,
-        artifact_type="model",
-        role="model",
-        mime_type="application/octet-stream",
-    )
-    preprocessor_bytes = _preprocessor_bytes(experiment, winner_key or None)
+    from app.engine.serving.model_package import PACKAGE_FILENAME
+
+    package_path = artifact_dir / PACKAGE_FILENAME
     preprocessor_artifact = None
-    if preprocessor_bytes:
-        preprocessor_artifact = _store_bytes(
+    if experiment.artifact_dir and package_path.is_file():
+        # P7.1-A: the model package; its manifest is the feature manifest the version pins.
+        model_artifact, preprocessor_artifact, feature_manifest_artifact = _store_model_package(
+            db, experiment, package_path, result, feature_set_version_id
+        )
+    else:
+        # Run directories written before the package format: the pickle is stored as is,
+        # marked quarantined, and never loaded here (no preprocessor is extracted from it).
+        model_path = artifact_dir / "model.joblib"
+        member_path = artifact_dir / "members" / f"{winner_key}.joblib" if winner_key else None
+        model_file = member_path if member_path is not None and member_path.is_file() else model_path
+        model_artifact = _store_path_if_exists(
             db,
             experiment,
-            artifact_type="preprocessor",
-            filename="preprocessor.joblib",
-            data=preprocessor_bytes,
+            model_file,
+            artifact_type="model",
+            role="model",
             mime_type="application/octet-stream",
-            role="preprocessor",
+            metadata={"model_format": "legacy_pickle", "quarantined": True},
         )
-    features = list((winner.payload or {}).get("feature_set") or []) if winner is not None else []
-    if not features:
-        features = list((result.get("model_development_plan") or {}).get("allowed_features") or [])
-    manifest = {
-        "pipeline_run_id": str(experiment.id),
-        "feature_set_version_id": str(feature_set_version_id) if feature_set_version_id else None,
-        "features": features,
-        "candidate_id": winner.candidate_key if winner is not None else None,
-    }
-    feature_manifest_artifact = _store_bytes(
-        db,
-        experiment,
-        artifact_type="feature_manifest",
-        filename="feature_manifest.json",
-        data=(json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
-        mime_type="application/json",
-        role="feature_manifest",
-    )
+        features = list((winner.payload or {}).get("feature_set") or []) if winner is not None else []
+        if not features:
+            features = list((result.get("model_development_plan") or {}).get("allowed_features") or [])
+        manifest = {
+            "pipeline_run_id": str(experiment.id),
+            "feature_set_version_id": str(feature_set_version_id) if feature_set_version_id else None,
+            "features": features,
+            "candidate_id": winner.candidate_key if winner is not None else None,
+        }
+        feature_manifest_artifact = _store_bytes(
+            db,
+            experiment,
+            artifact_type="feature_manifest",
+            filename="feature_manifest.json",
+            data=(json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
+            mime_type="application/json",
+            role="feature_manifest",
+        )
     code_snapshot = None
     if get_settings().reproducible_code_export_enabled:
         source_bytes = _engine_source_zip()
