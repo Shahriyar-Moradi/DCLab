@@ -78,6 +78,8 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/experiments/{experiment_id}/findings",
             # P5.2-A: out-of-fold operating points only (no final-evaluation figure at any point).
             "/v1/experiments/{experiment_id}/operating-points",
+            # P5.5-B-read: CV-only verdict + test-set look counts (metadata, no final-evaluation value).
+            "/v1/experiments/{experiment_id}/verdict",
             "/v1/decisions/{decision_id}",
             "/v1/model-versions/{model_version_id}",
             "/v1/model-versions/{model_version_id}/card",

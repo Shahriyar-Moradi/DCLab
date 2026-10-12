@@ -32,6 +32,7 @@ from dclab_client.types import (
     ExperimentFindings,
     OperatingPointChoice,
     OperatingPoints,
+    ExperimentVerdict,
     ExperimentPage,
     Governance,
     GovernanceSwitch,
@@ -1170,6 +1171,21 @@ class ExperimentsClient:
             request_id=request_id,
         )
         return OperatingPoints.model_validate(payload)
+
+    def verdict(
+        self, experiment_id: UUID | str, *, against: UUID | str | None = None, request_id: str | None = None
+    ) -> ExperimentVerdict:
+        """Does this experiment beat ``against`` (default: its parent) beyond noise? Paired locked
+        per-fold CV scores, Nadeau-Bengio corrected margin for the new candidates the try added
+        (P5.5-B-read), and the split plan's test-set look count (counts only)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/verdict",
+            params={"against": _id(against)} if against is not None else None,
+            request_id=request_id,
+        )
+        return ExperimentVerdict.model_validate(payload)
 
     def choose_operating_point(
         self,

@@ -46,6 +46,14 @@ def comparison_view(request: Request, body: Any) -> Any:
     return _for_agents(request, body, shaping.withhold_comparison)
 
 
+def verdict_view(request: Request, body: Any) -> Any:
+    """P5.5-B-read: the verdict is CV-only and the test-set look count is metadata (named
+    ``test_set_looks`` so this guard keeps it): tokens get the same body; any key naming the
+    holdout would still be dropped."""
+
+    return _for_agents(request, body, lambda b: type(b).model_validate(shaping.strip_holdout(b)))
+
+
 def model_version_view(request: Request, body: Any) -> Any:
     return _for_agents(request, body, shaping.withhold_model_version)
 

@@ -356,6 +356,33 @@ def test_experiment_findings_use_v1_path_and_parse_checks():
     assert len(recorded) == 1
 
 
+def test_experiment_verdict_uses_v1_path_and_against_query():
+    recorded: list[httpx.Request] = []
+    eid, parent = "33333333-3333-3333-3333-333333333333", "55555555-5555-5555-5555-555555555555"
+    payload = {"experiment_id": eid, "against_experiment_id": parent, "against_is_parent": True,
+               "verdict": "within_the_noise", "reason": "inside_margin", "message": "m", "metric": "rmse",
+               "direction": "lower_is_better", "folds": 5, "mean_difference": -0.2, "margin": 0.5,
+               "comparisons": 3, "new_candidates": 3, "minimum_effect_basis": "relative",
+               "fold_scores": [{"fold_number": 1, "experiment": 9.8, "against": 10.0, "difference": -0.2}],
+               "test_set_looks": {"looks_on_plan": 3, "experiment_look": 3, "against_look": 1}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=payload)
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    result = api.experiments.verdict(eid, against=parent)
+    assert result.verdict == "within_the_noise" and result.test_set_looks.experiment_look == 3
+    assert result.fold_scores[0].difference == -0.2 and result.outcome_scope == "cv"
+    assert (result.comparisons, result.new_candidates, result.minimum_effect_basis) == (3, 3, "relative")
+    assert recorded[0].method == "GET" and recorded[0].url.path == f"/v1/experiments/{eid}/verdict"
+    assert recorded[0].url.params["against"] == parent
+    api.experiments.verdict(eid)
+    assert "against" not in recorded[1].url.params
+    with pytest.raises(DCLabClientError):
+        api.experiments.verdict(eid, against="../x")
+
+
 def test_experiment_operating_points_use_v1_path_and_parse_points():
     recorded: list[httpx.Request] = []
     point = {"threshold": 0.4, "tp": 3, "fp": 1, "fn": 1, "tn": 5, "precision": 0.75, "recall": 0.75,

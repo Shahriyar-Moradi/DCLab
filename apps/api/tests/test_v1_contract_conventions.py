@@ -149,6 +149,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/experiments/{experiment_id}",
         "GET /v1/experiments/{experiment_id}/findings",
         "GET /v1/experiments/{experiment_id}/operating-points",
+        "GET /v1/experiments/{experiment_id}/verdict",
         "POST /v1/experiments/{experiment_id}/operating-point",
         "POST /v1/experiments/{experiment_id}/branches",
         "POST /v1/experiments/{experiment_id}/cancel",

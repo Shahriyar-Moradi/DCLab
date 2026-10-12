@@ -217,6 +217,8 @@ click (R2-A can then be run on B's data: how often does "try another family"
 beat the noise?). **Q1 to the founder: A, B or C?** The rest of this ADR is
 the option-A design; §5 (verdict) and §6.4 (look count) also serve option B.
 
+**Option B wording rule (added 2026-10-12, found by the review of the Improve screen).** The §5 caveat "the final test set is the honest estimate" belongs to option A, where trial runs are sealed and the final test set is scored once for the accepted result. Under option B every try is an ordinary run and scores the final test set once (each try spends one look), so that sentence is FALSE there and invites choosing a model by its final-test number. Under option B the caveat reads: "Best of N tries on the same folds: the cross-validation number is a little optimistic, and each try also scored the final test set once, so no single number here is a fresh estimate." Likewise, T (the number of comparisons behind the margin) is the number of NEW models a try adds, not 1: a try's winner is the best of those on the same folds.
+
 ## Decision (option A design)
 
 ### 0. The loop in three sentences

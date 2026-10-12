@@ -59,6 +59,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | All investigation checks | P5.1-A | renders in the P4.10 panel (no new screen) |
 | Operating point (threshold) | P5.2-A: `GET /v1/experiments/{id}/operating-points` (out-of-fold curve, Pareto points, locked and chosen point; MCP `get_operating_points`), `POST /v1/experiments/{id}/operating-point` (people only; records an `operating_point_chosen` decision) | P5.2-UI (experiment page "Per-fold and threshold") |
 | Improve loop | P5.4-A | P5.5-A (+ assistant `improve` tool, A5) |
+| Improve: comparison verdict and test-set look count (ADR 0007 option B) | P5.5-B-read: `GET /v1/experiments/{id}/verdict` (`?against={id}`, default the parent; verdict from locked per-fold CV scores, Nadeau-Bengio margin at T = max(1, `new_candidates`), `comparisons_on_plan`, `test_set_looks`; SDK `experiments.verdict`, no MCP tool) | P5.5-B (guided Improve screen) |
 | Agent runs and proposals | P6.4-A, P6.6-A, P6.10-A | A2-UI (Agent runs, Tool registry), A4-A, P4.16-UI (+ assistant skills, A6) |
 | Jev answers at decision points | P6.7-A, P6.9-A | P6.7-UI (development role only), P4.17-UI decision points |
 | Agent trust levels (R3) | P6.8-A | P6.8-UI (Agents & tools → Agent catalog) |

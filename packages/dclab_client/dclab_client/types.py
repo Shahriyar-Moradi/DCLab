@@ -1025,6 +1025,57 @@ class OperatingPointChoice(_Versioned):
     scoring: OperatingScoring
 
 
+class VerdictFold(BaseModel):
+    fold_number: int
+    experiment: float
+    against: float
+    difference: float
+
+
+class SplitPlanLooks(BaseModel):
+    """Experiments on the split plan counted (conservatively) as a look at its final test set."""
+
+    split_plan_id: UUID | None = None
+    looks_on_plan: int
+    experiment_look: int | None = None
+    against_look: int | None = None
+    counting: str | None = None
+
+
+class ExperimentVerdict(BaseModel):
+    """Does an experiment beat another on the same folds beyond noise (P5.5-B-read)? From the locked
+    per-fold CV scores (``outcome_scope`` ``cv``); differences in the metric's own units;
+    ``verdict`` beats_the_noise | within_the_noise | worse | not_comparable; ``comparisons`` (T) =
+    max(1, ``new_candidates``)."""
+
+    experiment_id: UUID
+    against_experiment_id: UUID | None = None
+    against_is_parent: bool = False
+    split_plan_id: UUID | None = None
+    verdict: str
+    reason: str | None = None
+    message: str
+    metric: str | None = None
+    direction: str | None = None
+    folds: int | None = None
+    mean_difference: float | None = None
+    margin: float | None = None
+    minimum_effect: float | None = None
+    minimum_effect_basis: str | None = None
+    standard_error: float | None = None
+    t_quantile: float | None = None
+    alpha: float = 0.05
+    comparisons: int = 1
+    new_candidates: int = 0
+    comparisons_on_plan: int = 0
+    multiplicity_note: str | None = None
+    sign_convention: str | None = None
+    fold_scores: list[VerdictFold] = Field(default_factory=list)
+    test_set_looks: SplitPlanLooks
+    outcome_scope: str = "cv"
+    basis: str = "locked_cv_fold_evaluations"
+
+
 class ExperimentLineage(BaseModel):
     parent_experiment_id: UUID | None = None
     split_plan_id: UUID | None = None

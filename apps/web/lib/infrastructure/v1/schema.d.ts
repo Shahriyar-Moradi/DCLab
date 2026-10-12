@@ -667,13 +667,21 @@ export interface paths {
          * @description Does this experiment beat the other one beyond noise? Computed from the LOCKED per-fold
          *     cross-validation scores of both winners on the shared ranking metric (``outcome_scope: "cv"``;
          *     never a final-evaluation value): paired fold differences on the same folds, Nadeau-Bengio
-         *     corrected standard error, a one-sided margin ``t_{1-0.05/T, K-1} x se_NB`` with ``T = 1`` (one
-         *     comparison; ``comparisons_on_plan`` says how many experiments on the split plan picked a winner)
-         *     and a minimum effect. ``verdict``: ``beats_the_noise | within_the_noise | worse | not_comparable``
-         *     with ``reason`` and a plain ``message``; differences in the metric's own units (``sign_convention``).
-         *     ``test_set_looks``: how many experiments on the split plan count as a look at its final test set
-         *     (conservative) and which look each of the two is; counts only. Service tokens get the same body.
-         *     Another workspace's experiment (either id): 404.
+         *     corrected standard error, a one-sided margin ``t_{1-0.05/T, K-1} x se_NB`` and a minimum effect.
+         *     ``T = comparisons = max(1, new_candidates)``: the try's winner is the best of the new trained
+         *     candidates it added on the same folds (ADR 0007 §5). Per try the false "beats" rate is 5% when
+         *     fold scores correlate as the Nadeau-Bengio model assumes (rho = 1/K); about 10% at rho = 2/K.
+         *     Power at T = 1 for a true per-fold gain of 1 / 2 / 3 fold-delta SDs: K = 5 0.40 / 0.86 / 0.99,
+         *     K = 10 0.68 / 0.99 at 1 / 2 SDs. ``comparisons_on_plan`` counts the experiments on the split plan that
+         *     picked a winner or are still running; above 2 the ``message`` carries the best-of-N caveat.
+         *     ``verdict``: ``beats_the_noise | within_the_noise | worse | not_comparable`` with ``reason`` and a
+         *     plain ``message``; differences in the metric's own units (``sign_convention``). Time-ordered
+         *     folds and runs whose own trust checks fail target leakage or an implausible score are never
+         *     "beats" (``time_ordered_folds``, ``suspicious_result``). ``test_set_looks``: how many experiments
+         *     on the split plan count as a look at its final test set (conservative) and which look each of
+         *     the two is; counts only. Service tokens get the same body. ``against`` at most once (``422``).
+         *     Another workspace's experiment (either id): 404. ``If-None-Match`` is ignored (200 + ``ETag``),
+         *     like the sibling reads.
          */
         get: operations["read_experiment_verdict_v1_experiments__experiment_id__verdict_get"];
         put?: never;
@@ -3163,13 +3171,13 @@ export interface components {
             basis: "locked_cv_fold_evaluations";
             /**
              * Comparisons
-             * @description T: comparisons the margin is corrected for (one click).
+             * @description T: comparisons the margin is corrected for (= max(1, new_candidates)).
              * @default 1
              */
             comparisons: number;
             /**
              * Comparisons On Plan
-             * @description Experiments on the split plan that picked (or are picking) a winner, these included.
+             * @description Experiments on the split plan that picked a winner or are still running (root, in-flight runs and these two included).
              * @default 0
              */
             comparisons_on_plan: number;
@@ -3196,7 +3204,7 @@ export interface components {
             mean_difference?: number | null;
             /**
              * Message
-             * @description One plain sentence.
+             * @description A plain sentence, plus the new-candidate note and the split-plan caveat when they apply.
              */
             message: string;
             /**
@@ -3206,14 +3214,25 @@ export interface components {
             metric?: string | null;
             /**
              * Minimum Effect
-             * @description δ_min (metric units).
+             * @description δ_min (metric units): max(0.001, 1/n_min) for count-based metrics, 0.001 x |the other run's mean| otherwise; n_min is the smallest class count for class-sensitive metrics when the locked folds carry it (binary), else the smallest validation fold (multiclass: less conservative than ADR 0007 §5).
              */
             minimum_effect?: number | null;
             /**
+             * Minimum Effect Basis
+             * @description smallest_class_rows | validation_rows | relative | floor.
+             */
+            minimum_effect_basis?: string | null;
+            /**
              * Multiplicity Note
-             * @default The margin covers this one comparison (T = 1). Trying several families in turn on the same folds multiplies the comparisons, and the best of several tries looks a little better than it is: comparisons_on_plan says how many experiments on this split plan picked a winner.
+             * @default The margin is corrected for the new candidates this try added (comparisons = T = new_candidates, at least 1): the try is judged at 5% on its own. Each further try on the same folds is judged at 5% again, so several tries can reach up to N x 5% together (about 1 - 0.95^N, 23% at N = 5): comparisons_on_plan counts the experiments on this split plan that picked a winner or are still running, the root and these two included.
              */
             multiplicity_note: string;
+            /**
+             * New Candidates
+             * @description k: trained non-baseline candidate keys of this experiment that the other one did not train (the winner is the best of these on the same folds).
+             * @default 0
+             */
+            new_candidates: number;
             /**
              * Outcome Scope
              * @default cv
@@ -3222,7 +3241,7 @@ export interface components {
             outcome_scope: "cv";
             /**
              * Reason
-             * @description Why: no_change | inside_margin | below_minimum_effect (within_the_noise); a not_comparable reason (different_split_plan, different_metric, different_folds, too_few_folds, constant_difference, missing_locked_folds, not_finished, evidence_not_locked, no_winner, no_parent, same_experiment).
+             * @description Why: no_change | inside_margin | below_minimum_effect (within_the_noise); a not_comparable reason (different_split_plan, different_metric, different_folds, too_few_folds, constant_difference, missing_locked_folds, not_finished, evidence_not_locked, no_winner, no_parent, same_experiment, time_ordered_folds, suspicious_result).
              */
             reason?: string | null;
             /**
@@ -5695,7 +5714,7 @@ export interface components {
             against_look?: number | null;
             /**
              * Counting
-             * @default conservative: every experiment on this split plan that locked a winner or scored the final test set counts as one look, failed or cancelled ones included; ordered by the time the winner was locked
+             * @default conservative: every experiment on this split plan that locked a winner, has a final-evaluation row, or recorded a final_test_started event (the evidence for a run that failed or was cancelled after its final test began) counts as one look; ordered by the time the winner was locked. Limits: split plans that share the same holdout rows are counted separately, and a run that died after a lost (best-effort) final_test_started write is not counted.
              */
             counting: string;
             /**
