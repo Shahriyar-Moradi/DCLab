@@ -218,11 +218,17 @@ def _resolve_effective_capabilities(
     workspace_read = bool(
         workspace is not None and can_read_workspace(db, user, workspace.id)
     )
+    is_compatibility_client = user.role == UserRole.CLIENT_USER.value
+    # A client_user keeps workspace_write (the legacy /app Labs gate) but never executes the
+    # shared ML core (external reader). Every /v1 write route reads execute_ml, so it is
+    # stated here as well as in can_execute_workspace_ml.
     workspace_write = bool(
         workspace_read and can_write_workspace(db, user, workspace.id)
     )
     execute_ml = bool(
-        workspace_read and can_execute_workspace_ml(db, user, workspace.id)
+        workspace_read
+        and not is_compatibility_client
+        and can_execute_workspace_ml(db, user, workspace.id)
     )
     manage_members = bool(
         workspace_read and can_manage_workspace_members(db, user, workspace.id)
@@ -236,7 +242,6 @@ def _resolve_effective_capabilities(
     stored_workspace_role = (
         workspace_role_for(db, user, workspace.id) if workspace is not None else None
     )
-    is_compatibility_client = user.role == UserRole.CLIENT_USER.value
     is_personal_developer = stored_workspace_role is WorkspaceRole.PERSONAL_DEVELOPER
     application_access = workspace_read and not is_personal_developer
     development_access = workspace_read and (

@@ -421,15 +421,15 @@ def test_cursor_codec_rejects_foreign_scope_and_garbage():
 # --- ETag / If-Match --------------------------------------------------------------------------
 
 
-def _create_request(auth_client, **extra):
-    return auth_client.post(
+def _create_request(engineer_client, **extra):
+    return engineer_client.post(
         "/v1/execution-requests",
         json={"operation": OPERATION_MODEL_BUILD, "request_spec": {"filename": "a.csv"}, **extra.pop("body", {})},
         **extra,
     )
 
 
-def test_mutable_gets_return_strong_etags(client, db_session, tmp_path, auth_client):
+def test_mutable_gets_return_strong_etags(client, db_session, tmp_path, engineer_client):
     setup = make_lineage_setup(db_session, tmp_path)
     pipeline = _pipeline_with_events(db_session, setup, count=1)
     db_session.commit()
@@ -441,27 +441,27 @@ def test_mutable_gets_return_strong_etags(client, db_session, tmp_path, auth_cli
         assert re.fullmatch(r'"[0-9a-f]{32}"', etag), etag
         assert client.get(path, headers=headers).headers["ETag"] == etag
 
-    created = _create_request(auth_client)
+    created = _create_request(engineer_client)
     assert created.status_code == 202, created.text
-    fetched = auth_client.get(f"/v1/execution-requests/{created.json()['id']}")
+    fetched = engineer_client.get(f"/v1/execution-requests/{created.json()['id']}")
     assert fetched.headers["ETag"] == created.headers["ETag"]
 
 
-def test_if_match_mismatch_is_412_and_match_reaches_the_command(auth_client):
-    created = _create_request(auth_client)
+def test_if_match_mismatch_is_412_and_match_reaches_the_command(engineer_client):
+    created = _create_request(engineer_client)
     request_id = created.json()["id"]
     etag = created.headers["ETag"]
     confirm = f"/v1/execution-requests/{request_id}/target-confirmation"
 
-    stale = auth_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": '"deadbeef"'})
+    stale = engineer_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": '"deadbeef"'})
     error = _assert_envelope(stale, 412, "precondition_failed")
     assert error["details"]["current_etag"] == etag and error["retryable"] is False
-    weak = auth_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": f"W/{etag}"})
+    weak = engineer_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": f"W/{etag}"})
     _assert_envelope(weak, 412, "precondition_failed")
 
     # Matching (or `*`) preconditions pass; the state machine then answers.
     for value in (etag, "*", f'"other", {etag}'):
-        response = auth_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": value})
+        response = engineer_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": value})
         error = _assert_envelope(response, 409, "execution_not_waiting")
         assert error["details"]["status"] == "accepted"
 
@@ -500,20 +500,20 @@ def _count(db_session) -> int:
     return db_session.scalar(select(func.count(ExecutionRequest.id))) or 0
 
 
-def test_idempotency_key_replays_and_conflicts(auth_client, db_session):
+def test_idempotency_key_replays_and_conflicts(engineer_client, db_session):
     key = f"p31a-{uuid4().hex}"
-    first = _create_request(auth_client, headers={"Idempotency-Key": key})
+    first = _create_request(engineer_client, headers={"Idempotency-Key": key})
     assert first.status_code == 202 and "Idempotent-Replayed" not in first.headers
     before = _count(db_session)
 
-    replay = _create_request(auth_client, headers={"Idempotency-Key": key})
+    replay = _create_request(engineer_client, headers={"Idempotency-Key": key})
     assert replay.status_code == 202 and replay.headers["Idempotent-Replayed"] == "true"
     assert replay.json() == first.json() and _count(db_session) == before
     # Header and the legacy body key are the same key.
-    same = _create_request(auth_client, headers={"Idempotency-Key": key}, body={"idempotency_key": key})
+    same = _create_request(engineer_client, headers={"Idempotency-Key": key}, body={"idempotency_key": key})
     assert same.json()["id"] == first.json()["id"]
 
-    conflict = auth_client.post(
+    conflict = engineer_client.post(
         "/v1/execution-requests",
         json={"operation": OPERATION_MODEL_BUILD, "request_spec": {"filename": "b.csv"}},
         headers={"Idempotency-Key": key},
@@ -522,32 +522,32 @@ def test_idempotency_key_replays_and_conflicts(auth_client, db_session):
     assert error["retryable"] is False and _count(db_session) == before
 
 
-def test_idempotency_key_is_bound_to_the_principal(auth_client, admin_client, db_session):
+def test_idempotency_key_is_bound_to_the_principal(engineer_client, admin_client, db_session):
     key = f"p31a-shared-{uuid4().hex}"
-    assert _create_request(auth_client, headers={"Idempotency-Key": key}).status_code == 202
+    assert _create_request(engineer_client, headers={"Idempotency-Key": key}).status_code == 202
     other = _create_request(admin_client, headers={"Idempotency-Key": key})
     _assert_envelope(other, 409, "idempotency_key_conflict")
 
 
-def test_idempotency_key_validation_and_keyless_posts(auth_client, db_session):
+def test_idempotency_key_validation_and_keyless_posts(engineer_client, db_session):
     _assert_envelope(
-        _create_request(auth_client, headers={"Idempotency-Key": "has spaces!"}), 400, "invalid_idempotency_key"
+        _create_request(engineer_client, headers={"Idempotency-Key": "has spaces!"}), 400, "invalid_idempotency_key"
     )
     _assert_envelope(
-        _create_request(auth_client, headers={"Idempotency-Key": "a"}, body={"idempotency_key": "b"}),
+        _create_request(engineer_client, headers={"Idempotency-Key": "a"}, body={"idempotency_key": "b"}),
         400,
         "idempotency_key_mismatch",
     )
     # Without a key every POST executes (documented: not replay-protected).
-    one, two = _create_request(auth_client), _create_request(auth_client)
+    one, two = _create_request(engineer_client), _create_request(engineer_client)
     assert one.status_code == two.status_code == 202 and one.json()["id"] != two.json()["id"]
 
 
-def test_v1_key_never_replays_an_internal_surface_row(auth_client, db_session, client_user):
+def test_v1_key_never_replays_an_internal_surface_row(engineer_client, db_session, engineer_user):
     # Internal namespaces are reserved: a /v1 caller can neither claim nor plant them.
     for spelling in ({"headers": {"Idempotency-Key": f"legacy_labs_upload:{uuid4()}"}},
                      {"body": {"idempotency_key": f"legacy_labs_upload:{uuid4()}"}}):
-        _assert_envelope(_create_request(auth_client, **spelling), 400, "invalid_idempotency_key")
+        _assert_envelope(_create_request(engineer_client, **spelling), 400, "invalid_idempotency_key")
     # A row written without a digest (internal surface) never replays to a /v1 key.
     key = f"internal-{uuid4().hex}"
     create_execution_request(
@@ -555,34 +555,34 @@ def test_v1_key_never_replays_an_internal_surface_row(auth_client, db_session, c
         workspace_id=DEFAULT_WORKSPACE_ID,
         operation=OPERATION_MODEL_BUILD,
         source_surface=SOURCE_LEGACY_LABS,
-        requested_by_user_id=client_user.id,
+        requested_by_user_id=engineer_user.id,
         idempotency_key=key,
         request_spec={"filename": "a.csv"},
     )
     db_session.commit()
-    _assert_envelope(_create_request(auth_client, headers={"Idempotency-Key": key}), 409, "idempotency_key_conflict")
+    _assert_envelope(_create_request(engineer_client, headers={"Idempotency-Key": key}), 409, "idempotency_key_conflict")
 
 
-def test_server_owned_spec_keys_are_refused_and_the_digest_is_not_exposed(auth_client, db_session):
+def test_server_owned_spec_keys_are_refused_and_the_digest_is_not_exposed(engineer_client, db_session):
     for key in ("request_digest", "parent_experiment_id", "change_set_digest"):
-        response = auth_client.post(
+        response = engineer_client.post(
             "/v1/execution-requests",
             json={"operation": OPERATION_MODEL_BUILD, "request_spec": {key: "0" * 64}},
         )
         _assert_envelope(response, 400, "invalid_request_spec")
-    created = _create_request(auth_client, headers={"Idempotency-Key": f"p31a-{uuid4().hex}"})
+    created = _create_request(engineer_client, headers={"Idempotency-Key": f"p31a-{uuid4().hex}"})
     assert "request_digest" not in created.json()["request_spec"]
     stored = db_session.get(ExecutionRequest, UUID(created.json()["id"]))
     assert len(stored.request_spec["request_digest"]) == 64
 
 
-def test_confirmation_accepts_idempotency_key_and_validates_it(auth_client):
-    created = _create_request(auth_client).json()
+def test_confirmation_accepts_idempotency_key_and_validates_it(engineer_client):
+    created = _create_request(engineer_client).json()
     confirm = f"/v1/execution-requests/{created['id']}/target-confirmation"
     _assert_envelope(
-        auth_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "bad key"}),
+        engineer_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "bad key"}),
         400,
         "invalid_idempotency_key",
     )
-    keyed = auth_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "k-1"})
+    keyed = engineer_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "k-1"})
     _assert_envelope(keyed, 409, "execution_not_waiting")

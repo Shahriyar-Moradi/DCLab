@@ -152,8 +152,10 @@ def test_create_project_authz_and_principal_scoped_keys(client, db_session, setu
         headers={**_h(setup, key=_key()), "X-Workspace-Id": str(setup["beta"].id)},
     )
     _assert_envelope(foreign, 403, "forbidden")
-    # Client users write /v1 like POST /v1/execution-requests does.
-    assert auth_client.post("/v1/projects", json={"name": "Client"}, headers={"Idempotency-Key": _key()}).status_code == 201
+    # A client_user is an external reader of the shared ML core: no /v1 writes (test_client_user_authority.py).
+    _assert_envelope(
+        auth_client.post("/v1/projects", json={"name": "Client"}, headers={"Idempotency-Key": _key()}), 403, "forbidden"
+    )
 
     # Keys are scoped per principal: another engineer's identical key is independent.
     engineer = _member(db_session, setup, WorkspaceRole.ML_ENGINEER)

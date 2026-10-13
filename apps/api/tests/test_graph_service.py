@@ -295,13 +295,13 @@ def k(kind, node_id) -> str:
 # --- graph shape ----------------------------------------------------------------------
 
 
-def test_real_auto_train_run_projects_full_graph(auth_client, db_session, client_user, monkeypatch, tmp_path):
+def test_real_auto_train_run_projects_full_graph(engineer_client, db_session, engineer_user, monkeypatch, tmp_path):
     db = db_session
-    upload = _upload_and_train(auth_client, db, client_user, monkeypatch)
+    upload = _upload_and_train(engineer_client, db, engineer_user, monkeypatch)
     experiment = db.get(Experiment, upload.experiment_id)
     mv = db.scalar(select(ModelVersion).where(ModelVersion.pipeline_run_id == experiment.id))
 
-    response = auth_client.get(f"/v1/projects/{experiment.project_id}/graph")
+    response = engineer_client.get(f"/v1/projects/{experiment.project_id}/graph")
     assert response.status_code == 200, response.text
     body = response.json()
     kinds = {n["kind"] for n in body["nodes"]}
@@ -329,20 +329,20 @@ def test_real_auto_train_run_projects_full_graph(auth_client, db_session, client
     mv_node = next(n for n in body["nodes"] if n["key"] == k("model_version", mv.id))
     assert mv_node["ref_kinds"] == ["champion_model"]
     # prepared_as is an attribute edge: the prepared dataset has no downstream.
-    prepared_impact = auth_client.get(f"/v1/nodes/dataset_version/{experiment.dataset_id}/impact")
+    prepared_impact = engineer_client.get(f"/v1/nodes/dataset_version/{experiment.dataset_id}/impact")
     assert prepared_impact.status_code == 200, prepared_impact.text
     assert prepared_impact.json()["total"] == 0
-    source_impact = auth_client.get(f"/v1/nodes/dataset_version/{experiment.source_dataset_id}/impact").json()
+    source_impact = engineer_client.get(f"/v1/nodes/dataset_version/{experiment.source_dataset_id}/impact").json()
     assert {exp_key, k("model_version", mv.id), k("split_plan", experiment.split_plan_id)} <= {
         item["key"] for item in source_impact["items"]
     }
 
     # A ref move on a real graph: a new source dataset (and its plan) becomes current.
-    g = SimpleNamespace(ws=experiment.workspace_id, project=experiment.project, actor=client_user)
+    g = SimpleNamespace(ws=experiment.workspace_id, project=experiment.project, actor=engineer_user)
     source2 = _source_dataset(db, tmp_path, workspace_id=g.ws, project_id=g.project.id,
                               env=db.get(Environment, experiment.environment_id), name="src-v2")
     _move_refs(db, g, {"dataset": source2.id})
-    after = auth_client.get(f"/v1/projects/{experiment.project_id}/graph").json()
+    after = engineer_client.get(f"/v1/projects/{experiment.project_id}/graph").json()
     stale = {n["key"] for n in after["nodes"] if n["stale"]}
     assert {exp_key, k("split_plan", experiment.split_plan_id), k("model_version", mv.id)} <= stale
     assert k("dataset_version", experiment.source_dataset_id) not in stale

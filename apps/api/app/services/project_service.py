@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Project, User, Workspace
 from app.domain.errors import IdentityError, ProjectNotFoundError
 from app.domain.workspace_identity import PROJECT_PROVENANCE_USER
-from app.services.authorization_service import can_perform_ml_write, can_read_workspace
+from app.services.authorization_service import can_perform_ml_write, can_read_workspace, can_write_workspace
 from app.services.workspace_service import slugify
 
 
@@ -38,9 +39,25 @@ def create_project(
     slug: str | None = None,
     description: str = "",
 ) -> Project:
+    return _create_project(
+        db, actor=actor, workspace_id=workspace_id, name=name, slug=slug, description=description,
+        may_write=can_perform_ml_write,
+    )
+
+
+def _create_project(
+    db: Session,
+    *,
+    actor: User,
+    workspace_id: UUID,
+    name: str,
+    slug: str | None,
+    description: str,
+    may_write: Callable[[Session, User, UUID], bool],
+) -> Project:
     if db.get(Workspace, workspace_id) is None:
         raise IdentityError("workspace not found", status_code=404)
-    if not can_perform_ml_write(db, actor, workspace_id):
+    if not may_write(db, actor, workspace_id):
         raise IdentityError(
             "creating a project requires an ML-write workspace role",
             status_code=403,
@@ -88,13 +105,16 @@ def get_or_create_labs_project(
     )
     if existing is not None:
         return existing
-    return create_project(
+    # The stable Client Labs project is the one project a client_user may create: it holds the
+    # legacy /app write gate (can_write_workspace) but not shared-core ML authority.
+    return _create_project(
         db,
         actor=actor,
         workspace_id=workspace_id,
         name=LABS_PROJECT_NAME,
         slug=LABS_PROJECT_SLUG,
         description="Client Labs uploads and datasets.",
+        may_write=can_write_workspace,
     )
 
 

@@ -573,6 +573,12 @@ def save_upload(
     origin: dict[str, str] | None = None,
 ) -> ClientLabUploadRead:
     parsed_category = _parse_category(category)
+    if (project_id is not None or problem_spec_id is not None) and not can_perform_ml_write(
+        db, user, workspace_id
+    ):
+        # The legacy /app gate lets a client_user upload into its own Labs project only; choosing
+        # a shared project or problem spec writes the shared ML core.
+        raise IdentityError("choosing a project or problem spec requires an ML-write workspace role", status_code=403)
     if data is None and upload_stream is None:
         raise ValueError("data or upload_stream is required")
     if data is not None and upload_stream is not None:

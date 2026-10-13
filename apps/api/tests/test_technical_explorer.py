@@ -194,7 +194,7 @@ def test_pipeline_run_detail_roles_artifacts_and_detail_query_budget(
     client,
     db_session,
     monkeypatch,
-    client_user,
+    admin_user,
     _rule_engine_only,
 ):
     frame = ordinary_binary()
@@ -210,7 +210,7 @@ def test_pipeline_run_detail_roles_artifacts_and_detail_query_budget(
     workspace_id = upload.workspace_id
     engineer_membership = add_workspace_member(
         db_session,
-        actor=client_user,
+        actor=admin_user,
         workspace_id=workspace_id,
         email=f"ml-{uuid4().hex}@test.invalid",
         password="test-password",

@@ -81,7 +81,7 @@ def _frame(n: int = 220, seed: int = 11) -> pd.DataFrame:
 
 
 def _upload_and_train(
-    auth_client, db, client_user, monkeypatch, *, locked_spec: bool = True
+    engineer_client, db, engineer_user, monkeypatch, *, locked_spec: bool = True
 ) -> ClientLabUpload:
     monkeypatch.setattr(
         "app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None
@@ -90,11 +90,11 @@ def _upload_and_train(
     if locked_spec:
         seed_business_domains(db)
         project = get_or_create_labs_project(
-            db, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+            db, workspace_id=DEFAULT_WORKSPACE_ID, actor=engineer_user
         )
         spec = create_problem_spec(
             db,
-            actor=client_user,
+            actor=engineer_user,
             workspace_id=DEFAULT_WORKSPACE_ID,
             project_id=project.id,
             task_type="binary",
@@ -104,7 +104,7 @@ def _upload_and_train(
         )
         db.commit()
         data = {"category": "Revenue", "problem_spec_id": str(spec.id)}
-    response = auth_client.post(
+    response = engineer_client.post(
         "/app/labs/uploads",
         data=data,
         files={"file": ("churn.csv", _frame().to_csv(index=False).encode(), "text/csv")},
@@ -193,10 +193,10 @@ def _validation_by_fold(result: dict) -> dict[str, dict[int, list[int]]]:
 
 
 def test_two_runs_on_same_dataset_share_split_plan_refs_bootstrap_once(
-    auth_client, db_session, client_user, monkeypatch
+    engineer_client, db_session, engineer_user, monkeypatch
 ):
     db = db_session
-    first = _upload_and_train(auth_client, db, client_user, monkeypatch)
+    first = _upload_and_train(engineer_client, db, engineer_user, monkeypatch)
     exp1 = db.get(Experiment, first.experiment_id)
     plan = db.scalar(select(SplitPlan))
     assert plan is not None and plan.version == 1
@@ -314,9 +314,9 @@ def test_two_runs_on_same_dataset_share_split_plan_refs_bootstrap_once(
         assert row.workspace_id == first.workspace_id and row.project_id == plan.project_id
 
 
-def test_tampered_stored_assignment_fails_closed(auth_client, db_session, client_user, monkeypatch):
+def test_tampered_stored_assignment_fails_closed(engineer_client, db_session, engineer_user, monkeypatch):
     db = db_session
-    first = _upload_and_train(auth_client, db, client_user, monkeypatch)
+    first = _upload_and_train(engineer_client, db, engineer_user, monkeypatch)
     plan = db.scalar(select(SplitPlan))
     artifact = db.get(Artifact, plan.assignment_artifact_id)
     backend = storage_for_artifact(artifact)
@@ -339,10 +339,10 @@ def test_tampered_stored_assignment_fails_closed(auth_client, db_session, client
 
 
 def test_changed_row_set_with_same_identity_fails_closed(
-    auth_client, db_session, client_user, monkeypatch
+    engineer_client, db_session, engineer_user, monkeypatch
 ):
     db = db_session
-    first = _upload_and_train(auth_client, db, client_user, monkeypatch)
+    first = _upload_and_train(engineer_client, db, engineer_user, monkeypatch)
     from app.services.auto_train import cleaning
 
     real = cleaning.structural_clean_frame
@@ -363,7 +363,7 @@ def test_changed_row_set_with_same_identity_fails_closed(
 
 
 def test_bootstrap_waits_for_a_run_with_dataset_and_split_plan(
-    auth_client, db_session, client_user, monkeypatch
+    engineer_client, db_session, engineer_user, monkeypatch
 ):
     db = db_session
 
@@ -372,7 +372,7 @@ def test_bootstrap_waits_for_a_run_with_dataset_and_split_plan(
 
     with monkeypatch.context() as patch:
         patch.setattr("app.services.auto_train.split_plan.require_partition_source", unavailable)
-        first = _upload_and_train(auth_client, db, client_user, monkeypatch, locked_spec=False)
+        first = _upload_and_train(engineer_client, db, engineer_user, monkeypatch, locked_spec=False)
     exp1 = db.get(Experiment, first.experiment_id)
     assert exp1.split_plan_id is None and exp1.scientific_evidence_locked_at is not None
     # A plan-less first model does not bootstrap (it would be a one-shot dead end).
@@ -397,11 +397,11 @@ def test_bootstrap_waits_for_a_run_with_dataset_and_split_plan(
     assert refs["split_plan"].split_plan_id == exp2.split_plan_id
 
 
-def test_verifier_split_plan_check(auth_client, db_session, client_user, monkeypatch):
+def test_verifier_split_plan_check(engineer_client, db_session, engineer_user, monkeypatch):
     from app.services.pipeline_verifier import _verify_split_plan_lineage
 
     db = db_session
-    upload = _upload_and_train(auth_client, db, client_user, monkeypatch)
+    upload = _upload_and_train(engineer_client, db, engineer_user, monkeypatch)
     exp = db.get(Experiment, upload.experiment_id)
 
     def run(report, session=db):

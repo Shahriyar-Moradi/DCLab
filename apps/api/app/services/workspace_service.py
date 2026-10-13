@@ -30,6 +30,7 @@ from app.services.authorization_service import (
     assert_can_assign_workspace_role,
     can_manage_workspace_members,
     canonical_workspace_role,
+    is_compatibility_client,
     parse_assigned_workspace_role,
     platform_role_for,
     role_can_manage_members,
@@ -68,6 +69,9 @@ def _unique_workspace_slug(db: Session, name: str, requested: str | None) -> str
 
 
 def _require_workspace_write_actor(db: Session, actor: User) -> None:
+    if is_compatibility_client(actor):
+        # A client account is an external reader: as an owner it would be capped to viewer.
+        raise IdentityError("client accounts cannot create workspaces", status_code=403)
     platform_role = platform_role_for(db, actor)
     if platform_role is PlatformRole.DCLAB_DEVELOPER:
         raise IdentityError(
@@ -215,6 +219,8 @@ def add_workspace_member(
     if existing is not None:
         if platform_role_for(db, existing) is not None:
             raise IdentityError("platform members cannot be added as workspace customers")
+        if is_compatibility_client(existing) and membership_role is not WorkspaceRole.VIEWER:
+            raise IdentityError("a client account is an external reader and can only be added as a viewer")
         already = db.scalar(
             select(WorkspaceMembership).where(
                 WorkspaceMembership.workspace_id == workspace_id,
@@ -274,9 +280,10 @@ def list_workspace_members(db: Session, *, actor: User, workspace_id: UUID) -> W
 
     Same predicate as ``add_workspace_member``. Suspended and deactivated people are not listed. Only the fields
     the screen shows leave the server: no ids, no password hashes, no token information.
-    Also listed, marked ``legacy_access``: active ``client_user`` accounts of this workspace with no
-    membership row at all, who still get administrator access (``workspace_role_for``). ``create_user``
-    always writes a membership, so these exist only in data from before memberships.
+    Every ``client_user`` account is listed as ``viewer`` and marked ``legacy_access``: it reads the workspace
+    (and runs the legacy Labs trials) but holds no shared-core authority (``authority_role``). That includes
+    active ``client_user`` accounts of this workspace with no membership row at all; ``create_user`` always
+    writes a membership, so those exist only in data from before memberships.
     """
 
     if not can_manage_workspace_members(db, actor, workspace_id):
@@ -299,9 +306,14 @@ def list_workspace_members(db: Session, *, actor: User, workspace_id: UUID) -> W
         WorkspaceMemberRead(
             full_name=person.full_name or "",
             email=person.email,
-            role=(canonical_workspace_role(WorkspaceRole(membership.role)) or WorkspaceRole(membership.role)).value,
+            role=(
+                WorkspaceRole.VIEWER
+                if is_compatibility_client(person)
+                else canonical_workspace_role(WorkspaceRole(membership.role)) or WorkspaceRole(membership.role)
+            ).value,
             joined_at=membership.created_at,
             is_you=person.id == actor.id,
+            legacy_access=is_compatibility_client(person),
         )
         for membership, person in rows[:MEMBER_LIST_CAP]
     ]
@@ -321,7 +333,7 @@ def list_workspace_members(db: Session, *, actor: User, workspace_id: UUID) -> W
         ).all()
     members += [
         WorkspaceMemberRead(
-            full_name=person.full_name or "", email=person.email, role=WorkspaceRole.WORKSPACE_ADMIN.value,
+            full_name=person.full_name or "", email=person.email, role=WorkspaceRole.VIEWER.value,
             joined_at=person.created_at, is_you=person.id == actor.id, legacy_access=True,
         )
         for person in legacy_rows[:room]

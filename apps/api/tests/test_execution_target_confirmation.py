@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.db.models import (
     DEFAULT_WORKSPACE_ID,
@@ -155,10 +155,10 @@ def test_no_training_begins_while_waiting(auth_client, db_session, monkeypatch):
     assert job.status != "running"
 
 
-def test_confirm_churn_resumes_execution(auth_client, db_session, monkeypatch):
+def test_confirm_churn_resumes_execution(auth_client, engineer_client, db_session, monkeypatch):
     run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
     request_id = body["target_confirmation"]["execution_request_id"]
-    confirmed = auth_client.post(
+    confirmed = engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "Churn"},
     )
@@ -176,10 +176,10 @@ def test_confirm_churn_resumes_execution(auth_client, db_session, monkeypatch):
     assert upload.pipeline_log["target"]["column"] == "Churn"
 
 
-def test_invalid_target_rejected(auth_client, db_session, monkeypatch):
+def test_invalid_target_rejected(auth_client, engineer_client, db_session, monkeypatch):
     _run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
     request_id = body["target_confirmation"]["execution_request_id"]
-    response = auth_client.post(
+    response = engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "NotAColumn"},
     )
@@ -219,16 +219,16 @@ def test_cross_workspace_confirmation_rejected(
     assert request.status == REQUEST_NEEDS_INPUT
 
 
-def test_same_confirmation_twice_is_idempotent(auth_client, db_session, monkeypatch):
+def test_same_confirmation_twice_is_idempotent(auth_client, engineer_client, db_session, monkeypatch):
     run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
     request_id = body["target_confirmation"]["execution_request_id"]
-    first = auth_client.post(
+    first = engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "Churn"},
     )
     assert first.status_code == 200, first.text
     before = _counts(db_session, run_id)
-    second = auth_client.post(
+    second = engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "Churn"},
     )
@@ -239,15 +239,15 @@ def test_same_confirmation_twice_is_idempotent(auth_client, db_session, monkeypa
     assert len(jobs) == 1
 
 
-def test_conflicting_second_confirmation_rejected(auth_client, db_session, monkeypatch):
+def test_conflicting_second_confirmation_rejected(auth_client, engineer_client, db_session, monkeypatch):
     _run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
     request_id = body["target_confirmation"]["execution_request_id"]
-    first = auth_client.post(
+    first = engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "Churn"},
     )
     assert first.status_code == 200, first.text
-    second = auth_client.post(
+    second = engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "Partner"},
     )
@@ -258,13 +258,13 @@ def test_conflicting_second_confirmation_rejected(auth_client, db_session, monke
 
 
 def test_resume_does_not_duplicate_lineage_or_jobs(
-    auth_client, db_session, monkeypatch
+    auth_client, engineer_client, db_session, monkeypatch
 ):
     run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
     before = _counts(db_session, run_id)
     assert before == (1, 1, 1)
     request_id = body["target_confirmation"]["execution_request_id"]
-    auth_client.post(
+    engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "Churn"},
     )
@@ -276,11 +276,11 @@ def test_resume_does_not_duplicate_lineage_or_jobs(
 
 
 def test_event_history_records_wait_confirm_and_resume(
-    auth_client, db_session, monkeypatch
+    auth_client, engineer_client, db_session, monkeypatch
 ):
     run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
     request_id = body["target_confirmation"]["execution_request_id"]
-    auth_client.post(
+    engineer_client.post(
         f"/v1/execution-requests/{request_id}/target-confirmation",
         json={"target_column": "Churn"},
     )
@@ -310,15 +310,15 @@ def test_event_history_records_wait_confirm_and_resume(
 
 
 def test_dclab_client_confirm_target_uses_v1(
-    auth_client, db_session, monkeypatch, client_token
+    auth_client, engineer_client, engineer_user, db_session, monkeypatch
 ):
     _run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
     request_id = body["target_confirmation"]["execution_request_id"]
     api = DCLabClient(
-        base_url=str(auth_client.base_url),
-        token=client_token,
+        base_url=str(engineer_client.base_url),
+        token=create_access_token(engineer_user),
         workspace_id=DEFAULT_WORKSPACE_ID,
-        http=auth_client,
+        http=engineer_client,
     )
     row = api.execution_requests.confirm_target(request_id, target_column="Churn")
     assert row.status == "running"
@@ -339,3 +339,47 @@ def test_labs_adapter_confirm_rejects_other_workspace_upload(
     assert missing.status_code == 404
     upload = db_session.get(ClientLabUpload, run_id)
     assert upload.pipeline_status == "needs_input"
+
+
+def test_client_confirms_its_own_upload_target_through_the_labs_route(auth_client, db_session, monkeypatch):
+    """The Labs screen's confirm step is part of the legacy /app gate; the /v1 route is not open to a client."""
+
+    run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
+    request_id = body["target_confirmation"]["execution_request_id"]
+    via_v1 = auth_client.post(
+        f"/v1/execution-requests/{request_id}/target-confirmation", json={"target_column": "Churn"}
+    )
+    assert via_v1.status_code == 403, via_v1.text
+    db_session.expire_all()
+    assert db_session.get(ClientLabUpload, run_id).pipeline_status == "needs_input"
+
+    via_labs = auth_client.post(f"/app/labs/uploads/{run_id}/target-confirmation", json={"target_column": "Churn"})
+    assert via_labs.status_code == 200, via_labs.text
+    run_auto_train_job(db_session, run_id)
+    db_session.expire_all()
+    upload = db_session.get(ClientLabUpload, run_id)
+    assert upload.pipeline_status == "completed", upload.pipeline_log
+    assert upload.pipeline_log["target"]["column"] == "Churn"
+
+
+def test_client_cannot_confirm_the_target_of_an_upload_it_did_not_make(
+    auth_client, engineer_client, db_session, monkeypatch
+):
+    run_id, _body = _wait_for_target(engineer_client, db_session, monkeypatch)  # the engineer's upload
+    denied = auth_client.post(f"/app/labs/uploads/{run_id}/target-confirmation", json={"target_column": "Churn"})
+    assert denied.status_code == 404, denied.text
+    db_session.expire_all()
+    assert db_session.get(ClientLabUpload, run_id).pipeline_status == "needs_input"
+
+
+def test_client_cannot_confirm_a_v1_run_through_the_labs_route(auth_client, db_session, monkeypatch):
+    """A run started on /v1 (before the cap, say) is shared-core work even though it has an upload row."""
+
+    run_id, body = _wait_for_target(auth_client, db_session, monkeypatch)
+    request_id = body["target_confirmation"]["execution_request_id"]
+    db_session.execute(update(ExecutionRequest).where(ExecutionRequest.id == request_id).values(source_surface="api"))
+    db_session.commit()
+    denied = auth_client.post(f"/app/labs/uploads/{run_id}/target-confirmation", json={"target_column": "Churn"})
+    assert denied.status_code == 404, denied.text
+    db_session.expire_all()
+    assert db_session.get(ClientLabUpload, run_id).pipeline_status == "needs_input"
