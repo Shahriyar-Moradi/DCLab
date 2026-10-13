@@ -305,6 +305,27 @@ def client_user(db_session: Session):
     return user
 
 
+ENGINEER_PASSWORD = "engineer-pass-123"
+
+
+@pytest.fixture()
+def engineer_user(db_session: Session):
+    """A workspace ML engineer: the actor for shared-ML-core work (a client_user is an external reader)."""
+    from app.db.models import DEFAULT_WORKSPACE_ID, UserRole
+    from app.services.auth_service import create_user
+
+    user = create_user(
+        db_session,
+        email="engineer@client.test",
+        password=ENGINEER_PASSWORD,
+        role=UserRole.ML_ENGINEER,
+        full_name="ML Engineer",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    db_session.commit()
+    return user
+
+
 @pytest.fixture()
 def admin_token(admin_user) -> str:
     from app.services.auth_service import create_access_token
@@ -345,6 +366,14 @@ def _authed_client(db_session: Session, token: str) -> Generator[TestClient, Non
 def auth_client(db_session, client_token) -> Generator[TestClient, None, None]:
     """TestClient authenticated as a client_user, for the /app tree."""
     yield from _authed_client(db_session, client_token)
+
+
+@pytest.fixture()
+def engineer_client(db_session, engineer_user) -> Generator[TestClient, None, None]:
+    """TestClient authenticated as a workspace ML engineer, for /app and /v1 shared-ML-core flows."""
+    from app.services.auth_service import create_access_token
+
+    yield from _authed_client(db_session, create_access_token(engineer_user))
 
 
 @pytest.fixture()

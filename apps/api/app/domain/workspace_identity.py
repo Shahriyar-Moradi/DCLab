@@ -143,7 +143,7 @@ class WorkspaceMemberRead(BaseModel):
     role: str
     joined_at: datetime
     is_you: bool
-    legacy_access: bool = False  # access from the old per-user workspace field, no membership row
+    legacy_access: bool = False  # a legacy client account: reads the workspace, holds no shared-core authority
 
 
 class WorkspaceRoleAbilitiesRead(BaseModel):

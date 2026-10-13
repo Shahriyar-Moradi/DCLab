@@ -432,7 +432,7 @@ def test_explicit_two_label_target_positive_class_is_value_based():
 # ---------------------------------------------------------------------------
 
 
-def test_critic_runs_on_every_completed_run_when_enabled(auth_client, db_session, monkeypatch):
+def test_critic_runs_on_every_completed_run_when_enabled(engineer_client, db_session, monkeypatch):
     from types import SimpleNamespace
 
     from app.agents.gateway.limits import GatewayLimits
@@ -455,7 +455,7 @@ def test_critic_runs_on_every_completed_run_when_enabled(auth_client, db_session
 
     reviewed = []
     for frame in (_classification(), _regression()):
-        upload, _result = _train(db_session, _upload(auth_client, frame))
+        upload, _result = _train(db_session, _upload(engineer_client, frame))
         assert upload.pipeline_status == "completed", upload.pipeline_log
         experiment = db_session.get(Experiment, upload.experiment_id)
         run = db_session.scalar(select(AgentRun).where(AgentRun.experiment_id == experiment.id,

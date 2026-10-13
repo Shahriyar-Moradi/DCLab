@@ -189,13 +189,13 @@ def _assert_safe(body: dict, experiment: Experiment) -> None:
 
 
 def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
-    auth_client, db_session, client_user, monkeypatch, tmp_path
+    engineer_client, db_session, engineer_user, monkeypatch, tmp_path
 ):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     child = _branch(
         db,
-        client_user,
+        engineer_user,
         parent,
         [
             {"kind": "hyperparameter_override", "family": "random_forest", "parameters": {"n_estimators": 37}},
@@ -209,7 +209,7 @@ def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
     )
     plan = db.get(SplitPlan, parent.split_plan_id)
     for experiment in (parent, child):
-        body = _code(auth_client, experiment)
+        body = _code(engineer_client, experiment)
         _assert_safe(body, experiment)
         assert body["generator_version"].endswith(".v2")
         assert body["split_plan_id"] == str(plan.id)
@@ -223,9 +223,9 @@ def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
         _assert_rows_follow_map(db, experiment, ns)
         _assert_reproduces_cv(db, experiment, body, ns)
 
-    parent_ns_mode = _code(auth_client, parent)["script"]["source"]
+    parent_ns_mode = _code(engineer_client, parent)["script"]["source"]
     assert "PARTITIONED_BY = 'holdout_plan_resplit'" in parent_ns_mode
-    body = _code(auth_client, child)
+    body = _code(engineer_client, child)
     script = body["script"]["source"]
     assert body["is_branch"] is True and body["parent_experiment_id"] == str(parent.id)
     assert "PARTITIONED_BY = 'split_plan_assignment'" in script
@@ -259,10 +259,10 @@ def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
 
 
 def test_sdk_returns_code_and_route_hides_other_tenants(
-    client, auth_client, db_session, client_user, client_token, monkeypatch, tmp_path
+    client, engineer_client, db_session, engineer_user, client_token, monkeypatch, tmp_path
 ):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     api = DCLabClient(
         base_url=str(client.base_url), token=client_token, workspace_id=parent.workspace_id, http=client
     )
@@ -298,7 +298,7 @@ def test_sdk_returns_code_and_route_hides_other_tenants(
 
 
 def test_legacy_run_without_split_plan_still_exports_and_reproduces(
-    auth_client, db_session, client_user, monkeypatch, tmp_path
+    engineer_client, db_session, engineer_user, monkeypatch, tmp_path
 ):
     def unavailable(*_args, **_kwargs):
         raise split_plan_service.SplitPlanUnavailable("forced plan-less run")
@@ -306,8 +306,8 @@ def test_legacy_run_without_split_plan_still_exports_and_reproduces(
     db = db_session
     with monkeypatch.context() as patch:
         patch.setattr("app.services.auto_train.split_plan.require_partition_source", unavailable)
-        legacy = _parent_without_plan(auth_client, db, client_user, monkeypatch)
-    body = _code(auth_client, legacy)
+        legacy = _parent_without_plan(engineer_client, db, engineer_user, monkeypatch)
+    body = _code(engineer_client, legacy)
     _assert_safe(body, legacy)
     assert body["split_plan_id"] is None
     assert [item["name"] for item in body["inputs"]] == ["dataset"]
@@ -318,13 +318,13 @@ def test_legacy_run_without_split_plan_still_exports_and_reproduces(
     _assert_reproduces_cv(db, legacy, body, ns)
 
 
-def _parent_without_plan(auth_client, db, client_user, monkeypatch) -> Experiment:
+def _parent_without_plan(engineer_client, db, engineer_user, monkeypatch) -> Experiment:
     """``_parent``'s upload + auto-train, for a run that ends without a SplitPlan."""
 
     from app.db.models import ClientLabUpload
 
     with pytest.raises(AssertionError):  # _parent insists on a split plan
-        _parent(auth_client, db, client_user, monkeypatch)
+        _parent(engineer_client, db, engineer_user, monkeypatch)
     upload = db.scalars(select(ClientLabUpload).order_by(ClientLabUpload.created_at.desc())).first()
     experiment = db.get(Experiment, upload.experiment_id)
     assert upload.pipeline_status == "completed" and experiment.status == "COMPLETED"

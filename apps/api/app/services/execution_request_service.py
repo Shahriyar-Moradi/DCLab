@@ -50,7 +50,12 @@ from app.domain.idempotency import (
 )
 from app.domain.lab_run_stages import ANALYZING
 from app.domain.ml_jobs import JOB_CANCELLED, JOB_RUNNING
-from app.services.authorization_service import can_execute_workspace_ml, can_read_workspace
+from app.services.authorization_service import (
+    can_execute_workspace_ml,
+    can_perform_ml_write,
+    can_read_workspace,
+    can_write_workspace,
+)
 
 
 
@@ -527,12 +532,16 @@ def confirm_execution_target(
     request_id: UUID,
     target_column: str,
     service_token_id: UUID | None = None,
+    legacy_labs: bool = False,
 ) -> ExecutionRequest:
     """Supply the missing target and resume the original execution once.
 
     ``service_token_id``: an agent confirmed it. The request then counts as
     token-initiated (its ref bootstrap becomes a proposal) and the confirmation
-    is recorded as ``source: agent`` with the token id."""
+    is recorded as ``source: agent`` with the token id.
+
+    ``legacy_labs``: the Client Labs route (``confirm_upload_target``) authorizes with the legacy
+    ``/app`` write gate, which a ``client_user`` holds, instead of shared-core ML execution."""
 
     from app.services.problem_spec_service import populate_unlocked_problem_spec_target
     from app.services.target_intent_service import (
@@ -548,7 +557,8 @@ def confirm_execution_target(
 
     if not can_read_workspace(db, actor, workspace_id):
         raise IdentityError("not found", status_code=404)
-    if not can_execute_workspace_ml(db, actor, workspace_id):
+    may_confirm = can_write_workspace if legacy_labs else can_execute_workspace_ml
+    if not may_confirm(db, actor, workspace_id):
         raise IdentityError("not found", status_code=404)
 
     selected = normalize_target_name(target_column)
@@ -819,15 +829,23 @@ def confirm_upload_target(
     upload = db.get(ClientLabUpload, upload_id)
     if upload is None or upload.workspace_id != workspace_id:
         raise IdentityError("not found", status_code=404)
+    shared_core_writer = can_perform_ml_write(db, actor, workspace_id)
+    if upload.requested_by != actor.id and not shared_core_writer:
+        # An external reader (client_user) confirms only the target of its own upload.
+        raise IdentityError("not found", status_code=404)
     request = execution_request_for_upload(db, upload)
     if request is None:
         raise ExecutionNotWaitingError(upload.pipeline_status or "unknown")
+    if request.source_surface != SOURCE_LEGACY_LABS and not shared_core_writer:
+        # ... and only a Labs run: a /v1 run (also an upload row) is shared-core work.
+        raise IdentityError("not found", status_code=404)
     confirm_execution_target(
         db,
         actor=actor,
         workspace_id=workspace_id,
         request_id=request.id,
         target_column=target_column,
+        legacy_labs=True,
     )
     db.refresh(upload)
     return upload

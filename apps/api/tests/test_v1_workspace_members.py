@@ -157,5 +157,15 @@ def test_legacy_client_without_membership_is_listed_and_marked(client, db_sessio
     db_session.query(WorkspaceMembership).filter_by(user_id=legacy.id).delete()
     db_session.commit()
     members = {m["email"]: m for m in _get(ws.admin, ws.alpha).json()["members"]}
-    assert members[legacy.email]["legacy_access"] is True and members[legacy.email]["role"] == "workspace_admin"
+    # A client account reads the workspace but holds no shared-core authority: listed as a viewer, never an admin.
+    assert members[legacy.email]["legacy_access"] is True and members[legacy.email]["role"] == "viewer"
     assert members[ws.admin.email]["legacy_access"] is False
+
+
+def test_client_with_a_membership_row_is_listed_as_a_viewer_too(client, db_session, ws):
+    person = create_user(db_session, email=f"wm-client-{uuid4().hex[:6]}@test.invalid", password=PASSWORD,
+                         role=UserRole.CLIENT_USER, workspace_id=ws.alpha.id, full_name="Cleo Client")
+    db_session.commit()
+    assert db_session.query(WorkspaceMembership).filter_by(user_id=person.id).one().role == "business_admin"
+    members = {m["email"]: m for m in _get(ws.admin, ws.alpha).json()["members"]}
+    assert members[person.email]["role"] == "viewer" and members[person.email]["legacy_access"] is True

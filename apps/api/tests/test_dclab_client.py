@@ -112,18 +112,18 @@ def test_client_projects_and_datasets_are_workspace_scoped(client, db_session, t
 
 
 def test_client_execution_request_returns_id_and_status(
-    auth_client, db_session, client_user, client_token
+    engineer_client, db_session, engineer_user
 ):
     project = create_project(
         db_session,
-        actor=client_user,
+        actor=engineer_user,
         workspace_id=DEFAULT_WORKSPACE_ID,
         name="Client project",
         slug=f"client-{uuid4().hex[:8]}",
     )
     db_session.commit()
     api = _client(
-        auth_client, client_token, workspace_id=DEFAULT_WORKSPACE_ID, request_id="client-trace"
+        engineer_client, create_access_token(engineer_user), workspace_id=DEFAULT_WORKSPACE_ID, request_id="client-trace"
     )
     before_jobs = db_session.scalar(select(func.count(MlJob.id))) or 0
     created = api.execution_requests.create(

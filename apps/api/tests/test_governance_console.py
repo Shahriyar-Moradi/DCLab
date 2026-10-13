@@ -174,6 +174,26 @@ def test_a_sole_approver_may_accept_their_own_proposal_flagged(gc):
     assert done.status_code == 200 and done.json()["self_approved"] is True
 
 
+def test_a_client_user_is_neither_a_governance_actor_nor_an_approver(gc):
+    def make_client(ws):
+        person = create_user(gc.db, email=f"client-{uuid4().hex[:6]}@gov.test", password=PASSWORD,
+                             role=UserRole.CLIENT_USER, workspace_id=ws)
+        gc.db.commit()
+        return person
+
+    client_user = make_client(gc.ws)
+    proposal = gc.propose(gc.eng).json()
+    _assert_envelope(gc.get(client_user), 403)  # no console: neither ML-write nor an approver
+    _assert_envelope(gc.propose(client_user), 403)
+    _assert_envelope(gc.accept(proposal, client_user), 403)
+    _assert_envelope(gc.switch(client_user, "off"), 403)
+    # nor does it count as an approver: a workspace's one real owner still self-approves (flagged)
+    make_client(gc.solo_ws)
+    proposed = gc.propose(gc.solo, ws=gc.solo_ws).json()
+    done = gc.accept(proposed, gc.solo, gc.solo_ws)
+    assert done.status_code == 200 and done.json()["self_approved"] is True
+
+
 def test_caps_validation_and_command_conventions(gc):
     loose = gc.propose(gc.owner, _policy(budgets__workspace_month_micros=99_000_000))
     error = _assert_envelope(loose, 422, "policy_cap_violation")

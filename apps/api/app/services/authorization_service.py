@@ -13,6 +13,12 @@ rewriting stored membership rows:
 
 Workspace administration and shared ML-core execution stay separate:
 ``can_manage_workspace_members`` vs ``can_execute_workspace_ml``.
+
+A ``client_user`` is an external reader of the shared ML core. Its stored (or
+fallback) ``business_admin`` membership still opens the workspace for reading and
+for the legacy ``/app`` Labs writes (``can_write_workspace``), but grants no
+shared-core authority: ML writes, member administration, AI-policy approval and
+service tokens all resolve through ``authority_role``, which caps it to ``viewer``.
 """
 
 from __future__ import annotations
@@ -208,9 +214,30 @@ def workspace_role_for(db: Session, user: User, workspace_id: UUID) -> Workspace
     return None
 
 
+def is_compatibility_client(user: User) -> bool:
+    """A legacy ``client_user`` account: an external reader of the shared ML core."""
+
+    return user.role == UserRole.CLIENT_USER.value
+
+
+def authority_role(db: Session, user: User, workspace_id: UUID) -> WorkspaceRole | None:
+    """Canonical role that grants shared-core authority (ML writes, member administration).
+
+    Same as ``workspace_role_for`` canonicalized, except a ``client_user`` is capped to
+    ``viewer``: its ``business_admin`` membership is a compatibility row, not an admin grant.
+    """
+
+    role = canonical_workspace_role(workspace_role_for(db, user, workspace_id))
+    if role is not None and is_compatibility_client(user):
+        return WorkspaceRole.VIEWER
+    return role
+
+
 def explicit_workspace_role(db: Session, user: User, workspace_id: UUID) -> WorkspaceRole | None:
     """Canonical role from an explicit, unsuspended membership only: no platform-role
-    or legacy ``client_user`` fallthrough. Service tokens (P3.2-A) borrow exactly this."""
+    or legacy ``client_user`` fallthrough. Service tokens (P3.2-A) borrow exactly this.
+    A ``client_user`` is capped to ``viewer`` (see ``authority_role``), so it can neither
+    mint a service token nor use one for writes, and is never an AI-policy approver."""
 
     row = db.scalar(
         select(WorkspaceMembership).where(
@@ -219,7 +246,11 @@ def explicit_workspace_role(db: Session, user: User, workspace_id: UUID) -> Work
             WorkspaceMembership.suspended_at.is_(None),
         )
     )
-    return canonical_workspace_role(WorkspaceRole(row.role)) if row is not None else None
+    if row is None:
+        return None
+    if is_compatibility_client(user):
+        return WorkspaceRole.VIEWER
+    return canonical_workspace_role(WorkspaceRole(row.role))
 
 
 def is_ml_write_role(role: WorkspaceRole | None) -> bool:
@@ -241,6 +272,9 @@ def can_read_workspace(db: Session, user: User, workspace_id: UUID) -> bool:
 
 
 def can_write_workspace(db: Session, user: User, workspace_id: UUID) -> bool:
+    """The legacy ``/app`` write gate (``require_client``): a ``client_user`` keeps it so the
+    Labs trial runs work. Shared ML-core writes use ``can_perform_ml_write`` instead."""
+
     platform_role = platform_role_for(db, user)
     if platform_role is not None:
         return platform_role is PlatformRole.DCLAB_ADMIN
@@ -248,9 +282,15 @@ def can_write_workspace(db: Session, user: User, workspace_id: UUID) -> bool:
 
 
 def can_perform_ml_write(db: Session, user: User, workspace_id: UUID) -> bool:
-    """Customer ML writes: projects, datasets, workflows, runs, experiments."""
+    """Customer ML writes: projects, datasets, workflows, runs, experiments.
 
-    return can_write_workspace(db, user, workspace_id)
+    Never true for a ``client_user`` (external reader), even though it passes
+    ``can_write_workspace``."""
+
+    platform_role = platform_role_for(db, user)
+    if platform_role is not None:
+        return platform_role is PlatformRole.DCLAB_ADMIN
+    return authority_role(db, user, workspace_id) in _ML_WRITE_ROLES
 
 
 def can_execute_workspace_ml(db: Session, user: User, workspace_id: UUID) -> bool:
@@ -275,17 +315,15 @@ def can_manage_workspace_members(db: Session, user: User, workspace_id: UUID) ->
     platform_role = platform_role_for(db, user)
     if platform_role is not None:
         return platform_role is PlatformRole.DCLAB_ADMIN
-    return (
-        canonical_workspace_role(workspace_role_for(db, user, workspace_id))
-        in _MEMBER_ADMIN_ROLES
-    )
+    return authority_role(db, user, workspace_id) in _MEMBER_ADMIN_ROLES
 
 
 def can_approve_ai_policy(db: Session, user: User, workspace_id: UUID) -> bool:
     """ADR 0009 §3: an unsuspended explicit owner/admin membership of this workspace.
 
-    No legacy ``client_user`` fallback and no platform staff: platform roles may seed
-    platform rows and switch off, never approve a customer's AI policy or levels.
+    No legacy ``client_user`` (capped to viewer by ``explicit_workspace_role``) and no
+    platform staff: platform roles may seed platform rows and switch off, never approve a
+    customer's AI policy or levels.
     """
 
     if platform_role_for(db, user) is not None:
@@ -308,6 +346,7 @@ def count_ai_policy_approvers(db: Session, workspace_id: UUID) -> int:
         1
         for role, member in rows
         if canonical_workspace_role(WorkspaceRole(role)) in _MEMBER_ADMIN_ROLES
+        and not is_compatibility_client(member)
         and platform_role_for(db, member) is None
     )
 
@@ -340,8 +379,7 @@ def assignable_workspace_roles_for(
         return ASSIGNABLE_WORKSPACE_ROLES
     if platform_role is not None:
         return frozenset()
-    canonical = canonical_workspace_role(workspace_role_for(db, actor, workspace_id))
-    return _ASSIGNABLE_BY_CANONICAL_ROLE.get(canonical, frozenset())
+    return _ASSIGNABLE_BY_CANONICAL_ROLE.get(authority_role(db, actor, workspace_id), frozenset())
 
 
 def assert_can_assign_workspace_role(
