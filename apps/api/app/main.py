@@ -45,6 +45,8 @@ from app.api.v1_decisions import router as v1_decisions_router
 from app.api.v1_proposals import router as v1_proposals_router
 from app.api.v1_experiments import router as v1_experiments_router
 from app.api.v1_governance import router as v1_governance_router
+from app.api.v1_monitoring import router as v1_monitoring_router
+from app.api.v1_outcomes import router as v1_outcomes_router
 from app.api.v1_predictions import router as v1_predictions_router
 from app.api.v1_scoring_schedules import router as v1_scoring_schedules_router
 from app.api.v1_service_tokens import router as v1_service_tokens_router
@@ -127,6 +129,8 @@ app.include_router(v1_experiments_router)
 app.include_router(v1_decisions_router)
 app.include_router(v1_predictions_router)
 app.include_router(v1_scoring_schedules_router)
+app.include_router(v1_monitoring_router)
+app.include_router(v1_outcomes_router)  # P7.6-A Business view
 app.include_router(v1_service_tokens_router)
 app.include_router(v1_assistant_router)
 app.include_router(v1_proposals_router)

@@ -627,6 +627,46 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
+      "description": "Monitoring of a project's model in use, read-only and deterministic: the latest weekly status (ok / watch / alert / not_enough_data) and the last 12 weeks (Monday 00:00 UTC) with the largest input drift (PSI vs the training rows), score drift, rows scored and, once a person linked real outcomes, labelled rows, coverage and the primary metric on them; code-owned thresholds and the alert finding code. Drift means the inputs look different from training, not that the model is wrong; it never retrains or switches a model.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "MonitoringInput",
+        "type": "object"
+      },
+      "name": "get_monitoring",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects/{project_id}/monitoring"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.monitoring_service.monitoring_overview"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
       "description": "Operating points of a binary experiment, all from the locked winner's out-of-fold predictions: the threshold curve summary, up to 20 Pareto points over precision and recall (and expected cost) with 95% intervals and fold spread, the locked threshold and the chosen operating point with its reason. Never a final-evaluation value; choosing a point is a person's act in DCLab Studio.",
       "effect": "read",
       "input_schema": {

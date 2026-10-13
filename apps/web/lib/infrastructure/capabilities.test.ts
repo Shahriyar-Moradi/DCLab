@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -6,6 +7,7 @@ import {
   canAccessProductRoute,
   studioRoute,
   defaultProductRoute,
+  isBusinessViewPath,
   isLegacyMarketingPath,
   safeNextPath,
   safeWorkspaceSwitchDestination,
@@ -73,10 +75,31 @@ test("Studio paths: known sections and UUID ids only; a project opens on Experim
   }
 });
 
-test("the Decision.ai landing page needs the legacy decision layer flag", () => {
+test("business users land on the Business view; their Labs and legacy pages stay reachable", () => {
   const app = { [CAPABILITIES.accountAccess]: true, [CAPABILITIES.applicationAccess]: true };
-  assert.equal(defaultProductRoute(user(app)), "/app/labs");
-  assert.equal(defaultProductRoute(user({ ...app, [CAPABILITIES.legacyDecisionLayer]: true })), "/app/dashboards");
+  assert.equal(defaultProductRoute(user(app)), "/outcomes");
+  const legacy = user({ ...app, [CAPABILITIES.legacyDecisionLayer]: true });
+  assert.equal(defaultProductRoute(legacy), "/outcomes");
+  for (const route of ["/app/labs", "/app/dashboards"]) assert.equal(canAccessProductRoute(legacy, route), true, route);
+});
+
+test("P7.6-A: the Business view is for workspace readers; business users never reach developer routes", () => {
+  const client = user({ [CAPABILITIES.accountAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  const developer = user({ [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  assert.equal(isBusinessViewPath("/outcomes"), true);
+  for (const path of ["/outcomes/x", "/outcomes/", "/outcomesx", "/Outcomes"]) assert.equal(isBusinessViewPath(path), false, path);
+  assert.equal(canAccessProductRoute(client, "/outcomes"), true);
+  assert.equal(canAccessProductRoute(developer, "/outcomes"), true);
+  assert.equal(canAccessProductRoute(user({ [CAPABILITIES.accountAccess]: true }), "/outcomes"), false);
+  assert.equal(canAccessProductRoute(null, "/outcomes"), false);
+  assert.equal(canAccessProductRoute(client, "/outcomes/x"), false);
+  for (const path of ["/projects", "/home", "/inbox", "/settings", "/agents", "/projects/new", "/dev/studio-kit", "/development"]) {
+    assert.equal(canAccessProductRoute(client, path), false, path);
+  }
+  assert.equal(safeNextPath(client, "/outcomes"), "/outcomes");
+  assert.equal(safeNextPath(client, "/projects"), null);
+  assert.equal(safeWorkspaceSwitchDestination(client, "/outcomes"), "/outcomes");
+  assert.equal(safeWorkspaceSwitchDestination(client, "/projects"), "/outcomes");
 });
 
 test("workspace switches preserve only capability-safe collection routes", () => {
@@ -148,12 +171,12 @@ test("every role lands in its workspace after login", () => {
   assert.equal(defaultProductRoute(admin), "/projects");
   assert.equal(defaultProductRoute(developer), "/projects");
   assert.equal(defaultProductRoute(operator), "/admin/monitoring");
-  assert.equal(defaultProductRoute(client), "/app/labs");
+  assert.equal(defaultProductRoute(client), "/outcomes");
   assert.equal(defaultProductRoute(businessAdmin), "/projects");
   assert.equal(defaultProductRoute(user({ ...base, [CAPABILITIES.businessAccess]: true, [CAPABILITIES.applicationAccess]: true })), "/business");
   assert.equal(defaultProductRoute(user(base)), "/app/settings");
   assert.equal(defaultProductRoute(null), "/app/settings");
-  for (const [who, route] of [[admin, "/projects"], [developer, "/projects"], [operator, "/admin/monitoring"], [client, "/app/labs"]] as const) {
+  for (const [who, route] of [[admin, "/projects"], [developer, "/projects"], [operator, "/admin/monitoring"], [client, "/outcomes"]] as const) {
     assert.equal(canAccessProductRoute(who, route), true, route);
   }
 });
@@ -180,3 +203,11 @@ test("only the frozen marketing paths are gated by the marketing flag", () => {
     assert.equal(isLegacyMarketingPath(path), false, path);
   }
 });
+
+test("P7.6-A: the middleware runs on every gated Studio and Business view route", () => {
+  const source = readFileSync(new URL("../../middleware.ts", import.meta.url), "utf8");
+  for (const prefix of ["/home", "/inbox", "/agents", "/settings", "/projects", "/outcomes", "/dev", "/app", "/business"]) {
+    assert.ok(source.includes(`"${prefix}/:path*"`), prefix);
+  }
+});
+

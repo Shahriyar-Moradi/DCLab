@@ -6,7 +6,7 @@ import json
 from dataclasses import replace
 import logging
 import time
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -888,6 +888,60 @@ def _winner_feature_importance(
     )
 
 
+def _training_reference(
+    pipeline: Any,
+    pool: pd.DataFrame,
+    task: TaskSpec,
+    oof: tuple[list[np.ndarray], list[np.ndarray]] | None,
+    threshold: float | None,
+    class_labels: list[Any] | None,
+    *,
+    target_original: pd.Series | None = None,
+    target_labels: Mapping[str, Any] | None = None,
+    last_fold_only: bool = False,
+    importance: dict[str, Any] | None = None,
+    time_columns: Sequence[str] = (),
+) -> dict[str, Any] | None:
+    """P7.4-A monitoring reference: distributions of the TRAINING partition (``pool``) and the
+    locked winner's out-of-fold CV scores (time-ordered CV: only the last fold, the rows the
+    threshold was locked on); never a holdout row. Dates (the epoch feature action, and the
+    task's / holdout's / validation's time column when it is a numeric input) are marked so
+    monitoring shows them but never counts them. Binary: the pool's positive rate and the
+    target's label VOCABULARY (which spellings mean 1 and 0; nothing is fitted): from
+    auto-train cleaning (``target_labels``, read from the uploaded column like the 0/1 rule
+    itself), else from the pool rows' values before coercion (``target_original``); a target
+    that was only 0 / 1 records none. Advisory: on failure it is left out and the run goes on."""
+
+    from app.engine.serving.batch_scoring import _pipeline_contract
+    from app.engine.serving.model_package import _date_plan
+    from app.engine.serving.monitoring import build_reference, informative_spellings, target_spellings
+
+    try:
+        features, numeric, categorical, _categories = _pipeline_contract(pipeline)
+        actions = (task.feature_engineering or {}).get("feature_engineering_actions") or []
+        target = None
+        if task.task_type == "binary":
+            coded = pool[task.target]
+            spellings = informative_spellings(target_labels)
+            if spellings is None and target_original is not None and SOURCE_ROW_COLUMN in pool.columns:
+                spellings = informative_spellings(target_spellings(pool[SOURCE_ROW_COLUMN].map(target_original), coded))
+            target = {**(spellings or {"positive": [], "negative": []}),
+                      "positive_rate": round(float(pd.to_numeric(coded, errors="coerce").mean()), 6)}
+        scores = list(oof[1]) if oof else []
+        times = {str(name) for name in (*time_columns, task.prediction_time_column) if name} & set(numeric)
+        return build_reference(
+            pool.loc[:, features], numeric=numeric, categorical=categorical, task_type=task.task_type,
+            oof_scores=scores[-1:] if last_fold_only else scores, threshold=threshold, class_labels=class_labels,
+            date_columns=sorted(set(_date_plan(actions, features)) | times),
+            priority=[str(row.get("column")) for row in (importance or {}).get("features") or []
+                      if isinstance(row, dict)],
+            target=target, folds="last" if last_fold_only else "all",
+        )
+    except Exception as exc:  # noqa: BLE001 - monitoring reference is advisory
+        logger.warning("monitoring reference skipped: %s", failure_chain(exc))
+        return None
+
+
 def _saved_package(
     pipeline: Any,
     row: dict[str, Any],
@@ -898,6 +952,7 @@ def _saved_package(
     classifier: bool,
     n_classes: int | None,
     decision_threshold: float | None = None,
+    reference_summary: dict[str, Any] | None = None,
 ) -> bytes:
     """The fitted winner as a model package (skops + native booster formats, manifest with
     the feature contract, CV metrics and the locked decision threshold), loaded back with the
@@ -907,7 +962,8 @@ def _saved_package(
 
     try:
         return _verified_package(pipeline, row, task, pool, selection_metric, classifier=classifier,
-                                 n_classes=n_classes, decision_threshold=decision_threshold)
+                                 n_classes=n_classes, decision_threshold=decision_threshold,
+                                 reference_summary=reference_summary)
     except (ModelPackageError, TypeError, MemoryError, OSError) as exc:  # serializers, temp files
         logger.warning("model package for candidate %s refused: %s", row.get("candidate_id"), failure_chain(exc))
         if isinstance(exc, ModelPackageError) and str(exc) in PUBLIC_PACKAGE_FAILURES:
@@ -925,6 +981,7 @@ def _verified_package(
     classifier: bool,
     n_classes: int | None,
     decision_threshold: float | None = None,
+    reference_summary: dict[str, Any] | None = None,
 ) -> bytes:
     package = build_package(
         pipeline,
@@ -942,6 +999,7 @@ def _verified_package(
             "std": row.get("cv_std"),
         },
         decision_threshold=decision_threshold,
+        reference_summary=reference_summary,
     )
     from app.engine.serving.batch_scoring import ScoringError
     from app.engine.serving.package_loader import load_model_package
@@ -1128,8 +1186,16 @@ def _run_open_ingest_candidates(
     class_labels: list[Any] | None = None,
     objective: dict[str, Any] | None = None,
     outer_fold_assignment: Mapping[int, int] | None = None,
+    target_original: pd.Series | None = None,
+    target_labels: Mapping[str, Any] | None = None,
+    time_columns: Sequence[str] = (),
 ) -> dict[str, Any]:
     """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked.
+
+    ``target_original``: the binary target as given to the runner, by source row (P7.4-A
+    monitoring reads the pool rows' label spellings from it); ``target_labels``: the uploaded
+    spellings when the target was coded before the runner (auto-train cleaning), preferred;
+    ``time_columns``: the holdout's time column (monitoring shows it as a date, never counts it).
 
     ``outer_fold_assignment`` (source row -> fold) is a stored SplitPlan's fold
     map: when given, the outer folds are taken from it instead of re-derived.
@@ -1639,9 +1705,16 @@ def _run_open_ingest_candidates(
 
         def _save_package(fitted: Any) -> None:
             started, timer = datetime.now(UTC), time.perf_counter()
+            binary_threshold = threshold if task.task_type == "binary" else None
+            reference = _training_reference(  # P7.4-A: training rows + out-of-fold scores only
+                fitted, pool, task, oof_scores.get(best_single["candidate_id"]), binary_threshold, class_labels,
+                target_original=target_original, target_labels=target_labels, importance=feature_importance,
+                last_fold_only=validation_plan.strategy == _TIME_SERIES_SPLIT,
+                time_columns=[name for name in (*time_columns, validation_plan.time_column) if name],
+            )
             saved["package"] = _saved_package(
                 fitted, best_single, task, pool, selection_metric, classifier=classifier, n_classes=n_classes,
-                decision_threshold=threshold if task.task_type == "binary" else None,
+                decision_threshold=binary_threshold, reference_summary=reference,
             )
             stage_timings.append(_timing("model_packaging", started, timer))
             _emit_event(  # also a heartbeat: packaging a large model can take a while
@@ -1759,6 +1832,7 @@ def _run_open_ingest_experiment(
     on_event: RunEventCallback | None,
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
+    target_labels: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Leakage-safe open-ingest experiment with an early locked holdout."""
     profile = profile_frame(frame)
@@ -1769,7 +1843,10 @@ def _run_open_ingest_experiment(
     if task.target not in work.columns:
         raise ValueError(f"Frame is missing target {task.target!r}")
     class_labels: list[Any] | None = None
+    target_original: pd.Series | None = None
     if task.task_type == "binary":
+        # P7.4-A: the uploaded spellings by source row; monitoring reads them for pool rows only.
+        target_original = pd.Series(work[task.target].to_numpy(), index=work[SOURCE_ROW_COLUMN].to_numpy())
         work[task.target] = coerce_binary_target(work[task.target])
         work = work.dropna(subset=[task.target])
         work[task.target] = work[task.target].astype(int)
@@ -1891,6 +1968,9 @@ def _run_open_ingest_experiment(
         class_labels=class_labels,
         objective=config.objective,
         outer_fold_assignment=outer_fold_assignment,
+        target_original=target_original,
+        target_labels=target_labels,
+        time_columns=[name for name in (holdout_plan.time_column,) if name],
     )
     funnel.update(outcome["funnel"])
     records = outcome["records"]
@@ -2018,8 +2098,12 @@ def run_experiment(
     model_development_plan: Any = None,
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
+    target_labels: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Train, filter, select, and report. Returns a JSON-serializable result dict.
+
+    ``target_labels`` (binary): the uploaded spellings of 1 and 0 when the frame's target was
+    coded before (auto-train cleaning); recorded in the monitoring reference only.
 
     ``holdout_partition`` (holdout rows, train rows) and ``outer_fold_assignment``
     come from a stored SplitPlan (ADR 0006 §3); the run then applies them
@@ -2055,6 +2139,7 @@ def run_experiment(
         on_event=on_event,
         outer_fold_assignment=outer_fold_assignment,
         holdout_partition=holdout_partition,
+        target_labels=target_labels,
     )
 
 

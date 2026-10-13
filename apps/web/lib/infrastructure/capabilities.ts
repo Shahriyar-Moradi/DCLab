@@ -28,6 +28,11 @@ export function isStudioPath(pathname: string): boolean {
   return STUDIO_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+/** Business view (P7.6-A): `/outcomes` only, for any workspace reader who may open the business pages. */
+export function isBusinessViewPath(pathname: string): boolean {
+  return pathname === "/outcomes";
+}
+
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const PROJECT_SECTIONS = "lab|pipeline|graph|data|experiments|improve|models|predictions|monitoring|decisions";
 const STUDIO_ROUTE = new RegExp(
@@ -55,7 +60,7 @@ export function hasCapability(
  * Where each role lands after login (STUDIO_DESIGN section 3). Developers and admins with a
  * workspace open the project list (`/home` is one click away in the sidebar); a platform operator
  * with no workspace opens monitoring until `/operator` (P8.5-UI); a business-only administrator keeps
- * `/business`; clients keep their existing pages until `/outcomes` (P7.6).
+ * `/business`; business users (clients) open the Business view `/outcomes` (P7.6-A; Labs stays reachable).
  */
 export function defaultProductRoute(user: CapabilityPrincipal | null | undefined): string {
   const platform = hasCapability(user, CAPABILITIES.platformRead);
@@ -63,9 +68,7 @@ export function defaultProductRoute(user: CapabilityPrincipal | null | undefined
   if (development) return "/projects";
   if (platform) return "/admin/monitoring";
   if (hasCapability(user, CAPABILITIES.businessAccess)) return "/business";
-  if (hasCapability(user, CAPABILITIES.applicationAccess)) {
-    return hasCapability(user, CAPABILITIES.legacyDecisionLayer) ? "/app/dashboards" : "/app/labs";
-  }
+  if (hasCapability(user, CAPABILITIES.applicationAccess)) return "/outcomes";
   return "/app/settings";
 }
 
@@ -118,6 +121,9 @@ export function canAccessProductRoute(
   if (isStudioPath(pathname)) {
     return hasCapability(user, CAPABILITIES.developmentAccess);
   }
+  if (isBusinessViewPath(pathname)) {
+    return hasCapability(user, CAPABILITIES.applicationAccess);
+  }
   if (pathname === "/business" || pathname.startsWith("/business/")) {
     return hasCapability(user, CAPABILITIES.businessAccess);
   }
@@ -142,6 +148,7 @@ const WORKSPACE_SWITCH_STABLE_ROUTES = new Set([
   "/app/opportunities/upload",
   "/app/decisions",
   "/app/labs",
+  "/outcomes",
   "/business",
   "/development",
   "/admin/businesses",

@@ -57,10 +57,10 @@ test("Studio: sidebar, project pages, empty states, command bar and access", asy
   await expect(page.getByRole("heading", { name: "Experiments", level: 1 })).toBeVisible();
   await expect(page.getByRole("region", { name: "Project" })).toContainText(name);
   // A new project has no test design and no model in use yet, so Goal & test design and Predictions are not listed.
-  for (const label of ["Data", "Experiments", "Improve", "Model", "History"]) {
+  for (const label of ["Data", "Experiments", "Improve", "Model", "Monitoring", "History"]) {
     await expect(sidebar.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
-  for (const hidden of ["Lab (chat)", "Pipeline", "Graph", "Monitoring", "Goal & test design", "Predictions"]) {
+  for (const hidden of ["Lab (chat)", "Pipeline", "Graph", "Goal & test design", "Predictions"]) {
     await expect(sidebar.getByRole("link", { name: hidden, exact: true })).toHaveCount(0);
   }
   await expect(sidebar.getByText("Project · " + name)).toBeVisible();
@@ -80,7 +80,7 @@ test("Studio: sidebar, project pages, empty states, command bar and access", asy
   await page.emulateMedia({ colorScheme: "light" });
 
   await page.goto(`/projects/${projectId}/monitoring`);
-  await expect(page.getByText("Monitoring arrives with releases.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Monitoring", level: 1 })).toBeVisible();
   await page.goto(`/projects/${projectId}/decisions`);
   await expect(page.getByRole("heading", { name: "History", level: 1 })).toBeVisible();
   await page.goto("/inbox");

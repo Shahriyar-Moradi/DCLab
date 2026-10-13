@@ -450,6 +450,7 @@ def run_auto_train_job(
                     else dict(split_plan.assignment.train_folds)
                 ),
                 holdout_partition=split_plan.holdout_partition,
+                target_labels=cleaned.target_labels,
             ),
         )
         persisted = run_persistence(

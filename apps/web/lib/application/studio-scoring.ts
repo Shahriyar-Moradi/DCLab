@@ -82,6 +82,11 @@ const BY_CODE: Record<string, PlainError> = {
     detail: "Nothing was scored. Ask someone who can change this workspace to approve a different model on the Model screen, or to train this one again, then score the file again.",
     fixable: false,
   },
+  schedule_owner_not_allowed: {
+    title: "This week was not scored",
+    detail: "The person who set up this schedule can no longer score, so this week was not scored. Someone who can should save the schedule again.",
+    fixable: false,
+  },
   not_found: { title: "Not found", detail: "The model version or the file is not in this workspace.", fixable: false },
   idempotency_key_conflict: { title: "That request was already used with different content", detail: "Reload the page and try again.", fixable: false },
 };
@@ -98,8 +103,11 @@ export function mapScoringError(error: unknown): PlainError {
 }
 
 /** Why a finished scoring failed, from the API's own code (its message is generic API text, shown as plain text). */
-export function failureError(code: string | null | undefined, message: string | null | undefined): PlainError {
+export function failureError(code: string | null | undefined, message: string | null | undefined, scheduled = false): PlainError {
   const key = code?.toLowerCase() ?? "";
+  if (scheduled && key === "release_mismatch") {
+    return { title: "This scheduled run did not score", detail: "The model in use changed before this scheduled run started, so nothing was scored.", fixable: false };
+  }
   if (key === "feature_contract_failed") return { ...BY_CODE.feature_contract_failed, detail: message ? `${message}.` : BY_CODE.feature_contract_failed.detail };
   if (key === "scoring_failed" && message) return { ...BY_CODE.scoring_failed, detail: `${message}.` };
   const known = Object.hasOwn(BY_CODE, key) ? BY_CODE[key] : undefined;
@@ -171,6 +179,7 @@ export function downloadWords(threshold: number | null | undefined): string {
 
 type PredictionLike = {
   id: string; model_version_id: string; status: string; created_at: string; rows_in?: number | null; rows_out?: number | null; release?: ReleaseSummaryLike | null;
+  scheduled?: boolean; scheduled_for?: string | null; error_code?: string | null; error_message?: string | null;
 };
 /** What the page knows of one scoring's read: its data, or that the read failed, or neither yet (still loading). */
 export type ReadState = { data?: PredictionLike; failed?: boolean } | undefined;
@@ -182,8 +191,12 @@ export type HistoryRow = {
   id: string; file: string; model: string; when: string | null; status: string; statusKey: string; rows: string; by: string; href: string | null;
   /** The approval the scoring used, from the read's own `release`, or why it is not known (loading, unreadable, other model). */
   approval: string;
+  /** "Scheduled run for <date>" for a weekly scheduled scoring, "By hand" otherwise (from the read's own `scheduled`). */
+  origin: string;
+  /** Why a failed scoring failed, in plain words (from the API's own code); null when it did not fail. */
+  failure: string | null;
 };
-export type SessionEntry = SessionScoring & { modelVersionId: string };
+export type SessionEntry = SessionScoring & { modelVersionId: string; scheduled?: boolean };
 
 /**
  * One row per scoring started in this browser tab by the signed-in person (the list is stored per workspace and user), newest first;
@@ -195,7 +208,7 @@ export function historyRows(
   reads: ReadonlyMap<string, ReadState>,
   modelLabel: (modelVersionId: string) => string | null,
   hrefFor: (modelVersionId: string) => string | null,
-  used: { when: (iso: string) => string; inUseNow: (modelVersionId: string) => boolean | null } = { when: (iso) => iso, inUseNow: () => null },
+  used: { when: (iso: string) => string; utc?: (iso: string) => string; inUseNow: (modelVersionId: string) => boolean | null } = { when: (iso) => iso, inUseNow: () => null },
 ): HistoryRow[] {
   const rows = entries.map((entry, index) => {
     const state = reads.get(entry.id);
@@ -216,7 +229,9 @@ export function historyRows(
         // tone keys: a failed read is shown like a failed scoring, a mismatch like a neutral state
         statusKey: p ? p.status : mismatch ? "skipped" : state?.failed ? "failed" : "loading",
         rows: done ? `${p.rows_out ?? "—"} of ${p.rows_in ?? "—"}` : "—",
-        by: "You, in this browser tab",
+        by: entry.scheduled || p?.scheduled ? "The weekly schedule" : "You, in this browser tab",
+        failure: p?.status === "failed" ? (() => { const f = failureError(p.error_code, p.error_message, !!p.scheduled); return `${f.title}. ${f.detail}`; })() : null,
+        origin: p?.scheduled ? (p.scheduled_for ? `Scheduled run for ${(used.utc ?? used.when)(p.scheduled_for)}` : "Scheduled run") : p ? "By hand" : entry.scheduled ? "Scheduled run" : "—",
         href: hrefFor(entry.modelVersionId),
         approval: approval
           ? (approval.approval ? `${approval.approval}${approval.stale ? `. ${approval.stale}` : ""}` : "none (nothing was scored)")

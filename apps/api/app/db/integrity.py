@@ -1166,8 +1166,16 @@ SCORING_SCHEDULE_RUNS_APPEND_ONLY_TRIGGER_SQL = (
 )
 
 
+# 0080 (P7.4-A): monitoring windows and linked outcome files are append-only (identical literals in 0080).
+MONITORING_APPEND_ONLY_TRIGGER_SQL = tuple(
+    f"CREATE TRIGGER {table}_append_only BEFORE UPDATE OR DELETE ON {table} "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    for table in ("monitoring_windows", "monitoring_outcome_sets")
+)
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0079 install
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0080 install
     (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
@@ -1193,6 +1201,8 @@ def install_immutability_triggers(connection) -> None:
     connection.execute(text(R3_RUNS_APPEND_ONLY_TRIGGER_SQL))
     connection.execute(text(MODEL_RELEASES_APPEND_ONLY_TRIGGER_SQL))
     connection.execute(text(SCORING_SCHEDULE_RUNS_APPEND_ONLY_TRIGGER_SQL))
+    for statement in MONITORING_APPEND_ONLY_TRIGGER_SQL:
+        connection.execute(text(statement))
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():

@@ -87,6 +87,8 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"dataset_id": UUID_ZERO}
         elif path.endswith("/operating-point"):
             body = {"threshold": 0.5, "reason": "x"}
+        elif path.endswith("/monitoring/outcomes"):
+            body = {"dataset_id": UUID_ZERO, "key_column": "id", "outcome_column": "y"}
         kwargs.setdefault("json", body)
         # P3.1-B commands require a key; supply one so the resource checks answer.
         kwargs["headers"] = {"Idempotency-Key": f"conv-{uuid4().hex}", **(kwargs.get("headers") or {})}
@@ -174,6 +176,12 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/projects/{project_id}/scoring-schedule",
         "PUT /v1/projects/{project_id}/scoring-schedule",
         "GET /v1/projects/{project_id}/scoring-schedule/runs",
+        "GET /v1/projects/{project_id}/monitoring",
+        "GET /v1/projects/{project_id}/monitoring/windows/{window_start}",
+        "GET /v1/projects/{project_id}/monitoring/outcomes",
+        "POST /v1/projects/{project_id}/monitoring/outcomes",
+        "GET /v1/projects/{project_id}/outcomes",
+        "GET /v1/outcomes/projects",
         "GET /v1/service-tokens",
         "POST /v1/service-tokens",
         "POST /v1/service-tokens/{token_id}/revoke",

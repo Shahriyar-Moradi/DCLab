@@ -90,6 +90,13 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             # Weekly scheduled scoring: the schedule and its runs (no user ids for tokens).
             "/v1/projects/{project_id}/scoring-schedule",
             "/v1/projects/{project_id}/scoring-schedule/runs",
+            # P7.4-A: monitoring aggregates and linked outcome files (no rows, no holdout, no person ids).
+            "/v1/projects/{project_id}/monitoring",
+            "/v1/projects/{project_id}/monitoring/windows/{window_start}",
+            "/v1/projects/{project_id}/monitoring/outcomes",
+            # P7.6-A: the Business view; tokens get the final-test headline withheld (no person ids).
+            "/v1/projects/{project_id}/outcomes",
+            "/v1/outcomes/projects",  # id and name of projects with a model in use
             # P6.6-A: proposals and agent runs, read with holdout-free output.
             "/v1/agent-runs",
             "/v1/agent-runs/{run_id}",
@@ -150,6 +157,9 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/governance/policy/{proposal_id}/accept"),
         ("POST", "/v1/governance/switches"),
         ("POST", "/v1/agent-runs/{run_id}/replay"),
+        # P7.4-A: linking real outcomes is a person's act (tokens: 403 service_token_not_permitted; the
+        # route refuses any token again as human_session_required).
+        ("POST", "/v1/projects/{project_id}/monitoring/outcomes"),
         # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required).
         ("GET", "/v1/assistant/threads"),
         ("POST", "/v1/assistant/threads"),

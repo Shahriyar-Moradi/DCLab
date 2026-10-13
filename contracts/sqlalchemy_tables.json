@@ -54,6 +54,8 @@
   "model_releases",
   "model_selection_decisions",
   "model_versions",
+  "monitoring_outcome_sets",
+  "monitoring_windows",
   "opportunities",
   "pipeline_scientific_plans",
   "pipeline_stage_runs",

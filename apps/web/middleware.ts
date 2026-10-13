@@ -134,6 +134,10 @@ export const config = {
     "/inbox/:path*",
     "/agents/:path*",
     "/projects/:path*",
+    // Studio Settings (P4.14): developer role only, like the other Studio routes (P7.6-A found it unmatched).
+    "/settings/:path*",
+    // Business view (P7.6-A).
+    "/outcomes/:path*",
     // Frozen Decision.ai marketing pages (P4.12-A): redirected to `/` unless the flag is on.
     "/industries/:path*",
     "/solutions/:path*",

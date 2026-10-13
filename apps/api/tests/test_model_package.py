@@ -203,6 +203,42 @@ def test_tampered_members_and_manifests_are_refused():
     assert caught.value.public_message == pl.DIGEST_MESSAGE
 
 
+def test_reference_summary_is_additive_and_pinned_by_the_manifest_digest():
+    """P7.4-A: the training-partition reference monitoring compares with rides in the manifest.
+    Packages without it (saved before monitoring) still read and load; editing it breaks the pin."""
+
+    from app.engine.serving import monitoring as mon
+
+    frame = _frame()
+    pipeline = _fitted("binary", "logistic_regression", frame, _target("binary", frame))
+    reference = mon.build_reference(frame.loc[:, NUMERIC + CATEGORICAL], numeric=NUMERIC, categorical=CATEGORICAL,
+                                    task_type="binary", oof_scores=[np.linspace(0.0, 1.0, 60)], threshold=0.5,
+                                    class_labels=None)
+    raw = mp.build_package(
+        pipeline, family="logistic_regression", task_type="binary", candidate_id="cand_1",
+        training_dtypes={"a": "float64"}, feature_actions=ACTIONS, target="y",
+        cv={"metric": "roc_auc", "strategy": "kfold", "folds": 5, "mean": {"roc_auc": 0.8}, "std": {}},
+        decision_threshold=0.5, reference_summary=reference,
+    )
+    package, manifest_bytes = mp.finalize_package(raw, training_run_id="run-1", feature_set_version_id=None,
+                                                  availability={})
+    manifest = mp.read_package(package).manifest
+    assert manifest["reference_summary"] == json.loads(json.dumps(reference))  # finalize keeps it
+    assert mon.usable_reference(manifest)["n_rows"] == len(frame)
+    assert [f["name"] for f in manifest["reference_summary"]["features"]] == manifest["features"]
+    assert _load(package, manifest_bytes).saved_format == "package_v1"  # digest-pinned load works
+    older, older_manifest = _package(pipeline)  # no reference: a model saved before monitoring
+    assert "reference_summary" not in mp.read_package(older).manifest
+    assert mon.usable_reference(mp.read_package(older).manifest) is None
+    assert _load(older, older_manifest).saved_format == "package_v1"
+    edited = dict(manifest, reference_summary={**manifest["reference_summary"], "n_rows": 1})
+    resigned = _rezip(package, replace={"manifest.json": json.dumps(edited).encode()})
+    mp.read_package(resigned)  # structurally fine, but not the manifest the model version pins
+    with pytest.raises(ScoringError) as caught:
+        _load(resigned, manifest_bytes)
+    assert caught.value.public_message == pl.DIGEST_MESSAGE
+
+
 @pytest.mark.parametrize("mutation", ["traversal", "nested", "duplicate", "unknown", "no_manifest", "oversize"])
 def test_malformed_packages_are_refused(mutation, monkeypatch):
     frame = _frame()

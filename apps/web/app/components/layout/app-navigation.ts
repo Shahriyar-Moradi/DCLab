@@ -12,7 +12,7 @@ import {
   Scale,
   Upload,
 } from "lucide-react";
-import { CAPABILITIES, defaultProductRoute, hasCapability, isStudioPath } from "@/lib/infrastructure/capabilities";
+import { CAPABILITIES, defaultProductRoute, hasCapability, isBusinessViewPath, isStudioPath } from "@/lib/infrastructure/capabilities";
 import type { SessionUser } from "@/lib/infrastructure/session";
 
 type NavAudience = "all" | "platform" | "business" | "development";
@@ -97,6 +97,14 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
         icon: Upload,
         audience: "all",
         isActive: (pathname) => prefixMatch(pathname, "/app/opportunities/upload"),
+      },
+      {
+        id: "outcomes",
+        label: "Business view",
+        href: "/outcomes",
+        icon: BarChart3,
+        audience: "all",
+        isActive: (pathname) => prefixMatch(pathname, "/outcomes"),
       },
       {
         id: "labs",
@@ -202,12 +210,17 @@ export function isProductRoute(pathname: string) {
   );
 }
 
-/** Studio design kit and Developer Studio routes render their own shell, outside marketing and product chrome. */
+/** Studio design kit, Developer Studio and Business view routes render their own shell, outside marketing and product chrome. */
 export function isStudioRoute(pathname: string) {
-  return pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname);
+  return pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname) || isBusinessViewPath(pathname);
 }
 
-export { STUDIO_BACKEND_FEATURES, studioNavigationForUser, studioRoleForUser } from "@/lib/application/studio-navigation";
+export {
+  STUDIO_BACKEND_FEATURES,
+  businessNavigationForUser,
+  studioNavigationForUser,
+  studioRoleForUser,
+} from "@/lib/application/studio-navigation";
 
 export function isAuthRoute(pathname: string) {
   return pathname === "/login" || pathname.startsWith("/login/");

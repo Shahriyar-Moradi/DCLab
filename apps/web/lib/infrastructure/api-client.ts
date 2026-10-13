@@ -205,8 +205,8 @@ export function newIdempotencyKey(): string {
   return `studio-${newRequestId()}`;
 }
 
-export function apiPut<T>(path: string, schema: ZodType<T>, json: unknown): Promise<T> {
-  return request(path, schema, { method: "PUT", body: JSON.stringify(json) });
+export function apiPut<T>(path: string, schema: ZodType<T>, json: unknown, headers?: Record<string, string>): Promise<T> {
+  return request(path, schema, { method: "PUT", body: JSON.stringify(json), headers });
 }
 
 export async function apiPostEmpty(path: string): Promise<void> {

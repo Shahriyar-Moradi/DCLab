@@ -20,6 +20,7 @@ from app.domain.ml_jobs import (
     HANDLER_AUTH_SESSION_CLEANUP,
     HANDLER_LABS_AUTO_TRAIN,
     HANDLER_MODELS_BATCH_PREDICT,
+    HANDLER_MONITORING_COMPUTE_WINDOW,
 )
 
 Heartbeat = Callable[[], None]
@@ -108,6 +109,20 @@ def handle_models_batch_predict(
     from app.services.batch_prediction_service import run_batch_prediction_job
 
     run_batch_prediction_job(db, job, on_heartbeat=on_heartbeat)
+
+
+@register_handler(HANDLER_MONITORING_COMPUTE_WINDOW)
+def handle_monitoring_compute_window(
+    db: Session,
+    job: MlJob,
+    *,
+    on_heartbeat: Heartbeat | None = None,
+) -> None:
+    """P7.4-A: one monitoring window from stored files (never loads a model)."""
+
+    from app.services.monitoring_service import compute_window_job
+
+    compute_window_job(db, job, on_heartbeat=on_heartbeat)
 
 
 @register_handler(HANDLER_AGENTS_RUN)

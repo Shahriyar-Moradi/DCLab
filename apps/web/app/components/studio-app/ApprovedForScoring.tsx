@@ -31,8 +31,11 @@ import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 type Target = { mode: ApprovalMode; modelVersionId: string; model: string; returnId: string };
 const SUMMARY_ID = "approval-summary";
 
-function ConfirmApproval({ projectId, target, current, onClose, onDone }: {
+/** The one confirm step for approve / go back; the Monitoring screen reuses it for its go-back (one write path). */
+export function ConfirmApproval({ projectId, target, current, onClose, onDone, where }: {
   projectId: string; target: Target; current: string | null; onClose: () => void; onDone: (text: string) => void;
+  /** Where the change was made, for the History reason when none is typed (default: the Model screen). */
+  where?: string;
 }) {
   const model = useModelVersionRead(target.modelVersionId);
   const refs = useProjectRefs(projectId);
@@ -54,7 +57,7 @@ function ConfirmApproval({ projectId, target, current, onClose, onDone }: {
     setBusy(true);
     setError(null);
     const m = model.data;
-    const text = reasonToSend(target.mode, target.model, reason);
+    const text = reasonToSend(target.mode, target.model, reason, where);
     const fingerprint = `${m.id}:${text}`;
     if (frozen.current?.fingerprint !== fingerprint) {
       frozen.current = {
@@ -150,7 +153,7 @@ export function ApprovedForScoring({ projectId }: { projectId: string }) {
         purpose="See which model the project scores with, who approved it and when, and go back to an earlier one if needed."
         howTo="Read the list, newest first. To change the model in use, press “Approve for scoring” on a model or “Go back to this model” on an earlier one, read what changes, then confirm."
         youGet={`The model in use, the latest ${RELEASES_LISTED} approvals with their date and reason, and a record of each change in History.`}
-        attention="Approving does not retrain the model or test it again. Predictions already made are not changed. Other models can still score a file from their own page: only scoring with the model in use is checked against its approval. Scoring on a weekly schedule is planned and not built yet."
+        attention="Approving does not retrain the model or test it again. Predictions already made are not changed. Other models can still score a file from their own page: only scoring with the model in use is checked against its approval. Weekly scoring, if it is on, uses the model in use only when it is approved: see the Weekly scoring card on the Predictions screen."
       />
       <Card title="Approved for scoring" aside={<Pill tone="ok">Working today</Pill>}>
         {summary.kind === "error" ? (

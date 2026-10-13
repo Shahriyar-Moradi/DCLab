@@ -129,17 +129,17 @@ export function confirmWords(mode: ApprovalMode, model: string, current: string 
       replaces,
       "Predictions already made are not changed.",
       "Nothing is retrained or tested again. Before it records the approval, DCLab checks that a saved model file exists in a format DCLab can score with, and that the model was tested on the same test design as the model in use. Each time the model in use scores a file, the approval is checked again.",
-      "Scoring on a weekly schedule is planned and not built yet.",
+      "Weekly scoring, if it is on, uses the model in use when it is approved: see the Weekly scoring card on the Predictions screen.",
       "The change and your reason are saved in History. A person approves; the assistant can only suggest.",
     ],
   };
 }
 
-/** The reason sent when the person leaves it empty (the API needs one): it says that none was given. */
-export function reasonToSend(mode: ApprovalMode, model: string, typed: string): string {
+/** The reason sent when the person leaves it empty (the API needs one): it says that none was given, and where it was done. */
+export function reasonToSend(mode: ApprovalMode, model: string, typed: string, where = "the Model screen"): string {
   const text = typed.trim().slice(0, REASON_MAX);
   if (text) return text;
-  return mode === "go_back" ? `Went back to ${model} on the Model screen (no reason given).` : `Approved ${model} for scoring on the Model screen (no reason given).`;
+  return mode === "go_back" ? `Went back to ${model} on ${where} (no reason given).` : `Approved ${model} for scoring on ${where} (no reason given).`;
 }
 
 const CONFLICT: PlainError = { title: "Someone else just changed the model in use", detail: "Reload to see the model in use now, then decide again.", fixable: false };
@@ -168,6 +168,7 @@ const BY_CODE: Record<string, PlainError> = {
   idempotency_key_conflict: { title: "Your approval may already be saved", detail: "Reload and check the list before you try again.", fixable: false },
   capability_denied: { title: "You do not have permission to approve a model here", detail: "Approving needs a role that can change ML work in this workspace.", fixable: false },
   decision_actor_not_permitted: { title: "You do not have permission to approve a model here", detail: "Only a person with write access can approve a model.", fixable: false },
+  concurrent_conflict: { title: "Another change was being saved", detail: "Nothing changed yet. Try again in a moment.", fixable: false },
   validation_failed: { title: "The reason could not be saved", detail: "Use plain text of up to 4000 characters and try again.", fixable: true },
   release_created_concurrently: CONFLICT,
   stale_ref_version: CONFLICT,
@@ -179,7 +180,10 @@ const own = (key: string): PlainError | undefined => (key && Object.hasOwn(BY_CO
 /** True for refusals after which the same request can never succeed: the next try must be a new action (new key, fresh versions). */
 export function isConflict(error: unknown): boolean {
   const status = (error as { status?: unknown } | null)?.status;
-  return status === 409 || status === 412 || status === 428;
+  if (status !== 409 && status !== 412 && status !== 428) return false;
+  // A retryable conflict (another change in flight) is sent again with the SAME key; only a real conflict renews it.
+  const { code } = envelope((error as { body?: unknown } | null)?.body);
+  return !(code === "concurrent_conflict" || (error as { body?: { error?: { retryable?: unknown } } } | null)?.body?.error?.retryable === true);
 }
 
 /**

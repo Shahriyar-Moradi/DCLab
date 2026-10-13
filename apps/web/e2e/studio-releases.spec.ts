@@ -102,7 +102,7 @@ test("approve a model for scoring, go back to the previous one, and refusals are
   await expect(confirm).toContainText("Predictions already made are not changed.");
   await expect(confirm).toContainText("Nothing is retrained or tested again.");
   await expect(confirm).toContainText("a saved model file exists in a format DCLab can score with");
-  await expect(confirm).toContainText("Scoring on a weekly schedule is planned and not built yet.");
+  await expect(confirm).toContainText("Weekly scoring, if it is on, uses the model in use when it is approved: see the Weekly scoring card on the Predictions screen.");
   await expect(panel).not.toContainText(BANNED);
   await checkA11y(page, "1-confirm");
   // Cancel returns focus to the row and the buttons come back.
@@ -126,6 +126,24 @@ test("approve a model for scoring, go back to the previous one, and refusals are
   await expect(list.getByRole("listitem").first()).toContainText("(no reason given)");
   await expect(list.getByRole("listitem").nth(1)).toContainText("Earlier approval by you on");
   await expect(list.getByRole("listitem").nth(1)).toContainText("Not the model in use now.");
+
+  // The API's real concurrent-write refusal is 409 concurrent_conflict (retryable): a plain sentence, and the retry keeps the SAME key.
+  const keys: string[] = [];
+  await page.route("**/api/backend/v1/projects/*/refs/champion_model", (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    keys.push(route.request().headers()["idempotency-key"] ?? "");
+    return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "concurrent_conflict", message: "a concurrent request conflicted; retry", retryable: true, details: {} } }) });
+  });
+  await panel.getByRole("button", { name: `Go back to this model: ${second.name}` }).click();
+  const retry = panel.getByRole("form", { name: `Go back to ${second.name}?` });
+  await retry.getByRole("button", { name: `Yes, go back to ${second.name}` }).click();
+  await expect(retry.getByRole("alert")).toContainText("Another change was being saved");
+  await retry.getByRole("button", { name: `Yes, go back to ${second.name}` }).click();
+  await expect.poll(() => keys.length).toBe(2);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[1]).toBe(keys[0]);
+  await page.unroute("**/api/backend/v1/projects/*/refs/champion_model");
+  await retry.getByRole("button", { name: "Cancel" }).click();
 
   // A conflict (someone else changed the model in use) is one plain sentence (stubbed 412 from the API).
   await page.route("**/api/backend/v1/projects/*/refs/champion_model", (route) => (route.request().method() === "POST"
@@ -191,7 +209,8 @@ test("approve a model for scoring, go back to the previous one, and refusals are
     await route.fulfill({ response, json: { ...body, status: "failed", error_code: "release_mismatch", error_message: "the stored model no longer matches the version approved for scoring", output: null, rows_out: null, completed_at: null } });
   });
   await page.reload();
-  await expect(page.getByText("The saved model no longer matches the model that was approved")).toBeVisible();
+  // The table row now repeats the reason a failed scoring failed, so the sentence appears twice.
+  await expect(page.getByText("The saved model no longer matches the model that was approved").first()).toBeVisible();
   await expect(page.getByTestId("scored-with").first()).toHaveText(`Was to score with: ${second.name}.`);
   await expect(page.getByRole("table", { name: "Predictions run in this browser tab" })).toContainText("none (nothing was scored)");
   await expect(page.locator("main")).not.toContainText(/digest|manifest|package|approve it again/i);

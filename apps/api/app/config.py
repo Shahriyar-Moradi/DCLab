@@ -134,6 +134,14 @@ class Settings(BaseSettings):
     # Wall-clock limit of the reasons step (seconds); it stops at a chunk / column boundary and
     # the read notes how many rows were explained (none in time: reasons unavailable).
     batch_reasons_deadline_seconds: float = 120.0
+    # P7.4-A monitoring: kill switch (no new window jobs, links refused; reads still answer) and
+    # the minimums below which a window is ``not_enough_data`` / outcomes ``not_enough_labels``.
+    monitoring_enabled: bool = True
+    monitoring_min_rows: int = 500
+    monitoring_min_labels: int = 100
+    monitoring_min_per_class: int = 10
+    # A burst of scorings / links collapses into one recompute per window at most this often.
+    monitoring_debounce_minutes: float = 10.0
     # Durable ML jobs. Production default persists a row and returns; a worker
     # process claims with FOR UPDATE SKIP LOCKED. `inline` / `thread` are local
     # adapters only — they must be set explicitly and are not the default.

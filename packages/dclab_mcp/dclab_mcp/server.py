@@ -71,6 +71,10 @@ OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked fro
 SCHEDULE_NOTE = ("Read-only: only a person turns weekly scoring on or off, in DCLab Studio. Each week it scores the "
                  "newest file uploaded for scoring with the model in use approved for scoring; it never retrains "
                  "and never fetches data.")
+MONITORING_NOTE = ("Read-only and deterministic: drift means the inputs look different from training, not that the "
+                   "model is wrong; outcome metrics are real results of scored rows (never the final test set) and "
+                   "appear only after a person links them in DCLab Studio. Monitoring never retrains or switches a "
+                   "model.")
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 
@@ -331,6 +335,29 @@ def _scoring_schedule(state: Any) -> dict[str, Any]:
              "input_dataset_id": _sid(r.input_dataset_id)} for r in state.recent_runs[:LIST_LIMIT]]
     return {"project_id": str(state.project_id), "status": state.status, "schedule": schedule, "recent_runs": runs,
             "note": SCHEDULE_NOTE}
+
+
+def _monitoring(view: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``_monitoring_shape``: codes, dates, counts and numbers
+    only (no summaries, finding text or feature names: they carry the user's column names)."""
+
+    windows = [{"window_start": w.window_start.isoformat(), "window_end": w.window_end.isoformat(),
+                "revision": w.revision, "model_version_id": str(w.model_version_id),
+                "model_release_id": _sid(w.model_release_id), "status": w.status, "summary_code": w.summary_code,
+                "n_rows": w.n_rows, "n_batch_predictions": w.n_batch_predictions, "max_psi": w.max_psi,
+                "prediction_psi": w.prediction_psi, "outcomes_status": w.outcomes_status or None,
+                "n_labelled": w.n_labelled, "coverage": w.coverage, "outcome_metric": w.outcome_metric,
+                "outcome_metric_value": w.outcome_metric_value} for w in view.windows[:LIST_LIMIT]]
+    t = view.thresholds
+    thresholds = {"psi_watch": t.psi_watch, "psi_alert": t.psi_alert, "significance_level": t.significance_level,
+                  "flagged_share_relative_watch": t.flagged_share_relative_watch,
+                  "flagged_share_absolute_watch": t.flagged_share_absolute_watch, "min_rows": t.min_rows,
+                  "min_labels": t.min_labels, "min_per_class": t.min_per_class}
+    return {"project_id": str(view.project_id), "enabled": view.enabled, "status": view.status,
+            "model_version_id": _sid(view.model_version_id), "model_version": view.model_version,
+            "model_release_id": _sid(view.model_release_id),
+            "finding": view.finding.code if view.finding is not None else None,
+            "thresholds": thresholds, "windows": windows, "note": MONITORING_NOTE}
 
 
 def _governance(g: Any) -> dict[str, Any]:
@@ -640,6 +667,11 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             return _scoring_schedule(api.scoring_schedules.get(uuid_arg(project_id, "project_id")))
         return run(call)
 
+    def get_monitoring(project_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            return _monitoring(api.monitoring.get(uuid_arg(project_id, "project_id")))
+        return run(call)
+
     def inspect_governance() -> CallToolResult:
         def call() -> dict[str, Any]:
             return _governance(api.governance.get())
@@ -771,6 +803,12 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
              "platform, weekday and hour (UTC), next and last slot, whether the person it acts as can still score, "
              "and the newest handled weeks (queued with the week's prediction, or why nothing was scored). Only a "
              "person turns it on or off, in DCLab Studio.")
+        tool(get_monitoring, read, "Monitoring of a project's model in use, read-only and deterministic: the latest "
+             "weekly status (ok / watch / alert / not_enough_data) and the last 12 weeks (Monday 00:00 UTC) with the "
+             "largest input drift (PSI vs the training rows), score drift, rows scored and, once a person linked real "
+             "outcomes, labelled rows, coverage and the primary metric on them; code-owned thresholds and the alert "
+             "finding code. Drift means the inputs look different from training, not that the model is wrong; it "
+             "never retrains or switches a model.")
         tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
              "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(get_impact, read, "Downstream closure of one graph node: which specs, datasets, split plans, recipes, "

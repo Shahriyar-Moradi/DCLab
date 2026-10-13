@@ -8,7 +8,7 @@
  * Runtime validation stays with the caller's zod schema, as everywhere else.
  */
 import type { ZodType } from "zod";
-import { apiDownload, apiGet, apiPost, apiPostForm, newIdempotencyKey } from "../api-client";
+import { apiDownload, apiGet, apiPost, apiPostForm, apiPut, newIdempotencyKey } from "../api-client";
 import type { components, paths } from "./schema";
 
 export { newIdempotencyKey };
@@ -129,6 +129,15 @@ export function v1Post<P extends V1Path<"post">, T>(
   ...[options]: OptionsArg<P, CommandOptions>
 ): Promise<T> {
   return apiPost(v1Path(path, options?.params), schema, body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers));
+}
+
+export function v1Put<P extends V1Path<"put">, T>(
+  path: P,
+  schema: ZodType<T> & ZodType<ReadableAs<V1Response<P, "put">, T>>,
+  body: V1RequestBody<P, "put">,
+  ...[options]: OptionsArg<P, CommandOptions>
+): Promise<T> {
+  return apiPut(v1Path(path, options?.params), schema, body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers));
 }
 
 export function v1PostForm<P extends V1Path<"post">, T>(

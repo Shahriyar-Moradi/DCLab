@@ -44,6 +44,7 @@ from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.model_card import ModelCardRead
 from app.domain.model_releases import ModelReleaseList
+from app.domain.monitoring import MonitoringOverviewRead
 from app.domain.operating_points import OperatingPointsRead
 from app.domain.project_graph import NodeImpactRead, ProjectGraphRead
 from app.domain.proposal_reviews import ProposalPage
@@ -149,6 +150,9 @@ class CorpusReads:
     def scoring_schedule(self, pid):
         return self._get(f"/v1/projects/{pid}/scoring-schedule", ScoringScheduleState)
 
+    def monitoring(self, pid):
+        return self._get(f"/v1/projects/{pid}/monitoring", MonitoringOverviewRead)
+
     def prediction(self, pid):
         return self._get(f"/v1/predictions/{pid}", BatchPredictionRead)
 
@@ -250,6 +254,11 @@ def _adversarial(corpus: dict) -> dict:
     schedule["schedule"]["warning"] = f"{INJECTION} {SECRET}"
     for run in schedule["recent_runs"]:
         run["message"] = f"{INJECTION} {SECRET} holdout_auc 0.9"
+    monitoring = r[f"GET /v1/projects/{ids['project']}/monitoring"]  # summaries carry the user's column names
+    monitoring["finding"].update(title=f"{INJECTION} {SECRET}", body=f"{INJECTION} holdout_auc 0.9")
+    for window in [monitoring["latest"], *monitoring["windows"]]:
+        window["summary"] = f"{INJECTION} {SECRET} final_test 0.97"
+    monitoring["notes"] = [f"{INJECTION} {SECRET}"]
     return r
 
 
@@ -354,6 +363,7 @@ def test_record_corpus(client, db_session, st, tmp_path):  # noqa: F811
         f"/v1/experiments/{r}/operating-points": None,
         f"/v1/projects/{pid}/releases": None,  # empty here (first-run model in use); the committed corpus has one
         f"/v1/projects/{pid}/scoring-schedule": None,  # off here; the committed corpus has one with runs
+        f"/v1/projects/{pid}/monitoring": None,  # no window here; the committed corpus has an alert week
     }  # no model build of the root run: get_evidence on it covers "no build"
     responses = {}
     for key, query in paths.items():

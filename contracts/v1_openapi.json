@@ -1286,6 +1286,23 @@
         "successSchema": "NodeImpactRead"
       }
     },
+    "/v1/outcomes/projects": {
+      "GET": {
+        "operationId": "read_outcome_projects_v1_outcomes_projects_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OutcomesProjectList"
+      }
+    },
     "/v1/predictions/{prediction_id}": {
       "GET": {
         "operationId": "read_prediction_v1_predictions__prediction_id__get",
@@ -1526,6 +1543,141 @@
           "500"
         ],
         "successSchema": "ProjectGraphRead"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring": {
+      "GET": {
+        "operationId": "read_monitoring_v1_projects__project_id__monitoring_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "model_version_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "MonitoringOverviewRead"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring/outcomes": {
+      "GET": {
+        "operationId": "read_monitoring_outcomes_v1_projects__project_id__monitoring_outcomes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OutcomeSetList"
+      },
+      "POST": {
+        "operationId": "link_monitoring_outcomes_v1_projects__project_id__monitoring_outcomes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "OutcomeSetCreateRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "OutcomeSetRead"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring/windows/{window_start}": {
+      "GET": {
+        "operationId": "read_monitoring_window_v1_projects__project_id__monitoring_windows__window_start__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "window_start",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "model_version_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "MonitoringWindowRead"
+      }
+    },
+    "/v1/projects/{project_id}/outcomes": {
+      "GET": {
+        "operationId": "read_project_outcomes_v1_projects__project_id__outcomes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OutcomesRead"
       }
     },
     "/v1/projects/{project_id}/problem-specs": {
@@ -2864,6 +3016,167 @@
         "workspace_id"
       ]
     },
+    "MonitoringFinding": {
+      "properties": [
+        "body",
+        "code",
+        "severity",
+        "title"
+      ],
+      "required": [
+        "body",
+        "code",
+        "title"
+      ]
+    },
+    "MonitoringOverviewRead": {
+      "properties": [
+        "enabled",
+        "finding",
+        "latest",
+        "model_release_id",
+        "model_version",
+        "model_version_id",
+        "notes",
+        "project_id",
+        "status",
+        "thresholds",
+        "windows"
+      ],
+      "required": [
+        "enabled",
+        "finding",
+        "latest",
+        "model_release_id",
+        "model_version_id",
+        "notes",
+        "project_id",
+        "status",
+        "thresholds",
+        "windows"
+      ]
+    },
+    "MonitoringThresholds": {
+      "properties": [
+        "flagged_share_absolute_watch",
+        "flagged_share_relative_watch",
+        "min_labels",
+        "min_per_class",
+        "min_rows",
+        "psi_alert",
+        "psi_watch",
+        "significance_level"
+      ],
+      "required": [
+        "flagged_share_absolute_watch",
+        "flagged_share_relative_watch",
+        "min_labels",
+        "min_per_class",
+        "min_rows",
+        "psi_alert",
+        "psi_watch",
+        "significance_level"
+      ]
+    },
+    "MonitoringWindowRead": {
+      "properties": [
+        "computed_at",
+        "coverage",
+        "feature_sentences",
+        "finding",
+        "input_drift",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "notes",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcome_sentences",
+        "outcomes",
+        "outcomes_status",
+        "prediction_drift",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "thresholds",
+        "window_end",
+        "window_start"
+      ],
+      "required": [
+        "computed_at",
+        "coverage",
+        "feature_sentences",
+        "finding",
+        "input_drift",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "notes",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcomes",
+        "outcomes_status",
+        "prediction_drift",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "thresholds",
+        "window_end",
+        "window_start"
+      ]
+    },
+    "MonitoringWindowSummary": {
+      "properties": [
+        "computed_at",
+        "coverage",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcomes_status",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "window_end",
+        "window_start"
+      ],
+      "required": [
+        "computed_at",
+        "coverage",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcomes_status",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "window_end",
+        "window_start"
+      ]
+    },
     "NodeImpactRead": {
       "properties": [
         "counts_by_kind",
@@ -2882,6 +3195,38 @@
         "project_id",
         "total",
         "truncated"
+      ]
+    },
+    "OutcomeSetList": {
+      "properties": [
+        "items",
+        "notes",
+        "project_id"
+      ],
+      "required": [
+        "items",
+        "notes",
+        "project_id"
+      ]
+    },
+    "OutcomeSetRead": {
+      "properties": [
+        "dataset_id",
+        "dataset_name",
+        "id",
+        "key_column",
+        "linked_at",
+        "linked_by_user_id",
+        "outcome_column",
+        "project_id"
+      ],
+      "required": [
+        "dataset_id",
+        "id",
+        "key_column",
+        "linked_at",
+        "outcome_column",
+        "project_id"
       ]
     },
     "PipelineModelBuildRead": {

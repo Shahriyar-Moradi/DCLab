@@ -87,7 +87,7 @@ function ScoringCard({ item, current, modelVersionId, modelLabel }: { item: Sess
     }
   };
 
-  const failure = p?.status === "failed" ? failureError(p.error_code, p.error_message) : null;
+  const failure = p?.status === "failed" ? failureError(p.error_code, p.error_message, !!p.scheduled) : null;
   return (
     <Card
       title={`Scoring of ${plainText(item.fileName, 80)}`}

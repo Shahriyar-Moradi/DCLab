@@ -199,11 +199,20 @@ def _domain_fills(plan: Any) -> dict[str, Any]:
 def scoring_spec(result: Mapping[str, Any], pipeline: Any) -> ScoringSpec:
     """The replay plan for one locked run. Raises ``ScoringError`` (fail closed)."""
 
+    return contract_spec(result, _pipeline_contract(pipeline))
+
+
+def contract_spec(
+    result: Mapping[str, Any], contract: tuple[list[str], list[str], list[str], dict[str, tuple[Any, ...]]]
+) -> ScoringSpec:
+    """``scoring_spec`` from an input contract (columns, numeric, categorical, categories) learned
+    at fit time: the loaded pipeline's, or (P7.4-A monitoring, no model loaded) the manifest's."""
+
     task = result.get("task") if isinstance(result.get("task"), dict) else {}
     task_type = str(task.get("task_type") or "")
     if task_type not in TASK_TYPES:
         raise _unsupported(UNSUPPORTED_MODEL)
-    features, numeric, categorical, categories = _pipeline_contract(pipeline)
+    features, numeric, categorical, categories = contract
     evidence = result.get("scientific_evidence")
     if not isinstance(evidence, dict):
         raise _unsupported()

@@ -292,6 +292,10 @@ class BatchPredictionError(ExperimentRequestError):
     """A batch prediction cannot be created or downloaded (P4.9-A): stable ``code``."""
 
 
+class MonitoringError(ExperimentRequestError):
+    """An outcome file cannot be linked, or a monitoring window cannot be computed (P7.4-A)."""
+
+
 class OperatingPointError(ExperimentRequestError):
     """An operating point cannot be chosen (P5.2-A): stable ``code``, 409/422, typed ``details``
     (e.g. the closest point of an infeasible objective)."""

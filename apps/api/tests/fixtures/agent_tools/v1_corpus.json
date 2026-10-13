@@ -4349,6 +4349,95 @@
    "truncated": false,
    "truncated_kinds": []
   },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/monitoring": {
+   "enabled": true,
+   "finding": {
+    "body": "Inputs look different from training: plan (PSI 0.31), visits (PSI 0.22). Drift means the inputs look different from training; it does not mean the model is wrong. Nothing was retrained or switched; check whether the data source or the population scored has changed before acting.",
+    "code": "inputs_look_different",
+    "severity": "alert",
+    "title": "Inputs look different from training: plan, visits"
+   },
+   "latest": {
+    "computed_at": "2026-10-19T09:05:11Z",
+    "coverage": 0.3417,
+    "max_psi": 0.3127,
+    "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+    "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+    "n_batch_predictions": 2,
+    "n_labelled": 410,
+    "n_rows": 1200,
+    "outcome_metric": "roc_auc",
+    "outcome_metric_value": 0.7712,
+    "outcomes_status": "measured",
+    "prediction_psi": 0.0841,
+    "revision": 2,
+    "status": "alert",
+    "summary": "Inputs look different from training: plan (PSI 0.31), visits (PSI 0.22). Drift means the inputs look different from training; it does not mean the model is wrong.",
+    "summary_code": "inputs_moved",
+    "window_end": "2026-10-19T00:00:00Z",
+    "window_start": "2026-10-12T00:00:00Z"
+   },
+   "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+   "model_version": "v1",
+   "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+   "notes": [
+    "Drift means the inputs look different from training; it does not mean the model is wrong."
+   ],
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "status": "alert",
+   "thresholds": {
+    "flagged_share_absolute_watch": 0.02,
+    "flagged_share_relative_watch": 0.3,
+    "min_labels": 100,
+    "min_per_class": 10,
+    "min_rows": 500,
+    "psi_alert": 0.2,
+    "psi_watch": 0.1,
+    "significance_level": 0.01
+   },
+   "windows": [
+    {
+     "computed_at": "2026-10-19T09:05:11Z",
+     "coverage": 0.3417,
+     "max_psi": 0.3127,
+     "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "n_batch_predictions": 2,
+     "n_labelled": 410,
+     "n_rows": 1200,
+     "outcome_metric": "roc_auc",
+     "outcome_metric_value": 0.7712,
+     "outcomes_status": "measured",
+     "prediction_psi": 0.0841,
+     "revision": 2,
+     "status": "alert",
+     "summary": "Inputs look different from training: plan (PSI 0.31), visits (PSI 0.22). Drift means the inputs look different from training; it does not mean the model is wrong.",
+     "summary_code": "inputs_moved",
+     "window_end": "2026-10-19T00:00:00Z",
+     "window_start": "2026-10-12T00:00:00Z"
+    },
+    {
+     "computed_at": "2026-10-12T09:04:02Z",
+     "coverage": null,
+     "max_psi": 0.0412,
+     "model_release_id": null,
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "n_batch_predictions": 1,
+     "n_labelled": null,
+     "n_rows": 640,
+     "outcome_metric": null,
+     "outcome_metric_value": null,
+     "outcomes_status": "not_linked",
+     "prediction_psi": 0.0213,
+     "revision": 1,
+     "status": "ok",
+     "summary": "The 640 compared rows look like training (largest PSI 0.04, tenure).",
+     "summary_code": "stable",
+     "window_end": "2026-10-12T00:00:00Z",
+     "window_start": "2026-10-05T00:00:00Z"
+    }
+   ]
+  },
   "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/releases": {
    "current_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
    "items": [
@@ -4640,6 +4729,12 @@
     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
    },
    "tool": "get_scoring_schedule"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "get_monitoring"
   }
  ]
 }

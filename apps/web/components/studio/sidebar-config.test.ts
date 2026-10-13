@@ -68,9 +68,10 @@ test("Goal and Predictions need the id of the test design / model of the project
   assert.equal(hrefs.predictions, "/projects/p1/predictions");
 });
 
-test("pages that are not built (Monitoring, AI settings) stay hidden; Settings (members and roles) is shown in Admin with the default capabilities", async () => {
+test("pages that are not built (AI settings) stay hidden; Monitoring and Settings (members and roles) are shown with the default capabilities", async () => {
   const { STUDIO_BACKEND_FEATURES } = await import("../../lib/application/studio-navigation.ts");
   const shown = ids(resolveSidebar("developer", { capabilities: STUDIO_BACKEND_FEATURES, projectBase: "/projects/p1", targets: { split_plan: SPLIT, project_model: MODEL } }));
-  for (const hidden of ["monitoring", "governance", "lab", "pipeline", "graph"]) assert.ok(!shown.includes(hidden), hidden);
+  for (const hidden of ["governance", "lab", "pipeline", "graph"]) assert.ok(!shown.includes(hidden), hidden);
   assert.ok(shown.includes("settings"));
+  assert.ok(shown.includes("monitoring"));
 });

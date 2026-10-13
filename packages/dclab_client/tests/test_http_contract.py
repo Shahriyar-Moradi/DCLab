@@ -463,6 +463,57 @@ def test_scoring_schedule_get_set_and_runs_use_v1_paths():
     assert recorded[2].url.params["cursor"] == "c1.x.y" and recorded[2].url.params["limit"] == "5"
 
 
+def test_monitoring_reads_and_outcome_link_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    pid, mv = "66666666-6666-6666-6666-666666666666", "77777777-7777-7777-7777-777777777777"
+    thresholds = {"psi_watch": 0.1, "psi_alert": 0.2, "significance_level": 0.01,
+                  "flagged_share_relative_watch": 0.3, "flagged_share_absolute_watch": 0.02, "min_rows": 500,
+                  "min_labels": 100, "min_per_class": 10}
+    window = {"window_start": "2030-01-07T00:00:00Z", "window_end": "2030-01-14T00:00:00Z", "revision": 1,
+              "model_version_id": mv, "model_release_id": None, "status": "alert", "summary_code": "inputs_moved",
+              "summary": "s", "n_rows": 900, "n_batch_predictions": 2, "max_psi": 0.31, "prediction_psi": 0.05,
+              "outcomes_status": "not_linked", "n_labelled": None, "coverage": None, "outcome_metric": None,
+              "outcome_metric_value": None, "computed_at": "2030-01-08T00:00:00Z"}
+    overview = {"project_id": pid, "enabled": True, "model_version_id": mv, "model_version": "v1",
+                "model_release_id": None, "status": "alert", "latest": window, "windows": [window],
+                "finding": {"code": "inputs_look_different", "severity": "alert", "title": "t", "body": "b"},
+                "thresholds": thresholds, "notes": ["n"]}
+    linked = {"id": "88888888-8888-8888-8888-888888888888", "project_id": pid,
+              "dataset_id": "99999999-9999-9999-9999-999999999999", "dataset_name": "labels.csv",
+              "key_column": "customer_id", "outcome_column": "churned", "linked_at": "2030-01-09T00:00:00Z",
+              "linked_by_user_id": None}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path.endswith("/monitoring"):
+            return httpx.Response(200, json=overview)
+        if "/windows/" in path:
+            return httpx.Response(200, json={**window, "input_drift": {"features": []}, "feature_sentences": [],
+                                             "prediction_drift": {}, "outcomes": {}, "finding": None,
+                                             "thresholds": thresholds, "notes": []})
+        if request.method == "POST":
+            return httpx.Response(201, json=linked, headers={"ETag": '"o1"'})
+        return httpx.Response(200, json={"project_id": pid, "items": [linked], "notes": []})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    read = api.monitoring.get(pid)
+    assert read.status == "alert" and read.windows[0].max_psi == 0.31 and read.finding.code == "inputs_look_different"
+    assert api.monitoring.window(pid, "2030-01-07", model_version_id=mv).summary_code == "inputs_moved"
+    assert api.monitoring.outcomes(pid).items[0].key_column == "customer_id"
+    made = api.monitoring.link_outcomes(pid, dataset_id=linked["dataset_id"], key_column="customer_id",
+                                        outcome_column="churned", idempotency_key="k3")
+    assert made.etag == '"o1"' and made.outcome_column == "churned"
+    with pytest.raises(DCLabClientError):
+        api.monitoring.window(pid, "../../v1/me")
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/monitoring"), ("GET", f"/v1/projects/{pid}/monitoring/windows/2030-01-07"),
+        ("GET", f"/v1/projects/{pid}/monitoring/outcomes"), ("POST", f"/v1/projects/{pid}/monitoring/outcomes")]
+    assert recorded[1].url.params["model_version_id"] == mv and recorded[3].headers["Idempotency-Key"] == "k3"
+    assert json.loads(recorded[3].content) == {"dataset_id": linked["dataset_id"], "key_column": "customer_id",
+                                               "outcome_column": "churned"}
+
+
 def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
     from datetime import UTC, datetime
 
@@ -1065,3 +1116,37 @@ def test_inbox_uses_v1_paths_filters_and_parses_items():
     with pytest.raises(DCLabClientError, match="UUID"):
         api.inbox.list(project_id="../x")
     assert len(recorded) == 2
+
+
+def test_project_outcomes_reads_the_business_view():
+    recorded: list[httpx.Request] = []
+    pid = "12121212-1212-1212-1212-121212121212"
+    body = {
+        "project_name": "Churn", "state": "ready", "message": None,
+        "model_in_use": {"display_name": "Churn model", "saved_at": "2030-01-01T00:00:00Z", "approved_at": None,
+                         "approval_text": "a"},
+        "headline": {"status": "withheld", "task": "binary", "sentences": [], "counts_text": None, "basis": "b",
+                     "numbers": None},
+        "how_built": {"sentences": ["one", "two", "three"], "rows": 10, "learned_rows": 8, "tested_rows": 2,
+                      "target": "churned", "method": "m", "test_design": None},
+        "weekly_list": {"id": "34343434-3434-3434-3434-343434343434", "completed_at": "2030-01-07T09:00:00Z",
+                        "rows": 30, "has_reasons": True, "text": "t",
+                        "download_path": "/v1/predictions/34343434-3434-3434-3434-343434343434/download"},
+        "weekly_list_note": None, "limits": ["l"], "boundary": "DCLab scores and explains", "untrusted_fields": [],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path == "/v1/outcomes/projects":
+            return httpx.Response(200, json={"items": [{"id": pid, "name": "Churn"}]})
+        return httpx.Response(200, json=body, headers={"ETag": '"o1"'})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    view = api.projects.outcomes(pid)
+    assert view.headline.status == "withheld" and view.weekly_list.rows == 30 and len(view.how_built.sentences) == 3
+    assert [(r.method, r.url.path) for r in recorded] == [("GET", f"/v1/projects/{pid}/outcomes")]
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.projects.outcomes("../x")
+    assert len(recorded) == 1
+    assert api.projects.outcome_projects().items[0].name == "Churn" and recorded[1].url.path == "/v1/outcomes/projects"
+

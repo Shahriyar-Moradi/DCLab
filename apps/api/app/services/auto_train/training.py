@@ -34,6 +34,8 @@ class TrainingInput(BaseModel):
     outer_fold_assignment: dict[int, int] | None = None
     # (holdout rows, train rows) of a reused SplitPlan; None = runner re-splits.
     holdout_partition: tuple[frozenset[int], frozenset[int]] | None = None
+    # P7.4-A: the binary target's uploaded spellings (``StructuralCleaningOutput.target_labels``).
+    target_labels: dict[str, Any] | None = None
 
 
 class TrainingOutput(BaseModel):
@@ -85,6 +87,7 @@ def run_training(ctx: RunContext, inp: TrainingInput) -> TrainingOutput:
             persist_scientific=False,
             outer_fold_assignment=inp.outer_fold_assignment,
             holdout_partition=inp.holdout_partition,
+            target_labels=inp.target_labels,
         )
         if experiment.status != "COMPLETED":
             result = dict(experiment.result or {})

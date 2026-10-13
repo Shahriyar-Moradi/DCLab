@@ -324,6 +324,15 @@ from app.domain.scoring_schedules import (
     CK_SCORING_SCHEDULES_HOUR,
     CK_SCORING_SCHEDULES_WEEKDAY,
 )
+from app.domain.monitoring import (
+    CK_MONITORING_OUTCOME_SETS_COLUMNS,
+    CK_MONITORING_WINDOWS_COUNTS,
+    CK_MONITORING_WINDOWS_JSON,
+    CK_MONITORING_WINDOWS_STATUS,
+    CK_MONITORING_WINDOWS_SUMMARY,
+    CK_MONITORING_WINDOWS_SUMMARY_CODE,
+    CK_MONITORING_WINDOWS_WEEK,
+)
 from app.domain.experiment_changes import (
     CK_EXPERIMENTS_CHANGE_SET_BOUNDED,
     CK_EXPERIMENTS_CHANGE_SET_CHANGES,
@@ -6421,6 +6430,116 @@ class ModelRelease(Base):
     rationale: Mapped[str] = mapped_column(String(4000), nullable=False)
     package_manifest_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     saved_format: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class MonitoringWindow(Base):
+    """One computed revision of a weekly monitoring window (P7.4-A; ``app.domain.monitoring``).
+
+    Written only by the ``monitoring.compute_window`` worker job. Append-only (DB trigger): a
+    recompute (more scorings, outcomes linked) inserts the next ``revision``; reads use the
+    highest. The jsonb columns hold bounded aggregates of the workspace's own data (PSI, shares,
+    category labels <= 60 chars, top 10, column names), never rows and never holdout figures.
+    """
+
+    __tablename__ = "monitoring_windows"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_monitoring_windows_workspace_id"),
+        UniqueConstraint(
+            "project_id", "model_version_id", "window_start", "revision", name="uq_monitoring_windows_revision"
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_monitoring_windows_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_monitoring_windows_workspace_project_model_version",
+        ),
+        # The release must be of this tenant AND approve this very version (MATCH SIMPLE: checked when set).
+        ForeignKeyConstraint(
+            ["workspace_id", "model_version_id", "model_release_id"],
+            ["model_releases.workspace_id", "model_releases.model_version_id", "model_releases.id"],
+            name="fk_monitoring_windows_workspace_model_release",
+        ),
+        CheckConstraint(CK_MONITORING_WINDOWS_STATUS, name="ck_monitoring_windows_status"),
+        CheckConstraint(CK_MONITORING_WINDOWS_SUMMARY_CODE, name="ck_monitoring_windows_summary_code"),
+        CheckConstraint(CK_MONITORING_WINDOWS_SUMMARY, name="ck_monitoring_windows_summary"),
+        CheckConstraint(CK_MONITORING_WINDOWS_COUNTS, name="ck_monitoring_windows_counts"),
+        CheckConstraint(CK_MONITORING_WINDOWS_WEEK, name="ck_monitoring_windows_week"),
+        CheckConstraint(CK_MONITORING_WINDOWS_JSON, name="ck_monitoring_windows_json"),
+        Index(
+            "ix_monitoring_windows_latest",
+            "workspace_id", "project_id", "model_version_id", desc("window_start"), desc("revision"),
+        ),
+        Index(
+            "ix_monitoring_windows_workspace_model_release",
+            "workspace_id",
+            "model_release_id",
+            postgresql_where=text("model_release_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_batch_predictions: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_drift: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    prediction_drift: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    outcomes: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class MonitoringOutcomeSet(Base):
+    """A person's link of a file of real outcomes to a project (P7.4-A). Append-only (DB
+    trigger); key/outcome column names were checked against the dataset's columns. Linking
+    stores no rows: the worker joins the file with scored rows when a window is computed."""
+
+    __tablename__ = "monitoring_outcome_sets"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_monitoring_outcome_sets_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_monitoring_outcome_sets_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "dataset_id"],
+            ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_monitoring_outcome_sets_workspace_project_dataset",
+        ),
+        CheckConstraint(CK_MONITORING_OUTCOME_SETS_COLUMNS, name="ck_monitoring_outcome_sets_columns"),
+        Index("ix_monitoring_outcome_sets_project_created_at", "workspace_id", "project_id", desc("created_at")),
+        Index("ix_monitoring_outcome_sets_dataset", "workspace_id", "dataset_id"),
+        Index("ix_monitoring_outcome_sets_linked_by_user_id", "linked_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    key_column: Mapped[str] = mapped_column(String(256), nullable=False)
+    outcome_column: Mapped[str] = mapped_column(String(256), nullable=False)
+    linked_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
     )

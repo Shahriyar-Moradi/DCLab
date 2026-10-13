@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO, TypeVar
@@ -18,6 +19,8 @@ from dclab_client.types import (
     AgentRunPage,
     Artifact,
     BatchPrediction,
+    BusinessOutcomes,
+    BusinessOutcomesProjectList,
     Dataset,
     DatasetProfile,
     DatasetUpload,
@@ -54,6 +57,10 @@ from dclab_client.types import (
     ProposalPage,
     RefMoveResult,
     Replay,
+    MonitoringOverview,
+    MonitoringWindow,
+    OutcomeSet,
+    OutcomeSetList,
     ScoringScheduleRunPage,
     ScoringScheduleState,
     Visualization,
@@ -211,6 +218,19 @@ class ProjectsClient:
             idempotency_key=idempotency_key,
         )
         return _versioned(ProblemSpec, payload, headers)
+
+    def outcomes(self, project_id: UUID | str, *, request_id: str | None = None) -> BusinessOutcomes:
+        """The Business view (P7.6-A): the model in use, its final test in plain sentences (service
+        tokens get ``headline.status == "withheld"``), how it was built, the latest list and its limits."""
+
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/outcomes", request_id=request_id)
+        return BusinessOutcomes.model_validate(payload)
+
+    def outcome_projects(self, *, request_id: str | None = None) -> BusinessOutcomesProjectList:
+        """Projects of the workspace with a model in use (id and name only, newest first, at most 50)."""
+
+        payload = self._transport.request("GET", "/v1/outcomes/projects", request_id=request_id)
+        return BusinessOutcomesProjectList.model_validate(payload)
 
     def graph(
         self,
@@ -835,6 +855,59 @@ class ScoringSchedulesClient:
         return ScoringScheduleRunPage.model_validate(payload)
 
 
+class MonitoringClient:
+    """Monitoring of a project's model in use (P7.4-A): weekly windows, drift (PSI vs the training
+    rows) and real performance once outcomes are linked. Any token reads it; ``link_outcomes`` is a
+    person's act (a user token with ML-write): service tokens get 403 ``service_token_not_permitted``.
+    Deterministic and read-only: it never retrains or switches a model."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def get(
+        self, project_id: UUID | str, *, model_version_id: UUID | str | None = None, request_id: str | None = None,
+    ) -> MonitoringOverview:
+        """Latest status and the last 12 weeks, newest first (``model_version_id``: another version)."""
+
+        params = {"model_version_id": _id(model_version_id)} if model_version_id is not None else None
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring", params=params, request_id=request_id)
+        return MonitoringOverview.model_validate(payload)
+
+    def window(
+        self, project_id: UUID | str, window_start: str, *, model_version_id: UUID | str | None = None,
+        request_id: str | None = None,
+    ) -> MonitoringWindow:
+        """One week in detail; ``window_start`` is its Monday as ``YYYY-MM-DD`` (UTC)."""
+
+        day = str(window_start).strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise DCLabClientError("window_start must be a date YYYY-MM-DD")
+        params = {"model_version_id": _id(model_version_id)} if model_version_id is not None else None
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring/windows/{day}", params=params, request_id=request_id)
+        return MonitoringWindow.model_validate(payload)
+
+    def outcomes(self, project_id: UUID | str, *, request_id: str | None = None) -> OutcomeSetList:
+        """Linked files of real outcomes, newest first."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring/outcomes", request_id=request_id)
+        return OutcomeSetList.model_validate(payload)
+
+    def link_outcomes(
+        self, project_id: UUID | str, *, dataset_id: UUID | str, key_column: str, outcome_column: str,
+        idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> OutcomeSet:
+        """Link an uploaded file of real outcomes (its key column holds the scored rows' entity values)."""
+
+        body = {"dataset_id": _id(dataset_id), "key_column": key_column, "outcome_column": outcome_column}
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/projects/{_id(project_id)}/monitoring/outcomes", json=body, request_id=request_id,
+            idempotency_key=idempotency_key)
+        return _versioned(OutcomeSet, payload, headers)
+
+
 class NodesClient:
     def __init__(self, transport: V1Transport) -> None:
         self._transport = transport
@@ -1409,6 +1482,7 @@ class DCLabClient:
         self.model_versions = ModelVersionsClient(self._transport)
         self.releases = ReleasesClient(self._transport)
         self.scoring_schedules = ScoringSchedulesClient(self._transport)
+        self.monitoring = MonitoringClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)

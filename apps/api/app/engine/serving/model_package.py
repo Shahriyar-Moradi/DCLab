@@ -337,10 +337,13 @@ def build_package(
     target: str | None,
     cv: Mapping[str, Any],
     decision_threshold: float | None = None,
+    reference_summary: Mapping[str, Any] | None = None,
 ) -> bytes:
     """Package the fitted winner ``Pipeline([("prep", ...), ("model", ...)])``.
     Raises ``ModelPackageError`` when a part has no safe format (fail closed).
     ``decision_threshold``: the binary threshold locked from CV evidence (scoring labels with it).
+    ``reference_summary`` (P7.4-A, additive): training-partition distributions monitoring compares
+    new scorings with (``monitoring.build_reference``); packages without it predate monitoring.
     ``created_at`` is part of the manifest, so identical re-runs produce different digests."""
 
     steps = getattr(pipeline, "named_steps", None)
@@ -376,6 +379,8 @@ def build_package(
             "std": {str(k): _plain(v) for k, v in dict(cv.get("std") or {}).items()},
         },
     }
+    if reference_summary is not None:
+        manifest["reference_summary"] = dict(reference_summary)
     return _assemble(members, manifest)[0]
 
 

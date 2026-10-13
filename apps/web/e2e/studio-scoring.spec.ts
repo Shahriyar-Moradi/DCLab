@@ -127,10 +127,10 @@ test("Score new data: upload, column check, progress, download, missing column, 
   await page.getByLabel("Scoring file").setInputFiles({ name: "page-run.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv(25, { target: false, offset: 9000 })) });
   await page.getByRole("button", { name: "Score this file" }).click();
   await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ })).toBeVisible({ timeout: 120_000 });
-  await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ }).locator("xpath=ancestor::section[1]").getByText("Model v")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ }).locator("xpath=ancestor::section[1]").getByTestId("scored-with")).toContainText("Model v");
   await expect(history).toContainText("page-run.csv");
-  // Only what is built: no schedule, no per-row reasons, no raw terms.
-  await expect(page.locator("main")).not.toContainText(/weekly|every Monday|reasons for each|feature contract|holdout|artifact/i);
+  // Only what is built: the weekly scoring card is allowed here; no per-row reasons and no raw terms.
+  await expect(page.locator("main")).not.toContainText(/reasons for each|feature contract|holdout|artifact/i);
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "4b-predictions");
   // The model page's score tab is the same step of the flow bar.

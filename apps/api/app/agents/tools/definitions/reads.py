@@ -54,6 +54,10 @@ REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 SCHEDULE_NOTE = ("Read-only: only a person turns weekly scoring on or off, in DCLab Studio. Each week it scores the "
                  "newest file uploaded for scoring with the model in use approved for scoring; it never retrains "
                  "and never fetches data.")
+MONITORING_NOTE = ("Read-only and deterministic: drift means the inputs look different from training, not that the "
+                   "model is wrong; outcome metrics are real results of scored rows (never the final test set) and "
+                   "appear only after a person links them in DCLab Studio. Monitoring never retrains or switches a "
+                   "model.")
 GraphKind = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"]
 
 Id = Annotated[UUID, Field(description="Resource UUID.")]
@@ -112,6 +116,10 @@ class ListReleasesInput(BaseModel):
 
 
 class ScoringScheduleInput(BaseModel):
+    project_id: Id
+
+
+class MonitoringInput(BaseModel):
     project_id: Id
 
 
@@ -273,6 +281,11 @@ class ServiceReads:
         from app.services.scoring_schedule_service import schedule_state
 
         return schedule_state(self.db, **self._who, project_id=project_id, agent=True)  # no user ids
+
+    def monitoring(self, project_id: UUID) -> Any:
+        from app.services.monitoring_service import monitoring_overview
+
+        return monitoring_overview(self.db, **self._who, project_id=project_id)  # aggregates only, no user ids
 
     def decision(self, decision_id: UUID) -> Any:
         from app.services import decision_record_service as drs
@@ -811,6 +824,39 @@ def _scoring_schedule_shape(state: Any) -> Shaped:
             for r in state.recent_runs[:LIST_LIMIT]]
     return Shaped({"project_id": state.project_id, "status": code(state.status), "schedule": schedule,
                    "recent_runs": runs, "note": SCHEDULE_NOTE})
+
+
+def _monitoring_fetch(reads: Any, a: MonitoringInput) -> Any:
+    return reads.monitoring(a.project_id)
+
+
+def _monitoring_shape(view: Any) -> Shaped:
+    """Codes, dates, counts and numbers only: no summaries or finding text (they carry the
+    user's column names) and no feature names; PSI and outcome metrics are aggregates of the
+    workspace's scored and outcome files (real production outcomes, never the final test set)."""
+
+    windows = [{"window_start": w.window_start, "window_end": w.window_end, "revision": w.revision,
+                "model_version_id": w.model_version_id, "model_release_id": w.model_release_id,
+                "status": code(w.status), "summary_code": code(w.summary_code), "n_rows": w.n_rows,
+                "n_batch_predictions": w.n_batch_predictions, "max_psi": w.max_psi, "prediction_psi": w.prediction_psi,
+                "outcomes_status": code(w.outcomes_status or None), "n_labelled": w.n_labelled, "coverage": w.coverage,
+                "outcome_metric": code(w.outcome_metric), "outcome_metric_value": w.outcome_metric_value}
+               for w in view.windows[:LIST_LIMIT]]
+    t = view.thresholds
+    thresholds = {"psi_watch": t.psi_watch, "psi_alert": t.psi_alert, "significance_level": t.significance_level,
+                  "flagged_share_relative_watch": t.flagged_share_relative_watch,
+                  "flagged_share_absolute_watch": t.flagged_share_absolute_watch, "min_rows": t.min_rows,
+                  "min_labels": t.min_labels, "min_per_class": t.min_per_class}
+    # Scope: outcome metrics are real production labels, neither CV nor holdout. The catalog and the
+    # gateway know only "none" / "cv" (holdout never enters), so they ride under "cv", the scope
+    # below holdout; the tool is MCP-only (never in an in-app AI call). A distinct "production"
+    # scope is a follow-up for the gateway contract.
+    return Shaped({"project_id": view.project_id, "enabled": view.enabled, "status": code(view.status),
+                   "model_version_id": view.model_version_id, "model_version": code(view.model_version),
+                   "model_release_id": view.model_release_id,
+                   "finding": code(view.finding.code if view.finding is not None else None),
+                   "thresholds": thresholds, "windows": windows, "note": MONITORING_NOTE},
+                  data_class="aggregates", outcome_scope="cv", aggregates=("windows",))
 
 
 def _proposal_fetch(reads: Any, a: ProposalInput) -> Any:

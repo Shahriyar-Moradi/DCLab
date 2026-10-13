@@ -28,6 +28,9 @@ export const PredictionSchema = z.object({
   error_message: nullableString,
   /** P7.2-A: the approval this scoring ran with (only when the approved model in use scored). */
   release: ReleaseSummarySchema.nullable().optional(),
+  /** Queued by the project's weekly schedule (false when a person scored it by hand). */
+  scheduled: z.boolean().optional(),
+  scheduled_for: nullableString,
   created_at: z.string(),
   completed_at: nullableString,
   output: z.object({ artifact_id: z.string(), content_digest: z.string(), download_path: z.string(), size_bytes: z.number(), mime_type: nullableString }).nullable(),

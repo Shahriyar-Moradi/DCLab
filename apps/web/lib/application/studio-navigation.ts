@@ -27,9 +27,12 @@ export const STUDIO_BACKEND_FEATURES: StudioCapabilities = {
   improve: true, // guided Improve (P5.5-B-UI): existing branch API + GET /v1/experiments/{id}/verdict; no loop engine
   models: true, // GET /v1/model-versions/{id}, champion ref
   predictions: true, // score-new-data tab of the model in use; listed only once the project has one
-  monitoring: false, // monitoring windows arrive with P7.4
+  monitoring: true, // GET /v1/projects/{id}/monitoring (P7.4-A) + the Monitoring screen (P7.5-A)
   decisions: true, // GET /v1/projects/{id}/decisions
   assistant: false, // assistant panel (A3-UI): slot only
+  client_outcomes: true, // GET /v1/projects/{id}/outcomes (P7.6-A Business view)
+  client_predictions: false, // the latest list is a section of /outcomes, not its own page
+  client_questions: false, // questions from the data team and plain-language Q&A wait for checkpoint G6
 };
 
 export function studioRoleForUser(user: Pick<SessionUser, "capabilities"> | null): StudioRole | null {
@@ -50,4 +53,10 @@ export function studioNavigationForUser(
   const projectBase = isUuid(projectId) ? `/projects/${projectId}` : undefined;
   const groups = resolveSidebar(role, { capabilities: STUDIO_BACKEND_FEATURES, projectBase, targets });
   return projectBase ? groups : groups.filter((group) => group.id !== "project");
+}
+
+/** Business view sidebar (P7.6-A): workspace readers who may open the business pages see the client items only. */
+export function businessNavigationForUser(user: Pick<SessionUser, "capabilities"> | null): ResolvedSidebarGroup[] {
+  if (!hasCapability(user, CAPABILITIES.applicationAccess)) return [];
+  return resolveSidebar("client", { capabilities: STUDIO_BACKEND_FEATURES });
 }

@@ -500,6 +500,12 @@ def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[
             "reasons": reasons,
         }
     db.commit()
+    try:  # P7.4-A: queue the week's monitoring window; never fails the committed scoring
+        from app.services.monitoring_service import after_scoring_completed
+
+        after_scoring_completed(db, row)
+    except Exception:  # noqa: BLE001 - the hook logs its own failures; an import error lands here
+        logger.warning("monitoring hook unavailable after batch prediction", exc_info=True)
 
 
 def sync_prediction_with_job(db: Session, job: MlJob) -> None:

@@ -343,6 +343,7 @@ def execute_experiment(
     persist_scientific: bool = True,
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
+    target_labels: Mapping[str, Any] | None = None,
 ) -> Experiment:
     if experiment.scientific_evidence_locked_at is not None:
         # Re-running replaces preprocessing, findings, and stage facts. PostgreSQL
@@ -394,6 +395,7 @@ def execute_experiment(
             on_event=on_event,
             outer_fold_assignment=outer_fold_assignment,
             holdout_partition=holdout_partition,
+            target_labels=target_labels,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)

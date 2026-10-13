@@ -25,6 +25,8 @@ const WHAT: Record<string, string> = {
   proposal_rejected: "Rejected a suggestion",
   proposal_reverted: "Undid a suggestion",
   decision_point_resolved: "Settled a question with the rules and the assistant",
+  scoring_schedule_changed: "Changed weekly scoring",
+  monitoring_outcomes_linked: "Linked real outcomes",
   operating_point_chosen: "Recorded a preferred threshold",
 };
 

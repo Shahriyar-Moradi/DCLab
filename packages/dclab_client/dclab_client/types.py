@@ -1476,3 +1476,178 @@ class ScoringScheduleRunPage(BaseModel):
     project_id: UUID
     items: list[ScoringScheduleRun] = Field(default_factory=list)
     next_cursor: str | None = None
+
+
+class MonitoringThresholds(BaseModel):
+    """Code-owned monitoring thresholds (read-only): PSI watch / alert, the significance level a
+    shift must also pass, the flagged-share change that counts as a watch, and the minimum rows /
+    labelled rows / rows per class."""
+
+    psi_watch: float
+    psi_alert: float
+    significance_level: float
+    flagged_share_relative_watch: float
+    flagged_share_absolute_watch: float
+    min_rows: int
+    min_labels: int
+    min_per_class: int
+
+
+class MonitoringFinding(BaseModel):
+    """The one deterministic finding of an ``alert`` week (no proposal, no retrain)."""
+
+    code: str
+    severity: str = "alert"
+    title: str
+    body: str
+
+
+class MonitoringWindowSummary(BaseModel):
+    """One weekly window (Monday 00:00 UTC) of a model version, highest revision. ``status``:
+    ok, watch, alert or not_enough_data; outcome fields are null until real outcomes are linked."""
+
+    window_start: datetime
+    window_end: datetime
+    revision: int
+    model_version_id: UUID
+    model_release_id: UUID | None = None
+    status: str
+    summary_code: str
+    summary: str
+    n_rows: int
+    n_batch_predictions: int
+    max_psi: float | None = None
+    prediction_psi: float | None = None
+    outcomes_status: str
+    n_labelled: int | None = None
+    coverage: float | None = None
+    outcome_metric: str | None = None
+    outcome_metric_value: float | None = None
+    computed_at: datetime
+
+
+class MonitoringWindow(MonitoringWindowSummary):
+    """A window in detail: PSI per feature (top 20) with a plain sentence each, score drift and
+    outcomes. Drift means the inputs look different from training, not that the model is wrong."""
+
+    input_drift: dict[str, Any] = Field(default_factory=dict)
+    feature_sentences: list[str] = Field(default_factory=list)
+    prediction_drift: dict[str, Any] = Field(default_factory=dict)
+    outcomes: dict[str, Any] = Field(default_factory=dict)
+    outcome_sentences: list[str] = Field(default_factory=list)
+    finding: MonitoringFinding | None = None
+    thresholds: MonitoringThresholds
+    notes: list[str] = Field(default_factory=list)
+
+
+class MonitoringOverview(BaseModel):
+    """The model in use: latest status and the last 12 windows, newest first. ``status`` also
+    ``no_windows`` / ``no_model_in_use``."""
+
+    project_id: UUID
+    enabled: bool
+    model_version_id: UUID | None = None
+    model_version: str | None = None
+    model_release_id: UUID | None = None
+    status: str
+    latest: MonitoringWindowSummary | None = None
+    windows: list[MonitoringWindowSummary] = Field(default_factory=list)
+    finding: MonitoringFinding | None = None
+    thresholds: MonitoringThresholds
+    notes: list[str] = Field(default_factory=list)
+
+
+class OutcomeSet(_Versioned):
+    """A linked file of real outcomes (key and outcome columns are the user's column names)."""
+
+    id: UUID
+    project_id: UUID
+    dataset_id: UUID
+    dataset_name: str | None = None
+    key_column: str
+    outcome_column: str
+    linked_at: datetime
+    linked_by_user_id: UUID | None = None  # null for service tokens
+
+
+class OutcomeSetList(BaseModel):
+    project_id: UUID
+    items: list[OutcomeSet] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class BusinessOutcomesModel(BaseModel):
+    display_name: str  # untrusted: built from the project name
+    saved_at: datetime
+    approved_at: datetime | None = None  # null when no person approved it for scoring
+    approval_text: str
+
+
+class BusinessOutcomesNumbers(BaseModel):
+    """The final test of the model in use (fractions; errors in natural units)."""
+
+    rows_tested: int | None = None
+    recall: float | None = None
+    precision: float | None = None
+    decision_threshold: float | None = None
+    positives: int | None = None
+    found: int | None = None
+    flagged: int | None = None
+    balanced_accuracy: float | None = None
+    class_count: int | None = None
+    typical_error: float | None = None
+    large_miss_error: float | None = None
+    worse_than_average: bool | None = None
+
+
+class BusinessOutcomesHeadline(BaseModel):
+    status: str  # reported | withheld (service tokens) | missing
+    task: str | None = None
+    sentences: list[str] = Field(default_factory=list)
+    counts_text: str | None = None
+    basis: str
+    numbers: BusinessOutcomesNumbers | None = None
+
+
+class BusinessOutcomesHowBuilt(BaseModel):
+    sentences: list[str] = Field(default_factory=list)
+    rows: int | None = None
+    learned_rows: int | None = None
+    tested_rows: int | None = None
+    target: str | None = None
+    method: str | None = None
+    test_design: str | None = None
+
+
+class BusinessOutcomesList(BaseModel):
+    id: UUID  # the scoring to download with predictions.download
+    completed_at: datetime
+    rows: int
+    has_reasons: bool
+    text: str
+    download_path: str
+
+
+class BusinessOutcomesProject(BaseModel):
+    id: UUID
+    name: str  # untrusted
+
+
+class BusinessOutcomesProjectList(BaseModel):
+    items: list[BusinessOutcomesProject] = Field(default_factory=list)
+
+
+class BusinessOutcomes(BaseModel):
+    """The Business view of a project (P7.6-A): plain sentences built by the server."""
+
+    project_name: str
+    state: str  # ready | no_model | no_result
+    message: str | None = None
+    model_in_use: BusinessOutcomesModel | None = None
+    headline: BusinessOutcomesHeadline | None = None
+    how_built: BusinessOutcomesHowBuilt | None = None
+    weekly_list: BusinessOutcomesList | None = None
+    weekly_list_note: str | None = None
+    limits: list[str] = Field(default_factory=list)
+    boundary: str
+    untrusted_fields: list[str] = Field(default_factory=list)

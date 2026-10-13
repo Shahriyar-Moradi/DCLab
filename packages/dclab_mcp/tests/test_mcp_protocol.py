@@ -29,7 +29,8 @@ READ_TOOLS = {"inspect_project", "inspect_dataset", "get_experiment", "compare_e
               "get_impact", "accept_proposal", "list_proposals", "inspect_governance",
               "get_operating_points",  # P5.2-A
               "list_releases",  # P7.2-A
-              "get_scoring_schedule"}  # weekly scoring
+              "get_scoring_schedule",  # weekly scoring
+              "get_monitoring"}  # P7.4-A
 WRITE_TOOLS = {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
                "predict", "record_decision", "request_agent_review"}
 PACKAGES = Path(__file__).resolve().parents[2]

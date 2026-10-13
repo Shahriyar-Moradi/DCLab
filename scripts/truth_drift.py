@@ -88,6 +88,14 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     ("ScoringSchedule", "ScoringScheduleRead"),
     ("ScoringScheduleRun", "ScoringScheduleRunRead"),
     ("ScoringScheduleRunPage", "ScoringScheduleRunPage"),
+    # P7.4-A monitoring.
+    ("MonitoringOverview", "MonitoringOverviewRead"),
+    ("MonitoringWindowSummary", "MonitoringWindowSummary"),
+    ("MonitoringWindow", "MonitoringWindowRead"),
+    ("MonitoringThresholds", "MonitoringThresholds"),
+    ("MonitoringFinding", "MonitoringFinding"),
+    ("OutcomeSet", "OutcomeSetRead"),
+    ("OutcomeSetList", "OutcomeSetList"),
     # P4.10-A trust-check findings.
     ("ExperimentFindings", "ExperimentFindingsRead"),
     ("ExperimentFinding", "ExperimentFindingRead"),

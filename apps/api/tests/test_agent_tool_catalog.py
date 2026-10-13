@@ -99,16 +99,16 @@ def test_catalog_is_the_mcp_tool_set_with_get_impact():
     tools = catalog()
     reads = {name for name, item in tools.items() if item.effect == "read"}
     writes = {name for name, item in tools.items() if item.effect == "proposal"}
-    assert len(tools) == 25 and len(reads) == 18 and len(writes) == 7 and "get_impact" in reads
+    assert len(tools) == 26 and len(reads) == 19 and len(writes) == 7 and "get_impact" in reads
     assert writes == {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
                       "predict", "record_decision", "request_agent_review"}
     assert {item.name for item in visible("mcp")} == set(tools)
     # P6.6-A: the assistant surface is unchanged (no accept, no proposal listing, no review request).
     # P5.2-A: get_operating_points is MCP-only (the lead agent's released prompt lists its tools); so are
-    # P7.2-A list_releases and the weekly scoring get_scoring_schedule.
+    # P7.2-A list_releases, the weekly scoring get_scoring_schedule and P7.4-A get_monitoring.
     assert {item.name for item in visible("assistant")} == set(tools) - {
         "accept_proposal", "list_proposals", "request_agent_review", "inspect_governance", "get_operating_points",
-        "list_releases", "get_scoring_schedule"}
+        "list_releases", "get_scoring_schedule", "get_monitoring"}
     assert tools["accept_proposal"].surfaces == {"mcp"}  # a hand-off; the lead agent never gets it
     assert tools["list_proposals"].surfaces == {"mcp"} and "accept_proposal" not in {
         item.name for item in visible("studio_forms")}
@@ -336,7 +336,7 @@ def _read_calls(t: SimpleNamespace) -> list[tuple[str, dict]]:
         ("get_impact", {"kind": "experiment", "node_id": t.root}), ("accept_proposal", {"proposal_id": t.decision}),
         ("list_proposals", {"project_id": t.project}), ("inspect_governance", {}),
         ("get_operating_points", {"experiment_id": t.root}), ("list_releases", {"project_id": t.project}),
-        ("get_scoring_schedule", {"project_id": t.project}),
+        ("get_scoring_schedule", {"project_id": t.project}), ("get_monitoring", {"project_id": t.project}),
     ]
 
 

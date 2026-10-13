@@ -99,7 +99,7 @@ test("confirm step says what changes, what it replaces and what does not change"
   assert.match(text, /Nothing is retrained/);
   assert.match(text, /saved model file exists in a format DCLab can score with/);
   assert.match(text, /same test design as the model in use/);
-  assert.match(text, /weekly schedule is planned and not built/);
+  assert.match(text, /Weekly scoring, if it is on, uses the model in use when it is approved: see the Weekly scoring card on the Predictions screen/);
   assert.doesNotMatch(text, BANNED);
   assert.doesNotMatch(text, /final test/i);
   assert.match(confirmWords("approve", "Model v1", "Model v1").lines.join(" "), /Model v1 stays the model in use; this records its approval/);

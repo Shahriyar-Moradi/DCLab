@@ -1,7 +1,7 @@
-"""The catalog's tool definitions: the 18 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
+"""The catalog's tool definitions: the 19 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
 the MCP-only ``get_operating_points`` (P5.2-A), the MCP-only ``list_releases`` (P7.2-A), the MCP-only
-``get_scoring_schedule`` (weekly scoring) and the MCP-only ``accept_proposal`` hand-off) and the 7 write
-tools (proposals)."""
+``get_scoring_schedule`` (weekly scoring), the MCP-only ``get_monitoring`` (P7.4-A) and the MCP-only
+``accept_proposal`` hand-off) and the 7 write tools (proposals)."""
 
 from __future__ import annotations
 
@@ -121,6 +121,14 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           ("GET /v1/projects/{project_id}/scoring-schedule",),
           ("app.services.scoring_schedule_service.schedule_state",), r._scoring_schedule_fetch,
           r._scoring_schedule_shape, surfaces=frozenset({"mcp"})),
+    _read("get_monitoring", "Monitoring of a project's model in use, read-only and deterministic: the latest weekly "
+          "status (ok / watch / alert / not_enough_data) and the last 12 weeks (Monday 00:00 UTC) with the largest "
+          "input drift (PSI vs the training rows), score drift, rows scored and, once a person linked real outcomes, "
+          "labelled rows, coverage and the primary metric on them; code-owned thresholds and the alert finding code. "
+          "Drift means the inputs look different from training, not that the model is wrong; it never retrains or "
+          "switches a model.", r.MonitoringInput, ("GET /v1/projects/{project_id}/monitoring",),
+          ("app.services.monitoring_service.monitoring_overview",), r._monitoring_fetch, r._monitoring_shape,
+          surfaces=frozenset({"mcp"}), aggregates=True),
     _read("get_prediction", "Batch prediction: status, row counts, feature-contract check (required / "
           "missing / ignored columns), error code; never predicted rows or storage locations.", r.PredictionInput,
           ("GET /v1/predictions/{prediction_id}",), ("app.services.batch_prediction_service.batch_prediction_read",),
