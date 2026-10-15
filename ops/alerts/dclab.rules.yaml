@@ -1,0 +1,66 @@
+# DCLab alert rules (P8.5-A). Prometheus rule-file format; no infrastructure ships with this repo.
+# Metrics come from app/observability/metrics.py over OTLP (OTEL_EXPORTER_OTLP_ENDPOINT), translated
+# to Prometheus names by the collector: counters gain `_total`, gauges keep their names. Queue,
+# worker, schedule and readiness gauges are exported by the API process only.
+# Every rule names its runbook (docs/runbooks/); apps/api/tests/test_observability.py checks the links.
+groups:
+  - name: dclab
+    rules:
+      - alert: DclabJobFailureRateHigh
+        expr: |
+          (sum(rate(dclab_ml_jobs_total{status="failed"}[30m])) / sum(rate(dclab_ml_jobs_total[30m]))) > 0.2
+          and sum(increase(dclab_ml_jobs_total[30m])) >= 5
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: More than 20% of finished ML jobs failed in the last 30 minutes
+          threshold: "failed / finished > 0.2 over 30m, at least 5 jobs, for 15m"
+          runbook_url: docs/runbooks/job-failure-rate.md
+      - alert: DclabQueueAgeHigh
+        expr: max(dclab_ml_job_queue_age_seconds) > 600
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: The oldest queued ML job has waited more than 10 minutes
+          threshold: "oldest queued job age > 600 s for 5m"
+          runbook_url: docs/runbooks/queue-age.md
+      - alert: DclabWorkerHeartbeatStale
+        expr: max(dclab_workers_seen) == 0 or max(dclab_worker_heartbeat_age_seconds) > 120
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: No worker process has been seen by the database for 2 minutes
+          threshold: "no worker connected, or freshest worker last seen > 120 s ago (WORKER_HEARTBEAT_STALE_SECONDS), for 5m"
+          runbook_url: docs/runbooks/worker-heartbeat.md
+      - alert: DclabHttp5xxRateHigh
+        expr: |
+          (sum(rate(dclab_http_requests_total{status_class="5xx"}[5m])) / sum(rate(dclab_http_requests_total[5m]))) > 0.02
+          and sum(rate(dclab_http_requests_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: More than 2% of API requests answer 5xx
+          threshold: "5xx / all > 0.02 over 5m with > 0.1 req/s, for 10m"
+          runbook_url: docs/runbooks/http-5xx.md
+      - alert: DclabReadinessFailing
+        expr: min by (check) (dclab_readiness_ok) == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A required readiness check is failing: {{ $labels.check }}"
+          threshold: "GET /health/ready check failing (database, migrations or object_storage) for 5m"
+          runbook_url: docs/runbooks/readiness.md
+      - alert: DclabScheduledRunsMissed
+        expr: max(dclab_scoring_schedules_overdue) > 0
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Enabled weekly scoring schedules are past their slot
+          threshold: "at least one enabled schedule > 15 min past next_planned_for, for 30m"
+          runbook_url: docs/runbooks/scheduled-runs.md

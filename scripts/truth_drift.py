@@ -580,6 +580,10 @@ SDK_EXEMPT_V1_PATHS = frozenset({
     "/v1/assistant/threads", "/v1/assistant/threads/{}", "/v1/assistant/threads/{}/messages",
     # V7-B6: members' names and emails are for signed-in administrators (403 session_required for any bearer).
     "/v1/workspaces/{}/members",
+    # P8.4-A: plan limits and usage are for signed-in administrators (human-only route; no token read).
+    "/v1/workspaces/{}/usage",
+    # P8.5-A: operator reads are for signed-in platform staff (403 human_session_required for any bearer).
+    "/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/failed-jobs",
 })
 
 

@@ -29,13 +29,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.domain.batch_predictions import (
-    CONTRACT_CHECK_MAX_BYTES,
-    FEATURE_CONTRACT_FAILED,
-    SCORING_FAILED,
-    UNSUPPORTED_MODEL,
-    UNSUPPORTED_TRANSFORM,
-)
 from app.engine.explain.reasons import REASON_COLUMNS
 from app.engine.lab.auto_prepare import (
     apply_feature_engineering_actions,
@@ -43,6 +36,13 @@ from app.engine.lab.auto_prepare import (
     coerce_numeric_like,
 )
 from app.engine.modeling.objective import DEFAULT_THRESHOLD
+from app.engine.serving.codes import (
+    CONTRACT_CHECK_MAX_BYTES,
+    FEATURE_CONTRACT_FAILED,
+    SCORING_FAILED,
+    UNSUPPORTED_MODEL,
+    UNSUPPORTED_TRANSFORM,
+)
 
 logger = logging.getLogger(__name__)
 

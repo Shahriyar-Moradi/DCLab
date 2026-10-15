@@ -1173,9 +1173,15 @@ MONITORING_APPEND_ONLY_TRIGGER_SQL = tuple(
     for table in ("monitoring_windows", "monitoring_outcome_sets")
 )
 
+# 0081 (P8.4-A): usage records are append-only (identical literal in 0081_usage_records).
+USAGE_RECORDS_APPEND_ONLY_TRIGGER_SQL = (
+    "CREATE TRIGGER usage_records_append_only BEFORE UPDATE OR DELETE ON usage_records "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
 
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0080 install
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081 install
     (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
@@ -1203,6 +1209,7 @@ def install_immutability_triggers(connection) -> None:
     connection.execute(text(SCORING_SCHEDULE_RUNS_APPEND_ONLY_TRIGGER_SQL))
     for statement in MONITORING_APPEND_ONLY_TRIGGER_SQL:
         connection.execute(text(statement))
+    connection.execute(text(USAGE_RECORDS_APPEND_ONLY_TRIGGER_SQL))
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():

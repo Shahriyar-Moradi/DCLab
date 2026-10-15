@@ -149,10 +149,29 @@ class Settings(BaseSettings):
     ml_job_max_attempts: int = 3
     ml_job_heartbeat_timeout_seconds: float = 300.0
     ml_job_poll_seconds: float = 1.0
+    # P8.5-A observability. OpenTelemetry traces and metrics stay a no-op (nothing imported, nothing
+    # sent) unless OTEL_EXPORTER_OTLP_ENDPOINT is set or OBSERVABILITY_ENABLED=true; the SDK is the
+    # optional `[observability]` extra. LOG_FORMAT=json: one redacted JSON object per log line.
+    observability_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = ""
+    otel_service_name: str = "dclab"
+    log_format: str = "text"
+    log_level: str = "INFO"
+    # GET /health/ready: a worker unseen for longer than this is "stale" (degraded, not a 503).
+    worker_heartbeat_stale_seconds: float = 120.0
+    # GET /health/ready is unauthenticated: its checks run at most once per this many seconds per process.
+    readiness_cache_seconds: float = 5.0
     # Weekly scheduled scoring: the worker checks for due schedules every tick. false is the
     # platform kill switch: schedules still save, every run waits ("paused by the platform").
     scoring_schedule_enabled: bool = True
     scoring_schedule_tick_seconds: float = 60.0
+    # P8.4-A usage metering: the worker aggregates usage_records from the existing ledgers every
+    # tick (false: no new records; reads still answer, limits are still measured live).
+    usage_metering_enabled: bool = True
+    usage_metering_tick_seconds: float = 300.0
+    # P8.4-A plan limits refuse new runs, scorings and uploads with 429 quota_exceeded when reached.
+    # false: limits are shown but never refuse work (a process restart applies a change).
+    quotas_enforced: bool = True
 
 
 def is_production_env(settings: Settings) -> bool:

@@ -127,6 +127,63 @@ def cmd_governance_switch(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _limit_arg(raw: str | None):
+    """``--runs-per-day 100`` / ``unlimited`` / ``default`` (back to the default plan's value)."""
+
+    from app.services.usage_service import UNSET
+
+    if raw is None:
+        return None
+    word = raw.strip().lower()
+    if word == "unlimited":
+        return ("set", None)
+    if word == "default":
+        return ("set", UNSET)
+    if not word.isdigit():
+        raise SystemExit(f"limit must be a whole number, 'unlimited' or 'default': {raw!r}")
+    return ("set", int(word))
+
+
+def cmd_usage_set_plan(args: argparse.Namespace) -> int:
+    """P8.4-A: a named platform admin sets a workspace's plan and limits; no HTTP route (tenants
+    cannot change their own limits). Entitlement rows record ``platform_staff:<admin id>``.
+    ``--admin`` only records who did it (no password is asked): the control is who holds the
+    database credentials this command runs with."""
+
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.db.models import User
+    from app.domain.errors import IdentityError
+    from app.domain.usage import QUOTA_COMPUTE_SECONDS_MONTH, QUOTA_RUNS_PER_DAY, QUOTA_STORAGE_BYTES
+    from app.services.usage_service import set_plan
+
+    limits = {}
+    for key, raw in ((QUOTA_COMPUTE_SECONDS_MONTH, args.compute_seconds_month),
+                     (QUOTA_STORAGE_BYTES, args.storage_bytes), (QUOTA_RUNS_PER_DAY, args.runs_per_day)):
+        parsed = _limit_arg(raw)
+        if parsed is not None:
+            limits[key] = parsed[1]
+    db = _session()
+    try:
+        admin = db.scalar(select(User).where(func.lower(User.email) == args.admin.strip().lower()))
+        if admin is None:
+            print(json.dumps({"error": "unknown admin"}))
+            return 2
+        try:
+            result = set_plan(db, actor=admin, workspace_id=UUID(args.workspace), plan=args.plan, limits=limits)
+        except IdentityError as exc:
+            db.rollback()
+            print(json.dumps({"error": str(exc)}))
+            return 2
+        db.commit()
+        print(json.dumps(result))
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_agents_sync_prompts(args: argparse.Namespace) -> int:
     """Create prompt_releases rows from app/agents/prompts (ADR 0009 §2.8); --check only verifies."""
 
@@ -472,11 +529,19 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     import socket
     import time
 
+    from app import observability
     from app.config import get_settings, mark_worker_process
+    from app.observability.setup import setup as setup_observability
     from app.services.ml_job_service import process_next_job
     from app.services.scoring_schedule_service import run_scoring_schedule_tick
+    from app.services.system_health_service import mark_worker_connections
+    from app.services.usage_service import run_usage_metering_tick
 
     mark_worker_process()  # P7.1-A: this process may load stored models
+    # P8.5-A: name this worker's DB connections (liveness for /health/ready and the operator
+    # console; no new table), then logs / optional OTel for the worker process.
+    mark_worker_connections()
+    setup_observability("worker")
     settings = get_settings()
     print(json.dumps({"model_probe_limits": {"memory_bytes": settings.model_probe_memory_bytes,
                                              "timeout_seconds": settings.model_probe_timeout_seconds}}), file=sys.stderr)
@@ -487,12 +552,26 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     )
     claimed_by = f"{socket.gethostname()}:{os.getpid()}"[:128]
     next_tick = 0.0
+    next_usage_tick = 0.0
     while True:
+        if time.monotonic() >= next_usage_tick:  # P8.4-A usage metering (bounded, per-workspace transactions)
+            next_usage_tick = time.monotonic() + max(1.0, float(settings.usage_metering_tick_seconds))
+            db = _session()
+            try:
+                run_usage_metering_tick(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"usage metering tick: {exc}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
         if time.monotonic() >= next_tick:  # weekly scheduled scoring: queues jobs this loop then runs
             next_tick = time.monotonic() + max(1.0, float(settings.scoring_schedule_tick_seconds))
             db = _session()
             try:
-                run_scoring_schedule_tick(db)
+                with observability.scheduled_tick() as tick:
+                    runs = run_scoring_schedule_tick(db)
+                    queued = sum(1 for run in runs if run.outcome == "queued")
+                    tick.labels = {"runs_queued": queued, "runs_skipped": len(runs) - queued}
             except Exception as exc:  # noqa: BLE001 - never stops job processing
                 print(json.dumps({"error": f"scoring schedule tick: {exc}"}), file=sys.stderr)
                 db.rollback()
@@ -571,6 +650,18 @@ def build_parser() -> argparse.ArgumentParser:
     governance_switch.add_argument("--reason", required=True)
     governance_switch.add_argument("--workspace", default=None, help="workspace id (omit for platform keys)")
     governance_switch.set_defaults(func=cmd_governance_switch)
+
+    usage = sub.add_parser("usage", help="P8.4-A plans and limits (platform staff)")
+    usage_sub = usage.add_subparsers(dest="usage_cmd", required=True)
+    set_plan = usage_sub.add_parser("set-plan", help="set a workspace's plan name and limits")
+    set_plan.add_argument("workspace", help="workspace id")
+    set_plan.add_argument("--admin", required=True,
+                          help="email of the platform admin (recorded only, not authenticated: database "
+                               "credentials are the control)")
+    set_plan.add_argument("--plan", default=None, help="plan name (a label, e.g. beta, team)")
+    for flag in ("--compute-seconds-month", "--storage-bytes", "--runs-per-day"):
+        set_plan.add_argument(flag, default=None, help="whole number, 'unlimited' or 'default'")
+    set_plan.set_defaults(func=cmd_usage_set_plan)
 
     agents = sub.add_parser("agents")
     agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)

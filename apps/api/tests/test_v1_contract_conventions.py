@@ -38,9 +38,12 @@ WORKSPACE_FREE = {"/v1/me", "/v1/workspaces"}
 # Signed-in sessions only; any Authorization header is a 403 with this code (P3.2-A; P6.3-B2).
 SESSION_ONLY = {"/v1/service-tokens": "session_required", "/v1/service-tokens/{token_id}/revoke": "session_required",
                 "/v1/workspaces/{workspace_id}/members": "session_required",
+                "/v1/workspaces/{workspace_id}/usage": "session_required",
                 **{path: "human_session_required" for path in (
                     "/v1/assistant/threads", "/v1/assistant/threads/{thread_id}",
-                    "/v1/assistant/threads/{thread_id}/messages")}}
+                    "/v1/assistant/threads/{thread_id}/messages",
+                    # P8.5-A: platform-staff operator reads (signed-in sessions only).
+                    "/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/failed-jobs")}}
 
 
 def _operations() -> list[tuple[str, str]]:
@@ -126,6 +129,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/me",
         "GET /v1/workspaces",
         "GET /v1/workspaces/{workspace_id}/members",
+        "GET /v1/workspaces/{workspace_id}/usage",
         "GET /v1/projects",
         "POST /v1/projects",
         "GET /v1/activity",
@@ -202,6 +206,9 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/governance/policy/{proposal_id}/accept",
         "POST /v1/governance/switches",
         "POST /v1/agent-runs/{run_id}/replay",
+        "GET /v1/operator/overview",
+        "GET /v1/operator/workspaces",
+        "GET /v1/operator/failed-jobs",
     }
 
 

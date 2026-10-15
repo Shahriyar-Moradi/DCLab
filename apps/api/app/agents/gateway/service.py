@@ -69,6 +69,7 @@ from app.agents.prompt_releases import (
 )
 from app.agents.semantic import releases
 from app.agents.semantic.releases import SUBJECT_KEY, release_for
+from app import observability
 from app.config import get_settings
 from app.db.models import DatasetColumn, LlmInvocation, PromptRelease, SemanticDecisionAnswer
 
@@ -510,6 +511,14 @@ class GatewayService:
                  annotate: Annotate | None = None) -> CompletionResponse:
         """``annotate`` (legacy writers only): see ``contract.LedgerNote``."""
 
+        with observability.llm_call("completion") as observed:  # P8.5-A: outcome codes only
+            response = self._complete(db, request, annotate=annotate)
+            observed.status = "ok" if response.ok else (response.refusal.code if response.refusal else "error")
+            observed.labels = {"provider": response.provider, "model": response.model}
+        return response
+
+    def _complete(self, db: Session, request: CompletionRequest, *,
+                  annotate: Annotate | None = None) -> CompletionResponse:
         try:
             call = _Call(kind="completion", request=request, role=request.agent_role,
                          agent_key=request.agent_key, agent_role=request.agent_role,
@@ -521,6 +530,12 @@ class GatewayService:
             return CompletionResponse(ok=False, refusal=Refusal(code="provider_error", message="gateway failure"))
 
     def decide(self, db: Session, request: SemanticDecisionRequest) -> SemanticDecisionResponse:
+        with observability.llm_call("semantic") as observed:
+            response = self._decide(db, request)
+            observed.status = "ok" if response.ok else (response.refusal.code if response.refusal else "error")
+        return response
+
+    def _decide(self, db: Session, request: SemanticDecisionRequest) -> SemanticDecisionResponse:
         try:
             call = _Call(kind="semantic", request=request, role="jev", agent_key=None, agent_role=None,
                          provider_kind="semantic_decision", mode="semantic_decision")

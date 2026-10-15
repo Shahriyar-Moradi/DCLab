@@ -5,6 +5,7 @@ import {
   REQUEST_ID_HEADER,
   WORKSPACE_HEADER,
 } from "./active-workspace";
+import { errorMessage } from "./api-error-message";
 import { CSRF_HEADER, ensureCsrfToken } from "./csrf";
 import { notifySessionChanged } from "./session";
 
@@ -116,14 +117,6 @@ function mergeRequestHeaders(path: string, method: string, context: RequestWorks
     return base;
   }
   return csrfHeaders(path, context, base);
-}
-
-/** Legacy ``{detail}`` bodies and the /v1 ``{error: {message}}`` envelope. */
-function errorMessage(body: unknown): string | null {
-  if (typeof body !== "object" || !body) return null;
-  if ("detail" in body) return String((body as { detail: unknown }).detail);
-  const error = (body as { error?: { message?: unknown } }).error;
-  return error && typeof error.message === "string" ? error.message : null;
 }
 
 async function request<T>(

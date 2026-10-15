@@ -119,6 +119,7 @@ from app.domain.state_graph import GRAPH_EXPERIMENT_WINDOW
 from app.domain.reproducibility import ArtifactRead
 from app.domain.dataset_profile import DatasetProfileRead, DatasetVersionRead
 from app.domain.technical_explorer import DatasetListItem
+from app.domain.usage import UsageRead
 from app.domain.workspace_identity import (
     ProblemSpecCreateRequest,
     ProblemSpecRead,
@@ -156,6 +157,7 @@ from app.services.dataset_profile_service import DatasetNotFoundError, dataset_p
 from app.services.technical_explorer_service import list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
 from app.services.workspace_service import list_workspace_members, list_workspaces_for_actor
+from app.services.usage_service import usage_read
 from app.services.workspace_selection_service import principal_read, service_token_principal_read
 
 router = APIRouter(
@@ -258,6 +260,32 @@ def read_workspace_members(
         body = list_workspace_members(db, actor=user, workspace_id=request_workspace_id(request))
     except IdentityError as exc:
         raise domain_error(exc, code="members_not_permitted" if exc.status_code == 403 else None) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get("/workspaces/{workspace_id}/usage", response_model=UsageRead)
+def read_workspace_usage(
+    workspace_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_session_workspace_member),
+    db: Session = Depends(get_db),
+) -> UsageRead:
+    """How much the workspace used (P8.4-A), measured from DCLab's own records (an estimate, not an
+    invoice): this month's and last month's totals per kind, the last 31 UTC days, the plan's limits
+    with `used` measured now (`warning` from 80%, `over` at the limit: new runs, scorings or uploads
+    of that kind are refused with 429 `quota_exceeded` until `resets_at`), and the AI spend against
+    the workspace's existing AI budget. No person ids, no per-user split, no file names. Signed-in
+    owners, administrators and ML engineers only (403 `usage_not_permitted`; any bearer 403
+    `session_required`); another workspace is 404. Never cached."""
+
+    del workspace_id  # the path id was matched to the caller's selected workspace by the dependency
+    try:
+        body = usage_read(db, actor=user, workspace_id=request_workspace_id(request))
+    except IdentityError as exc:
+        raise domain_error(exc, code="usage_not_permitted" if exc.status_code == 403 else None) from exc
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Authorization, Cookie"
     return body
@@ -860,7 +888,7 @@ def _dataset_upload_read(db: Session, dataset: Any) -> DatasetUploadRead:
     "/datasets",
     response_model=DatasetUploadRead,
     status_code=201,
-    responses={**_CREATED_RESPONSES, **error_responses(411, 413)},
+    responses={**_CREATED_RESPONSES, **error_responses(411, 413, 429)},
     openapi_extra={"requestBody": _DATASET_UPLOAD_BODY},
 )
 async def create_dataset_v1(
@@ -876,7 +904,8 @@ async def create_dataset_v1(
     ``purpose=scoring`` marks rows to score (no target; refused as a run source).
     Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
     project and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;
-    a structurally invalid file: ``422 upload_rejected`` (nothing is kept).
+    a structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its
+    storage limit: ``429 quota_exceeded`` (nothing is stored).
     """
 
     workspace_id = request_workspace_id(request)

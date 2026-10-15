@@ -9,6 +9,7 @@ export const SESSION_HEADER = "X-DCLab-Session";
 export const BACKEND_UNAVAILABLE = "backend unavailable";
 export const PAYLOAD_TOO_LARGE = "payload too large";
 export const RESPONSE_TOO_LARGE = "response too large";
+export const NOT_PROXIED = "not found";
 
 const BODYLESS_STATUSES = new Set([204, 205, 304]);
 const FORWARD_REQUEST_HEADERS = [
@@ -196,6 +197,11 @@ export async function proxyBackend(
   fetchImpl: typeof fetch = fetch,
 ): Promise<NextResponse> {
   const requestId = resolveRequestId(req.headers.get("x-request-id"));
+  // /health/* probes (readiness, P8.5-A) hit the API directly: the public origin never fans out to
+  // them. Plain /health (liveness) stays proxied for Studio's health pill.
+  if ((path[0] ?? "").toLowerCase() === "health" && path.length > 1) {
+    return jsonError(404, NOT_PROXIED, requestId);
+  }
   const upload = await readBoundedUpload(req, maxUploadBytes());
   if (upload.tooLarge) {
     return jsonError(413, PAYLOAD_TOO_LARGE, requestId);

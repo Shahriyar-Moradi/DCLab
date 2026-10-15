@@ -14,11 +14,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.config import REPO_ROOT
-
-RAW = REPO_ROOT / "data" / "olist" / "raw"
-CLEANED = REPO_ROOT / "data" / "olist" / "cleaned"
-ANALYTICAL = REPO_ROOT / "data" / "olist" / "analytical"
+# Development default: this checkout's data/olist (the same directory as
+# app.config.REPO_ROOT / "data" / "olist", resolved here so the engine does not import
+# server settings). Callers pass ``root`` / ``raw_root`` to read from anywhere else.
+OLIST_DATA_ROOT = Path(__file__).resolve().parents[5] / "data" / "olist"
+RAW = OLIST_DATA_ROOT / "raw"
+CLEANED = OLIST_DATA_ROOT / "cleaned"
+ANALYTICAL = OLIST_DATA_ROOT / "analytical"
 
 FILES = {
     "customers": "olist_customers_dataset.csv",

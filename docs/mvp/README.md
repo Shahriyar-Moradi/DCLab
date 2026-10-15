@@ -13,6 +13,7 @@ ADRs and designs are carried forward here and cited where they are reused.
 | [UI_COVERAGE.md](UI_COVERAGE.md) | Every `/v1` operation and MCP tool mapped to its Studio screen (exists / planned prompt / API-only) |
 | [EXECUTION_GUIDE.md](EXECUTION_GUIDE.md) | How to run a prompt with Claude Code, model selection rubric, definition of done |
 | [prompts/](prompts/) | One file per phase plus [ASSISTANT.md](prompts/ASSISTANT.md) (Track A, the in-app assistant); each prompt is one commit, merged in batches at merge points |
+| [OPEN_SOURCE_PLAN.md](OPEN_SOURCE_PLAN.md) | P8.6: what would be published (engine, SDK, MCP), the enforced engine import boundary, extraction approach, clean-public-repo checklist; license options in [ADR 0011](../adr/0011-open-source-license.md) (Proposed) |
 | [../QUICKSTART_MCP.md](../QUICKSTART_MCP.md) | Connect Claude Code to DCLab over MCP (service token, `.mcp.json`, Phase 3 walk-through) |
 | [STATUS.md](STATUS.md) | The only progress ledger (prompt → done/date/SHA/evidence) |
 

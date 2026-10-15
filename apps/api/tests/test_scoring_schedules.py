@@ -333,6 +333,7 @@ def test_scheduled_scoring_end_to_end_through_the_worker(client, db_session, set
     monkeypatch.setattr(sss, "_now", lambda: week + timedelta(minutes=5))
     monkeypatch.setattr("app.cli.main._session", lambda: Session(bind=db.get_bind()))
     monkeypatch.setattr("app.config._PROCESS_ROLE", {"worker": False})  # restored after the test
+    monkeypatch.setenv("PGAPPNAME", "pytest")  # the worker names its connections (P8.5-A); restored after
     assert cmd_worker_run(argparse.Namespace(once=True, poll_seconds=None)) == 0
     assert _predictions(db) == before + 1
     run = _runs(db, setup)[-1]

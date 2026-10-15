@@ -282,3 +282,14 @@ def test_get_model_card_is_holdout_blind_and_wraps_user_text():
     assert card["cv"]["mean"] == 0.81 and card["baseline"]["beats_baseline"] is True
     invalid = _call_with(handler, "get_model_card", {"model_version_id": "../x"})
     assert invalid.is_error and len(seen) == 1
+
+
+def test_help_and_version_answer_without_config_or_starting_the_server(capsys, monkeypatch):
+    from dclab_mcp import __version__
+    from dclab_mcp.server import main
+
+    monkeypatch.setattr("dclab_mcp.server.build_server", lambda *_: pytest.fail("server must not start"))
+    assert main(["--help"]) == 0
+    assert "usage: dclab-mcp" in capsys.readouterr().out
+    assert main(["--version"]) == 0
+    assert capsys.readouterr().out.strip() == f"dclab-mcp {__version__}"

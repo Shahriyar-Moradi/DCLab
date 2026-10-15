@@ -76,6 +76,8 @@ Rules of the topology:
 5. Code that will become open source lives behind package boundaries:
    `app/engine` (ML engine, no DB imports), `packages/dclab_client` (SDK),
    `packages/dclab_mcp` (MCP server). Services/DB/Studio stay product code.
+   The engine boundary is enforced by `tests/test_engine_import_boundary.py`
+   (P8.6-A; see [OPEN_SOURCE_PLAN.md](OPEN_SOURCE_PLAN.md)).
 
 ## 3. Fundamentals
 

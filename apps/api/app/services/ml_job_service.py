@@ -240,12 +240,15 @@ def commit_job_heartbeat(
 
 
 def ensure_run_capacity(
-    db: Session, workspace_id: UUID, *, job_types: tuple[str, ...] = (JOB_TYPE_AUTO_TRAIN, JOB_TYPE_BATCH_PREDICT)
+    db: Session, workspace_id: UUID, *, job_types: tuple[str, ...] = (JOB_TYPE_AUTO_TRAIN, JOB_TYPE_BATCH_PREDICT),
+    resume: bool = False,
 ) -> None:
     """Refuse a new job of ``job_types`` (default: training runs and batch scoring, one
     shared worker budget) when the workspace holds its maximum of queued + running ones (``RunQuotaExceededError``, 429).
     Serialized per workspace by a transaction-scoped advisory lock, so concurrent
-    creators cannot overshoot."""
+    creators cannot overshoot. Then the P8.4-A plan limits (``QuotaExceededError``, 429
+    ``quota_exceeded``). ``resume=True``: a parked run continues (target or split confirmed),
+    so it is not counted again as a run started today."""
 
     limit = int(get_settings().ml_max_active_runs_per_workspace)
     db.execute(
@@ -262,6 +265,15 @@ def ensure_run_capacity(
     )
     if int(active or 0) >= limit:
         raise RunQuotaExceededError(limit)
+    # P8.4-A plan limits: runs started today (under this lock), this month's compute, and storage
+    # (runs and scorings write files). Admission only: the worker never checks.
+    from app.domain.usage import QUOTA_COMPUTE_SECONDS_MONTH, QUOTA_RUNS_PER_DAY, QUOTA_STORAGE_BYTES
+    from app.services.usage_service import ensure_within_quota
+
+    if not resume:
+        ensure_within_quota(db, workspace_id, QUOTA_RUNS_PER_DAY, requested=1)
+    ensure_within_quota(db, workspace_id, QUOTA_COMPUTE_SECONDS_MONTH)
+    ensure_within_quota(db, workspace_id, QUOTA_STORAGE_BYTES)
 
 
 def _mark_job_cancelled(job: MlJob, *, now: datetime) -> None:
@@ -667,5 +679,11 @@ def process_next_job(
     if job is None:
         db.commit()
         return None
+    labels = {"job_id": job.id, "job_type": job.job_type, "handler_key": job.handler_key, "attempt": job.attempts}
     db.commit()
-    return execute_job(db, job, runner=runner)
+    from app import observability  # P8.5-A: span + dclab_ml_jobs; no-op unless configured
+
+    with observability.job(**labels) as outcome:
+        finished = execute_job(db, job, runner=runner)
+        outcome.status = finished.status
+    return finished

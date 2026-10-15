@@ -37,9 +37,9 @@ import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.pipeline import Pipeline
 
-from app.domain.batch_predictions import SCORING_FAILED, UNSUPPORTED_MODEL
 from app.engine.serving import package_checks as checks
 from app.engine.serving.batch_scoring import ScoringError
+from app.engine.serving.codes import SCORING_FAILED, UNSUPPORTED_MODEL
 from app.engine.serving.model_package import (
     ESTIMATOR_MEMBERS,
     NATIVE_ESTIMATOR_MAX_BYTES,

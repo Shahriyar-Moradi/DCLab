@@ -373,6 +373,8 @@ def _newest_new_file(db: Session, schedule: ScoringSchedule, model: ModelVersion
 
 def _queue_failure_reason(exc: Exception) -> str:
     if isinstance(exc, RunQuotaExceededError):
+        # Includes a P8.4-A plan limit (QuotaExceededError): the closed reason codes are a 0079 CHECK,
+        # so it is recorded as the nearest code, run_limit; which limit ran out is in the worker log.
         return REASON_RUN_LIMIT
     code = getattr(exc, "code", None)
     if code == "release_required":

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline as SkPipeline
 
-from app.domain.lab_run_stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
+from app.engine.experiments.stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
 from app.engine.data.quality import quality_report
 from app.engine.evaluation.metrics import (
     LOWER_IS_BETTER,

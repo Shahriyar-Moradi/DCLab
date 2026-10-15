@@ -134,6 +134,8 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("GET", "/v1/service-tokens"),
         # V7-B6: members' names and emails are for signed-in administrators (session_required for any bearer).
         ("GET", "/v1/workspaces/{workspace_id}/members"),
+        # P8.4-A: usage and plan limits are for signed-in owners, administrators and ML engineers.
+        ("GET", "/v1/workspaces/{workspace_id}/usage"),
         ("POST", "/v1/service-tokens"),
         ("POST", "/v1/service-tokens/{token_id}/revoke"),
         ("POST", "/v1/decisions/{decision_id}/accept"),
@@ -165,6 +167,10 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/assistant/threads"),
         ("GET", "/v1/assistant/threads/{thread_id}"),
         ("POST", "/v1/assistant/threads/{thread_id}/messages"),
+        # P8.5-A: the operator reads are for signed-in platform staff (403 human_session_required).
+        ("GET", "/v1/operator/overview"),
+        ("GET", "/v1/operator/workspaces"),
+        ("GET", "/v1/operator/failed-jobs"),
     }
 )
 

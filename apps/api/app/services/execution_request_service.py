@@ -503,6 +503,18 @@ def mark_execution_needs_input(
     return request
 
 
+def _admit_resume(db: Session, workspace_id: UUID, job: MlJob | None) -> None:
+    """A parked run continues only within the workspace's limits (P8.4-A): the active-run check
+    and the plan limits, not counted again as a run started today. Called before anything is
+    written, so a refusal (429) leaves the job parked and the request waiting."""
+
+    if job is None or job.status == JOB_RUNNING:
+        return
+    from app.services.ml_job_service import ensure_run_capacity
+
+    ensure_run_capacity(db, workspace_id, resume=True)
+
+
 def _resume_auto_train_job(
     db: Session,
     *,
@@ -597,6 +609,7 @@ def confirm_execution_target(
         locked_job.status == JOB_CANCELLED or locked_job.cancel_requested_at is not None
     ):
         raise ExecutionNotWaitingError("cancelled")
+    _admit_resume(db, workspace_id, locked_job)
     dataset_id = upload.dataset_id if upload is not None else None
     if dataset_id is None:
         spec = request.request_spec if isinstance(request.request_spec, dict) else {}
@@ -782,6 +795,7 @@ def confirm_execution_split(
     locked_job = _job_for_request(db, request, upload, for_update=True)
     if locked_job is not None and (locked_job.status == JOB_CANCELLED or locked_job.cancel_requested_at is not None):
         raise ExecutionNotWaitingError("cancelled")
+    _admit_resume(db, workspace_id, locked_job)
     now = datetime.now(UTC)
     confirmer = {"confirmed_by": str(actor.id)}
     if service_token_id is not None:

@@ -301,6 +301,7 @@
           "411",
           "413",
           "422",
+          "429",
           "500"
         ],
         "successSchema": "DatasetUploadRead"
@@ -1286,6 +1287,79 @@
         "successSchema": "NodeImpactRead"
       }
     },
+    "/v1/operator/failed-jobs": {
+      "GET": {
+        "operationId": "read_failed_jobs_v1_operator_failed_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatorFailedJobPage"
+      }
+    },
+    "/v1/operator/overview": {
+      "GET": {
+        "operationId": "read_overview_v1_operator_overview_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatorOverviewRead"
+      }
+    },
+    "/v1/operator/workspaces": {
+      "GET": {
+        "operationId": "read_workspaces_v1_operator_workspaces_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatorWorkspacePage"
+      }
+    },
     "/v1/outcomes/projects": {
       "GET": {
         "operationId": "read_outcome_projects_v1_outcomes_projects_get",
@@ -2188,6 +2262,29 @@
           "500"
         ],
         "successSchema": "WorkspaceMembersRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/usage": {
+      "GET": {
+        "operationId": "read_workspace_usage_v1_workspaces__workspace_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "UsageRead"
       }
     }
   },

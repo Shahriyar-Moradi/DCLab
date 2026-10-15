@@ -1006,7 +1006,13 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
 
 
 def main(argv: list[str] | None = None) -> int:
-    del argv
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] in (["-h"], ["--help"]):  # P8.6-A: answer without reading config or starting
+        print("usage: dclab-mcp [--help | --version]\n\n" + "\n\n".join((__doc__ or "").split("\n\n")[:3]).strip())
+        return 0
+    if args[:1] == ["--version"]:
+        print(f"dclab-mcp {__version__}")
+        return 0
     try:
         server = build_server(settings_from_env(os.environ))
     except ConfigError as exc:

@@ -204,7 +204,8 @@ export interface paths {
          *     ``purpose=scoring`` marks rows to score (no target; refused as a run source).
          *     Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
          *     project and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;
-         *     a structurally invalid file: ``422 upload_rejected`` (nothing is kept).
+         *     a structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its
+         *     storage limit: ``429 quota_exceeded`` (nothing is stored).
          */
         post: operations["create_dataset_v1_v1_datasets_post"];
         delete?: never;
@@ -1011,6 +1012,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/operator/failed-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Failed Jobs
+         * @description Failed ML jobs, newest first: job and workspace ids, type, handler, failure code, attempts.
+         */
+        get: operations["read_failed_jobs_v1_operator_failed_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operator/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Overview
+         * @description Platform health in counts: workspaces, jobs of the last 24 h by type and status, queue
+         *     depth and oldest age, workers (no ids), failure codes, platform AI caps, readiness.
+         */
+        get: operations["read_overview_v1_operator_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/operator/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Workspaces
+         * @description Every workspace (oldest first): id, name, kind, member / project / job counts.
+         */
+        get: operations["read_workspaces_v1_operator_workspaces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/outcomes/projects": {
         parameters: {
             query?: never;
@@ -1633,6 +1695,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Workspace Usage
+         * @description How much the workspace used (P8.4-A), measured from DCLab's own records (an estimate, not an
+         *     invoice): this month's and last month's totals per kind, the last 31 UTC days, the plan's limits
+         *     with `used` measured now (`warning` from 80%, `over` at the limit: new runs, scorings or uploads
+         *     of that kind are refused with 429 `quota_exceeded` until `resets_at`), and the AI spend against
+         *     the workspace's existing AI budget. No person ids, no per-user split, no file names. Signed-in
+         *     owners, administrators and ML engineers only (403 `usage_not_permitted`; any bearer 403
+         *     `session_required`); another workspace is 404. Never cached.
+         */
+        get: operations["read_workspace_usage_v1_workspaces__workspace_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1814,6 +1902,33 @@ export interface components {
             usage?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * AiSpendRead
+         * @description The workspace's existing AI budget (``workspace_llm_budgets``; the AI gateway enforces it).
+         */
+        AiSpendRead: {
+            /** Currency */
+            currency: string;
+            /** Hard Stop */
+            hard_stop: boolean;
+            /** Limit Micros */
+            limit_micros: number;
+            /** Over */
+            over: boolean;
+            /** Percent */
+            percent: number | null;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /** Reserved Micros */
+            reserved_micros: number;
+            /** Spent Micros */
+            spent_micros: number;
+            /** Warning */
+            warning: boolean;
         };
         /** ArtifactRead */
         ArtifactRead: {
@@ -3606,6 +3721,13 @@ export interface components {
             /** Selection Metric */
             selection_metric?: string | null;
         };
+        /** FailureCodeCountRead */
+        FailureCodeCountRead: {
+            /** Code */
+            code: string;
+            /** Count */
+            count: number;
+        };
         /** GovernanceRead */
         GovernanceRead: {
             /** Ai Enabled Setting */
@@ -4015,6 +4137,15 @@ export interface components {
             subject_key: string;
             /** Subject Kind */
             subject_kind: string;
+        };
+        /** JobCountRead */
+        JobCountRead: {
+            /** Count */
+            count: number;
+            /** Job Type */
+            job_type: string;
+            /** Status */
+            status: string;
         };
         /** LatestRunRead */
         LatestRunRead: {
@@ -5367,6 +5498,101 @@ export interface components {
              */
             uses: "locked_threshold";
         };
+        /** OperatorFailedJobPage */
+        OperatorFailedJobPage: {
+            /** Items */
+            items: components["schemas"]["OperatorFailedJobRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** OperatorFailedJobRead */
+        OperatorFailedJobRead: {
+            /** Attempts */
+            attempts: number;
+            /**
+             * Code
+             * @description A stable failure code, or see_logs (free-text reasons are never returned).
+             */
+            code: string;
+            /**
+             * Failed At
+             * Format: date-time
+             */
+            failed_at: string;
+            /** Handler Key */
+            handler_key: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Job Type */
+            job_type: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** OperatorOverviewRead */
+        OperatorOverviewRead: {
+            /** Failed Jobs Last 24H */
+            failed_jobs_last_24h: components["schemas"]["FailureCodeCountRead"][];
+            /**
+             * Failed Jobs Last 24H Truncated
+             * @description True when more failed jobs than the scan bound (5000, newest first) exist: counts are a lower bound.
+             */
+            failed_jobs_last_24h_truncated: boolean;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Jobs Last 24H */
+            jobs_last_24h: components["schemas"]["JobCountRead"][];
+            platform_ai_caps: components["schemas"]["PlatformAiCapsRead"];
+            queue: components["schemas"]["QueueRead"];
+            readiness: components["schemas"]["ReadinessRead"];
+            workers: components["schemas"]["WorkersRead"];
+            workspaces: components["schemas"]["WorkspaceTotalsRead"];
+        };
+        /** OperatorWorkspacePage */
+        OperatorWorkspacePage: {
+            /** Items */
+            items: components["schemas"]["OperatorWorkspaceRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** OperatorWorkspaceRead */
+        OperatorWorkspaceRead: {
+            /** Active Last 7D */
+            active_last_7d: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Failed Jobs Last 24H */
+            failed_jobs_last_24h: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Jobs Last 30D */
+            jobs_last_30d: number;
+            /** Kind */
+            kind: string;
+            /** Member Count */
+            member_count: number;
+            /**
+             * Name
+             * @description Customer-chosen text: render as plain text.
+             */
+            name: string;
+            /** Project Count */
+            project_count: number;
+        };
         /** OutcomeSetCreateRequest */
         OutcomeSetCreateRequest: {
             /**
@@ -5700,6 +5926,28 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /**
+         * PlatformAiCapsRead
+         * @description Code-owned caps (``agents/governance/platform_default``) and the AI_ENABLED setting. Read-only.
+         */
+        PlatformAiCapsRead: {
+            /** Ai Enabled */
+            ai_enabled: boolean;
+            /** Auto Release */
+            auto_release: boolean;
+            /** Budgets */
+            budgets: {
+                [key: string]: number | boolean;
+            };
+            /** Max Data Class */
+            max_data_class: string;
+            /** Model Allowlist */
+            model_allowlist: string[];
+            /** Sample Values Per Column */
+            sample_values_per_column: number;
+            /** User Text To Jev */
+            user_text_to_jev: boolean;
         };
         /** PolicyAcceptRequest */
         PolicyAcceptRequest: {
@@ -6303,6 +6551,13 @@ export interface components {
             /** Validator Verdict */
             validator_verdict: string;
         };
+        /** QueueRead */
+        QueueRead: {
+            /** Depth */
+            depth: number;
+            /** Oldest Age Seconds */
+            oldest_age_seconds: number | null;
+        };
         /**
          * R3EvidenceRead
          * @description A link to a stored R3 run: ids, digests, pair and a verdict summary. Never the report body.
@@ -6352,6 +6607,39 @@ export interface components {
              * @default false
              */
             verdict_current: boolean;
+        };
+        /** ReadinessCheckRead */
+        ReadinessCheckRead: {
+            /**
+             * Code
+             * @description Stable reason code (no secrets, no versions).
+             */
+            code?: string | null;
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "database" | "migrations" | "object_storage" | "worker";
+            /**
+             * Required
+             * @description A failing required check makes GET /health/ready answer 503.
+             */
+            required: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failing" | "stale" | "unknown" | "skipped";
+        };
+        /** ReadinessRead */
+        ReadinessRead: {
+            /** Checks */
+            checks: components["schemas"]["ReadinessCheckRead"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "degraded" | "not_ready";
         };
         /** RecentChangeRead */
         RecentChangeRead: {
@@ -6972,6 +7260,157 @@ export interface components {
             /** Workspace */
             workspace: components["schemas"]["SwitchRead"][];
         };
+        /** UsageDayRead */
+        UsageDayRead: {
+            /** Agent Runs */
+            agent_runs: number;
+            /** Assistant Runs */
+            assistant_runs: number;
+            /** Compute Seconds */
+            compute_seconds: number;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Llm Cost Micros */
+            llm_cost_micros: number;
+            /** Llm Tokens */
+            llm_tokens: number;
+            /** Storage Bytes */
+            storage_bytes: number;
+        };
+        /** UsageQuotaRead */
+        UsageQuotaRead: {
+            /**
+             * Enforced
+             * @description Whether reaching the limit refuses new work right now.
+             */
+            enforced: boolean;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "compute_seconds_month" | "storage_bytes" | "runs_per_day" | "members";
+            /**
+             * Limit
+             * @description null: unlimited.
+             */
+            limit: number | null;
+            /**
+             * Over
+             * @description At or past the limit: new work of this kind is refused (429 quota_exceeded).
+             */
+            over: boolean;
+            /**
+             * Percent
+             * @description used / limit * 100, rounded to 0.1; null when unlimited.
+             */
+            percent: number | null;
+            /**
+             * Period
+             * @description When `used` starts again from zero (UTC).
+             * @enum {string}
+             */
+            period: "month" | "day" | "none";
+            /**
+             * Resets At
+             * @description Start of the next period (UTC); null for storage and members.
+             */
+            resets_at: string | null;
+            /**
+             * Source
+             * @description `plan_default`: the default plan's value; `workspace`: set for this workspace by DCLab staff.
+             * @enum {string}
+             */
+            source: "plan_default" | "workspace";
+            /** Unit */
+            unit: string;
+            /**
+             * Used
+             * @description Measured now from the ledgers (the same number the limit check uses).
+             */
+            used: number;
+            /**
+             * Warning
+             * @description At or past 80% of the limit and not yet over it.
+             */
+            warning: boolean;
+        };
+        /**
+         * UsageRead
+         * @description ``GET /v1/workspaces/{workspace_id}/usage``: no person ids, no per-user split, no file names.
+         */
+        UsageRead: {
+            /** @description null when the workspace's AI policy cannot be resolved. */
+            ai_spend: components["schemas"]["AiSpendRead"] | null;
+            /**
+             * Daily
+             * @description The last 31 UTC days, oldest first (today so far included).
+             */
+            daily: components["schemas"]["UsageDayRead"][];
+            /** Disclaimer */
+            disclaimer: string;
+            /**
+             * Measured At
+             * @description When the newest usage record was written; null if never.
+             */
+            measured_at: string | null;
+            /**
+             * Metering Enabled
+             * @description Platform switch for the aggregation that fills the daily series.
+             */
+            metering_enabled: boolean;
+            /**
+             * Month Start
+             * Format: date
+             */
+            month_start: string;
+            /** Notes */
+            notes: string[];
+            /** Plan */
+            plan: string;
+            /** Quotas */
+            quotas: components["schemas"]["UsageQuotaRead"][];
+            /**
+             * Quotas Enforced
+             * @description Platform switch: false means limits are shown but never refuse work.
+             */
+            quotas_enforced: boolean;
+            /**
+             * Resets At
+             * Format: date-time
+             * @description Start of next month (UTC): when monthly limits start again.
+             */
+            resets_at: string;
+            /** Totals */
+            totals: components["schemas"]["UsageTotalsRead"][];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** UsageTotalsRead */
+        UsageTotalsRead: {
+            /**
+             * Aggregate
+             * @description `latest` for storage (a snapshot), else `sum`.
+             * @enum {string}
+             */
+            aggregate: "sum" | "latest";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "compute_seconds" | "storage_bytes" | "llm_tokens" | "llm_cost_micros" | "agent_runs" | "assistant_runs";
+            /** Last Month */
+            last_month: number;
+            /** This Month */
+            this_month: number;
+            /** Unit */
+            unit: string;
+        };
         /** V1Error */
         V1Error: {
             /**
@@ -7073,6 +7512,29 @@ export interface components {
              */
             workspace_id: string;
         };
+        /** WorkersRead */
+        WorkersRead: {
+            /**
+             * Count
+             * @description Worker processes connected to the database now (no ids).
+             */
+            count: number;
+            /**
+             * Dispatcher
+             * @description ML_JOB_DISPATCHER (postgres: separate worker processes).
+             */
+            dispatcher: string;
+            /**
+             * Heartbeat Age Seconds
+             * @description Seconds since each worker was last seen, freshest first.
+             */
+            heartbeat_age_seconds: number[];
+            /**
+             * Visible
+             * @description False when the database does not show other sessions to this role.
+             */
+            visible: boolean;
+        };
         /**
          * WorkspaceMemberRead
          * @description One person in the workspace, for the members screen (administrators only). No ids, no secrets.
@@ -7144,6 +7606,16 @@ export interface components {
             can_run_ml: boolean;
             /** Role */
             role: string;
+        };
+        /** WorkspaceTotalsRead */
+        WorkspaceTotalsRead: {
+            /**
+             * Active Last 7D
+             * @description Workspaces that queued at least one ML job in the last 7 days.
+             */
+            active_last_7d: number;
+            /** Total */
+            total: number;
         };
     };
     responses: never;
@@ -8142,6 +8614,15 @@ export interface operations {
             };
             /** @description Unprocessable entity (error envelope) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (error envelope) */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11324,6 +11805,234 @@ export interface operations {
             };
         };
     };
+    read_failed_jobs_v1_operator_failed_jobs_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorFailedJobPage"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_overview_v1_operator_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorOverviewRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_workspaces_v1_operator_workspaces_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorWorkspacePage"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_outcome_projects_v1_outcomes_projects_get: {
         parameters: {
             query?: never;
@@ -14028,6 +14737,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceMembersRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_workspace_usage_v1_workspaces__workspace_id__usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageRead"];
                 };
             };
             /** @description Bad request (error envelope) */

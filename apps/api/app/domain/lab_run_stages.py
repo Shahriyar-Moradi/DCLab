@@ -19,6 +19,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.engine.experiments.stages import (  # the runner emits these; the engine owns them
+    CROSS_VALIDATION,
+    EVALUATING,
+    PREDICTING,
+    SPLITTING,
+    TRAINING,
+)
 from app.translation.banned_terms import is_clean
 
 # Stored on client_lab_uploads.pipeline_status (lowercase, matching queued/failed).
@@ -28,11 +35,6 @@ ANALYZING = "analyzing"
 CLEANING = "cleaning"
 FEATURE_ENGINEERING = "feature_engineering"
 PREPROCESSING = "preprocessing"
-SPLITTING = "splitting"
-CROSS_VALIDATION = "cross_validation"
-TRAINING = "training"
-EVALUATING = "evaluating"
-PREDICTING = "predicting"
 COMPLETED = "completed"
 FAILED = "failed"
 SKIPPED = "skipped"

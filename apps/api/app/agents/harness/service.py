@@ -53,6 +53,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import observability
 from app.agents.contracts import AgentRunResult, AgentRunSpec, Citation, ContextEnvelope, RunLimits, Untrusted
 from app.agents.gateway import redaction
 from app.agents.gateway.budget import AGENT_RUN_BUDGET_KIND
@@ -294,6 +295,12 @@ class AgentService:
         return self._create(db, spec, authorize(db, spec, settings=self._settings()), bind=bind).id
 
     def run(self, db: Session, spec: AgentRunSpec, *, heartbeat: Callable[[], None] | None = None) -> AgentRunResult:
+        with observability.agent_run(spec.kind) as observed:  # P8.5-A: kind and final status only
+            result = self._run(db, spec, heartbeat=heartbeat)
+            observed.status = result.status
+        return result
+
+    def _run(self, db: Session, spec: AgentRunSpec, *, heartbeat: Callable[[], None] | None = None) -> AgentRunResult:
         settings = self._settings()
         try:
             if spec.parent_run_id is not None and spec.kind == "lead" and spec.run_id is None:

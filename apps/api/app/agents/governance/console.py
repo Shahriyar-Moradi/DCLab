@@ -265,6 +265,24 @@ def _spend(db: Session, workspace_id: UUID, policy: Any) -> SpendRead:
         "specialist": budgets.specialist_run_micros, "project_month": budgets.project_month_micros})
 
 
+def workspace_month_spend(db: Session, workspace_id: UUID) -> BudgetPeriodRead | None:
+    """The workspace's monthly AI budget counter as the console shows it (P8.4-A usage read);
+    None when the effective policy cannot be resolved. Read only: never creates a counter row."""
+
+    try:
+        effective = effective_policy(db, workspace_id)
+    except PolicyUnavailable:
+        return None
+    month = next((p for p in _spend(db, workspace_id, effective).workspace if p.period == "month"), None)
+    if month is None:  # counters exist for other periods only: the policy's monthly limit, nothing spent
+        budgets = effective.policy.budgets
+        month = BudgetPeriodRead(
+            scope="workspace", period="month", period_start=period_start("month", datetime.now(UTC).date()).isoformat(),
+            limit_micros=budgets.workspace_month_micros, spent_micros=0, reserved_micros=0, calls=0,
+            hard_stop=budgets.hard_stop, alert_fraction=budgets.alert_fraction, currency="USD")
+    return month
+
+
 def _incidents(db: Session, workspace_id: UUID) -> list[IncidentRead]:
     rows = db.scalars(select(AiIncident).where(AiIncident.workspace_id == workspace_id, AiIncident.status == "open")
                       .order_by(AiIncident.opened_at.desc()).limit(INCIDENT_LIMIT))
@@ -386,4 +404,5 @@ def console_read(db: Session, *, actor: User, workspace_id: UUID, agent: bool = 
     return agent_view(view) if agent else view
 
 
-__all__ = ["authorize_console", "console_read", "policy_change_read", "switch_read", "viewer_for"]
+__all__ = ["authorize_console", "console_read", "policy_change_read", "switch_read", "viewer_for",
+           "workspace_month_spend"]

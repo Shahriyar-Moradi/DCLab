@@ -78,6 +78,7 @@
   "service_tokens",
   "simulation_runs",
   "split_plans",
+  "usage_records",
   "users",
   "visualizations",
   "workflow_run_inputs",

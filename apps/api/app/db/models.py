@@ -333,6 +333,12 @@ from app.domain.monitoring import (
     CK_MONITORING_WINDOWS_SUMMARY_CODE,
     CK_MONITORING_WINDOWS_WEEK,
 )
+from app.domain.usage import (
+    CK_USAGE_RECORDS_KIND,
+    CK_USAGE_RECORDS_QUANTITY,
+    CK_USAGE_RECORDS_PERIOD_DAY,
+    CK_USAGE_RECORDS_SOURCE_REF,
+)
 from app.domain.experiment_changes import (
     CK_EXPERIMENTS_CHANGE_SET_BOUNDED,
     CK_EXPERIMENTS_CHANGE_SET_CHANGES,
@@ -1685,6 +1691,13 @@ class MlJob(Base):
         CheckConstraint("max_attempts >= 1", name="ck_ml_jobs_max_attempts_positive"),
         Index("ix_ml_jobs_status_queued_at", "status", "queued_at"),
         Index("ix_ml_jobs_workspace_created_at", "workspace_id", "created_at"),
+        # P8.4-A (0081): the admission check sums a workspace's compute time of the month.
+        Index(
+            "ix_ml_jobs_workspace_completed_at",
+            "workspace_id",
+            "completed_at",
+            postgresql_where=text("completed_at IS NOT NULL"),
+        ),
         Index(
             "ix_ml_jobs_queued_claim",
             "priority",
@@ -6881,6 +6894,45 @@ class ScoringScheduleRun(Base):
     model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     model_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     input_dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class UsageRecord(Base):
+    """P8.4-A: one measured quantity of a workspace for one UTC day, derived from existing ledgers.
+    Append-only (DB trigger). A recompute that changes the number adds a row with a new
+    ``source_ref``; reads take the newest row per (kind, day) by ``created_at``. ``UNIQUE ... NULLS NOT DISTINCT``
+    makes a repeated recompute a no-op. ``project_id`` NULL: a workspace-level record."""
+
+    __tablename__ = "usage_records"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_usage_records_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "kind", "period_day", "project_id", "source_ref",
+            name="uq_usage_records_source", postgresql_nulls_not_distinct=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_usage_records_workspace_project",
+        ),
+        CheckConstraint(CK_USAGE_RECORDS_KIND, name="ck_usage_records_kind"),
+        CheckConstraint(CK_USAGE_RECORDS_QUANTITY, name="ck_usage_records_quantity"),
+        CheckConstraint(CK_USAGE_RECORDS_SOURCE_REF, name="ck_usage_records_source_ref"),
+        CheckConstraint(CK_USAGE_RECORDS_PERIOD_DAY, name="ck_usage_records_period_day"),
+        Index("ix_usage_records_workspace_kind_day", "workspace_id", "kind", "period_day", desc("created_at")),
+        _partial_index("ix_usage_records_project_id", "workspace_id", "project_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    period_day: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
     )

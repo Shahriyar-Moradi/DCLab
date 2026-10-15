@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.middleware.security import CsrfOriginMiddleware, SecurityHeadersMiddleware
 
@@ -50,15 +51,21 @@ from app.api.v1_outcomes import router as v1_outcomes_router
 from app.api.v1_predictions import router as v1_predictions_router
 from app.api.v1_scoring_schedules import router as v1_scoring_schedules_router
 from app.api.v1_service_tokens import router as v1_service_tokens_router
+from app.api.v1_operator import router as v1_operator_router
 from app.api.v1_conventions import install_v1_conventions
 from app.config import get_settings, validate_runtime_settings
-from app.db.session import get_engine
+from app.db.session import get_db, get_engine
+from app.observability.http import ObservabilityMiddleware
+from app.observability.setup import setup as setup_observability, shutdown as shutdown_observability
 from app.services.job_dispatcher import start_local_ml_worker
+from app.domain.operator import ReadinessRead
+from app.services.system_health_service import cached_readiness
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     validate_runtime_settings(get_settings())
+    setup_observability("api")  # P8.5-A: logs always; OTel only when configured
     # Thread dispatcher: claim leftover queued uploads in this process.
     # Postgres dispatcher: a separate `dclab worker run` process claims jobs.
     stop = start_local_ml_worker()
@@ -67,11 +74,14 @@ async def lifespan(_app: FastAPI):
     finally:
         if stop is not None:
             stop.set()
+        shutdown_observability()
 
 
 app = FastAPI(title="Decision.ai", version="0.1.0", lifespan=lifespan)
 # /v1 error envelope + request ids (P3.1-A); other surfaces keep FastAPI defaults.
 install_v1_conventions(app)
+# Innermost (added first): sees the request id bound by SecurityHeadersMiddleware (P8.5-A).
+app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(CsrfOriginMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
@@ -135,6 +145,7 @@ app.include_router(v1_service_tokens_router)
 app.include_router(v1_assistant_router)
 app.include_router(v1_proposals_router)
 app.include_router(v1_governance_router)
+app.include_router(v1_operator_router)
 app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(scoped_workspaces_router)
@@ -159,3 +170,17 @@ def health():
             detail={"status": "error", "db": "disconnected"},
         ) from exc
     return {"status": "ok", "db": "connected"}
+
+
+@app.get("/health/ready", response_model=ReadinessRead)
+def health_ready(response: Response, db: Session = Depends(get_db)) -> ReadinessRead:
+    """Readiness (P8.5-A): named checks with a status and a reason code (no secrets, no versions).
+    503 only when a required check (database, migrations, object storage) fails; a stale worker
+    is ``degraded`` (the API still serves). Cached ``READINESS_CACHE_SECONDS`` per process; the BFF
+    never proxies ``/health``. ``/health`` stays the liveness probe."""
+
+    result = cached_readiness(db)
+    response.headers["Cache-Control"] = "no-store"
+    if result.status == "not_ready":
+        response.status_code = 503
+    return result

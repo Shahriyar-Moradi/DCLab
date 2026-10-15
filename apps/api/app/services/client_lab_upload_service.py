@@ -31,6 +31,7 @@ from app.db.models import (
 from app.domain.client_lab import ClientLabUploadRead, TargetConfirmationRequired
 from app.domain.data_access import ACCESS_TYPE_UPLOAD, EXECUTION_MODE_COPY
 from app.domain.data_plane import DATASET_PURPOSE_TRAINING
+from app.domain.usage import QUOTA_COMPUTE_SECONDS_MONTH, QUOTA_RUNS_PER_DAY, QUOTA_STORAGE_BYTES
 from app.domain.errors import (
     IdentityError,
     OpenLabFileError,
@@ -75,6 +76,7 @@ from app.services.ingestion_run_service import (
 from app.services.lab_service import seed_dogfood
 from app.services.project_service import get_or_create_labs_project, get_project
 from app.services.upload_structure_scan import inspect_upload_structure
+from app.services.usage_service import ensure_within_quota
 from app.storage.base import ObjectPutResult
 from app.storage.factory import get_object_storage
 from app.storage.materialize import materialize_object, object_location_uri
@@ -327,6 +329,22 @@ class IngestedUpload:
     dataset: Dataset
 
 
+def _payload_size(payload: bytes | BinaryIO) -> int:
+    """Bytes still to read when cheaply known (bytes, or a seekable stream); else 0."""
+
+    if isinstance(payload, (bytes, bytearray)):
+        return len(payload)
+    try:
+        if not payload.seekable():
+            return 0
+        position = payload.tell()
+        end = payload.seek(0, 2)
+        payload.seek(position)
+        return max(int(end) - int(position), 0)
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
 @contextmanager
 def _staged_upload(
     db: Session,
@@ -342,6 +360,9 @@ def _staged_upload(
     (ADR 0005 §2, §8): nothing is retained for a rejected or failed upload.
     """
 
+    # P8.4-A: a workspace at (or, with this file, past) its storage limit stores nothing more
+    # (429 quota_exceeded, before any byte is written).
+    ensure_within_quota(db, workspace_id, QUOTA_STORAGE_BYTES, requested=_payload_size(payload))
     storage = get_object_storage()
     artifact_id = uuid4()
     object_key = artifact_object_key(workspace_id, artifact_id, filename)
@@ -587,6 +608,10 @@ def save_upload(
     filename = filename or "upload"
     payload = data if data is not None else upload_stream
     assert payload is not None
+    # P8.4-A cheap early refusal (no lock) before the file is written and scanned; the locked
+    # ensure_run_capacity below decides.
+    ensure_within_quota(db, workspace_id, QUOTA_RUNS_PER_DAY, requested=1, lock=False)
+    ensure_within_quota(db, workspace_id, QUOTA_COMPUTE_SECONDS_MONTH)
     with _staged_upload(
         db,
         workspace_id=workspace_id,
@@ -703,7 +728,7 @@ def save_upload(
         from app.services.execution_request_service import (
             attach_legacy_labs_model_build_request,
         )
-        from app.services.ml_job_service import create_auto_train_job
+        from app.services.ml_job_service import create_auto_train_job, ensure_run_capacity
 
         request = attach_legacy_labs_model_build_request(
             db,
@@ -726,6 +751,9 @@ def save_upload(
             execution_request_id=request.id,
         )
         db.flush()
+        # The same admission check as POST /v1/experiments (active runs + P8.4-A plan limits);
+        # refused: everything rolls back and the stored file is deleted.
+        ensure_run_capacity(db, workspace_id)
         create_auto_train_job(
             db,
             workspace_id=workspace_id,

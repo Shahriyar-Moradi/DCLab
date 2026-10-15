@@ -322,6 +322,38 @@ class RunQuotaExceededError(Exception):
     def public_detail(self) -> dict[str, object]:
         return {"code": self.code, "message": str(self), "limit": self.limit}
 
+    def legacy_detail(self) -> dict[str, object]:
+        """The ``detail`` of a non-/v1 (legacy Labs) refusal."""
+
+        return self.public_detail()
+
+
+class QuotaExceededError(RunQuotaExceededError):
+    """A plan limit of the workspace is reached (P8.4-A). 429 ``quota_exceeded``, not retryable
+    before ``resets_at``. A subclass so every admission point that maps the run limit maps this too."""
+
+    code = "quota_exceeded"
+    retryable = False
+
+    def __init__(self, key: str, *, used: int, limit: int, resets_at: object | None, message: str,
+                 plain_message: str | None = None) -> None:
+        Exception.__init__(self, message)
+        self.key, self.used, self.limit, self.resets_at = key, used, limit, resets_at
+        self.plain_message = plain_message or message
+
+    def _resets(self) -> str | None:
+        resets = getattr(self.resets_at, "isoformat", None)
+        return resets() if callable(resets) else None
+
+    def public_detail(self) -> dict[str, object]:
+        return {"code": self.code, "message": str(self), "kind": self.key, "used": self.used, "limit": self.limit,
+                "resets_at": self._resets()}
+
+    def legacy_detail(self) -> dict[str, object]:
+        """Legacy (non-/v1) surfaces get no numbers: what ran out and when it resets."""
+
+        return {"code": self.code, "message": self.plain_message, "kind": self.key, "resets_at": self._resets()}
+
 
 class ExperimentNotCancellableError(Exception):
     """Only a queued or running run can be cancelled (P3.1-B2). Maps to 409."""

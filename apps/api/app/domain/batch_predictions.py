@@ -19,6 +19,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.data_plane import sql_in_clause
 from app.domain.model_releases import ModelReleaseSummary
 
+# Stable failure codes (``error_code``); ``error_message`` is generic public text. The
+# scoring codes and the contract-check bound are owned by the engine, which raises them.
+from app.engine.serving.codes import (
+    CONTRACT_CHECK_MAX_BYTES,
+    FEATURE_CONTRACT_FAILED,
+    SCORING_FAILED,
+    UNSUPPORTED_MODEL,
+    UNSUPPORTED_TRANSFORM,
+)
+
 PREDICTION_QUEUED = "queued"
 PREDICTION_RUNNING = "running"
 PREDICTION_COMPLETED = "completed"
@@ -26,13 +36,7 @@ PREDICTION_FAILED = "failed"
 PREDICTION_STATUSES = (PREDICTION_QUEUED, PREDICTION_RUNNING, PREDICTION_COMPLETED, PREDICTION_FAILED)
 TERMINAL_PREDICTION_STATUSES = frozenset({PREDICTION_COMPLETED, PREDICTION_FAILED})
 OUTPUT_FORMATS = ("csv", "parquet")
-CONTRACT_CHECK_MAX_BYTES = 65536
 
-# Stable failure codes (``error_code``); ``error_message`` is generic public text.
-FEATURE_CONTRACT_FAILED = "feature_contract_failed"
-UNSUPPORTED_TRANSFORM = "unsupported_transform"
-UNSUPPORTED_MODEL = "unsupported_model"
-SCORING_FAILED = "scoring_failed"
 DATASET_UNAVAILABLE = "dataset_unavailable"
 RELEASE_MISMATCH = "release_mismatch"  # the approval no longer matches the model's package
 # A weekly scheduled scoring whose person lost the right to score before it ran.

@@ -495,6 +495,69 @@
         "title": "AgentRunRead",
         "type": "object"
       },
+      "AiSpendRead": {
+        "additionalProperties": false,
+        "description": "The workspace's existing AI budget (``workspace_llm_budgets``; the AI gateway enforces it).",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "hard_stop": {
+            "title": "Hard Stop",
+            "type": "boolean"
+          },
+          "limit_micros": {
+            "title": "Limit Micros",
+            "type": "integer"
+          },
+          "over": {
+            "title": "Over",
+            "type": "boolean"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "reserved_micros": {
+            "title": "Reserved Micros",
+            "type": "integer"
+          },
+          "spent_micros": {
+            "title": "Spent Micros",
+            "type": "integer"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "period_start",
+          "limit_micros",
+          "spent_micros",
+          "reserved_micros",
+          "currency",
+          "percent",
+          "warning",
+          "over",
+          "hard_stop"
+        ],
+        "title": "AiSpendRead",
+        "type": "object"
+      },
       "ArtifactRead": {
         "properties": {
           "artifact_type": {
@@ -4808,6 +4871,25 @@
         "title": "ExperimentWinner",
         "type": "object"
       },
+      "FailureCodeCountRead": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count"
+        ],
+        "title": "FailureCodeCountRead",
+        "type": "object"
+      },
       "GovernanceRead": {
         "additionalProperties": false,
         "properties": {
@@ -5702,6 +5784,30 @@
           "evidence"
         ],
         "title": "IncidentRead",
+        "type": "object"
+      },
+      "JobCountRead": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "job_type": {
+            "title": "Job Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_type",
+          "status",
+          "count"
+        ],
+        "title": "JobCountRead",
         "type": "object"
       },
       "LatestRunRead": {
@@ -9211,6 +9317,226 @@
         "title": "OperatingScoringRead",
         "type": "object"
       },
+      "OperatorFailedJobPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorFailedJobRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "OperatorFailedJobPage",
+        "type": "object"
+      },
+      "OperatorFailedJobRead": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "code": {
+            "description": "A stable failure code, or see_logs (free-text reasons are never returned).",
+            "title": "Code",
+            "type": "string"
+          },
+          "failed_at": {
+            "format": "date-time",
+            "title": "Failed At",
+            "type": "string"
+          },
+          "handler_key": {
+            "title": "Handler Key",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_type": {
+            "title": "Job Type",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "job_type",
+          "handler_key",
+          "code",
+          "attempts",
+          "failed_at"
+        ],
+        "title": "OperatorFailedJobRead",
+        "type": "object"
+      },
+      "OperatorOverviewRead": {
+        "additionalProperties": false,
+        "properties": {
+          "failed_jobs_last_24h": {
+            "items": {
+              "$ref": "#/components/schemas/FailureCodeCountRead"
+            },
+            "title": "Failed Jobs Last 24H",
+            "type": "array"
+          },
+          "failed_jobs_last_24h_truncated": {
+            "description": "True when more failed jobs than the scan bound (5000, newest first) exist: counts are a lower bound.",
+            "title": "Failed Jobs Last 24H Truncated",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "jobs_last_24h": {
+            "items": {
+              "$ref": "#/components/schemas/JobCountRead"
+            },
+            "title": "Jobs Last 24H",
+            "type": "array"
+          },
+          "platform_ai_caps": {
+            "$ref": "#/components/schemas/PlatformAiCapsRead"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/QueueRead"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/ReadinessRead"
+          },
+          "workers": {
+            "$ref": "#/components/schemas/WorkersRead"
+          },
+          "workspaces": {
+            "$ref": "#/components/schemas/WorkspaceTotalsRead"
+          }
+        },
+        "required": [
+          "generated_at",
+          "workspaces",
+          "jobs_last_24h",
+          "queue",
+          "workers",
+          "failed_jobs_last_24h",
+          "failed_jobs_last_24h_truncated",
+          "platform_ai_caps",
+          "readiness"
+        ],
+        "title": "OperatorOverviewRead",
+        "type": "object"
+      },
+      "OperatorWorkspacePage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorWorkspaceRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "OperatorWorkspacePage",
+        "type": "object"
+      },
+      "OperatorWorkspaceRead": {
+        "additionalProperties": false,
+        "properties": {
+          "active_last_7d": {
+            "title": "Active Last 7D",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failed_jobs_last_24h": {
+            "title": "Failed Jobs Last 24H",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "jobs_last_30d": {
+            "title": "Jobs Last 30D",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "member_count": {
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Customer-chosen text: render as plain text.",
+            "title": "Name",
+            "type": "string"
+          },
+          "project_count": {
+            "title": "Project Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "created_at",
+          "member_count",
+          "project_count",
+          "jobs_last_30d",
+          "failed_jobs_last_24h",
+          "active_last_7d"
+        ],
+        "title": "OperatorWorkspaceRead",
+        "type": "object"
+      },
       "OutcomeSetCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9968,6 +10294,67 @@
           "stages"
         ],
         "title": "PipelineModelBuildRead",
+        "type": "object"
+      },
+      "PlatformAiCapsRead": {
+        "additionalProperties": false,
+        "description": "Code-owned caps (``agents/governance/platform_default``) and the AI_ENABLED setting. Read-only.",
+        "properties": {
+          "ai_enabled": {
+            "title": "Ai Enabled",
+            "type": "boolean"
+          },
+          "auto_release": {
+            "title": "Auto Release",
+            "type": "boolean"
+          },
+          "budgets": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "title": "Budgets",
+            "type": "object"
+          },
+          "max_data_class": {
+            "title": "Max Data Class",
+            "type": "string"
+          },
+          "model_allowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Model Allowlist",
+            "type": "array"
+          },
+          "sample_values_per_column": {
+            "title": "Sample Values Per Column",
+            "type": "integer"
+          },
+          "user_text_to_jev": {
+            "title": "User Text To Jev",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ai_enabled",
+          "max_data_class",
+          "sample_values_per_column",
+          "user_text_to_jev",
+          "auto_release",
+          "model_allowlist",
+          "budgets"
+        ],
+        "title": "PlatformAiCapsRead",
         "type": "object"
       },
       "PolicyAcceptRequest": {
@@ -11498,6 +11885,32 @@
         "title": "ProposalRead",
         "type": "object"
       },
+      "QueueRead": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          },
+          "oldest_age_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Age Seconds"
+          }
+        },
+        "required": [
+          "depth",
+          "oldest_age_seconds"
+        ],
+        "title": "QueueRead",
+        "type": "object"
+      },
       "R3EvidenceRead": {
         "additionalProperties": false,
         "description": "A link to a stored R3 run: ids, digests, pair and a verdict summary. Never the report body.",
@@ -11590,6 +12003,83 @@
           "recorded_at"
         ],
         "title": "R3EvidenceRead",
+        "type": "object"
+      },
+      "ReadinessCheckRead": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable reason code (no secrets, no versions).",
+            "title": "Code"
+          },
+          "name": {
+            "enum": [
+              "database",
+              "migrations",
+              "object_storage",
+              "worker"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "description": "A failing required check makes GET /health/ready answer 503.",
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "failing",
+              "stale",
+              "unknown",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "required"
+        ],
+        "title": "ReadinessCheckRead",
+        "type": "object"
+      },
+      "ReadinessRead": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessCheckRead"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "degraded",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessRead",
         "type": "object"
       },
       "RecentChangeRead": {
@@ -12883,6 +13373,318 @@
         "title": "SwitchesRead",
         "type": "object"
       },
+      "UsageDayRead": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_runs": {
+            "title": "Agent Runs",
+            "type": "integer"
+          },
+          "assistant_runs": {
+            "title": "Assistant Runs",
+            "type": "integer"
+          },
+          "compute_seconds": {
+            "title": "Compute Seconds",
+            "type": "integer"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "llm_cost_micros": {
+            "title": "Llm Cost Micros",
+            "type": "integer"
+          },
+          "llm_tokens": {
+            "title": "Llm Tokens",
+            "type": "integer"
+          },
+          "storage_bytes": {
+            "title": "Storage Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "compute_seconds",
+          "storage_bytes",
+          "llm_tokens",
+          "llm_cost_micros",
+          "agent_runs",
+          "assistant_runs"
+        ],
+        "title": "UsageDayRead",
+        "type": "object"
+      },
+      "UsageQuotaRead": {
+        "additionalProperties": false,
+        "properties": {
+          "enforced": {
+            "description": "Whether reaching the limit refuses new work right now.",
+            "title": "Enforced",
+            "type": "boolean"
+          },
+          "key": {
+            "enum": [
+              "compute_seconds_month",
+              "storage_bytes",
+              "runs_per_day",
+              "members"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null: unlimited.",
+            "title": "Limit"
+          },
+          "over": {
+            "description": "At or past the limit: new work of this kind is refused (429 quota_exceeded).",
+            "title": "Over",
+            "type": "boolean"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "used / limit * 100, rounded to 0.1; null when unlimited.",
+            "title": "Percent"
+          },
+          "period": {
+            "description": "When `used` starts again from zero (UTC).",
+            "enum": [
+              "month",
+              "day",
+              "none"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "resets_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start of the next period (UTC); null for storage and members.",
+            "title": "Resets At"
+          },
+          "source": {
+            "description": "`plan_default`: the default plan's value; `workspace`: set for this workspace by DCLab staff.",
+            "enum": [
+              "plan_default",
+              "workspace"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "used": {
+            "description": "Measured now from the ledgers (the same number the limit check uses).",
+            "title": "Used",
+            "type": "integer"
+          },
+          "warning": {
+            "description": "At or past 80% of the limit and not yet over it.",
+            "title": "Warning",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "unit",
+          "period",
+          "limit",
+          "used",
+          "percent",
+          "warning",
+          "over",
+          "resets_at",
+          "enforced",
+          "source"
+        ],
+        "title": "UsageQuotaRead",
+        "type": "object"
+      },
+      "UsageRead": {
+        "additionalProperties": false,
+        "description": "``GET /v1/workspaces/{workspace_id}/usage``: no person ids, no per-user split, no file names.",
+        "properties": {
+          "ai_spend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiSpendRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when the workspace's AI policy cannot be resolved."
+          },
+          "daily": {
+            "description": "The last 31 UTC days, oldest first (today so far included).",
+            "items": {
+              "$ref": "#/components/schemas/UsageDayRead"
+            },
+            "title": "Daily",
+            "type": "array"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the newest usage record was written; null if never.",
+            "title": "Measured At"
+          },
+          "metering_enabled": {
+            "description": "Platform switch for the aggregation that fills the daily series.",
+            "title": "Metering Enabled",
+            "type": "boolean"
+          },
+          "month_start": {
+            "format": "date",
+            "title": "Month Start",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "quotas": {
+            "items": {
+              "$ref": "#/components/schemas/UsageQuotaRead"
+            },
+            "title": "Quotas",
+            "type": "array"
+          },
+          "quotas_enforced": {
+            "description": "Platform switch: false means limits are shown but never refuse work.",
+            "title": "Quotas Enforced",
+            "type": "boolean"
+          },
+          "resets_at": {
+            "description": "Start of next month (UTC): when monthly limits start again.",
+            "format": "date-time",
+            "title": "Resets At",
+            "type": "string"
+          },
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/UsageTotalsRead"
+            },
+            "title": "Totals",
+            "type": "array"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "plan",
+          "quotas_enforced",
+          "metering_enabled",
+          "measured_at",
+          "month_start",
+          "resets_at",
+          "quotas",
+          "totals",
+          "daily",
+          "ai_spend",
+          "disclaimer",
+          "notes"
+        ],
+        "title": "UsageRead",
+        "type": "object"
+      },
+      "UsageTotalsRead": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregate": {
+            "description": "`latest` for storage (a snapshot), else `sum`.",
+            "enum": [
+              "sum",
+              "latest"
+            ],
+            "title": "Aggregate",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "compute_seconds",
+              "storage_bytes",
+              "llm_tokens",
+              "llm_cost_micros",
+              "agent_runs",
+              "assistant_runs"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_month": {
+            "title": "Last Month",
+            "type": "integer"
+          },
+          "this_month": {
+            "title": "This Month",
+            "type": "integer"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "unit",
+          "aggregate",
+          "this_month",
+          "last_month"
+        ],
+        "title": "UsageTotalsRead",
+        "type": "object"
+      },
       "V1Error": {
         "properties": {
           "code": {
@@ -13100,6 +13902,42 @@
         "title": "VisualizationRead",
         "type": "object"
       },
+      "WorkersRead": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "Worker processes connected to the database now (no ids).",
+            "title": "Count",
+            "type": "integer"
+          },
+          "dispatcher": {
+            "description": "ML_JOB_DISPATCHER (postgres: separate worker processes).",
+            "title": "Dispatcher",
+            "type": "string"
+          },
+          "heartbeat_age_seconds": {
+            "description": "Seconds since each worker was last seen, freshest first.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Heartbeat Age Seconds",
+            "type": "array"
+          },
+          "visible": {
+            "description": "False when the database does not show other sessions to this role.",
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dispatcher",
+          "count",
+          "heartbeat_age_seconds",
+          "visible"
+        ],
+        "title": "WorkersRead",
+        "type": "object"
+      },
       "WorkspaceMemberRead": {
         "description": "One person in the workspace, for the members screen (administrators only). No ids, no secrets.",
         "properties": {
@@ -13252,6 +14090,26 @@
           "can_approve_ai_policy"
         ],
         "title": "WorkspaceRoleAbilitiesRead",
+        "type": "object"
+      },
+      "WorkspaceTotalsRead": {
+        "additionalProperties": false,
+        "properties": {
+          "active_last_7d": {
+            "description": "Workspaces that queued at least one ML job in the last 7 days.",
+            "title": "Active Last 7D",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "active_last_7d"
+        ],
+        "title": "WorkspaceTotalsRead",
         "type": "object"
       }
     }
@@ -14551,7 +15409,7 @@
         ]
       },
       "post": {
-        "description": "Upload a file into a project: stored, structurally validated, ingested and\npublished for internal training (ADR 0005) through the Labs ingestion path.\nSynchronous; does not start training (that is ``POST /v1/experiments``).\n``purpose=scoring`` marks rows to score (no target; refused as a run source).\nRequires ``Idempotency-Key`` (bound to the file's sha256, filename, type,\nproject and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;\na structurally invalid file: ``422 upload_rejected`` (nothing is kept).",
+        "description": "Upload a file into a project: stored, structurally validated, ingested and\npublished for internal training (ADR 0005) through the Labs ingestion path.\nSynchronous; does not start training (that is ``POST /v1/experiments``).\n``purpose=scoring`` marks rows to score (no target; refused as a run source).\nRequires ``Idempotency-Key`` (bound to the file's sha256, filename, type,\nproject and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;\na structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its\nstorage limit: ``429 quota_exceeded`` (nothing is stored).",
         "operationId": "create_dataset_v1_v1_datasets_post",
         "parameters": [
           {
@@ -14718,6 +15576,16 @@
               }
             },
             "description": "Unprocessable entity (error envelope)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too many requests (error envelope)"
           },
           "500": {
             "content": {
@@ -19338,6 +20206,314 @@
         ]
       }
     },
+    "/v1/operator/failed-jobs": {
+      "get": {
+        "description": "Failed ML jobs, newest first: job and workspace ids, type, handler, failure code, attempts.",
+        "operationId": "read_failed_jobs_v1_operator_failed_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorFailedJobPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Failed Jobs",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/operator/overview": {
+      "get": {
+        "description": "Platform health in counts: workspaces, jobs of the last 24 h by type and status, queue\ndepth and oldest age, workers (no ids), failure codes, platform AI caps, readiness.",
+        "operationId": "read_overview_v1_operator_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorOverviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Overview",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/operator/workspaces": {
+      "get": {
+        "description": "Every workspace (oldest first): id, name, kind, member / project / job counts.",
+        "operationId": "read_workspaces_v1_operator_workspaces_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorWorkspacePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Workspaces",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
     "/v1/outcomes/projects": {
       "get": {
         "description": "Projects of the workspace that have a model in use (newest first, at most 50): ``id`` and\n``name`` only, for the Business view's project choice. ``name`` is untrusted plain text.",
@@ -23501,6 +24677,100 @@
           }
         },
         "summary": "Read Workspace Members",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/usage": {
+      "get": {
+        "description": "How much the workspace used (P8.4-A), measured from DCLab's own records (an estimate, not an\ninvoice): this month's and last month's totals per kind, the last 31 UTC days, the plan's limits\nwith `used` measured now (`warning` from 80%, `over` at the limit: new runs, scorings or uploads\nof that kind are refused with 429 `quota_exceeded` until `resets_at`), and the AI spend against\nthe workspace's existing AI budget. No person ids, no per-user split, no file names. Signed-in\nowners, administrators and ML engineers only (403 `usage_not_permitted`; any bearer 403\n`session_required`); another workspace is 404. Never cached.",
+        "operationId": "read_workspace_usage_v1_workspaces__workspace_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Workspace Usage",
         "tags": [
           "v1"
         ]

@@ -16,6 +16,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | --- | --- | --- | --- | --- |
 | Who am I, workspaces | `GET /v1/me`, `GET /v1/workspaces` | — | header workspace switcher | exists |
 | Members and roles (read only) | `GET /v1/workspaces/{workspace_id}/members` (people only; owners and administrators; 403 `members_not_permitted`) | — | `/settings` (Members and roles; adding people is not in the screen) | done V7-B6 |
+| Usage, plan limits and AI spend (read only) | `GET /v1/workspaces/{workspace_id}/usage` (people only; owners, administrators and ML engineers; 403 `usage_not_permitted`). New runs, scorings and uploads over a limit: 429 `quota_exceeded` on `POST /v1/experiments`, `POST /v1/experiments/{experiment_id}/branches`, `POST /v1/model-versions/{model_version_id}/predictions`, `POST /v1/datasets` | — | `/settings` → Usage & cost (planned) | backend P8.4-A; screen planned |
 | Service tokens | `GET/POST /v1/service-tokens`, `POST …/{id}/revoke` | — | `/agents` → Service tokens tab (also `/app/settings`) | exists |
 | Connect an agent (MCP/CLI) | — | — | `/agents` → Connect tab (copy `.mcp.json`, SDK, CLI, `/v1` conventions) | exists |
 | Projects list / create / detail | `GET/POST /v1/projects`, `GET /v1/projects/{id}` | `inspect_project` | `/projects`, `/projects/[id]`; Home Projects table reads the list `summary` (goal, champion CV metrics, latest run; P4.15-A) | planned P4.1-A; list summary backend P4.15-A, screen P4.15-UI |
@@ -76,7 +77,7 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Link real outcomes (monitoring) | P7.4-A (done, API + SDK): `POST /v1/projects/{project_id}/monitoring/outcomes` (people with ML-write only, `Idempotency-Key`; an uploaded file's key and outcome columns; writes a `monitoring_outcomes_linked` History entry; `409 already_linked`, `429 rate_limited` above 10 links per project and hour; the worker recomputes the recent weeks, debounced); SDK `client.monitoring.link_outcomes` (user token) | P7.5-A (done, web; verified against stubbed reads): Monitoring → "Link real outcomes" (upload with `POST /v1/datasets` or pick a file of the project; key and outcome columns from `GET /v1/datasets/{dataset_id}/profile`; one confirm step, then `POST /v1/projects/{project_id}/monitoring/outcomes`; buttons only with ML-write) and "Linked files" (`GET /v1/projects/{project_id}/monitoring/outcomes`); no MCP tool (tokens and agents cannot link) |
 | Compute cost per run | P8.3-A | P8.3-A (cost column in Experiments tab) |
 | Usage and quotas | P8.4-A | P8.4-A (usage page) |
-| System health | P8.5-A | P8.5-UI (`/operator` console) |
+| System health (operator reads) | P8.5-A (done, API-only until the console): `GET /v1/operator/overview` (counts only: workspaces, jobs by type and status in the last 24 h, queue depth and oldest age, workers without ids, failure codes, platform AI caps, readiness), `GET /v1/operator/workspaces` (cursor; id, name, kind, member / project / job counts), `GET /v1/operator/failed-jobs` (cursor; job and workspace ids, type, handler, failure code, never the free-text reason); signed-in platform staff only (any bearer 403 `human_session_required`, workspace roles 403); no MCP tool, no SDK; alert rules `ops/alerts/dclab.rules.yaml`, runbooks `docs/runbooks/` | P8.5-UI (`/operator` console, planned) |
 | Quarantine review | P8.7-A | P8.7-A (operator review page) |
 
 ## API-only by design
@@ -84,4 +85,5 @@ Snapshot: 2026-10-04, `main` at d221407 (end of Phase 3).
 | Operation | Reason |
 | --- | --- |
 | `GET /health` | infrastructure probe |
+| `GET /health/ready` | readiness probe (P8.5-A): named checks with status and reason code; 503 only when database, migrations or object storage fail |
 | Idempotency-Key / ETag headers | transport mechanics; the UI client sets them automatically |

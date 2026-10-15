@@ -1631,6 +1631,26 @@
       "definition": "CHECK ((version >= 1))"
     },
     {
+      "table": "usage_records",
+      "name": "ck_usage_records_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['compute_seconds'::character varying, 'storage_bytes'::character varying, 'llm_tokens'::character varying, 'llm_cost_micros'::character varying, 'agent_runs'::character varying, 'assistant_runs'::character varying])::text[])))"
+    },
+    {
+      "table": "usage_records",
+      "name": "ck_usage_records_period_day",
+      "definition": "CHECK (((period_day >= '2020-01-01'::date) AND (period_day <= (((created_at AT TIME ZONE 'UTC'::text))::date + 1))))"
+    },
+    {
+      "table": "usage_records",
+      "name": "ck_usage_records_quantity",
+      "definition": "CHECK ((quantity >= 0))"
+    },
+    {
+      "table": "usage_records",
+      "name": "ck_usage_records_source_ref",
+      "definition": "CHECK ((((char_length((source_ref)::text) >= 1) AND (char_length((source_ref)::text) <= 128)) AND ((source_ref)::text ~ '^[a-z0-9][a-z0-9:._-]*$'::text)))"
+    },
+    {
       "table": "users",
       "name": "ck_users_client_requires_workspace",
       "definition": "CHECK ((((role)::text <> ALL ((ARRAY['client_user'::character varying, 'personal_developer'::character varying])::text[])) OR (workspace_id IS NOT NULL)))"
@@ -2101,6 +2121,11 @@
       "table": "split_plans",
       "name": "split_plans_immutable",
       "definition": "CREATE TRIGGER split_plans_immutable BEFORE DELETE OR UPDATE ON public.split_plans FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "usage_records",
+      "name": "usage_records_append_only",
+      "definition": "CREATE TRIGGER usage_records_append_only BEFORE DELETE OR UPDATE ON public.usage_records FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "visualizations",
