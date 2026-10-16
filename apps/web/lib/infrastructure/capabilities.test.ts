@@ -53,7 +53,7 @@ test("navigation follows server capabilities rather than the display role", () =
 test("Studio routes need the development workspace role", () => {
   const developer = user({ [CAPABILITIES.developmentAccess]: true });
   const client = user({ [CAPABILITIES.applicationAccess]: true });
-  for (const path of ["/home", "/inbox", "/agents", "/projects", "/projects/p1/experiments/e1"]) {
+  for (const path of ["/home", "/inbox", "/agents", "/real", "/projects", "/projects/p1/experiments/e1"]) {
     assert.equal(canAccessProductRoute(developer, path), true, path);
     assert.equal(canAccessProductRoute(client, path), false, path);
   }
@@ -64,13 +64,13 @@ test("Studio routes need the development workspace role", () => {
 
 test("Studio paths: known sections and UUID ids only; a project opens on Experiments", () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  for (const ok of ["/home", "/inbox", "/agents", "/settings", "/projects", "/projects/new", `/projects/${id}/predictions`, `/projects/${id}/experiments/new`, `/projects/${id}/experiments/compare`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
+  for (const ok of ["/home", "/inbox", "/agents", "/settings", "/real", "/projects", "/projects/new", `/projects/${id}/predictions`, `/projects/${id}/experiments/new`, `/projects/${id}/experiments/compare`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
     ...["data", "splits", "features", "models", "pipeline"].map((section) => `/projects/${id}/${section}/${id}`)]) {
     assert.equal(studioRoute(ok), "ok", ok);
   }
   assert.deepEqual(studioRoute(`/projects/${id}`), { redirect: `/projects/${id}/experiments` });
   for (const bad of ["/projects/x/graph", `/projects/${id}/nope`, `/projects/${id}/constructor`, `/projects/${id}/graph/x`,
-    `/projects/${id}/experiments/x`, "/home/x", "/agents/x", "/agents/", "/settings/x", "/settings/", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`,
+    `/projects/${id}/experiments/x`, "/home/x", "/agents/x", "/agents/", "/settings/x", "/settings/", "/real/x", "/realx", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`,
     `/projects/${id}/predictions/x`, `/projects/${id}/predictions/${id}`, `/projects/${id}/data/x`, `/projects/${id}/pipeline/x`, `/projects/${id}/pipeline/${id}/x`, `/projects/${id}/splits/${id}/x`, `/projects/${id}/features`, `/projects/${id}/graph/${id}`]) {
     assert.equal(studioRoute(bad), "not_found", bad);
   }

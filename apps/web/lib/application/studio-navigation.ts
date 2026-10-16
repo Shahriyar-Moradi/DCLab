@@ -33,6 +33,8 @@ export const STUDIO_BACKEND_FEATURES: StudioCapabilities = {
   client_outcomes: true, // GET /v1/projects/{id}/outcomes (P7.6-A Business view)
   client_predictions: false, // the latest list is a section of /outcomes, not its own page
   client_questions: false, // questions from the data team and plain-language Q&A wait for checkpoint G6
+  business_view: true, // Studio link to /outcomes (P7.6-A), only for people who may open it (application_access)
+  real: true, // "What's real today" (/real, V7 UI-A): static list from lib/application/screen-status.ts
 };
 
 export function studioRoleForUser(user: Pick<SessionUser, "capabilities"> | null): StudioRole | null {
@@ -52,10 +54,14 @@ export function studioNavigationForUser(
   // Project ids are UUIDs; anything else from the URL gets no project-scoped links.
   const projectBase = isUuid(projectId) ? `/projects/${projectId}` : undefined;
   const groups = resolveSidebar(role, { capabilities: STUDIO_BACKEND_FEATURES, projectBase, targets });
-  const studio = projectBase ? groups : groups.filter((group) => group.id !== "project");
-  // Platform administrators keep one link to the operator console from Studio (P8.5-UI).
+  // The Business view link is listed only for people who may open `/outcomes` (the middleware and the API still decide).
+  const mayOpenBusinessView = hasCapability(user, CAPABILITIES.applicationAccess);
+  const studio = (projectBase ? groups : groups.filter((group) => group.id !== "project"))
+    .map((group) => (group.id === "other" && !mayOpenBusinessView ? { ...group, items: group.items.filter((item) => item.id !== "business-view") } : group))
+    .filter((group) => group.items.length > 0);
+  // Platform administrators keep one link to the operator console from Studio (P8.5-UI), above Help.
   const consoleLink = operatorNavigationForUser(user).map((group) => ({ ...group, items: group.items.filter((item) => item.id === "op-overview") }));
-  return [...studio, ...consoleLink.filter((group) => group.items.length > 0)];
+  return [...studio.filter((group) => group.id !== "help"), ...consoleLink.filter((group) => group.items.length > 0), ...studio.filter((group) => group.id === "help")];
 }
 
 /** Operator console features whose read exists (P8.5-A): overview, workspaces, failed jobs. Quarantine (P8.7), caps review and benchmarks are planned. */

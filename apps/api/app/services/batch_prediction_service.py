@@ -11,6 +11,7 @@ Every query is workspace-scoped; a foreign model version or dataset is "not foun
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -39,19 +40,31 @@ from app.domain.batch_predictions import (
     PREDICTION_FAILED,
     PREDICTION_QUEUED,
     PREDICTION_RUNNING,
+    REASON_TEXT_MAX,
     REASONS_NOT_RECORDED,
     REASONS_TURNED_OFF,
     RELEASE_MISMATCH,
+    ROW_TEXT_MAX,
+    ROWS_CONCURRENT_READS,
+    ROWS_FILE_MAX_BYTES,
+    ROWS_FILE_MAX_ROWS,
+    ROWS_NOTES,
+    ROWS_PAGE_DEFAULT,
+    ROWS_PAGE_MAX,
+    ROWS_REACHABLE_MAX,
     SCHEDULE_OWNER_NOT_ALLOWED,
     SCORING_FAILED,
     TERMINAL_PREDICTION_STATUSES,
     UNSUPPORTED_MODEL,
+    BatchPredictionFlagged,
     BatchPredictionOutput,
     BatchPredictionRead,
     BatchPredictionReasons,
+    BatchPredictionRowRead,
+    BatchPredictionRowsPage,
 )
 from app.domain.data_plane import PREDICTIONS_TYPE
-from app.domain.errors import BatchPredictionError, IdentityError
+from app.domain.errors import BatchPredictionError, IdentityError, InvalidCursorError
 from app.domain.execution_requests import (
     OPERATION_MODEL_BATCH_PREDICT,
     REQUEST_COMPLETED,
@@ -76,6 +89,10 @@ from app.storage._hashing import sha256_bytes
 logger = logging.getLogger(__name__)
 
 _RETRIES_EXHAUSTED = "scoring failed; create a new prediction to retry"
+_ROW_COLUMN = "row_number"  # app.engine.serving.batch_scoring.ROW_COLUMN (the file's 1-based row number)
+# Bounds the memory of whole-file parses in one API process (each page reads and ranks the file).
+_ROWS_READS = threading.BoundedSemaphore(ROWS_CONCURRENT_READS)
+_ROWS_WAIT_SECONDS = 20.0
 
 
 def _now() -> datetime:
@@ -209,14 +226,30 @@ def _require_read(db: Session, actor: User, workspace_id: UUID) -> None:
         raise IdentityError("not authorized for this workspace", status_code=403)
 
 
-def _reasons(db: Session, row: BatchPrediction) -> BatchPredictionReasons | None:
+def _result_summary(db: Session, row: BatchPrediction) -> dict[str, Any]:
+    request = _request_for(db, row)
+    return request.result_summary if request is not None and isinstance(request.result_summary, dict) else {}
+
+
+def _flagged(row: BatchPrediction, summary: dict[str, Any]) -> BatchPredictionFlagged | None:
+    """V7 B5: the worker's flagged count of a completed binary scoring (None when not recorded)."""
+
+    if row.status != PREDICTION_COMPLETED or not isinstance(summary.get("flagged"), dict):
+        return None
+    try:
+        return BatchPredictionFlagged.model_validate(summary["flagged"])
+    except ValidationError:
+        logger.warning("batch prediction %s has an unreadable flagged record", row.id)
+        return None
+
+
+def _reasons(db: Session, row: BatchPrediction, summary: dict[str, Any] | None = None) -> BatchPredictionReasons | None:
     """P7.7-A: what the predictions file holds about per-row reasons (None until completed);
     the worker records it in the request's result summary."""
 
     if row.status != PREDICTION_COMPLETED:
         return None
-    request = _request_for(db, row)
-    summary = request.result_summary if request is not None and isinstance(request.result_summary, dict) else {}
+    summary = _result_summary(db, row) if summary is None else summary
     if isinstance(summary.get("reasons"), dict):
         try:
             return BatchPredictionReasons.model_validate(summary["reasons"])
@@ -249,6 +282,7 @@ def batch_prediction_read(
     current = current_release(db, workspace_id=workspace_id, project_id=row.project_id) if release else None
     slot = db.scalar(select(ScoringScheduleRun.planned_for).where(
         ScoringScheduleRun.workspace_id == workspace_id, ScoringScheduleRun.batch_prediction_id == row.id))
+    summary = _result_summary(db, row) if row.status == PREDICTION_COMPLETED else {}
     return BatchPredictionRead(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -265,7 +299,8 @@ def batch_prediction_read(
         decision_threshold=row.decision_threshold,
         contract_check=row.contract_check,
         output=output,
-        reasons=_reasons(db, row),
+        reasons=_reasons(db, row, summary),
+        flagged=_flagged(row, summary),
         error_code=row.error_code,
         error_message=row.error_message,
         created_at=row.created_at,
@@ -295,6 +330,141 @@ def batch_prediction_download(
     if sha256_bytes(payload) != artifact.content_digest:
         raise BatchPredictionError("prediction_output_changed", "the stored predictions file changed", status_code=409)
     return payload, artifact.mime_type or "application/octet-stream", f"predictions-{row.id}.{row.output_format}"
+
+
+def _row_text(value: Any, cap: int) -> str | None:
+    """A scored-file cell as inert plain text (the engine's own reason-text rule: control and
+    format characters dropped, whitespace collapsed, capped); None when empty."""
+
+    from app.engine.explain import plain_text
+
+    if value is None or (isinstance(value, float) and value != value) or str(value).strip() == "":
+        return None
+    return plain_text(value, cap)
+
+
+def _number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None
+
+
+def batch_prediction_rows(
+    db: Session, *, actor: User, workspace_id: UUID, prediction_id: UUID, order: str = "score",
+    limit: int = ROWS_PAGE_DEFAULT, cursor: str | None = None,
+) -> BatchPredictionRowsPage | None:
+    """V7 B6: one capped page of a completed prediction's file, under the download's own
+    authorization (workspace readers; another tenant's id is None -> 404). Only the file's own
+    columns (row number, entity key, scores, label, reason_1..3), every text cell made inert;
+    ``order=score`` (highest first, ties by row number) or ``row``. At most ``ROWS_PAGE_MAX`` per
+    page and the first ``ROWS_REACHABLE_MAX`` rows of an ordering (cursor = offset, bound to this
+    prediction, ordering and tenant); files above ``ROWS_FILE_MAX_BYTES`` or ``ROWS_FILE_MAX_ROWS``
+    are download-only, and at most ``ROWS_CONCURRENT_READS`` parses run at once (else 429)."""
+
+    from app.services.cursor_codec import open_cursor
+
+    _require_read(db, actor, workspace_id)
+    row = _row(db, workspace_id, prediction_id)
+    if row is None:
+        return None
+    if row.status != PREDICTION_COMPLETED or row.output_artifact_id is None:
+        raise BatchPredictionError(
+            "prediction_not_ready", f"the prediction is {row.status}; its rows exist once it completes", status_code=409)
+    limit = max(1, min(int(limit), ROWS_PAGE_MAX))
+    scope = f"prediction-rows:{workspace_id}:{row.id}:{order}"
+    offset = 0
+    if cursor is not None and cursor.strip():
+        message = "cursor is not a rows cursor for this prediction and order"
+        position = open_cursor(cursor, scope, message=message)
+        if len(position) != 1 or not isinstance(position[0], int) or not 0 < position[0] < ROWS_REACHABLE_MAX:
+            raise InvalidCursorError(message)
+        offset = position[0]
+    artifact = get_artifact(db, workspace_id=workspace_id, artifact_id=row.output_artifact_id)
+    too_large = BatchPredictionError(
+        "prediction_rows_too_large", "this predictions file is too large to page through; download it instead",
+        status_code=409)
+    if int(artifact.size_bytes or 0) > ROWS_FILE_MAX_BYTES or int(row.rows_out or 0) > ROWS_FILE_MAX_ROWS:
+        raise too_large
+    if not _ROWS_READS.acquire(timeout=_ROWS_WAIT_SECONDS):
+        raise BatchPredictionError("rows_busy", "too many row reads are running; try again shortly", status_code=429)
+    try:
+        return _rows_page(db, row, artifact, order=order, limit=limit, offset=offset, scope=scope,
+                          too_large=too_large)
+    finally:
+        _ROWS_READS.release()
+
+
+def _rows_page(db: Session, row: BatchPrediction, artifact: Artifact, *, order: str, limit: int, offset: int,
+               scope: str, too_large: BatchPredictionError) -> BatchPredictionRowsPage:
+    import io
+
+    import numpy as np
+    import pandas as pd
+
+    from app.services.cursor_codec import sign_cursor
+
+    workspace_id = row.workspace_id
+    try:  # streamed with a byte cap, then checked against the stored digest like the download
+        payload = read_artifact_bytes(db, workspace_id=workspace_id, artifact_id=artifact.id,
+                                      max_bytes=ROWS_FILE_MAX_BYTES)
+    except ArtifactTooLargeError as exc:
+        raise too_large from exc
+    if sha256_bytes(payload) != artifact.content_digest:
+        raise BatchPredictionError("prediction_output_changed", "the stored predictions file changed", status_code=409)
+    if row.output_format == "parquet":
+        frame = pd.read_parquet(io.BytesIO(payload))
+    else:  # every cell as written (keys keep leading zeros; "NA" stays text)
+        frame = pd.read_csv(io.BytesIO(payload), dtype=str, keep_default_na=False)
+    columns = [str(name) for name in frame.columns]
+    unreadable = BatchPredictionError(
+        "prediction_rows_unavailable", "this predictions file has no rows this read can show", status_code=409)
+    if _ROW_COLUMN not in columns:
+        raise unreadable
+    entity = columns[0] if columns[0] != _ROW_COLUMN else None  # the file writes the key first
+    numbers = pd.to_numeric(frame[_ROW_COLUMN], errors="coerce").to_numpy(dtype=float)
+    if np.isnan(numbers).any():
+        raise unreadable
+    multiclass = [name for name in columns if name.startswith("probability_") and name != entity]
+    if "prediction" in columns:
+        task, scores = "regression", pd.to_numeric(frame["prediction"], errors="coerce").to_numpy(dtype=float)
+    elif "probability" in columns and "label" in columns:
+        task, scores = "binary", pd.to_numeric(frame["probability"], errors="coerce").to_numpy(dtype=float)
+    elif multiclass and "label" in columns:
+        task = "multiclass"
+        scores = frame[multiclass].apply(pd.to_numeric, errors="coerce").max(axis=1).to_numpy(dtype=float)
+    else:
+        raise unreadable
+    if order == "score":  # highest first; missing scores last; ties by row number
+        ranked = np.lexsort((numbers, np.where(np.isnan(scores), np.inf, -scores)))
+    else:
+        ranked = np.lexsort((numbers,))
+    reachable = min(len(frame), ROWS_REACHABLE_MAX)
+    chosen = ranked[offset:min(offset + limit, reachable)]
+    reason_columns = [name for name in ("reason_1", "reason_2", "reason_3") if name in columns]
+    items = []
+    for index in chosen:
+        cells = frame.iloc[int(index)]
+        reasons = [text for text in (_row_text(cells[name], REASON_TEXT_MAX) for name in reason_columns) if text]
+        score = _number(scores[int(index)])
+        items.append(BatchPredictionRowRead(
+            row_number=int(numbers[int(index)]),
+            entity=_row_text(cells[entity], ROW_TEXT_MAX) if entity else None,
+            probability=score if task != "regression" else None,
+            flagged=(_number(cells["label"]) == 1.0) if task == "binary" else None,
+            label=_row_text(cells["label"], ROW_TEXT_MAX) if task == "multiclass" else None,
+            prediction=score if task == "regression" else None,
+            reasons=reasons,
+        ))
+    following = offset + len(chosen)
+    return BatchPredictionRowsPage(
+        prediction_id=row.id, task_type=task, order=order,  # type: ignore[arg-type]
+        entity_column=_row_text(entity, ROW_TEXT_MAX) if entity else None,
+        decision_threshold=row.decision_threshold, rows_total=int(len(frame)), rows_reachable=reachable,
+        limit=limit, next_cursor=sign_cursor(scope, [following]) if following < reachable and chosen.size else None,
+        items=items, reasons=_reasons(db, row), notes=list(ROWS_NOTES),
+    )
 
 
 # --- worker --------------------------------------------------------------------------
@@ -439,7 +609,7 @@ def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[
     transform, unusable model) are recorded on the row and returned; anything else
     raises so ``execute_job`` retries it (``sync_prediction_with_job`` follows)."""
 
-    from app.engine.serving.batch_scoring import ScoringError, serialize_predictions
+    from app.engine.serving.batch_scoring import ScoringError, flagged_summary, serialize_predictions
 
     row = _row(db, job.workspace_id, job.target_id, lock=True)
     if row is None or row.status in TERMINAL_PREDICTION_STATUSES:
@@ -498,6 +668,7 @@ def run_batch_prediction_job(db: Session, job: MlJob, *, on_heartbeat: Callable[
             "model_format": saved_format,
             "reasons_method": reasons["method"] or "unavailable",  # P7.7-A
             "reasons": reasons,
+            "flagged": flagged_summary(scored.predictions, spec),  # V7 B5: binary only, else None
         }
     db.commit()
     try:  # P7.4-A: queue the week's monitoring window; never fails the committed scoring

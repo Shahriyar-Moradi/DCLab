@@ -34,6 +34,7 @@ COLUMN_NAME_MAX = 256
 SUMMARY_MAX_CHARS = 1000
 JSON_MAX_BYTES = 32768  # per jsonb column of a window
 WINDOWS_LISTED = 12
+FEATURE_SERIES_MAX = 8  # features in the overview's PSI-by-week series
 OUTCOME_SETS_LISTED = 50
 OUTCOME_SETS_TRIED = 5  # newest linked sets a window tries, newest first
 WINDOW_SCORINGS_MAX = 20  # newest completed scorings (distinct input files) per window
@@ -155,7 +156,24 @@ class MonitoringWindowSummary(BaseModel):
     coverage: float | None = Field(description="Labelled rows / scored customers with a key in this week.")
     outcome_metric: str | None
     outcome_metric_value: float | None
+    outcome_precision: float | None = Field(
+        default=None, description="Binary, outcomes measured: precision at the locked threshold on the joined rows "
+                                  "(real outcomes, never the final test). Null otherwise.")
+    outcome_recall: float | None = Field(
+        default=None, description="Binary, outcomes measured: recall at the locked threshold on the joined rows.")
     computed_at: datetime
+
+
+class MonitoringPsiPoint(BaseModel):
+    window_start: datetime
+    psi: float | None = Field(description="Null when the feature was not among the week's shown features.")
+    status: str | None = None
+
+
+class MonitoringFeatureSeries(BaseModel):
+    name: str = Field(description=_UNTRUSTED)
+    kind: str | None = None
+    points: list[MonitoringPsiPoint] = Field(description="One per listed window, oldest first.")
 
 
 class MonitoringWindowRead(MonitoringWindowSummary):
@@ -180,6 +198,10 @@ class MonitoringOverviewRead(BaseModel):
     status: OverviewStatus
     latest: MonitoringWindowSummary | None
     windows: list[MonitoringWindowSummary] = Field(description="Last 12 windows, newest first.")
+    feature_psi_series: list[MonitoringFeatureSeries] = Field(
+        default_factory=list,
+        description=f"PSI by week for the {FEATURE_SERIES_MAX} counted features with the highest PSI in any listed "
+                    "week (dates are never counted), over the same windows, oldest first.")
     finding: MonitoringFinding | None
     thresholds: MonitoringThresholds
     notes: list[str]
@@ -310,6 +332,46 @@ def outcome_sentences(outcomes: dict[str, Any], thresholds: MonitoringThresholds
     if outcomes.get("refused_sets"):
         out.append("A newer outcome file was skipped because a key appears in it more than once.")
     return out
+
+
+def outcome_rates(outcomes: dict[str, Any]) -> tuple[float | None, float | None]:
+    """(precision, recall) of a measured binary window, from its stored outcome metrics."""
+
+    metrics = outcomes.get("metrics") if outcomes.get("status") == "measured" else None
+    if not isinstance(metrics, dict):
+        return None, None
+    values = [metrics.get(key) for key in ("precision", "recall")]
+    rates = [float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+             for value in values]
+    return rates[0], rates[1]
+
+
+def feature_psi_series(windows: list[tuple[datetime, dict[str, Any]]],
+                       limit: int = FEATURE_SERIES_MAX) -> list[MonitoringFeatureSeries]:
+    """PSI by week per counted feature (dates never), from each window's stored input drift: the
+    ``limit`` features with the highest PSI in any week, ties by name; points oldest first, null
+    where the feature was not among that week's shown features."""
+
+    ordered = sorted(windows, key=lambda item: item[0])
+    weeks: list[dict[str, dict[str, Any]]] = []
+    peak: dict[str, float] = {}
+    kinds: dict[str, Any] = {}
+    for _start, drift in ordered:
+        rows = {str(row["name"]): row for row in _counted(list((drift or {}).get("features") or []))
+                if row.get("name")}
+        weeks.append(rows)
+        for name, row in rows.items():
+            peak[name] = max(peak.get(name, 0.0), float(row.get("psi") or 0.0))
+            kinds.setdefault(name, row.get("kind"))
+    chosen = sorted(peak, key=lambda name: (-peak[name], name))[:limit]
+    return [
+        MonitoringFeatureSeries(name=name, kind=kinds.get(name), points=[
+            MonitoringPsiPoint(window_start=start, psi=week[name].get("psi") if name in week else None,
+                               status=week[name].get("status") if name in week else None)
+            for (start, _drift), week in zip(ordered, weeks)
+        ])
+        for name in chosen
+    ]
 
 
 def finding_for(status: str, summary: str, input_drift: dict[str, Any], prediction_drift: dict[str, Any]) -> MonitoringFinding | None:

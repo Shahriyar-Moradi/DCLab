@@ -102,6 +102,14 @@ class DatasetProfileColumnRead(BaseModel):
     leakage_reason: str | None = Field(description="Recorded leakage reason (may quote column names).")
 
 
+class DatasetProfileTimeRangeRead(BaseModel):
+    """Earliest and latest value of the time column over the TRAINING rows only (V7 BE-C)."""
+
+    column: str = Field(description=_USER_DATA)
+    start: datetime
+    end: datetime
+
+
 class DatasetProfileRead(BaseModel):
     dataset_id: UUID
     project_id: UUID | None
@@ -111,3 +119,20 @@ class DatasetProfileRead(BaseModel):
     experiment: DatasetProfileExperimentRead | None
     importance_method: str | None
     columns: list[DatasetProfileColumnRead]
+    # V7 BE-C: summary of the same training rows (null in `upload` scope or when not determinable).
+    entity_column: str | None = Field(
+        default=None,
+        description="Column counted as the entity: the split plan's group column, else the only column the rule "
+        "reads as an identifier (null when there is none or more than one). " + _USER_DATA,
+    )
+    entity_count: int | None = Field(default=None, description="Distinct non-missing values of `entity_column`.")
+    time_range: DatasetProfileTimeRangeRead | None = Field(
+        default=None,
+        description="Time span of the training rows: the split plan's time column, else the only column the rule "
+        "reads as a date. With a time-ordered split it ends before the final test period, which is never read.",
+    )
+    target_rate: float | None = Field(
+        default=None,
+        description="Yes/no targets only: share of training rows whose target is the positive answer (the engine's "
+        "0/1 mapping). Never counts a final-test row.",
+    )

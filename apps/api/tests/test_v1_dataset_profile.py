@@ -23,7 +23,7 @@ from app.db.models import SplitPlan
 from app.services.auth_service import create_access_token
 from app.engine.validation.split_assignment import SplitAssignmentMismatchError
 from app.services import dataset_profile_service as profile_service
-from app.services.dataset_profile_service import training_statistics
+from app.services.dataset_profile_service import training_statistics, training_summary
 from app.services.split_plan_service import load_assignment
 from dclab_client import DCLabClient
 from test_v1_resources_experiments import _work
@@ -59,6 +59,47 @@ def test_training_statistics_never_count_holdout_rows():
     assert training_statistics(sparse, set(range(7)), "label")["sparse"]["rule_role"] == "ignored_free_text"
 
 
+def test_training_summary_uses_training_rows_only():
+    """V7 BE-C: entity count, time range and target rate never move with a final-test row."""
+
+    frame = pd.DataFrame({
+        "customer": ["c1", "c2", "c1", "c3", "c2", "c4", "c5", "HOLD1", "HOLD2", "HOLD3"],
+        "month": ["2025-01-01", "2025-02-01", "2025-03-01", "2025-04-01", "2025-05-01", "2025-06-01",
+                  "2025-07-01", "2026-01-01", "2026-02-01", "2026-03-01"],
+        "spend": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        "label": ["no", "yes", "no", "no", "yes", "no", "no", "yes", "yes", "yes"],
+    })
+    train = set(range(7))  # rows 7-9 are the final test period
+    stats = training_statistics(frame, train, "label", frozenset({7, 8, 9}))
+    kwargs = dict(target="label", task_type="binary", group_column="customer", time_column="month")
+    summary = training_summary(frame, train, stats, **kwargs)
+    assert set(summary) == {"entity_column", "entity_count", "time_range", "target_rate"}
+    assert (summary["entity_column"], summary["entity_count"]) == ("customer", 5)
+    assert summary["time_range"]["column"] == "month"
+    assert (summary["time_range"]["start"].date().isoformat(), summary["time_range"]["end"].date().isoformat()) == (
+        "2025-01-01", "2025-07-01")
+    assert summary["target_rate"] == pytest.approx(2 / 7)
+    changed = frame.copy()
+    changed.loc[7:9, ["customer", "month", "label"]] = [["c1", "1990-01-01", "no"]] * 3
+    assert training_summary(changed, train, stats, **kwargs) == summary
+    # Regression has no rate; an unknown time or group column falls back to the rule, never a guess.
+    assert training_summary(frame, train, stats, **{**kwargs, "task_type": "regression"})["target_rate"] is None
+    fallback = training_summary(frame, train, stats, target="label", task_type="binary", group_column=None,
+                                time_column=None)
+    identifiers = [n for n, item in stats.items() if item["rule_role"] == "identifier"]
+    assert fallback["entity_column"] == (identifiers[0] if len(identifiers) == 1 else None)
+    numeric_time = training_summary(frame, train, stats, **{**kwargs, "time_column": "spend"})
+    assert numeric_time["time_range"] is None  # numbers are never read as dates
+    # A final-test cell that changes a column's TYPE (not just its value) moves nothing either: the
+    # numeric decision is the training rows' own.
+    years = frame.assign(period=[str(y) for y in range(2015, 2025)])
+    typed = {**kwargs, "time_column": "period", "group_column": "period"}
+    base = training_summary(years, train, stats, **typed)
+    flipped = years.copy()
+    flipped.loc[9, "period"] = "unknown"
+    assert base["time_range"] is None and training_summary(flipped, train, stats, **typed) == base
+
+
 def _csv(tmp_path, n=240):
     rng = np.random.default_rng(7)
     tenure = rng.integers(1, 72, n).astype(float)
@@ -90,8 +131,12 @@ def test_profile_training_rows_only_tenant_isolation_tokens_sdk_and_catalog(clie
     before = client.get(f"/v1/datasets/{dataset.id}/profile", headers=headers)
     assert before.status_code == 200, before.text
     body = before.json()
+    assert set(body) == {"dataset_id", "project_id", "scope", "statistics_status", "split_plan", "experiment",
+                         "importance_method", "columns", "entity_column", "entity_count", "time_range", "target_rate"}
     assert (body["scope"], body["statistics_status"], body["split_plan"], body["experiment"]) == (
         "upload", "no_split_plan", None, None)
+    assert (body["entity_column"], body["entity_count"], body["time_range"], body["target_rate"]) == (
+        None, None, None, None)
     assert [c["name"] for c in body["columns"]] == list(frame.columns)
     assert all(c["missing_count"] is None and c["unique_count"] is None and c["rule_role"] is None
                for c in body["columns"])
@@ -123,6 +168,12 @@ def test_profile_training_rows_only_tenant_isolation_tokens_sdk_and_catalog(clie
     assert by_name["label"].rule_role == by_name["label"].role_used == "target"
     assert by_name["tenure"].role_used == "numerical" and by_name["tenure"].transforms
     assert by_name["marker"].leakage_excluded or by_name["marker"].role_used in {"identifier", "ignored_free_text"}
+    # V7 BE-C summary of the same training rows: the yes-rate of the label and the entity count.
+    labels = train["label"].map({"yes": 1.0, "no": 0.0})
+    assert profile.target_rate == pytest.approx(float(labels.mean()))
+    if profile.entity_column is not None:
+        assert profile.entity_count == train[profile.entity_column].nunique()
+    assert profile.time_range is None  # the file has no date column
 
     # Tenant isolation: another workspace (human or token) gets 404 for both reads.
     beta = {"Authorization": f"Bearer {create_access_token(st.beta_admin)}", "X-Workspace-Id": str(st.beta.id)}
@@ -153,4 +204,5 @@ def test_profile_training_rows_only_tenant_isolation_tokens_sdk_and_catalog(clie
     monkeypatch.setattr(profile_service, "load_assignment", tampered)
     withheld = client.get(f"/v1/datasets/{dataset.id}/profile", headers=headers).json()
     assert (withheld["scope"], withheld["statistics_status"]) == ("upload", "unavailable")
+    assert (withheld["entity_count"], withheld["time_range"], withheld["target_rate"]) == (None, None, None)
     assert all(c["missing_count"] is None and c["rule_role"] is None for c in withheld["columns"])

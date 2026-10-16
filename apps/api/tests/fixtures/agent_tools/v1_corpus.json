@@ -19,6 +19,10 @@
     "purpose": "scoring",
     "row_count": 30,
     "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    },
@@ -33,6 +37,10 @@
     "purpose": "training",
     "row_count": 240,
     "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    },
@@ -47,6 +55,10 @@
     "purpose": "training",
     "row_count": 240,
     "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    },
@@ -61,6 +73,10 @@
     "purpose": "training",
     "row_count": 240,
     "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    }
@@ -88,6 +104,10 @@
    "purpose": "training",
    "row_count": 240,
    "uploaded_by": "person",
+   "uploader": {
+    "is_you": true,
+    "kind": "person"
+   },
    "version": "v1",
    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
   },

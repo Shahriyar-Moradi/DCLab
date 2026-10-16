@@ -102,3 +102,50 @@ export function projectModelId(nodes: ReadonlyArray<{ kind: string; id: string; 
   const models = (nodes ?? []).filter((n) => n.kind === "model_version" && isUuid(n.id));
   return (models.find((n) => (n.ref_kinds ?? []).includes("champion_model")) ?? models[0])?.id ?? null;
 }
+
+/** The eight project step screens in flow order (V7 UI-A "Next step"); History ends the flow. */
+export type StepScreenId = FlowStepId | "history";
+export type NextStep = { id: StepScreenId; title: string; detail: string; href: string };
+
+export const NEXT_STEP_ORDER: ReadonlyArray<{ id: StepScreenId; title: string; detail: string }> = [
+  { id: "data", title: "Look at the data", detail: "What is in the file and which columns the model uses." },
+  { id: "goal", title: "See the goal and test design", detail: "What to predict, what good looks like, and how every run is tested." },
+  { id: "experiments", title: "Run and compare experiments", detail: "Compare a baseline with real models on the same test design." },
+  { id: "improve", title: "Try to improve the best run", detail: "Try another model family and see whether the gain is bigger than the noise." },
+  { id: "models", title: "Look at the model", detail: "Read the model card, pick a threshold and approve a model for scoring." },
+  { id: "predictions", title: "Score new data", detail: "Run the model on a new file, or let DCLab score the newest file every week." },
+  { id: "monitoring", title: "Check how the model is doing", detail: "See whether new data still looks like the data the model learned from." },
+  { id: "history", title: "See the history", detail: "Every change to this project: who made it, what it was, and when." },
+];
+
+/** Which step screen a path is: the step's own page only (a run, a model or a data version page is not a step screen). */
+export function stepScreenForPath(pathname: string, projectId: string): StepScreenId | null {
+  if (!isUuid(projectId)) return null;
+  const rest = pathname.replace(/\/+$/, "").slice(`/projects/${projectId}/`.length);
+  if (!pathname.startsWith(`/projects/${projectId}/`)) return null;
+  const parts = rest.split("/");
+  if (parts.length === 2 && parts[0] === "splits" && isUuid(parts[1])) return "goal";
+  if (parts.length !== 1) return null;
+  switch (parts[0]) {
+    case "data": case "experiments": case "improve": case "monitoring": case "predictions": return parts[0];
+    case "models": return "models";
+    case "decisions": return "history";
+    default: return null;
+  }
+}
+
+/**
+ * The page's one forward button: the next step after this screen whose page exists (built and, for Goal and Predictions,
+ * the project has the test design / a model). None on History, the last step, or outside a step screen.
+ */
+export function nextStepFor(input: { projectId: string; pathname: string; available: ReadonlySet<string>; targets: FlowInput["targets"] }): NextStep | null {
+  const here = stepScreenForPath(input.pathname, input.projectId);
+  if (!here) return null;
+  const index = NEXT_STEP_ORDER.findIndex((step) => step.id === here);
+  for (const step of NEXT_STEP_ORDER.slice(index + 1)) {
+    if (!input.available.has(step.id)) continue;
+    const href = step.id === "history" ? safeInternalHref(`/projects/${input.projectId}/decisions`) : hrefFor(step.id, input.projectId, input.targets);
+    if (href) return { ...step, href };
+  }
+  return null;
+}

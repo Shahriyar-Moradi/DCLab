@@ -1150,3 +1150,34 @@ def test_project_outcomes_reads_the_business_view():
     assert len(recorded) == 1
     assert api.projects.outcome_projects().items[0].name == "Churn" and recorded[1].url.path == "/v1/outcomes/projects"
 
+
+
+def test_v7_model_version_list_feature_contract_and_prediction_rows_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    pid, mv, pr = ("66666666-6666-6666-6666-666666666666", "77777777-7777-7777-7777-777777777777",
+                   "88888888-8888-8888-8888-888888888888")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path.endswith("/model-versions"):
+            return httpx.Response(200, json={"project_id": pid, "model_in_use_id": mv, "items": [{"id": mv}],
+                                             "next_cursor": None, "limit": 50, "cv_note": "n"})
+        if path.endswith("/feature-contract"):
+            return httpx.Response(200, json={"model_version_id": mv, "status": "available", "column_count": 1,
+                                             "columns": [{"name": "plan", "role": "categorical"}],
+                                             "target_column": "y", "manifest_digest": "d" * 64})
+        return httpx.Response(200, json={"prediction_id": pr, "task_type": "binary", "order": "row",
+                                         "entity_column": "id", "rows_total": 3, "rows_reachable": 3, "limit": 2,
+                                         "next_cursor": "c1.x.y", "items": [{"row_number": 1}]})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    assert api.model_versions.list_for_project(pid, limit=50).model_in_use_id == UUID(mv)
+    assert api.model_versions.feature_contract(mv).columns[0]["name"] == "plan"
+    assert api.predictions.rows(pr, order="row", limit=2, cursor="c1.a.b").next_cursor == "c1.x.y"
+    with pytest.raises(DCLabClientError):
+        api.predictions.rows(pr, order="random")
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/model-versions"), ("GET", f"/v1/model-versions/{mv}/feature-contract"),
+        ("GET", f"/v1/predictions/{pr}/rows")]
+    assert dict(recorded[2].url.params) == {"order": "row", "limit": "2", "cursor": "c1.a.b"}

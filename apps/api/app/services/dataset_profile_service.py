@@ -16,12 +16,16 @@ whole upload, so on a column whose holdout rows alone tip that decision the rule
 one completed experiment on that plan (the champion's when it uses the plan, else the
 newest): its column-role evidence, preprocessing record, train-only leakage plan and
 CV-validation-fold permutation importance. Nothing here reads holdout metrics.
+
+V7 BE-C: entity count, time range and target rate summarise the same training rows
+(``training_summary``); with a time-ordered plan the range ends before the final test period.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import warnings
 from collections import OrderedDict
 from typing import Any
 from uuid import UUID
@@ -50,10 +54,12 @@ from app.domain.dataset_profile import (
     DatasetProfileExperimentRead,
     DatasetProfileRead,
     DatasetProfileSplitPlanRead,
+    DatasetProfileTimeRangeRead,
     DatasetVersionRead,
 )
 from app.domain.errors import IdentityError
 from app.engine.data.loaders import load_table
+from app.engine.features.encode import coerce_binary_target
 from app.engine.lab.auto_prepare import (
     clean_feature_cells,
     coerce_numeric_like,
@@ -72,7 +78,7 @@ from app.services.technical_explorer_service import _dataset_list_item
 logger = logging.getLogger(__name__)
 
 _CACHE_MAX = 16
-_cache: OrderedDict[tuple[str, ...], dict[str, dict[str, Any]]] = OrderedDict()
+_cache: OrderedDict[tuple[str, ...], dict[str, Any]] = OrderedDict()  # {"columns": ..., "summary": ...}
 _cache_lock = threading.Lock()
 _inflight: dict[tuple[str, ...], threading.Lock] = {}
 PROFILE_MAX_ROWS = 2_000_000
@@ -133,9 +139,11 @@ def dataset_policy(db: Session, dataset: Dataset) -> DatasetPolicyRead:
     )
 
 
-def dataset_read(db: Session, *, actor: User, workspace_id: UUID, dataset_id: UUID) -> DatasetVersionRead:
+def dataset_read(db: Session, *, actor: User, workspace_id: UUID, dataset_id: UUID,
+                 viewer_id: UUID | None = None) -> DatasetVersionRead:
     dataset = _dataset(db, actor, workspace_id, dataset_id)
-    return DatasetVersionRead(**_dataset_list_item(dataset).model_dump(), policy=dataset_policy(db, dataset))
+    item = _dataset_list_item(dataset, viewer_id=viewer_id)
+    return DatasetVersionRead(**item.model_dump(), policy=dataset_policy(db, dataset))
 
 
 # --- training-row statistics ----------------------------------------------------------------
@@ -196,15 +204,63 @@ def training_statistics(frame: pd.DataFrame, train_rows: set[int], target: str,
     return out
 
 
-def _cached(key: tuple[str, ...]) -> dict[str, dict[str, Any]] | None:
+_BINARY_TASKS = frozenset({"binary", "binary_classification"})
+
+
+def _only(names: list[str]) -> str | None:
+    return names[0] if len(names) == 1 else None
+
+
+def training_summary(frame: pd.DataFrame, train_rows: set[int], stats: dict[str, dict[str, Any]], *,
+                     target: str, task_type: str, group_column: str | None,
+                     time_column: str | None) -> dict[str, Any]:
+    """Entity count, time range and target rate of the TRAINING rows only (V7 BE-C).
+
+    ``frame`` and ``train_rows`` are what ``training_statistics`` validated; holdout rows are
+    never selected, so none of the three moves with a final-test cell. The entity column is the
+    plan's group column, else the single rule ``identifier``; the time column is the plan's,
+    else the single rule ``datetime``. Ambiguous or unparsable columns give null, never a guess.
+    """
+
+    frame = frame.copy()
+    frame.columns = [str(c) for c in frame.columns]
+    train = frame.loc[frame.index.isin(sorted(train_rows))]
+    roles = {name: item.get("rule_role") for name, item in stats.items()}
+    entity = group_column if group_column in train.columns else _only(
+        [n for n, r in roles.items() if r == "identifier" and n in train.columns])
+    when = time_column if time_column in train.columns else _only(
+        [n for n, r in roles.items() if r == "datetime" and n in train.columns])
+    # The training rows' own numeric-coercion decision (as in ``training_statistics``): a column's type
+    # must never come from the whole file, where one final-test cell could flip it.
+    train = coerce_numeric_like(train, [c for c in dict.fromkeys((entity, when, target)) if c in train.columns])
+    out: dict[str, Any] = {"entity_column": entity, "entity_count": None, "time_range": None, "target_rate": None}
+    if entity is not None:
+        out["entity_count"] = int(train[entity].nunique(dropna=True))
+    if when is not None and not pd.api.types.is_numeric_dtype(train[when]):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            moments = pd.to_datetime(train[when], errors="coerce", utc=True).dropna()
+        if len(moments):
+            out["time_range"] = {"column": when, "start": moments.min().to_pydatetime(),
+                                 "end": moments.max().to_pydatetime()}
+    if task_type in _BINARY_TASKS and target in train.columns:
+        labels = coerce_binary_target(train[target]).dropna()
+        if len(labels):
+            out["target_rate"] = float(labels.mean())
+    return out
+
+
+def _cached(key: tuple[str, ...]) -> dict[str, Any] | None:
     with _cache_lock:
         if key not in _cache:
             return None
         _cache.move_to_end(key)
-        return {name: dict(item) for name, item in _cache[key].items()}
+        hit = _cache[key]
+        return {"columns": {name: dict(item) for name, item in hit["columns"].items()},
+                "summary": dict(hit["summary"])}
 
 
-def _load_statistics(db: Session, dataset: Dataset, plan: SplitPlan) -> dict[str, dict[str, Any]] | None:
+def _load_statistics(db: Session, dataset: Dataset, plan: SplitPlan) -> dict[str, Any] | None:
     """Training-row statistics, computed once per (dataset, plan) at a time (single flight)."""
 
     if dataset.row_count > PROFILE_MAX_ROWS:
@@ -223,21 +279,28 @@ def _load_statistics(db: Session, dataset: Dataset, plan: SplitPlan) -> dict[str
 
 
 def _compute_statistics(db: Session, dataset: Dataset, plan: SplitPlan, key: tuple[str, ...]
-                        ) -> dict[str, dict[str, Any]] | None:
+                        ) -> dict[str, Any] | None:
     try:
         assignment = load_assignment(db, plan)  # bytes verified against the plan's digest
         with materialize_dataset(dataset, db=db) as path:
             frame = load_table(path)
-        stats = training_statistics(frame, {int(r) for r in assignment.train_folds}, plan.target_column,
+        train_rows = {int(r) for r in assignment.train_folds}
+        stats = training_statistics(frame, train_rows, plan.target_column,
                                     frozenset(int(r) for r in assignment.holdout_rows))
     except Exception as exc:  # noqa: BLE001 - fail closed: no statistics, never a whole-file fallback
         logger.warning("dataset profile statistics unavailable: %s", type(exc).__name__)
         return None
+    try:
+        summary = training_summary(frame, train_rows, stats, target=plan.target_column, task_type=plan.task_type,
+                                   group_column=plan.group_column, time_column=plan.time_column)
+    except Exception as exc:  # noqa: BLE001 - the summary is optional; the column statistics still stand
+        logger.warning("dataset profile summary unavailable: %s", type(exc).__name__)
+        summary = {}
     with _cache_lock:
-        _cache[key] = stats
+        _cache[key] = {"columns": stats, "summary": summary}
         while len(_cache) > _CACHE_MAX:
             _cache.popitem(last=False)
-    return {name: dict(item) for name, item in stats.items()}
+    return {"columns": {name: dict(item) for name, item in stats.items()}, "summary": dict(summary)}
 
 
 # --- plan and experiment selection ----------------------------------------------------------
@@ -329,7 +392,10 @@ def dataset_profile(db: Session, *, actor: User, workspace_id: UUID, dataset_id:
         DatasetColumn.workspace_id == workspace_id, DatasetColumn.dataset_id == dataset.id,
     ).order_by(DatasetColumn.ordinal_position)).all()
     plan, plan_source = _current_plan(db, dataset)
-    stats = _load_statistics(db, dataset, plan) if plan is not None else None
+    loaded = _load_statistics(db, dataset, plan) if plan is not None else None
+    stats = loaded["columns"] if loaded is not None else None
+    summary = loaded["summary"] if loaded is not None else {}
+    time_range = summary.get("time_range")
     experiment, selection = _profiled_experiment(db, dataset, plan) if plan is not None else (None, "")
     facts, method = _run_facts(db, experiment) if experiment is not None else ({}, None)
     out = []
@@ -358,4 +424,8 @@ def dataset_profile(db: Session, *, actor: User, workspace_id: UUID, dataset_id:
         ) if experiment is not None else None,
         importance_method=method,
         columns=out,
+        entity_column=summary.get("entity_column"),
+        entity_count=summary.get("entity_count"),
+        time_range=DatasetProfileTimeRangeRead(**time_range) if time_range else None,
+        target_rate=summary.get("target_rate"),
     )

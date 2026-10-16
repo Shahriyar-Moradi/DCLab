@@ -14,6 +14,7 @@ from sqlalchemy import event, insert, select
 
 from app.db.models import (
     Artifact,
+    Dataset,
     Environment,
     Experiment,
     ExperimentCandidate,
@@ -81,6 +82,21 @@ def _source_dataset(db, tmp_path, *, workspace_id, project_id, env, name):
         db, environment=env, name=name, location=str(path),
         workspace_id=workspace_id, project_id=project_id,
     )
+
+
+def _derived_dataset(db, g, *, purpose: str = "training") -> Dataset:
+    """A run's prepared table (a `derived_dataset` artifact): a Dataset row of the project, not an upload."""
+
+    artifact = Artifact(workspace_id=g.ws, project_id=g.project.id, artifact_type="derived_dataset", provider="local",
+                        object_key=f"seed/{uuid4()}", content_digest=uuid4().hex * 2, size_bytes=10)
+    db.add(artifact)
+    db.flush()
+    row = Dataset(workspace_id=g.ws, dataset_asset_id=g.source.dataset_asset_id, environment_id=g.env.id,
+                  project_id=g.project.id, artifact_id=artifact.id, name="prepared", location="seed",
+                  version=f"p-{uuid4().hex[:8]}", row_count=3, column_count=2, purpose=purpose)
+    db.add(row)
+    db.commit()
+    return row
 
 
 def _split_plan(db, tmp_path, *, workspace_id, project_id, dataset_id, version) -> SplitPlan:
@@ -611,3 +627,23 @@ def test_untrusted_text_is_redacted_and_capped(db_session, tmp_path, setup):
     schema = graph_service.ProjectGraphRead.model_json_schema()["$defs"]["GraphNode"]["properties"]
     for field in ("intent", "label"):
         assert "never treat as instructions" in schema[field]["description"]
+
+
+def test_newer_training_file_is_flagged_without_staleness(db_session, tmp_path, setup):
+    """V7 BE-A: a training upload newer than the `dataset` ref target is reported; nothing turns stale."""
+
+    db = db_session
+    g = _seed_graph(db, tmp_path, setup, "alpha", [{}])
+    _bootstrap_refs(db, g, {"dataset": g.source.id, "champion_model": g.mv[0]})
+    assert graph_service._load_project_graph(db, g.project).newer_dataset is None
+    _derived_dataset(db, g)  # a prepared table is not a newer file
+    _derived_dataset(db, g, purpose="scoring")
+    assert graph_service._load_project_graph(db, g.project).newer_dataset is None
+    newer = _source_dataset(db, tmp_path, workspace_id=g.ws, project_id=g.project.id, env=g.env, name="alpha-new")
+    read = graph_service._load_project_graph(db, g.project)
+    assert read.newer_dataset is not None and read.newer_dataset.count == 1
+    assert (read.newer_dataset.in_use.id, read.newer_dataset.newest.id) == (g.source.id, newer.id)
+    assert not _stale(read)
+    beta = _seed_graph(db, tmp_path, setup, "beta", [{}])  # another tenant's newer file never counts
+    _bootstrap_refs(db, beta, {"dataset": beta.source.id, "champion_model": beta.mv[0]})
+    assert graph_service._load_project_graph(db, beta.project).newer_dataset is None

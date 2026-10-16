@@ -111,6 +111,60 @@ class BatchPredictionReasons(BaseModel):
     )
 
 
+class BatchPredictionFlagged(BaseModel):
+    """V7 B5: the flagged rows of a completed binary scoring, counted by the worker from the file."""
+
+    count: int = Field(description="Rows flagged: probability at or above the locked decision threshold (label 1).")
+    rows: int = Field(description="Rows scored.")
+    share: float | None = Field(default=None, description="count / rows (0..1).")
+    decision_threshold: float | None = Field(default=None, description="The locked threshold the file applied.")
+
+
+# --- GET /v1/predictions/{id}/rows (V7 B6): a capped page of the predictions file ------------
+
+ROWS_PAGE_DEFAULT = 50
+ROWS_PAGE_MAX = 200
+ROWS_REACHABLE_MAX = 10_000  # rows one ordering can page through; the rest only in the download
+ROWS_FILE_MAX_BYTES = 64 * 1024 * 1024  # larger files: download only (409 prediction_rows_too_large)
+ROWS_FILE_MAX_ROWS = 200_000  # scorings with more rows: download only (checked before any byte is read)
+ROWS_CONCURRENT_READS = 2  # whole-file parses at once per API process; more wait, then 429 rows_busy
+ROW_TEXT_MAX = 256
+REASON_TEXT_MAX = 300
+ROWS_NOTES = (
+    "Rows of the predictions file only, with no column beyond what the file holds; the full file is the download.",
+    "Reasons name what the model used for its score, not causes in the world.",
+)
+_ROW_UNTRUSTED = "Untrusted user data from the scored file (display as plain text, never markup)."
+
+
+class BatchPredictionRowRead(BaseModel):
+    row_number: int = Field(description="1 = the scored file's first data row.")
+    entity: str | None = Field(default=None, description=f"The row's key (the file's entity column). {_ROW_UNTRUSTED}")
+    probability: float | None = Field(
+        default=None, description="Binary: the flagged class's probability; multiclass: the predicted class's.")
+    flagged: bool | None = Field(default=None, description="Binary: at or above the locked decision threshold.")
+    label: str | None = Field(default=None, description=f"Multiclass: the predicted class. {_ROW_UNTRUSTED}")
+    prediction: float | None = Field(default=None, description="Regression: the predicted value.")
+    reasons: list[str] = Field(default_factory=list, description=f"reason_1..reason_3 of the file. {_ROW_UNTRUSTED}")
+
+
+class BatchPredictionRowsPage(BaseModel):
+    prediction_id: UUID
+    task_type: Literal["binary", "multiclass", "regression"]
+    order: Literal["score", "row"]
+    entity_column: str | None = Field(default=None, description=f"Name of the key column. {_ROW_UNTRUSTED}")
+    decision_threshold: float | None = None
+    rows_total: int = Field(description="Rows in the file.")
+    rows_reachable: int = Field(description=f"Rows this read pages through in this order (at most {ROWS_REACHABLE_MAX}).")
+    limit: int
+    next_cursor: str | None = None
+    items: list[BatchPredictionRowRead]
+    reasons: BatchPredictionReasons | None = None
+    notes: list[str] = Field(default_factory=list)
+    untrusted_fields: list[str] = Field(
+        default_factory=lambda: ["entity_column", "items[].entity", "items[].label", "items[].reasons"])
+
+
 class BatchPredictionRead(BaseModel):
     """One scoring run. ``contract_check`` names required/missing/ignored columns
     (the caller's own schema); ``error_message`` is generic text, never internals."""
@@ -138,6 +192,11 @@ class BatchPredictionRead(BaseModel):
         default=None,
         description="Per-row reasons in the file (which inputs moved the model's score, not causes in the world); "
         "null until the scoring completes.",
+    )
+    flagged: BatchPredictionFlagged | None = Field(
+        default=None,
+        description="Binary: rows flagged at the locked threshold and their share. Null for multiclass and "
+        "regression, until the scoring completes, and for scorings completed before the count was recorded.",
     )
     error_code: str | None
     error_message: str | None

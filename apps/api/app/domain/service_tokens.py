@@ -68,6 +68,11 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/datasets",
             "/v1/datasets/{dataset_id}",
             "/v1/datasets/{dataset_id}/profile",  # P4.1-C: training-row statistics, holdout-free
+            # V7 BE-C: goal versions and the test design; no user or token ids, final test = a row count only
+            # (no dates, rates or statistics) and the rule's reason text withheld from tokens.
+            "/v1/projects/{project_id}/problem-specs",
+            "/v1/projects/{project_id}/problem-specs/{spec_id}",
+            "/v1/split-plans/{split_plan_id}",
             "/v1/execution-requests/{request_id}",
             "/v1/model-builds/{pipeline_run_id}",
             "/v1/model-builds/{pipeline_run_id}/events",
@@ -85,8 +90,13 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/decisions/{decision_id}",
             "/v1/model-versions/{model_version_id}",
             "/v1/model-versions/{model_version_id}/card",
+            # V7 B2/B3: versions with CV metrics only (no final-test value); input column names + types only.
+            "/v1/projects/{project_id}/model-versions",
+            "/v1/model-versions/{model_version_id}/feature-contract",
             "/v1/predictions/{prediction_id}",
             "/v1/predictions/{prediction_id}/download",
+            # V7 B6: capped pages of the same file the download returns (same scope, no extra columns).
+            "/v1/predictions/{prediction_id}/rows",
             # Weekly scheduled scoring: the schedule and its runs (no user ids for tokens).
             "/v1/projects/{project_id}/scoring-schedule",
             "/v1/projects/{project_id}/scoring-schedule/runs",
@@ -136,6 +146,8 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("GET", "/v1/workspaces/{workspace_id}/members"),
         # P8.4-A: usage and plan limits are for signed-in owners, administrators and ML engineers.
         ("GET", "/v1/workspaces/{workspace_id}/usage"),
+        # V7 BE-A: the Studio flow bar's composed read (tokens use the underlying reads instead).
+        ("GET", "/v1/projects/{project_id}/flow"),
         ("POST", "/v1/service-tokens"),
         ("POST", "/v1/service-tokens/{token_id}/revoke"),
         ("POST", "/v1/decisions/{decision_id}/accept"),

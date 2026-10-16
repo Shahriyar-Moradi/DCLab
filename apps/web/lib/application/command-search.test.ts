@@ -106,7 +106,7 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   assert.deepEqual(studioNavigationForUser({ capabilities: { application_access: true } }), []);
   assert.equal(studioRoleForUser({ capabilities: { platform_read: true, development_access: true } }), "admin");
   const outside = studioNavigationForUser(developer);
-  assert.deepEqual(outside.map((g) => g.id), ["workspace", "admin"]);
+  assert.deepEqual(outside.map((g) => g.id), ["workspace", "admin", "help"]);
   assert.deepEqual(outside[0]!.items.map((i) => i.href), ["/home", "/inbox", "/projects"]);
   assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/settings", "/agents"]);
   const inside = studioNavigationForUser(developer, P1).find((g) => g.id === "project")!;
@@ -119,5 +119,5 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   assert.equal(STUDIO_BACKEND_FEATURES.monitoring, true);
   assert.equal(STUDIO_BACKEND_FEATURES.improve, true);
   assert.equal(STUDIO_BACKEND_FEATURES.assistant, false);
-  assert.deepEqual(studioNavigationForUser(developer, "../../evil?x=1").map((g) => g.id), ["workspace", "admin"]);
+  assert.deepEqual(studioNavigationForUser(developer, "../../evil?x=1").map((g) => g.id), ["workspace", "admin", "help"]);
 });

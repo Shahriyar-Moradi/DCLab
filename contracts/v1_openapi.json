@@ -1268,6 +1268,30 @@
         "successSchema": "ModelCardRead"
       }
     },
+    "/v1/model-versions/{model_version_id}/feature-contract": {
+      "GET": {
+        "operationId": "read_feature_contract_v1_model_versions__model_version_id__feature_contract_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "FeatureContractRead"
+      }
+    },
     "/v1/model-versions/{model_version_id}/predictions": {
       "POST": {
         "operationId": "create_prediction_v1_v1_model_versions__model_version_id__predictions_post",
@@ -1487,6 +1511,46 @@
         "successSchema": null
       }
     },
+    "/v1/predictions/{prediction_id}/rows": {
+      "GET": {
+        "operationId": "read_prediction_rows_v1_predictions__prediction_id__rows_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "BatchPredictionRowsPage"
+      }
+    },
     "/v1/projects": {
       "GET": {
         "operationId": "read_projects_v1_projects_get",
@@ -1649,6 +1713,29 @@
         "successSchema": "DecisionRecordRead"
       }
     },
+    "/v1/projects/{project_id}/flow": {
+      "GET": {
+        "operationId": "read_project_flow_v1_projects__project_id__flow_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectFlowRead"
+      }
+    },
     "/v1/projects/{project_id}/graph": {
       "GET": {
         "operationId": "read_project_graph_v1_projects__project_id__graph_get",
@@ -1680,6 +1767,39 @@
           "500"
         ],
         "successSchema": "ProjectGraphRead"
+      }
+    },
+    "/v1/projects/{project_id}/model-versions": {
+      "GET": {
+        "operationId": "read_project_model_versions_v1_projects__project_id__model_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectModelVersionPage"
       }
     },
     "/v1/projects/{project_id}/monitoring": {
@@ -1818,6 +1938,32 @@
       }
     },
     "/v1/projects/{project_id}/problem-specs": {
+      "GET": {
+        "operationId": "read_problem_specs_v1_projects__project_id__problem_specs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      },
       "POST": {
         "operationId": "create_problem_spec_v1_v1_projects__project_id__problem_specs_post",
         "parameters": [
@@ -1844,6 +1990,34 @@
           "500"
         ],
         "successSchema": "ProblemSpecRead"
+      }
+    },
+    "/v1/projects/{project_id}/problem-specs/{spec_id}": {
+      "GET": {
+        "operationId": "read_problem_spec_v1_projects__project_id__problem_specs__spec_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "spec_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProblemSpecDetailRead"
       }
     },
     "/v1/projects/{project_id}/refs": {
@@ -2287,6 +2461,29 @@
         "successSchema": "ServiceTokenRead"
       }
     },
+    "/v1/split-plans/{split_plan_id}": {
+      "GET": {
+        "operationId": "read_split_plan_v1_split_plans__split_plan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "split_plan_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "SplitPlanRead"
+      }
+    },
     "/v1/workspaces": {
       "GET": {
         "operationId": "read_workspaces_v1_workspaces_get",
@@ -2582,6 +2779,7 @@
         "error_code",
         "error_message",
         "execution_request_id",
+        "flagged",
         "id",
         "input_dataset_id",
         "model_release_id",
@@ -2650,6 +2848,7 @@
         "purpose",
         "row_count",
         "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ],
@@ -2663,6 +2862,7 @@
         "project_id",
         "row_count",
         "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ]
@@ -2735,12 +2935,16 @@
       "properties": [
         "columns",
         "dataset_id",
+        "entity_column",
+        "entity_count",
         "experiment",
         "importance_method",
         "project_id",
         "scope",
         "split_plan",
-        "statistics_status"
+        "statistics_status",
+        "target_rate",
+        "time_range"
       ],
       "required": [
         "columns",
@@ -2804,6 +3008,7 @@
         "purpose",
         "row_count",
         "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ],
@@ -2818,6 +3023,7 @@
         "project_id",
         "row_count",
         "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ]
@@ -3196,6 +3402,7 @@
     },
     "ModelCardFinalEvaluation": {
       "properties": [
+        "confusion",
         "decision_threshold",
         "label",
         "metric",
@@ -3345,6 +3552,7 @@
         "is_champion",
         "lineage",
         "metrics",
+        "package_verification",
         "project_id",
         "ref_kinds",
         "release",
@@ -3378,6 +3586,7 @@
     "MonitoringOverviewRead": {
       "properties": [
         "enabled",
+        "feature_psi_series",
         "finding",
         "latest",
         "model_release_id",
@@ -3440,6 +3649,8 @@
         "notes",
         "outcome_metric",
         "outcome_metric_value",
+        "outcome_precision",
+        "outcome_recall",
         "outcome_sentences",
         "outcomes",
         "outcomes_status",
@@ -3493,6 +3704,8 @@
         "n_rows",
         "outcome_metric",
         "outcome_metric_value",
+        "outcome_precision",
+        "outcome_recall",
         "outcomes_status",
         "prediction_psi",
         "revision",
@@ -3664,6 +3877,7 @@
         "counts_by_kind",
         "edges",
         "experiment_limit",
+        "newer_dataset",
         "next_cursor",
         "nodes",
         "project",

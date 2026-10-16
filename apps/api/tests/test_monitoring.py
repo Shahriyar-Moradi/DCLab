@@ -396,6 +396,27 @@ def test_monitoring_modules_never_touch_the_final_holdout():
     assert ms._cv_reference(manifest, "roc_auc", "binary") == {"metric": "roc_auc", "value": 0.8}
 
 
+def test_feature_psi_series_is_oldest_first_counted_features_only_with_gaps():
+    weeks = [datetime(2026, 9, 7, tzinfo=UTC), datetime(2026, 9, 14, tzinfo=UTC), datetime(2026, 9, 21, tzinfo=UTC)]
+    drift = {
+        weeks[2]: {"features": [{"name": "plan", "kind": "categorical", "psi": 0.3, "status": "alert", "counted": True},
+                                {"name": "when", "kind": "date", "psi": 9.0, "status": "ok", "counted": False}]},
+        weeks[0]: {"features": [{"name": "plan", "kind": "categorical", "psi": 0.01, "status": "ok", "counted": True},
+                                {"name": "age", "kind": "numeric", "psi": 0.12, "status": "watch", "counted": True}]},
+        weeks[1]: {"available": False},
+    }
+    series = dm.feature_psi_series([(start, drift[start]) for start in reversed(weeks)])  # given newest first
+    assert [row.name for row in series] == ["plan", "age"]  # highest PSI in any week first; the date never
+    assert [(p.window_start, p.psi, p.status) for p in series[0].points] == [
+        (weeks[0], 0.01, "ok"), (weeks[1], None, None), (weeks[2], 0.3, "alert")]
+    assert [p.psi for p in series[1].points] == [0.12, None, None]
+    assert dm.feature_psi_series([], limit=3) == [] and len(dm.feature_psi_series(
+        [(weeks[0], {"features": [{"name": f"f{i}", "psi": i / 100, "counted": True} for i in range(20)]})])) == 8
+    assert dm.outcome_rates({"status": "measured", "metrics": {"precision": 0.5, "recall": 0.25}}) == (0.5, 0.25)
+    assert dm.outcome_rates({"status": "not_enough_labels"}) == (None, None)
+    assert dm.outcome_rates({"status": "measured", "metrics": {"mae": 1.0}}) == (None, None)  # regression
+
+
 def test_keyed_scores_and_fixed_samples():
     newest = pd.DataFrame({"customer_id": ["a", "b", None], "probability": [0.9, 0.8, 0.7]})
     older = pd.DataFrame({"customer_id": ["b", "c"], "probability": [0.1, 0.2]})
@@ -696,6 +717,13 @@ def test_monitoring_end_to_end_with_planted_drift_and_outcomes(client, db_sessio
     assert body["thresholds"] == {"psi_watch": 0.1, "psi_alert": 0.2, "significance_level": 0.01,
                                   "flagged_share_relative_watch": 0.3, "flagged_share_absolute_watch": 0.02,
                                   "min_rows": 500, "min_labels": 100, "min_per_class": 10}
+    # V7 B7: PSI by week per counted feature (never the date) and no outcome rates before a link.
+    assert (body["latest"]["outcome_precision"], body["latest"]["outcome_recall"]) == (None, None)
+    counted = sorted((row for row in names.values() if row["kind"] != "date"), key=lambda r: (-r["psi"], r["name"]))
+    series = body["feature_psi_series"]
+    assert [row["name"] for row in series] == [row["name"] for row in counted][:dm.FEATURE_SERIES_MAX]
+    assert series[0]["points"] == [{"window_start": body["latest"]["window_start"], "psi": counted[0]["psi"],
+                                    "status": counted[0]["status"]}]
     monday = window.window_start.date().isoformat()
     detail = client.get(f"/v1/projects/{project_id}/monitoring/windows/{monday}", headers=_h(setup))
     assert detail.status_code == 200, detail.text
@@ -767,6 +795,10 @@ def test_monitoring_end_to_end_with_planted_drift_and_outcomes(client, db_sessio
     assert (outcomes["cv_reference"] is None) == (metric in ms._THRESHOLD_METRICS)
     words = client.get(f"/v1/projects/{project_id}/monitoring/windows/{monday}", headers=_h(setup)).json()
     assert words["outcome_sentences"][0] == "150 of 600 scored customers with a key have a real outcome (25%)."
+    assert (words["outcome_precision"], words["outcome_recall"]) == (
+        outcomes["metrics"]["precision"], outcomes["metrics"]["recall"])  # V7 B7: real outcomes, locked threshold
+    measured = client.get(f"/v1/projects/{project_id}/monitoring", headers=_h(setup)).json()["latest"]
+    assert measured["outcome_precision"] == outcomes["metrics"]["precision"] is not None
     listed = client.get(f"/v1/projects/{project_id}/monitoring/outcomes", headers=_h(setup)).json()
     assert [item["id"] for item in listed["items"]] == [linked.json()["id"]]
     assert listed["items"][0]["linked_by_user_id"] == str(setup["alpha_admin"].id)

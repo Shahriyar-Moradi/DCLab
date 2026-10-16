@@ -158,7 +158,9 @@ def _store_model_package(
     db: Session, experiment: Experiment, path: Path, result: dict[str, Any], feature_set_version_id: UUID | None
 ) -> tuple[Artifact, Artifact, Artifact]:
     """(model, preprocessor, manifest) artifacts of a P7.1-A model package. The run's
-    lineage is stamped into the manifest; members are copied, never deserialized."""
+    lineage is stamped into the manifest; members are copied, never deserialized. V7 B4: the
+    worker's build-time verification summary (``result.package_verification``) is stamped into
+    the manifest and the model artifact's metadata only when it names exactly these members."""
 
     from app.engine.serving.model_package import (
         PACKAGE_FORMAT,
@@ -168,18 +170,22 @@ def _store_model_package(
         read_package,
     )
 
+    checked = result.get("package_verification") if isinstance(result.get("package_verification"), dict) else None
     package, manifest_bytes = finalize_package(
         path.read_bytes(),
         training_run_id=str(experiment.id),
         feature_set_version_id=str(feature_set_version_id) if feature_set_version_id else None,
         availability=_feature_availability(result),
+        verification=checked,
     )
     contents = read_package(package)
     manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
     tag = {"package_format": PACKAGE_FORMAT, "manifest_digest": manifest_digest}
+    verification = contents.manifest.get("verification")  # present only when it matched the members
     model = _store_bytes(
         db, experiment, artifact_type="model", filename=PACKAGE_FILENAME, data=package,
-        mime_type="application/zip", role="model", metadata=tag,
+        mime_type="application/zip", role="model",
+        metadata={**tag, "verification": verification} if isinstance(verification, dict) else tag,
     )
     preprocessor = _store_bytes(
         db, experiment, artifact_type="preprocessor", filename=PREPROCESSOR_MEMBER,

@@ -72,7 +72,9 @@ def read_monitoring(
     and the last 12 weekly windows (Monday 00:00 UTC), newest first, with the code-owned
     thresholds. An ``alert`` window carries one plain finding. Drift means the inputs look
     different from training, not that the model is wrong; performance appears only when outcomes
-    are linked. ``no_model_in_use`` / ``no_windows`` before there is anything to show."""
+    are linked (binary: ``outcome_precision`` / ``outcome_recall`` per week at the locked threshold).
+    ``feature_psi_series``: PSI by week, oldest first, for the 8 counted features that moved most.
+    ``no_model_in_use`` / ``no_windows`` before there is anything to show."""
 
     response.headers.update(_NO_STORE)
     return _call(lambda: ms.monitoring_overview(db, actor=user, workspace_id=request_workspace_id(request),

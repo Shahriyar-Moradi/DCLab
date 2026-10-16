@@ -181,6 +181,16 @@ class ModelCardLlm(_Model):
     counted: str = LLM_COUNTED
 
 
+class ModelCardConfusion(_Model):
+    """Counts of the same single final evaluation at the locked decision threshold (binary)."""
+
+    tp: int = Field(description="Flagged and really positive.")
+    fp: int = Field(description="Flagged but really negative.")
+    fn: int = Field(description="Not flagged but really positive.")
+    tn: int = Field(description="Not flagged and really negative.")
+    rows: int = Field(description="Held-out rows scored (tp + fp + fn + tn).")
+
+
 class ModelCardFinalEvaluation(_Model):
     status: FinalEvaluationStatus
     label: str = FINAL_EVALUATION_LABEL
@@ -188,6 +198,11 @@ class ModelCardFinalEvaluation(_Model):
     value: float | None = None
     metrics: dict[str, float] = Field(default_factory=dict)
     decision_threshold: float | None = None
+    confusion: ModelCardConfusion | None = Field(
+        default=None,
+        description="Binary: the evaluation's 2x2 counts at the locked threshold. Null otherwise, and always "
+        "withheld (null) with the rest of this section for service-token (agent) callers.",
+    )
     note: str | None = None
 
 
@@ -458,6 +473,10 @@ def render_markdown(card: ModelCardRead) -> str:
         lines.append(f"{md(metric_label(fe.metric))} on held-out rows: {fmt(fe.value)}.")
         if fe.decision_threshold is not None:
             lines.append(f"Scored at the locked decision threshold {fmt(fe.decision_threshold)}.")
+        if fe.confusion is not None:
+            c = fe.confusion
+            lines.append(f"Counts on the {c.rows} held-out rows: {c.tp} flagged and positive, {c.fp} flagged but "
+                         f"negative, {c.fn} positive but not flagged, {c.tn} negative and not flagged.")
     else:
         lines.append(md(fe.note or "Not available."))
     return "\n".join(lines) + "\n"

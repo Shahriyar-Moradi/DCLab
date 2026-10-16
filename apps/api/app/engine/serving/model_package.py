@@ -432,15 +432,48 @@ def read_package(payload: bytes) -> PackageContents:
     return PackageContents(manifest=manifest, manifest_bytes=manifest_bytes, members=data)
 
 
+VERIFICATION_FORMAT = "dclab.model_package.verification.v1"
+PARITY_ROWS = 100  # training rows the load-back check compares (V7 B4)
+PARITY_TOLERANCE = 0.0  # exact: every family round-trips bit for bit (the runner gates on array equality)
+
+
+def members_digest(manifest: Mapping[str, Any]) -> str:
+    """One digest of the members' recorded SHA-256s: ties a verification summary to the exact
+    preprocessor and estimator bytes it checked (the manifest itself changes when finalized)."""
+
+    listed = manifest.get("members") if isinstance(manifest.get("members"), Mapping) else {}
+    return _digest_json({str(name): str((entry or {}).get("sha256")) for name, entry in listed.items()})
+
+
+def verification_summary(manifest: Mapping[str, Any], *, rows: int, max_abs_difference: float,
+                         output: str) -> dict[str, Any]:
+    """What the worker checked when it built the package (stored, never recomputed by the API):
+    the package opened with the worker's loader, every member matched its recorded SHA-256, and
+    the loaded model reproduced the fitted model's predictions on ``rows`` training rows exactly."""
+
+    return {
+        "format": VERIFICATION_FORMAT,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "opens": True,
+        "digests": True,
+        "parity": {"rows": int(rows), "row_source": "training_partition", "comparison": "exact",
+                   "tolerance": PARITY_TOLERANCE, "max_abs_difference": _plain(float(max_abs_difference)),
+                   "output": output, "passed": float(max_abs_difference) <= PARITY_TOLERANCE},
+        "members_digest": members_digest(manifest),
+    }
+
+
 def finalize_package(
     payload: bytes,
     *,
     training_run_id: str,
     feature_set_version_id: str | None,
     availability: Mapping[str, str],
+    verification: Mapping[str, Any] | None = None,
 ) -> tuple[bytes, bytes]:
     """(package, manifest bytes) with the run's lineage and each column's prediction-time
-    availability stamped into the manifest. Members are copied byte for byte."""
+    availability stamped into the manifest. Members are copied byte for byte. ``verification``
+    (V7 B4, additive): the build-time check summary, stamped only when it names these members."""
 
     contents = read_package(payload)
     manifest = json.loads(contents.manifest_bytes.decode("utf-8"))
@@ -451,6 +484,8 @@ def finalize_package(
         column["availability"] = str(availability.get(column["name"]) or "unknown")
     contract.pop("digest", None)
     contract["digest"] = _digest_json(contract)
+    if verification is not None and verification.get("members_digest") == members_digest(manifest):
+        manifest["verification"] = dict(verification)
     return _assemble(contents.members, manifest)
 
 

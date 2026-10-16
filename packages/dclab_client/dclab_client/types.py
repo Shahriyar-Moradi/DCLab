@@ -113,6 +113,14 @@ class DatasetPolicy(BaseModel):
     workspace_ai_max_class: str | None = None
 
 
+class Creator(BaseModel):
+    """Who made a node, without ids or names: ``person`` (``is_you`` when it is the reader),
+    ``connected_tool`` (a service token), ``agent``, ``rule`` or ``unknown``. ``is_you`` is never true for tokens."""
+
+    kind: str
+    is_you: bool = False
+
+
 class Dataset(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -127,6 +135,7 @@ class Dataset(BaseModel):
     # connected_tool = uploaded with a service token; person = not (own session / own API token). The
     # default only keeps the SDK reading servers from before upload attribution (0082).
     uploaded_by: str = "person"
+    uploader: Creator | None = None  # None only for servers before V7 BE-C
     created_at: datetime
 
 
@@ -169,6 +178,12 @@ class DatasetProfileColumn(BaseModel):
     leakage_reason: str | None = None
 
 
+class DatasetProfileTimeRange(BaseModel):
+    column: str
+    start: datetime
+    end: datetime
+
+
 class DatasetProfile(BaseModel):
     """``GET /v1/datasets/{id}/profile``: statistics over the current split plan's training rows only
     (``scope == "training_rows"``); ``scope == "upload"`` carries names and types without statistics."""
@@ -181,6 +196,11 @@ class DatasetProfile(BaseModel):
     experiment: DatasetProfileExperiment | None = None
     importance_method: str | None = None
     columns: list[DatasetProfileColumn]
+    # Training rows only (never a final-test row); null in ``upload`` scope or when not determinable.
+    entity_column: str | None = None
+    entity_count: int | None = None
+    time_range: DatasetProfileTimeRange | None = None
+    target_rate: float | None = None
 
 
 class ProblemSpec(_Versioned):
@@ -202,6 +222,65 @@ class ProblemSpec(_Versioned):
     created_by: UUID
     created_at: datetime
     locked_at: datetime | None = None
+
+
+class ProblemSpecDetail(BaseModel):
+    """``GET /v1/projects/{id}/problem-specs[/{spec_id}]``: one goal version, without user ids."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    version: int
+    task_type: str
+    target_column: str | None = None
+    prediction_unit: str | None = None
+    prediction_time_column: str | None = None
+    prediction_horizon: str | None = None
+    primary_metric: str | None = None
+    business_objective: str
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    success_criteria: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    content_digest: str
+    is_current: bool = False
+    creator: Creator
+    created_at: datetime
+    locked_at: datetime | None = None
+
+
+class SplitPlanFold(BaseModel):
+    fold_number: int
+    train_row_count: int
+    validation_row_count: int
+
+
+class SplitPlan(BaseModel):
+    """``GET /v1/split-plans/{id}``: the test design. The final test set is a row count only."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    dataset_id: UUID
+    version: int
+    task_type: str
+    target_column: str
+    evaluation_strategy: str
+    validation_strategy: str
+    validation_folds: int
+    stratified: bool
+    time_column: str | None = None
+    group_column: str | None = None
+    row_count: int
+    train_row_count: int
+    evaluation_row_count: int
+    has_evaluation_set: bool
+    folds_status: str
+    folds: list[SplitPlanFold] = Field(default_factory=list)
+    warmup_row_count: int | None = None  # time-ordered folds only
+    reason: str | None = None  # null for service tokens
+    creator: Creator
+    created_at: datetime
+    locked_at: datetime
 
 
 class DatasetIngestion(BaseModel):
@@ -413,6 +492,8 @@ class ProjectGraph(BaseModel):
     truncated: bool
     truncated_kinds: list[str] = Field(default_factory=list)
     next_cursor: str | None = None
+    # A training file newer than the `dataset` ref target exists (no ref moved, nothing stale).
+    newer_dataset: dict[str, Any] | None = None
 
 
 class NodeImpact(BaseModel):
@@ -578,7 +659,7 @@ class ActivitySubject(BaseModel):
 
 
 class ActivityLink(BaseModel):
-    kind: str  # decision_record | experiment | agent_run
+    kind: str  # decision_record | experiment | agent_run | dataset_version | monitoring_window | scoring_schedule_run
     id: UUID
 
 
@@ -595,6 +676,8 @@ class ActivityItem(BaseModel):
     status: str | None = None
     decision_type: str | None = None
     link: ActivityLink
+    # `run_finished` with locked evidence: model_family, algorithm, metric, cv_score (CV only).
+    run_result: dict[str, Any] | None = None
 
 
 class ActivityPage(BaseModel):
@@ -622,7 +705,7 @@ class InboxItem(BaseModel):
     """One ``GET /v1/inbox`` item. ``rule_answer`` / ``ai_answer`` are untrusted data (``None`` for tokens)."""
 
     id: str
-    kind: str  # decision_proposal | agent_proposal | question | run_finished
+    kind: str  # decision_proposal | agent_proposal | question | run_finished | drift_alert
     tab: str
     occurred_at: datetime
     project_id: UUID | None = None
@@ -643,6 +726,9 @@ class InboxItem(BaseModel):
     evidence_refs: list[InboxRef] = Field(default_factory=list)
     actions: list[InboxAction] = Field(default_factory=list)
     can_act: bool
+    agreement: str | None = None  # Jev items: agree | disagree | abstain | unavailable
+    resolved_by: dict[str, Any] | None = None  # done items: {"kind": person | rule | agent, "is_you": bool}
+    monitoring: dict[str, Any] | None = None  # drift_alert items: window_start, model_version_id, max_psi, ...
 
 
 class InboxViewer(BaseModel):
@@ -1277,6 +1363,8 @@ class ModelVersion(_Versioned):
     ref_kinds: list[str] = Field(default_factory=list)
     artifacts: list[ModelVersionArtifact] = Field(default_factory=list)
     release: ModelReleaseSummary | None = None
+    # V7 B4: the worker's stored build-time checks on the saved model file (opens, digests, parity).
+    package_verification: dict[str, Any] | None = None
 
 
 class ModelCardMetricInWords(BaseModel):
@@ -1425,6 +1513,8 @@ class BatchPrediction(_Versioned):
     completed_at: datetime | None = None
     scheduled: bool = False  # queued by the project's weekly schedule (False: scored by hand)
     scheduled_for: datetime | None = None
+    # V7 B5: binary only: rows flagged at the locked threshold (count, rows, share, decision_threshold).
+    flagged: dict[str, Any] | None = None
 
     @property
     def is_terminal(self) -> bool:
@@ -1656,3 +1746,48 @@ class BusinessOutcomes(BaseModel):
     limits: list[str] = Field(default_factory=list)
     boundary: str
     untrusted_fields: list[str] = Field(default_factory=list)
+
+
+class ProjectModelVersionPage(BaseModel):
+    """V7 B2: a project's model versions, newest first, with CV metrics only and where each stands
+    (``in_use`` / ``waiting_for_approval`` / ``approved_earlier`` / ``not_in_use``)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    project_id: UUID
+    model_in_use_id: UUID | None = None
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    next_cursor: str | None = None
+    limit: int
+
+
+class FeatureContract(BaseModel):
+    """V7 B3: the columns a scoring file must have: names and types only. Column names are
+    untrusted user data."""
+
+    model_config = ConfigDict(extra="allow")
+
+    model_version_id: UUID
+    status: str  # available | names_only
+    column_count: int
+    columns: list[dict[str, Any]] = Field(default_factory=list)
+    target_column: str | None = None
+    manifest_digest: str
+
+
+class PredictionRowsPage(BaseModel):
+    """V7 B6: one capped page of a predictions file (the file's own columns; entity values, labels
+    and reasons are untrusted user data, and reasons say what the model used, not causes)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    prediction_id: UUID
+    task_type: str
+    order: str
+    entity_column: str | None = None
+    rows_total: int
+    rows_reachable: int
+    limit: int
+    next_cursor: str | None = None
+    items: list[dict[str, Any]] = Field(default_factory=list)
+

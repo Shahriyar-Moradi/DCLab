@@ -375,7 +375,7 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
   ];
   return (
     <>
-      <PageHead title="Monitoring" subtitle="Whether the data the model in use scores still looks like the data it learned from, and how it really did once outcomes are known." badges={<Pill tone="ok">Working today</Pill>} />
+      <PageHead title="Monitoring" subtitle="Whether the data the model in use scores still looks like the data it learned from, and how it really did once outcomes are known." />
       <PageGuide
         purpose={<>Each <Term definition={WEEK_DEFINITION}>week</Term>, DCLab compares the rows the model in use scored with its training data, column by column, and compares its scores with the scores it gave during training. Once you link real outcomes, it also shows how the model really did on those rows.</>}
         howTo="Read the status first, then open a week to see which columns moved. When real results are known, link the file that holds them below."

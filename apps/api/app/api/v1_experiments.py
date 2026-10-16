@@ -78,7 +78,11 @@ from app.domain.experiment_resources import (
     ExperimentPage,
     ExperimentDetailRead,
     ExperimentStatus,
+    FeatureContractRead,
+    MODEL_VERSION_PAGE_DEFAULT,
+    MODEL_VERSION_PAGE_MAX,
     ModelVersionResourceRead,
+    ProjectModelVersionPage,
 )
 from app.domain.experiment_verdict import ExperimentVerdictRead
 from app.domain.findings import ExperimentFindingsRead
@@ -94,7 +98,9 @@ from app.services.experiment_service import (
     experiment_read,
     experiments_for_compare,
     list_experiments,
+    list_project_model_versions,
     model_card_read,
+    model_feature_contract,
     model_version_read,
     start_root_experiment,
 )
@@ -630,6 +636,77 @@ def read_model_card(
     body = model_card_view(request, body)  # second guard for service tokens
     set_etag(response, representation_etag(body))
     # The representation depends on the principal (final evaluation for humans only).
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get(
+    "/projects/{project_id}/model-versions",
+    response_model=ProjectModelVersionPage,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
+def read_project_model_versions(
+    project_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
+    limit: int = Query(MODEL_VERSION_PAGE_DEFAULT, ge=1, le=MODEL_VERSION_PAGE_MAX),
+) -> ProjectModelVersionPage:
+    """V7 B2: the project's model versions, newest first, each with its locked winner's
+    cross-validation metrics (``cv``; binary fold means at the locked threshold in
+    ``cv_at_locked_threshold``; never a final-test value, for people and service tokens alike)
+    and its standing: ``in_use`` (the model in use), ``waiting_for_approval`` (an open proposal to
+    put it in use), ``approved_earlier`` or ``not_in_use``, plus whether a person approved the
+    model in use for scoring. Another workspace's project: 404."""
+
+    try:
+        body = list_project_model_versions(
+            db, actor=user, workspace_id=request_workspace_id(request), project_id=project_id, cursor=cursor,
+            limit=limit,
+        )
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except InvalidCursorError as exc:
+        raise V1APIError(400, "invalid_cursor", str(exc)) from exc
+    except IdentityError as exc:
+        raise domain_error(exc) from exc
+    set_etag(response, representation_etag(body))
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get(
+    "/model-versions/{model_version_id}/feature-contract",
+    response_model=FeatureContractRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}, **error_responses(409)},
+)
+def read_feature_contract(
+    model_version_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> FeatureContractRead:
+    """V7 B3: the columns a file must have to be scored by this model version, from its stored
+    feature manifest: name, role (numeric / categorical), training dtype, required, date flag.
+    Names and types only: allowed values, formats and every other value are never returned.
+    Extra columns and the target column are ignored when scoring. Models saved before the package
+    format: ``status: names_only``. ``409 feature_contract_unavailable`` without a readable
+    manifest. Another workspace's model version: 404."""
+
+    try:
+        body = model_feature_contract(
+            db, actor=user, workspace_id=request_workspace_id(request), model_version_id=model_version_id
+        )
+    except (IdentityError, ExperimentRequestError) as exc:
+        raise domain_error(exc) from exc
+    if body is None:
+        raise _not_found("model version not found")
+    set_etag(response, representation_etag(body))
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Authorization, Cookie"
     return body

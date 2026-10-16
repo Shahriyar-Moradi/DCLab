@@ -1306,6 +1306,34 @@ def test_the_manifest_carries_the_locked_threshold_and_the_run_records_packaging
     assert manifest["decision_threshold"] == pytest.approx(locked if locked is not None else 0.5)
     assert "model_package_saved" in events
     assert any(row.get("stage") == "model_packaging" for row in result["execution_stage_timings"])
+    # V7 B4: the load-back checks are summarised for persistence, tied to the exact members checked.
+    checked = result["package_verification"]
+    from test_ml2_pipeline_integrity import _integrity_frame
+
+    n_pool = len(_integrity_frame()) - int(result["best_single"]["n_test_rows"])
+    assert checked["parity"] == {"rows": min(mp.PARITY_ROWS, n_pool), "row_source": "training_partition",
+                                 "comparison": "exact", "tolerance": 0.0, "max_abs_difference": 0.0,
+                                 "output": "positive_class_probability", "passed": True}
+    assert (checked["format"], checked["opens"], checked["digests"]) == (mp.VERIFICATION_FORMAT, True, True)
+    assert checked["members_digest"] == mp.members_digest(manifest) and "verification" not in manifest
+
+
+def test_build_time_verification_is_stamped_only_for_the_members_it_checked():
+    frame = _frame()
+    pipeline = _fitted("binary", "logistic_regression", frame, _target("binary", frame))
+    raw = mp.build_package(pipeline, family="logistic_regression", task_type="binary", candidate_id="c",
+                           training_dtypes={}, feature_actions=ACTIONS, target="y", cv={})
+    summary = mp.verification_summary(mp.read_package(raw).manifest, rows=100, max_abs_difference=0.0,
+                                      output="positive_class_probability")
+    stamped, manifest_bytes = mp.finalize_package(raw, training_run_id="r", feature_set_version_id=None,
+                                                  availability={}, verification=summary)
+    contents = mp.read_package(stamped)
+    assert contents.manifest["verification"] == summary and contents.members == mp.read_package(raw).members
+    assert _load(stamped, manifest_bytes).pipeline is not None  # the stamped manifest still loads
+    elsewhere = {**summary, "members_digest": "0" * 64}  # a summary of other members is never stamped
+    plain, _ = mp.finalize_package(raw, training_run_id="r", feature_set_version_id=None, availability={},
+                                   verification=elsewhere)
+    assert "verification" not in mp.read_package(plain).manifest
 
 
 def test_benchmark_predictions_use_the_model_package(tmp_path):

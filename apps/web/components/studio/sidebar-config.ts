@@ -12,7 +12,7 @@ export type StudioRole = "developer" | "admin" | "client" | "operator";
 export type StudioFeature =
   | "home" | "projects" | "inbox" | "governance" | "agents" | "settings" | "assistant"
   | "lab" | "pipeline" | "graph" | "data" | "goal" | "experiments" | "improve" | "models" | "predictions" | "monitoring" | "decisions"
-  | "client_outcomes" | "client_predictions" | "client_questions"
+  | "client_outcomes" | "client_predictions" | "client_questions" | "business_view" | "real"
   | "operator_overview" | "operator_workspaces" | "operator_jobs" | "operator_quarantine" | "operator_caps" | "operator_gates";
 
 /** Backend availability per feature. Missing key = not available. */
@@ -76,6 +76,22 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
       { id: "settings", label: "Settings", href: "/settings", icon: "≡", roles: WORK, feature: "settings", phase: "P4.14" },
       { id: "governance", label: "AI settings", href: "/governance", icon: "⚖", roles: WORK, feature: "governance", phase: "P6.11-UI" },
       { id: "agents", label: "Connect", href: "/agents", icon: "⚙", roles: WORK, feature: "agents", phase: "P4.8-UI" },
+    ],
+  },
+  {
+    // What a business user of this workspace sees (V7 UI-A). Listed only for people who may open `/outcomes` (studio-navigation.ts).
+    id: "other",
+    label: "Other views",
+    items: [
+      { id: "business-view", label: "Business view", href: "/outcomes", icon: "◉", roles: WORK, feature: "business_view", phase: "P7.6-A" },
+    ],
+  },
+  {
+    // The honest list of every screen and its status (V7 UI-A, lib/application/screen-status.ts).
+    id: "help",
+    label: "Help",
+    items: [
+      { id: "real", label: "What's real today", href: "/real", icon: "◌", roles: WORK, feature: "real", phase: "V7 UI-A" },
     ],
   },
   {

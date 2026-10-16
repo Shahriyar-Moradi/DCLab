@@ -565,6 +565,19 @@ def score_frame(
     return ScoredFrame(predictions=table, contract=contract, reasons=summary)
 
 
+def flagged_summary(table: pd.DataFrame, spec: ScoringSpec) -> dict[str, Any] | None:
+    """Binary only: how many scored rows are flagged (``label`` 1, i.e. ``probability`` at or above
+    the locked decision threshold) and their share. Counted from the written file's rows; None
+    for multiclass and regression (no single flagged class)."""
+
+    if spec.task_type != "binary" or "label" not in table.columns:
+        return None
+    rows = int(len(table))
+    count = int(pd.to_numeric(table["label"], errors="coerce").fillna(0).astype(int).sum())
+    return {"count": count, "rows": rows, "share": round(count / rows, 6) if rows else None,
+            "decision_threshold": spec.decision_threshold}
+
+
 def serialize_predictions(table: pd.DataFrame, output_format: str) -> tuple[bytes, str, str]:
     """(bytes, mime type, file extension)."""
 

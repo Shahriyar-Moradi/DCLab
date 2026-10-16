@@ -33,6 +33,7 @@ from dclab_client.types import (
     ExperimentCode,
     ExperimentComparison,
     ExperimentFindings,
+    FeatureContract,
     OperatingPointChoice,
     OperatingPoints,
     ExperimentVerdict,
@@ -47,10 +48,13 @@ from dclab_client.types import (
     ModelVersion,
     NodeImpact,
     PolicyChange,
+    PredictionRowsPage,
     Principal,
     ProblemSpec,
+    ProblemSpecDetail,
     Project,
     ProjectGraph,
+    ProjectModelVersionPage,
     ProjectRef,
     ProjectRefList,
     Proposal,
@@ -63,6 +67,7 @@ from dclab_client.types import (
     OutcomeSetList,
     ScoringScheduleRunPage,
     ScoringScheduleState,
+    SplitPlan,
     Visualization,
     Workspace,
     _Versioned,
@@ -219,6 +224,24 @@ class ProjectsClient:
         )
         return _versioned(ProblemSpec, payload, headers)
 
+    def problem_specs(
+        self, project_id: UUID | str, *, limit: int | None = None, request_id: str | None = None
+    ) -> list[ProblemSpecDetail]:
+        """ProblemSpec versions of the project, newest first (no user ids; ``creator`` says who)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/problem-specs", params={"limit": limit}, request_id=request_id
+        )
+        return [ProblemSpecDetail.model_validate(row) for row in payload]
+
+    def problem_spec(
+        self, project_id: UUID | str, spec_id: UUID | str, *, request_id: str | None = None
+    ) -> ProblemSpecDetail:
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/problem-specs/{_id(spec_id)}", request_id=request_id
+        )
+        return ProblemSpecDetail.model_validate(payload)
+
     def outcomes(self, project_id: UUID | str, *, request_id: str | None = None) -> BusinessOutcomes:
         """The Business view (P7.6-A): the model in use, its final test in plain sentences (service
         tokens get ``headline.status == "withheld"``), how it was built, the latest list and its limits."""
@@ -249,6 +272,12 @@ class ProjectsClient:
             request_id=request_id,
         )
         return ProjectGraph.model_validate(payload)
+
+    def flow(self, project_id: UUID | str, *, request_id: str | None = None) -> dict[str, Any]:
+        """The Studio flow bar's typed facts per step (V7 BE-A; CV figures only). People only: a user
+        token works, a service token gets 403 ``service_token_not_permitted`` (use the underlying reads)."""
+
+        return self._transport.request("GET", f"/v1/projects/{_id(project_id)}/flow", request_id=request_id)
 
     def decisions(
         self,
@@ -798,6 +827,26 @@ class ModelVersionsClient:
         )
         return ModelCard.model_validate(payload)
 
+    def list_for_project(
+        self, project_id: UUID | str, *, cursor: str | None = None, limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ProjectModelVersionPage:
+        """V7 B2: the project's model versions, newest first, CV metrics only, with their standing."""
+
+        params = {key: value for key, value in (("cursor", cursor), ("limit", limit)) if value is not None}
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/model-versions", params=params or None, request_id=request_id
+        )
+        return ProjectModelVersionPage.model_validate(payload)
+
+    def feature_contract(self, model_version_id: UUID | str, *, request_id: str | None = None) -> FeatureContract:
+        """V7 B3: the columns a file must have to be scored (names and types only, never values)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/model-versions/{_id(model_version_id)}/feature-contract", request_id=request_id
+        )
+        return FeatureContract.model_validate(payload)
+
 
 class ReleasesClient:
     """Approvals of the model in use (P7.2-A), read-only: a person approves by putting a model in
@@ -923,6 +972,13 @@ class NodesClient:
             request_id=request_id,
         )
         return NodeImpact.model_validate(payload)
+
+    def split_plan(self, split_plan_id: UUID | str, *, request_id: str | None = None) -> SplitPlan:
+        """The test design of one SplitPlan: strategy, folds with per-fold row counts, row counts, reason
+        (null for service tokens) and who made it. The final test set is a row count only."""
+
+        payload = self._transport.request("GET", f"/v1/split-plans/{_id(split_plan_id)}", request_id=request_id)
+        return SplitPlan.model_validate(payload)
 
 
 class DatasetsClient:
@@ -1399,6 +1455,25 @@ class PredictionsClient:
         if to is not None:
             Path(to).write_bytes(content)
         return content
+
+    def rows(
+        self, prediction_id: UUID | str, *, order: str = "score", limit: int | None = None,
+        cursor: str | None = None, request_id: str | None = None,
+    ) -> PredictionRowsPage:
+        """V7 B6: one capped page (at most 200 rows; the first 10,000 of an ordering) of a completed
+        predictions file, ``order`` = ``score`` (highest first) or ``row``."""
+
+        if order not in {"score", "row"}:
+            raise DCLabClientError("order must be one of: row, score")
+        params: dict[str, Any] = {"order": order}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        payload = self._transport.request(
+            "GET", f"/v1/predictions/{_id(prediction_id)}/rows", params=params, request_id=request_id
+        )
+        return PredictionRowsPage.model_validate(payload)
 
 
 class VisualizationsClient:

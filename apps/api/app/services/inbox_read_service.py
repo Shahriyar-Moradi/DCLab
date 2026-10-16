@@ -24,12 +24,20 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, exists, func, not_, or_, select
+from sqlalchemy import and_, exists, func, not_, or_, select, union_all
 from sqlalchemy.orm import Session, aliased
 
 from app.agents.tools.shaping import holdout_scoped
-from app.db.models import AgentProposal, ExecutionRequest, Experiment, ProjectDecisionRecord, User
-from app.domain.agent_records import AGENT_SUBJECT_COLUMNS
+from app.db.models import (
+    AgentProposal,
+    ExecutionRequest,
+    Experiment,
+    MonitoringWindow,
+    ProjectDecisionRecord,
+    SemanticDecisionAnswer,
+    User,
+)
+from app.domain.agent_records import AGENT_SUBJECT_COLUMNS, SEMANTIC_AGREEMENTS
 from app.domain.decision_records import (
     ACTOR_AGENT,
     ACTOR_RULE,
@@ -53,8 +61,10 @@ from app.domain.inbox_reads import (
     InboxActionRead,
     InboxCounts,
     InboxItemRead,
+    InboxMonitoringRead,
     InboxPage,
     InboxRefRead,
+    InboxResolverRead,
     InboxSubjectRead,
     InboxViewerRead,
 )
@@ -64,7 +74,13 @@ from app.services.audience_projection import public_diagnostic
 from app.services.authorization_service import can_approve_ai_policy, can_execute_workspace_ml, can_read_workspace
 from app.services.cursor_codec import open_cursor, scope_digest, sign_cursor
 from app.services.experiment_service import STATUS_SQL
-from app.services.home_read_service import decision_summary, keyset_before, run_label
+from app.services.home_read_service import (
+    decision_summary,
+    keyset_before,
+    latest_window_revision,
+    newest_week_of_model_in_use,
+    run_label,
+)
 from app.services.project_service import get_project
 
 # Existing routes the actions name (operation ids of the OpenAPI inventory).
@@ -107,7 +123,7 @@ class _Ctx:
     visible: Any  # ToolCallProposal visibility (None: no restriction)
 
 
-# --- sources: (statement, occurred_at column, id column) ------------------------------------------
+# --- sources: (statement, occurred_at column, id column, project column) ---------------------------
 
 
 def _scoped(stmt: Any, ws_column: Any, project_column: Any, ctx: _Ctx) -> Any:
@@ -119,19 +135,20 @@ def _decisions_open(ctx: _Ctx) -> tuple[Any, Any, Any]:
     pdr, successor = ProjectDecisionRecord, aliased(ProjectDecisionRecord)
     stmt = select(pdr).where(pdr.state == STATE_PROPOSED, ~exists().where(
         successor.supersedes_id == pdr.id, successor.workspace_id == pdr.workspace_id))
-    return _scoped(stmt, pdr.workspace_id, pdr.project_id, ctx), pdr.recorded_at, pdr.id
+    return _scoped(stmt, pdr.workspace_id, pdr.project_id, ctx), pdr.recorded_at, pdr.id, pdr.project_id
 
 
 def _decisions_done(ctx: _Ctx) -> tuple[Any, Any, Any]:
     pdr, resolution, correction = ProjectDecisionRecord, aliased(ProjectDecisionRecord), aliased(ProjectDecisionRecord)
     stmt = (
-        select(pdr, resolution.id, resolution.state, resolution.recorded_at, correction.id)
+        select(pdr, resolution.id, resolution.state, resolution.recorded_at, correction.id, resolution.actor_kind,
+               resolution.actor_user_id)
         .join(resolution, and_(resolution.supersedes_id == pdr.id, resolution.workspace_id == pdr.workspace_id))
         .outerjoin(correction, and_(correction.supersedes_id == resolution.id,
                                     correction.workspace_id == resolution.workspace_id))
         .where(pdr.state == STATE_PROPOSED)
     )
-    return _scoped(stmt, pdr.workspace_id, pdr.project_id, ctx), resolution.recorded_at, pdr.id
+    return _scoped(stmt, pdr.workspace_id, pdr.project_id, ctx), resolution.recorded_at, pdr.id, pdr.project_id
 
 
 def _auto_applied() -> Any:
@@ -151,23 +168,37 @@ def _proposals(ctx: _Ctx, tab: str) -> tuple[Any, Any, Any]:
         where = or_(ap.status.in_(_PROPOSAL_DONE), and_(ap.status == "applied", not_(_auto_applied())),
                     and_(ap.status == "proposed", not_(unexpired)))
         at = func.coalesce(ap.decided_at, ap.created_at)
-    stmt = select(ap, prs.owner_user_id_sql().label("owner_id"), at.label("at")).where(where)
+    sda = SemanticDecisionAnswer
+    stmt = (select(ap, prs.owner_user_id_sql().label("owner_id"), at.label("at"), sda.agreement)
+            .outerjoin(sda, and_(sda.id == ap.semantic_answer_id, sda.workspace_id == ap.workspace_id)).where(where))
     if ctx.visible is not None:
         stmt = stmt.where(ctx.visible)
-    return _scoped(stmt, ap.workspace_id, ap.project_id, ctx), at, ap.id
+    return _scoped(stmt, ap.workspace_id, ap.project_id, ctx), at, ap.id, ap.project_id
 
 
 def _questions(ctx: _Ctx) -> tuple[Any, Any, Any]:
     er = ExecutionRequest
     stmt = select(er.id, er.project_id, er.pipeline_run_id, er.result_summary, er.created_at).where(
         er.status == REQUEST_NEEDS_INPUT)
-    return _scoped(stmt, er.workspace_id, er.project_id, ctx), er.created_at, er.id
+    return _scoped(stmt, er.workspace_id, er.project_id, ctx), er.created_at, er.id, er.project_id
 
 
 def _runs_finished(ctx: _Ctx) -> tuple[Any, Any, Any]:
     stmt = select(Experiment.id, Experiment.project_id, Experiment.ended_at, Experiment.run_number,
                   Experiment.parent_pipeline_run_id, STATUS_SQL).where(Experiment.ended_at.is_not(None))
-    return _scoped(stmt, Experiment.workspace_id, Experiment.project_id, ctx), Experiment.ended_at, Experiment.id
+    return (_scoped(stmt, Experiment.workspace_id, Experiment.project_id, ctx), Experiment.ended_at, Experiment.id,
+            Experiment.project_id)
+
+
+def _drift_alerts(ctx: _Ctx, current: bool) -> tuple[Any, Any, Any, Any]:
+    """Alert windows (highest revision): the newest week of the model in use waits for a person."""
+
+    mw = MonitoringWindow
+    newest = newest_week_of_model_in_use()
+    stmt = select(mw.id, mw.project_id, mw.model_version_id, mw.window_start, mw.computed_at,
+                  mw.input_drift["max_psi"].as_float(), mw.prediction_drift["psi"].as_float()).where(
+        mw.status == "alert", latest_window_revision(), newest if current else not_(newest))
+    return _scoped(stmt, mw.workspace_id, mw.project_id, ctx), mw.computed_at, mw.id, mw.project_id
 
 
 _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
@@ -175,12 +206,14 @@ _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
         ("decision_proposal", _decisions_open),
         ("agent_proposal", lambda c: _proposals(c, "needs_decision")),
         ("question", _questions),
+        ("drift_alert", lambda c: _drift_alerts(c, True)),
     ),
     "applied_automatically": (("agent_proposal", lambda c: _proposals(c, "applied_automatically")),),
     "done": (
         ("decision_proposal", _decisions_done),
         ("agent_proposal", lambda c: _proposals(c, "done")),
         ("run_finished", _runs_finished),
+        ("drift_alert", lambda c: _drift_alerts(c, False)),
     ),
 }
 
@@ -245,7 +278,7 @@ def _primary_ref_kind(details: Any) -> str | None:
 
 
 def _decision_item(ctx: _Ctx, tab: str, row: ProjectDecisionRecord, at: datetime,
-                   resolution: tuple[UUID, str, UUID | None] | None) -> InboxItemRead:
+                   resolution: tuple[UUID, str, UUID | None, str, UUID | None] | None) -> InboxItemRead:
     column = SUBJECT_COLUMNS.get(row.subject_kind)
     subject_id = getattr(row, column) if column else row.project_id
     # Agent readers never get a holdout-scoped ref (the `GET /v1/decisions/{id}` agent view drops them too).
@@ -254,6 +287,7 @@ def _decision_item(ctx: _Ctx, tab: str, row: ProjectDecisionRecord, at: datetime
                 and not (ctx.agent and holdout_scoped(r))]
     actions: list[InboxActionRead] = []
     status = STATE_PROPOSED
+    resolved_by = None
     can = ctx.can_decide and row.decision_type not in SERVICE_ONLY_DECISION_TYPES
     if resolution is None:
         ref_kind = _primary_ref_kind(row.details) if row.decision_type in REF_MOVE_DECISION_TYPES else None
@@ -265,7 +299,8 @@ def _decision_item(ctx: _Ctx, tab: str, row: ProjectDecisionRecord, at: datetime
             actions.append(_action("accept", OP_DECISION_ACCEPT, can, decision_id=row.id))
         actions.append(_action("reject", OP_DECISION_REJECT, can, decision_id=row.id))
     else:
-        resolution_id, state, correction_id = resolution
+        resolution_id, state, correction_id, actor_kind, actor_user_id = resolution
+        resolved_by = _resolver(ctx, {ACTOR_RULE: "rule", ACTOR_AGENT: "agent"}.get(actor_kind, "person"), actor_user_id)
         status = "superseded" if correction_id is not None else state
         if (state == STATE_ACCEPTED and correction_id is None
                 and row.decision_type not in REF_HISTORY_DECISION_TYPES):
@@ -277,6 +312,7 @@ def _decision_item(ctx: _Ctx, tab: str, row: ProjectDecisionRecord, at: datetime
         source=InboxRefRead(kind="decision_record", id=row.id), subject=_subject(row.subject_kind, subject_id),
         proposed_by=proposed_by, decision_type=row.decision_type,
         resolution_record_id=resolution[0] if resolution else None, evidence_refs=_refs(*evidence), actions=actions,
+        resolved_by=resolved_by,
     )
 
 
@@ -296,8 +332,10 @@ def _proposal_summary(row: AgentProposal, status: str) -> str:
     return f"{label} {status}"
 
 
-def _proposal_item(ctx: _Ctx, tab: str, row: AgentProposal, owner_id: UUID | None, at: datetime) -> InboxItemRead:
+def _proposal_item(ctx: _Ctx, tab: str, row: AgentProposal, owner_id: UUID | None, at: datetime,
+                   agreement: str | None) -> InboxItemRead:
     status = _proposal_status(row)
+    person = tab == "done" and row.decided_by_user_id is not None
     actions: list[InboxActionRead] = []
     if status == "proposed" and row.proposal_type in prs.DECIDABLE_TYPES:
         owner_ok = row.proposal_type != "ToolCallProposal" or owner_id == ctx.viewer.id
@@ -319,7 +357,8 @@ def _proposal_item(ctx: _Ctx, tab: str, row: AgentProposal, owner_id: UUID | Non
         evidence_refs=_refs(_ref("agent_run", row.run_id), _ref("semantic_answer", row.semantic_answer_id),
                             _ref("decision_record", row.decision_record_id),
                             _ref("decision_record", row.applied_decision_record_id)),
-        actions=actions,
+        actions=actions, agreement=agreement if agreement in SEMANTIC_AGREEMENTS else None,
+        resolved_by=_resolver(ctx, "person", row.decided_by_user_id) if person else None,
     )
 
 
@@ -353,20 +392,40 @@ def _run_item(exp_id: UUID, project_id: UUID | None, at: datetime, number: int |
     )
 
 
+def _resolver(ctx: _Ctx, kind: str, user_id: UUID | None) -> InboxResolverRead:
+    return InboxResolverRead(kind=kind, is_you=kind == "person" and not ctx.agent and user_id == ctx.viewer.id)
+
+
+def _drift_item(tab: str, window_id: UUID, project_id: UUID, version_id: UUID, start: datetime, at: datetime,
+                max_psi: float | None, prediction_psi: float | None) -> InboxItemRead:
+    current = tab == "needs_decision"
+    return _item(
+        id=f"drift_alert:{window_id}", kind="drift_alert", tab=tab, occurred_at=at, project_id=project_id,
+        summary="Drift alert on the model in use" if current else "Drift alert (an earlier week or model)",
+        status="alert", source=InboxRefRead(kind="monitoring_window", id=window_id),
+        subject=_subject("model_version", version_id), proposed_by="rule",
+        evidence_refs=_refs(_ref("model_version", version_id)), actions=[],
+        monitoring=InboxMonitoringRead(window_start=start, model_version_id=version_id, max_psi=max_psi,
+                                       prediction_psi=prediction_psi),
+    )
+
+
 def _items(ctx: _Ctx, tab: str, kind: str, source: Any, after: _Key | None, n: int) -> list[InboxItemRead]:
-    stmt, at_column, id_column = source(ctx)
+    stmt, at_column, id_column, _project = source(ctx)
     cut = keyset_before(after, kind, at_column, id_column, INBOX_KIND_RANK)
     if cut is not None:
         stmt = stmt.where(cut)
     rows = ctx.db.execute(stmt.order_by(at_column.desc(), id_column.desc()).limit(n)).all()
     if kind == "decision_proposal" and tab == "done":
-        return [_decision_item(ctx, tab, r[0], r[3], (r[1], r[2], r[4])) for r in rows]
+        return [_decision_item(ctx, tab, r[0], r[3], (r[1], r[2], r[4], r[5], r[6])) for r in rows]
     if kind == "decision_proposal":
         return [_decision_item(ctx, tab, r[0], r[0].recorded_at, None) for r in rows]
     if kind == "agent_proposal":
-        return [_proposal_item(ctx, tab, r[0], r[1], r[2]) for r in rows]
+        return [_proposal_item(ctx, tab, r[0], r[1], r[2], r[3]) for r in rows]
     if kind == "question":
         return [_question_item(ctx, r[0], r[1], r[2], r[3], r[4]) for r in rows]
+    if kind == "drift_alert":
+        return [_drift_item(tab, *r) for r in rows]
     return [_run_item(*r) for r in rows]
 
 
@@ -451,7 +510,7 @@ def inbox_counts(db: Session, *, actor: User, workspace_id: UUID, project_id: UU
     for tab in INBOX_TABS:
         parts = []
         for _kind, source in _SOURCES[tab]:
-            stmt, _at, id_column = source(ctx)
+            stmt, _at, id_column, _project = source(ctx)
             ids = stmt.with_only_columns(id_column).subquery()
             parts.append(select(func.count()).select_from(ids).scalar_subquery())
         total = parts[0]
@@ -460,3 +519,23 @@ def inbox_counts(db: Session, *, actor: User, workspace_id: UUID, project_id: UU
         columns.append(total.label(tab))
     row = db.execute(select(*columns)).one()
     return InboxCounts(**{tab: int(getattr(row, tab)) for tab in INBOX_TABS})
+
+
+def needs_decision_by_project(db: Session, *, actor: User, workspace_id: UUID, project_ids: list[UUID],
+                              viewer_is_agent: bool = False) -> dict[UUID, int]:
+    """``needs_decision`` totals per project for this caller (the same sources and visibility as the tab),
+    in one statement. The caller has authorized workspace read and loaded ``project_ids`` from it."""
+
+    if not project_ids:
+        return {}
+    ctx = _Ctx(db=db, ws=workspace_id, project_id=None, viewer=actor, agent=viewer_is_agent, can_decide=False,
+               approver=False, visible=prs.visibility_clause(db, workspace_id=workspace_id,
+                                                             viewer=None if viewer_is_agent else actor,
+                                                             agent=viewer_is_agent))
+    parts = []
+    for _kind, source in _SOURCES["needs_decision"]:
+        stmt, _at, _id, project_column = source(ctx)
+        parts.append(stmt.with_only_columns(project_column.label("project_id")).where(project_column.in_(project_ids)))
+    rows = union_all(*parts).subquery()
+    return {project: int(total) for project, total in db.execute(
+        select(rows.c.project_id, func.count()).group_by(rows.c.project_id)).all()}

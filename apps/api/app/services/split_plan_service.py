@@ -19,16 +19,27 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
+from collections import OrderedDict
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Artifact, Dataset, Experiment, PipelineScientificPlan, SplitPlan
+from app.db.models import (
+    Artifact,
+    Dataset,
+    ExecutionRequest,
+    Experiment,
+    PipelineScientificPlan,
+    SplitPlan,
+    User,
+    WorkflowRun,
+)
 from app.domain.data_plane import SPLIT_ASSIGNMENT_TYPE
 from app.domain.decision_records import (
     DECISION_SPLIT_PLAN_CREATED,
@@ -36,7 +47,8 @@ from app.domain.decision_records import (
     holdout_planner_rule,
     split_plan_created_idempotency_key,
 )
-from app.domain.errors import SplitPlanLineageError
+from app.domain.errors import GraphNodeNotFoundError, IdentityError, SplitPlanLineageError
+from app.domain.project_graph import SplitPlanFoldRead, SplitPlanRead
 from app.domain.state_graph import SPLIT_PLAN_EVIDENCE_MAX_BYTES, SPLIT_PLAN_HOLDOUT_STRATEGIES
 from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.validation_planner import TIME_SERIES_SPLIT, ValidationPlan
@@ -46,8 +58,11 @@ from app.engine.validation.split_assignment import (
     assignment_digest,
     parse_split_assignment,
 )
+from app.domain.workspace_identity import CreatorRead, creator_read
 from app.services.artifact_service import record_artifact
+from app.services.authorization_service import can_read_workspace
 from app.services.decision_record_service import evidence_ref, rule_record, unique_violation
+from app.services.graph_service import untrusted_text
 from app.services.scientific_lineage_service import holdout_plan_digest
 from app.storage import factory as storage_factory
 from app.storage.base import ObjectStorage
@@ -668,3 +683,103 @@ def verify_run_against_plan(
                 f"candidate {candidate.get('candidate_id')} outer folds differ from the split plan"
             )
     return plan
+
+
+# --- read (V7 BE-C) ---------------------------------------------------------------------------
+
+_FOLD_CACHE_MAX = 64
+_fold_cache: OrderedDict[tuple[str, str], tuple[list[SplitPlanFoldRead], int | None]] = OrderedDict()
+_fold_cache_lock = threading.Lock()
+_RULE_INITIATORS = frozenset({"system", "schedule"})
+
+
+def fold_row_counts(plan: SplitPlan, assignment: SplitAssignment) -> tuple[list[SplitPlanFoldRead], int | None]:
+    """Per outer fold: rows learned on and checked on (the plan's own fold rule); warm-up rows.
+
+    Counts over the TRAINING partition only; final-test rows are not in ``train_folds``."""
+
+    folds = [
+        SplitPlanFoldRead(fold_number=number, train_row_count=len(train), validation_row_count=len(validation))
+        for number, (train, validation) in sorted(_expected_folds(plan, assignment).items())
+    ]
+    warmup = sum(1 for fold in assignment.train_folds.values() if int(fold) == 0)
+    return folds, (warmup if plan.validation_strategy == TIME_SERIES_SPLIT else None)
+
+
+def _cached_folds(db: Session, plan: SplitPlan) -> tuple[list[SplitPlanFoldRead], int | None] | None:
+    key = (str(plan.id), plan.assignment_digest)  # plans are immutable: safe to cache by id + digest
+    with _fold_cache_lock:
+        if key in _fold_cache:
+            _fold_cache.move_to_end(key)
+            return _fold_cache[key]
+    try:
+        counted = fold_row_counts(plan, load_assignment(db, plan))
+    except Exception as exc:  # noqa: BLE001 - fail closed: no fold counts from an unverified map
+        logger.warning("split plan fold counts unavailable: %s", type(exc).__name__)
+        return None
+    with _fold_cache_lock:
+        _fold_cache[key] = counted
+        while len(_fold_cache) > _FOLD_CACHE_MAX:
+            _fold_cache.popitem(last=False)
+    return counted
+
+
+def _plan_creator(db: Session, plan: SplitPlan, viewer_id: UUID | None) -> CreatorRead:
+    """The run that created the plan (its earliest run): connected tool, agent, rule or person.
+
+    Without any run row the creator cannot be determined (``created_by`` is the requesting user
+    even for a service-token run), so the answer is ``unknown``, never a guessed person."""
+
+    by_token = exists().where(
+        ExecutionRequest.pipeline_run_id == Experiment.id,
+        ExecutionRequest.workspace_id == Experiment.workspace_id,
+        ExecutionRequest.initiated_by_service_token_id.is_not(None),
+    )
+    first = db.execute(
+        select(WorkflowRun.initiated_by_type, by_token.label("by_token"))
+        .select_from(Experiment)
+        .outerjoin(WorkflowRun, and_(WorkflowRun.id == Experiment.workflow_run_id,
+                                     WorkflowRun.workspace_id == Experiment.workspace_id))
+        .where(Experiment.workspace_id == plan.workspace_id, Experiment.split_plan_id == plan.id)
+        .order_by(Experiment.created_at, Experiment.id)
+        .limit(1)
+    ).first()
+    if first is None:
+        return CreatorRead(kind="unknown")
+    if first.by_token:
+        return CreatorRead(kind="connected_tool")
+    if first.initiated_by_type == "agent":
+        return CreatorRead(kind="agent")
+    if first.initiated_by_type in _RULE_INITIATORS:
+        return CreatorRead(kind="rule")
+    return creator_read(user_id=plan.created_by, service_token_id=None, viewer_id=viewer_id)
+
+
+def split_plan_read(
+    db: Session, *, actor: User, workspace_id: UUID, split_plan_id: UUID, viewer_id: UUID | None,
+    service_token: bool,
+) -> SplitPlanRead:
+    """One SplitPlan of the caller's workspace. No final-test dates, rates or statistics: only its
+    row count. ``service_token``: the rule's reason text (it names the holdout) is withheld."""
+
+    if not can_read_workspace(db, actor, workspace_id):
+        raise IdentityError("workspace read denied", status_code=403)
+    plan = db.scalar(select(SplitPlan).where(SplitPlan.id == split_plan_id, SplitPlan.workspace_id == workspace_id))
+    if plan is None:
+        raise GraphNodeNotFoundError("split plan not found")
+    counted = _cached_folds(db, plan)
+    return SplitPlanRead(
+        id=plan.id, workspace_id=plan.workspace_id, project_id=plan.project_id, dataset_id=plan.dataset_id,
+        version=plan.version, task_type=plan.task_type,
+        target_column=untrusted_text(plan.target_column, 256) or "",
+        evaluation_strategy=plan.holdout_strategy, validation_strategy=plan.validation_strategy,
+        validation_folds=plan.validation_folds, stratified=plan.stratified,
+        time_column=untrusted_text(plan.time_column, 256), group_column=untrusted_text(plan.group_column, 256),
+        row_count=plan.row_count, train_row_count=plan.train_row_count, evaluation_row_count=plan.holdout_row_count,
+        has_evaluation_set=plan.holdout_row_count > 0,
+        folds_status="computed" if counted is not None else "unavailable",
+        folds=list(counted[0]) if counted is not None else [],
+        warmup_row_count=counted[1] if counted is not None else None,
+        reason=None if service_token else untrusted_text(plan.reason, 2048),
+        creator=_plan_creator(db, plan, viewer_id), created_at=plan.created_at, locked_at=plan.locked_at,
+    )

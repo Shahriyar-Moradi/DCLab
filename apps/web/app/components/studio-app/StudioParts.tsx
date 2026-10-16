@@ -9,7 +9,7 @@ import { Pill, type PillTone } from "@/components/studio/Pill";
 import { useProjectExperiments, useProjectRefs, useStudioProject } from "@/lib/application";
 import { STUDIO_BACKEND_FEATURES } from "@/lib/application/studio-navigation";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
-import { buildFlow, flowRunStatuses, projectModelId } from "@/lib/application/studio-flow";
+import { buildFlow, flowRunStatuses, nextStepFor, projectModelId } from "@/lib/application/studio-flow";
 import { ApiError } from "@/lib/infrastructure/api-client";
 
 /** "No backend, no element": an explicit empty state that names the prompt that ships it. */
@@ -49,6 +49,21 @@ const REF_LABEL: Record<string, string> = {
 
 const FLOW_STEPS = ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring"] as const;
 export const FLOW_AVAILABLE: ReadonlySet<string> = new Set(FLOW_STEPS.filter((id) => STUDIO_BACKEND_FEATURES[id] === true));
+/** Step screens a "Next step" button may lead to: the flow steps plus History (the last one). */
+const NEXT_AVAILABLE: ReadonlySet<string> = new Set([...FLOW_AVAILABLE, ...(STUDIO_BACKEND_FEATURES.decisions ? ["history"] : [])]);
+
+/** The page's one forward button (V7 UI-A), at the bottom of each project step screen; none on the last step. */
+export function NextStepLink({ step }: { step: { title: string; detail: string; href: string } }) {
+  return (
+    <nav aria-label="Next step">
+      <Link className="next-step" href={step.href}>
+        <span className="ns-label">Next step</span>
+        <b>{step.title} <span aria-hidden="true">→</span></b>
+        <small>{step.detail}</small>
+      </Link>
+    </nav>
+  );
+}
 
 /** Project band above every project page: name, the project's steps (flow bar), and the versions in use behind a details row. */
 export function ProjectHeader({ projectId, children }: { projectId: string; children: ReactNode }) {
@@ -70,12 +85,14 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
   const items = refs.data?.items ?? [];
   const champion = items.some((ref) => ref.ref_kind === "champion_model");
   const targetOf = (kind: string) => items.find((ref) => ref.ref_kind === kind)?.target.id ?? null;
+  const targets = { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) };
   const flow = buildFlow({
     projectId, pathname, available: FLOW_AVAILABLE,
     refKinds: refs.data?.refs_initialized ? items.map((ref) => ref.ref_kind) : refs.data ? [] : null,
     runStatuses: flowRunStatuses(runs.data?.items, !!runs.data?.next_cursor), tab,
-    targets: { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) },
+    targets,
   });
+  const next = nextStepFor({ projectId, pathname, available: NEXT_AVAILABLE, targets });
   return (
     <>
       <section className="toolbar" aria-label="Project">
@@ -100,6 +117,7 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
         </details>
       ) : null}
       {children}
+      {next ? <NextStepLink step={next} /> : null}
     </>
   );
 }

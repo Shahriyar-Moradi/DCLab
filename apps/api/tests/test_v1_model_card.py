@@ -19,7 +19,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from app.db.models import ModelVersion
-from app.domain.model_card import FINAL_EVALUATION_LABEL, ModelCardRead, render_markdown
+from app.domain.model_card import (
+    FINAL_EVALUATION_LABEL,
+    ModelCardConfusion,
+    ModelCardFinalEvaluation,
+    ModelCardRead,
+    render_markdown,
+)
 from app.engine.modeling.importance import ImportanceFold, _sample, validation_fold_importance
 from app.services.service_token_service import create_service_token
 from test_v1_batch_predictions import _frame, _trained
@@ -109,6 +115,8 @@ def _common(card: dict, task_type: str) -> None:
     final = card["final_evaluation"]
     assert final["status"] == "reported" and final["label"] == FINAL_EVALUATION_LABEL
     assert final["value"] is not None and final["metric"] == card["cv"]["metric"]
+    # V7 B1: binary cards carry the same evaluation's 2x2 counts; other tasks none.
+    assert (final["confusion"] is not None) == (task_type == "binary")
     md = card["markdown"]
     for heading in ("## Top drivers", "## Known risks", "## Compared with the dummy baseline", "## Final evaluation"):
         assert heading in md
@@ -141,6 +149,15 @@ def test_binary_card_and_agent_view(client, db_session, setup):  # noqa: F811
     assert (words["caveat"] is None) == (threshold["source"] == "default")
     columns = [item["column"] for item in card["drivers"]["features"]]
     assert "plan" in columns and "label" not in columns
+    # V7 B1: the final evaluation's counts, exactly as the run recorded that single evaluation.
+    confusion, recorded = card["final_evaluation"]["confusion"], experiment.result["final_test_evaluation"]
+    assert set(confusion) == {"tp", "fp", "fn", "tn", "rows"}
+    assert {k: confusion[k] for k in ("tp", "fp", "fn", "tn")} == recorded["metrics"]["confusion_matrix"]
+    assert confusion["rows"] == recorded["test_row_count"] == card["split"]["evaluation_rows"]
+    held_out = card["final_evaluation"]["metrics"]
+    if confusion["tp"] + confusion["fn"]:
+        assert held_out["recall"] == pytest.approx(confusion["tp"] / (confusion["tp"] + confusion["fn"]))
+    assert f"Counts on the {confusion['rows']} held-out rows: {confusion['tp']} flagged and positive" in card["markdown"]
 
     again = client.get(f"/v1/model-versions/{mv_id}/card", headers=_h(setup))
     assert again.json()["markdown"] == card["markdown"]
@@ -151,6 +168,7 @@ def test_binary_card_and_agent_view(client, db_session, setup):  # noqa: F811
 
     agent = _card(client, setup, mv_id, headers={"Authorization": f"Bearer {_token(db, setup)}"})
     assert agent["final_evaluation"]["status"] == "withheld" and agent["final_evaluation"]["metrics"] == {}
+    assert agent["final_evaluation"]["confusion"] is None and "Counts on the" not in agent["markdown"]
     assert agent["final_evaluation"]["value"] is None
     assert not {key for key in _keys(agent) if HOLDOUT_KEY.search(key)}
     rest = {"final_evaluation", "markdown", "risks"}
@@ -274,6 +292,19 @@ def test_markdown_escapes_every_user_value(value):
     assert headings == [line for line in benign.splitlines() if line.startswith("#")]
     assert not re.search(r"(?<!\\)\]\(", rendered) and not re.search(r"(?<!\\)!\[", rendered)
     assert "held-out rows: 0.99" not in rendered.replace("\\", "") or "\\#\\#" in rendered
+
+
+def test_confusion_counts_render_only_in_a_reported_final_evaluation():
+    from app.agents.tools.shaping import withhold_model_card
+
+    card = _card_with("plain").model_copy(update={"final_evaluation": ModelCardFinalEvaluation(
+        status="reported", metric="roc_auc", value=0.7, metrics={"roc_auc": 0.7}, decision_threshold=0.4,
+        confusion=ModelCardConfusion(tp=8, fp=2, fn=4, tn=26, rows=40))})
+    rendered = render_markdown(card)
+    assert ("Counts on the 40 held-out rows: 8 flagged and positive, 2 flagged but negative, 4 positive but not "
+            "flagged, 26 negative and not flagged.") in rendered
+    withheld = withhold_model_card(card)
+    assert withheld.final_evaluation.confusion is None and "Counts on the" not in withheld.markdown
 
 
 # --- engine: importance statistics and sampling ------------------------------------------

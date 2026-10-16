@@ -7,6 +7,8 @@ import { WorkspaceSelector } from "@/app/components/layout/WorkspaceSelector";
 import { STUDIO_BACKEND_FEATURES, studioNavigationForUser } from "@/app/components/layout/app-navigation";
 import { CommandBar } from "@/components/studio/CommandBar";
 import { Crumbs, type Crumb } from "@/components/studio/Crumbs";
+import { GlossaryDialog } from "@/components/studio/GlossaryDialog";
+import { ScreenStatusProvider } from "@/components/studio/ScreenStatusTag";
 import { Shell } from "@/components/studio/Shell";
 import { useCommandSearch, useProjectRefs, useSession, useStudioProject } from "@/lib/application";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
@@ -80,6 +82,7 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   else if (workspaceSwitching) body = <p role="status">Switching workspace…</p>;
 
   return (
+    <ScreenStatusProvider>
     <Shell
       nav={nav}
       currentHref={current?.href}
@@ -89,13 +92,14 @@ export function StudioFrame({ children }: { children: ReactNode }) {
       crumbs={<Crumbs items={crumbs} />}
       // Keyed by workspace: a switch drops results and aborts requests made for the old one.
       commandBar={user ? <StudioCommandBar key={activeWorkspaceId ?? "none"} projectId={projectId} /> : null}
-      topbarRight={user ? <WorkspaceSelector inputId="studio-workspace" /> : null}
+      topbarRight={user ? <><GlossaryDialog /><WorkspaceSelector inputId="studio-workspace" /></> : null}
       // Assistant panel (A3-UI) slot: the capability stays false until the assistant ships.
       assistant={STUDIO_BACKEND_FEATURES.assistant ? <p>Assistant</p> : undefined}
     >
-      <div key={activeWorkspaceId ?? "no-workspace"} style={{ display: "contents" }}>
+      <div key={activeWorkspaceId ?? "no-workspace"} className="contents">
         {body}
       </div>
     </Shell>
+    </ScreenStatusProvider>
   );
 }

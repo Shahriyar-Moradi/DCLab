@@ -75,3 +75,22 @@ test("pages that are not built (AI settings) stay hidden; Monitoring and Setting
   assert.ok(shown.includes("settings"));
   assert.ok(shown.includes("monitoring"));
 });
+
+test("v7 UI-A: What's real today is listed last for Studio users; the Business view only for people who may open it", async () => {
+  const { studioNavigationForUser } = await import("../../lib/application/studio-navigation.ts");
+  const dev = { capabilities: { development_access: true } };
+  const devWithBusiness = { capabilities: { development_access: true, application_access: true } };
+  const labels = (user: { capabilities: Record<string, boolean> }) => studioNavigationForUser(user).map((g) => [g.label, g.items.map((i) => i.label)]);
+  assert.deepEqual(labels(dev).at(-1), ["Help", ["What's real today"]]);
+  assert.ok(!labels(dev).some(([label]) => label === "Other views"));
+  assert.deepEqual(labels(devWithBusiness).find(([label]) => label === "Other views"), ["Other views", ["Business view"]]);
+  const hrefs = studioNavigationForUser(devWithBusiness).flatMap((g) => g.items.map((i) => i.href));
+  assert.ok(hrefs.includes("/real") && hrefs.includes("/outcomes"));
+  // The assistant and AI settings stay hidden.
+  assert.ok(!hrefs.includes("/governance") && !studioNavigationForUser(devWithBusiness).some((g) => g.items.some((i) => i.id === "lab")));
+  // A platform administrator's console link sits above Help.
+  const admin = { capabilities: { development_access: true, platform_read: true, platform_write: true } };
+  assert.deepEqual(studioNavigationForUser(admin).slice(-2).map((g) => g.id), ["platform", "help"]);
+  // Business users do not get the Studio link.
+  assert.deepEqual(studioNavigationForUser({ capabilities: { application_access: true } }), []);
+});

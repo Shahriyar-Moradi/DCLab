@@ -77,18 +77,30 @@
 .studio .cmd:hover { border-color: var(--accent); }
 .studio .cmd kbd, .studio .cmd-in kbd { margin-left: auto; font-family: var(--font-mono); font-size: 0.72rem; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--muted); }
 .studio .content { padding: 36px 40px 96px; display: grid; gap: 32px; align-content: start; min-width: 0; max-width: 1480px; }
-.studio .content > *, .studio [role="tabpanel"], .studio .card > .tbl-wrap { min-width: 0; } /* a wide table inside a wrapper or tab scrolls inside its card instead of widening the page */
+.studio .content > *, .studio .content > .contents > *, .studio [role="tabpanel"], .studio .card > .tbl-wrap { min-width: 0; }
+.studio .content > .contents { display: contents; } /* the workspace-keyed wrapper of StudioFrame: its children are the grid items */ /* a wide table inside a wrapper or tab scrolls inside its card instead of widening the page */
 .studio.embedded .content { padding-bottom: 36px; }
 .studio .page-head { display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: flex-start; justify-content: space-between; }
 .studio .page-head > div:first-child { display: grid; gap: 10px; max-width: 76ch; }
 .studio .page-head .sub { color: var(--muted); font-size: 1.05rem; line-height: 1.55; }
 .studio .eyebrow { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ok-text); }
 .studio .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.studio .nav-groups { display: grid; gap: 22px; }
 @media (max-width: 860px) {
-  .studio.shell { grid-template-columns: 1fr; }
-  .studio .nav { position: static; height: auto; }
+  /* V7 UI-A: the sidebar becomes a sticky horizontal strip of links; the top bar scrolls away with the page. */
+  .studio.shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .studio .nav { position: sticky; top: 0; z-index: 6; height: auto; flex-direction: row; align-items: center; gap: 6px; padding: 8px 12px; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); }
+  .studio.embedded .nav { position: static; }
+  .studio .nav .ws, .studio .nav .nav-label, .studio .nav .user { display: none; }
+  .studio .nav .brand b { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } /* keeps the link's name */
+  .studio .nav .brand { padding: 0 4px 0 0; flex: none; }
+  .studio .nav-groups, .studio .nav-group { display: flex; gap: 2px; flex: none; }
+  .studio .nav-groups { gap: 10px; }
+  .studio .nav a, .studio .nav .nav-off { padding: 8px 10px; white-space: nowrap; }
+  .studio .nav .cnt { margin-left: 4px; }
   .studio .content { padding: 24px 18px 64px; gap: 24px; }
-  .studio .topbar { padding: 12px 18px; flex-wrap: wrap; }
+  .studio .topbar { padding: 12px 18px; flex-wrap: wrap; position: static; }
+  .studio .topbar .right { flex-wrap: wrap; }
   .studio .topbar .cmd { order: 3; flex-basis: 100%; max-width: none; }
 }
 
@@ -328,3 +340,35 @@
 .studio .usage-chart { width: 100%; height: auto; display: block; }
 .studio .usage-chart rect { fill: var(--accent); }
 .studio .usage-chart text { fill: var(--muted); font-size: 10px; }
+
+/* V7 UI-A: status tags under the title, guide toggle, "Next step", glossary panel, What's real today */
+.studio .status-tag { text-decoration: none; border-radius: 999px; }
+.studio .status-tag:hover .pill, .studio .status-tag:focus-visible .pill { border-color: currentColor; }
+.studio .guide .guide-hide { grid-column: 1 / -1; justify-self: end; font-size: .92rem; }
+.studio .guide-off { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; }
+.studio .next-step { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 18px; align-items: center; padding: 16px 22px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line); text-decoration: none; color: var(--ink); box-shadow: var(--shadow); }
+.studio .next-step:hover { border-color: var(--accent); }
+.studio .next-step .ns-label { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-text); grid-row: 1 / span 2; padding-right: 18px; border-right: 1px solid var(--line); }
+.studio .next-step b { font-size: 1.05rem; }
+.studio .next-step small { grid-column: 2; color: var(--muted); font-size: .95rem; }
+@media (max-width: 520px) {
+  .studio .next-step { grid-template-columns: minmax(0, 1fr); }
+  .studio .next-step .ns-label { grid-row: auto; padding-right: 0; border-right: 0; }
+  .studio .next-step small { grid-column: 1; }
+}
+.glossary-dialog .glossary-body { padding: 22px 24px; display: grid; gap: 14px; max-height: 80vh; overflow-y: auto; }
+.glossary-dialog dl { margin: 0; display: grid; gap: 12px; }
+.glossary-dialog dl > div { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 4px 16px; }
+.glossary-dialog dt { font-weight: 650; }
+.glossary-dialog dd { margin: 0; }
+.glossary-dialog form { justify-self: end; }
+@media (max-width: 600px) { .glossary-dialog dl > div { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  /* After the base guide and step rules so they win: guide in one column, flow steps scroll sideways. */
+  .studio .guide { grid-template-columns: 1fr; }
+  .studio .steps.flow { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; position: relative; } /* position: screen-reader-only step states stay inside the strip */
+  .studio .steps.flow li { flex: none; }
+}
+.studio .status-legend li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.studio .real-table th[scope="row"] { white-space: normal; text-transform: none; letter-spacing: 0; font-size: .97rem; color: var(--ink); }
+.studio .real-table .group-row th { padding-top: 22px; color: var(--ok-text); }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ScreenStatusTag } from "./ScreenStatusTag";
 
 export type PageHeadProps = {
   title: string;
@@ -15,6 +16,8 @@ export function PageHead({ title, eyebrow, subtitle, badges, actions }: PageHead
       <div>
         {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
         <h1>{title}</h1>
+        {/* The screen's status (Working today / Partly working / Built, switched off / Planned) inside the Studio frame. */}
+        <ScreenStatusTag />
         {badges ? <div className="toolbar">{badges}</div> : null}
         {subtitle ? <p className="sub">{subtitle}</p> : null}
       </div>

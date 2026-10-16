@@ -109,12 +109,18 @@ from app.domain.idempotency import (
     RESOURCE_PROBLEM_SPEC,
     RESOURCE_PROJECT,
 )
-from app.domain.home_reads import ACTIVITY_PAGE_DEFAULT, ACTIVITY_PAGE_MAX, ActivityPage, ProjectWithSummaryRead
+from app.domain.home_reads import (
+    ACTIVITY_PAGE_DEFAULT,
+    ACTIVITY_PAGE_MAX,
+    ActivityPage,
+    ProjectFlowRead,
+    ProjectWithSummaryRead,
+)
 from app.domain.inbox_reads import INBOX_PAGE_DEFAULT, INBOX_PAGE_MAX, InboxCounts, InboxPage, InboxTab
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.observability import MlRunEventRead
-from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead
+from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead, SplitPlanRead
 from app.domain.state_graph import GRAPH_EXPERIMENT_WINDOW
 from app.domain.reproducibility import ArtifactRead
 from app.domain.dataset_profile import DatasetProfileRead, DatasetVersionRead
@@ -122,6 +128,7 @@ from app.domain.technical_explorer import DatasetListItem
 from app.domain.usage import UsageRead
 from app.domain.workspace_identity import (
     ProblemSpecCreateRequest,
+    ProblemSpecDetailRead,
     ProblemSpecRead,
     ProjectCreateRequest,
     ProjectRead,
@@ -139,6 +146,7 @@ from app.services.execution_request_service import (
 )
 from app.services.decision_record_service import list_decisions, unique_violation
 from app.services.home_read_service import list_activity, project_summaries
+from app.services.project_flow_service import project_flow
 from app.services.inbox_read_service import inbox_counts, list_inbox
 from app.services.graph_service import impact, project_graph
 from app.services.model_build_reproduction_service import (
@@ -151,7 +159,13 @@ from app.services.audience_projection import artifact_read, event_read, public_d
 from app.services import idempotency_service
 from app.services.client_lab_upload_service import ingest_dataset
 from app.services.idempotency_service import IdempotencyKeyRaceError, KeyScope
-from app.services.problem_spec_service import create_problem_spec, get_problem_spec
+from app.services.problem_spec_service import (
+    create_problem_spec,
+    get_problem_spec,
+    get_problem_spec_detail,
+    list_problem_spec_details,
+)
+from app.services.split_plan_service import split_plan_read
 from app.services.project_service import create_project, get_project, list_projects
 from app.services.dataset_profile_service import DatasetNotFoundError, dataset_profile, dataset_read
 from app.services.technical_explorer_service import list_datasets
@@ -307,7 +321,8 @@ def read_projects(
         rows = list_projects(db, actor=user, workspace_id=workspace_id)
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    summaries = project_summaries(db, workspace_id=workspace_id, project_ids=[row.id for row in rows])
+    summaries = project_summaries(db, workspace_id=workspace_id, project_ids=[row.id for row in rows], actor=user,
+                                  viewer_is_agent=is_agent(request))
     return [
         ProjectWithSummaryRead.model_validate(
             {**ProjectRead.model_validate(row).model_dump(), "summary": summaries[row.id]}
@@ -455,6 +470,12 @@ def _service_token_id(request: Request) -> UUID | None:
 
     token = request_service_token(request)
     return token.id if token is not None else None
+
+
+def _viewer_id(request: Request, user: User) -> UUID | None:
+    """The signed-in reader for ``is_you`` (V7 BE-C); None for a service token (never "you")."""
+
+    return None if request_service_token(request) is not None else user.id
 
 
 def _principal_id(request: Request, user: User) -> UUID:
@@ -662,6 +683,69 @@ def create_problem_spec_v1(
     return body
 
 
+@router.get("/projects/{project_id}/problem-specs", response_model=list[ProblemSpecDetailRead])
+def read_problem_specs(
+    project_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+) -> list[ProblemSpecDetailRead]:
+    """ProblemSpec versions of the project, newest first: task, target, unit, horizon, metric, objective,
+    constraints, status, whether it is current, and who made it (no user or token ids). Service tokens get
+    no constraint/criteria key matching holdout|final_test and a redacted objective."""
+
+    try:
+        return list_problem_spec_details(db, actor=user, workspace_id=request_workspace_id(request),
+                                         project_id=project_id, viewer_id=_viewer_id(request, user), limit=limit,
+                                         agent_reader=request_service_token(request) is not None)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found() from exc
+
+
+@router.get("/projects/{project_id}/problem-specs/{spec_id}", response_model=ProblemSpecDetailRead)
+def read_problem_spec(
+    project_id: UUID,
+    spec_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ProblemSpecDetailRead:
+    """One ProblemSpec version of the project (same shape as the list)."""
+
+    try:
+        return get_problem_spec_detail(db, actor=user, workspace_id=request_workspace_id(request),
+                                       project_id=project_id, spec_id=spec_id, viewer_id=_viewer_id(request, user),
+                                       agent_reader=request_service_token(request) is not None)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProblemSpecNotFoundError as exc:
+        raise _not_found() from exc
+
+
+@router.get("/split-plans/{split_plan_id}", response_model=SplitPlanRead)
+def read_split_plan(
+    split_plan_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> SplitPlanRead:
+    """How one SplitPlan tests models: strategy, folds and per-fold row counts (training partition), time
+    column, row counts, reason, locked_at and who made it. The final test set is a row count only: no dates,
+    rates or statistics of its rows. Service tokens get no reason text."""
+
+    try:
+        return split_plan_read(db, actor=user, workspace_id=request_workspace_id(request), split_plan_id=split_plan_id,
+                               viewer_id=_viewer_id(request, user),
+                               service_token=request_service_token(request) is not None)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except GraphNodeNotFoundError as exc:
+        raise _not_found() from exc
+
+
 @router.get("/projects/{project_id}/graph", response_model=ProjectGraphRead)
 def read_project_graph(
     project_id: UUID,
@@ -689,6 +773,30 @@ def read_project_graph(
         raise _not_found(str(exc)) from exc
     except InvalidCursorError as exc:
         raise _bad_cursor(exc) from exc
+
+
+@router.get("/projects/{project_id}/flow", response_model=ProjectFlowRead)
+def read_project_flow(
+    project_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ProjectFlowRead:
+    """The project's eight flow steps as typed facts (V7 BE-A): the training file (in use, newer file
+    uploaded), goal and test design, runs (count, running, best locked CV score on the current split
+    plan), branch runs, the model in use (family, locked threshold), scorings and the weekly schedule,
+    the newest monitoring week, and decision records; plus `stage` and the caller's waiting decisions.
+    CV figures only, never a final-test value. `data.file_name` and the goal texts are untrusted
+    data. Signed-in people only (service tokens are refused); another workspace's project is 404."""
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return project_flow(db, actor=user, workspace_id=workspace_id, project_id=project_id,
+                            viewer_is_agent=is_agent(request))
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
 
 
 @router.get("/projects/{project_id}/decisions", response_model=DecisionRecordPage)
@@ -774,7 +882,7 @@ def read_datasets(
 ) -> list[DatasetListItem]:
     workspace_id = request_workspace_id(request)
     try:
-        return list_datasets(db, user, workspace_id=workspace_id, limit=limit)
+        return list_datasets(db, user, workspace_id=workspace_id, limit=limit, viewer_id=_viewer_id(request, user))
     except IdentityError as exc:
         raise _identity_http(exc) from exc
 
@@ -789,7 +897,8 @@ def read_dataset(
     """One DatasetVersion with its ADR 0005 upload policy and AI data class (read-only)."""
 
     try:
-        return dataset_read(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id)
+        return dataset_read(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id,
+                            viewer_id=_viewer_id(request, user))
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except DatasetNotFoundError as exc:

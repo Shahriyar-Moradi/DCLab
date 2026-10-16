@@ -700,6 +700,7 @@ def thresholds() -> dm.MonitoringThresholds:
 
 def _summary(row: MonitoringWindow) -> dm.MonitoringWindowSummary:
     outcomes = row.outcomes or {}
+    precision, recall = dm.outcome_rates(outcomes)  # V7 B7: stored at compute time, read here
     return dm.MonitoringWindowSummary(
         window_start=row.window_start, window_end=row.window_end, revision=row.revision,
         model_version_id=row.model_version_id, model_release_id=row.model_release_id, status=row.status,
@@ -708,7 +709,7 @@ def _summary(row: MonitoringWindow) -> dm.MonitoringWindowSummary:
         prediction_psi=(row.prediction_drift or {}).get("psi"), outcomes_status=str(outcomes.get("status") or ""),
         n_labelled=outcomes.get("n_labelled"), coverage=outcomes.get("coverage"),
         outcome_metric=outcomes.get("metric"), outcome_metric_value=outcomes.get("metric_value"),
-        computed_at=row.computed_at)
+        outcome_precision=precision, outcome_recall=recall, computed_at=row.computed_at)
 
 
 def _version(db: Session, actor: User, workspace_id: UUID, project_id: UUID,
@@ -755,7 +756,9 @@ def monitoring_overview(db: Session, *, actor: User, workspace_id: UUID, project
         model_release_id=release.id if release is not None and model is not None
         and release.model_version_id == model.id else None,
         status=status, latest=_summary(latest) if latest is not None else None,
-        windows=[_summary(row) for row in rows], finding=finding, thresholds=thresholds(), notes=list(dm.NOTES))
+        windows=[_summary(row) for row in rows],
+        feature_psi_series=dm.feature_psi_series([(row.window_start, row.input_drift or {}) for row in rows]),
+        finding=finding, thresholds=thresholds(), notes=list(dm.NOTES))
 
 
 def parse_window_start(value: str) -> datetime | None:

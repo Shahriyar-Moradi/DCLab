@@ -40,6 +40,7 @@ from app.engine.serving.model_package import (
     PACKAGE_FILENAME,
     PACKAGE_NOT_SAVED,
     PACKAGE_UNSAFE_CATEGORY,
+    PARITY_ROWS,
     PUBLIC_PACKAGE_FAILURES,
     ModelPackageError,
     build_package,
@@ -47,6 +48,7 @@ from app.engine.serving.model_package import (
     read_package,
     sha256_hex,
     unsafe_category_types,
+    verification_summary,
 )
 from app.engine.search.tuning import tune
 from app.engine.modeling.objective import (
@@ -953,17 +955,19 @@ def _saved_package(
     n_classes: int | None,
     decision_threshold: float | None = None,
     reference_summary: dict[str, Any] | None = None,
+    verification: dict[str, Any] | None = None,
 ) -> bytes:
     """The fitted winner as a model package (skops + native booster formats, manifest with
     the feature contract, CV metrics and the locked decision threshold), loaded back with the
     worker's loader and checked to reproduce the in-memory predictions on training rows.
+    ``verification`` (V7 B4) is filled with the summary of those checks once they pass.
     Raises ``ModelPackageError`` with one of the plain sentences in ``PUBLIC_PACKAGE_FAILURES``
     (shown to the user); the cause chain goes to the server log."""
 
     try:
         return _verified_package(pipeline, row, task, pool, selection_metric, classifier=classifier,
                                  n_classes=n_classes, decision_threshold=decision_threshold,
-                                 reference_summary=reference_summary)
+                                 reference_summary=reference_summary, verification=verification)
     except (ModelPackageError, TypeError, MemoryError, OSError) as exc:  # serializers, temp files
         logger.warning("model package for candidate %s refused: %s", row.get("candidate_id"), failure_chain(exc))
         if isinstance(exc, ModelPackageError) and str(exc) in PUBLIC_PACKAGE_FAILURES:
@@ -982,6 +986,7 @@ def _verified_package(
     n_classes: int | None,
     decision_threshold: float | None = None,
     reference_summary: dict[str, Any] | None = None,
+    verification: dict[str, Any] | None = None,
 ) -> bytes:
     package = build_package(
         pipeline,
@@ -1004,16 +1009,26 @@ def _verified_package(
     from app.engine.serving.batch_scoring import ScoringError
     from app.engine.serving.package_loader import load_model_package
 
+    contents = read_package(package)  # structure + every member's SHA-256 against the manifest
     try:
-        loaded = load_model_package(package, manifest_digest=sha256_hex(read_package(package).manifest_bytes))
+        loaded = load_model_package(package, manifest_digest=sha256_hex(contents.manifest_bytes))
     except ScoringError as exc:
         raise ModelPackageError("the saved model could not be loaded back") from exc
-    sample = pool.loc[:, list(row["features"])].head(64)  # training rows only
-    if not np.array_equal(
-        _predict(pipeline, sample, classifier, n_classes), _predict(loaded.pipeline, sample, classifier, n_classes),
-        equal_nan=True,
-    ):
+    # Parity: the first PARITY_ROWS rows of the training partition (deterministic order; never a
+    # test row), scored by the fitted pipeline and by the loaded package. Exact match required:
+    # every family reproduces bit for bit, so the tolerance is zero.
+    sample = pool.loc[:, list(row["features"])].head(PARITY_ROWS)
+    fitted = _predict(pipeline, sample, classifier, n_classes)
+    reloaded = _predict(loaded.pipeline, sample, classifier, n_classes)
+    if not np.array_equal(fitted, reloaded, equal_nan=True):
         raise ModelPackageError("the saved model does not reproduce the trained model's predictions")
+    if verification is not None:
+        output = ("class_probabilities" if classifier and n_classes
+                  else "positive_class_probability" if classifier else "prediction")
+        gap = np.abs(np.asarray(fitted, dtype=float) - np.asarray(reloaded, dtype=float))
+        verification.update(verification_summary(  # NaN only where both are NaN (equal above)
+            contents.manifest, rows=len(sample), output=output,
+            max_abs_difference=float(np.nanmax(gap)) if gap.size and not np.isnan(gap).all() else 0.0))
     return package
 
 
@@ -1667,6 +1682,7 @@ def _run_open_ingest_candidates(
         )
 
     feature_importance: dict[str, Any] | None = None
+    saved: dict[str, Any] = {}  # the model package bytes and its build-time verification summary
     # Persist the CV-only selection checkpoint before the holdout is touched.
     if best_single is not None:
         best_single["locked"] = True
@@ -1701,7 +1717,6 @@ def _run_open_ingest_candidates(
         stage_timings.append(
             _timing("feature_importance", importance_started, importance_timer, status=feature_importance["status"])
         )
-        saved: dict[str, bytes] = {}
 
         def _save_package(fitted: Any) -> None:
             started, timer = datetime.now(UTC), time.perf_counter()
@@ -1712,10 +1727,12 @@ def _run_open_ingest_candidates(
                 last_fold_only=validation_plan.strategy == _TIME_SERIES_SPLIT,
                 time_columns=[name for name in (*time_columns, validation_plan.time_column) if name],
             )
+            verification: dict[str, Any] = {}
             saved["package"] = _saved_package(
                 fitted, best_single, task, pool, selection_metric, classifier=classifier, n_classes=n_classes,
-                decision_threshold=binary_threshold, reference_summary=reference,
+                decision_threshold=binary_threshold, reference_summary=reference, verification=verification,
             )
+            saved["verification"] = verification or None
             stage_timings.append(_timing("model_packaging", started, timer))
             _emit_event(  # also a heartbeat: packaging a large model can take a while
                 on_event,
@@ -1814,6 +1831,7 @@ def _run_open_ingest_candidates(
         "feature_importance": feature_importance,
         "oof_evidence": oof_summary,
         "operating_curve": operating_curve,
+        "package_verification": saved.get("verification"),
     }
 
 
@@ -2074,6 +2092,8 @@ def _run_open_ingest_experiment(
         "oof_evidence": outcome.get("oof_evidence"),
         # P5.2-A: the winner's out-of-fold operating curve (aggregate counts; no rows, no scores).
         "operating_curve": outcome.get("operating_curve"),
+        # V7 B4: what the worker checked on the model package before the final test (training rows only).
+        "package_verification": outcome.get("package_verification"),
     }
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")

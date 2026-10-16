@@ -953,6 +953,15 @@ experiment-independent node (Phase 5): today every run creates its own
 FeatureSet (`scientific_lineage_service.py:345`), so including it would mark
 every non-champion ModelVersion stale by construction. See §6.
 
+**Note (2026-10-16, V7 BE-C reads).** `GET /v1/datasets/{dataset_id}/profile` reports
+`time_range` over the SplitPlan's training rows only, and `GET /v1/split-plans/{split_plan_id}`
+reports the final test set as a row count only (no dates, rates or statistics). For a
+time-ordered plan (`temporal_future`), the training window's `time_range.end` reveals
+roughly where the final-test period starts. That is split metadata (the same fact as
+"the final test set is the latest slice in time"), not a final-test value: no final-test
+row is read, counted or exposed, and ADR 0008 §2b (no holdout outcome in any AI call)
+is unaffected.
+
 ## Open questions for the founder (answered above)
 
 1. **Bootstrap champion.** Confirm: the first locked ModelVersion in a project

@@ -30,7 +30,7 @@ export type ShellProps = {
   children: ReactNode;
 };
 
-/** Sidebar (264 px) plus sticky glass top bar. Landmarks: nav, header, main (div in embedded mode). */
+/** Sidebar (264 px; a sticky horizontal strip at 860 px and below) plus a glass top bar. Landmarks: nav, header, main (div in embedded mode). */
 export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, topbarRight, steps, guide, assistant, theme, embedded, mainId = "main", badges, children }: ShellProps) {
   const Aside = embedded ? "div" : "aside";
   const Side = embedded ? "div" : "nav";
@@ -49,7 +49,7 @@ export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, t
             {workspace.detail ? <small>{workspace.detail}</small> : null}
           </div>
         ) : null}
-        <Side aria-label={embedded ? undefined : "Studio"} style={{ display: "grid", gap: 22 }}>
+        <Side className="nav-groups" aria-label={embedded ? undefined : "Studio"}>
           {nav.map((group) => (
             <div className="nav-group" key={group.id}>
               <div className="nav-label">{group.label}</div>
