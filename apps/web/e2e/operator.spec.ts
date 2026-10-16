@@ -108,7 +108,7 @@ test("a platform administrator reads the real console of a seeded stack", async 
   expect(await axeViolations(page)).toEqual([]);
 
   await page.getByRole("tab", { name: /Quarantine/ }).click();
-  await expect(page.getByRole("tabpanel")).toContainText("Planned in P8.7");
+  await expect(page.getByRole("tabpanel")).toContainText("Planned (data safety)");
   await page.getByRole("tab", { name: /Benchmarks & gates/ }).click();
   await expect(page.getByRole("tabpanel")).toContainText("not in the operator read yet");
   await bannedFree(page);

@@ -23,7 +23,9 @@ test("tabs: three working tabs, three planned ones that name what is missing; un
   assert.deepEqual(OPERATOR_TABS.map((t) => [t.id, t.status]), [
     ["overview", "working"], ["workspaces", "working"], ["failed-jobs", "working"], ["quarantine", "planned"], ["caps", "planned"], ["benchmarks", "planned"],
   ]);
-  assert.match(OPERATOR_TABS[3].planned ?? "", /P8\.7/);
+  assert.match(OPERATOR_TABS[3].planned ?? "", /data safety/);
+  // No internal plan id (such as P8.7 or R1) reaches the screen.
+  for (const tab of OPERATOR_TABS) assert.doesNotMatch(tab.planned ?? "", /\b(P\d+\.\d+|R\d)\b/);
   for (const t of OPERATOR_TABS.filter((t) => t.status === "planned")) keep(t.planned ?? "");
   assert.deepEqual(statusTag("working"), { label: "Working today", tone: "ok" });
   assert.deepEqual(statusTag("planned"), { label: "Planned", tone: "gray" });

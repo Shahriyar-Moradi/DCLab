@@ -8,6 +8,7 @@ import { FlowTiles } from "@/components/studio/FlowBar";
 import { PageGuide } from "@/components/studio/PageGuide";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill } from "@/components/studio/Pill";
+import { NewProjectDialog } from "@/app/components/studio-app/NewProjectDialog";
 import { GoalCell, LastRunCell } from "@/app/components/studio-app/ProjectCells";
 import { QueryNotice } from "@/app/components/studio-app/StudioParts";
 import { useSession, useStudioProjects, type StudioProjectListItem } from "@/lib/application";
@@ -140,11 +141,11 @@ export default function StudioHomePage() {
       <PageHead
         eyebrow="Home" title={hello}
         subtitle={homeSubtitle(waiting, running) || undefined}
-        actions={<Link className="btn primary" href="/projects/new">Upload data</Link>}
+        actions={<NewProjectDialog label="Upload data" />}
       />
       <PageGuide
         purpose="A starting point for your workspace: what needs you, where your latest project stands, what is running and what happened lately."
-        howTo={<>Start with what needs you, then open your project or the Inbox. Upload data starts a new project from a file. Press ⌘K (Ctrl+K) to jump to a project, run or model by name. Every value here is read from your workspace; nothing is estimated.</>}
+        howTo={<>Start with what needs you, then open your project or the Inbox. Upload data opens the New project dialog: a name and a file, what to predict, then the test design you confirm. Press ⌘K (Ctrl+K) to jump to a project, run or model by name. Every value here is read from your workspace; nothing is estimated.</>}
         youGet="The decisions waiting for you, your latest project as its eight steps, runs in progress with the fold they are on, recent activity as sentences, and your projects."
         attention={waiting ? `${waiting} ${waiting === 1 ? "thing is" : "things are"} waiting for your decision in the Inbox.` : undefined}
       />
@@ -166,7 +167,7 @@ export default function StudioHomePage() {
       {projects.isPending ? <p role="status">Loading projects…</p> : null}
       {projects.data && recent.length === 0 ? (
         <Card title="Your first project">
-          <div className="empty"><p><b>Create your first project.</b></p><p>A project holds your data, runs, models and the decisions that changed them.</p><p><Link className="btn primary" href="/projects/new">New project</Link></p></div>
+          <div className="empty"><p><b>Create your first project.</b></p><p>A project holds your data, runs, models and the decisions that changed them.</p><p><NewProjectDialog /></p></div>
         </Card>
       ) : null}
       {recent[0] ? <ActiveProject project={recent[0]} /> : null}
@@ -227,7 +228,7 @@ export default function StudioHomePage() {
           </div>
         ) : null}
         {projects.data && recent.length === 0 ? <div className="empty">No projects yet.</div> : null}
-        <div className="toolbar"><Link className="btn" href="/projects/new">New project</Link><Link className="btn" href="/agents">Connect</Link></div>
+        <div className="toolbar"><NewProjectDialog primary={false} /><Link className="btn" href="/agents">Connect</Link></div>
       </Card>
     </>
   );

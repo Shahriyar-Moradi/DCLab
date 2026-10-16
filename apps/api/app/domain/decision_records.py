@@ -39,6 +39,10 @@ DECISION_TYPES = (
     "operating_point_chosen",
     "scoring_schedule_changed",
     "monitoring_outcomes_linked",
+    "target_confirmed",
+    "test_design_confirmed",
+    "goal_metric_confirmed",
+    "goal_rule_confirmed",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
 DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
@@ -64,9 +68,18 @@ DECISION_SCORING_SCHEDULE_CHANGED = "scoring_schedule_changed"
 DECISION_MONITORING_OUTCOMES_LINKED = "monitoring_outcomes_linked"
 # Phase 6 reserves these for agent proposals and AI decision points (ADR 0008 §7);
 # only their owning services (P6.6-A and later) write them.
+# D3a: who confirmed the goal (target, test design, ranking metric, business rule): written only by
+# ``goal_decision_service`` when the confirmation or the goal version is saved; never corrected.
+GOAL_CONFIRMATION_DECISION_TYPES = {
+    "target": "target_confirmed",
+    "test_design": "test_design_confirmed",
+    "metric": "goal_metric_confirmed",
+    "rule": "goal_rule_confirmed",
+}
 RESERVED_DECISION_TYPES = frozenset(
     {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted",
-     DECISION_SCORING_SCHEDULE_CHANGED, DECISION_MONITORING_OUTCOMES_LINKED}
+     DECISION_SCORING_SCHEDULE_CHANGED, DECISION_MONITORING_OUTCOMES_LINKED,
+     *GOAL_CONFIRMATION_DECISION_TYPES.values()}
 )
 # Accepted rows of these types exist only together with their ref move
 # (``project_ref_service.move_ref``); they are never corrected in place.
@@ -337,6 +350,10 @@ DecisionType = Literal[
     "operating_point_chosen",
     "scoring_schedule_changed",
     "monitoring_outcomes_linked",
+    "target_confirmed",
+    "test_design_confirmed",
+    "goal_metric_confirmed",
+    "goal_rule_confirmed",
 ]
 
 _UNTRUSTED = (

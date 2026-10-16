@@ -49,7 +49,7 @@ export const STATUS_WORDS: Record<StatusKind, { label: string; tone: StatusTone;
   working: { label: "Working today", tone: "ok", meaning: "You can use it now." },
   partly: { label: "Partly working", tone: "warn", meaning: "Some parts are missing; the table says which." },
   off: { label: "Built, switched off", tone: "ai", meaning: "AI pieces that are built but not shown to people until they pass testing." },
-  planned: { label: "Planned", tone: "gray", meaning: "Not built yet; the tag names the phase of the plan that builds it." },
+  planned: { label: "Planned", tone: "gray", meaning: "Not built yet; the table says what is missing." },
 };
 
 export const SCREEN_STATUS: readonly ScreenStatus[] = [
@@ -66,7 +66,7 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "projects", name: "Projects", group: "Workspace", href: "/projects", feature: "projects",
     tags: [{ kind: "working" }],
-    missing: "Nothing for the daily job. The score column is the cross-validation score of the model in use, not the best run's; the wizard keeps its four steps.",
+    missing: "Nothing for the daily job. The score column is the cross-validation score of the model in use, not the best run's. New project is a three-step dialog; the older four-step page is still linked from it.",
   },
   {
     id: "data", name: "Data", group: "Project", href: null, feature: "data",
@@ -177,11 +177,10 @@ export function screenStatus(id: string): ScreenStatus | null {
   return Object.hasOwn(BY_ID, id) ? BY_ID[id] : null;
 }
 
-/** Pill text of one tag, e.g. "Working today", "Partly working · no screen yet", "Screen: Planned · Phase 4". */
+/** Pill text of one tag, e.g. "Working today", "Partly working · no screen yet", "Screen: Planned". The roadmap phase stays in the data, never on screen. */
 export function tagLabel(tag: StatusTag): string {
   let text = STATUS_WORDS[tag.kind].label;
   if (tag.kind === "partly" && tag.short) text += ` · ${tag.short}`;
-  if (tag.kind === "planned" && tag.phase !== undefined) text += ` · Phase ${tag.phase}`;
   return tag.part ? `${tag.part}: ${text}` : text;
 }
 

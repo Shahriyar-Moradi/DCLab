@@ -268,13 +268,12 @@ export function timelineSummary(d: PlanDesign): string {
   return `Test design drawn to scale by rows: ${d.folds} ${d.kind ? `${PHRASE[d.kind]} ` : ""}cross-validation folds on ${fmt(d.trainRows)} training rows${folds ? ` (${folds})` : ""}, ${test}.`;
 }
 
-// --- who decided -------------------------------------------------------------------------
+// --- who recorded a decision (History, lineage) -----------------------------------------------
 
 export type DecisionLike = {
   id: string; decision_type: string; effective_state: string; recorded_at: string;
   actor: { kind: string; agent_run_id?: string | null; service_token_id?: string | null }; subject: { kind: string; id: string };
 };
-export type DecidedRow = { key: string; part: string; by: string; when: string; state: string };
 
 /** Who recorded a decision. Outside tools with access tokens are never "the assistant". */
 export function actorWords(actor: DecisionLike["actor"]): string {
@@ -287,19 +286,4 @@ export function actorWords(actor: DecisionLike["actor"]): string {
 /** The problem spec a run used (`experiment uses_problem_spec problem_spec`). */
 export function problemSpecOf(edges: Array<{ from: { kind: string; id: string }; to: { kind: string; id: string }; relation: string }>, experimentId: string): string | null {
   return edges.find((e) => e.relation === "uses_problem_spec" && e.from.kind === "experiment" && e.from.id === experimentId)?.to.id ?? null;
-}
-
-/**
- * The newest decision record of this run's goal (its own problem spec) and of this test design. Only what the record says is shown:
- * who recorded it and when. Nothing is claimed about who confirmed it.
- */
-export function decidedRows(items: DecisionLike[], splitPlanId: string, problemSpecId: string | null = null): DecidedRow[] {
-  const newest = (match: (d: DecisionLike) => boolean) =>
-    items.filter(match).sort((a, b) => b.recorded_at.localeCompare(a.recorded_at) || a.id.localeCompare(b.id))[0];
-  const goal = problemSpecId ? newest((d) => d.decision_type === "problem_spec_locked" && d.subject.id === problemSpecId) : undefined;
-  const design = newest((d) => d.decision_type === "split_plan_created" && d.subject.id === splitPlanId);
-  return [
-    goal ? { key: goal.id, part: "What we predict, how models are ranked and the business rule", by: actorWords(goal.actor), when: goal.recorded_at, state: goal.effective_state } : null,
-    design ? { key: design.id, part: "Test design", by: actorWords(design.actor), when: design.recorded_at, state: design.effective_state } : null,
-  ].filter((row): row is DecidedRow => row !== null);
 }

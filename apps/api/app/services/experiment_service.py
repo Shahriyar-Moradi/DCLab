@@ -36,6 +36,7 @@ from app.db.models import (
     IngestionRun,
     LlmInvocation,
     MlJob,
+    MlJobAttempt,
     ModelSelectionDecision,
     ModelVersion,
     ProblemSpec,
@@ -61,6 +62,7 @@ from app.domain.experiment_resources import (
     ExperimentListItem,
     ExperimentMetrics,
     ExperimentPage,
+    ExperimentAttemptRead,
     ExperimentDetailRead,
     ExperimentWinner,
     FeatureContractColumnRead,
@@ -405,6 +407,29 @@ def _metrics(db: Session, experiment: Experiment) -> ExperimentMetrics | None:
     )
 
 
+def _attempts(db: Session, workspace_id: UUID, job_id: UUID) -> list[ExperimentAttemptRead]:
+    """D2a: the job's attempts (closed codes only), oldest first."""
+
+    rows = db.scalars(
+        select(MlJobAttempt)
+        .where(MlJobAttempt.workspace_id == workspace_id, MlJobAttempt.ml_job_id == job_id)
+        .order_by(MlJobAttempt.attempt.asc())
+    ).all()
+    return [
+        ExperimentAttemptRead(
+            attempt=row.attempt,
+            started_at=row.started_at,
+            ended_at=row.ended_at,
+            duration_seconds=(
+                round(max(0.0, (row.ended_at - row.started_at).total_seconds()), 3) if row.ended_at is not None else None
+            ),
+            outcome=row.outcome,
+            failure_class=row.failure_class,
+        )
+        for row in rows
+    ]
+
+
 def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID) -> ExperimentDetailRead:
     _require_read(db, actor, workspace_id)
     experiment, status = _load(db, workspace_id, experiment_id)
@@ -419,12 +444,13 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
         .order_by(ExecutionRequest.created_at.desc())
         .limit(1)
     )
-    cancel_requested_at = db.scalar(
-        select(MlJob.cancel_requested_at)
+    job = db.execute(
+        select(MlJob.id, MlJob.cancel_requested_at)
         .where(MlJob.workspace_id == workspace_id, MlJob.pipeline_run_id == experiment.id)
         .order_by(MlJob.created_at.desc())
         .limit(1)
-    )
+    ).first()
+    cancel_requested_at = job.cancel_requested_at if job is not None else None
     task = dict((experiment.result or {}).get("task") or {})
     completed = status == "completed"
     diff = None
@@ -458,6 +484,7 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
         change_set=public_diagnostic(experiment.change_set) if experiment.change_set is not None else None,
         metrics=_metrics(db, experiment) if completed else None,
         diff_vs_parent=diff,
+        attempts=_attempts(db, workspace_id, job.id) if job is not None else [],
     )
 
 

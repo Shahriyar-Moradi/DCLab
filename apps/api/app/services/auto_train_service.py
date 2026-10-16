@@ -42,6 +42,7 @@ from app.domain.lab_run_stages import (
     QUEUED,
     SKIPPED,
 )
+from app.domain.ml_jobs import FAILURE_INTERNAL_ERROR, exception_failure_class
 from app.engine.data.loaders import load_table
 from app.engine.lab.schema_inference import MIN_TRAIN_ROWS
 from app.engine.modeling.objective import Objective, parse_objective
@@ -500,15 +501,15 @@ def run_auto_train_job(
         # change that cannot apply to this run) fails closed.
         logger.exception("auto-train split plan check failed for upload %s", upload_id)
         db.rollback()
-        ctx.fail(str(exc))
+        ctx.fail(str(exc), failure_class=FAILURE_INTERNAL_ERROR)
     except ScientificEvidenceLockedError as exc:
         logger.exception("auto-train hit locked pipeline run for upload %s", upload_id)
         db.rollback()
-        ctx.fail(str(exc), experiment_id=exc.pipeline_run_id)
+        ctx.fail(str(exc), experiment_id=exc.pipeline_run_id, failure_class=FAILURE_INTERNAL_ERROR)
     except Exception as exc:  # noqa: BLE001
         logger.exception("auto-train job failed for upload %s", upload_id)
         db.rollback()
-        ctx.fail(f"unexpected error: {exc}")
+        ctx.fail(f"unexpected error: {exc}", failure_class=exception_failure_class(exc))
 
 
 def enqueue_auto_train(upload_id: UUID) -> None:

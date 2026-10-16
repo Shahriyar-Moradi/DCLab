@@ -25,7 +25,7 @@ export const OPERATOR_TABS: readonly OperatorTab[] = [
   { id: "failed-jobs", label: "Failed jobs", status: "working" },
   {
     id: "quarantine", label: "Quarantine", status: "planned",
-    planned: "Planned in P8.7 (data safety): uploaded files held for review will be listed here, with their metadata only, and a person will clear or reject each one with a reason.",
+    planned: "Planned (data safety): uploaded files held for review will be listed here, with their metadata only, and a person will clear or reject each one with a reason.",
   },
   {
     id: "caps", label: "Platform AI caps", status: "planned",
@@ -33,7 +33,7 @@ export const OPERATOR_TABS: readonly OperatorTab[] = [
   },
   {
     id: "benchmarks", label: "Benchmarks & gates", status: "planned",
-    planned: "Planned: benchmark results (R1, R2, R3) and the gates they feed are not in the operator read yet, so nothing is shown here.",
+    planned: "Planned: benchmark results and the go or no-go checks they feed are not in the operator read yet, so nothing is shown here.",
   },
 ];
 
@@ -347,7 +347,7 @@ function errorCode(body: unknown): string | null {
 export function readFailure(error: ReadErrorLike, what: string): ReadState {
   const status = error?.status ?? 0;
   if (status === 401) return { kind: "signed_out", text: "Your session ended. Sign in again to open the operator console." };
-  if (status === 403) return { kind: "forbidden", text: "The operator console is for DCLab platform administrators only. Your account cannot open it." };
+  if (status === 403) return { kind: "forbidden", text: "The operator console is for DCLab platform admins only. Your account cannot open it." };
   if (status === 400 && errorCode(error?.body) === "invalid_cursor") {
     return { kind: "invalid_cursor", text: `The next page of ${what} could not be read: the list changed or the page link expired. Start again from the first page.` };
   }

@@ -41,6 +41,9 @@ DATASET_UNAVAILABLE = "dataset_unavailable"
 RELEASE_MISMATCH = "release_mismatch"  # the approval no longer matches the model's package
 # A weekly scheduled scoring whose person lost the right to score before it ran.
 SCHEDULE_OWNER_NOT_ALLOWED = "schedule_owner_not_allowed"
+# D2a: scoring failure codes that are about the input data (the attempt's ``data_error`` class);
+# every other code is an ``internal_error``.
+DATA_FAILURE_CODES = frozenset({FEATURE_CONTRACT_FAILED, UNSUPPORTED_TRANSFORM, DATASET_UNAVAILABLE})
 
 # DB CHECK backstops (models.py; Alembic 0069 inlines the same literal SQL).
 CK_BATCH_PREDICTIONS_STATUS = sql_in_clause("status", PREDICTION_STATUSES)

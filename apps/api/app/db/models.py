@@ -133,6 +133,10 @@ from app.domain.privacy_audit import (
     CK_DATASET_COLUMNS_SENSITIVITY,
 )
 from app.domain.ml_jobs import (
+    CK_ML_JOB_ATTEMPTS_FAILURE_CLASS,
+    CK_ML_JOB_ATTEMPTS_NUMBER,
+    CK_ML_JOB_ATTEMPTS_OUTCOME,
+    CK_ML_JOB_ATTEMPTS_SHAPE,
     CK_ML_JOB_AUTO_TRAIN_UPLOAD,
     CK_ML_JOB_HANDLER_KEY,
     CK_ML_JOB_HANDLER_VERSION,
@@ -338,6 +342,14 @@ from app.domain.usage import (
     CK_USAGE_RECORDS_QUANTITY,
     CK_USAGE_RECORDS_PERIOD_DAY,
     CK_USAGE_RECORDS_SOURCE_REF,
+)
+from app.domain.data_goal import (
+    CK_UPLOAD_ATTEMPTS_ACTOR,
+    CK_UPLOAD_ATTEMPTS_FILE_NAME,
+    CK_UPLOAD_ATTEMPTS_OUTCOME,
+    CK_UPLOAD_ATTEMPTS_REASON,
+    CK_UPLOAD_ATTEMPTS_SIZE,
+    CK_UPLOAD_ATTEMPTS_SOURCE,
 )
 from app.domain.notifications import (
     CK_NOTIFICATION_OUTBOX_ATTEMPTS,
@@ -1816,6 +1828,38 @@ class MlJob(Base):
     )
 
     upload: Mapped["ClientLabUpload | None"] = relationship(foreign_keys="MlJob.upload_id")
+
+
+class MlJobAttempt(Base):
+    """D2a (0084): one claim of an ``ml_jobs`` row by a worker and how it ended. Closed codes
+    only (outcome, failure class), never a message. Written by ``ml_job_service`` at the claim
+    (``running``) and once at the attempt's end; a finished attempt is final (DB trigger)."""
+
+    __tablename__ = "ml_job_attempts"
+    __table_args__ = (
+        UniqueConstraint("ml_job_id", "attempt", name="uq_ml_job_attempts_job_attempt"),
+        ForeignKeyConstraint(
+            ["workspace_id", "ml_job_id"],
+            ["ml_jobs.workspace_id", "ml_jobs.id"],
+            name="fk_ml_job_attempts_workspace_job",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_NUMBER, name="ck_ml_job_attempts_number"),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_OUTCOME, name="ck_ml_job_attempts_outcome"),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_FAILURE_CLASS, name="ck_ml_job_attempts_failure_class"),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_SHAPE, name="ck_ml_job_attempts_shape"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ml_job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    failure_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class ExecutionRequest(Base):
@@ -6981,6 +7025,60 @@ class UsageRecord(Base):
     )
 
 
+class UploadAttempt(Base):
+    """D3a (0085, ADR 0005 amendment): metadata of one upload attempt, accepted or rejected. Never
+    file content or row values. Append-only: UPDATE is refused and DELETE only inside a transaction
+    ``retention_guard.allow_retention`` stamped (rows older than 90 days) or a workspace deletion;
+    ``created_at`` is forced to ``now()`` on insert so a row can never be backdated."""
+
+    __tablename__ = "upload_attempts"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_upload_attempts_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_upload_attempts_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "service_token_id"], ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_upload_attempts_service_token",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "dataset_id"], ["datasets.workspace_id", "datasets.id"],
+            name="fk_upload_attempts_workspace_dataset",
+        ),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_OUTCOME, name="ck_upload_attempts_outcome"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_REASON, name="ck_upload_attempts_reason"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_ACTOR, name="ck_upload_attempts_actor"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_SOURCE, name="ck_upload_attempts_source"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_FILE_NAME, name="ck_upload_attempts_file_name"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_SIZE, name="ck_upload_attempts_size"),
+        Index("ix_upload_attempts_project_created_at", "workspace_id", "project_id", desc("created_at"), desc("id")),
+        Index("ix_upload_attempts_created_at", "created_at"),
+        _partial_index("ix_upload_attempts_service_token_id", "workspace_id", "service_token_id"),
+        _partial_index("ix_upload_attempts_dataset_id", "workspace_id", "dataset_id"),
+        Index("ix_upload_attempts_actor_user_id", "actor_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    # NULL only for a legacy Labs rejection before the workspace has a Labs project.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    service_token_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    file_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class NotificationPreference(Base):
     """P8.8-A: a person's email choice for one notification kind in one workspace. Rows exist only
     for overrides of ``app.domain.notifications.DEFAULT_EMAIL`` (mutable config, the person's own)."""
@@ -8128,6 +8226,11 @@ def _protect_append_only_decision_record(
 @event.listens_for(AgentEvent, "before_update")
 def _protect_append_only_agent_event(_mapper, _connection, _target: AgentEvent) -> None:
     raise ValueError("AgentEvent rows are append-only")
+
+
+@event.listens_for(UploadAttempt, "before_update")
+def _protect_append_only_upload_attempt(_mapper, _connection, _target: UploadAttempt) -> None:
+    raise ValueError("UploadAttempt rows are append-only (deleted only by the 90-day retention purge)")
 
 
 @event.listens_for(SemanticDecisionAnswer, "before_update")

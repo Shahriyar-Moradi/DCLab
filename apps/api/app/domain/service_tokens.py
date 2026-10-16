@@ -121,6 +121,11 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             # tool call, and every action is `allowed: false` (deciding stays with people).
             "/v1/inbox",
             "/v1/inbox/counts",
+            # D3a: training-row monthly target rate (final test always sealed for tokens); the upload log
+            # (metadata, no person ids, file names untrusted); who decided the goal (never "you", no ids).
+            "/v1/datasets/{dataset_id}/target-by-period",
+            "/v1/projects/{project_id}/upload-attempts",
+            "/v1/projects/{project_id}/goal/decisions",
         )
     },
     ("POST", "/v1/projects"): SCOPE_PROJECTS_WRITE,

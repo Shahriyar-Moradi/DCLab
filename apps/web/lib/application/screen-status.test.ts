@@ -63,7 +63,7 @@ test("the registry reflects the real state today, not the demo's older tags", ()
   for (const id of ["assistant", "aiSettings"]) assert.equal(main(id), "off", id);
   assert.match(screenStatus("improve")!.missing, /Guided/);
   assert.deepEqual(screenStatus("inbox")!.tags.map(tagLabel), ["Working today", "Items from the assistant: Built, switched off"]);
-  assert.deepEqual(screenStatus("aiSettings")!.tags.map(tagLabel), ["Built, switched off", "Screen: Planned · Phase 4"]);
+  assert.deepEqual(screenStatus("aiSettings")!.tags.map(tagLabel), ["Built, switched off", "Screen: Planned"]);
 });
 
 test("ids are unique, every entry has a one-line plain sentence, and partly / planned tags say what or when", () => {
@@ -80,7 +80,7 @@ test("ids are unique, every entry has a one-line plain sentence, and partly / pl
 test("tag words and tones", () => {
   assert.equal(tagLabel({ kind: "working" }), "Working today");
   assert.equal(tagLabel({ kind: "partly", short: "no screen yet" }), "Partly working · no screen yet");
-  assert.equal(tagLabel({ kind: "planned", phase: 8 }), "Planned · Phase 8");
+  assert.equal(tagLabel({ kind: "planned", phase: 8 }), "Planned"); // no roadmap ids on screen
   assert.equal(tagLabel({ kind: "off" }), "Built, switched off");
   assert.deepEqual(["working", "partly", "off", "planned"].map((kind) => tagTone({ kind } as never)), ["ok", "warn", "ai", "gray"]);
 });

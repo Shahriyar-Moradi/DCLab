@@ -28,7 +28,7 @@ export default function RealTodayPage() {
         <ul className="plain-list status-legend">
           {KINDS.map((kind) => (
             <li key={kind}>
-              <Pill tone={STATUS_WORDS[kind].tone}>{kind === "planned" ? "Planned · Phase N" : STATUS_WORDS[kind].label}</Pill> <span className="muted">{STATUS_WORDS[kind].meaning}</span>
+              <Pill tone={STATUS_WORDS[kind].tone}>{STATUS_WORDS[kind].label}</Pill> <span className="muted">{STATUS_WORDS[kind].meaning}</span>
             </li>
           ))}
         </ul>

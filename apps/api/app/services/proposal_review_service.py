@@ -584,7 +584,8 @@ def _t_propose_spec(ctx: _Ctx, args: dict[str, Any]):
     def command(hook: Callable[[Any], None]) -> Any:
         fields = {k: v for k, v in args.items() if k not in ("project_id", "rationale")}
         spec = create_problem_spec(ctx.db, actor=ctx.user, workspace_id=ctx.workspace_id,
-                                   project_id=ctx.row.project_id, status="locked", **fields)
+                                   project_id=ctx.row.project_id, status="locked", record_goal="assistant",
+                                   **fields)
         ctx.db.flush()
         result = _move_refs(ctx, {"problem_spec": spec.id}, [drs.evidence_ref("problem_spec", spec.id)],
                             args["rationale"], None)
@@ -719,7 +720,7 @@ def _create_draft(ctx: _Ctx, args: dict[str, Any], hook: Callable[[Any], None]) 
 
     fields = {k: v for k, v in args.items() if k not in ("project_id", "rationale")}
     spec = create_problem_spec(ctx.db, actor=ctx.user, workspace_id=ctx.workspace_id, project_id=ctx.row.project_id,
-                               status="draft", **fields)
+                               status="draft", record_goal="assistant", **fields)
     ctx.db.flush()
     hook(spec)
     ctx.db.commit()

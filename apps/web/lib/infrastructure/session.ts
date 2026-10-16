@@ -1,5 +1,7 @@
 "use client";
 
+import { roleLabelWithDetail } from "../application/role-labels.ts";
+
 /** Presentation helpers for /auth/me. The API authorizes every operation. */
 export const SESSION_CHANGED_EVENT = "dclab-session-changed";
 
@@ -52,20 +54,9 @@ export function notifySessionChanged(): void {
   window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
 }
 
+/** Display words for the account's role, from the one label map (lib/application/role-labels.ts). */
 export function roleLabel(role: SessionUser["role"]): string {
-  const labels: Record<SessionUser["role"], string> = {
-    dclab_admin: "DCLab Admin",
-    dclab_developer: "DCLab Developer",
-    business_admin: "Business Admin",
-    business_developer: "Business Developer",
-    personal_developer: "Personal Developer",
-    client_user: "Business Client",
-    workspace_owner: "Workspace Owner",
-    workspace_admin: "Workspace Admin",
-    ml_engineer: "ML Engineer",
-    viewer: "Viewer",
-  };
-  return labels[role];
+  return roleLabelWithDetail(role);
 }
 
 export function displayName(user: SessionUser): string {

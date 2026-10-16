@@ -288,7 +288,7 @@ const UPLOAD_ERRORS: Record<string, UploadError> = {
   upload_rejected: { title: "That file could not be read as a table", detail: "Nothing was added. Use a CSV, TSV, JSON, Parquet or XLSX file with a header row." },
   payload_too_large: { title: "The file is too large", detail: "Nothing was added. Upload a smaller file." },
   length_required: { title: "The upload could not be sent", detail: "Nothing was added. Try again; if it keeps failing, use a smaller file." },
-  quota_exceeded: { title: "Your workspace has no storage left", detail: "Nothing was stored. Ask an administrator of this workspace to free space or raise the limit." },
+  quota_exceeded: { title: "Your workspace has no storage left", detail: "Nothing was stored. Ask an admin of this workspace to free space or raise the limit." },
   idempotency_key_conflict: { title: "That upload may already be saved", detail: "Look at the list of versions before you upload again." },
   validation_failed: { title: "The upload was refused", detail: "Nothing was added. Choose one file and try again." },
 };

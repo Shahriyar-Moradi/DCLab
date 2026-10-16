@@ -127,6 +127,24 @@ class ExperimentPage(BaseModel):
     limit: int
 
 
+AttemptOutcome = Literal["running", "completed", "failed", "retried", "cancelled"]
+AttemptFailureClass = Literal["out_of_memory", "timeout", "worker_lost", "data_error", "internal_error", "cancelled"]
+
+
+class ExperimentAttemptRead(BaseModel):
+    """One worker attempt of the run's job (D2a). ``retried``: the attempt failed and the queue
+    claimed the job again automatically (no other change). Closed codes, never a message."""
+
+    attempt: int = Field(ge=1)
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_seconds: float | None = Field(default=None, description="ended_at - started_at; null while running.")
+    outcome: AttemptOutcome
+    failure_class: AttemptFailureClass | None = Field(
+        default=None, description="failed / retried / cancelled attempts only."
+    )
+
+
 class ExperimentDetailRead(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -146,6 +164,10 @@ class ExperimentDetailRead(BaseModel):
     diff_vs_parent: dict[str, Any] | None = Field(
         default=None,
         description="Completed branches: metric deltas vs the parent on the same split plan, or the refusal.",
+    )
+    attempts: list[ExperimentAttemptRead] = Field(
+        default_factory=list,
+        description="Worker attempts of the run's job, oldest first (empty for runs before attempts were recorded).",
     )
     untrusted_fields: list[str] = Field(
         default_factory=lambda: list(UNTRUSTED_FIELDS),

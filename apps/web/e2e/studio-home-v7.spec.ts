@@ -4,7 +4,7 @@ import { axeViolations, login, proposeDecision, shot, trainedProject } from "./s
 /**
  * V7 UI-B: Home v7 (greeting, Upload data, what needs you with a sentence and a button, the latest project as eight tiles,
  * Running now with the fold, activity with model and CV score, See all), Projects v7 (Where it is, the CV score of the
- * model in use, last run, explainer, New project dialog over today's four-step wizard) and the project flow bar as tiles.
+ * model in use, last run, explainer, the three-step New project dialog) and the project flow bar as tiles.
  * Real API + worker and a real trained run; only the fold of a running run is injected into the project list read (a real
  * run finishes too fast to catch mid-fold), and one test fails the flow read on purpose.
  */
@@ -40,7 +40,7 @@ test("Home v7 on a trained project: greeting, what needs you, eight tiles, activ
   await page.goto("/home");
   await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
   const head = page.locator(".page-head");
-  await expect(head.getByRole("link", { name: "Upload data" })).toHaveAttribute("href", "/projects/new");
+  await expect(head.getByRole("button", { name: "Upload data" })).toHaveAttribute("aria-haspopup", "dialog");
   await expect(head).toContainText(/\d+ things? needs? you\.|Nothing needs you right now\./);
   await expect(head).toContainText("Nothing is running.");
 
@@ -136,20 +136,20 @@ test("Projects v7: where it is, scores, last run, explainer and the New project 
   await expect(row).toContainText("Run 1 · Finished");
   await expect(row).toContainText(/[A-Za-z-]+ \d+\.\d\d/);
   await expect(row.getByRole("link", { name: projectName })).toHaveAttribute("href", `/projects/${projectId}/experiments`);
-  await expect(page.locator(".card", { has: page.getByRole("heading", { name: "Starting a project" }) })).toContainText("four steps");
+  await expect(page.locator(".card", { has: page.getByRole("heading", { name: "Starting a project" }) })).toContainText("three steps");
 
   await page.getByRole("button", { name: "New project" }).click();
   const dialog = page.getByRole("dialog", { name: "New project" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("list", { name: "The wizard's steps" }).getByRole("listitem")).toHaveCount(4);
-  for (const step of ["Data.", "What to predict.", "What good looks like.", "Train."]) await expect(dialog.getByText(step, { exact: true })).toBeVisible();
-  await expect(dialog.getByRole("link", { name: "Start the wizard" })).toHaveAttribute("href", "/projects/new");
+  await expect(dialog.getByRole("navigation", { name: "New project steps" }).getByRole("listitem")).toHaveCount(3);
+  for (const step of ["1 Name and file", "2 What to predict", "3 Test design"]) await expect(dialog.getByRole("listitem").filter({ hasText: step })).toHaveCount(1);
+  await expect(dialog.getByRole("link", { name: "Use the four-step page" })).toHaveAttribute("href", "/projects/new");
   await shot(page, "projects-v7-dialog");
   await axeBoth(page, "/projects dialog");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await page.getByRole("button", { name: "New project" }).click();
-  await dialog.getByRole("link", { name: "Start the wizard" }).click();
+  await dialog.getByRole("link", { name: "Use the four-step page" }).click();
   await expect(page).toHaveURL(/\/projects\/new$/);
   await expect(page.getByLabel("Project name")).toBeVisible();
   await page.goto("/projects");

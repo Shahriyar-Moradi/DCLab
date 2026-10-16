@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   anyAiAnswer, beatsText, bestRunIds, changeSentences, familyLabel, selectionScore, matchesStatusFilter, pointLabel, runFacts, runSteps, scoreText,
-  stageStateWords, stageWords, statusWords, trustCounts, trustSentence,
+  stageStateWords, stageWords, statusWords, trustCounts, trustSentence, attemptRows, attemptsSummary,
 } from "./studio-runs.ts";
 
 test("model families are words; unknown and prototype keys are shown as text, not looked up", () => {
@@ -139,4 +139,49 @@ test("step, status and choice names are words and hold up against prototype keys
   assert.equal(matchesStatusFilter("completed", "failed"), false);
   assert.equal(anyAiAnswer([{ aiOff: true } as never]), false);
   assert.equal(anyAiAnswer([{ aiOff: true } as never, { aiOff: false } as never]), true);
+});
+
+test("each step lists its recorded stages in run order (the read's sequence) with their own time", () => {
+  const steps = runSteps([
+    { key: "holdout_lock", status: "completed", duration_ms: 300, sequence: 6, title: "Holdout lock" },
+    { key: "final_holdout_plan", status: "completed", duration_ms: 20, sequence: 5, title: "Final holdout plan" },
+    { key: "ingestion", status: "completed", duration_ms: 1200, sequence: 1, title: "Ingestion" },
+    { key: "problem_profile", status: "running", sequence: 7, title: "Train-only ProblemProfile" },
+  ]);
+  assert.deepEqual(steps.map((s) => s.id), ["read", "split", "profile"]);
+  assert.deepEqual(steps[1].parts.map((p) => [p.key, p.label, p.state, p.time]), [
+    ["final_holdout_plan", "Plan the final test set", "done", "20 ms"], ["holdout_lock", "Set the final test set aside", "done", "300 ms"],
+  ]);
+  assert.deepEqual(steps[2].parts.map((p) => [p.state, p.time]), [["running", "—"]]);
+  // A stage this app does not know keeps its recorded title, as text.
+  assert.equal(runSteps([{ key: "__proto__", status: "completed", title: "<b>odd</b>" }])[0].parts[0].label, "<b>odd</b>");
+});
+
+test("tries: 'retried automatically' only when the read says retried; failure classes are a closed set", () => {
+  const attempts = [
+    { attempt: 2, outcome: "completed", started_at: "2026-10-16T10:05:00Z", ended_at: "2026-10-16T10:06:00Z", duration_seconds: 60 },
+    { attempt: 1, outcome: "retried", failure_class: "out_of_memory", started_at: "2026-10-16T10:00:00Z", ended_at: "2026-10-16T10:01:30Z", duration_seconds: 90 },
+  ];
+  const rows = attemptRows(attempts);
+  assert.deepEqual(rows.map((r) => [r.label, r.sentence, r.tone, r.time]), [
+    ["Try 1", "failed: out of memory, retried automatically", "warn", "1 min 30 s"], ["Try 2", "finished", "ok", "1 min"],
+  ]);
+  assert.equal(attemptsSummary(rows, attempts), "Ran 2 times; the queue started it again on its own after a failed try.");
+  // A final failure is not called a retry; an unknown or hostile class is not guessed.
+  assert.equal(attemptRows([{ attempt: 1, outcome: "failed", failure_class: "out_of_memory", started_at: "x" }])[0].sentence, "failed: out of memory");
+  assert.equal(attemptRows([{ attempt: 1, outcome: "failed", failure_class: "__proto__", started_at: "x" }])[0].sentence, "failed: reason not recorded");
+  assert.equal(attemptRows([{ attempt: 1, outcome: "retried", failure_class: null, started_at: "x" }])[0].sentence, "failed: reason not recorded, retried automatically");
+  assert.deepEqual(attemptRows([{ attempt: 1, outcome: "running", started_at: "x" }]).map((r) => [r.sentence, r.time]), [["running now", "still running"]]);
+  const live = [{ attempt: 1, outcome: "retried", failure_class: "timeout", started_at: "x" }, { attempt: 2, outcome: "running", started_at: "y" }];
+  assert.equal(attemptsSummary(attemptRows(live), live), "Running (try 2).");
+  assert.equal(attemptRows(live)[0].sentence, "failed: timed out, retried automatically");
+  assert.equal(attemptRows([{ attempt: 1, outcome: "cancelled", failure_class: "cancelled", started_at: "x", duration_seconds: 2 }])[0].sentence, "stopped (cancelled)");
+  const once = attemptRows([{ attempt: 1, outcome: "completed", started_at: "x", duration_seconds: 5 }]);
+  assert.equal(attemptsSummary(once, []), "Ran once.");
+  assert.deepEqual(attemptRows(undefined), []);
+  assert.equal(attemptsSummary([], []), null);
+  // Retried twice, no "smaller batch" or any other claimed change.
+  const words = ["completed", "running", "retried", "failed", "cancelled"].flatMap((outcome) => ["out_of_memory", "timeout", "worker_lost", "data_error", "internal_error", "cancelled", null]
+    .map((failure_class) => attemptRows([{ attempt: 1, outcome, failure_class, started_at: "x" }])[0].sentence));
+  for (const text of words) assert.doesNotMatch(text, /\b(smaller|batch|holdout|champion|worker_lost|out_of_memory)\b/i, text);
 });

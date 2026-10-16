@@ -110,6 +110,36 @@ class DatasetProfileTimeRangeRead(BaseModel):
     end: datetime
 
 
+UploadCheckCode = Literal["duplicate_rows", "missing_values", "date_parsing", "id_like_columns", "constant_columns"]
+UPLOAD_CHECK_COLUMNS_MAX = 20
+
+
+class UploadCheckColumnRead(BaseModel):
+    name: str = Field(description=_USER_DATA)
+    count: int | None = None
+    share: float | None = None
+
+
+class UploadCheckRead(BaseModel):
+    code: UploadCheckCode
+    status: Literal["ok", "warn"]
+    count: int | None = Field(description="Duplicate rows for `duplicate_rows`; the number of columns otherwise.")
+    share: float | None = Field(description="Share of rows (duplicates) or of cells (missing values); else null. "
+                                "Per column: missing / date-parse failures (of the first 500 values) / unique share.")
+    columns: list[UploadCheckColumnRead] = Field(description=f"At most {UPLOAD_CHECK_COLUMNS_MAX} columns.")
+    columns_truncated: bool = False
+
+
+class UploadChecksRead(BaseModel):
+    """D3a: fast checks run once on the whole uploaded file, before any split exists. They never use
+    the target (it is not known at upload) and feed no run; leakage checks run inside each run."""
+
+    scope: Literal["whole_upload"] = "whole_upload"
+    ran_at: datetime
+    row_count: int
+    checks: list[UploadCheckRead]
+
+
 class DatasetProfileRead(BaseModel):
     dataset_id: UUID
     project_id: UUID | None
@@ -135,4 +165,9 @@ class DatasetProfileRead(BaseModel):
         default=None,
         description="Yes/no targets only: share of training rows whose target is the positive answer (the engine's "
         "0/1 mapping). Never counts a final-test row.",
+    )
+    upload_checks: UploadChecksRead | None = Field(
+        default=None,
+        description="D3a: checked on upload (whole file; duplicates, missing values, dates, ID-like and constant "
+        "columns); null for files uploaded before these checks or whose grid could not be read.",
     )

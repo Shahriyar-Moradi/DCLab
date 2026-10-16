@@ -158,6 +158,7 @@ from app.services.observatory_query_service import list_run_events
 from app.services.audience_projection import artifact_read, event_read, public_diagnostic, public_failure
 from app.services import idempotency_service
 from app.services.client_lab_upload_service import ingest_dataset
+from app.services.upload_attempt_service import record_rejected
 from app.services.idempotency_service import IdempotencyKeyRaceError, KeyScope
 from app.services.problem_spec_service import (
     create_problem_spec,
@@ -654,6 +655,7 @@ def create_problem_spec_v1(
             workspace_id=workspace_id,
             project_id=project_id,
             created_by_service_token_id=_service_token_id(request),
+            record_goal="author",  # D3a: "who decided" entries for the target / metric / rule it sets
             **payload.model_dump(),
         )
         bind(spec.id)
@@ -1054,6 +1056,11 @@ async def create_dataset_v1(
         if purpose not in DATASET_PURPOSES:
             raise _form_error("purpose", "purpose must be training or scoring", "literal_error")
         if upload.size is not None and upload.size > limit:
+            await run_in_threadpool(  # D3a upload log (only for a project of this workspace)
+                record_rejected, db, workspace_id=workspace_id, project_id=project_id, user=user,
+                service_token_id=_service_token_id(request), file_name=upload.filename, size_bytes=upload.size,
+                reason_code="too_large", source="v1_api",
+            )
             raise V1APIError(413, "payload_too_large", f"uploads are limited to {limit} bytes")
         filename = upload.filename or "upload"
         binding = idempotency_binding(
@@ -1265,11 +1272,14 @@ def confirm_execution_request_target(
             request_id=request_id,
             target_column=payload.target_column,
             service_token_id=_service_token_id(request),
+            rationale=payload.rationale,
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except (ExecutionNotWaitingError, TargetNotInDatasetError, TargetIntentConflictError) as exc:
         raise domain_error(exc) from exc
+    except InvalidDecisionRecordError as exc:  # the person's reason (secret-like text, control characters)
+        raise domain_error(exc, status_code=422, code="invalid_rationale") from exc
     except ExecutionRequestSpecError as exc:
         raise V1APIError(400, "invalid_request_spec", str(exc)) from exc
     body = _execution_request_read(row)
@@ -1309,11 +1319,14 @@ def confirm_execution_request_split(
                 if current.status == REQUEST_NEEDS_INPUT or spec.get("split_resolution") != payload.answer:
                     raise
         row = confirm_execution_split(db, actor=user, workspace_id=workspace_id, request_id=request_id,
-                                      answer=payload.answer, service_token_id=_service_token_id(request))
+                                      answer=payload.answer, service_token_id=_service_token_id(request),
+                                      rationale=payload.rationale)
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except ExecutionNotWaitingError as exc:
         raise domain_error(exc) from exc
+    except InvalidDecisionRecordError as exc:
+        raise domain_error(exc, status_code=422, code="invalid_rationale") from exc
     except ExecutionRequestSpecError as exc:
         raise V1APIError(400, "invalid_request_spec", str(exc)) from exc
     body = _execution_request_read(row)

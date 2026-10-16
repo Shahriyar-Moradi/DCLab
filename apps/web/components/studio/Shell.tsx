@@ -67,8 +67,8 @@ export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, t
                     <span>{item.label}</span>
                     {item.available ? null : (
                       <span className="cnt" style={{ whiteSpace: "nowrap" }}>
-                        <span className="sr-only">Planned in </span>
-                        {item.phase}
+                        {/* The plan's internal id stays in sidebar-config.ts; people read a plain word. */}
+                        Planned
                       </span>
                     )}
                   </span>

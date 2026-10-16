@@ -4,17 +4,11 @@
  * and the caller's own access from the session capabilities. Nothing here adds or changes people.
  */
 import { plainText } from "./command-search.ts";
+import { roleLabel, roleLabelWithDetail } from "./role-labels.ts";
 
-export const MEMBER_ROLE_WORDS: Record<string, string> = {
-  workspace_owner: "Owner",
-  workspace_admin: "Administrator",
-  ml_engineer: "Data scientist",
-  viewer: "Viewer",
-};
-
-/** Own keys only: a role such as `__proto__` or `constructor` is shown as cleaned text, never inherited. */
+/** Role words come from the one label map (role-labels.ts): "Admin · Owner", "Admin", "Data scientist", "Analyst (view only)". */
 export function roleWords(role: unknown): string {
-  return typeof role === "string" && Object.hasOwn(MEMBER_ROLE_WORDS, role) ? MEMBER_ROLE_WORDS[role] : plainText(role, 40) || "Unknown role";
+  return roleLabelWithDetail(role);
 }
 
 export type RoleAbilities = { role: string; can_read: boolean; can_run_ml: boolean; can_manage_members: boolean; can_approve_ai_policy: boolean };
@@ -42,7 +36,8 @@ export function memberRow(member: MemberRow): { key: string; name: string; email
     key: String(member.email),
     name: plainText(member.full_name, 80) || "No name given",
     email,
-    role: roleWords(member.role),
+    // The API lists every client account as `viewer` with legacy_access: it is a business user.
+    role: member.legacy_access === true ? roleLabel("client_user") : roleWords(member.role),
     joined: formatDay(member.joined_at),
     you: member.is_you === true,
     legacy: member.legacy_access === true,
@@ -60,7 +55,7 @@ export function myAccess(capabilities: Record<string, boolean> | undefined): { c
   const sentences = [
     has("workspace_read") ? "You can see this workspace's projects, data, runs and results." : "You cannot see this workspace's work.",
     has("workspace_execute_ml") ? "You can create projects, upload data, start runs and decide in the Inbox." : "You cannot change work here: no uploads, runs or decisions.",
-    has("workspace_manage_members") ? "You can see the people in this workspace." : "Only owners and administrators can see the people in this workspace.",
+    has("workspace_manage_members") ? "You can see the people in this workspace." : "Only admins can see the people in this workspace.",
   ];
   return { canSeeMembers: has("workspace_manage_members"), sentences };
 }

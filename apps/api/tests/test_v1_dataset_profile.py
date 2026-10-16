@@ -132,7 +132,9 @@ def test_profile_training_rows_only_tenant_isolation_tokens_sdk_and_catalog(clie
     assert before.status_code == 200, before.text
     body = before.json()
     assert set(body) == {"dataset_id", "project_id", "scope", "statistics_status", "split_plan", "experiment",
-                         "importance_method", "columns", "entity_column", "entity_count", "time_range", "target_rate"}
+                         "importance_method", "columns", "entity_column", "entity_count", "time_range", "target_rate",
+                         "upload_checks"}
+    assert body["upload_checks"]["scope"] == "whole_upload"  # D3a: run once at upload, never the target
     assert (body["scope"], body["statistics_status"], body["split_plan"], body["experiment"]) == (
         "upload", "no_split_plan", None, None)
     assert (body["entity_column"], body["entity_count"], body["time_range"], body["target_rate"]) == (

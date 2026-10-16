@@ -10,18 +10,17 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { QueryNotice, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { useBackingRun } from "@/app/components/studio-app/Inspectors";
+import { WhoDecided } from "@/app/components/studio-app/DataGoalD3";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
-import { DataTable, type Column } from "@/components/studio/DataTable";
 import { GlossaryTerm } from "@/components/studio/GlossaryTerm";
 import { KeyValue } from "@/components/studio/KeyValue";
 import { PageGuide } from "@/components/studio/PageGuide";
 import { safeInternalHref } from "@/components/studio/safe-href";
 import { plainText, projectHref } from "@/lib/application/command-search";
-import { useProjectDecisions } from "@/lib/application";
 import {
-  decidedRows, designChips, goalCards, goalFacts, planDesign, problemSpecOf, timeline, timelineSummary, whyFromRows,
-  type DecidedRow, type GoalCards, type PlanDesign,
+  designChips, goalCards, goalFacts, planDesign, problemSpecOf, timeline, timelineSummary, whyFromRows,
+  type GoalCards, type PlanDesign,
 } from "@/lib/application/studio-goal";
 import { inspectorPath } from "@/lib/application/studio-inspect";
 import { useDatasetProfile } from "@/lib/application/studio-data-hooks";
@@ -34,7 +33,7 @@ function Guide() {
     <PageGuide
       purpose={<>See what is predicted, what &ldquo;good&rdquo; means and how the data is split so the score is fair: <GlossaryTerm term="cv" /> on the training rows and a <GlossaryTerm term="finalTest" />.</>}
       howTo="Check the target, the ranking metric and the business rule, then the test design. Runs on the same test design are comparable."
-      youGet="The goal in three cards, the test design drawn to scale by row count, why it was chosen, and who recorded each decision."
+      youGet="The goal in three cards, the test design drawn to scale by row count, why it was chosen, and who suggested and confirmed each part."
       attention="The test design is fixed before any model is fitted. Final test set row values and dates are never shown here."
     />
   );
@@ -132,24 +131,16 @@ export function GoalTestDesign({ projectId, nodeId }: { projectId: string; nodeI
   const single = useProblemSpec(projectId, specId && specs.data && !listed ? specId : null);
   const spec = listed ?? single.data ?? null;
   const profile = useDatasetProfile(plan.data?.dataset_id);
-  const decisions = useProjectDecisions(projectId);
   const facts = useMemo(() => goalFacts(build.data, experiment.data), [build.data, experiment.data]);
   // The positive share is counted on the training rows of the profile's test design; used only when it is this one.
   const targetRate = profile.data?.split_plan?.id === nodeId ? profile.data.target_rate ?? null : null;
   const cards = goalCards(spec, facts, { targetRate, clean });
   const design = plan.data ? planDesign(plan.data) : null;
   const why = design ? whyFromRows(design, (v) => plainText(v, 60)) : null;
-  const decided = decidedRows(decisions.data?.items ?? [], nodeId, specId);
   if (graph.isError) return <QueryNotice error={graph.error} what="project" />;
   if (graph.isPending) return <p role="status">Loading the goal and test design…</p>;
   if (!node && plan.isError) return <Banner tone="warn">This test design is not in the active workspace, or you cannot see it. Open it from the History page.</Banner>;
   const runHref = experimentId ? safeInternalHref(inspectorPath(projectId, "experiment", experimentId) ?? "") : null;
-  const decidedColumns: Column<DecidedRow>[] = [
-    { key: "part", header: "Part", render: (r) => r.part },
-    { key: "by", header: "Recorded by", render: (r) => r.by },
-    { key: "when", header: "When", render: (r) => formatWhen(r.when) },
-    { key: "state", header: "Status", render: (r) => r.state.replaceAll("_", " ") },
-  ];
   const specLoading = specs.isPending || (single.isPending && single.fetchStatus !== "idle");
   return (
     <>
@@ -176,9 +167,9 @@ export function GoalTestDesign({ projectId, nodeId }: { projectId: string; nodeI
           </>
         ) : null}
       </Card>
-      <Card title="Who decided" aside="from the History">
-        {decisions.isError ? <QueryNotice error={decisions.error} what="decisions" /> : null}
-        {decided.length ? <DataTable caption="Who decided" columns={decidedColumns} rows={decided} rowKey={(r) => r.key} /> : <p className="muted">{decisions.isPending ? "Loading…" : "No decision about this goal or test design is among the newest History entries."}</p>}
+      <Card title="Who decided" aside="every part of the goal">
+        <p className="muted">For the project&apos;s current goal and newest test design; it may differ from the test design shown here.</p>
+        <WhoDecided projectId={projectId} />
       </Card>
       <details>
         <summary>Details</summary>
@@ -228,6 +219,11 @@ export function GoalOverview({ projectId, designKnown }: { projectId: string; de
       {specs.data && designKnown ? (
         <Card title="How we test">
           <p>No test design yet. It is made when the first run starts: DCLab sets aside a final test set, used once per run at the end, before any model is fitted, then cuts the training rows into cross-validation folds. {start}</p>
+        </Card>
+      ) : null}
+      {spec ? (
+        <Card title="Who decided" aside="every part of the goal">
+          <WhoDecided projectId={projectId} />
         </Card>
       ) : null}
     </>

@@ -480,6 +480,7 @@ def _with_reasons(
     on_progress: Callable[[], None] | None,
     max_rows: int | None,
     deadline_seconds: float | None,
+    reference: Mapping[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``table`` with ``reason_1``..``reason_3`` appended (empty where a row was not explained)
     and the reasons record. Never fails the scoring: scores are written whatever happens here
@@ -498,7 +499,7 @@ def _with_reasons(
         )
         texts = explain.reason_texts(
             explanation, features, fmap, task_type=spec.task_type,
-            date_columns=set(spec.date_formats) | set(spec.legacy_date_columns),
+            date_columns=set(spec.date_formats) | set(spec.legacy_date_columns), reference=reference,
         )
         summary = explain.available_summary(explanation)
     except explain.ExplainUnavailable as exc:
@@ -526,11 +527,15 @@ def score_frame(
     reasons: bool = False,
     reasons_max_rows: int | None = None,
     reasons_deadline_seconds: float | None = None,
+    reasons_reference: Mapping[str, Any] | None = None,
 ) -> ScoredFrame:
     """Contract check, replayed transforms, fitted pipeline, locked threshold. With
     ``reasons`` (P7.7-A), after the scores: ``reason_1``..``reason_3`` appended per row from
     the same prepared rows (``app.engine.explain``); a failure there leaves them empty and
-    is recorded in ``ScoredFrame.reasons``, never as a scoring failure."""
+    is recorded in ``ScoredFrame.reasons``, never as a scoring failure. ``reasons_reference``: the
+    package's training ``reference_summary`` (``monitoring.usable_reference``), whose quantile bins
+    describe numeric values ("high (top 20%)"); without it they are described against the
+    method's reference."""
 
     frame = frame.copy()
     frame.columns = [str(name) for name in frame.columns]
@@ -561,7 +566,7 @@ def score_frame(
     if not reasons:
         return ScoredFrame(predictions=table, contract=contract)
     table, summary = _with_reasons(table, features, spec, pipeline, on_progress, reasons_max_rows,
-                                   reasons_deadline_seconds)
+                                   reasons_deadline_seconds, reasons_reference)
     return ScoredFrame(predictions=table, contract=contract, reasons=summary)
 
 

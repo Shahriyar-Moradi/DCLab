@@ -9,11 +9,15 @@ import { Shell } from "@/components/studio/Shell";
 import { useSession } from "@/lib/application";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { displayName } from "@/lib/infrastructure/session";
+import { accountRoleLabel } from "@/lib/application/role-labels";
+import { useViewAs, ViewAsBanner } from "@/app/components/studio-app/ViewAs";
 
 /** Business view frame (P7.6-A): one sidebar item, no developer routes; the existing Labs page stays one click away. */
 export function BusinessFrame({ children }: { children: ReactNode }) {
   const { user, loaded, activeWorkspace, activeWorkspaceId, workspaceSwitching } = useSession();
   const nav = businessNavigationForUser(user);
+  // An admin who opened this view from a "View as" preview keeps the preview note here, with a way to end it.
+  const viewAs = useViewAs(user);
 
   let body: ReactNode = children;
   if (!loaded) body = <p role="status">Loading your workspace…</p>;
@@ -24,7 +28,7 @@ export function BusinessFrame({ children }: { children: ReactNode }) {
     <Shell
       nav={nav}
       currentHref="/outcomes"
-      workspace={activeWorkspace ? { name: activeWorkspace.name } : undefined}
+      workspace={activeWorkspace ? { name: activeWorkspace.name, detail: accountRoleLabel(user, activeWorkspace) } : undefined}
       user={user ? { name: displayName(user), detail: user.email } : undefined}
       crumbs={<Crumbs items={[{ label: activeWorkspace?.name ?? "Workspace" }, { label: "Business view" }]} />}
       topbarRight={
@@ -37,6 +41,7 @@ export function BusinessFrame({ children }: { children: ReactNode }) {
       }
     >
       <div key={activeWorkspaceId ?? "no-workspace"} style={{ display: "contents" }}>
+        {viewAs.role ? <ViewAsBanner role={viewAs.role} onStop={() => viewAs.choose(null)} /> : null}
         {body}
       </div>
     </Shell>

@@ -81,6 +81,23 @@ Still production-denied (frozen or retiring surfaces, unchanged): admin lab file
 ingestion (`api/lab.py`, retired by P1.1), uploaded trial data
 (`client_lab_service`), legacy opportunity CSV import (`api/opportunities.py`).
 
+## Amendment 2026-10-16 (D3a): metadata-only upload log
+
+§2 still holds for the file: a rejected upload's bytes are deleted and no lineage row exists. What is
+now kept, for both upload paths (`POST /v1/datasets` and the legacy Labs upload), is one
+`upload_attempts` row per attempt that reached a project, accepted or rejected: workspace, project,
+actor kind (person or connected tool) and user, the service token if any, the file name (capped at
+200 characters, control characters removed), size in bytes, outcome, a closed `reason_code`
+(`too_large`, `storage_limit`, `empty_file`, `unsafe_file_name`, `unsupported_type`,
+`content_mismatch`, `unreadable_sheets`, `unsafe_content`, `unreadable_file`) and the time; never
+file content or row values. `unsafe_content` names the structural refusals (macros, external links,
+oversized or unsafe archive entries); it is still not a malware verdict. Rows are append-only (DB
+trigger) and retention-aware: the worker deletes rows older than 90 days through the ADR 0009 §2.2
+retention guard, one workspace per transaction, bounded per tick. `GET
+/v1/projects/{project_id}/upload-attempts` lists them for workspace readers (service tokens: no
+person ids, file names as untrusted text). Refusals before the project is known (missing
+`Content-Length`, an over-limit declared size, authorization) are not logged.
+
 ## Deferred to Phase 8 (formerly S0-P05C–E)
 
 Content/malware scanner and classifier adapters, resumable quarantine worker,

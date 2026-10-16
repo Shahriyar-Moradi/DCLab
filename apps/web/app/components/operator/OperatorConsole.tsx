@@ -9,6 +9,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { CopyButton } from "@/app/components/studio-app/CopyButton";
+import { ComingNext } from "@/components/studio/ComingNext";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
 import { DataTable, type Column } from "@/components/studio/DataTable";
@@ -18,6 +19,7 @@ import { PageHead } from "@/components/studio/PageHead";
 import { Pill } from "@/components/studio/Pill";
 import { Stat } from "@/components/studio/Stat";
 import { TabPanel, Tabs } from "@/components/studio/Tabs";
+import { COMING_NEXT } from "@/lib/application/coming-next";
 import { utcWhen } from "@/lib/application/format-time";
 import {
   CAPS_READ_ONLY, JOB_STATUSES, NO_CUSTOMER_ROWS, OPERATOR_TABS, TIMES_UTC, ageText, capsItems, checkLabel, checkName, checkSentence, checkTone,
@@ -104,6 +106,7 @@ function Overview({ data }: { data: OperatorOverview }) {
         <KeyValue items={caps.items.map((item) => ({ key: item.key, label: item.label, value: item.value }))} />
         {caps.unknownBudgets ? <p className="muted">{caps.unknownBudgets} more {caps.unknownBudgets === 1 ? "limit is" : "limits are"} in the read but not named on this page yet.</p> : null}
       </Card>
+      <ComingNext entry={COMING_NEXT.backups} />
     </div>
   );
 }

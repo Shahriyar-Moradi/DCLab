@@ -46,7 +46,7 @@ test("status tags open What's real today; sidebar, glossary and guide toggle", a
   await expect(row("Notifications (email)")).toContainText("Partly working · no screen yet");
   await expect(row("Integrations (webhooks)")).toContainText("Partly working · no screen yet");
   await expect(row("Assistant")).toContainText("Built, switched off");
-  await expect(row("AI settings")).toContainText("Screen: Planned · Phase 4");
+  await expect(row("AI settings")).toContainText("Screen: Planned");
   await expect(table.getByRole("link", { name: "Business view" })).toHaveAttribute("href", "/outcomes");
   await expect(page.locator(".page-head .status-tag")).toHaveCount(0); // the list itself has no tag
   await shot(page, "shell-1-real");
@@ -126,6 +126,8 @@ test("Next step follows the flow order on every step screen; responsive shell at
     for (const path of [`${base}/experiments`, "/real"]) {
       await page.goto(path);
       await expect(page.locator(".page-head h1")).toBeVisible();
+      // D1: an admin, so the top bar also carries "View as"; the page must still not scroll sideways.
+      await expect(page.getByLabel("View as", { exact: true })).toBeVisible();
       await noPageScroll(page);
       const nav = await page.locator(".studio .nav").evaluate((el) => ({ position: getComputedStyle(el).position, direction: getComputedStyle(el).flexDirection }));
       const guideCols = await page.locator(".studio .guide").first().evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);

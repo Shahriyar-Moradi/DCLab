@@ -127,7 +127,7 @@ export function OpenDatasetPanel({ category }: { category: InsightCategoryValue 
       </div>
       {!canWrite ? (
         <p className="mt-3 text-body text-ink-muted">
-          Read-only access. Uploading and running analyses require an administrator.
+          Read-only access. Uploading and running analyses need an admin or a data scientist.
         </p>
       ) : null}
       {uploads.isError ? (

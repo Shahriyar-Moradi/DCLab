@@ -546,6 +546,7 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     from app.services.notification_service import run_notification_tick
     from app.services.scoring_schedule_service import run_scoring_schedule_tick
     from app.services.system_health_service import mark_worker_connections
+    from app.services.upload_attempt_service import PURGE_TICK_SECONDS, purge_expired_upload_attempts
     from app.services.usage_service import run_usage_metering_tick
 
     mark_worker_process()  # P7.1-A: this process may load stored models
@@ -565,7 +566,18 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     next_tick = 0.0
     next_usage_tick = 0.0
     next_notification_tick = 0.0
+    next_purge_tick = 0.0
     while True:
+        if time.monotonic() >= next_purge_tick:  # D3a: the 90-day upload log retention (bounded, idempotent)
+            next_purge_tick = time.monotonic() + PURGE_TICK_SECONDS
+            db = _session()
+            try:
+                purge_expired_upload_attempts(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"upload log purge: {type(exc).__name__}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
         if time.monotonic() >= next_notification_tick:  # P8.8-A outbox: bounded batch, one transaction per row
             next_notification_tick = time.monotonic() + max(1.0, float(settings.notifications_tick_seconds))
             db = _session()

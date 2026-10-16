@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
-  CHECK_LABEL, RECOMMENDATION_TEXT, attentionCount, branchPrefillHref, checkLabel, findingStatusLabel, findingTone, findingsState, formatEvidenceValue, evidenceRows,
+  CHECK_LABEL, CHECK_ORDER, checkList, passSummary, RECOMMENDATION_TEXT, attentionCount, branchPrefillHref, checkLabel, findingStatusLabel, findingTone, findingsState, formatEvidenceValue, evidenceRows,
   parseBranchPrefill, prefillFor, sortFindings,
 } from "./studio-findings.ts";
 
@@ -100,4 +101,50 @@ test("parsing refuses unknown kinds and clamps hostile values", () => {
   assert.equal(parsed?.draft.mode, "balanced");
   assert.equal(parsed?.draft.transform, "drop_column");
   assert.equal(parsed?.draft.family.length, 120);
+});
+
+const openapi = JSON.parse(readFileSync(new URL("../infrastructure/v1/openapi.json", import.meta.url), "utf8")) as {
+  components: { schemas: { ExperimentFindingRead: { properties: { check: { enum: string[] } } } } };
+};
+
+test("the check registry is the server's: the same 15 checks in the same order as the API's enum", () => {
+  assert.deepEqual([...CHECK_ORDER], openapi.components.schemas.ExperimentFindingRead.properties.check.enum);
+  assert.equal(CHECK_ORDER.length, 15);
+  for (const check of CHECK_ORDER) assert.ok(Object.hasOwn(CHECK_LABEL, check), check);
+});
+
+test("check list: every registry check in run order; a check the run did not record is never 'Passed'", () => {
+  assert.deepEqual(checkList(null), []);
+  assert.deepEqual(checkList({ investigated: false, checks: [] }), []);
+  // An older run stored the five core checks only (the read sends them in registry order).
+  const old = checkList({ investigated: true, checks: [f("target_leakage", "pass", "info"), f("overfit_gap", "warning"), f("duplicate_rows", "fail", "critical"), f("class_imbalance", "not_evaluated", "info"), f("implausible_score", "pass", "info")] });
+  assert.equal(old.length, 15);
+  assert.deepEqual(old.map((r) => r.check), [...CHECK_ORDER]);
+  assert.deepEqual(old.map((r) => r.position), Array.from({ length: 15 }, (_, i) => i + 1));
+  assert.deepEqual(old.slice(0, 5).map((r) => r.result), ["Passed", "Warning", "Failed (critical)", "Not checked", "Passed"]);
+  assert.deepEqual(old.slice(0, 5).map((r) => r.tone), ["ok", "warn", "crit", "gray", "ok"]);
+  assert.ok(old.slice(5).every((r) => !r.recorded && r.result === "Not recorded for this run" && r.tone === "gray"));
+  // A check the server knows and this list does not is kept at the end, as text (own keys only).
+  const odd = checkList({ investigated: true, checks: [f("target_leakage", "pass", "info"), f("__proto__", "warning")] });
+  assert.equal(odd.length, 16);
+  assert.deepEqual([odd[15].check, odd[15].label, odd[15].result], ["__proto__", "  proto  ", "Warning"]);
+});
+
+test("banned words: no check name or result word uses internal words", () => {
+  const banned = /\b(holdout|champion|digest|refs?|L[0-3]|jev|nooa|governance)\b/i;
+  const rows = checkList({ investigated: true, checks: CHECK_ORDER.map((c) => f(c, "pass", "info")) });
+  for (const row of rows) for (const text of [row.label, row.result]) assert.doesNotMatch(text, banned, text);
+});
+
+test("headline: 'All checks passed' only when all 15 were recorded and passed; a partial set is neutral and says what is missing", () => {
+  const five = ["target_leakage", "overfit_gap", "duplicate_rows", "class_imbalance", "implausible_score"].map((c) => f(c, "pass", "info"));
+  assert.deepEqual(passSummary({ investigated: true, checks: five }), {
+    tone: "gray", pill: "None to review", sentence: "All 5 recorded checks passed; 10 were not recorded for this run.",
+  });
+  const all = CHECK_ORDER.map((c) => f(c, "pass", "info"));
+  assert.deepEqual(passSummary({ investigated: true, checks: all }), { tone: "ok", pill: "All checks passed", sentence: "All 15 trust checks passed." });
+  assert.deepEqual(passSummary({ investigated: true, checks: [...five.slice(0, 4), f("implausible_score", "warning")] }), { tone: "warn", pill: "1 to review", sentence: null });
+  assert.deepEqual(passSummary({ investigated: true, checks: [f("target_leakage", "not_evaluated", "info")] }), { tone: "gray", pill: "None to review, 1 not checked", sentence: null });
+  assert.equal(passSummary({ investigated: false, checks: [] }), null);
+  assert.equal(passSummary(null), null);
 });

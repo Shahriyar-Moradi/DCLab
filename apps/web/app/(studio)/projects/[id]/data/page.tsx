@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Banner } from "@/components/studio/Banner";
 import { DataTable, type Column } from "@/components/studio/DataTable";
@@ -13,6 +14,7 @@ import { SectionTabs } from "@/components/studio/SectionTabs";
 import { Stat } from "@/components/studio/Stat";
 import { safeInternalHref } from "@/components/studio/safe-href";
 import { Term } from "@/components/studio/Term";
+import { TargetOverTime, UploadChecks, UploadLog } from "@/app/components/studio-app/DataGoalD3";
 import { FindingsPanel } from "@/app/components/studio-app/FindingsPanel";
 import { QueryNotice, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { ActionKeys, mapWizardError, uploadDataset, useProjectDatasets, useProjectRefs, useWizardInvalidation, type PlainError, type StudioDatasetItem } from "@/lib/application";
@@ -29,6 +31,7 @@ import {
 import { useProblemSpecs } from "@/lib/application/studio-goal-hooks";
 import { useAiOff } from "@/lib/application/studio-home-hooks";
 import { useSession } from "@/lib/application/session-provider";
+import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
@@ -209,6 +212,7 @@ function VersionsTab({ projectId, datasets, selected, onSelect, canWrite }: { pr
       {graph.isError ? <QueryNotice error={graph.error} what="what uses each version" /> : null}
       <DataTable caption="Data versions" columns={columns} rows={datasets} rowKey={(d) => d.id} highlightRow={(d) => d.id === selected} />
       <p className="muted">Old files are never changed or deleted. A newer file is a new version: once it is in use, test designs, runs and models made from an older one are marked <b>built on old data</b>.</p>
+      <UploadLog projectId={projectId} />
       {target ? (
         <form className="form card" onSubmit={(event) => { event.preventDefault(); void confirm(); }}>
           <h3>Use {dataVersionName(plainText(target.name, 80), target.created_at)} (version {plainText(target.version, 20)}) as the data in use</h3>
@@ -240,9 +244,13 @@ function ChecksTab({ projectId, profile }: { projectId: string; profile: StudioD
   ];
   return (
     <>
-      <p className="muted">Checks on the training rows. They run inside every run and work with AI off.</p>
+      <UploadChecks checks={profile.upload_checks} />
+      <section aria-labelledby="d3-checked-run" data-testid="checked-in-run">
+      <h3 id="d3-checked-run">Checked inside each run</h3>
+      <p className="muted">Leakage and the run&apos;s 15 trust checks are checked inside each run once the goal is known. Most use the training rows; four compare the training rows with the final test set&apos;s columns, never its answers. They work with AI off.{profile.experiment ? " The results below come from one run; all its checks are further down." : " No finished run yet, so there are no results from a run."}</p>
       {findings.isError ? <QueryNotice error={findings.error} what="trust checks" /> : null}
       <DataTable caption="Data checks" columns={checkColumns} rows={rows} rowKey={(r) => r.key} />
+      </section>
       {excluded.length ? (
         <>
           <h3>Columns left out by the leakage plan</h3>
@@ -299,6 +307,7 @@ function AccessTab({ datasetId }: { datasetId: string }) {
 function UploadNewer({ projectId, keys, title, onClose, onDone }: { projectId: string; keys: ActionKeys; title: string; onClose: () => void; onDone: (done: { id: string; text: string }) => void }) {
   const inflight = useRef(false);
   const invalidate = useWizardInvalidation();
+  const client = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<UploadError | null>(null);
@@ -317,6 +326,9 @@ function UploadNewer({ projectId, keys, title, onClose, onDone }: { projectId: s
     } finally {
       inflight.current = false;
       setBusy(false);
+      // Accepted uploads and rejected ones that reached the project add a row to the upload log; an upload refused before
+      // that (for example a declared size over the limit) does not.
+      void client.invalidateQueries({ queryKey: workspaceQueryKey("v1", "upload-attempts", projectId) });
     }
   };
   return (
@@ -436,7 +448,11 @@ export default function DataPage() {
                 content: profile.isError ? <QueryNotice error={profile.error} what="column profile" /> : !profile.data ? <p role="status">Loading columns…</p> : <ColumnsTab projectId={id} profile={profile.data} />,
               },
               { id: "versions", label: "Versions", count: rows.length, content: <VersionsTab projectId={id} datasets={rows} selected={selected} onSelect={setChosen} canWrite={canWrite} /> },
-              { id: "checks", label: "Data checks", content: profile.data ? <ChecksTab projectId={id} profile={profile.data} /> : <p role="status">Loading data checks…</p> },
+              { id: "balance", label: "Target over time", content: <TargetOverTime datasetId={selected} /> },
+              {
+                id: "checks", label: "Data checks",
+                content: profile.isError ? <QueryNotice error={profile.error} what="data checks" /> : profile.data ? <ChecksTab projectId={id} profile={profile.data} /> : <p role="status">Loading data checks…</p>,
+              },
               { id: "access", label: "Access", content: <AccessTab datasetId={selected} /> },
             ]}
           />

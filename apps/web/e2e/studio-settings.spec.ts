@@ -42,13 +42,17 @@ test("Settings: an administrator sees the people and the role table, nothing els
   await expect(people).toBeVisible();
   const me = people.getByRole("row").filter({ hasText: ADMIN });
   await expect(me).toContainText("you");
-  await expect(me).toContainText("Administrator");
-  await expect(people.getByRole("row").filter({ hasText: VIEWER })).toContainText("Viewer");
+  await expect(me.getByRole("cell", { name: "Admin", exact: true })).toBeVisible();
+  await expect(people.getByRole("row").filter({ hasText: VIEWER }).getByRole("cell", { name: "Analyst (view only)", exact: true })).toBeVisible();
+  // A client account is listed as a Business user.
+  await expect(people.getByRole("row").filter({ hasText: "client-user@verification.invalid" }).getByRole("cell", { name: "Business user", exact: true })).toBeVisible();
   await expect(people.getByRole("row").filter({ hasText: "you" })).toHaveCount(1);
 
   const roles = page.getByRole("table", { name: "What each role can and cannot do" });
-  for (const role of ["Owner", "Administrator", "Data scientist", "Viewer"]) await expect(roles.getByRole("rowheader", { name: role })).toBeVisible();
-  const viewerRow = roles.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Viewer" }) });
+  for (const role of ["Admin · Owner", "Admin", "Data scientist", "Analyst (view only)"]) await expect(roles.getByRole("rowheader", { name: role, exact: true })).toBeVisible();
+  // D1: no raw role code (workspace_owner, ml_engineer, ...) is shown anywhere on the page.
+  expect(await page.locator("main").innerText()).not.toMatch(/workspace_owner|workspace_admin|ml_engineer|business_admin|business_developer|personal_developer|client_user/);
+  const viewerRow = roles.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Analyst (view only)" }) });
   await expect(viewerRow).toContainText("Create projects, upload data, start runs or decide in the Inbox");
 
   await expect(page.getByText("Adding or removing people is not available in Studio yet; contact DCLab.")).toBeVisible();
@@ -99,7 +103,7 @@ test("Settings: a viewer gets an explanation, no list, and the API refuses", asy
   await login(page, VIEWER);
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  await expect(page.getByText("Only owners and administrators can see the people in a workspace. Your role cannot.")).toBeVisible();
+  await expect(page.getByText("Only admins can see the people in a workspace. Your role cannot.")).toBeVisible();
   await expect(page.getByRole("table")).toHaveCount(0);
   await expect(page.getByText(ADMIN)).toHaveCount(0);
   await expect(page.getByText("You cannot change work here: no uploads, runs or decisions.")).toBeVisible();

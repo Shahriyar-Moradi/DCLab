@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NEW_PROJECT_STEPS, STARTING_A_PROJECT, goalWords, lastRunText, modelInUseText, stageOrder, whereItIs } from "./studio-projects.ts";
-import { WIZARD_STEPS } from "./studio-wizard.ts";
+import { DIALOG_STEPS } from "./studio-wizard.ts";
 
 const BANNED = /\b(release|champion|ref|digest|holdout|manifest|package|slot|tick|revision|window)s?\b/i;
 
@@ -40,11 +40,13 @@ test("goal, last run and model in use from the summary; untrusted text is capped
   assert.equal(modelInUseText(undefined), null);
 });
 
-test("the New project dialog lists today's four wizard steps, in the wizard's order", () => {
-  assert.equal(NEW_PROJECT_STEPS.length, 4);
-  assert.deepEqual(NEW_PROJECT_STEPS.map((s) => s.id), WIZARD_STEPS.map((s) => s.id));
+test("the New project dialog has three steps in order, and training starts only after the confirm", () => {
+  assert.equal(NEW_PROJECT_STEPS.length, 3);
+  assert.deepEqual(NEW_PROJECT_STEPS.map((s) => s.id), DIALOG_STEPS.map((s) => s.id));
+  assert.deepEqual(NEW_PROJECT_STEPS.map((s) => s.id), ["file", "goal", "design"]);
   assert.ok(NEW_PROJECT_STEPS.every((s) => s.detail.length > 20));
-  assert.match(STARTING_A_PROJECT, /four steps/);
+  assert.match(STARTING_A_PROJECT, /three steps/);
+  assert.match(STARTING_A_PROJECT, /only then does training start/);
   assert.match(STARTING_A_PROJECT, /AI switched off/);
 });
 

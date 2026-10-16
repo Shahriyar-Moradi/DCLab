@@ -8,7 +8,7 @@ import { Crumbs } from "@/components/studio/Crumbs";
 import { Shell } from "@/components/studio/Shell";
 import { useSession } from "@/lib/application";
 import { OPERATOR_TABS, tabFromQuery } from "@/lib/application/operator";
-import { displayName } from "@/lib/infrastructure/session";
+import { displayName, roleLabel } from "@/lib/infrastructure/session";
 
 function Frame({ children }: { children: ReactNode }) {
   const { user, loaded } = useSession();
@@ -25,7 +25,7 @@ function Frame({ children }: { children: ReactNode }) {
     <Shell
       nav={nav}
       currentHref={current?.href}
-      user={user ? { name: displayName(user), detail: user.email } : undefined}
+      user={user ? { name: displayName(user), detail: `${roleLabel(user.role)} · ${user.email}` } : undefined}
       crumbs={<Crumbs items={[{ label: "Operator console", href: "/operator" }, { label }]} />}
       topbarRight={user ? <a className="btn" href="/admin/monitoring">Platform admin pages</a> : null}
     >

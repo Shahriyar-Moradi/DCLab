@@ -40,11 +40,11 @@ def _scoring_rows(seed: int = 9) -> pd.DataFrame:
     return _frame(seed=seed).assign(c=lambda f: f["c"].where(f.index % 7 != 0, "unseen"))
 
 
-def _explained(pipeline, rows, task, **kwargs):
+def _explained(pipeline, rows, task, reference=None, **kwargs):
     fmap = explain.feature_map(pipeline)
     baselines = explain.training_baselines(pipeline, fmap)
     explanation = explain.explain_rows(pipeline, rows, fmap, baselines, task_type=task, **kwargs)
-    texts = explain.reason_texts(explanation, rows, fmap, task_type=task, date_columns={"when"})
+    texts = explain.reason_texts(explanation, rows, fmap, task_type=task, date_columns={"when"}, reference=reference)
     return fmap, baselines, explanation, texts
 
 
@@ -188,14 +188,14 @@ def test_hand_built_linear_model_gives_known_contributions_order_and_direction()
     np.testing.assert_allclose(explanation.contributions, z * np.array([3.0, -2.0, 0.5]), rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(explanation.contributions.sum(axis=1) + 1.0, pipeline.predict(rows), rtol=1e-12)
     assert texts[0] == [
-        "alpha: above the training average, raised the predicted value",
-        "beta: above the training average, lowered the predicted value",
-        "gamma: above the training average, raised the predicted value",
+        "Alpha: above the training average, raised the predicted value",
+        "Beta: above the training average, lowered the predicted value",
+        "Gamma: above the training average, raised the predicted value",
     ]
     assert texts[1] == [
-        "alpha: below the training average, lowered the predicted value",
-        "beta: below the training average, raised the predicted value",
-        "gamma: below the training average, lowered the predicted value",
+        "Alpha: below the training average, lowered the predicted value",
+        "Beta: below the training average, raised the predicted value",
+        "Gamma: below the training average, lowered the predicted value",
     ]
     # A column under 1% of the row's total |contribution| is noise, not a reason.
     linear.coef_ = np.array([3.0, -2.0, 0.01])
@@ -217,15 +217,152 @@ def test_each_method_names_the_reference_it_measures_against():
     assert np.median(train["income"]) == pytest.approx(median)
     assert explanation.references["income"] == pytest.approx(mean, rel=1e-9)
     assert explanation.contributions[0, 0] < 0
-    assert texts[0][0] == "income: below the training average, lowered the model's score"
-    for family, start, end in (("xgboost", "income: above the training median, ", " compared with the model's average row"),
-                               ("random_forest", "income: above the training median, ", "the model's score")):
+    assert texts[0][0] == "Income: below the training average, lowered the score"
+    for family, start, end in (("xgboost", "Income: above the training median, ", " compared with the model's average row"),
+                               ("random_forest", "Income: above the training median, ", "the score")):
         high = pd.DataFrame({"income": [60_000.0], "noise": [0.0]})  # where the trees respond
         _fmap, _b, explanation, texts = _explained(_pipeline(family, "binary", train, y, ["income", "noise"], []),
                                                    high, "binary")
-        income = [text for text in texts[0] if text and text.startswith("income")]
+        income = [text for text in texts[0] if text and text.startswith("Income")]
         assert income and income[0].startswith(start) and income[0].endswith(end), income
         assert explanation.references["income"] == pytest.approx(median)
+
+
+def _decile_reference(**columns) -> dict:
+    """A training reference (the package manifest's ``reference_summary`` shape) with ten
+    equal-share bins per column: edges 1..9, 10 training rows per bin, none missing."""
+
+    return {"format": "dclab.monitoring.reference.v2", "features": [
+        {"name": name, "kind": kind, "edges": [float(edge) for edge in range(1, 10)], "counts": [10] * 10 + [0],
+         **({"min": 0.0, "max": 10.0} if kind == "date" else {})}
+        for name, kind in columns.items()]}
+
+
+def _one_driver_linear(names=("monthly_fee", "other")) -> Pipeline:
+    """A linear regression whose only non-zero coefficient is on the first column (+3). That
+    column is skewed: training median 3.5 (a missing cell's fill), average 5.83."""
+
+    train = pd.DataFrame({name: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0] for name in names}).assign(
+        **{names[0]: [1.0, 2.0, 3.0, 4.0, 5.0, 20.0]})
+    pipeline = Pipeline([("prep", build_preprocessor(list(names), [])),
+                         ("model", make_model("linear_regression", task_type="regression"))])
+    pipeline.fit(train, np.arange(6.0))
+    linear = pipeline.named_steps["model"].named_steps["m"]
+    linear.coef_, linear.intercept_ = np.array([3.0] + [0.0] * (len(names) - 1)), 1.0
+    return pipeline
+
+
+def test_numbers_are_described_by_their_training_quantile_in_exact_sentences():
+    """With the model's training reference, a number is high (top N%), low (bottom N%) or
+    mid-range among the TRAINING values (right-closed bins, as monitoring counts them); the
+    direction and the reference the method measures against are unchanged."""
+
+    pipeline = _one_driver_linear()
+    rows = pd.DataFrame({"monthly_fee": [10.0, 9.0, 5.0, 1.5, 0.0, np.nan], "other": [3.5] * 6})
+    plain = _explained(pipeline, rows, "regression")
+    with_reference = _explained(pipeline, rows, "regression", reference=_decile_reference(monthly_fee="numeric"))
+    np.testing.assert_array_equal(plain[2].contributions, with_reference[2].contributions)  # the words only
+    assert [row[0] for row in with_reference[3]] == [
+        "Monthly fee: high (top 10%), raised the predicted value compared with the training average",
+        "Monthly fee: high (top 20%), raised the predicted value compared with the training average",
+        "Monthly fee: mid-range, lowered the predicted value compared with the training average",
+        "Monthly fee: low (bottom 20%), lowered the predicted value compared with the training average",
+        "Monthly fee: low (bottom 10%), lowered the predicted value compared with the training average",
+        "Monthly fee: missing, lowered the predicted value compared with the training average",
+    ]
+    for plain_row, quantile_row in zip(plain[3], with_reference[3]):  # same direction either way
+        assert plain_row[0].split(", ")[1].split()[0] == quantile_row[0].split(", ")[1].split()[0]
+    # Dates: earliest / latest instead of low / high.
+    dated = _explained(pipeline, pd.DataFrame({"monthly_fee": [9.5, 0.5, 12.0], "other": [3.5] * 3}), "regression",
+                       reference=_decile_reference(monthly_fee="date"))[3]
+    assert [row[0].split(", ")[0] for row in dated] == ["Monthly fee: late (latest 10%)",
+                                                         "Monthly fee: early (earliest 10%)",
+                                                         "Monthly fee: after the training period"]
+
+
+def test_real_training_references_never_call_a_tail_value_mid_range():
+    """Bins from ``monitoring.numeric_reference`` for awkward shapes: a value is high / low only
+    when its bin lies inside the tail (share rounded up), mid-range only between the 20th and
+    80th percentiles; a straddling bin (a common flag, a capped column's top) gets None, i.e. the
+    method's reference wording. Dates past the training range say so."""
+
+    from app.engine.serving.monitoring import numeric_reference
+
+    def keys(train, values, kind="numeric"):
+        bins = reasons._training_bins(numeric_reference(pd.Series(train, dtype=float), kind=kind))
+        return list(reasons._quantile_keys(np.asarray(values, dtype=float), bins))
+
+    assert keys([0.0] * 700 + [1.0] * 300, [0.0, 1.0]) == [None, None]  # a 30% flag: no tail, no middle
+    assert keys([0.0] * 996 + [3.0] * 4, [0.0, 3.0, 100.0]) == [None, "high:1", "high:1"]  # rare counts
+    capped = list(np.linspace(0, 999, 795)) + [1000.0] * 205  # 20.5% tied at the cap
+    assert keys(capped, [999.0, 1000.0, 1001.0]) == [None, None, None]
+    assert keys(capped, [1.0, 500.0]) == ["low:10", "mid"]
+    assert keys(list(np.arange(1000.0)), [995.0, 801.0, 2.0, np.inf, -np.inf]) == ["high:10", "high:20", "low:10", None, None]
+    dates = list(np.linspace(1.6e9, 1.7e9, 500))
+    assert keys(dates, [1.8e9, 1.5e9, 1.699e9], kind="date") == ["after", "before", "high:10"]
+
+
+def test_an_unusable_training_reference_falls_back_to_the_methods_reference():
+    pipeline = _one_driver_linear()
+    rows = pd.DataFrame({"monthly_fee": [10.0], "other": [3.5]})
+    expected = "Monthly fee: above the training average, raised the predicted value"
+    for reference in (None, {"features": [{"name": "monthly_fee", "kind": "numeric", "edges": [2.0], "counts": [60, 0, 0]}]},
+                      {"features": [{"name": "monthly_fee", "kind": "numeric", "edges": [1.0, 2.0], "counts": [5, 5]}]},
+                      {"features": [{"name": "monthly_fee", "kind": "categorical", "categories": []}]}):
+        assert _explained(pipeline, rows, "regression", reference=reference)[3][0][0] == expected, reference
+
+
+def test_categories_missing_and_unseen_values_read_as_plain_sentences():
+    rng = np.random.default_rng(3)
+    train = pd.DataFrame({"plan_type": rng.choice(["family_5g", "solo", "duo"], 400).astype(object),
+                          "monthly_fee": rng.uniform(1, 10, 400)})
+    y = ((train["plan_type"] == "family_5g") | (train["monthly_fee"] > 8)).astype(int)
+    pipeline = _pipeline("logistic_regression", "binary", train, y, ["monthly_fee"], ["plan_type"])
+    rows = pd.DataFrame({"plan_type": pd.Series(["family_5g", "never-seen", np.nan], dtype=object),
+                         "monthly_fee": [9.5, 5.0, 1.2]})
+    fmap, _b, explanation, texts = _explained(pipeline, rows, "binary",
+                                              reference=_decile_reference(monthly_fee="numeric"))
+    plan, fee = fmap.names.index("plan_type"), fmap.names.index("monthly_fee")
+
+    def verb(row, column):
+        return "raised" if explanation.contributions[row, column] > 0 else "lowered"
+
+    expected_plan = ["Plan type: family_5g", "Plan type: a value not seen in training", "Plan type: missing"]
+    expected_fee = ["Monthly fee: high (top 10%)", "Monthly fee: mid-range", "Monthly fee: low (bottom 20%)"]
+    for row in range(3):
+        present = [text for text in texts[row] if text]
+        if abs(explanation.contributions[row, plan]) > 0:
+            assert f"{expected_plan[row]}, {verb(row, plan)} the score compared with the training average" in present
+        if abs(explanation.contributions[row, fee]) > 0:
+            assert f"{expected_fee[row]}, {verb(row, fee)} the score compared with the training average" in present
+        assert not any(_CAUSAL.search(text) for text in present)
+    assert texts[0][0] is not None and texts[0][0].startswith(("Plan type: family_5g, ", "Monthly fee: high (top 10%), "))
+
+
+@pytest.mark.parametrize(("family", "reference_words"), [
+    ("xgboost_regressor", "compared with the model's average row"),
+    ("random_forest_regressor", "compared with the training median"),
+    ("linear_regression", "compared with the training average"),
+])
+def test_each_method_still_names_its_reference_next_to_a_quantile(family, reference_words):
+    rng = np.random.default_rng(6)
+    train = pd.DataFrame({"monthly_fee": rng.uniform(0, 10, 500), "noise": rng.normal(size=500)})
+    pipeline = _pipeline(family, "regression", train, 4 * train["monthly_fee"], ["monthly_fee", "noise"], [])
+    rows = pd.DataFrame({"monthly_fee": [9.8, 0.3], "noise": [0.0, 0.0]})
+    _fmap, _b, explanation, texts = _explained(pipeline, rows, "regression",
+                                               reference=_decile_reference(monthly_fee="numeric"))
+    assert texts[0][0] == f"Monthly fee: high (top 10%), raised the predicted value {reference_words}"
+    assert texts[1][0] == f"Monthly fee: low (bottom 10%), lowered the predicted value {reference_words}"
+    assert explanation.contributions[0, 0] > 0 > explanation.contributions[1, 0]
+
+
+def test_display_names_are_readable_but_traceable():
+    assert explain.display_names(["monthly_fee", "tenure", "plan__type_", "=x", "MRR"]) == [
+        "Monthly fee", "Tenure", "Plan type", "=x", "MRR"]
+    # A readable name that would equal another column's keeps each column's own spelling.
+    assert explain.display_names(["monthly_fee", "Monthly fee", "tenure"]) == ["monthly_fee", "Monthly fee", "Tenure"]
+    assert explain.display_names(["monthly fee", "Monthly_fee"]) == ["monthly fee", "Monthly_fee"]
+    assert explain.display_names(["___", ""]) == ["___", "(blank)"]
 
 
 # --- occlusion ---------------------------------------------------------------------------------
@@ -257,8 +394,8 @@ def test_occlusion_is_deterministic_and_finds_a_planted_driver(family):
     if task == "regression":
         assert top[20:].mean() >= 0.9 and (driver[20:] < 0).mean() >= 0.95
     for row, up, effect in zip(texts, above, driver):  # the words say what the numbers say
-        if row[0] and row[0].startswith("driver"):
-            assert row[0].startswith("driver: above the training median" if up else "driver: below the training median")
+        if row[0] and row[0].startswith("Driver"):
+            assert row[0].startswith("Driver: above the training median" if up else "Driver: below the training median")
             assert ("raised" in row[0]) == (effect > 0)
     again = _explained(pipeline, rows, task)[2]
     assert np.array_equal(again.contributions, explanation.contributions)  # bit for bit
@@ -382,26 +519,29 @@ def test_missing_and_unseen_values_are_described_and_never_crash(family):
     _fmap, _b, explanation, texts = _explained(pipeline, rows, "binary")
     flat = [text for row in texts for text in row if text]
     if family == "logistic_regression":  # filled with the training median, which moved the score
-        assert "group: a value not seen in training, " in " ".join(text for text in texts[0] if text)
-        assert any(text.startswith("level: missing") and text.endswith("compared with the training average")
+        assert "Group: a value not seen in training, " in " ".join(text for text in texts[0] if text)
+        assert any(text.startswith("Level: missing") and text.endswith("compared with the training average")
                    for text in texts[0] if text)
-        assert any(text.startswith("group: missing") for text in texts[1] if text)
+        assert any(text.startswith("Group: missing") for text in texts[1] if text)
     else:  # occlusion: a missing value is filled with the baseline itself, so it moved nothing
-        assert not any(text.startswith(("level: missing", "group: missing")) for text in flat)
+        assert not any(text.startswith(("Level: missing", "Group: missing")) for text in flat)
         assert texts[2] == [None, None, None]
     assert np.all(np.isfinite(explanation.contributions))
 
 
 _REFERENCE = r"the training (?:median|average)"
 _GRAMMAR = re.compile(
-    rf"^(?P<name>[^:=]+?)(?:: (?:below|above|at) {_REFERENCE}"
-    rf"|: (?:earlier|later) than {_REFERENCE} date|: at {_REFERENCE} date"
-    r"|: missing|: a value not seen in training| = (?P<value>[^,]+)), "
-    r"(?:raised|lowered) (?:the model's score|the predicted value"
+    rf"^(?P<name>[^:]+?): (?:(?:below|above|at) {_REFERENCE}"
+    rf"|(?:earlier|later) than {_REFERENCE} date|at {_REFERENCE} date"
+    r"|high \(top \d+%\)|low \(bottom \d+%\)|late \(latest \d+%\)|early \(earliest \d+%\)|mid-range"
+    r"|(?:after|before) the training period"
+    r"|missing|a value not seen in training|(?P<value>[^,]+)), "
+    r"(?:raised|lowered) (?:the score|the predicted value"
     r"|the predicted class's (?:lead over the other classes|probability))"
     r"(?: compared with (?:the model's average row|the training average|the training median"
     r"|the most common training value))?$"
 )
+_CAUSAL = re.compile(r"\b(?:because|caus\w*|rose|due to|led to|drove|drives|results? in)\b", re.IGNORECASE)
 
 
 @pytest.mark.parametrize(("task", "family"), [("binary", "logistic_regression"), ("multiclass", "random_forest"),
@@ -412,14 +552,16 @@ def test_reasons_use_original_names_and_never_the_rows_numbers(task, family):
     loaded = _load(*_package(_fitted(task, family, frame, _target(task, frame)), family, task))
     rows = _scoring_rows()
     fmap, _b, explanation, texts = _explained(loaded.pipeline, rows, task)
+    shown = dict(zip(explain.display_names(fmap.names), fmap.names))
     encoded = set(loaded.pipeline.named_steps["prep"].get_feature_names_out())
     for row_index, row in enumerate(texts):
         for text in filter(None, row):
             match = _GRAMMAR.match(text)
             assert match, text  # only the column name, a coarse bucket or category, a direction, a reference
-            assert match["name"] in fmap.names and not any(name in text for name in encoded if "__" in name)
+            assert match["name"] in shown and not any(name in text for name in encoded if "__" in name)
+            assert not _CAUSAL.search(text), text
             if match["value"] is not None:
-                assert match["value"] in {str(value) for value in fmap.categories[match["name"]]}
+                assert match["value"] in {str(value) for value in fmap.categories[shown[match["name"]]]}
             if explanation.method == "tree_shap":
                 assert text.endswith("compared with the model's average row")
             for name in ("a", "b", "when"):
@@ -440,8 +582,8 @@ def test_names_are_sanitized_capped_and_never_start_like_a_formula():
     assert flat and all("‮" not in text and "\n" not in text and "\t" not in text for text in flat)
     assert all(not text.startswith(("=", "+", "-", "@")) for text in flat)
     assert any(text.startswith("'=HYPERLINK(1): ") for text in flat)
-    assert any(text.startswith("name with tabs: ") for text in flat)
-    assert any(text.startswith("x" * 61 + "...: ") for text in flat)
+    assert any(text.startswith("Name with tabs: ") for text in flat)
+    assert any(text.startswith("X" + "x" * 60 + "...: ") for text in flat)
     assert explain.plain_text("", 10) == "(blank)" and explain.plain_text(3.0, 10) == "3"
 
 
@@ -476,7 +618,7 @@ def test_scoring_appends_reason_columns_and_keeps_every_other_column():
     }
     assert explained.predictions["reason_1"].notna().all()
     # Dates are described against the training median date, never as a number.
-    assert any("when: " in str(text) and "median date" in str(text)
+    assert any("When: " in str(text) and "median date" in str(text)
                for text in explained.predictions[list(explain.REASON_COLUMNS)].to_numpy().ravel())
     capped = score_frame(rows, spec, loaded.pipeline, reasons=True, reasons_max_rows=5)
     assert capped.predictions["reason_1"].iloc[:5].notna().all() and capped.predictions["reason_1"].iloc[5:].isna().all()

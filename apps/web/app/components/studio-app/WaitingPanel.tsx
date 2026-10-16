@@ -6,7 +6,7 @@ import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
 import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
-import { ActionKeys, confirmSplit, confirmTarget, mapWizardError, useExecutionRequest, useWizardInvalidation, type PlainError } from "@/lib/application";
+import { ActionKeys, confirmSplit, confirmTarget, plainWizardError, useExecutionRequest, useWizardInvalidation, type PlainError } from "@/lib/application";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 import { QueryNotice } from "./StudioParts";
 
@@ -47,7 +47,7 @@ export function WaitingPanel({ requestId, projectId, experimentId }: { requestId
       invalidate(projectId, experimentId);
       void waiting.refetch();
     } catch (caught) {
-      setError(mapWizardError(caught));
+      setError(plainWizardError(caught, "answer"));
     } finally {
       setBusy(false);
     }

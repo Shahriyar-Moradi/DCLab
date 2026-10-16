@@ -60,7 +60,8 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await expect(page.getByLabel("Dataset in this project")).not.toHaveValue("");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  // The column list arrives with the dataset profile read; until then the field is a free-text input (a race).
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Train" }).click();
@@ -76,7 +77,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await expect(steps).toContainText("Final test, once");
   await expect(steps.getByRole("row", { name: /Final test, once/ })).not.toContainText(/\d\.\d{3,}/);
   await expect(page.getByRole("heading", { name: "About this run" })).toBeVisible();
-  await expect(page.getByText("Column to predict").first()).toBeVisible();
+  await expect(page.locator(".card", { has: page.getByRole("heading", { name: "About this run" }) }).getByText("Column to predict")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Trust checks", exact: true }).first()).toBeVisible();
   await expect(page.locator("main")).not.toContainText(/Fingerprint|Critic review|Split plan|Feature recipe|champion/);
   for (const scheme of ["light", "dark"] as const) {
@@ -168,7 +169,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await decide.getByRole("button", { name: /Put this model in use/ }).click();
   await decide.getByLabel("Why (saved with the change)").fill("Balanced weights improved recall on CV");
   await decide.getByRole("button", { name: "Put in use" }).click();
-  await expect(page.getByText("This model is now in use and the change was saved in History.")).toBeVisible();
+  await expect(page.getByText("This model is now in use and approved for scoring; the change was saved in History.")).toBeVisible();
   const refs = await page.request.get(`/api/backend/v1/projects/${projectId}/refs`).then((r) => r.json()) as { items: Array<{ ref_kind: string; version: number }> };
   expect(refs.items.find((r) => r.ref_kind === "champion_model")?.version).toBeGreaterThanOrEqual(2);
   await shot(page, "3-accepted");
@@ -180,7 +181,9 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   const drawer = page.locator("aside.graph-drawer");
   await expect(drawer).toContainText("Balanced weights improved recall on CV");
   await expect(drawer).toContainText("final test set (used once per run)");
-  await expect(drawer.getByText("Change the version in use again; that adds a new entry.")).toBeVisible();
+  // Accepting the change records an approval for scoring (champion_promoted): its undo is the Model screen shortcut.
+  await expect(drawer).toContainText("To undo it, go back to an earlier approved model, when there is one, on");
+  await expect(drawer.getByRole("link", { name: "Model → Approved for scoring" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Correct" })).toHaveCount(0);
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
@@ -199,7 +202,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
     body: JSON.stringify({ error: { code: "precondition_failed", message: "the champion_model ref changed", retryable: false, details: {} } }),
   }));
   await champion.getByRole("button", { name: "Put in use" }).click();
-  await expect(champion.getByText("Someone else changed the model in use")).toBeVisible();
+  await expect(champion.getByText("Someone else just changed the model in use")).toBeVisible();
   await expect(champion.getByRole("button", { name: "Reload" })).toBeVisible();
   await page.unroute(`**/api/backend/v1/projects/${projectId}/refs/champion_model`);
   await shot(page, "5-champion-conflict");
@@ -251,7 +254,9 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await expect(drawer2.getByText("only the rules change it")).toBeVisible();
   await expect(drawer2.getByRole("button", { name: "Correct" })).toHaveCount(0);
   // Plain words on the page: no codes, no "supersede", no "engine", no "proposal".
-  const banned = /supersede|engine|proposal|decision_|winner_locked|ref_moved|champion_promoted|experiment_accepted|holdout|\bUndo\b/i;
+  // "Undo or correct" (column) and "To undo it, …" (how to reverse an approval) are explanations; there is never an Undo button.
+  const banned = /supersede|engine|proposal|decision_|winner_locked|ref_moved|champion_promoted|experiment_accepted|holdout/i;
   await expect(list).not.toContainText(banned);
   await expect(drawer2).not.toContainText(banned);
+  await expect(page.getByRole("button", { name: /^Undo\b/i })).toHaveCount(0);
 });

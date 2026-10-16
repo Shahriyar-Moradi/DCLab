@@ -20,6 +20,7 @@ from app.db.models import (
     ExperimentCandidate,
     IdempotencyKey,
     MlJob,
+    MlJobAttempt,
     ModelSelectionDecision,
     User,
     WorkflowRun,
@@ -30,7 +31,8 @@ from datetime import UTC, datetime, timedelta
 from app.db.models import Dataset, ExecutionRequest
 from app.engine.experiments import runner
 from app.services.lab_service import ingest_dataset
-from app.services.ml_job_service import process_next_job, recover_abandoned_jobs
+from app.services.ml_job_service import claim_next_queued_job, process_next_job, recover_abandoned_jobs
+from app.services.service_token_service import create_service_token
 from app.services.workspace_service import add_workspace_member
 from test_data_model_lineage import make_lineage_setup
 from test_v1_contract_conventions import _assert_envelope, _headers
@@ -322,6 +324,130 @@ def test_cancel_running_run_stops_at_the_next_candidate(client, db_session, setu
     assert after.status_code == 200 and after.json()["status"] == "cancelled"
     # Not requeued: nothing left for a worker.
     assert process_next_job(db_session, job_id=job.id) is None
+
+
+# --- attempts (D2a) ------------------------------------------------------------------------------
+
+ATTEMPT_KEYS = {"attempt", "started_at", "ended_at", "duration_seconds", "outcome", "failure_class"}
+
+
+def _attempts(client, setup, experiment_id, headers=None) -> list[dict]:
+    body = client.get(f"/v1/experiments/{experiment_id}", headers=headers or _h(setup))
+    assert body.status_code == 200, body.text
+    attempts = body.json()["attempts"]
+    assert all(set(item) == ATTEMPT_KEYS for item in attempts)
+    return attempts
+
+
+def test_a_failed_attempt_then_a_retry_reads_as_two_attempts_with_closed_classes(client, db_session, setup):
+    root = _root(client, setup, _dataset(client, setup)).json()
+    assert root["attempts"] == []  # queued: never claimed
+
+    def out_of_memory(db, upload_id):
+        raise MemoryError("worker ran out of memory at /internal/path")
+
+    job = _job(db_session, root["id"])
+    first = process_next_job(db_session, job_id=job.id, claimed_by="d2a-test", runner=out_of_memory)
+    assert first.status == "queued" and first.attempts == 1  # the queue's own automatic retry
+    retried = _attempts(client, setup, root["id"])
+    assert [(a["attempt"], a["outcome"], a["failure_class"]) for a in retried] == [(1, "retried", "out_of_memory")]
+    assert retried[0]["ended_at"] is not None and retried[0]["duration_seconds"] >= 0
+
+    done = _work(db_session, root["id"])
+    assert done.status == "completed" and done.attempts == 2
+    attempts = _attempts(client, setup, root["id"])
+    assert [(a["attempt"], a["outcome"], a["failure_class"]) for a in attempts] == [
+        (1, "retried", "out_of_memory"), (2, "completed", None)]
+    assert attempts[1]["started_at"] >= attempts[0]["ended_at"] and attempts[1]["duration_seconds"] > 0
+    # Closed codes only: no message, path or exception text anywhere in the read.
+    read = client.get(f"/v1/experiments/{root['id']}", headers=_h(setup)).text
+    assert "internal/path" not in read and "MemoryError" not in read
+    # A service token (agent) reads the same attempts.
+    token = create_service_token(db_session, creator=setup["alpha_admin"], workspace_id=setup["alpha"].id,
+                                 name="d2a", scopes=("read",), expires_in_days=1, current_password="test-password")[1]
+    db_session.commit()
+    assert _attempts(client, setup, root["id"], headers={"Authorization": f"Bearer {token}"}) == attempts
+
+
+def test_attempt_classes_for_a_lost_worker_a_data_failure_and_a_cancellation(client, db_session, setup):
+    # A worker that stopped heartbeating: recovered and retried as worker_lost.
+    lost = _root(client, setup, _dataset(client, setup)).json()
+    job = _job(db_session, lost["id"])
+    claimed = claim_next_queued_job(db_session, job_id=job.id, claimed_by="d2a")
+    assert claimed is not None
+    claimed.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)  # the worker went silent
+    db_session.commit()
+    recover_abandoned_jobs(db_session)
+    db_session.commit()
+    assert [(a["outcome"], a["failure_class"]) for a in _attempts(client, setup, lost["id"])] == [
+        ("retried", "worker_lost")]
+
+    # A run that records its own failure in a data stage: data_error, and the last attempt is failed.
+    data = _root(client, setup, _dataset(client, setup)).json()
+    data_job = _job(db_session, data["id"])
+    data_job.max_attempts = 1
+    db_session.commit()
+
+    def bad_data(db, upload_id):
+        upload = db.get(ClientLabUpload, upload_id)
+        upload.pipeline_status = "failed"
+        upload.pipeline_log = {"reason": "no usable rows", "failed_at": "analyzing"}
+        db.commit()
+
+    assert process_next_job(db_session, job_id=data_job.id, runner=bad_data).status == "failed"
+    assert [(a["outcome"], a["failure_class"]) for a in _attempts(client, setup, data["id"])] == [
+        ("failed", "data_error")]
+
+    # Cancelled while running: the attempt ends cancelled; a queued cancel never makes an attempt.
+    running = _root(client, setup, _dataset(client, setup)).json()
+
+    def cancelled_mid_run(db, upload_id, experiment_id=running["id"]):
+        assert client.post(f"/v1/experiments/{experiment_id}/cancel", headers=_h(setup)).status_code == 202
+        raise RuntimeError("boom")
+
+    run_job = _job(db_session, running["id"])
+    assert process_next_job(db_session, job_id=run_job.id, runner=cancelled_mid_run).status == "cancelled"
+    assert [(a["outcome"], a["failure_class"]) for a in _attempts(client, setup, running["id"])] == [
+        ("cancelled", "cancelled")]
+    queued = _root(client, setup, _dataset(client, setup)).json()
+    assert client.post(f"/v1/experiments/{queued['id']}/cancel", headers=_h(setup)).json()["status"] == "cancelled"
+    assert _attempts(client, setup, queued["id"]) == []
+    # A finished attempt is final in the database.
+    from sqlalchemy import update as sql_update
+    from sqlalchemy.exc import DBAPIError
+
+    with pytest.raises(DBAPIError, match="immutable"):
+        db_session.execute(sql_update(MlJobAttempt).where(MlJobAttempt.ml_job_id == run_job.id).values(outcome="failed",
+                                                                                                    failure_class="timeout"))
+        db_session.flush()
+    db_session.rollback()
+    # ... while deleting its job still cascades to it.
+    db_session.delete(db_session.get(MlJob, run_job.id))
+    db_session.flush()
+    assert db_session.scalar(select(func.count()).select_from(MlJobAttempt)
+                             .where(MlJobAttempt.ml_job_id == run_job.id)) == 0
+    db_session.rollback()
+
+
+def test_attempts_are_tenant_scoped(client, db_session, setup):
+    beta = _root(client, setup, _dataset(client, setup, workspace="beta"), workspace="beta").json()
+    beta_job = _job(db_session, beta["id"])
+
+    def out_of_memory(db, upload_id):
+        raise MemoryError()
+
+    process_next_job(db_session, job_id=beta_job.id, runner=out_of_memory)
+    _assert_envelope(client.get(f"/v1/experiments/{beta['id']}", headers=_h(setup)), 404, "not_found")
+    beta_read = client.get(f"/v1/experiments/{beta['id']}", headers=_h(setup, setup["beta_admin"], workspace=setup["beta"]))
+    assert [a["outcome"] for a in beta_read.json()["attempts"]] == ["retried"]
+    # The database refuses an attempt row whose workspace is not its job's.
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError):
+        db_session.add(MlJobAttempt(workspace_id=setup["alpha"].id, ml_job_id=beta_job.id, attempt=9,
+                                    started_at=datetime.now(UTC), outcome="running"))
+        db_session.flush()
+    db_session.rollback()
 
 
 # --- validation, authorization, tenant isolation ----------------------------------------------

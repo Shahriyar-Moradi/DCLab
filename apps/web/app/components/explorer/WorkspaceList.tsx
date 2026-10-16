@@ -6,6 +6,7 @@ import { DataTable } from "@/app/components/ui/DataTable";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { PageHeader } from "@/app/components/ui/PageHeader";
 import { filterByText } from "@/app/components/ui/localCollection";
+import { roleLabelWithDetail } from "@/lib/application/role-labels";
 import type { BusinessWorkspaceSummary, PlatformBusinessSummary } from "@/lib/domain";
 import Link from "next/link";
 import { useState } from "react";
@@ -63,7 +64,7 @@ export function PlatformBusinessList({ rows }: { rows: PlatformBusinessSummary[]
 
 export function TenantWorkspaceList({ rows }: { rows: BusinessWorkspaceSummary[] }) {
   const [query, setQuery] = useState("");
-  const filtered = filterByText(rows, query, (row) => [row.name, row.slug, row.role]);
+  const filtered = filterByText(rows, query, (row) => [row.name, row.slug, row.role, roleLabelWithDetail(row.role)]);
   return (
     <div>
       <PageHeader
@@ -90,7 +91,7 @@ export function TenantWorkspaceList({ rows }: { rows: BusinessWorkspaceSummary[]
                   </div>
                 ),
               },
-              { id: "role", header: "Role", cell: (row) => row.role },
+              { id: "role", header: "Role", cell: (row) => roleLabelWithDetail(row.role) },
               { id: "domains", header: "Domains", mono: true, cell: (row) => String(row.domain_count) },
               { id: "workflows", header: "Workflows", mono: true, cell: (row) => String(row.workflow_count) },
               { id: "runs", header: "Runs", mono: true, cell: (row) => String(row.run_count) },

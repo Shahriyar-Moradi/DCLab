@@ -236,7 +236,10 @@ class RunContext:
         reason: str,
         extra: dict[str, Any] | None = None,
         experiment_id: UUID | None = None,
+        failure_class: str | None = None,
     ) -> None:
+        """``failure_class`` (D2a): the closed class of an unexpected exception, for the job
+        attempt; otherwise the queue derives it from ``failed_at``. Never a message."""
         db = self.db
         upload = self.upload
         row = db.get(ClientLabUpload, self.upload_id)
@@ -246,6 +249,9 @@ class RunContext:
         payload = {**dict(row.pipeline_log or {}), **dict(extra or {})}
         payload["reason"] = reason
         payload["failed_at"] = self.current_stage
+        payload.pop("failure_class", None)  # never an earlier attempt's class
+        if failure_class is not None:
+            payload["failure_class"] = failure_class
         payload["pipeline_trace"] = list(self.trace_entries)
         verification_timer = self.evidence_start("deterministic_verification")
         partial_result = dict(extra or {})

@@ -21,7 +21,7 @@ import { QueryNotice, formatWhen, statusTone } from "@/app/components/studio-app
 import { useProjectExperiments, useStudioExperiment } from "@/lib/application";
 import { plainText, projectHref } from "@/lib/application/command-search";
 import { useExperimentFindings, useProjectGraph } from "@/lib/application/studio-data-hooks";
-import { attentionCount, findingsState, parseBranchPrefill } from "@/lib/application/studio-findings";
+import { attentionCount, findingsState, parseBranchPrefill, passSummary } from "@/lib/application/studio-findings";
 import { designLabels, runName, runOrdinals } from "@/lib/application/studio-names";
 import { taskLabel } from "@/lib/application/studio-goal";
 import { statusWords } from "@/lib/application/studio-runs";
@@ -68,7 +68,7 @@ function ExperimentPageInner() {
           <>
             <Pill tone={statusTone(experiment.status)}>{statusWords(experiment.status)}</Pill>
             {findingsState(findings.data) === "attention" ? <Pill tone="warn">{attention} trust check{attention === 1 ? "" : "s"} to review</Pill> : null}
-            {findingsState(findings.data) === "all_passed" ? <Pill tone="ok">All trust checks passed</Pill> : null}
+            {findingsState(findings.data) === "all_passed" ? (passSummary(findings.data)?.tone === "ok" ? <Pill tone="ok">All trust checks passed</Pill> : <Pill tone="gray">Recorded trust checks passed; some were not recorded</Pill>) : null}
             {findingsState(findings.data) === "not_computed" ? <Pill tone="gray">Trust checks not recorded yet</Pill> : null}
           </>
         )}
@@ -90,7 +90,7 @@ function ExperimentPageInner() {
       />
       {experiment.failure_reason ? <Banner tone="crit">{experiment.failure_reason}</Banner> : null}
       {experiment.status === "needs_input" ? <WaitingPanel requestId={experiment.lineage.execution_request_id} projectId={id} experimentId={experiment.id} /> : null}
-      <RunSteps experimentId={experiment.id} />
+      <RunSteps experimentId={experiment.id} attempts={experiment.attempts} />
       <Card title="About this run">
         <KeyValue
           items={[

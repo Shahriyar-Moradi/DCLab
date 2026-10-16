@@ -32,6 +32,13 @@ models: log of its probability over the geometric mean of the others' probabilit
 a rival class more), for occlusion its probability. A model fit on two classes of a
 multiclass task explains the predicted class's log-odds against the other one.
 
+Sentences (D2a) name the column readably (``monthly_fee`` -> ``Monthly fee``), describe the row's
+value coarsely -- its category (already in the file), ``missing``, ``a value not seen in training``,
+or for a number where it falls among the TRAINING values ("high (top 20%)", "low (bottom 10%)",
+"mid-range"; the quantile bins of the package's training ``reference_summary``, else against the
+method's reference) -- then the direction and the reference. Never the row's number, never a
+causal word.
+
 Data: only the rows being scored (prepared exactly as for prediction) and statistics of the
 fitted preprocessor (training rows) are used; no holdout value is read. Cost is bounded by
 the first ``max_rows`` rows, a work budget sized by rows x trees (x input columns for
@@ -43,9 +50,12 @@ library calls.
 
 from __future__ import annotations
 
+import math
+import re
 import time
 import unicodedata
-from collections.abc import Callable, Collection, Mapping
+from collections import Counter
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -85,6 +95,10 @@ FLOAT32_UNIT = 2.0 ** -24
 FLOAT64_RTOL = 1e-9
 ADDITIVITY_ATOL = 1e-9
 NAME_CAP, VALUE_CAP = 64, 40
+# A numeric value is "high" / "low" when its training quantile bin lies within the top / bottom
+# 20% of the training values, "mid-range" when it lies between them; a bin straddling a tail is
+# described against the method's reference instead.
+QUANTILE_TAIL_PERCENT = 20
 _BOOSTERS = frozenset({
     "XGBClassifier", "XGBRegressor", "LightGBMBoosterModel", "LGBMClassifier", "LGBMRegressor",
     "CatBoostClassifier", "CatBoostRegressor",
@@ -577,18 +591,103 @@ def _cell(text: str) -> str:
     return "'" + text if text.startswith(_FORMULA_START) else text
 
 
+def _pretty(name: str) -> str:
+    words = " ".join(re.sub(r"_+", " ", name).split())
+    if not words:
+        return name
+    return words[0].upper() + words[1:] if words[0].islower() else words
+
+
+def display_names(names: Sequence[Any]) -> list[str]:
+    """The column names as sentences show them: sanitized and capped (``plain_text``), snake_case
+    as words and the first letter capitalized (``monthly_fee`` -> ``Monthly fee``). Traceable: only
+    underscores and that first letter change, and a column whose readable name would equal
+    another column's keeps its own spelling."""
+
+    plain = [plain_text(name, NAME_CAP) for name in names]
+    pretty = [_pretty(name) for name in plain]
+    seen = Counter(pretty)
+    return [readable if seen[readable] == 1 else original for readable, original in zip(pretty, plain)]
+
+
 def _direction(task_type: str, method: str, raised: bool) -> str:
     verb = "raised" if raised else "lowered"
     if task_type == "regression":
         return f"{verb} the predicted value"
     if task_type == "multiclass":  # see BatchPredictionReasons: the lead, not the probability
         return f"{verb} the predicted class's {'probability' if method == OCCLUSION else 'lead over the other classes'}"
-    return f"{verb} the model's score"
+    return f"{verb} the score"
 
 
-def _buckets(frame: pd.DataFrame, fmap: FeatureMap, references: Mapping[str, Any], index: int, rows: int) -> np.ndarray:
-    """Per row, a coarse description key of this column's value: ``missing``, ``unseen``,
-    ``below`` / ``above`` / ``at`` the column's reference (numeric), or the category position."""
+@dataclass(frozen=True)
+class _Bins:
+    """A numeric / date column's training quantile bins: interior edges, the share of training
+    values below each bin (``lower``) and up to its end (``upper``); dates also their range."""
+
+    edges: np.ndarray
+    lower: np.ndarray
+    upper: np.ndarray
+    span: tuple[float, float] | None = None
+
+
+def _training_bins(entry: Any) -> _Bins | None:
+    """The bins of a numeric / date entry of the model's training reference
+    (``monitoring.build_reference``: up to 10 right-closed quantile bins of the TRAINING-partition
+    values, then the missing count). None when unusable, or for a column with one non-empty bin
+    (nothing to place a value against)."""
+
+    if not isinstance(entry, Mapping) or entry.get("kind") not in {"numeric", "date"}:
+        return None
+    edges, counts = entry.get("edges"), entry.get("counts")
+    if not isinstance(edges, list) or not isinstance(counts, list) or len(counts) != len(edges) + 2:
+        return None
+    try:
+        edge_values = np.asarray(edges, dtype=np.float64)
+        present = np.asarray(counts[:-1], dtype=np.float64)
+        span = (float(entry["min"]), float(entry["max"])) if entry.get("kind") == "date" else None
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (not np.all(np.isfinite(edge_values)) or np.any(np.diff(edge_values) <= 0) or not np.all(np.isfinite(present))
+            or np.any(present < 0) or np.count_nonzero(present) < 2
+            or (span is not None and not (np.isfinite(span[0]) and np.isfinite(span[1])))):
+        return None
+    upper = np.cumsum(present) / present.sum()
+    return _Bins(edge_values, np.r_[0.0, upper[:-1]], upper, span)
+
+
+def _quantile_keys(values: np.ndarray, bins: _Bins) -> np.ndarray:
+    """Per value: ``high:<p>`` (its bin lies within the top p% of the training values, p rounded
+    up), ``low:<p>`` (bottom p%), ``mid`` (its bin lies between the 20th and 80th percentiles),
+    for dates ``after`` / ``before`` the training period; else None (a bin straddling a tail, a
+    value past an open-ended bin that holds more than a tail, an infinite value): the caller
+    describes those against the method's reference instead."""
+
+    tail = QUANTILE_TAIL_PERCENT / 100.0
+    position = np.searchsorted(bins.edges, values, side="left")  # bins are right-closed, as in monitoring
+    keys = np.full(len(values), None, dtype=object)
+    for row, (value, index) in enumerate(zip(values, position)):
+        lower, upper = float(bins.lower[index]), float(bins.upper[index])
+        if not np.isfinite(value) or upper <= lower:
+            continue
+        if bins.span is not None and value > bins.span[1]:
+            keys[row] = "after"
+        elif bins.span is not None and value < bins.span[0]:
+            keys[row] = "before"
+        elif lower >= 1.0 - tail - 1e-12:
+            keys[row] = f"high:{max(1, math.ceil(round(100 * (1.0 - lower), 6)))}"
+        elif upper <= tail + 1e-12:
+            keys[row] = f"low:{max(1, math.ceil(round(100 * upper, 6)))}"
+        elif lower >= tail - 1e-12 and upper <= 1.0 - tail + 1e-12:
+            keys[row] = "mid"
+    return keys
+
+
+def _buckets(frame: pd.DataFrame, fmap: FeatureMap, references: Mapping[str, Any], index: int, rows: int,
+             bins: _Bins | None = None) -> np.ndarray:
+    """Per row, a coarse description key of this column's value: ``missing``, ``unseen``, the
+    category position, and for a numeric column its training quantile (``_quantile_keys``, when
+    the model recorded its training reference) or else ``below`` / ``above`` / ``at`` the
+    column's reference."""
 
     name = fmap.names[index]
     series = frame[name].iloc[:rows]
@@ -599,6 +698,9 @@ def _buckets(frame: pd.DataFrame, fmap: FeatureMap, references: Mapping[str, Any
         keys = np.where(values < reference, "below", np.where(values > reference, "above", "at")).astype(object)
         if pd.isna(reference):
             keys[:] = "none"
+        if bins is not None:
+            quantile = _quantile_keys(values, bins)
+            keys = np.where(quantile == None, keys, quantile).astype(object)  # noqa: E711 - elementwise
         keys[missing | np.isnan(values)] = "missing"
         return keys
     known = [value for value in fmap.categories.get(name, ()) if not pd.isna(value)]
@@ -606,6 +708,17 @@ def _buckets(frame: pd.DataFrame, fmap: FeatureMap, references: Mapping[str, Any
     keys = np.asarray([f"value:{position}" if position >= 0 else "unseen" for position in positions], dtype=object)
     keys[missing] = "missing"
     return keys
+
+
+def _quantile_words(key: str, is_date: bool) -> str | None:
+    if key in {"after", "before"}:
+        return f"{key} the training period"
+    kind, _, percent = key.partition(":")
+    if kind == "high":
+        return f"late (latest {percent}%)" if is_date else f"high (top {percent}%)"
+    if kind == "low":
+        return f"early (earliest {percent}%)" if is_date else f"low (bottom {percent}%)"
+    return "mid-range" if kind == "mid" else None
 
 
 def _sentence(name: str, key: str, categories: tuple[Any, ...], is_date: bool, method: str, direction: str) -> str:
@@ -617,8 +730,11 @@ def _sentence(name: str, key: str, categories: tuple[Any, ...], is_date: bool, m
         "above": f"later than {reference} date" if is_date else f"above {reference}",
         "at": f"at {reference} date" if is_date else f"at {reference}",
     }
+    quantile = _quantile_words(key, is_date)
     if key.startswith("value:"):
-        value = f"{name} = {plain_text(categories[int(key[6:])], VALUE_CAP)}"
+        value = f"{name}: {plain_text(categories[int(key[6:])], VALUE_CAP)}"
+    elif quantile is not None:
+        value = f"{name}: {quantile}"
     elif key in bucket:
         value = f"{name}: {bucket[key]}"
     elif key in {"missing", "unseen"}:
@@ -644,16 +760,23 @@ def reason_texts(
     task_type: str,
     date_columns: Collection[str] = (),
     top_k: int = TOP_K,
+    reference: Mapping[str, Any] | None = None,
 ) -> list[list[str | None]]:
-    """``top_k`` sentences per explained row, e.g. ``"plan = basic, raised the model's score
-    compared with the model's average row"``: the column name, a coarse description of the
-    row's value (its category, which is already in the file, or where it falls against the
-    TRAINING average / median -- never the number itself), the direction, and the reference
-    the method measures against. ``None`` where a row has fewer columns that moved its score."""
+    """``top_k`` sentences per explained row, e.g. ``"Monthly fee: high (top 20%), raised the score
+    compared with the model's average row"`` or ``"Plan type: family_5g, lowered the score compared
+    with the most common training value"``: the readable column name (``display_names``), a coarse
+    description of the row's value (its category, which is already in the file; for a number,
+    where it falls among the TRAINING values -- the quantile bins of the model's training
+    ``reference`` (the package manifest's ``reference_summary``), else against the training average
+    / median -- never the number itself), the direction, and the reference the method measures
+    against. What the model used, never a cause. ``None`` where a row has fewer columns that
+    moved its score."""
 
     rows = explanation.rows_explained
     order = explanation.top(top_k)
-    names = [plain_text(name, NAME_CAP) for name in fmap.names]
+    names = display_names(fmap.names)
+    entries = {str(entry.get("name")): entry for entry in ((reference or {}).get("features") or [])
+               if isinstance(entry, Mapping)}
     buckets: dict[int, np.ndarray] = {}
     cache: dict[tuple[int, str, bool], str] = {}
     out: list[list[str | None]] = []
@@ -664,17 +787,19 @@ def reason_texts(
                 texts.append(None)
                 continue
             index = int(index)
+            name = fmap.names[index]
             if index not in buckets:
-                buckets[index] = _buckets(frame, fmap, explanation.references, index, rows)
+                bins = _training_bins(entries.get(name)) if fmap.roles[index] == "numeric" else None
+                buckets[index] = _buckets(frame, fmap, explanation.references, index, rows, bins)
             key = str(buckets[index][row])
             raised = bool(explanation.contributions[row, index] > 0)
             text = cache.get((index, key, raised))
             if text is None:
-                name = fmap.names[index]
                 categories = tuple(value for value in fmap.categories.get(name, ()) if not pd.isna(value))
                 direction = _direction(task_type, explanation.method, raised)
+                is_date = name in date_columns or (entries.get(name) or {}).get("kind") == "date"
                 text = cache[(index, key, raised)] = _cell(
-                    _sentence(names[index], key, categories, name in date_columns, explanation.method, direction))
+                    _sentence(names[index], key, categories, is_date, explanation.method, direction))
             texts.append(text)
         out.append(texts)
     return out

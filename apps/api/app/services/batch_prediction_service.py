@@ -597,10 +597,13 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
     from app.config import get_settings
 
     # P7.7-A: per-row reasons are computed after the scores, from the same loaded model and rows.
+    from app.engine.serving.monitoring import usable_reference
+
     settings = get_settings()
     scored = score_frame(frame, spec, loaded.pipeline, on_progress=on_heartbeat,
                          reasons=settings.batch_reasons_enabled,
-                         reasons_deadline_seconds=settings.batch_reasons_deadline_seconds)
+                         reasons_deadline_seconds=settings.batch_reasons_deadline_seconds,
+                         reasons_reference=usable_reference(loaded.manifest))
     return scored, spec, int(len(frame)), loaded.saved_format
 
 

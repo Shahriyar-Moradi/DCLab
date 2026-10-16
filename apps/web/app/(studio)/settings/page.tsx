@@ -6,13 +6,17 @@ import { UsagePanel } from "@/app/components/studio-app/UsagePanel";
 import { TabPanel, Tabs } from "@/components/studio/Tabs";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
+import { ComingNext } from "@/components/studio/ComingNext";
 import { PageGuide } from "@/components/studio/PageGuide";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill } from "@/components/studio/Pill";
 import { useSession } from "@/lib/application";
+import { COMING_NEXT } from "@/lib/application/coming-next";
 import { ADDING_PEOPLE_TEXT, MORE_SETTINGS_TEXT, memberRow, membersCountText, myAccess, roleRow } from "@/lib/application/studio-settings";
 import { useWorkspaceMembers } from "@/lib/application/studio-settings-hooks";
 import { ApiError } from "@/lib/infrastructure/api-client";
+import { usePreviewRole } from "@/app/components/studio-app/ViewAs";
+import { PREVIEW_ROLE_LABEL, PREVIEW_ROLE_VALUE } from "@/lib/application/view-as";
 
 export default function SettingsPage() {
   const session = useSession();
@@ -30,6 +34,10 @@ export default function SettingsPage() {
     window.history.replaceState(null, "", id === "usage" ? "/settings?tab=usage" : "/settings");
   };
   const roles = (members.data?.roles ?? []).map(roleRow);
+  // "View as" (admins only): what the previewed role may do, from the same server role table (no extra request).
+  const preview = usePreviewRole();
+  const previewValue = preview ? PREVIEW_ROLE_VALUE[preview] : null;
+  const previewRow = previewValue ? roles.find((row) => row.role === previewValue) : undefined;
 
   return (
     <>
@@ -38,7 +46,7 @@ export default function SettingsPage() {
         purpose="See the people in your workspace, what each role is allowed to do, and how much of your plan is used."
         howTo="Read the list of people, then the table of roles; open Usage & cost for limits and spend. To give an access token to your own code or tools, go to Connect."
         youGet="Names, emails, roles and join dates of the people in this workspace, and what each role can and cannot do. Nothing here changes anything."
-        attention={hidden ? "Your role cannot see the list of people. Ask an owner or administrator." : undefined}
+        attention={hidden ? "Your role cannot see the list of people. Ask an admin." : undefined}
       />
 
       <Tabs
@@ -55,7 +63,17 @@ export default function SettingsPage() {
 
       {hidden ? (
         <Card title="Members and roles">
-          <Banner tone="info">Only owners and administrators can see the people in a workspace. Your role cannot.</Banner>
+          <Banner tone="info">Only admins can see the people in a workspace. Your role cannot.</Banner>
+        </Card>
+      ) : null}
+
+      {preview && previewRow ? (
+        <Card title={`What the ${PREVIEW_ROLE_LABEL[preview]} role can do (preview)`}>
+          <p className="muted">From the server&apos;s role table below. The rest of this screen still shows your own access.</p>
+          <div className="cols-2 grid">
+            <div><h3>Can</h3>{previewRow.can.length ? <ul className="plain-list">{previewRow.can.map((t) => <li key={t}>{t}</li>)}</ul> : <p>Nothing</p>}</div>
+            <div><h3>Cannot</h3>{previewRow.cannot.length ? <ul className="plain-list">{previewRow.cannot.map((t) => <li key={t}>{t}</li>)}</ul> : <p>Nothing</p>}</div>
+          </div>
         </Card>
       ) : null}
 
@@ -69,7 +87,7 @@ export default function SettingsPage() {
           {members.isError ? <Banner tone="crit">Could not load the members. {members.error instanceof Error ? members.error.message : ""}</Banner> : null}
           {members.data && members.data.members.length === 0 ? <div className="empty">No active members found.</div> : null}
           {members.data && members.data.members.length > 0 ? (
-            <div className="tbl">
+            <div className="tbl" tabIndex={0} role="region" aria-label="People in this workspace (scrolls sideways on small screens)">
               <table>
                 <caption className="sr-only">People in this workspace</caption>
                 <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Joined</th></tr></thead>
@@ -92,7 +110,7 @@ export default function SettingsPage() {
 
       {roles.length > 0 ? (
         <Card title="What each role can do">
-          <div className="tbl">
+          <div className="tbl" tabIndex={0} role="region" aria-label="What each role can do (scrolls sideways on small screens)">
             <table>
               <caption className="sr-only">What each role can and cannot do</caption>
               <thead><tr><th scope="col">Role</th><th scope="col">Can</th><th scope="col">Cannot</th></tr></thead>
@@ -114,6 +132,7 @@ export default function SettingsPage() {
       <Card title="Access tokens">
         <p>Access tokens for your own code and connected tools are managed under <Link href="/agents">Connect</Link>.</p>
       </Card>
+      <ComingNext entry={COMING_NEXT.earnedAutonomy} />
       <p className="small muted">{MORE_SETTINGS_TEXT}</p>
       </TabPanel>
     </>

@@ -1051,6 +1051,26 @@
       "definition": "CHECK (((refusal_code IS NULL) OR ((refusal_code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)))"
     },
     {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_failure_class",
+      "definition": "CHECK (((failure_class IS NULL) OR ((failure_class)::text = ANY ((ARRAY['out_of_memory'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'data_error'::character varying, 'internal_error'::character varying, 'cancelled'::character varying])::text[]))))"
+    },
+    {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_number",
+      "definition": "CHECK ((attempt >= 1))"
+    },
+    {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['running'::character varying, 'completed'::character varying, 'failed'::character varying, 'retried'::character varying, 'cancelled'::character varying])::text[])))"
+    },
+    {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_shape",
+      "definition": "CHECK ((((((outcome)::text = ANY ((ARRAY['running'::character varying, 'completed'::character varying])::text[])) AND (failure_class IS NULL)) OR (((outcome)::text = ANY ((ARRAY['failed'::character varying, 'retried'::character varying])::text[])) AND (failure_class IS NOT NULL) AND ((failure_class)::text <> 'cancelled'::text)) OR (((outcome)::text = 'cancelled'::text) AND ((failure_class)::text = 'cancelled'::text))) AND (((outcome)::text = 'running'::text) = (ended_at IS NULL)) AND ((ended_at IS NULL) OR (ended_at >= started_at))))"
+    },
+    {
       "table": "ml_jobs",
       "name": "ck_ml_jobs_attempts_non_negative",
       "definition": "CHECK ((attempts >= 0))"
@@ -1686,6 +1706,36 @@
       "definition": "CHECK ((version >= 1))"
     },
     {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_actor",
+      "definition": "CHECK (((((actor_kind)::text = 'person'::text) AND (service_token_id IS NULL)) OR (((actor_kind)::text = 'connected_tool'::text) AND (service_token_id IS NOT NULL))))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_file_name",
+      "definition": "CHECK ((((char_length((file_name)::text) >= 1) AND (char_length((file_name)::text) <= 200)) AND ((file_name)::text !~ '[[:cntrl:]]'::text)))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['accepted'::character varying, 'rejected'::character varying])::text[])))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_reason",
+      "definition": "CHECK (((((outcome)::text = 'accepted'::text) AND (reason_code IS NULL) AND (dataset_id IS NOT NULL)) OR (((outcome)::text = 'rejected'::text) AND (dataset_id IS NULL) AND ((reason_code)::text = ANY ((ARRAY['too_large'::character varying, 'storage_limit'::character varying, 'empty_file'::character varying, 'unsafe_file_name'::character varying, 'unsupported_type'::character varying, 'content_mismatch'::character varying, 'unreadable_sheets'::character varying, 'unsafe_content'::character varying, 'unreadable_file'::character varying])::text[])))))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_size",
+      "definition": "CHECK (((size_bytes IS NULL) OR (size_bytes >= 0)))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_source",
+      "definition": "CHECK (((source)::text = ANY ((ARRAY['v1_api'::character varying, 'labs'::character varying])::text[])))"
+    },
+    {
       "table": "usage_records",
       "name": "ck_usage_records_kind",
       "definition": "CHECK (((kind)::text = ANY ((ARRAY['compute_seconds'::character varying, 'storage_bytes'::character varying, 'llm_tokens'::character varying, 'llm_cost_micros'::character varying, 'agent_runs'::character varying, 'assistant_runs'::character varying])::text[])))"
@@ -2103,6 +2153,11 @@
       "definition": "CREATE TRIGGER llm_invocations_safe_output_retention BEFORE UPDATE OF safe_output ON public.llm_invocations FOR EACH ROW WHEN (((old.safe_output IS NOT NULL) AND (new.safe_output IS NULL))) EXECUTE FUNCTION prevent_mutation_except_retention('retention_update')"
     },
     {
+      "table": "ml_job_attempts",
+      "name": "ml_job_attempts_final",
+      "definition": "CREATE TRIGGER ml_job_attempts_final BEFORE UPDATE ON public.ml_job_attempts FOR EACH ROW WHEN (((old.outcome)::text <> 'running'::text)) EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "ml_run_events",
       "name": "ml_run_events_append_only",
       "definition": "CREATE TRIGGER ml_run_events_append_only BEFORE DELETE OR UPDATE ON public.ml_run_events FOR EACH ROW EXECUTE FUNCTION prevent_ml_run_event_mutation()"
@@ -2241,6 +2296,16 @@
       "table": "split_plans",
       "name": "split_plans_immutable",
       "definition": "CREATE TRIGGER split_plans_immutable BEFORE DELETE OR UPDATE ON public.split_plans FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "upload_attempts_append_only",
+      "definition": "CREATE TRIGGER upload_attempts_append_only BEFORE DELETE OR UPDATE ON public.upload_attempts FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "upload_attempts_created_at_now",
+      "definition": "CREATE TRIGGER upload_attempts_created_at_now BEFORE INSERT ON public.upload_attempts FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
     },
     {
       "table": "usage_records",

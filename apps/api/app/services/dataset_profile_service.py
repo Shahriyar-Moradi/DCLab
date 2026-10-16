@@ -23,6 +23,7 @@ V7 BE-C: entity count, time range and target rate summarise the same training ro
 
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 import warnings
@@ -31,6 +32,7 @@ from typing import Any
 from uuid import UUID
 
 import pandas as pd
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -43,11 +45,14 @@ from app.db.models import (
     Experiment,
     IngestionPublicationEvent,
     IngestionRun,
+    ModelEvaluation,
     ModelVersion,
+    ProblemSpec,
     SplitPlan,
     User,
     WorkflowRun,
 )
+from app.domain.data_goal import TARGET_PERIOD_BUCKET_CAP, TargetByPeriodRead, TargetPeriodFinalTestRead
 from app.domain.dataset_profile import (
     DatasetPolicyRead,
     DatasetProfileColumnRead,
@@ -56,10 +61,11 @@ from app.domain.dataset_profile import (
     DatasetProfileSplitPlanRead,
     DatasetProfileTimeRangeRead,
     DatasetVersionRead,
+    UploadChecksRead,
 )
 from app.domain.errors import IdentityError
 from app.engine.data.loaders import load_table
-from app.engine.features.encode import coerce_binary_target
+from app.engine.features.encode import binary_positive_label, coerce_binary_target
 from app.engine.lab.auto_prepare import (
     clean_feature_cells,
     coerce_numeric_like,
@@ -303,6 +309,195 @@ def _compute_statistics(db: Session, dataset: Dataset, plan: SplitPlan, key: tup
     return {"columns": {name: dict(item) for name, item in stats.items()}, "summary": dict(summary)}
 
 
+# --- D3a: target rate by month (training rows; the final test sealed until it was run) -----------
+
+
+def _months(series: pd.Series) -> pd.Series | None:
+    """UTC calendar months (``YYYY-MM``) of a time column; None when the rows' own numeric-coercion
+    decision makes it a number (numbers are never read as dates)."""
+
+    name = str(series.name)
+    values = coerce_numeric_like(series.to_frame(name), [name])[name]
+    if pd.api.types.is_numeric_dtype(values):
+        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        moments = pd.to_datetime(values, errors="coerce", utc=True)
+    return moments.dt.strftime("%Y-%m").where(moments.notna())
+
+
+def _label_mapper(train_target: pd.Series) -> Any:
+    """The TRAINING rows' 0/1 mapping, applied unchanged to other rows (never re-derived from them)."""
+
+    if pd.api.types.is_numeric_dtype(train_target) or pd.api.types.is_bool_dtype(train_target):
+        return lambda series: coerce_binary_target(pd.to_numeric(series, errors="coerce"))
+    positive = binary_positive_label(train_target)
+    if positive is None:  # yes/no-style words: each TRAINING label's own 0/1 (or NA), other values NA
+        known = {str(raw).strip().lower(): coerce_binary_target(pd.Series([raw], dtype=object)).iloc[0]
+                 for raw in train_target.dropna().unique()}
+        return lambda series: series.map(
+            lambda value: float(known.get(str(value).strip().lower(), float("nan"))) if pd.notna(value)
+            else float("nan"))
+    labels = {str(value).strip() for value in train_target.dropna()} - {""}
+    return lambda series: series.map(
+        lambda value: float(str(value).strip() == positive) if pd.notna(value) and str(value).strip() in labels
+        else float("nan"))
+
+
+def _buckets(months: pd.Series, labels: pd.Series, part: str) -> list[dict[str, Any]]:
+    usable = months.notna() & labels.notna()
+    grouped = labels[usable].astype(float).groupby(months[usable]).agg(["count", "mean"])
+    return [{"month": str(month), "part": part, "rows": int(row["count"]), "rate": float(row["mean"])}
+            for month, row in grouped.sort_index().iterrows()]
+
+
+def target_periods(frame: pd.DataFrame, train_rows: set[int], holdout_rows: set[int], *, target: str,
+                   time_column: str, after_training: bool, disclose: bool) -> dict[str, Any]:
+    """Monthly target rate of the TRAINING rows; of the final-test rows only their month span (when
+    they are the latest months) unless ``disclose`` (the final test was run for the model in use).
+
+    ``frame`` is the loaded upload (index = the run's ``source_row``); rows the map does not name
+    (dropped by the run) are never read, and a map row missing from the frame fails closed.
+    """
+
+    frame = frame.copy()
+    frame.columns = [str(c) for c in frame.columns]
+    if not train_rows or not (train_rows | holdout_rows) <= {int(i) for i in frame.index}:
+        raise ValueError("split assignment rows do not match the dataset")
+    if time_column not in frame.columns or target not in frame.columns or time_column == target:
+        return {"status": "no_time_column"}
+    keep = [time_column, target]
+    train = coerce_numeric_like(frame.loc[frame.index.isin(sorted(train_rows)), keep], keep)
+    months = _months(train[time_column])
+    if months is None:
+        return {"status": "time_not_dates"}
+    labels = coerce_binary_target(train[target])
+    final: dict[str, Any] = {"start_month": None, "end_month": None, "rate": None}
+    out = {"status": "computed", "training_rate": float(labels.dropna().mean()) if labels.notna().any() else None,
+           "buckets": _buckets(months, labels, "training"), "final_test": final}
+    # Sealed: only the final-test rows' time column is read (never their target).
+    holdout = frame.loc[frame.index.isin(sorted(holdout_rows)), keep if disclose else [time_column]]
+    held_months = _months(holdout[time_column]) if len(holdout) else None
+    if after_training and held_months is not None and held_months.notna().any():
+        final["start_month"], final["end_month"] = held_months.dropna().min(), held_months.dropna().max()
+    if disclose and len(holdout):  # only after the one final test of the model in use
+        held = _label_mapper(train[target])(holdout[target])
+        final["rate"] = float(held.dropna().mean()) if held.notna().any() else None
+        if after_training and held_months is not None:
+            out["buckets"] += _buckets(held_months, held, "final_test")
+    return out
+
+
+_period_cache: OrderedDict[tuple[str, ...], dict[str, Any]] = OrderedDict()
+
+
+def _load_periods(db: Session, dataset: Dataset, plan: SplitPlan, column: str, disclose: bool
+                  ) -> dict[str, Any] | None:
+    if dataset.row_count > PROFILE_MAX_ROWS:
+        return None
+    key = ("periods", str(dataset.id), str(dataset.content_digest), str(plan.id), plan.assignment_digest, column,
+           str(disclose))
+
+    def cached() -> dict[str, Any] | None:
+        with _cache_lock:
+            hit = _period_cache.get(key)
+            return copy.deepcopy(hit) if hit is not None else None
+
+    if (hit := cached()) is not None:
+        return hit
+    with _cache_lock:
+        flight = _inflight.setdefault(key, threading.Lock())
+    with flight:
+        try:
+            if (hit := cached()) is not None:
+                return hit
+            try:
+                assignment = load_assignment(db, plan)  # bytes verified against the plan's digest
+                with materialize_dataset(dataset, db=db) as path:
+                    frame = load_table(path)
+                result = target_periods(
+                    frame, {int(r) for r in assignment.train_folds}, {int(r) for r in assignment.holdout_rows},
+                    target=plan.target_column, time_column=column,
+                    after_training=plan.holdout_strategy == "temporal_future", disclose=disclose)
+            except Exception as exc:  # noqa: BLE001 - fail closed: no periods, never a whole-file fallback
+                logger.warning("target by period unavailable: %s", type(exc).__name__)
+                return None
+            with _cache_lock:
+                _period_cache[key] = result
+                while len(_period_cache) > _CACHE_MAX:
+                    _period_cache.popitem(last=False)
+            return copy.deepcopy(result)
+        finally:
+            with _cache_lock:
+                _inflight.pop(key, None)
+
+
+def _final_test_run(db: Session, dataset: Dataset, plan: SplitPlan) -> bool:
+    """The project's model in use was trained on this plan and this dataset and its one final test
+    (a ``final_holdout`` evaluation of its locked winner) exists."""
+
+    champion = current_refs(db, workspace_id=dataset.workspace_id, project_id=plan.project_id).get("champion_model")
+    if champion is None or champion.model_version_id is None:
+        return False
+    version = db.scalar(select(ModelVersion).where(ModelVersion.id == champion.model_version_id,
+                                                   ModelVersion.workspace_id == dataset.workspace_id))
+    if version is None or version.selected_candidate_id is None or db.scalar(select(Experiment.id).where(
+            Experiment.id == version.pipeline_run_id, Experiment.workspace_id == dataset.workspace_id,
+            Experiment.split_plan_id == plan.id, Experiment.source_dataset_id == dataset.id)) is None:
+        return False
+    return db.scalar(select(ModelEvaluation.id).where(
+        ModelEvaluation.workspace_id == dataset.workspace_id, ModelEvaluation.candidate_id == version.selected_candidate_id,
+        ModelEvaluation.evaluation_scope == "final_holdout").limit(1)) is not None
+
+
+def target_by_period(db: Session, *, actor: User, workspace_id: UUID, dataset_id: UUID, agent: bool
+                     ) -> TargetByPeriodRead:
+    """``GET /v1/datasets/{id}/target-by-period``. Service tokens (``agent``) always get the sealed span."""
+
+    dataset = _dataset(db, actor, workspace_id, dataset_id)
+    plan, _source = _current_plan(db, dataset)
+    base: dict[str, Any] = {
+        "dataset_id": dataset.id, "project_id": dataset.project_id, "split_plan_id": plan.id if plan else None,
+        "target_column": plan.target_column if plan else None, "time_column": None, "training_rate": None,
+        "buckets": [], "truncated": False, "final_test": None,
+    }
+    if plan is None:
+        return TargetByPeriodRead(status="no_split_plan", **base)
+    if plan.task_type not in _BINARY_TASKS:
+        return TargetByPeriodRead(status="not_binary", **base)
+    # The plan's time column (time-ordered splits), else the goal's declared prediction time column, else
+    # the one date column the rule reads in the training rows (cached profile summary).
+    spec_ref = current_refs(db, workspace_id=dataset.workspace_id, project_id=plan.project_id).get("problem_spec")
+    declared = db.scalar(select(ProblemSpec.prediction_time_column).where(
+        ProblemSpec.id == spec_ref.problem_spec_id, ProblemSpec.workspace_id == dataset.workspace_id,
+    )) if spec_ref is not None and spec_ref.problem_spec_id is not None else None
+    names = {str(c.get("name")) for c in ((dataset.schema_json or {}).get("columns") or []) if isinstance(c, dict)} \
+        if isinstance(dataset.schema_json, dict) else set()
+    declared = declared if declared in names else None  # a goal column this file lacks: use the fallback
+    loaded = None if plan.time_column or declared else _load_statistics(db, dataset, plan)
+    base["time_column"] = plan.time_column or declared or (
+        ((loaded or {}).get("summary") or {}).get("time_range") or {}).get("column")
+    if base["time_column"] is None:
+        return TargetByPeriodRead(status="no_time_column", **base)
+    disclosed = not agent and _final_test_run(db, dataset, plan)
+    result = _load_periods(db, dataset, plan, base["time_column"], disclosed)
+    if result is None or result["status"] != "computed":
+        return TargetByPeriodRead(status=result["status"] if result else "unavailable", **base)
+    buckets = sorted(result["buckets"], key=lambda item: (item["month"], item["part"] != "training"))
+    final = result["final_test"]
+    return TargetByPeriodRead(**{
+        **base, "status": "computed", "training_rate": result["training_rate"],
+        "buckets": buckets[-TARGET_PERIOD_BUCKET_CAP:], "truncated": len(buckets) > TARGET_PERIOD_BUCKET_CAP,
+        "final_test": TargetPeriodFinalTestRead(
+            layout="after_training" if plan.holdout_strategy == "temporal_future" else "mixed",
+            start_month=final["start_month"], end_month=final["end_month"], row_count=plan.holdout_row_count,
+            sealed=not disclosed,
+            sealed_reason=None if disclosed else ("not_for_service_tokens" if agent else "final_test_not_run"),
+            rate=final["rate"] if disclosed else None, disclosed_after_final_test=disclosed,
+        ),
+    })
+
+
 # --- plan and experiment selection ----------------------------------------------------------
 
 
@@ -411,7 +606,13 @@ def dataset_profile(db: Session, *, actor: User, workspace_id: UUID, dataset_id:
             importance=f.get("importance"), leakage_excluded=bool(f.get("leakage_excluded")),
             leakage_risk=f.get("leakage_risk"), leakage_reason=f.get("leakage_reason"),
         ))
+    try:  # D3a: stored at upload in the dataset's schema JSON; anything malformed reads as null
+        raw_checks = (dataset.schema_json or {}).get("upload_checks") if isinstance(dataset.schema_json, dict) else None
+        upload_checks = UploadChecksRead.model_validate(raw_checks) if raw_checks else None
+    except ValidationError:
+        upload_checks = None
     return DatasetProfileRead(
+        upload_checks=upload_checks,
         dataset_id=dataset.id, project_id=dataset.project_id,
         scope="training_rows" if stats is not None else "upload",
         statistics_status="computed" if stats is not None else ("unavailable" if plan is not None else "no_split_plan"),

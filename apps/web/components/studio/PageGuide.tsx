@@ -46,7 +46,7 @@ export function PageGuide({ purpose, howTo, youGet, attention, label = "About th
           <p>{body}</p>
         </div>
       ))}
-      <button type="button" className="guide-hide linkish" aria-expanded="true" onClick={() => toggle(true)}>Hide the guide</button>
+      <button type="button" className="guide-hide linkish" aria-expanded="true" onClick={() => toggle(true)}>Hide<span className="sr-only"> the guide</span></button>
     </section>
   );
 }

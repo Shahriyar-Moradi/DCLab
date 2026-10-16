@@ -18,6 +18,9 @@ import { badgeText } from "@/lib/application/studio-inbox";
 import { offSidebarCrumb } from "@/lib/application/studio-names";
 import { isUuid, MIN_QUERY_LENGTH, plainText } from "@/lib/application/command-search";
 import { displayName } from "@/lib/infrastructure/session";
+import { accountRoleLabel } from "@/lib/application/role-labels";
+import { previewCanOpen, previewNavigation } from "@/lib/application/view-as";
+import { PreviewRoleContext, useViewAs, ViewAsBanner, ViewAsControl, ViewAsGate } from "./ViewAs";
 
 function StudioCommandBar({ projectId }: { projectId?: string }) {
   const search = useCommandSearch(projectId);
@@ -53,7 +56,11 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   const graph = useProjectGraph(projectId);
   const targetOf = (kind: string) => refs.data?.items.find((ref) => ref.ref_kind === kind)?.target.id ?? null;
   // The Goal and Predictions pages need an id (the test design, the model in use); they are listed once the project has one (Predictions: any model, the one in use preferred).
-  const nav = studioNavigationForUser(user, projectId, { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) }).map((group) =>
+  const targets = { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) };
+  // "View as" (admins only): the sidebar and screen availability of another role, on this browser tab only; the session and every request stay the admin's.
+  const viewAs = useViewAs(user);
+  const preview = viewAs.role;
+  const nav = (preview ? previewNavigation(preview, projectId, targets) : studioNavigationForUser(user, projectId, targets)).map((group) =>
     group.id === "project" && project.data?.name ? { ...group, label: `Project · ${plainText(project.data.name, 60)}` } : group,
   );
   // One cheap counts read (refetched once a minute); the sidebar badge never needs the list.
@@ -80,6 +87,7 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   if (!loaded) body = <p role="status">Loading your workspace…</p>;
   else if (!user) body = <p>Your session ended. <Link href="/login">Sign in again</Link>.</p>;
   else if (workspaceSwitching) body = <p role="status">Switching workspace…</p>;
+  else if (preview && !previewCanOpen(preview, pathname)) body = <ViewAsGate role={preview} onStop={() => viewAs.choose(null)} />;
 
   return (
     <ScreenStatusProvider>
@@ -87,17 +95,18 @@ export function StudioFrame({ children }: { children: ReactNode }) {
       nav={nav}
       currentHref={current?.href}
       badges={{ inbox: badgeText(counts.data?.needs_decision) }}
-      workspace={activeWorkspace ? { name: activeWorkspace.name, detail: activeWorkspace.kind } : undefined}
+      workspace={activeWorkspace ? { name: activeWorkspace.name, detail: `${activeWorkspace.kind} workspace · ${accountRoleLabel(user, activeWorkspace)}` } : undefined}
       user={user ? { name: displayName(user), detail: user.email } : undefined}
       crumbs={<Crumbs items={crumbs} />}
       // Keyed by workspace: a switch drops results and aborts requests made for the old one.
       commandBar={user ? <StudioCommandBar key={activeWorkspaceId ?? "none"} projectId={projectId} /> : null}
-      topbarRight={user ? <><GlossaryDialog /><WorkspaceSelector inputId="studio-workspace" /></> : null}
+      topbarRight={user ? <>{viewAs.allowed ? <ViewAsControl role={preview} onChange={viewAs.choose} /> : null}<GlossaryDialog /><WorkspaceSelector inputId="studio-workspace" /></> : null}
       // Assistant panel (A3-UI) slot: the capability stays false until the assistant ships.
       assistant={STUDIO_BACKEND_FEATURES.assistant ? <p>Assistant</p> : undefined}
     >
       <div key={activeWorkspaceId ?? "no-workspace"} className="contents">
-        {body}
+        {preview ? <ViewAsBanner role={preview} onStop={() => viewAs.choose(null)} /> : null}
+        <PreviewRoleContext.Provider value={preview}>{body}</PreviewRoleContext.Provider>
       </div>
     </Shell>
     </ScreenStatusProvider>

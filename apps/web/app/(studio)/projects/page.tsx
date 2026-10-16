@@ -54,7 +54,7 @@ export default function ProjectsPage() {
       <PageHead eyebrow="Workspace" title="Projects" subtitle="Every project in this workspace. Each one goes from a customer file to a model you can trust." actions={<NewProjectDialog />} />
       <PageGuide
         purpose="Find the project you want to work on and see where each one stands."
-        howTo="Pick a project to open its experiments. Sort by name, where it is or last run. New project opens the wizard."
+        howTo="Pick a project to open its experiments. Sort by name, where it is or last run. New project opens a three-step dialog; training starts only after you confirm the test design."
         youGet="Every project in the active workspace with its goal, how far it got, the cross-validation score of the model in use, and its last run."
         attention={rows.some((p) => (p.summary?.waiting_decisions ?? 0) > 0) ? "Some projects have decisions waiting for you in the Inbox." : undefined}
       />

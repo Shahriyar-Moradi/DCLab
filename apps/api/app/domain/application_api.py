@@ -51,8 +51,15 @@ class ExecutionRequestCreate(BaseModel):
     external_request_id: str | None = Field(default=None, max_length=128)
 
 
+_CONFIRMATION_RATIONALE = (
+    "D3a: why, in the person's own words; kept on the decision entry the confirmation writes (Goal page 'Who "
+    "decided'). Omitted: DCLab writes a default. A service token's text is not kept."
+)
+
+
 class ExecutionTargetConfirmation(BaseModel):
     target_column: str = Field(min_length=1, max_length=256)
+    rationale: str | None = Field(default=None, max_length=1000, description=_CONFIRMATION_RATIONALE)
 
 
 class ExecutionSplitConfirmation(BaseModel):
@@ -60,6 +67,7 @@ class ExecutionSplitConfirmation(BaseModel):
     rule's split; the run plan's split answer is refused for this execution."""
 
     answer: Literal["keep_rule_split"]
+    rationale: str | None = Field(default=None, max_length=1000, description=_CONFIRMATION_RATIONALE)
 
 
 class ExecutionRequestRead(BaseModel):

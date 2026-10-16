@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  actorWords, constraintText, decidedRows, designChips, designKind, goalCards, goalFacts, newestSplitPlan, planDesign, problemSpecOf, metricInfo, ruleWords, taskLabel,
+  actorWords, constraintText, designChips, designKind, goalCards, goalFacts, newestSplitPlan, planDesign, problemSpecOf, metricInfo, ruleWords, taskLabel,
   timeline, timelineSummary, whyFromRows, type SplitPlanLike,
 } from "./studio-goal.ts";
 
@@ -144,19 +144,9 @@ test("newestSplitPlan: the test design in use, else the newest one in the graph;
   assert.equal(newestSplitPlan(undefined, undefined), null);
 });
 
-test("decidedRows states only who recorded the decision; a missing record gives no row", () => {
-  const items = [
-    { id: "a", decision_type: "problem_spec_locked", effective_state: "accepted", recorded_at: "2026-06-01T00:00:00Z", actor: { kind: "rule" }, subject: { kind: "problem_spec", id: "P1" } },
-    { id: "a2", decision_type: "problem_spec_locked", effective_state: "accepted", recorded_at: "2026-07-01T00:00:00Z", actor: { kind: "human" }, subject: { kind: "problem_spec", id: "P2" } },
-    { id: "b", decision_type: "split_plan_created", effective_state: "accepted", recorded_at: "2026-06-02T00:00:00Z", actor: { kind: "agent", service_token_id: "t" }, subject: { kind: "split_plan", id: "S1" } },
-    { id: "c", decision_type: "split_plan_created", effective_state: "accepted", recorded_at: "2026-06-03T00:00:00Z", actor: { kind: "human" }, subject: { kind: "split_plan", id: "OTHER" } },
-  ];
-  const rows = decidedRows(items, "S1", "P1");
-  assert.deepEqual(rows.map((r) => r.by), ["the rules", "a connected tool (access token)"]);
-  assert.equal(JSON.stringify(rows).includes("assistant"), false);
-  assert.deepEqual(decidedRows(items, "S1", null).map((r) => r.key), ["b"]);
-  assert.deepEqual(decidedRows([], "S1", "P1"), []);
+test("actorWords and problemSpecOf", () => {
   assert.equal(actorWords({ kind: "agent", agent_run_id: "r" }), "the assistant");
+  assert.equal(actorWords({ kind: "agent", service_token_id: "t" }), "a connected tool (access token)");
   assert.equal(actorWords({ kind: "agent" }), "an agent");
   assert.equal(actorWords({ kind: "__proto__" }), "someone else");
   assert.equal(actorWords({ kind: "constructor" }), "someone else");

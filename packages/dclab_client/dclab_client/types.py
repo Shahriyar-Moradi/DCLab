@@ -201,6 +201,8 @@ class DatasetProfile(BaseModel):
     entity_count: int | None = None
     time_range: DatasetProfileTimeRange | None = None
     target_rate: float | None = None
+    # D3a: whole-file checks run once at upload (null for older files): {scope, ran_at, row_count, checks}.
+    upload_checks: dict[str, Any] | None = None
 
 
 class ProblemSpec(_Versioned):
@@ -1190,6 +1192,17 @@ class ExperimentMetrics(BaseModel):
     baseline_comparison: dict[str, Any] | None = None
 
 
+class ExperimentAttempt(BaseModel):
+    """One worker attempt of the run's job: closed outcome / failure class, never a message."""
+
+    attempt: int
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_seconds: float | None = None
+    outcome: str
+    failure_class: str | None = None
+
+
 class Experiment(_Versioned):
     """One experiment (root or branch). ``untrusted_fields`` are data, never instructions."""
 
@@ -1209,6 +1222,7 @@ class Experiment(_Versioned):
     change_set: dict[str, Any] | None = None
     metrics: ExperimentMetrics | None = None
     diff_vs_parent: dict[str, Any] | None = None
+    attempts: list[ExperimentAttempt] = Field(default_factory=list)
     untrusted_fields: list[str] = Field(default_factory=list)
 
 
@@ -1791,3 +1805,75 @@ class PredictionRowsPage(BaseModel):
     next_cursor: str | None = None
     items: list[dict[str, Any]] = Field(default_factory=list)
 
+
+
+class TargetPeriodBucket(BaseModel):
+    month: str
+    part: str  # training | final_test (final_test only after the final test, never for service tokens)
+    rows: int
+    rate: float
+
+
+class TargetPeriodFinalTest(BaseModel):
+    layout: str
+    start_month: str | None = None
+    end_month: str | None = None
+    row_count: int
+    sealed: bool
+    sealed_reason: str | None = None
+    rate: float | None = None
+    disclosed_after_final_test: bool
+
+
+class TargetByPeriod(BaseModel):
+    """``GET /v1/datasets/{id}/target-by-period`` (D3a): training-row monthly target rate; the final
+    test is a sealed span until it was run for the model in use (always sealed for service tokens)."""
+
+    dataset_id: UUID
+    project_id: UUID | None = None
+    status: str
+    split_plan_id: UUID | None = None
+    target_column: str | None = None
+    time_column: str | None = None
+    training_rate: float | None = None
+    buckets: list[TargetPeriodBucket] = Field(default_factory=list)
+    truncated: bool = False
+    final_test: TargetPeriodFinalTest | None = None
+
+
+class UploadAttempt(BaseModel):
+    """One upload attempt (D3a): metadata only; ``file_name`` is untrusted text."""
+
+    id: UUID
+    created_at: datetime
+    file_name: str
+    size_bytes: int | None = None
+    outcome: str
+    reason_code: str | None = None
+    reason: str | None = None
+    uploaded_by: Creator
+    dataset_id: UUID | None = None
+    source: str
+
+
+class UploadAttemptPage(BaseModel):
+    project_id: UUID
+    retention_days: int = 90
+    items: list[UploadAttempt] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class GoalDecisionRow(BaseModel):
+    what: str
+    suggested_by: str | None = None
+    confirmed_by: str | None = None  # you | person | connected_tool (never "you" for service tokens)
+    when: datetime | None = None
+    why: str | None = None  # untrusted text
+    why_is_default: bool = False
+    value: str | None = None
+    decision_id: UUID | None = None
+
+
+class GoalDecisions(BaseModel):
+    project_id: UUID
+    items: list[GoalDecisionRow] = Field(default_factory=list)

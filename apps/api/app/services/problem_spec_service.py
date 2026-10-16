@@ -73,6 +73,7 @@ def create_problem_spec(
     status: str = "draft",
     created_by_service_token_id: UUID | None = None,
     plan: UUID | None = None,
+    record_goal: str | None = None,
 ) -> ProblemSpec:
     if not can_perform_ml_write(db, actor, workspace_id):
         raise IdentityError(
@@ -130,6 +131,11 @@ def create_problem_spec(
     )
     db.add(spec)
     db.flush()
+    if record_goal is not None:  # D3a: a goal saved in the product ("author" or an accepted AI "assistant" proposal)
+        from app.services.goal_decision_service import record_goal_version
+
+        record_goal_version(db, spec=spec, user=actor, service_token_id=created_by_service_token_id,
+                            from_plan=plan is not None, from_proposal=record_goal == "assistant")
     return spec
 
 

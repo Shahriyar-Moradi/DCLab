@@ -15,7 +15,7 @@ import { Suspense, useState } from "react";
 const LOCAL_ACCOUNTS = [
   { label: "DCLab Admin", email: "admin@dclab.io", password: "AdminPass123" },
   { label: "DCLab Developer", email: "developer@dclab.io", password: "DeveloperPass123" },
-  { label: "Business Client", email: "demo@client.io", password: "ClientPass123" },
+  { label: "Business user", email: "demo@client.io", password: "ClientPass123" },
   { label: "Business Admin", email: "business-admin@dclab.io", password: "BusinessAdminPass123" },
   { label: "Business Developer", email: "business-developer@dclab.io", password: "BusinessDevPass123" },
   { label: "Personal Developer", email: "personal@dclab.io", password: "PersonalPass123" },

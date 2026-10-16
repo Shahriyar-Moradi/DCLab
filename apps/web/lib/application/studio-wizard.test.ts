@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ActionKeys, buildSpecBody, dataStepProblem, mapWizardError, objectiveProblem, primaryMetricOptions, singleFlight, constraintMetricOptions,
+  DIALOG_STEPS, TASK_OPTIONS, dialogStepState, plainWizardError, testDesignRules,
 } from "./studio-wizard.ts";
 
 const err = (status: number, code: string, message = "", details: unknown = {}) => ({ status, body: { error: { code, message, details } } });
@@ -84,4 +85,56 @@ test("backend codes map to plain language; unknown codes keep the backend messag
 test("input problems found before sending are plain, fixable answers", async () => {
   const { WizardInputError } = await import("./studio-wizard.ts");
   assert.deepEqual(mapWizardError(new WizardInputError("Choose a data file to upload.")), { title: "Check your answers", detail: "Choose a data file to upload.", fixable: true });
+});
+
+test("new project dialog: three steps in order with done / current / to do", () => {
+  assert.deepEqual(DIALOG_STEPS.map((s) => s.id), ["file", "goal", "design"]);
+  assert.deepEqual(DIALOG_STEPS.map((s) => dialogStepState(s.id, "goal")), ["done", "current", "todo"]);
+  assert.deepEqual(DIALOG_STEPS.map((s) => dialogStepState(s.id, "file")), ["current", "todo", "todo"]);
+});
+
+test("test design words follow the engine's rule: 20% set aside, stratified for answers, time and IDs win, both stops", () => {
+  assert.match(testDesignRules("binary").suggestion, /random 20% .* keeping the share of each answer/);
+  assert.match(testDesignRules("multiclass").suggestion, /fewer than 3 rows/);
+  assert.doesNotMatch(testDesignRules("regression").suggestion, /share of each answer/);
+  const rules = testDesignRules("classification");
+  assert.equal(rules.exceptions.length, 3);
+  assert.match(rules.exceptions[0], /latest 20%/);
+  assert.match(rules.exceptions[1], /whole IDs go to one side/);
+  assert.match(rules.exceptions[2], /run stops/);
+  assert.match(rules.after, /used once/);
+  const banned = /\b(holdout|hold-out|champion|digest|refs?|stratif\w*|L[0-3]|jev|nooa|governance)\b/i;
+  for (const task of TASK_OPTIONS.map((o) => o.value)) {
+    const r = testDesignRules(task);
+    for (const text of [r.suggestion, ...r.exceptions, r.after]) assert.doesNotMatch(text, banned, text);
+  }
+});
+
+test("New project errors: fixed sentences by status and code only; the server's words never reach the screen", () => {
+  const SECRET = "SERVER SAYS internal table ml_jobs failed at line 42";
+  const quiet = () => undefined;
+  const cases: unknown[] = [
+    err(409, "something_new", SECRET), err(422, "validation_failed", SECRET, { errors: [{ loc: ["body", "x"], msg: SECRET }] }), err(429, "quota", SECRET),
+    err(403, "forbidden", SECRET), err(404, "not_found", SECRET), err(500, "boom", SECRET), err(400, "__proto__", SECRET), err(413, "", SECRET),
+    new Error(SECRET), null, { status: 409, body: { error: { code: "constructor", message: SECRET } } },
+  ];
+  for (const context of ["project", "upload", "goal", "run", "answer"] as const) {
+    for (const c of cases) {
+      const out = plainWizardError(c, context, quiet);
+      assert.ok(!JSON.stringify(out).includes("SERVER SAYS"), JSON.stringify(out));
+      assert.ok(out.title.length > 0 && out.detail.length > 0);
+    }
+  }
+  // The 403 sentence names the refused call.
+  assert.match(plainWizardError(err(403, "forbidden"), "project", quiet).detail, /^Creating a project/);
+  assert.match(plainWizardError(err(403, "forbidden"), "upload", quiet).detail, /^Uploading a file/);
+  assert.match(plainWizardError(err(403, "forbidden"), "run", quiet).detail, /^Starting a run/);
+  // Own keys only: __proto__ / constructor are not codes; the status decides.
+  assert.equal(plainWizardError(err(409, "__proto__", SECRET), "run", quiet).title, "The request was refused");
+  assert.equal(plainWizardError(err(500, "constructor", SECRET), "run", quiet).title, "Something went wrong");
+  assert.match(plainWizardError(err(422, "upload_rejected"), "upload", quiet).title, /could not be read/);
+  // Developers still get the details in the console.
+  const logged: unknown[][] = [];
+  plainWizardError(err(500, "boom", SECRET), "run", (...parts) => logged.push(parts));
+  assert.ok(JSON.stringify(logged).includes("SERVER SAYS"));
 });

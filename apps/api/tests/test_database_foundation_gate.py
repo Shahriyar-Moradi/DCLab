@@ -60,6 +60,10 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_ml_jobs_workspace_execution_request": "n",
     "fk_ml_jobs_workspace_workflow_run": "n",
     "fk_ml_jobs_workspace_pipeline_run": "n",
+    "fk_ml_job_attempts_workspace_job": "c",  # D2a (0084)
+    "fk_upload_attempts_workspace_project": "a",  # D3a (0085): NO ACTION, the upload log keeps its parents
+    "fk_upload_attempts_service_token": "a",
+    "fk_upload_attempts_workspace_dataset": "a",
     "fk_execution_requests_workspace_project": "n",
     "fk_execution_requests_workspace_parent": "n",
     "fk_execution_requests_workspace_workflow_run": "n",

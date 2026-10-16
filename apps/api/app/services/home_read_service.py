@@ -94,12 +94,17 @@ _DECISION_LABELS: dict[str, str] = {
     "operating_point_chosen": "Operating point chosen",
     "scoring_schedule_changed": "Weekly scoring schedule changed",
     "monitoring_outcomes_linked": "Real outcomes linked for monitoring",
+    "target_confirmed": "Target confirmed",
+    "test_design_confirmed": "Test design confirmed",
+    "goal_metric_confirmed": "Ranking metric set",
+    "goal_rule_confirmed": "Business rule set",
 }
 # Types whose label already says what happened; the others append the state.
 _SELF_DESCRIBING = frozenset(
     {"winner_locked", "split_plan_created", "ref_initialized", "problem_spec_locked", "proposal_accepted",
      "proposal_rejected", "decision_point_resolved", "proposal_reverted", "operating_point_chosen",
-     "scoring_schedule_changed", "monitoring_outcomes_linked"}
+     "scoring_schedule_changed", "monitoring_outcomes_linked", "target_confirmed", "test_design_confirmed",
+     "goal_metric_confirmed", "goal_rule_confirmed"}
 )
 _RUN_FINISHED = {
     "completed": "completed", "failed": "failed", "cancelled": "cancelled", "skipped": "skipped",

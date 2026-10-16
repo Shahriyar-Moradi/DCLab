@@ -92,6 +92,10 @@ export const StudioExperimentSchema = z.object({
   target_column: nullableString,
   task_type: nullableString,
   lineage: z.object({ parent_experiment_id: nullableString, split_plan_id: nullableString, problem_spec_id: nullableString, source_dataset_id: nullableString, execution_request_id: nullableString }),
+  /** D2a: worker attempts of the run's job, oldest first (closed codes only; empty for older runs). */
+  attempts: z.array(z.object({
+    attempt: z.number(), outcome: z.string(), failure_class: nullableString, started_at: z.string(), ended_at: nullableString, duration_seconds: z.number().nullable().optional(),
+  })).optional(),
 });
 export type StudioExperiment = z.infer<typeof StudioExperimentSchema>;
 
@@ -158,7 +162,15 @@ export function useStudioExperiment(experimentId: string | undefined) {
     queryFn: ({ signal }) => v1Get("/v1/experiments/{experiment_id}", StudioExperimentSchema, { params: { experiment_id: experimentId! }, signal }),
     enabled: isUuid(experimentId),
     retry: false,
-    refetchInterval: (query) => (LIVE.has(query.state.data?.status ?? "") ? 2000 : false),
+    // A finished run's worker try is closed a moment after the run itself: keep reading until no try says "running", for
+    // at most 2 minutes after the run ended (a try stuck as running is then left as the read says).
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (LIVE.has(data?.status ?? "")) return 2000;
+      const ended = Date.parse(data?.ended_at ?? data?.started_at ?? "");
+      const recent = !Number.isNaN(ended) && Date.now() - ended < 120_000;
+      return recent && (data?.attempts ?? []).some((a) => a.outcome === "running") ? 2000 : false;
+    },
   });
 }
 

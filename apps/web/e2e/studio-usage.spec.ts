@@ -120,7 +120,7 @@ test("Usage & cost: a viewer is told to ask an administrator and the API refuses
   await login(page, VIEWER);
   await page.goto("/settings");
   await page.getByRole("tab", { name: "Usage & cost" }).click();
-  await expect(page.getByText("Ask an administrator.")).toBeVisible();
+  await expect(page.getByText("Ask an admin.")).toBeVisible();
   await expect(page.getByText(/Could not load usage/)).toHaveCount(0);
   await expect(page.getByText("Compute time this month")).toHaveCount(0);
   expect(await axeSeriousOrCritical(page)).toEqual([]);

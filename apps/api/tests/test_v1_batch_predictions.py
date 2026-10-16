@@ -22,7 +22,7 @@ from sqlalchemy.exc import DBAPIError
 from app.config import get_settings
 from app.db.models import Artifact, BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
 from app.domain.batch_predictions import REASON_METHODS
-from app.engine.explain import REASON_COLUMNS
+from app.engine.explain import REASON_COLUMNS, display_names
 from app.engine.lab.auto_prepare import build_preprocessor, engineer_features
 from app.engine.serving.batch_scoring import ScoringError, prepare_features, score_frame, scoring_spec
 from app.engine.serving.model_package import read_package, sha256_hex
@@ -129,16 +129,18 @@ def _download(client, setup, prediction_id: str, headers=None) -> pd.DataFrame: 
 
 
 def _assert_reason_names(out: pd.DataFrame, features: list[str]) -> None:
-    """Every reason names one of the model's input columns (never an encoded column) and
-    says the direction; none shows a number from the row."""
+    """Every reason names one of the model's input columns (readably, never an encoded column)
+    and says the direction; none shows a number from the row. Numbers are described by the
+    model's training quantiles (its package carries the training reference)."""
 
     texts = [text for text in out[list(REASON_COLUMNS)].to_numpy().ravel() if isinstance(text, str)]
     assert texts
     for text in texts:
-        name = re.match(r"^(.+?)(?::| =) ", text)
-        assert name and name.group(1) in features, text
-        assert re.search(r", (raised|lowered) the (model's score|predicted value|predicted class's)", text), text
+        name = re.match(r"^(.+?): ", text)
+        assert name and name.group(1) in display_names(features), text
+        assert re.search(r", (raised|lowered) the (score|predicted value|predicted class's)", text), text
         assert "__" not in text and not re.search(r"\d\.\d", text), text
+    assert any(re.search(r": (?:high \(top|low \(bottom|mid-range)", text) for text in texts), texts[:10]
 
 
 def _holdout(experiment: Experiment) -> pd.DataFrame:

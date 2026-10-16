@@ -68,6 +68,9 @@ from dclab_client.types import (
     ScoringScheduleRunPage,
     ScoringScheduleState,
     SplitPlan,
+    GoalDecisions,
+    TargetByPeriod,
+    UploadAttemptPage,
     Visualization,
     Workspace,
     _Versioned,
@@ -278,6 +281,26 @@ class ProjectsClient:
         token works, a service token gets 403 ``service_token_not_permitted`` (use the underlying reads)."""
 
         return self._transport.request("GET", f"/v1/projects/{_id(project_id)}/flow", request_id=request_id)
+
+    def upload_attempts(
+        self, project_id: UUID | str, *, cursor: str | None = None, limit: int | None = None,
+        request_id: str | None = None,
+    ) -> UploadAttemptPage:
+        """The project's upload log (D3a), newest first: accepted and rejected uploads with a plain
+        reason; metadata only, kept 90 days. File names are untrusted text."""
+
+        params = {key: value for key, value in (("cursor", cursor), ("limit", limit)) if value is not None}
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/upload-attempts", params=params or None, request_id=request_id)
+        return UploadAttemptPage.model_validate(payload)
+
+    def goal_decisions(self, project_id: UUID | str, *, request_id: str | None = None) -> GoalDecisions:
+        """Who decided the goal (D3a): target, test design, ranking metric and business rule, each with
+        who suggested and who confirmed it (no ids; ``why`` is untrusted text)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/goal/decisions", request_id=request_id)
+        return GoalDecisions.model_validate(payload)
 
     def decisions(
         self,
@@ -1010,6 +1033,15 @@ class DatasetsClient:
             "GET", f"/v1/datasets/{_id(dataset_id)}/profile", request_id=request_id
         )
         return DatasetProfile.model_validate(payload)
+
+    def target_by_period(self, dataset_id: UUID | str, *, request_id: str | None = None) -> TargetByPeriod:
+        """Monthly target rate of the current split plan's training rows (D3a); the final test is a
+        sealed span until it was run for the model in use (always sealed for service tokens)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/datasets/{_id(dataset_id)}/target-by-period", request_id=request_id
+        )
+        return TargetByPeriod.model_validate(payload)
 
     def upload(
         self,

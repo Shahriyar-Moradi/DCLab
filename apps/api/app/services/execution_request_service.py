@@ -545,8 +545,12 @@ def confirm_execution_target(
     target_column: str,
     service_token_id: UUID | None = None,
     legacy_labs: bool = False,
+    rationale: str | None = None,
 ) -> ExecutionRequest:
     """Supply the missing target and resume the original execution once.
+
+    D3a: the confirmation writes a ``target_confirmed`` decision entry in the same transaction
+    (``rationale``: the person's own reason, validated first; a service token's text is not kept).
 
     ``service_token_id``: an agent confirmed it. The request then counts as
     token-initiated (its ref bootstrap becomes a proposal) and the confirmation
@@ -555,6 +559,7 @@ def confirm_execution_target(
     ``legacy_labs``: the Client Labs route (``confirm_upload_target``) authorizes with the legacy
     ``/app`` write gate, which a ``client_user`` holds, instead of shared-core ML execution."""
 
+    from app.services import goal_decision_service
     from app.services.problem_spec_service import populate_unlocked_problem_spec_target
     from app.services.target_intent_service import (
         TARGET_SOURCE_AGENT,
@@ -576,6 +581,7 @@ def confirm_execution_target(
     selected = normalize_target_name(target_column)
     if selected is None:
         raise TargetNotInDatasetError("")
+    reason = None if service_token_id else goal_decision_service.clean_person_rationale(rationale)
 
     request = db.scalar(
         select(ExecutionRequest)
@@ -661,6 +667,7 @@ def confirm_execution_target(
         populate_unlocked_problem_spec_target(db, problem_spec, selected)
 
     now = datetime.now(UTC)
+    waiting = dict(request.result_summary) if isinstance(request.result_summary, dict) else {}
     source = TARGET_SOURCE_USER
     confirmer: dict[str, str] = {"confirmed_by": str(actor.id)}
     if service_token_id is not None:
@@ -738,6 +745,8 @@ def confirm_execution_target(
     resumed = _resume_auto_train_job(
         db, request=request, upload=upload, job_was_running=job_was_running
     )
+    goal_decision_service.record_target_confirmed(db, request=request, waiting=waiting, user=actor,
+                                                  service_token_id=service_token_id, target=selected, rationale=reason)
     _emit_execution_event(
         db,
         upload=upload,
@@ -770,13 +779,18 @@ def confirm_execution_split(
     request_id: UUID,
     answer: str,
     service_token_id: UUID | None = None,
+    rationale: str | None = None,
 ) -> ExecutionRequest:
     """Resolve ``split_confirmation_required`` (P6.9-A): keep the rule's split and resume the
     run once; the run plan's split answer is refused for this execution so the resume never
-    parks again. Replay-safe by state: the same answer again returns the request."""
+    parks again. Replay-safe by state: the same answer again returns the request. D3a: writes a
+    ``test_design_confirmed`` decision entry (the person's ``rationale`` or a default)."""
+
+    from app.services import goal_decision_service
 
     if answer not in SPLIT_RESOLUTIONS:
         raise ExecutionRequestSpecError(f"unknown split answer {answer!r}")
+    reason = goal_decision_service.clean_person_rationale(rationale)
     if not can_read_workspace(db, actor, workspace_id) or not can_execute_workspace_ml(db, actor, workspace_id):
         raise IdentityError("not found", status_code=404)
     request = db.scalar(select(ExecutionRequest).where(
@@ -824,6 +838,7 @@ def confirm_execution_split(
     _emit_execution_event(db, upload=upload, request=request, event_type=SPLIT_CONFIRMED, status="completed",
                           payload={"answer": answer, **confirmer, "execution_request_id": str(request.id)})
     resumed = _resume_auto_train_job(db, request=request, upload=upload, job_was_running=job_was_running)
+    goal_decision_service.record_test_design_confirmed(db, request=request, user=actor, answer=answer, rationale=reason)
     _emit_execution_event(db, upload=upload, request=request, event_type=EXECUTION_RESUMED, status=REQUEST_RUNNING,
                           payload={"answer": answer, "execution_request_id": str(request.id),
                                    "ml_job_id": str(resumed.id) if resumed is not None else None})

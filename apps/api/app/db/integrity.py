@@ -1186,10 +1186,26 @@ WEBHOOK_APPEND_ONLY_TRIGGER_SQL = tuple(
     for table in ("webhook_deliveries", "webhook_changes")
 )
 
+# 0084 (D2a): a finished ml_job attempt is final; the running row is updated once, at its end.
+# DELETE stays possible (the job's or the workspace's cascade). Identical literal in 0084.
+ML_JOB_ATTEMPTS_FINAL_TRIGGER_SQL = (
+    "CREATE TRIGGER ml_job_attempts_final BEFORE UPDATE ON ml_job_attempts "
+    "FOR EACH ROW WHEN (OLD.outcome <> 'running') EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+# 0085 (D3a): the upload log is append-only and retention-aware (the 0071 functions): UPDATE refused,
+# DELETE only under the retention / workspace-deletion GUCs; created_at forced on insert. Identical in 0085.
+UPLOAD_ATTEMPTS_TRIGGER_SQL = (
+    "CREATE TRIGGER upload_attempts_append_only BEFORE UPDATE OR DELETE ON upload_attempts "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()",
+    "CREATE TRIGGER upload_attempts_created_at_now BEFORE INSERT ON upload_attempts "
+    "FOR EACH ROW EXECUTE FUNCTION force_created_at_now()",
+)
+
 
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083 install
-    (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0085
+    install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -1219,6 +1235,7 @@ def install_immutability_triggers(connection) -> None:
     connection.execute(text(USAGE_RECORDS_APPEND_ONLY_TRIGGER_SQL))
     for statement in WEBHOOK_APPEND_ONLY_TRIGGER_SQL:
         connection.execute(text(statement))
+    connection.execute(text(ML_JOB_ATTEMPTS_FINAL_TRIGGER_SQL))
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():
@@ -1242,6 +1259,8 @@ def install_immutability_triggers(connection) -> None:
     for statement in ai_governance_trigger_statements():
         connection.execute(text(statement))
     for statement in agent_run_release_trigger_statements():
+        connection.execute(text(statement))
+    for statement in UPLOAD_ATTEMPTS_TRIGGER_SQL:  # after the 0071 functions it uses
         connection.execute(text(statement))
 
 

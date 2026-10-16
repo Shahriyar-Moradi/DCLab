@@ -71,6 +71,61 @@ export const CHECK_LABEL: Record<string, string> = {
 /** Plain name of a check; own keys only (a check named `__proto__` is shown as text). */
 export const checkLabel = (check: string) => (Object.hasOwn(CHECK_LABEL, check) ? CHECK_LABEL[check] : check.replaceAll("_", " "));
 
+/**
+ * The backend's check registry in the order the checks run (engine/investigate CHECK_ORDER, which the findings read
+ * sorts by). studio-findings.test.ts compares it with the `check` enum of the generated openapi.json, so a check added
+ * or moved on the server fails the web tests instead of being guessed here.
+ */
+export const CHECK_ORDER = [
+  "target_leakage", "overfit_gap", "duplicate_rows", "class_imbalance", "implausible_score",
+  "fold_instability", "calibration", "subgroup_gap", "multicollinearity", "feature_drift", "temporal_shift",
+  "missingness_shift", "contamination", "time_travel", "new_feature",
+] as const;
+
+export type PassSummary = { tone: FindingTone; pill: string; sentence: string | null };
+
+/**
+ * The headline of the trust checks. "All checks passed" only when every registry check was recorded and passed; an older
+ * run that recorded fewer checks gets a neutral pill and says how many were not recorded (never counted as passed).
+ */
+export function passSummary(findings: FindingsLike | null | undefined): PassSummary | null {
+  const state = findingsState(findings);
+  if (state !== "all_passed" && state !== "attention") return null;
+  const checks = findings?.checks ?? [];
+  const recorded = new Set(checks.map((c) => c.check));
+  const missing = CHECK_ORDER.filter((c) => !recorded.has(c)).length;
+  const attention = attentionCount(findings);
+  if (attention) return { tone: "warn", pill: `${attention} to review`, sentence: null };
+  if (state === "all_passed") {
+    if (missing === 0) return { tone: "ok", pill: "All checks passed", sentence: `All ${checks.length} trust checks passed.` };
+    return { tone: "gray", pill: "None to review", sentence: `All ${checks.length} recorded checks passed; ${missing} ${missing === 1 ? "was" : "were"} not recorded for this run.` };
+  }
+  const notChecked = checks.filter((c) => c.status === "not_evaluated").length;
+  return { tone: "gray", pill: `None to review${notChecked ? `, ${notChecked} not checked` : ""}`, sentence: null };
+}
+
+export type CheckRow = { check: string; position: number; label: string; result: string; tone: FindingTone; recorded: boolean };
+
+/**
+ * Every registry check in run order with this run's result in plain words. A check the run did not record (an older
+ * run stored fewer checks) reads "Not recorded for this run", never "Passed". A check the read sends that the registry
+ * here does not know is kept, after the known ones, so nothing the server says is hidden.
+ */
+export function checkList(findings: FindingsLike | null | undefined): CheckRow[] {
+  if (findingsState(findings) !== "all_passed" && findingsState(findings) !== "attention") return [];
+  const byCheck = new Map((findings?.checks ?? []).map((c) => [c.check, c]));
+  const known = new Set<string>(CHECK_ORDER);
+  const extra = (findings?.checks ?? []).filter((c) => !known.has(c.check)).map((c) => c.check);
+  return [...CHECK_ORDER, ...extra].map((check, index) => {
+    const found = byCheck.get(check);
+    return {
+      check, position: index + 1, label: checkLabel(check), recorded: Boolean(found),
+      result: found ? findingStatusLabel(found.status, found.severity) : "Not recorded for this run",
+      tone: found ? findingTone(found.status) : "gray",
+    };
+  });
+}
+
 export const RECOMMENDATION_TEXT: Record<string, string> = {
   review_columns: "Review the flagged columns: confirm each one is known at prediction time, and drop it if not.",
   investigate_leakage: "Investigate the strongest columns for leakage before trusting this model.",

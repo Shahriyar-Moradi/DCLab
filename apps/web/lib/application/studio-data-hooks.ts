@@ -66,6 +66,15 @@ export const DatasetProfileSchema = z.object({
   entity_count: nullableNumber,
   time_range: z.object({ column: z.string(), start: z.string(), end: z.string() }).nullable().optional(),
   target_rate: nullableNumber,
+  // D3a: checked once on the whole upload (no target, feeds no run); null for older files.
+  upload_checks: z.object({
+    ran_at: z.string(),
+    row_count: z.number(),
+    checks: z.array(z.object({
+      code: z.string(), status: z.string(), count: nullableNumber, share: nullableNumber,
+      columns: z.array(z.object({ name: z.string(), count: nullableNumber, share: nullableNumber })), columns_truncated: z.boolean().optional(),
+    })),
+  }).nullable().optional(),
 });
 export type StudioDatasetProfile = z.infer<typeof DatasetProfileSchema>;
 

@@ -69,7 +69,7 @@ export function disabledReason(item: Pick<InboxItemLike, "actions" | "kind">, na
   if (!action) return null;
   if (actionRoute(item, name) === null) return "This action is not available from the inbox. Open the item's project and decide it from its History.";
   if (action.allowed) return null;
-  if (!viewerCanDecide) return "Your role can read the inbox but not decide. Ask a workspace member who can write ML work.";
+  if (!viewerCanDecide) return "Your role can read the inbox but not decide. Ask a data scientist or an admin.";
   if (item.kind === "agent_proposal" && name === "accept") return "Only the person whose conversation made this assistant suggestion can approve it. You can still reject it.";
   return "You cannot take this action here.";
 }

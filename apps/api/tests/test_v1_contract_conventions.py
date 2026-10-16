@@ -234,6 +234,10 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret",
         "POST /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test",
         "GET /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries",
+        # D3a: Data and Goal reads.
+        "GET /v1/datasets/{dataset_id}/target-by-period",
+        "GET /v1/projects/{project_id}/upload-attempts",
+        "GET /v1/projects/{project_id}/goal/decisions",
     }
 
 

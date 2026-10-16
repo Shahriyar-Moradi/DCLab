@@ -8,7 +8,7 @@ import type { PillToneName } from "./studio-home.ts";
 import { lookup } from "./studio-inbox.ts";
 import { modelName } from "./studio-names.ts";
 import { statusWords } from "./studio-runs.ts";
-import { WIZARD_STEPS, type WizardStepId } from "./studio-wizard.ts";
+import { DIALOG_STEPS, type DialogStepId } from "./studio-wizard.ts";
 
 type Summary = {
   goal?: { target_column?: string | null; objective?: string | null; status?: string } | null;
@@ -75,16 +75,15 @@ export function lastRunText(run: Summary["latest_run"]): { text: string; status:
 /** "Model v2", or null when nothing is in use. */
 export const modelInUseText = (summary: Summary | undefined): string | null => (summary?.champion ? modelName(plainText(summary.champion.version, 20)) : null);
 
-/** What each of today's four wizard steps asks for (the dialog before the wizard). Keyed by the wizard's own step ids. */
-const STEP_DETAIL: Record<WizardStepId, string> = {
-  data: "A project name and a CSV file. DCLab checks the file's structure and shows its columns.",
-  target: "The column to predict and the kind of answer it holds (a category or a number).",
-  objective: "The score that picks the best model, and an optional rule such as a minimum recall.",
-  train: "Start the first run. The rules make the test design, set a final test set aside and ask you on the run page if they need an answer.",
+/** What each step of the New project dialog asks for (D2b). Keyed by the dialog's own step ids. */
+const STEP_DETAIL: Record<DialogStepId, string> = {
+  file: "A project name and a data file. Uploading saves both; DCLab checks the file's structure and lists its columns.",
+  goal: "The column to predict, the kind of answer it holds, the score that picks the best model and an optional success rule.",
+  design: "The test design the fixed rules will make. You confirm that the rules may choose it; only then does training start. The run page shows the design they chose.",
 };
 
-export const NEW_PROJECT_STEPS: ReadonlyArray<{ id: WizardStepId; label: string; detail: string }> = WIZARD_STEPS.map((step) => ({ ...step, detail: STEP_DETAIL[step.id] }));
+export const NEW_PROJECT_STEPS: ReadonlyArray<{ id: DialogStepId; label: string; detail: string }> = DIALOG_STEPS.map((step) => ({ ...step, detail: STEP_DETAIL[step.id] }));
 
 export const STARTING_A_PROJECT =
-  "The New project wizard has four steps: a name and a file, what to predict, what good looks like, and the first run. " +
-  "The rules make the test design when the run starts; you see it on Goal & test design. Every step is a form, so it works with AI switched off.";
+  "New project opens a dialog with three steps: a name and a file, what to predict with an optional success rule, and the test design the rules will make. You confirm that the rules may choose it; only then does training start. The run page shows the design they chose " +
+  "and asks you if it needs an answer. Every step is a form, so it works with AI switched off; the older four-step page is still linked from the dialog.";

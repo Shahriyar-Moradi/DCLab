@@ -28,7 +28,12 @@ SUPPORTED_SUFFIXES = (
 
 
 class OpenIngestError(ValueError):
-    """Safe, client-facing reason the file could not be taken in."""
+    """Safe, client-facing reason the file could not be taken in. ``code`` is the upload log's
+    closed reason (``app.domain.data_goal.UPLOAD_REASON_CODES``)."""
+
+    def __init__(self, message: str, code: str = "unreadable_file") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass
@@ -191,12 +196,13 @@ def preview_upload_path(filename: str, path: Path) -> OpenIngestPreview:
     metadata. The training worker still has its own compute requirements.
     """
     if not path.is_file() or path.stat().st_size == 0 or not _has_non_whitespace_bytes(path):
-        raise OpenIngestError("This file is empty.")
+        raise OpenIngestError("This file is empty.", "empty_file")
 
     suffix = Path(filename or "upload").suffix.lower()
     if suffix and suffix not in SUPPORTED_SUFFIXES:
         raise OpenIngestError(
-            "This file type is not supported yet. Try a spreadsheet, JSON, Parquet, Excel, or a plain text log."
+            "This file type is not supported yet. Try a spreadsheet, JSON, Parquet, Excel, or a plain text log.",
+            "unsupported_type",
         )
     try:
         if suffix in SPREADSHEET_SUFFIXES or not suffix:
@@ -234,12 +240,13 @@ def preview_upload_path(filename: str, path: Path) -> OpenIngestPreview:
 def preview_upload(filename: str, data: bytes) -> OpenIngestPreview:
     """Inspect a file without requiring any particular field names."""
     if not data or not data.strip():
-        raise OpenIngestError("This file is empty.")
+        raise OpenIngestError("This file is empty.", "empty_file")
 
     suffix = Path(filename or "upload").suffix.lower()
     if suffix and suffix not in SUPPORTED_SUFFIXES:
         raise OpenIngestError(
-            "This file type is not supported yet. Try a spreadsheet, JSON, Parquet, Excel, or a plain text log."
+            "This file type is not supported yet. Try a spreadsheet, JSON, Parquet, Excel, or a plain text log.",
+            "unsupported_type",
         )
 
     try:

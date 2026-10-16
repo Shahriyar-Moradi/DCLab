@@ -14,12 +14,12 @@ import { useProjectFlow } from "@/lib/application/studio-flow-hooks";
 import { flowTiles } from "@/lib/application/studio-flow-tiles";
 import { ApiError } from "@/lib/infrastructure/api-client";
 
-/** "No backend, no element": an explicit empty state that names the prompt that ships it. */
-export function PhaseEmpty({ title, phase, children }: { title: string; phase: string; children?: ReactNode }) {
+/** "No backend, no element": an explicit empty state. The plan's internal id (`phase`) is kept in code, never shown. */
+export function PhaseEmpty({ title, children }: { title: string; phase: string; children?: ReactNode }) {
   return (
     <div className="empty" role="note">
       <p><b>{title}</b></p>
-      <p>Planned in {phase}.{children ? " " : ""}{children}</p>
+      <p>Not built yet.{children ? " " : ""}{children}</p>
     </div>
   );
 }

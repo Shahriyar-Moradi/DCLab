@@ -35,7 +35,7 @@ export type UsageReadLike = {
 export type UsageScreenState = "loading" | "no_workspace" | "forbidden" | "error" | "empty" | "ready";
 
 export const USAGE_DISCLAIMER_FALLBACK = "Measured from DCLab's own records: an estimate, not an invoice.";
-export const USAGE_FORBIDDEN_TEXT = "Usage and limits are shown to owners, administrators and data scientists. Ask an administrator.";
+export const USAGE_FORBIDDEN_TEXT = "Usage and limits are shown to admins and data scientists. Ask an admin.";
 /**
  * "Never blocks reading, approving or rolling back" is true by construction: the limit check is called only from
  * the admission points (pinned by apps/api/tests/test_usage_metering.py::test_only_admission_points_call_the_limit_check).
