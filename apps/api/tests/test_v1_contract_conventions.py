@@ -43,7 +43,16 @@ SESSION_ONLY = {"/v1/service-tokens": "session_required", "/v1/service-tokens/{t
                     "/v1/assistant/threads", "/v1/assistant/threads/{thread_id}",
                     "/v1/assistant/threads/{thread_id}/messages",
                     # P8.5-A: platform-staff operator reads (signed-in sessions only).
-                    "/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/failed-jobs")}}
+                    "/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/failed-jobs")},
+                # P8.8-A: your notification preferences and the workspace's webhooks.
+                **{path: "session_required" for path in (
+                    "/v1/me/notification-preferences", "/v1/workspaces/{workspace_id}/webhooks",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries")}}
+# No principal at all (P8.8-A one-click unsubscribe: the signed link is the only authority).
+PUBLIC = {"/v1/notifications/unsubscribe"}
 
 
 def _operations() -> list[tuple[str, str]]:
@@ -209,6 +218,15 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/operator/overview",
         "GET /v1/operator/workspaces",
         "GET /v1/operator/failed-jobs",
+        "GET /v1/me/notification-preferences",
+        "PUT /v1/me/notification-preferences",
+        "POST /v1/notifications/unsubscribe",
+        "GET /v1/workspaces/{workspace_id}/webhooks",
+        "POST /v1/workspaces/{workspace_id}/webhooks",
+        "PATCH /v1/workspaces/{workspace_id}/webhooks/{webhook_id}",
+        "POST /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret",
+        "POST /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test",
+        "GET /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries",
     }
 
 
@@ -234,6 +252,9 @@ def test_openapi_documents_the_envelope_on_every_v1_operation():
 def test_every_v1_operation_401_uses_envelope_with_request_id(client):
     for method, path in _operations():
         response = _call(client, method, _concrete(path))
+        if path in PUBLIC:  # no credentials asked for: the envelope still applies (empty body: 422)
+            _assert_envelope(response, 422, "validation_failed")
+            continue
         error = _assert_envelope(response, 401, "unauthenticated")
         assert error["retryable"] is False
 
@@ -242,7 +263,7 @@ def test_every_workspace_operation_400_without_selector_and_403_foreign(client, 
     setup = make_lineage_setup(db_session, tmp_path)
     bearer = {"Authorization": f"Bearer {create_access_token(setup['alpha_admin'])}"}
     for method, path in _operations():
-        if path in WORKSPACE_FREE:
+        if path in WORKSPACE_FREE or path in PUBLIC:
             continue
         if path in SESSION_ONLY:
             _assert_envelope(_call(client, method, _concrete(path), headers=bearer), 403, SESSION_ONLY[path])

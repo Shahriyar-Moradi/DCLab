@@ -48,6 +48,23 @@ DATASET_PURPOSE_TRAINING = "training"
 DATASET_PURPOSE_SCORING = "scoring"
 DATASET_PURPOSES = (DATASET_PURPOSE_TRAINING, DATASET_PURPOSE_SCORING)
 
+# 0082: who uploaded a DatasetVersion, as reads show it (no token ids or names). ``connected_tool``
+# = ``datasets.uploaded_by_service_token_id`` is set (only a service token sets it); ``person`` = not
+# uploaded with a service token: a browser session or the person's own /auth/tokens API token, a row
+# from before 0082, or a derived/prepared training dataset (never a scoring file).
+UPLOADED_BY_PERSON = "person"
+UPLOADED_BY_CONNECTED_TOOL = "connected_tool"
+UPLOADED_BY_DESCRIPTION = (
+    "Who uploaded the file: `connected_tool` (uploaded with a service token, i.e. by a connected tool or agent) or "
+    "`person` (not uploaded with a service token: a person's own sign-in or own API token counts as the person, "
+    "as do rows from before attribution existed and derived training datasets, which are never scoring files). "
+    "Weekly scheduled scoring scores only files a person uploaded."
+)
+
+
+def uploaded_by(service_token_id: object | None) -> str:
+    return UPLOADED_BY_CONNECTED_TOOL if service_token_id is not None else UPLOADED_BY_PERSON
+
 LABS_PROJECT_SLUG = "labs"
 LABS_PROJECT_NAME = "Labs"
 

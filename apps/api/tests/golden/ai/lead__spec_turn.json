@@ -139,7 +139,7 @@
       "payload": {
         "cache_hit": false,
         "call": 1,
-        "cost_micros": 3774,
+        "cost_micros": 5661,
         "invocation_id": "<id:10>",
         "ok": true,
         "output_digest": "<digest>",
@@ -196,7 +196,7 @@
       "payload": {
         "cache_hit": false,
         "call": 2,
-        "cost_micros": 4612,
+        "cost_micros": 6918,
         "invocation_id": "<id:11>",
         "ok": true,
         "output_digest": "<digest>",
@@ -262,7 +262,7 @@
       "payload": {
         "cache_hit": false,
         "call": 3,
-        "cost_micros": 4582,
+        "cost_micros": 6873,
         "invocation_id": "<id:12>",
         "ok": true,
         "output_digest": "<digest>",
@@ -300,8 +300,8 @@
     },
     {
       "payload": {
-        "cost_micros": 12968,
-        "freed_micros": 237032
+        "cost_micros": 19452,
+        "freed_micros": 230548
       },
       "type": "budget_settled"
     },
@@ -344,7 +344,7 @@
       "data_class": "aggregates",
       "input_tokens": 1687,
       "llm_used": true,
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "outcome_scope": "cv",
       "output_tokens": 40,
       "prompt_version": "lead:v1",
@@ -359,7 +359,7 @@
       "data_class": "aggregates",
       "input_tokens": 1916,
       "llm_used": true,
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "outcome_scope": "cv",
       "output_tokens": 78,
       "prompt_version": "lead:v1",
@@ -374,7 +374,7 @@
       "data_class": "aggregates",
       "input_tokens": 1981,
       "llm_used": true,
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "outcome_scope": "cv",
       "output_tokens": 62,
       "prompt_version": "lead:v1",
@@ -425,7 +425,7 @@
     "decision_point_key": null,
     "error_code": null,
     "kind": "lead",
-    "model": "gpt-6.1-sol",
+    "model": "claude-sonnet-5-5",
     "outcome_scope": "cv",
     "purpose": "assistant.turn",
     "runtime": "lead_loop",

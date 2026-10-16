@@ -13,7 +13,7 @@ export type StudioFeature =
   | "home" | "projects" | "inbox" | "governance" | "agents" | "settings" | "assistant"
   | "lab" | "pipeline" | "graph" | "data" | "goal" | "experiments" | "improve" | "models" | "predictions" | "monitoring" | "decisions"
   | "client_outcomes" | "client_predictions" | "client_questions"
-  | "operator_overview" | "operator_jobs" | "operator_quarantine" | "operator_caps" | "operator_gates";
+  | "operator_overview" | "operator_workspaces" | "operator_jobs" | "operator_quarantine" | "operator_caps" | "operator_gates";
 
 /** Backend availability per feature. Missing key = not available. */
 export type StudioCapabilities = Partial<Record<StudioFeature, boolean>>;
@@ -88,14 +88,16 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
     ],
   },
   {
+    // Operator console (P8.5-UI, `/operator`): platform administrators only. The page's tabs follow `?tab=`.
     id: "platform",
     label: "Platform operations",
     items: [
-      { id: "op-overview", label: "Overview", href: "/platform", icon: "▣", roles: ["operator"], feature: "operator_overview", phase: "P4.17" },
-      { id: "op-jobs", label: "Jobs & workers", href: "/platform#jobs", icon: "⇶", roles: ["operator"], feature: "operator_jobs", phase: "P4.17" },
-      { id: "op-quarantine", label: "Quarantine", href: "/platform#quarantine", icon: "▤", roles: ["operator"], feature: "operator_quarantine", phase: "P4.17" },
-      { id: "op-caps", label: "Platform AI caps", href: "/platform#caps", icon: "⚖", roles: ["operator"], feature: "operator_caps", phase: "P4.17" },
-      { id: "op-gates", label: "Benchmarks & gates", href: "/platform#gates", icon: "✓", roles: ["operator"], feature: "operator_gates", phase: "P4.17" },
+      { id: "op-overview", label: "Operator console", href: "/operator", icon: "▣", roles: ["operator"], feature: "operator_overview", phase: "P8.5-UI" },
+      { id: "op-workspaces", label: "Workspaces", href: "/operator?tab=workspaces", icon: "▦", roles: ["operator"], feature: "operator_workspaces", phase: "P8.5-UI" },
+      { id: "op-jobs", label: "Failed jobs", href: "/operator?tab=failed-jobs", icon: "⇶", roles: ["operator"], feature: "operator_jobs", phase: "P8.5-UI" },
+      { id: "op-quarantine", label: "Quarantine", href: "/operator?tab=quarantine", icon: "▤", roles: ["operator"], feature: "operator_quarantine", phase: "P8.7" },
+      { id: "op-caps", label: "Platform AI caps", href: "/operator?tab=caps", icon: "⚖", roles: ["operator"], feature: "operator_caps", phase: "later" },
+      { id: "op-gates", label: "Benchmarks & gates", href: "/operator?tab=benchmarks", icon: "✓", roles: ["operator"], feature: "operator_gates", phase: "later" },
     ],
   },
 ];

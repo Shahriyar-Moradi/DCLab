@@ -55,7 +55,7 @@ test("Settings: an administrator sees the people and the role table, nothing els
   await expect(page.getByText("More settings arrive with later releases.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Connect", exact: true }).last()).toHaveAttribute("href", "/agents");
   // Negative: no pretend tabs or controls, no secrets on the page.
-  for (const fake of ["Usage", "Integrations", "Notifications", "Invite", "Remove", "Add a member"]) {
+  for (const fake of ["Integrations", "Notifications", "Invite", "Remove", "Add a member"]) {
     await expect(page.getByRole("tab", { name: new RegExp(fake, "i") })).toHaveCount(0);
     await expect(page.getByRole("button", { name: new RegExp(fake, "i") })).toHaveCount(0);
   }

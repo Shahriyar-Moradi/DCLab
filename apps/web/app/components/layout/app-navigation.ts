@@ -12,10 +12,11 @@ import {
   Scale,
   Upload,
 } from "lucide-react";
-import { CAPABILITIES, defaultProductRoute, hasCapability, isBusinessViewPath, isStudioPath } from "@/lib/infrastructure/capabilities";
+import { CAPABILITIES, defaultProductRoute, hasCapability, isBusinessViewPath, isOperatorPath, isStudioPath } from "@/lib/infrastructure/capabilities";
 import type { SessionUser } from "@/lib/infrastructure/session";
 
-type NavAudience = "all" | "platform" | "business" | "development";
+/** `platform_admin`: platform read AND platform write (the operator console, P8.5-UI). */
+type NavAudience = "all" | "platform" | "platform_admin" | "business" | "development";
 
 export type AppNavigationItem = {
   id: string;
@@ -153,6 +154,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
 function isVisible(audience: NavAudience, user: SessionUser) {
   if (audience === "all") return hasCapability(user, CAPABILITIES.applicationAccess);
   if (audience === "platform") return hasCapability(user, CAPABILITIES.platformRead);
+  if (audience === "platform_admin") return hasCapability(user, CAPABILITIES.platformRead) && hasCapability(user, CAPABILITIES.platformWrite);
   if (audience === "development") return hasCapability(user, CAPABILITIES.developmentAccess);
   return hasCapability(user, CAPABILITIES.businessAccess);
 }
@@ -210,14 +212,15 @@ export function isProductRoute(pathname: string) {
   );
 }
 
-/** Studio design kit, Developer Studio and Business view routes render their own shell, outside marketing and product chrome. */
+/** Studio design kit, Developer Studio, Business view and operator console routes render their own shell, outside marketing and product chrome. */
 export function isStudioRoute(pathname: string) {
-  return pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname) || isBusinessViewPath(pathname);
+  return pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname) || isBusinessViewPath(pathname) || isOperatorPath(pathname);
 }
 
 export {
   STUDIO_BACKEND_FEATURES,
   businessNavigationForUser,
+  operatorNavigationForUser,
   studioNavigationForUser,
   studioRoleForUser,
 } from "@/lib/application/studio-navigation";

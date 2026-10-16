@@ -1,5 +1,8 @@
 """OpenAI adapter: Responses API with structured output (ADR 0009 §9).
 
+LEGACY (switched to Anthropic 2026-10-16; kept for now): registered only with
+``AI_LEGACY_PROVIDERS_ENABLED=true`` and no model id routes here (see ``providers.default_providers``).
+
 The only module that imports the ``openai`` SDK for the gateway. The key is read
 only from ``DCLAB_OPENAI_API_KEY``. One request per call, no SDK retries
 (``max_retries=0``), ``store=False``. Returns usage, the request id and the

@@ -466,7 +466,7 @@ def test_critic_runs_on_every_completed_run_when_enabled(engineer_client, db_ses
     advice = {"verdict": "needs_work", "summary": "Insufficient evidence for promotion.", "cv_metrics": [],
               "findings": [], "confidence": 0.4}
     fake = FakeProvider(handler=lambda _call: dict(advice), environment="test")
-    service = AgentService(gateway=GatewayService(providers={"openai": fake}, limits=GatewayLimits(),
+    service = AgentService(gateway=GatewayService(providers={"anthropic": fake}, limits=GatewayLimits(),
                                                   settings=lambda: on), settings=lambda: on)
     for experiment, run in reviewed:
         before = (experiment.status, experiment.scientific_evidence_locked_at, dict(experiment.result))

@@ -3,9 +3,9 @@
   "case": "default",
   "exchanges": [
     {
-      "input_digest": "bfab6ff9716fc7c3e386d46fc2309c4d33705495eeef5136479224a849f7a1b5",
+      "input_digest": "c0f06f6c2833808d4214eb54d3c32e37fd39ff25da75145a0deda3aae693c139",
       "instructions_digest": "49712bff83adc3775e59646b8118af55ebd344e5c93810e8547496d2a3f2e3c1",
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "output": {
         "confidence": 0.7,
         "families": [

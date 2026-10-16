@@ -1,7 +1,8 @@
 # ADR 0011 — Open-source license for the engine, SDK and MCP server
 
-**Status:** Proposed — the founder decides. No `LICENSE` file is added and no package
-claims a license until this ADR is accepted.  
+**Status:** Accepted (founder, 2026-10-16): Apache-2.0 plus a DCO for `dclab-client`, `dclab-mcp` and
+`dclab-engine`; the server stays private. No `LICENSE` file is added and no package claims a license
+until the first publication (the `Private :: Do Not Upload` classifier stays until then).  
 **Date:** 2026-10-16  
 **Prompt:** P8.6-A (open-source readiness)  
 **Depends on:** [ARCHITECTURE.md](../mvp/ARCHITECTURE.md) §2 principle 5 (what becomes

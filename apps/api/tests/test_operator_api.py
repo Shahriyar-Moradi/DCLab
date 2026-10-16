@@ -81,13 +81,12 @@ def test_operator_routes_are_human_only_and_never_token_routes():
 
 
 def test_authority_matrix_platform_staff_only(client, op):
-    for role in ("platform_admin", "platform_developer"):
-        _login(client, op["users"][role])
-        for path in ROUTES:
-            response = client.get(path)
-            assert response.status_code == 200, (role, path, response.text)
-            assert response.headers["Cache-Control"] == "private, no-store"
-    for role in ("owner", "workspace_admin", "ml_engineer", "viewer", "client"):
+    _login(client, op["users"]["platform_admin"])  # founder decision 2026-10-16: platform ADMIN only
+    for path in ROUTES:
+        response = client.get(path)
+        assert response.status_code == 200, (path, response.text)
+        assert response.headers["Cache-Control"] == "private, no-store"
+    for role in ("platform_developer", "owner", "workspace_admin", "ml_engineer", "viewer", "client"):
         _login(client, op["users"][role])
         for path in ROUTES:
             response = client.get(path)

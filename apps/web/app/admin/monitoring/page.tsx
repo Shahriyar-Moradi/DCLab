@@ -10,7 +10,8 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { filterByText } from "@/app/components/ui/localCollection";
-import { useAdminMonitoring } from "@/lib/application";
+import { useAdminMonitoring, useSession } from "@/lib/application";
+import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import type { RetrainEvent } from "@/lib/domain/schemas";
 import Link from "next/link";
 import { useState } from "react";
@@ -31,6 +32,18 @@ function metricChange(event: RetrainEvent): string {
         }${delta.delta.toFixed(3)})`,
     )
     .join(" · ");
+}
+
+/** P8.5-UI: platform administrators start on the operator console; this page stays reachable. */
+function OperatorConsoleLink() {
+  const { user } = useSession();
+  if (!hasCapability(user, CAPABILITIES.platformWrite)) return null;
+  return (
+    <p className="mt-4 rounded-md border border-hairline bg-paper-raised px-4 py-3 text-sm text-ink" data-testid="operator-console-link">
+      Platform health (queue, workers, failed jobs, readiness) now lives in the{" "}
+      <Link className="font-medium text-navy underline" href="/operator">operator console</Link>.
+    </p>
+  );
 }
 
 export default function MonitoringPage() {
@@ -65,6 +78,7 @@ export default function MonitoringPage() {
         title="Monitoring"
         description="Retrain history, evaluation deltas, and dataset synchronization health."
       />
+      <OperatorConsoleLink />
 
       <Panel className="mt-8" title="Retrain history & metric deltas">
         <CollectionSearch

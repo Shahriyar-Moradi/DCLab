@@ -41,6 +41,11 @@ os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
 # AI development permissions (fake provider / runtime, the global_ai seed) need an
 # explicit development DCLAB_ENV; an unset variable does not count (P6.7-A).
 os.environ["DCLAB_ENV"] = "test"
+# No real provider call from a test: the production Anthropic adapter (2026-10-16) also reads
+# the plain vendor name a developer shell may export. Tests that need a key set a fake one.
+for _provider_key in ("DCLAB_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "DCLAB_OPENAI_API_KEY",
+                      "DCLAB_TYPESAFE_API_KEY"):
+    os.environ.pop(_provider_key, None)
 
 
 def _clear_test_object_store() -> None:

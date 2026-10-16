@@ -124,7 +124,7 @@
       "payload": {
         "cache_hit": false,
         "call": 1,
-        "cost_micros": 4138,
+        "cost_micros": 6207,
         "invocation_id": "<id:1>",
         "ok": true,
         "output_digest": "<digest>",
@@ -148,8 +148,8 @@
     },
     {
       "payload": {
-        "cost_micros": 4138,
-        "freed_micros": 95862
+        "cost_micros": 6207,
+        "freed_micros": 93793
       },
       "type": "budget_settled"
     },
@@ -185,7 +185,7 @@
       "data_class": "aggregates",
       "input_tokens": 1669,
       "llm_used": true,
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "outcome_scope": "cv",
       "output_tokens": 80,
       "prompt_version": "experiment_critic:v1",
@@ -242,7 +242,7 @@
     "decision_point_key": "experiment.review",
     "error_code": null,
     "kind": "specialist",
-    "model": "gpt-6.1-sol",
+    "model": "claude-sonnet-5-5",
     "outcome_scope": "cv",
     "purpose": "experiment.review",
     "runtime": "fake",

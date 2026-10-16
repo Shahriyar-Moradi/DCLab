@@ -402,6 +402,9 @@ def run_usage_metering_tick(db: Session, *, now: datetime | None = None) -> list
                 db.rollback()
                 continue
             aggregate_workspace(db, workspace_id, moment)
+            from app.services.notification_service import notify_quota_levels  # P8.8-A; never raises
+
+            notify_quota_levels(db, workspace_id, moment)
             db.commit()
             done.append(workspace_id)
         except Exception:  # noqa: BLE001 - one workspace never blocks the others

@@ -103,8 +103,8 @@ def hz(db_session, g):  # noqa: F811
     ns = SimpleNamespace(db=db, g=g, log=[], settings=SimpleNamespace(ai_enabled=True, service_tokens_enabled=True,
                                                                       dclab_env="test"))
     ns.release = db.scalar(select(PromptRelease.id).where(PromptRelease.agent_key == "harness_fixture"))
-    ns.fake = FakeProvider(handler=lambda _call: dict(OK), resolved_model="gpt-6.1-sol-2026-09-30", environment="test")
-    ns.gateway = GatewayService(providers={"openai": ns.fake}, limits=GatewayLimits(),
+    ns.fake = FakeProvider(handler=lambda _call: dict(OK), resolved_model="claude-sonnet-5-5@resolved", environment="test")
+    ns.gateway = GatewayService(providers={"anthropic": ns.fake}, limits=GatewayLimits(),
                                 settings=lambda: ns.settings, prompts_root=HARNESS_PROMPTS)
 
     def service(script=(("llm",),), *, hooks=None, final=None):
@@ -701,10 +701,10 @@ def test_previews_redacted_levels_use_the_run_model_and_limits_renarrow(hz, monk
     result = hz.service((("llm",),), final=RuntimeOutput(output=HarnessStep(**OK), proposal=draft)).run(
         db, hz.spec(kind="specialist", tool_surface=None, decision_point_key="experiment.review"))
     [row] = db.scalars(select(AgentProposal).where(AgentProposal.run_id == result.run_id))
-    assert seen == {"prompt_release_id": hz.release, "model_id": "gpt-6.1-sol"}
+    assert seen == {"prompt_release_id": hz.release, "model_id": "claude-sonnet-5-5"}
     assert (row.status, row.level_at_proposal) == ("proposed", 1)
     run = db.get(AgentRun, result.run_id)
-    assert (run.provider, run.model) == ("fake", "gpt-6.1-sol")
+    assert (run.provider, run.model) == ("fake", "claude-sonnet-5-5")
 
     # Previews: only what the gateway lets through (dataset labels deny here) is stored.
     read = hz.service((("tool", "get_experiment", {"experiment_id": str(g.exp[1])}), ("llm",))).run(

@@ -1,9 +1,11 @@
 """Weekly scheduled scoring: vocabulary, DB CHECK literals and /v1 read models.
 
 One schedule per project (``scoring_schedules``, mutable config a person saves). Each week
-on its weekday and hour (UTC) the worker scores the newest file uploaded for scoring
-(``purpose=scoring``) since the last run with the model in use, approved for scoring (its
-current ``model_releases`` row), as the person who last saved the schedule. Every handled
+on its weekday and hour (UTC) the worker scores the newest file a person uploaded for scoring
+(``purpose=scoring``; files a connected tool uploaded with a service token are ignored; a person's
+own session or /auth/tokens API token counts as the person) since the last run with the model in
+use, approved for scoring (its current ``model_releases`` row), as the person who last saved the
+schedule. Every handled
 week is one append-only ``scoring_schedule_runs`` row (``UNIQUE (schedule_id, planned_for)``):
 ``queued`` with its batch prediction, or why nothing was scored. It never retrains, never
 fetches data and never scores a model that no person approved.
@@ -34,8 +36,8 @@ RunOutcome = Literal["queued", "skipped_no_new_file", "skipped_no_model_in_use",
 
 # Plain words for each outcome (the Studio list and agent readers show these, never internals).
 OUTCOME_MESSAGES: dict[str, str] = {
-    OUTCOME_QUEUED: "Scored the newest file uploaded for scoring; the result is this week's list.",
-    OUTCOME_NO_NEW_FILE: "Nothing scored: no new file was uploaded for scoring since the last run.",
+    OUTCOME_QUEUED: "Scored the newest file a person uploaded for scoring; the result is this week's list.",
+    OUTCOME_NO_NEW_FILE: "Nothing scored: no new file was uploaded for scoring by a person since the last run.",
     OUTCOME_NO_MODEL_IN_USE: "Nothing scored: the project has no model in use.",
     OUTCOME_NO_APPROVAL: "Nothing scored: no person has approved the model in use for scoring.",
     OUTCOME_OWNER_NOT_ALLOWED: "Nothing scored: the person who saved the schedule can no longer score in this "
@@ -63,7 +65,8 @@ ABOUT = ("Every week on the chosen day and hour (UTC) DCLab scores the newest fi
          "since the last run, with the model in use approved for scoring, as the person who last saved the "
          "schedule. It does not retrain, does not fetch data and scores only uploaded files; with no new file or "
          "no approved model it scores nothing and says so. The result is the week's list (download it from the "
-         "prediction). Any file uploaded for scoring counts, also one an agent uploaded with a service token. "
+         "prediction). Only files uploaded by a person are scored; files a connected tool uploaded with a service "
+         "token are ignored. A file uploaded with a person's own sign-in or own API token counts as that person's. "
          "DCLab's worker runs it between jobs: a worker busy or down for more than 24 hours skips that week.")
 PLATFORM_PAUSED_MESSAGE = ("Paused by the platform: scheduled scoring is turned off on this server for now "
                            "(SCORING_SCHEDULE_ENABLED; the worker reads it when it starts).")
@@ -130,6 +133,12 @@ class ScoringScheduleRead(BaseModel):
     )
     owner_can_score: bool = Field(description="That person can still score in this workspace.")
     warning: str | None = Field(default=None, description="A plain warning when runs would be skipped.")
+    ignored_token_uploads: int = Field(
+        default=0, ge=0,
+        description="Files uploaded for scoring by connected tools (with a service token) since the last scheduled "
+        "run that scored a file (or since the schedule was created): never scored by the schedule. Uploads made "
+        "with a person's own sign-in or own API token are the person's and are not counted here.",
+    )
 
 
 class ScoringScheduleState(BaseModel):

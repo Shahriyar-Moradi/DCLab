@@ -68,7 +68,8 @@ from test_tenant_backfill_schema import _run
 
 PURPOSE = "gateway.fixture"
 FIXTURE_PROMPTS = Path(__file__).resolve().parent / "fixtures" / "prompts"
-RESOLVED = "gpt-6.1-sol-2026-09-30"
+RESOLVED = "claude-sonnet-5-5@resolved"  # what the (fake) provider reports
+MODEL = "claude-sonnet-5-5"
 OK = {"verdict": "keep", "confidence": 0.9}
 
 
@@ -104,7 +105,7 @@ def gw(db_session, tmp_path):
 
     def service(provider=None, *, providers=None, ai_enabled=True, prompts_root=FIXTURE_PROMPTS):
         return GatewayService(
-            providers=providers if providers is not None else {"openai": provider or ns.fake},
+            providers=providers if providers is not None else {"anthropic": provider or ns.fake},
             limits=ns.limits, settings=lambda: SimpleNamespace(ai_enabled=ai_enabled, dclab_env="test"),
             prompts_root=prompts_root,
         )
@@ -184,11 +185,11 @@ def test_completion_writes_one_final_row_settles_and_never_stores_the_prompt(gw)
     response = gw.service().complete(gw.db, req)
 
     assert response.ok and response.output == GatewayFixtureOutput(**OK)
-    assert (response.provider, response.model, response.resolved_model) == ("fake", "gpt-6.1-sol", RESOLVED)
+    assert (response.provider, response.model, response.resolved_model) == ("fake", MODEL, RESOLVED)
     [row] = rows(gw)
     usage = Usage(input_tokens=row.input_tokens, output_tokens=row.output_tokens)
-    assert response.cost_micros == row.cost_micros == budget.cost_micros("gpt-6.1-sol", usage.input_tokens,
-                                                                          usage.output_tokens) > 0
+    assert response.cost_micros == row.cost_micros == budget.cost_micros(MODEL, usage.input_tokens,
+                                                                    usage.output_tokens) > 0
     assert (row.status, row.validator_verdict, row.refusal_code, row.cache_hit) == ("completed", "accepted", None, False)
     assert (row.provider_kind, row.llm_used, row.agent_role, row.mode) == ("llm_provider", True, "specialist", "completion")
     assert (row.provider_resolved_model, row.provider_request_id, row.currency) == (RESOLVED, "fake-1", "USD")
@@ -226,7 +227,7 @@ def test_ai_enabled_defaults_to_false_and_refuses(gw, monkeypatch):
 
     monkeypatch.delenv("AI_ENABLED", raising=False)
     get_settings.cache_clear()
-    response = GatewayService(providers={"openai": gw.fake}, limits=gw.limits).complete(gw.db, gw.request())
+    response = GatewayService(providers={"anthropic": gw.fake}, limits=gw.limits).complete(gw.db, gw.request())
     assert get_settings().ai_enabled is False
     assert (response.ok, response.refusal.code, response.refusal.scope) == (False, "kill_switch", "setting:AI_ENABLED")
     assert gw.fake.calls == []
@@ -240,7 +241,7 @@ def test_ai_enabled_defaults_to_false_and_refuses(gw, monkeypatch):
     (False, "global_ai", "platform:global_ai"),
     (True, "all_ai", "workspace:all_ai"),
     (True, "agent:gateway_fixture", "workspace:agent:gateway_fixture"),
-    (False, "provider:openai", "platform:provider:openai"),
+    (False, "provider:anthropic", "platform:provider:anthropic"),
     (True, f"purpose:{PURPOSE}", f"workspace:purpose:{PURPOSE}"),
 ])
 def test_kill_switch_at_each_precedence_level(gw, workspace, key, scope):
@@ -274,8 +275,10 @@ def test_policy_unavailable_fails_closed(gw):
 
 
 @pytest.mark.parametrize("role, model", [
+    # the legacy OpenAI / TypeSafe ids are off the allowlist since 2026-10-16
     ("specialist", "gpt-4o"), ("legacy_decision", "gpt-6.1-sol"), ("specialist", "jev-1.13.0"),
-    ("lead", "gpt-6.1-sol-latest"),
+    ("lead", "gpt-6.1-sol-latest"), ("verifier", "gpt-6-luna"),
+    ("lead", "claude-sonnet-5-5-latest"), ("specialist", "claude-opus-5-5"),  # alias / not allowlisted
 ])
 def test_model_off_the_role_allowlist_is_refused(gw, role, model):
     response = gw.service().complete(gw.db, gw.request(agent_role=role, model=model))
@@ -283,8 +286,41 @@ def test_model_off_the_role_allowlist_is_refused(gw, role, model):
 
 
 def test_router_uses_per_agent_and_role_defaults(gw):
-    assert gw.service().complete(gw.db, gw.request(agent_role="verifier")).model == "gpt-6-luna"
-    assert gw.service().complete(gw.db, gw.request(model="gpt-6-luna")).model == "gpt-6-luna"
+    assert gw.service().complete(gw.db, gw.request(agent_role="verifier")).model == MODEL
+    assert gw.service().complete(gw.db, gw.request(model=MODEL)).model == MODEL
+
+
+def test_stored_policy_naming_legacy_models_is_clamped_to_claude(gw):
+    """A platform head stored before 2026-10-16 (gpt / jev ids) needs no data migration: read
+    narrows it into CAPS (Claude only), a request naming a legacy id is refused, a write is too."""
+    from app.agents.governance.platform_default import CAPS, ROLE_NAMES, AiPolicyV1
+    from app.agents.governance.policy import cap_violations, document_digest, effective_policy
+
+    legacy = PLATFORM_DEFAULT.model_dump(mode="json")
+    sol, luna = "gpt-6.1-sol", "gpt-6-luna"
+    legacy["models"]["roles"] = {
+        "lead": {"default": sol, "allowed": [sol, luna], "fallback": "rule_path", "per_agent": {}},
+        "specialist": {"default": sol, "allowed": [sol, luna], "fallback": "rule_answer",
+                       "per_agent": {"dataset_investigator": luna}},
+        "legacy_decision": {"default": luna, "allowed": [luna], "fallback": "rule_answer", "per_agent": {}},
+        "verifier": {"default": luna, "allowed": [luna, sol], "fallback": "rule_answer", "per_agent": {}},
+        "jev": {"default": "jev-1.13.0", "allowed": ["jev-1.13.0"], "fallback": "rule_answer", "per_agent": {}},
+    }
+    req = gw.request()
+    _insert(gw.db, "ai_policies", {
+        "workspace_id": None, "version": 2, "state": "accepted", "policy": legacy,
+        "policy_digest": document_digest(legacy), "schema_version": 1, "change_kind": "seed",
+        "rationale": "the pre-2026-10-16 platform default", "evidence": [],
+    })
+    gw.db.commit()
+    roles = effective_policy(gw.db, gw.ws_a).policy.models.roles
+    for role in ROLE_NAMES:
+        models = getattr(roles, role)
+        assert (models.default, models.allowed, models.per_agent) == (MODEL, (MODEL,), {})
+    assert gw.service().complete(gw.db, req).model == MODEL and gw.fake.calls[-1].model == MODEL
+    refused = gw.service().complete(gw.db, gw.request(model=sol))
+    assert refused.refusal.code == "model_not_allowed" and len(gw.fake.calls) == 1
+    assert "models.roles.lead.allowed" in cap_violations(AiPolicyV1.model_validate(legacy), CAPS)
 
 
 def test_prompt_release_and_output_schema_must_match(gw, tmp_path):
@@ -885,11 +921,43 @@ def test_invalid_output_retries_once_for_specialists_only(gw):
     assert response.ok and len(flaky.calls) == 2
     assert rows(gw)[-1].input_tokens == sum(len(c.instructions + c.input_json) // 4 for c in flaky.calls)
     strict = FakeProvider([{"verdict": "maybe"}, dict(OK)], environment="test")
-    response = gw.service(strict).complete(gw.db, gw.request(agent_role="verifier"))
+    # cache off: every role routes to the same model now, so the specialist's answer would be served
+    response = gw.service(strict).complete(gw.db, gw.request(agent_role="verifier", cache=False))
     assert response.refusal.code == "invalid_output" and len(strict.calls) == 1
     row = rows(gw)[-1]
     assert (row.status, row.validator_verdict, row.safe_output) == ("failed", "rejected", None)
     assert row.cost_micros > 0 and row.budget_settled  # a rejected answer is still paid for
+
+
+def test_a_billed_but_unusable_reply_is_charged_and_settled(gw):
+    failing = FakeProvider([ProviderError("invalid_output", input_tokens=400, output_tokens=100)], environment="test")
+    response = gw.service(failing).complete(gw.db, gw.request(agent_role="verifier", cache=False))
+    assert response.refusal.code == "invalid_output" and response.cost_micros == budget.cost_micros(MODEL, 400, 100)
+    row = rows(gw)[-1]
+    assert (row.status, row.input_tokens, row.output_tokens) == ("failed", 400, 100)
+    assert row.cost_micros == budget.cost_micros(MODEL, 400, 100) and row.budget_settled
+    assert counters(gw)["workspace"].spent_micros == row.cost_micros  # the budget sees the spend
+    # a specialist's failed first attempt is charged next to the retry that succeeds
+    flaky = FakeProvider([ProviderError("invalid_output", input_tokens=400, output_tokens=100), dict(OK)],
+                         environment="test")
+    assert gw.service(flaky).complete(gw.db, gw.request(cache=False)).ok and len(flaky.calls) == 2
+    row = rows(gw)[-1]
+    second = len(flaky.calls[1].instructions + flaky.calls[1].input_json) // 4
+    assert row.input_tokens == 400 + second and row.cost_micros == budget.cost_micros(
+        MODEL, row.input_tokens, row.output_tokens)
+
+
+@pytest.mark.parametrize("kind", ["timeout", "server_error"])
+def test_a_sent_request_without_usage_is_charged_its_worst_case(gw, kind):
+    failing = FakeProvider([ProviderError(kind, billed_unknown=True)], environment="test")
+    response = gw.service(failing).complete(gw.db, gw.request(agent_role="verifier", cache=False))
+    [call] = failing.calls
+    worst = budget.worst_case_micros(MODEL, input_tokens=budget.estimate_tokens(call.instructions + call.input_json),
+                                     max_output_tokens=call.max_output_tokens)
+    assert not response.ok and response.cost_micros == worst > 0
+    row = rows(gw)[-1]
+    assert (row.status, row.cost_micros, row.input_tokens, row.budget_settled) == ("failed", worst, 0, True)
+    assert counters(gw)["workspace"].spent_micros == worst
 
 
 @pytest.mark.parametrize("error, code", [
@@ -1037,9 +1105,11 @@ def test_openai_adapter_reads_only_its_key_and_maps_errors(monkeypatch):
 
 def test_price_table_covers_the_platform_allowlist():
     assert PLATFORM_MODEL_ALLOWLIST <= set(budget.PRICES_MICROS_PER_MTOK)
-    assert budget.cost_micros("gpt-6.1-sol", 1_000_000, 1_000_000) == 12_000_000
-    assert budget.cost_micros("gpt-6-luna", 1_000_000, 1_000_000) == 600_000
-    assert budget.cost_micros("jev-1.13.0", 1_000_000, 1_000_000) == 42_000
+    assert PLATFORM_MODEL_ALLOWLIST == {MODEL} == set(budget.PRICES_MICROS_PER_MTOK)  # legacy rows commented out
+    # the conservative bound ($3 in + $15 out per MTok) until Anthropic's pricing page is verified
+    assert budget.cost_micros(MODEL, 1_000_000, 1_000_000) == 18_000_000
+    assert budget.cost_micros(MODEL, 1_000, 200) == 6_000  # 1k in ($0.003) + 200 out ($0.003)
+    assert budget.cost_micros(MODEL, 1, 0) == 3  # always rounded up
 
 
 # --- decide() (Jev through the fake) -----------------------------------------------------
@@ -1055,23 +1125,23 @@ def test_decide_with_the_fake_jev_provider_and_its_refusals(gw):
 
     def request(**overrides):
         values = dict(
-            purpose="column.semantic_role", release_version="1", decision_point_key="column.semantic_role",
+            purpose="column.semantic_role", release_version="2", decision_point_key="column.semantic_role",
             workspace_id=gw.ws_a, project_id=gw.project_a, dataset_id=gw.dataset_a,
             state={"c0": {"column": Untrusted(untrusted_text="feature"), "dtype": "float", "cardinality": "high"}},
             column_keys={"c0": ids["feature"]},
             questions=(SemanticQuestion(question_key="feature", primitive="choice", choices=ROLES,
                                         column_id=ids["feature"]),),
             source_datasets=(gw.dataset_a,), source_columns=(ids["feature"],),
-            budget=gw.reserve(estimate=10_000, run_kind="jev"),
+            budget=gw.reserve(estimate=100_000, run_kind="jev"),  # the per-run cap ≥ one batch worst case
         )
         return SemanticDecisionRequest(**{**values, **overrides})
 
-    service = gw.service(providers={"openai": gw.fake, "typesafe": jev})
+    service = gw.service(providers={"anthropic": jev})
     response = service.decide(gw.db, request())
     assert response.ok and response.answers[0].answer == {"value": "numeric"} and not response.cache_hit
     row = rows(gw, "column.semantic_role")[-1]
     assert (row.provider_kind, row.agent_role, row.model, row.data_class) == (
-        "semantic_decision", None, "jev-1.13.0", "metadata")
+        "semantic_decision", None, MODEL, "metadata")
     assert '"untrusted_text":"feature"' in jev.calls[0].input_json and row.budget_settled
     assert json.loads(jev.calls[0].instructions)["question"] == RELEASES["column.semantic_role"].question
     assert service.decide(gw.db, request()).cache_hit and len(jev.calls) == 1
@@ -1081,7 +1151,7 @@ def test_decide_with_the_fake_jev_provider_and_its_refusals(gw):
     value["label"] = "text"
     wrong = service.decide(gw.db, request(state={**low, "c0": {**low["c0"], "nulls": "none"}}))
     assert wrong.refusal.code == "invalid_output" and len(jev.calls) == 3
-    unconfigured = gw.service(providers={"openai": gw.fake}).decide(gw.db, request())
+    unconfigured = gw.service(providers={"typesafe": jev}).decide(gw.db, request())  # legacy: never routed
     assert (unconfigured.refusal.code, unconfigured.refusal.message) == ("provider_error", "provider not configured")
     unsourced = service.decide(gw.db, request(source_datasets=(), source_columns=(), questions=(
         SemanticQuestion(question_key="feature", primitive="choice", choices=ROLES),)))
@@ -1097,14 +1167,14 @@ def test_jev_user_text_and_state_text_are_gated(gw, monkeypatch):
     gw.db.commit()
     answer = {"answers": [{"question_key": "message", "answer": {"value": "other"}, "confidence": 0.9}]}
     jev = FakeProvider(handler=lambda _c: answer, environment="test")
-    service = gw.service(providers={"openai": gw.fake, "typesafe": jev})
+    service = gw.service(providers={"anthropic": jev})
 
     def request(**overrides):
         values = dict(
-            purpose="command.intent_route", release_version="1", decision_point_key="command.intent_route",
+            purpose="command.intent_route", release_version="2", decision_point_key="command.intent_route",
             workspace_id=gw.ws_a, project_id=gw.project_a,
             questions=(SemanticQuestion(question_key="message", primitive="choice", choices=("run_experiment", "other")),),
-            budget=gw.reserve(estimate=10_000, run_kind="jev"),
+            budget=gw.reserve(estimate=100_000, run_kind="jev"),  # the per-run cap ≥ one batch worst case
         )
         return SemanticDecisionRequest(**{**values, **overrides})
 
@@ -1125,11 +1195,11 @@ def test_jev_user_text_and_state_text_are_gated(gw, monkeypatch):
                         lambda db, ws: SimpleNamespace(policy=allowed, digest=real(db, ws).digest))
     assert service.decide(gw.db, request(user_text=(note,))).ok
     assert '"user_text":[{"untrusted_text":"the user asked something"}]' in jev.calls[-1].input_json
-    # the provider switch is checked against the routed provider (typesafe for Jev)
-    flip_off(gw.db, workspace_id=None, switch_key="provider:typesafe", reason="test", actor_rule="test.switch.v1")
+    # the provider switch is checked against the routed provider (anthropic for Jev since 2026-10-16)
+    flip_off(gw.db, workspace_id=None, switch_key="provider:anthropic", reason="test", actor_rule="test.switch.v1")
     gw.db.commit()
     refused = service.decide(gw.db, request())
-    assert (refused.refusal.code, refused.refusal.scope) == ("kill_switch", "platform:provider:typesafe")
+    assert (refused.refusal.code, refused.refusal.scope) == ("kill_switch", "platform:provider:anthropic")
 
 
 # --- prompt releases ---------------------------------------------------------------------

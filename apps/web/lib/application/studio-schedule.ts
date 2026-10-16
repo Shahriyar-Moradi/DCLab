@@ -21,6 +21,7 @@ const validHour = (n: unknown): n is number => Number.isInteger(n) && (n as numb
 
 export type ScheduleLike = {
   weekday: number; hour_utc: number; enabled: boolean; next_planned_for?: string | null; owner_can_score: boolean; updated_by_user_id?: string | null;
+  ignored_token_uploads?: number;
 };
 export type RunLike = {
   id: string; planned_for: string; outcome: string; reason_code?: string | null; batch_prediction_id?: string | null; model_version_id?: string | null;
@@ -94,6 +95,15 @@ export function localHint(weekday: number, hour: number, now: Date, local: (d: D
   return `The next run is ${local(nextOccurrence(weekday, hour, now))} where you are; local time shifts with daylight saving, UTC does not.`;
 }
 
+/** How many files connected tools uploaded for scoring with a service token that the schedule will not score (null: none, or unknown). */
+export function ignoredUploadsText(schedule: ScheduleLike | null | undefined): string | null {
+  const n = schedule?.ignored_token_uploads;
+  if (!schedule || typeof n !== "number" || !Number.isInteger(n) || n <= 0) return null;
+  return n === 1
+    ? "1 file a connected tool uploaded with a service token was not scored. Only files uploaded by a person are scored."
+    : `${n} files connected tools uploaded with a service token were not scored. Only files uploaded by a person are scored.`;
+}
+
 /** The warning when the person scheduled runs act as can no longer score. */
 export function ownerWarning(schedule: ScheduleLike | null | undefined): string | null {
   return schedule && schedule.enabled && schedule.owner_can_score === false
@@ -133,8 +143,8 @@ const REASON_SENTENCES: Record<string, string> = {
 };
 export const UNKNOWN_OUTCOME = "This week was handled, but this page does not recognise the result, so nothing more is said.";
 const OUTCOME_SENTENCES: Record<string, string> = {
-  queued: "Started scoring the newest file uploaded for scoring with the model in use.",
-  skipped_no_new_file: "Nothing scored: no file was uploaded for scoring after weekly scoring was first set up and after the last week it scored.",
+  queued: "Started scoring the newest file a person uploaded for scoring with the model in use.",
+  skipped_no_new_file: "Nothing scored: no person uploaded a file for scoring after weekly scoring was first set up and after the last week it scored.",
   skipped_no_model_in_use: "Nothing scored: the project had no model in use.",
   skipped_no_approval: "Nothing scored: the model in use was not approved for scoring.",
   skipped_owner_not_allowed: "Nothing scored: the person who set up this schedule can no longer score in this workspace. Someone who can should save the schedule again.",
@@ -163,7 +173,7 @@ export function runRows(runs: readonly RunLike[], isUuid: (v: unknown) => boolea
     const pid = r.outcome === "queued" && isUuid(r.batch_prediction_id) ? (r.batch_prediction_id as string) : null;
     const p = pid ? predictions.get(pid) : undefined;
     if (!pid || !p) return base;
-    if (p.status === "queued" || p.status === "running") return { ...base, sentence: "Scoring the newest file uploaded for scoring with the model in use…" };
+    if (p.status === "queued" || p.status === "running") return { ...base, sentence: "Scoring the newest file a person uploaded for scoring with the model in use…" };
     if (p.status === "completed") return { ...base, sentence: `Done: ${p.rows_out ?? "—"} rows scored.`, predictionId: pid };
     if (p.status === "failed") {
       const why = failureError(p.error_code, p.error_message, true);
@@ -176,11 +186,13 @@ export function runRows(runs: readonly RunLike[], isUuid: (v: unknown) => boolea
 export type Intent = { enabled: boolean; weekday: number; hour: number };
 
 export const FILE_RULE = "the newest file uploaded for scoring after weekly scoring was first set up and after the last week it scored (never the file the model learned from or one it already scored). Only one file is scored per week; older new files in the same week are not scored.";
+/** Who can supply the file: the API never picks a file a connected tool uploaded with a service token; a person's own sign-in or own API token is the person. */
+export const PERSON_ONLY_RULE = "Only files uploaded by a person are scored; files a connected tool uploaded with a service token are ignored. A file uploaded with a person's own sign-in or own API token counts as that person's.";
 /** The static paragraph of the card; the same wording rules as the confirm step. */
 export const ABOUT_LINES = [
   `Each week on the chosen day and hour (UTC), DCLab scores ${FILE_RULE}`,
   "It scores with the model in use if a person approved it, as the person who last saved the schedule. It does not retrain, does not fetch data and does not switch models. With no new file or no approved model it scores nothing and records why.",
-  "Any file uploaded for scoring counts, including one uploaded with an access token. It runs between DCLab's background jobs, so a long-busy DCLab can skip a week.",
+  `${PERSON_ONLY_RULE} It runs between DCLab's background jobs, so a long-busy DCLab can skip a week.`,
 ];
 
 /** What the one confirm step says will happen, and what will not, before anything is sent. */
@@ -206,7 +218,7 @@ export function confirmWords(intent: Intent, model: ModelUsed, ctx: { paused?: b
   if (ctx.paused) lines.push("Weekly scoring is paused by the platform: you can save it, but nothing is scored until the platform turns it on.");
   lines.push(
     "With no new file, or no approved model in use, nothing is scored and the week says why.",
-    "It does not retrain, does not fetch data and does not switch models. It scores only files uploaded for scoring, including one uploaded with an access token.",
+    `It does not retrain, does not fetch data and does not switch models. It scores only files uploaded for scoring. ${PERSON_ONLY_RULE}`,
     "If you lose access to run ML work here, the scheduled runs stop and say so. Only the latest missed week within 24 hours is considered, and a busy DCLab can skip a week.",
     "The change and your reason are saved in History.",
   );

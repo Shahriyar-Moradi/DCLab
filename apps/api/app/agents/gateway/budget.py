@@ -59,9 +59,15 @@ logger = logging.getLogger(__name__)
 CURRENCY = "USD"
 # Micro-USD per 1M tokens (input, output); ADR 0009 §9, founder decision Q1.
 PRICES_MICROS_PER_MTOK: dict[str, tuple[int, int]] = {
-    "gpt-6.1-sol": (2_000_000, 10_000_000),
-    "gpt-6-luna": (100_000, 500_000),
-    "jev-1.13.0": (42_000, 0),
+    # VERIFY against Anthropic pricing: a CONSERVATIVE bound ($3 / $15 per MTok) until the founder
+    # checks the live pricing page; the claude-api reference (models table cached 2026-10-06)
+    # lists $2 / $10. Operators can only raise it (AI_PRICE_OVERRIDES). No cache reads / writes
+    # are requested by the adapter.
+    "claude-sonnet-5-5": (3_000_000, 15_000_000),
+    # LEGACY (switched to Anthropic 2026-10-16; kept for now):
+    # "gpt-6.1-sol": (2_000_000, 10_000_000),
+    # "gpt-6-luna": (100_000, 500_000),
+    # "jev-1.13.0": (42_000, 0),
 }
 # The ADR names no Jev per-run cap: a Jev batch is bounded like a specialist run.
 _RUN_KIND_POLICY_FIELD = {
@@ -82,8 +88,34 @@ _RELEASED_MAX = 100_000
 _RELEASED_LOCK = threading.Lock()
 
 
-def cost_micros(model: str, input_tokens: int, output_tokens: int) -> int:
+def price(model: str) -> tuple[int, int]:
+    """The model's (input, output) micro-USD per 1M tokens: the code table, raised (never
+    lowered) by the operator's ``AI_PRICE_OVERRIDES``. ``KeyError`` for an unpriced model."""
+
     price_in, price_out = PRICES_MICROS_PER_MTOK[model]
+    override = _price_overrides().get(model)
+    if override is None:
+        return price_in, price_out
+    return max(price_in, override[0]), max(price_out, override[1])
+
+
+def _price_overrides() -> dict[str, tuple[int, int]]:
+    from app.config import get_settings
+
+    raw = getattr(get_settings(), "ai_price_overrides", None) or {}
+    out: dict[str, tuple[int, int]] = {}
+    for model, pair in dict(raw).items():
+        try:
+            price_in, price_out = (int(value) for value in pair)
+        except (TypeError, ValueError):
+            continue
+        if price_in >= 0 and price_out >= 0:
+            out[str(model)] = (price_in, price_out)
+    return out
+
+
+def cost_micros(model: str, input_tokens: int, output_tokens: int) -> int:
+    price_in, price_out = price(model)
     return math.ceil((input_tokens * price_in + output_tokens * price_out) / 1_000_000)
 
 

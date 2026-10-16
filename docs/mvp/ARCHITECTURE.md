@@ -99,7 +99,8 @@ Rules of the topology:
   invalid agent output. Fail safe in ML: LLM/agent failure falls back to the
   deterministic path, never crashes the run.
 - **Feature flags** (typed settings, default off) + kill switch for every
-  optional integration (OpenAI, NOOA, Jev, MCP writes, external compute).
+  optional integration (Anthropic Claude via the AI gateway since 2026-10-16, NOOA, Jev, MCP
+  writes, external compute; the OpenAI / TypeSafe adapters are legacy and inactive).
 - **Testing pyramid:** engine unit tests (pure, fast) → service tests on real
   PostgreSQL → E2E lab suite (`test_e2e_lab_run.py`) → benchmark regression
   (Track R) → Playwright for Studio flows. Deterministic fakes for every LLM/agent.

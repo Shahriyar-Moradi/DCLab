@@ -369,6 +369,7 @@ def recover_abandoned_jobs(
         db.flush()
     for job in recovered:
         _sync_batch_prediction(db, job)
+        _notify_terminal(db, job)
         if job.status == JOB_CANCELLED:
             _record_cancelled_run(db, job)  # commits, one job at a time
     return recovered
@@ -409,6 +410,7 @@ def claim_next_queued_job(
         job.failure_reason = job.failure_reason or "max attempts exhausted before claim"
         db.flush()
         _sync_batch_prediction(db, job)
+        _notify_terminal(db, job)
         return None
     worker = (claimed_by or "").strip() or None
     if worker is not None:
@@ -479,6 +481,7 @@ def fail_or_retry_job(
     _apply_failure(job, reason=reason, now=now or _now())
     db.flush()
     _sync_batch_prediction(db, job)
+    _notify_terminal(db, job)
     if job.status == JOB_CANCELLED:
         _record_cancelled_run(db, job)
 
@@ -497,6 +500,15 @@ def _sync_batch_prediction(db: Session, job: MlJob) -> None:
         from app.agents.harness.service import end_run_for_job
 
         end_run_for_job(db, job)
+
+
+def _notify_terminal(db: Session, job: MlJob) -> None:
+    """P8.8-A: a training or scoring job that ended completed / failed notifies (once per
+    transition, in this transaction; never raises, a notification never fails the job)."""
+
+    from app.services.notification_service import notify_job_terminal
+
+    notify_job_terminal(db, job)
 
 
 def _record_cancelled_run(db: Session, job: MlJob) -> None:
@@ -639,6 +651,7 @@ def execute_job(
             _fail_job_terminally(db, current, failure, now=terminal_at)
     else:
         complete_job(db, current, now=terminal_at)
+    _notify_terminal(db, current)
     db.commit()
     db.refresh(current)
     return current

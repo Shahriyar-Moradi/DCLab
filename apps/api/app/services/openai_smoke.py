@@ -1,11 +1,13 @@
-"""Opt-in, synthetic-only live check of the gateway's OpenAI adapter for developers and admins.
+"""Opt-in, synthetic-only live check of a gateway provider adapter for developers and admins.
 
-One call to ``app.agents.gateway.providers.openai.OpenAIProvider`` (the only reader of the
-provider key, ADR 0009 §1 rule e) with the verification package of a static synthetic
-report: no workspace, no dataset, no ledger row. It still leaves the process and costs
-money, so ``live_smoke_refusal`` requires ``--live`` and the platform AI gates
-(``AI_ENABLED``, the platform ``global_ai`` and provider / agent switches). Errors are safe
-codes, never provider text.
+One call to the gateway's ``AnthropicProvider`` (the default since 2026-10-16;
+``dclab verify-ai-smoke``) or, LEGACY (kept for now), its ``OpenAIProvider``
+(``dclab verify-openai-smoke``), the only readers of their provider keys
+(ADR 0009 §1 rule e), with the verification package of a static synthetic report: no
+workspace, no dataset, no ledger row. It still leaves the process and costs money, so
+``live_smoke_refusal`` requires ``--live`` and the platform AI gates (``AI_ENABLED``, the
+platform ``global_ai`` and provider / agent switches). Errors are safe codes, never
+provider text or key material.
 """
 
 from __future__ import annotations
@@ -22,17 +24,25 @@ from app.domain.ml_verification import PipelineAuditReport
 from app.services.pipeline_audit_service import AGENT_KEY, AUDITOR_PROMPT_VERSION, validate_advisory_report
 from app.services.verification_evidence import build_verification_evidence
 
-SMOKE_MODEL = PLATFORM_DEFAULT.models.roles.verifier.default
+SMOKE_MODEL = PLATFORM_DEFAULT.models.roles.verifier.default  # claude-sonnet-5-5 on Anthropic
+LEGACY_OPENAI_SMOKE_MODEL = "gpt-6-luna"  # LEGACY (switched to Anthropic 2026-10-16; kept for now)
+SMOKE_PROVIDERS = ("anthropic", "openai")
 
 
-def live_smoke_refusal(db: Any, *, live: bool, ai_enabled: bool) -> str | None:
-    """Why the live smoke may not run, or ``None``."""
+def live_smoke_refusal(db: Any, *, live: bool, ai_enabled: bool, provider: str = "anthropic",
+                       legacy_enabled: bool = False) -> str | None:
+    """Why the live smoke may not run, or ``None``. The legacy OpenAI smoke also needs
+    ``AI_LEGACY_PROVIDERS_ENABLED`` (the adapter is inactive otherwise)."""
     from app.agents.governance.switches import platform_switches
 
     if not live:
         return "live_flag_missing"
-    blocking = platform_switches(db).blocking(ai_enabled=ai_enabled, agent_key=AGENT_KEY, provider="openai")
-    return f"kill_switch:{blocking}" if blocking else None
+    if provider not in SMOKE_PROVIDERS:
+        return "unknown_provider"
+    blocking = platform_switches(db).blocking(ai_enabled=ai_enabled, agent_key=AGENT_KEY, provider=provider)
+    if blocking:
+        return f"kill_switch:{blocking}"
+    return "legacy_provider_disabled" if provider == "openai" and not legacy_enabled else None
 
 
 class OpenAISmokeError(RuntimeError):
@@ -117,16 +127,26 @@ def synthetic_smoke_report() -> dict[str, Any]:
     }
 
 
+def run_anthropic_verification_smoke(*, provider: Provider | None = None) -> dict[str, Any]:
+    """Call the production Anthropic adapter once using synthetic bounded evidence."""
+    from app.agents.gateway.providers.anthropic import AnthropicProvider
+
+    return _run_smoke("anthropic", SMOKE_MODEL, provider or AnthropicProvider())
+
+
 def run_openai_verification_smoke(*, provider: Provider | None = None) -> dict[str, Any]:
-    """Call the production provider adapter once using synthetic bounded evidence."""
+    """LEGACY (kept for now): call the OpenAI adapter once using synthetic bounded evidence."""
     from app.agents.gateway.providers.openai import OpenAIProvider
 
+    return _run_smoke("openai", LEGACY_OPENAI_SMOKE_MODEL, provider or OpenAIProvider())
+
+
+def _run_smoke(provider_name: str, model: str, adapter: Provider) -> dict[str, Any]:
     report = synthetic_smoke_report()
     package = build_verification_evidence(report)
     deterministic = dict(report["deterministic_verification"])
-    adapter = provider or OpenAIProvider()
     call = ProviderCall(
-        model=SMOKE_MODEL,
+        model=model,
         instructions=f"{prompt_text(AGENT_KEY, AUDITOR_PROMPT_VERSION).rstrip()}\n\n{UNTRUSTED_NOTICE}",
         input_json=json.dumps(package.payload, sort_keys=True, separators=(",", ":")),
         output_schema=PipelineAuditReport,
@@ -151,8 +171,8 @@ def run_openai_verification_smoke(*, provider: Provider | None = None) -> dict[s
         raise OpenAISmokeError("provider_request_failed") from exc
 
     return {
-        "provider": "openai",
-        "model": SMOKE_MODEL,
+        "provider": provider_name,
+        "model": model,
         "status": validated.overall_status,
         "request_duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
         "evidence_digest": package.digest,

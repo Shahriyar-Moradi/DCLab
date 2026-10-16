@@ -52,7 +52,26 @@ export function studioNavigationForUser(
   // Project ids are UUIDs; anything else from the URL gets no project-scoped links.
   const projectBase = isUuid(projectId) ? `/projects/${projectId}` : undefined;
   const groups = resolveSidebar(role, { capabilities: STUDIO_BACKEND_FEATURES, projectBase, targets });
-  return projectBase ? groups : groups.filter((group) => group.id !== "project");
+  const studio = projectBase ? groups : groups.filter((group) => group.id !== "project");
+  // Platform administrators keep one link to the operator console from Studio (P8.5-UI).
+  const consoleLink = operatorNavigationForUser(user).map((group) => ({ ...group, items: group.items.filter((item) => item.id === "op-overview") }));
+  return [...studio, ...consoleLink.filter((group) => group.items.length > 0)];
+}
+
+/** Operator console features whose read exists (P8.5-A): overview, workspaces, failed jobs. Quarantine (P8.7), caps review and benchmarks are planned. */
+export const OPERATOR_FEATURES: StudioCapabilities = {
+  operator_overview: true, // GET /v1/operator/overview
+  operator_workspaces: true, // GET /v1/operator/workspaces
+  operator_jobs: true, // GET /v1/operator/failed-jobs
+  operator_quarantine: false, // P8.7-A
+  operator_caps: false, // no read beyond the overview's code-owned caps
+  operator_gates: false, // benchmark results are not in the operator read
+};
+
+/** Operator console sidebar (P8.5-UI): platform administrators only (platform read AND platform write). */
+export function operatorNavigationForUser(user: Pick<SessionUser, "capabilities"> | null): ResolvedSidebarGroup[] {
+  if (!hasCapability(user, CAPABILITIES.platformRead) || !hasCapability(user, CAPABILITIES.platformWrite)) return [];
+  return resolveSidebar("operator", { capabilities: OPERATOR_FEATURES });
 }
 
 /** Business view sidebar (P7.6-A): workspace readers who may open the business pages see the client items only. */

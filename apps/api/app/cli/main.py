@@ -268,7 +268,7 @@ def cmd_r3_run(args: argparse.Namespace) -> int:
             port = semantic_port(GatewayService(), settings=settings)
             if not r3.platform_evaluation_workspace_ok(db, settings.r3_eval_workspace_id, settings) or type(
                     port).__name__ != "JevSemanticPort":
-                print(json.dumps({"error": "live runs need AI enabled, the typesafe provider and R3_EVAL_WORKSPACE_ID "
+                print(json.dumps({"error": "live runs need AI and Jev enabled, the Jev provider and R3_EVAL_WORKSPACE_ID "
                                            f"naming a workspace with the {r3.EVALUATION_CAPABILITY} capability"}))
                 return 2
             eval_ws = settings.r3_eval_workspace_id
@@ -501,26 +501,36 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_verify_openai_smoke(args: argparse.Namespace) -> int:
-    """Run exactly one synthetic-only live OpenAI request (needs --live and AI switched on)."""
+def cmd_verify_ai_smoke(args: argparse.Namespace) -> int:
+    """Run exactly one synthetic-only live request through a provider adapter (default Anthropic;
+    needs --live and AI switched on). Prints a safe summary only, never key material."""
     from app.config import get_settings
-    from app.services.openai_smoke import OpenAISmokeError, live_smoke_refusal, run_openai_verification_smoke
+    import app.services.openai_smoke as smoke
 
+    provider = getattr(args, "provider", None) or "anthropic"
     db = _session()
     try:
-        refusal = live_smoke_refusal(db, live=bool(getattr(args, "live", False)),
-                                     ai_enabled=bool(get_settings().ai_enabled))
+        settings = get_settings()
+        refusal = smoke.live_smoke_refusal(db, live=bool(getattr(args, "live", False)),
+                                           ai_enabled=bool(settings.ai_enabled), provider=provider,
+                                           legacy_enabled=settings.ai_legacy_providers_enabled is True)
     finally:
         db.close()
     if refusal is not None:
         print(f"live smoke not executed: {refusal}", file=sys.stderr)
         return 1
+    run = smoke.run_openai_verification_smoke if provider == "openai" else smoke.run_anthropic_verification_smoke
     try:
-        print(json.dumps(run_openai_verification_smoke()))
-    except OpenAISmokeError as exc:
+        print(json.dumps(run()))
+    except smoke.OpenAISmokeError as exc:
         print(f"live smoke not executed: {exc.code}", file=sys.stderr)
         return 1
     return 0
+
+
+def cmd_verify_openai_smoke(args: argparse.Namespace) -> int:
+    """LEGACY (switched to Anthropic 2026-10-16; kept for now): the smoke against the OpenAI adapter."""
+    return cmd_verify_ai_smoke(argparse.Namespace(**{**vars(args), "provider": "openai"}))
 
 
 def cmd_worker_run(args: argparse.Namespace) -> int:
@@ -533,6 +543,7 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     from app.config import get_settings, mark_worker_process
     from app.observability.setup import setup as setup_observability
     from app.services.ml_job_service import process_next_job
+    from app.services.notification_service import run_notification_tick
     from app.services.scoring_schedule_service import run_scoring_schedule_tick
     from app.services.system_health_service import mark_worker_connections
     from app.services.usage_service import run_usage_metering_tick
@@ -553,7 +564,18 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     claimed_by = f"{socket.gethostname()}:{os.getpid()}"[:128]
     next_tick = 0.0
     next_usage_tick = 0.0
+    next_notification_tick = 0.0
     while True:
+        if time.monotonic() >= next_notification_tick:  # P8.8-A outbox: bounded batch, one transaction per row
+            next_notification_tick = time.monotonic() + max(1.0, float(settings.notifications_tick_seconds))
+            db = _session()
+            try:
+                run_notification_tick(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"notification tick: {type(exc).__name__}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
         if time.monotonic() >= next_usage_tick:  # P8.4-A usage metering (bounded, per-workspace transactions)
             next_usage_tick = time.monotonic() + max(1.0, float(settings.usage_metering_tick_seconds))
             db = _session()
@@ -746,9 +768,18 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--id", required=True)
     report.set_defaults(func=cmd_experiment_report)
 
+    ai_smoke = sub.add_parser(
+        "verify-ai-smoke",
+        help="call the production verifier once through a provider adapter with synthetic bounded evidence",
+    )
+    ai_smoke.add_argument("--live", action="store_true",
+                          help="required: the call leaves the process (AI_ENABLED and global_ai must be on)")
+    ai_smoke.add_argument("--provider", choices=("anthropic", "openai"), default="anthropic",
+                          help="anthropic (default) or openai (legacy)")
+    ai_smoke.set_defaults(func=cmd_verify_ai_smoke)
     smoke = sub.add_parser(
         "verify-openai-smoke",
-        help="call the production OpenAI verifier once with synthetic bounded evidence",
+        help="legacy: call the OpenAI verifier once with synthetic bounded evidence",
     )
     smoke.add_argument("--live", action="store_true",
                        help="required: the call leaves the process (AI_ENABLED and global_ai must be on)")

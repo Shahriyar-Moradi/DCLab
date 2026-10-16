@@ -339,6 +339,32 @@ from app.domain.usage import (
     CK_USAGE_RECORDS_PERIOD_DAY,
     CK_USAGE_RECORDS_SOURCE_REF,
 )
+from app.domain.notifications import (
+    CK_NOTIFICATION_OUTBOX_ATTEMPTS,
+    CK_NOTIFICATION_OUTBOX_CHANNEL,
+    CK_NOTIFICATION_OUTBOX_DEDUPE,
+    CK_NOTIFICATION_OUTBOX_ERROR,
+    CK_NOTIFICATION_OUTBOX_KIND,
+    CK_NOTIFICATION_OUTBOX_PAYLOAD,
+    CK_NOTIFICATION_OUTBOX_PING,
+    CK_NOTIFICATION_OUTBOX_RECIPIENT,
+    CK_NOTIFICATION_OUTBOX_SENT,
+    CK_NOTIFICATION_OUTBOX_STATUS,
+    CK_NOTIFICATION_PREFERENCES_KIND,
+    CK_WEBHOOK_CHANGES_ACTION,
+    CK_WEBHOOK_CHANGES_URL_HOST,
+    CK_WEBHOOK_DELIVERIES_ERROR,
+    CK_WEBHOOK_DELIVERIES_EVENT,
+    CK_WEBHOOK_DELIVERIES_NUMBERS,
+    CK_WEBHOOK_DELIVERIES_OUTCOME,
+    CK_WEBHOOK_DELIVERIES_STATUS_CODE,
+    CK_WEBHOOK_ENDPOINTS_EVENTS,
+    CK_WEBHOOK_ENDPOINTS_FAILURES,
+    CK_WEBHOOK_ENDPOINTS_NAME,
+    CK_WEBHOOK_ENDPOINTS_SECRET_KEY_ID,
+    CK_WEBHOOK_ENDPOINTS_SECRET_VERSION,
+    CK_WEBHOOK_ENDPOINTS_URL,
+)
 from app.domain.experiment_changes import (
     CK_EXPERIMENTS_CHANGE_SET_BOUNDED,
     CK_EXPERIMENTS_CHANGE_SET_CHANGES,
@@ -2846,6 +2872,18 @@ class Dataset(Base):
             ["ingestion_runs.workspace_id", "ingestion_runs.id"],
             name="fk_datasets_workspace_ingestion_run",
         ),
+        # 0082: the service token (connected tool) that uploaded it; NO ACTION, provenance is kept.
+        ForeignKeyConstraint(
+            ["workspace_id", "uploaded_by_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_datasets_service_token",
+        ),
+        Index(
+            "ix_datasets_service_token",
+            "workspace_id",
+            "uploaded_by_service_token_id",
+            postgresql_where=text("uploaded_by_service_token_id IS NOT NULL"),
+        ),
         CheckConstraint(CK_DATASETS_PURPOSE, name="ck_datasets_purpose"),
         Index("ix_datasets_workspace_created_at", "workspace_id", desc("created_at")),
         Index("ix_datasets_project_created_at", "project_id", desc("created_at")),
@@ -2893,6 +2931,11 @@ class Dataset(Base):
     # P4.9-A: ``scoring`` uploads (no target) are refused as training sources.
     purpose: Mapped[str] = mapped_column(
         String(16), nullable=False, default="training", server_default="training"
+    )
+    # 0082: set at INSERT (rows are immutable) when a service token uploaded the file through
+    # ``POST /v1/datasets``; NULL = a signed-in person (or before 0082). Weekly scoring skips non-NULL.
+    uploaded_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -6788,8 +6831,8 @@ class ScoringSchedule(Base):
     one row per project, saved by a person with ML-write (``scoring_schedule_service``); the
     worker tick only advances ``last_planned_for`` / ``next_planned_for``. Runs act as
     ``updated_by_user_id`` (who last saved it; an accepted deviation from "the creator"),
-    re-checked when queued and again when the job runs. Known limit: uploads do not record
-    whether a service token made them, so a file an agent uploaded for scoring is scored too."""
+    re-checked when queued and again when the job runs. Only files a person uploaded are scored:
+    datasets with ``uploaded_by_service_token_id`` (a connected tool's upload, 0082) are ignored."""
 
     __tablename__ = "scoring_schedules"
     __table_args__ = (
@@ -6933,6 +6976,207 @@ class UsageRecord(Base):
     period_day: Mapped[date] = mapped_column(Date, nullable=False)
     quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class NotificationPreference(Base):
+    """P8.8-A: a person's email choice for one notification kind in one workspace. Rows exist only
+    for overrides of ``app.domain.notifications.DEFAULT_EMAIL`` (mutable config, the person's own)."""
+
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", "kind", name="uq_notification_preferences_user_kind"),
+        CheckConstraint(CK_NOTIFICATION_PREFERENCES_KIND, name="ck_notification_preferences_kind"),
+        Index("ix_notification_preferences_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class WebhookEndpoint(Base):
+    """P8.8-A: a customer system that receives signed event webhooks (owner/admin config). No secret
+    is stored: the signing secret is derived from the server key named ``secret_key_id``, the ids and
+    ``secret_version`` (rotation increments it). ``consecutive_failures`` / ``paused_until`` are the
+    delivery circuit breaker. Disabled, never deleted (deliveries and changes reference it)."""
+
+    __tablename__ = "webhook_endpoints"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_webhook_endpoints_workspace_id"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_NAME, name="ck_webhook_endpoints_name"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_URL, name="ck_webhook_endpoints_url"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_EVENTS, name="ck_webhook_endpoints_events"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_SECRET_VERSION, name="ck_webhook_endpoints_secret_version"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_SECRET_KEY_ID, name="ck_webhook_endpoints_secret_key_id"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_FAILURES, name="ck_webhook_endpoints_consecutive_failures"),
+        Index("ix_webhook_endpoints_created_by_user_id", "created_by_user_id"),
+        Index("ix_webhook_endpoints_updated_by_user_id", "updated_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    events: Mapped[list] = mapped_column(JSONB, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    secret_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    secret_key_id: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'k1'"))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    secret_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationOutbox(Base):
+    """P8.8-A: one notification to send (a person's email or an endpoint's webhook). Producers
+    insert in the event's transaction (``enqueue_notification``); ``UNIQUE ... NULLS NOT DISTINCT``
+    on the dedupe key makes a re-run or recompute a no-op. The worker tick sends due rows
+    (``FOR UPDATE SKIP LOCKED``) with backoff; ``last_error_code`` is a closed code."""
+
+    __tablename__ = "notification_outbox"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_notification_outbox_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "channel", "recipient_user_id", "webhook_endpoint_id", "dedupe_key",
+            name="uq_notification_outbox_dedupe", postgresql_nulls_not_distinct=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "webhook_endpoint_id"], ["webhook_endpoints.workspace_id", "webhook_endpoints.id"],
+            name="fk_notification_outbox_workspace_webhook_endpoint", ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_notification_outbox_workspace_project",
+        ),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_CHANNEL, name="ck_notification_outbox_channel"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_KIND, name="ck_notification_outbox_kind"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_STATUS, name="ck_notification_outbox_status"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_ERROR, name="ck_notification_outbox_error_code"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_RECIPIENT, name="ck_notification_outbox_recipient"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_PING, name="ck_notification_outbox_ping"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_DEDUPE, name="ck_notification_outbox_dedupe_key"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_PAYLOAD, name="ck_notification_outbox_payload"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_ATTEMPTS, name="ck_notification_outbox_attempts"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_SENT, name="ck_notification_outbox_sent_at"),
+        # The worker's due scan.
+        Index("ix_notification_outbox_due", "next_attempt_at",
+              postgresql_where=text("status IN ('pending', 'sending', 'failed')")),
+        _partial_index("ix_notification_outbox_recipient_user_id", "recipient_user_id"),
+        _partial_index("ix_notification_outbox_webhook_endpoint_id", "workspace_id", "webhook_endpoint_id"),
+        _partial_index("ix_notification_outbox_project_id", "workspace_id", "project_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    recipient_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    webhook_endpoint_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                      server_default=func.now())
+    last_error_code: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    # Set when a worker claims the row; the result is written only by the holder of this token.
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WebhookDelivery(Base):
+    """P8.8-A: one webhook delivery attempt. Append-only (DB trigger): the status code, duration
+    and a closed error code; the response body is never read past 4 KiB and never stored."""
+
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_webhook_deliveries_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "webhook_endpoint_id"], ["webhook_endpoints.workspace_id", "webhook_endpoints.id"],
+            name="fk_webhook_deliveries_workspace_webhook_endpoint",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "outbox_id"], ["notification_outbox.workspace_id", "notification_outbox.id"],
+            name="fk_webhook_deliveries_workspace_outbox",
+        ),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_OUTCOME, name="ck_webhook_deliveries_outcome"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_ERROR, name="ck_webhook_deliveries_error_code"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_STATUS_CODE, name="ck_webhook_deliveries_status_code"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_NUMBERS, name="ck_webhook_deliveries_numbers"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_EVENT, name="ck_webhook_deliveries_event"),
+        Index("ix_webhook_deliveries_endpoint_created", "workspace_id", "webhook_endpoint_id", desc("created_at")),
+        Index("ix_webhook_deliveries_outbox", "workspace_id", "outbox_id"),
+        # The per-workspace deliveries-per-minute count.
+        Index("ix_webhook_deliveries_workspace_created", "workspace_id", desc("created_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    webhook_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    outbox_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    status_code: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class WebhookChange(Base):
+    """P8.8-A: who changed a webhook endpoint and how (append-only, DB trigger), written in the same
+    transaction as the change. ``url_host`` only (never the path, query or credentials)."""
+
+    __tablename__ = "webhook_changes"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_webhook_changes_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "webhook_endpoint_id"], ["webhook_endpoints.workspace_id", "webhook_endpoints.id"],
+            name="fk_webhook_changes_workspace_webhook_endpoint",
+        ),
+        CheckConstraint(CK_WEBHOOK_CHANGES_ACTION, name="ck_webhook_changes_action"),
+        CheckConstraint(CK_WEBHOOK_CHANGES_URL_HOST, name="ck_webhook_changes_url_host"),
+        Index("ix_webhook_changes_endpoint_created", "workspace_id", "webhook_endpoint_id", desc("created_at")),
+        Index("ix_webhook_changes_actor_user_id", "actor_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    webhook_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    url_host: Mapped[str | None] = mapped_column(String(253), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
     )

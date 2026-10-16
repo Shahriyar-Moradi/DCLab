@@ -109,6 +109,8 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_batch_predictions_workspace_input_dataset": "a",
     "fk_batch_predictions_workspace_output_artifact": "a",
     "fk_batch_predictions_service_token": "a",
+    # 0082: upload attribution is kept, never erased by a token delete (datasets are immutable).
+    "fk_datasets_service_token": "a",
     # P6.2-A1 (0071): agent evidence is never erased by a parent delete; an
     # invocation keeps its workspace when its agent run goes (column-list SET NULL).
     "fk_llm_invocations_workspace_agent_run": "n",

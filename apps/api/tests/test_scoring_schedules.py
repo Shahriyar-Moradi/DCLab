@@ -419,3 +419,113 @@ def _run_job(db, prediction_id: UUID) -> BatchPrediction:
     process_next_job(db, job_id=job.id, claimed_by="sched-test")
     db.expire_all()
     return db.get(BatchPrediction, prediction_id)
+
+
+def _token_upload(client, bearer: dict[str, str], setup, frame, *, purpose: str = "scoring"):  # noqa: F811
+    return client.post(
+        "/v1/datasets", headers={**bearer, "Idempotency-Key": _key()},
+        data={"project_id": str(setup["alpha_project"].id), "purpose": purpose},
+        files={"file": ("rows.csv", frame.to_csv(index=False).encode(), "text/csv")},
+    )
+
+
+def test_token_uploads_are_attributed_and_never_scored_by_the_schedule(client, db_session, setup):  # noqa: F811
+    """0082: a ``POST /v1/datasets`` made with a service token is recorded on the (immutable) dataset
+    row and shown as ``connected_tool``; the weekly run scores only files a person uploaded and the
+    schedule read counts the ignored ones."""
+
+    db = db_session
+    frame = _frame("binary", n=200)
+    rows = frame.drop(columns=["label"])
+    experiment, mv_id = _trained(client, db, setup, frame, "label")
+    _save(db, setup)
+    release = _approve(client, db, setup, experiment, mv_id)
+    token_row, raw = create_service_token(db, creator=setup["alpha_admin"], workspace_id=setup["alpha"].id,
+                                          name="uploader", scopes=("read", "datasets:write"), expires_in_days=1,
+                                          current_password="test-password")
+    db.commit()
+    bearer = {"Authorization": f"Bearer {raw}"}
+
+    # A person's upload, then a newer one from the connected tool.
+    person = _upload(client, setup, rows.head(40))
+    assert person["uploaded_by"] == "person"
+    assert db.get(Dataset, UUID(person["id"])).uploaded_by_service_token_id is None
+    tool = _token_upload(client, bearer, setup, rows.iloc[40:80])
+    assert tool.status_code == 201, tool.text
+    assert tool.json()["uploaded_by"] == "connected_tool" and "service_token" not in tool.text
+    assert db.get(Dataset, UUID(tool.json()["id"])).uploaded_by_service_token_id == token_row.id
+    one = client.get(f"/v1/datasets/{tool.json()['id']}", headers=_h(setup)).json()
+    assert one["uploaded_by"] == "connected_tool"
+    listed = {item["id"]: item["uploaded_by"] for item in client.get("/v1/datasets", headers=_h(setup)).json()}
+    assert listed[person["id"]] == "person" and listed[tool.json()["id"]] == "connected_tool"
+    # The attribution cannot be erased: dataset rows are immutable.
+    with pytest.raises(DBAPIError, match="immutable"):
+        db.execute(text("UPDATE datasets SET uploaded_by_service_token_id = NULL WHERE id = :id"),
+                   {"id": UUID(tool.json()["id"])})
+    db.rollback()
+
+    state = client.get(_url(setup), headers=_h(setup)).json()
+    assert state["schedule"]["ignored_token_uploads"] == 1
+    assert ("Only files uploaded by a person are scored; files a connected tool uploaded with a service token are "
+            "ignored. A file uploaded with a person's own sign-in or own API token counts as that person's.") in state["about"]
+    assert "also one an agent uploaded" not in state["about"] and "access token" not in state["about"]
+
+    # The tick skips the newer connected-tool file and scores the person's file.
+    assert _tick(db, SLOT + timedelta(minutes=5)) == [(SLOT, "queued", None)]
+    run = _runs(db, setup)[-1]
+    assert (run.input_dataset_id, run.model_release_id) == (UUID(person["id"]), release.id)
+    assert client.get(_url(setup), headers=_h(setup)).json()["schedule"]["ignored_token_uploads"] == 0
+
+    # Only a connected-tool file is new: nothing scored (the closed 0079 codes have no own code), counted.
+    later = _token_upload(client, bearer, setup, rows.iloc[80:120])
+    assert later.status_code == 201, later.text
+    assert _tick(db, SLOT + WEEK + timedelta(minutes=5)) == [(SLOT + WEEK, "skipped_no_new_file", None)]
+    assert _runs(db, setup)[-1].input_dataset_id is None
+    as_token = client.get(_url(setup), headers=bearer).json()
+    assert as_token["schedule"]["ignored_token_uploads"] == 1 and as_token["schedule"]["updated_by_user_id"] is None
+    assert as_token["recent_runs"][0]["message"].startswith("Nothing scored: no new file")
+    # The tool's file can still be scored by a person by hand ("Score new data" keeps today's rule).
+    assert _predict(client, setup, mv_id, later.json()["id"]).status_code == 202
+
+
+def test_upload_attribution_is_tenant_keyed(client, db_session, setup):  # noqa: F811
+    """The composite FK refuses a dataset naming another workspace's token; another tenant's
+    schedule read never counts this workspace's connected-tool uploads."""
+
+    db = db_session
+    alpha_token, _raw = create_service_token(
+        db, creator=setup["alpha_admin"], workspace_id=setup["alpha"].id, name="a", scopes=("read", "datasets:write"),
+        expires_in_days=1, current_password="test-password")
+    beta_token, _raw = create_service_token(
+        db, creator=setup["beta_admin"], workspace_id=setup["beta"].id, name="b", scopes=("read", "datasets:write"),
+        expires_in_days=1, current_password="test-password")
+    db.commit()
+    beta_file = db.get(Dataset, UUID(_upload(client, setup, _frame("binary", n=30), workspace="beta")["id"]))
+    columns = [c.key for c in Dataset.__table__.columns if c.key not in ("id", "version", "content_digest",
+                                                                           "uploaded_by_service_token_id")]
+
+    def clone(token_id: UUID) -> None:
+        db.add(Dataset(**{key: getattr(beta_file, key) for key in columns}, id=uuid4(), version=f"v-{uuid4().hex[:8]}",
+                       content_digest=uuid4().hex, uploaded_by_service_token_id=token_id))
+        db.flush()
+
+    with pytest.raises(IntegrityError, match="fk_datasets_service_token"):
+        clone(alpha_token.id)
+    db.rollback()
+    clone(beta_token.id)  # the same workspace's token is accepted
+    db.rollback()
+
+    _save(db, setup)
+    save_schedule(db, actor=setup["beta_admin"], workspace_id=setup["beta"].id, project_id=setup["beta_project"].id,
+                  request=ScoringScheduleWrite(weekday=0, hour_utc=9), now=MONDAY)
+    db.commit()
+    _row, raw = create_service_token(db, creator=setup["alpha_admin"], workspace_id=setup["alpha"].id, name="up",
+                                     scopes=("read", "datasets:write"), expires_in_days=1,
+                                     current_password="test-password")
+    db.commit()
+    assert _token_upload(client, {"Authorization": f"Bearer {raw}"}, setup, _frame("binary", n=30)).status_code == 201
+    assert client.get(_url(setup), headers=_h(setup)).json()["schedule"]["ignored_token_uploads"] == 1
+    beta = _headers(setup["beta_admin"], setup["beta"].id)
+    _assert_envelope(client.get(_url(setup), headers=beta), 404, "not_found")
+    beta_state = client.get(f"/v1/projects/{setup['beta_project'].id}/scoring-schedule", headers=beta).json()
+    assert beta_state["schedule"]["ignored_token_uploads"] == 0  # alpha's uploads never reach a beta read

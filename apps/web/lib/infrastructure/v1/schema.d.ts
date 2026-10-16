@@ -202,7 +202,9 @@ export interface paths {
          *     published for internal training (ADR 0005) through the Labs ingestion path.
          *     Synchronous; does not start training (that is ``POST /v1/experiments``).
          *     ``purpose=scoring`` marks rows to score (no target; refused as a run source).
-         *     Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
+         *     A service token's upload is recorded as ``uploaded_by: connected_tool`` and is never picked
+         *     up by weekly scheduled scoring; an upload made with the person's own session or own API token
+         *     is ``person``. Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
          *     project and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;
          *     a structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its
          *     storage limit: ``429 quota_exceeded`` (nothing is stored).
@@ -849,6 +851,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Notification Preferences
+         * @description Your email choices for each notification kind in the selected workspace (defaults: decisions
+         *     waiting, failed runs, drift alerts and usage warnings on; finished runs and weekly scoring
+         *     results off), whether your role receives each kind at all, and whether this server sends email
+         *     (`email_delivery`: `off` with EMAIL_PROVIDER=none, `paused` with the kill switch). Signed-in
+         *     sessions only. Never cached.
+         */
+        get: operations["read_notification_preferences_v1_me_notification_preferences_get"];
+        /**
+         * Save Notification Preferences
+         * @description Turn email on or off for one or more kinds (yours only; kinds not listed keep their value).
+         *     Idempotent by state: an `Idempotency-Key` is validated and a replay changes nothing.
+         */
+        put: operations["save_notification_preferences_v1_me_notification_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/model-builds/{pipeline_run_id}": {
         parameters: {
             query?: never;
@@ -1006,6 +1037,29 @@ export interface paths {
         get: operations["read_node_impact_v1_nodes__kind___node_id__impact_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unsubscribe V1
+         * @description One-click unsubscribe from an email link (`/unsubscribe#token=…`; the token travels in the
+         *     URL fragment, never to a server log). No sign-in and no session needed: the signed token
+         *     (30 days) can only turn off email of its one kind for the person and workspace it was made
+         *     for. Idempotent by state.
+         */
+        post: operations["unsubscribe_v1_v1_notifications_unsubscribe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1469,8 +1523,9 @@ export interface paths {
          * Save Scoring Schedule
          * @description Turn weekly scoring on or off, or change its day and hour (UTC). One schedule per
          *     project; ``enabled=false`` turns it off and keeps it and its runs. Each week it scores the
-         *     newest file uploaded for scoring since the last run with the model in use approved for
-         *     scoring, acting as you (re-checked every run). Writes an accepted
+         *     newest file a person uploaded for scoring since the last run (files a connected tool uploaded
+         *     with a service token are ignored; your own sign-in or own API token counts as you) with the
+         *     model in use approved for scoring, acting as you (re-checked every run). Writes an accepted
          *     ``scoring_schedule_changed`` History entry (``rationale``: your reason). People with
          *     ML-write only: a service token gets ``403 service_token_not_permitted``, any agent
          *     ``403 human_session_required``, a viewer ``403 forbidden``. Requires ``Idempotency-Key``.
@@ -1715,6 +1770,124 @@ export interface paths {
         get: operations["read_workspace_usage_v1_workspaces__workspace_id__usage_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Webhooks
+         * @description The workspace's webhook endpoints (at most 5) with their last delivery. Never a secret.
+         *     Owners and administrators on a signed-in session only.
+         */
+        get: operations["read_webhooks_v1_workspaces__workspace_id__webhooks_get"];
+        put?: never;
+        /**
+         * Create Webhook V1
+         * @description Add a webhook endpoint (https, port 443 unless the platform allows others; private and
+         *     local destinations are refused when added and again at every delivery). `secret` (for the
+         *     `X-DCLab-Signature` check) is returned by this response only; a replay of the
+         *     `Idempotency-Key` returns `secret: null`. Requires `Idempotency-Key`. 409
+         *     `webhooks_not_configured` when this server has no WEBHOOK_SECRET_KEY, `webhook_limit_reached`
+         *     at 5 endpoints.
+         */
+        post: operations["create_webhook_v1_v1_workspaces__workspace_id__webhooks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Webhook V1
+         * @description Change the name, URL or events, or turn the endpoint off / on (`enabled`; turning it on also
+         *     clears a paused delivery breaker). Endpoints are turned off, never deleted (the delivery log and
+         *     change trail stay). Every URL, events, on / off change is recorded with who made it. Idempotent
+         *     by state.
+         */
+        patch: operations["update_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__patch"];
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Webhook Deliveries
+         * @description The endpoint's newest 50 delivery attempts: event, attempt, HTTP status, a closed error code
+         *     and the duration. Response bodies are never stored.
+         */
+        get: operations["read_webhook_deliveries_v1_workspaces__workspace_id__webhooks__webhook_id__deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate Webhook Secret V1
+         * @description Replace the signing secret now (the old one stops verifying at once); the new `secret` is
+         *     returned by this response only (a replay of the `Idempotency-Key` returns `secret: null` and
+         *     rotates nothing). Requires `Idempotency-Key`.
+         */
+        post: operations["rotate_webhook_secret_v1_v1_workspaces__workspace_id__webhooks__webhook_id__rotate_secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Webhook V1
+         * @description Queue a signed `ping` to the endpoint (at most one per minute, a repeat within the minute
+         *     returns the same one; at most 6 per hour: 409 `ping_limit_reached`). The worker tries it once;
+         *     the result appears in the delivery log.
+         */
+        post: operations["test_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2426,6 +2599,12 @@ export interface components {
             purpose: string;
             /** Row Count */
             row_count: number;
+            /**
+             * Uploaded By
+             * @description Who uploaded the file: `connected_tool` (uploaded with a service token, i.e. by a connected tool or agent) or `person` (not uploaded with a service token: a person's own sign-in or own API token counts as the person, as do rows from before attribution existed and derived training datasets, which are never scoring files). Weekly scheduled scoring scores only files a person uploaded.
+             * @enum {string}
+             */
+            uploaded_by: "person" | "connected_tool";
             /** Version */
             version: string;
             /**
@@ -2665,6 +2844,12 @@ export interface components {
             size_bytes: number | null;
             /** Source Type */
             source_type: string;
+            /**
+             * Uploaded By
+             * @description Who uploaded the file: `connected_tool` (uploaded with a service token, i.e. by a connected tool or agent) or `person` (not uploaded with a service token: a person's own sign-in or own API token counts as the person, as do rows from before attribution existed and derived training datasets, which are never scoring files). Weekly scheduled scoring scores only files a person uploaded.
+             * @enum {string}
+             */
+            uploaded_by: "person" | "connected_tool";
             /** Version */
             version: string;
             /**
@@ -2709,6 +2894,12 @@ export interface components {
             purpose: string;
             /** Row Count */
             row_count: number;
+            /**
+             * Uploaded By
+             * @description Who uploaded the file: `connected_tool` (uploaded with a service token, i.e. by a connected tool or agent) or `person` (not uploaded with a service token: a person's own sign-in or own API token counts as the person, as do rows from before attribution existed and derived training datasets, which are never scoring files). Weekly scheduled scoring scores only files a person uploaded.
+             * @enum {string}
+             */
+            uploaded_by: "person" | "connected_tool";
             /** Version */
             version: string;
             /**
@@ -5205,6 +5396,75 @@ export interface components {
              */
             truncated: boolean;
         };
+        /** NotificationPreferenceRead */
+        NotificationPreferenceRead: {
+            /**
+             * Applies To You
+             * @description Whether your role in this workspace receives this kind at all.
+             */
+            applies_to_you: boolean;
+            /**
+             * Default
+             * @description The default for this kind.
+             */
+            default: boolean;
+            /**
+             * Email Enabled
+             * @description Your choice (the default unless you changed it).
+             */
+            email_enabled: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning";
+            /** Label */
+            label: string;
+        };
+        /** NotificationPreferenceWrite */
+        NotificationPreferenceWrite: {
+            /** Email Enabled */
+            email_enabled: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning";
+        };
+        /**
+         * NotificationPreferencesRead
+         * @description ``GET /v1/me/notification-preferences``: your email choices in the selected workspace.
+         */
+        NotificationPreferencesRead: {
+            /**
+             * Email Delivery
+             * @description `off`: EMAIL_PROVIDER=none (nothing is sent); `paused`: NOTIFICATIONS_ENABLED=false.
+             * @enum {string}
+             */
+            email_delivery: "on" | "off" | "paused";
+            /**
+             * Email Verified
+             * @description DCLab emails only people whose address is verified.
+             */
+            email_verified: boolean;
+            /** Items */
+            items: components["schemas"]["NotificationPreferenceRead"][];
+            /** Note */
+            note?: string | null;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /**
+         * NotificationPreferencesWrite
+         * @description ``PUT /v1/me/notification-preferences``: set one or more kinds (others keep their value).
+         */
+        NotificationPreferencesWrite: {
+            /** Items */
+            items: components["schemas"]["NotificationPreferenceWrite"][];
+        };
         /** OperatingConstraintInput */
         OperatingConstraintInput: {
             /**
@@ -6829,6 +7089,12 @@ export interface components {
              */
             id: string;
             /**
+             * Ignored Token Uploads
+             * @description Files uploaded for scoring by connected tools (with a service token) since the last scheduled run that scored a file (or since the schedule was created): never scored by the schedule. Uploads made with a person's own sign-in or own API token are the person's and are not counted here.
+             * @default 0
+             */
+            ignored_token_uploads: number;
+            /**
              * Last Planned For
              * @description The last slot a run handled.
              */
@@ -6949,7 +7215,7 @@ export interface components {
             /**
              * About
              * @description What scheduled scoring does and does not do.
-             * @default Every week on the chosen day and hour (UTC) DCLab scores the newest file you uploaded for scoring since the last run, with the model in use approved for scoring, as the person who last saved the schedule. It does not retrain, does not fetch data and scores only uploaded files; with no new file or no approved model it scores nothing and says so. The result is the week's list (download it from the prediction). Any file uploaded for scoring counts, also one an agent uploaded with a service token. DCLab's worker runs it between jobs: a worker busy or down for more than 24 hours skips that week.
+             * @default Every week on the chosen day and hour (UTC) DCLab scores the newest file you uploaded for scoring since the last run, with the model in use approved for scoring, as the person who last saved the schedule. It does not retrain, does not fetch data and scores only uploaded files; with no new file or no approved model it scores nothing and says so. The result is the week's list (download it from the prediction). Only files uploaded by a person are scored; files a connected tool uploaded with a service token are ignored. A file uploaded with a person's own sign-in or own API token counts as that person's. DCLab's worker runs it between jobs: a worker busy or down for more than 24 hours skips that week.
              */
             about: string;
             /**
@@ -7260,6 +7526,28 @@ export interface components {
             /** Workspace */
             workspace: components["schemas"]["SwitchRead"][];
         };
+        /** UnsubscribeRead */
+        UnsubscribeRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning";
+            /**
+             * Unsubscribed
+             * @default true
+             * @constant
+             */
+            unsubscribed: true;
+        };
+        /** UnsubscribeRequest */
+        UnsubscribeRequest: {
+            /**
+             * Token
+             * @description The token from the email's unsubscribe link.
+             */
+            token: string;
+        };
         /** UsageDayRead */
         UsageDayRead: {
             /** Agent Runs */
@@ -7511,6 +7799,194 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /** WebhookCreate */
+        WebhookCreate: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Events */
+            events: ("decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning")[];
+            /** Name */
+            name: string;
+            /**
+             * Url
+             * @description https only, port 443 (or a port the platform allows), no user:password.
+             */
+            url: string;
+        };
+        /** WebhookDeliveryRead */
+        WebhookDeliveryRead: {
+            /** Attempt */
+            attempt: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Delivery Id
+             * Format: uuid
+             * @description The X-DCLab-Delivery value (the same on every retry).
+             */
+            delivery_id: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Error Code */
+            error_code?: string | null;
+            /** Event */
+            event: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "delivered" | "failed";
+            /** Status Code */
+            status_code?: number | null;
+        };
+        /**
+         * WebhookRead
+         * @description A webhook endpoint. Never contains its signing secret.
+         */
+        WebhookRead: {
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By User Id */
+            created_by_user_id?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Events */
+            events: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Delivery At */
+            last_delivery_at?: string | null;
+            /** Last Delivery Outcome */
+            last_delivery_outcome?: ("delivered" | "failed") | null;
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Paused Until
+             * @description Set after 5 failed deliveries in a row: deliveries wait until then, then one is tried.
+             */
+            paused_until?: string | null;
+            /** Secret Rotated At */
+            secret_rotated_at?: string | null;
+            /** Secret Version */
+            secret_version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Url */
+            url: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** WebhookSecretRead */
+        WebhookSecretRead: {
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By User Id */
+            created_by_user_id?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Events */
+            events: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Delivery At */
+            last_delivery_at?: string | null;
+            /** Last Delivery Outcome */
+            last_delivery_outcome?: ("delivered" | "failed") | null;
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Paused Until
+             * @description Set after 5 failed deliveries in a row: deliveries wait until then, then one is tried.
+             */
+            paused_until?: string | null;
+            /**
+             * Secret
+             * @description The signing secret. Returned only by the create / rotate response; store it now. An Idempotency-Key replay returns null.
+             */
+            secret: string | null;
+            /** Secret Rotated At */
+            secret_rotated_at?: string | null;
+            /** Secret Version */
+            secret_version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Url */
+            url: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** WebhookTestRead */
+        WebhookTestRead: {
+            /** Note */
+            note: string;
+            /**
+             * Outbox Id
+             * Format: uuid
+             */
+            outbox_id: string;
+            /** Status */
+            status: string;
+        };
+        /** WebhookUpdate */
+        WebhookUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Events */
+            events?: ("decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning")[] | null;
+            /** Name */
+            name?: string | null;
+            /** Url */
+            url?: string | null;
         };
         /** WorkersRead */
         WorkersRead: {
@@ -11146,6 +11622,170 @@ export interface operations {
             };
         };
     };
+    read_notification_preferences_v1_me_notification_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferencesRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    save_notification_preferences_v1_me_notification_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPreferencesWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferencesRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_model_build_v1_model_builds__pipeline_run_id__get: {
         parameters: {
             query?: never;
@@ -11778,6 +12418,96 @@ export interface operations {
             };
             /** @description Not found (error envelope) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    unsubscribe_v1_v1_notifications_unsubscribe_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnsubscribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnsubscribeRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14844,6 +15574,526 @@ export interface operations {
             };
             /** @description Not found (error envelope) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_webhooks_v1_workspaces__workspace_id__webhooks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookRead"][];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_webhook_v1_v1_workspaces__workspace_id__webhooks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSecretRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_webhook_deliveries_v1_workspaces__workspace_id__webhooks__webhook_id__deliveries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryRead"][];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    rotate_webhook_secret_v1_v1_workspaces__workspace_id__webhooks__webhook_id__rotate_secret_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSecretRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    test_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

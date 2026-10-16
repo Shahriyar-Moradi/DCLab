@@ -901,6 +901,13 @@ class _Execution:
             expires_at=datetime.now(UTC) + timedelta(days=self.ttl_days) if level else None, **self._subject(),
         )
         self.db.add(row)
+        if row.status == "proposed":  # P8.8-A: one "decision waiting" per run (deduped); never raises
+            from app.services.notification_service import notify_decision_needed
+
+            self.db.flush()
+            notify_decision_needed(self.db, workspace_id=self.workspace_id, project_id=self.project_id,
+                                   subject_kind="agent_run", subject_id=self.run_id,
+                                   dedupe_key=f"decision:agent_run:{self.run_id}")
         self.db.commit()
         self.ctx.proposal_ids.append(row.id)
         self.record("proposal_created", {"proposal_id": str(row.id), "type": draft.proposal_type,

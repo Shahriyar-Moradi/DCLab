@@ -584,6 +584,11 @@ SDK_EXEMPT_V1_PATHS = frozenset({
     "/v1/workspaces/{}/usage",
     # P8.5-A: operator reads are for signed-in platform staff (403 human_session_required for any bearer).
     "/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/failed-jobs",
+    # P8.8-A: your notification preferences and the workspace's webhooks are session-only (403
+    # session_required for any bearer); unsubscribe takes no credentials (the signed email link only).
+    "/v1/me/notification-preferences", "/v1/notifications/unsubscribe", "/v1/workspaces/{}/webhooks",
+    "/v1/workspaces/{}/webhooks/{}", "/v1/workspaces/{}/webhooks/{}/rotate-secret",
+    "/v1/workspaces/{}/webhooks/{}/test", "/v1/workspaces/{}/webhooks/{}/deliveries",
 })
 
 

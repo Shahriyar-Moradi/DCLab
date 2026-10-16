@@ -1080,6 +1080,45 @@
         "successSchema": "PrincipalRead"
       }
     },
+    "/v1/me/notification-preferences": {
+      "GET": {
+        "operationId": "read_notification_preferences_v1_me_notification_preferences_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "NotificationPreferencesRead"
+      },
+      "PUT": {
+        "operationId": "save_notification_preferences_v1_me_notification_preferences_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "NotificationPreferencesWrite",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "NotificationPreferencesRead"
+      }
+    },
     "/v1/model-builds/{pipeline_run_id}": {
       "GET": {
         "operationId": "read_model_build_v1_model_builds__pipeline_run_id__get",
@@ -1285,6 +1324,30 @@
           "500"
         ],
         "successSchema": "NodeImpactRead"
+      }
+    },
+    "/v1/notifications/unsubscribe": {
+      "POST": {
+        "operationId": "unsubscribe_v1_v1_notifications_unsubscribe_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "UnsubscribeRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "UnsubscribeRead"
       }
     },
     "/v1/operator/failed-jobs": {
@@ -2286,6 +2349,186 @@
         ],
         "successSchema": "UsageRead"
       }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks": {
+      "GET": {
+        "operationId": "read_webhooks_v1_workspaces__workspace_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_webhook_v1_v1_workspaces__workspace_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "WebhookCreate",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookSecretRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}": {
+      "PATCH": {
+        "operationId": "update_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "WebhookUpdate",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries": {
+      "GET": {
+        "operationId": "read_webhook_deliveries_v1_workspaces__workspace_id__webhooks__webhook_id__deliveries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret": {
+      "POST": {
+        "operationId": "rotate_webhook_secret_v1_v1_workspaces__workspace_id__webhooks__webhook_id__rotate_secret_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookSecretRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test": {
+      "POST": {
+        "operationId": "test_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__test_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookTestRead"
+      }
     }
   },
   "sdk_schemas": {
@@ -2406,6 +2649,7 @@
         "project_id",
         "purpose",
         "row_count",
+        "uploaded_by",
         "version",
         "workspace_id"
       ],
@@ -2418,6 +2662,7 @@
         "name",
         "project_id",
         "row_count",
+        "uploaded_by",
         "version",
         "workspace_id"
       ]
@@ -2524,6 +2769,7 @@
         "schema_digest",
         "size_bytes",
         "source_type",
+        "uploaded_by",
         "version",
         "workspace_id"
       ],
@@ -2540,6 +2786,7 @@
         "schema_digest",
         "size_bytes",
         "source_type",
+        "uploaded_by",
         "version",
         "workspace_id"
       ]
@@ -2556,6 +2803,7 @@
         "project_id",
         "purpose",
         "row_count",
+        "uploaded_by",
         "version",
         "workspace_id"
       ],
@@ -2569,6 +2817,7 @@
         "policy",
         "project_id",
         "row_count",
+        "uploaded_by",
         "version",
         "workspace_id"
       ]
@@ -3512,6 +3761,7 @@
         "enabled",
         "hour_utc",
         "id",
+        "ignored_token_uploads",
         "last_planned_for",
         "next_planned_for",
         "owner_can_score",

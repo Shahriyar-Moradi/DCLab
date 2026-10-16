@@ -101,14 +101,14 @@ def hk(gw, monkeypatch):  # noqa: F811
     level = {"value": 0}
 
     def effective_level(db, workspace_id, key, kind=None, prompt_release_id=None, model_id=None):
-        assert prompt_release_id is not None and model_id == "jev-1.13.0"  # keyed by (release, model)
+        assert prompt_release_id is not None and model_id == "claude-sonnet-5-5"  # keyed by (release, model)
         return min(level["value"], answer_ceiling(key, kind))
 
     monkeypatch.setattr("app.agents.governance.snapshot.effective_level", effective_level)
 
     def ctx(fake, lvl=0, *, service=None):
         level["value"] = lvl
-        service = service or gw.service(providers={"openai": gw.fake, "typesafe": fake})
+        service = service or gw.service(providers={"anthropic": fake})
         return Ctx(gw, take_snapshot(gw.db, gw.ws_a, dp.JEV_POINTS, port=JevSemanticPort(service, settings=ON)))
 
     gw.ctx = ctx
@@ -178,7 +178,7 @@ def test_l0_with_a_wrong_jev_logs_beside_the_rule_and_records_the_point(hk):
     assert details["revert"] == {"kind": "none"} and details["policy_digest"] == ctx.decisions.snapshot.digest
     assert details["columns"] == [{"column": "feature", "rule": "numeric", "ai": "identifier", "used": "numeric",
                                    "source": "rule", "agreement": "disagree", "level": 0, "confidence": 0.99}]
-    assert details["ai"]["semantic_answer_ids"] == [str(rows[1].id)] and details["model_id"] == "jev-1.13.0"
+    assert details["ai"]["semantic_answer_ids"] == [str(rows[1].id)] and details["model_id"] == "claude-sonnet-5-5"
     roles(ctx)  # a second resolution finds its record (idempotent per experiment and point)
     assert len(records(hk.db, hk.alpha.pipeline.id)) == 2
 
@@ -270,7 +270,7 @@ def test_timeout_and_over_budget_are_unavailable_and_take_the_rule(hk, monkeypat
     details = records(hk.db, hk.alpha.pipeline.id)[dp.ROLE].details
     assert details["agreement"] == "unavailable" and details["ai"]["refusals"] == ["timeout"]
     fake = jev({dp.ROLE: {"*": ("categorical_code", 0.99)}, dp.IDENTIFIER: {"*": (0.99, None)}})
-    service = hk.service(providers={"openai": hk.fake, "typesafe": fake})
+    service = hk.service(providers={"anthropic": fake})
     monkeypatch.setattr(service, "reserve", lambda *a, **k: Refusal(code="budget_exhausted"))
     broke = hk.ctx(fake, 2, service=service)
     assert roles(broke)[:2] == (["feature"], []) and fake.calls == []
@@ -280,7 +280,7 @@ def test_timeout_and_over_budget_are_unavailable_and_take_the_rule(hk, monkeypat
 
 def test_ai_off_kill_switch_and_branch_runs_ask_nothing_and_write_nothing(hk):
     fake = jev({dp.ROLE: {"*": ("identifier", 0.99)}, dp.IDENTIFIER: {"*": (0.99, None)}})
-    service = hk.service(providers={"openai": hk.fake, "typesafe": fake})
+    service = hk.service(providers={"anthropic": fake})
     from app.agents.semantic.port import semantic_port
 
     off = take_snapshot(hk.db, hk.ws_a, dp.JEV_POINTS, port=semantic_port(service, settings=SimpleNamespace(ai_enabled=False)))
@@ -604,7 +604,7 @@ def test_ai_off_and_l0_with_a_wrong_jev_train_identically(monkeypatch, auth_clie
     wrong = jev({dp.IDENTIFIER: {"*": (0.99, None)}, dp.ROLE: {"visits": ("categorical_code", 0.99),
                                                                 "*": ("identifier", 0.99)},
                  dp.LEAKAGE: {"*": (0.99, None)}})
-    service = GatewayService(providers={"typesafe": wrong}, limits=GatewayLimits(), settings=lambda: ON)
+    service = GatewayService(providers={"anthropic": wrong}, limits=GatewayLimits(), settings=lambda: ON)
     monkeypatch.setattr(dp, "semantic_port", lambda: JevSemanticPort(service, settings=ON))
     l0_id = _upload(auth_client, frame)
     _label(db_session, admin_user, l0_id)
@@ -653,7 +653,7 @@ def test_l2_role_value_reaches_the_fold_pipeline_with_its_record_and_fingerprint
     frame = _with_visits(_classification_frame())
     fake = jev({dp.ROLE: {"visits": ("categorical_code", 0.95), "*": ("numeric", 0.5)},
                 dp.IDENTIFIER: {"*": (0.05, None)}, dp.LEAKAGE: {"*": (0.5, None)}})
-    service = GatewayService(providers={"typesafe": fake}, limits=GatewayLimits(), settings=lambda: ON)
+    service = GatewayService(providers={"anthropic": fake}, limits=GatewayLimits(), settings=lambda: ON)
     monkeypatch.setattr(dp, "semantic_port", lambda: JevSemanticPort(service, settings=ON))
     upload_id = _upload(auth_client, frame)
     _label(db_session, admin_user, upload_id)

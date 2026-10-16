@@ -26,19 +26,35 @@ from pydantic import BaseModel
 from sqlalchemy import null, select
 from sqlalchemy.orm import Session
 
-from app.agents.gateway import cache
-from app.agents.gateway.contract import Refusal, SemanticDecisionRequest, SemanticQuestion
+from app.agents.gateway import budget, cache
+from app.agents.gateway.contract import Refusal, SemanticAnswers, SemanticDecisionRequest, SemanticQuestion
+from app.agents.gateway.router import provider_for
 from app.agents.governance.decision_points import REGISTRY, answer_ceiling
 from app.agents.governance.policy import effective_level
 from app.agents.governance.switches import effective_switches
 from app.agents.semantic import policy
 from app.agents.semantic.deterministic import DeterministicSemanticPort
 from app.agents.semantic.port import NO_KIND, Resolution, SemanticAsk, SemanticOutcome, Subject, Validator
-from app.agents.semantic.releases import MAX_QUESTIONS, MAX_STATE_BYTES, TIMEOUT_MS, JevRelease, release_for
+from app.agents.semantic.releases import (
+    JEV_MAX_INPUT_TOKENS,
+    JEV_MAX_OUTPUT_TOKENS,
+    JEV_THINKING_TOKENS,
+    MAX_QUESTIONS,
+    MAX_STATE_BYTES,
+    TIMEOUT_MS,
+    JevRelease,
+    answer_labels,
+    answer_tokens,
+    release_for,
+)
 from app.db.models import AiIncident, PromptRelease, SemanticDecisionAnswer
 
 logger = logging.getLogger(__name__)
-BATCH_ESTIMATE_MICROS = 10_000  # worst case of one batch: ≤ 8 KB state at $0.042 / 1M input tokens
+# A batch's hold is its own worst case, from the price table (``batch_estimate_micros``): the measured
+# instructions + payload (plus this margin for the gateway's redaction rendering and the adapter's
+# overhead) at the input price, and the full output cap at the output price. Each batch holds on
+# its own (the budget's per-run cap bounds a Jev BATCH like a specialist run, gateway.budget).
+ESTIMATE_MARGIN_TOKENS = 256
 ANSWER_WRITE_FAILURE_THRESHOLD = 3  # failed answer-row inserts per (workspace, purpose) and process
 WRITE_FAILURES: Counter[tuple[UUID, str]] = Counter()
 _WRITE_FAILURES_LOCK = threading.Lock()
@@ -64,9 +80,24 @@ class _Batch:
         self.column_keys = {**ask.context_columns, **{key: column for column, key in keys.items()}}
         choices = list(release.choices or ask.choices) if release.primitive == "choice" else []
         self.questions = [(s.question_key, release.primitive, choices, s.column_id) for s in subjects]
+        self.user_text = [_wire(item) for item in ask.user_text]
+        self.release = release
+        self.labels = answer_labels(release, ask.choices)
 
     def size(self) -> int:
         return len(cache.canonical_json(_wire(self.state)).encode())
+
+    def input_tokens(self) -> int:
+        """Instructions + payload as the gateway sends them, measured like its worst case."""
+        payload = {"purpose": self.release.purpose, "state": _wire(self.state), "user_text": self.user_text,
+                   "questions": [{"question_key": {"untrusted_text": key}, "primitive": primitive,
+                                  "choices": choices, "subject": "c00"}
+                                 for key, primitive, choices, _column in self.questions]}
+        instructions = {"question": self.release.question, "criteria": self.release.criteria}
+        return budget.estimate_tokens(cache.canonical_json(instructions) + cache.canonical_json(payload))
+
+    def output_tokens(self) -> int:
+        return JEV_THINKING_TOKENS + sum(answer_tokens(key, self.labels) for key, *_ in self.questions)
 
     def digests(self, ask: SemanticAsk, release: JevRelease) -> list[str]:
         return cache.jev_question_keys(
@@ -79,16 +110,37 @@ class _Batch:
 
 
 def batches(ask: SemanticAsk, release: JevRelease) -> list[_Batch]:
+    """Subjects packed in order: ≤ 50 questions, state ≤ 8 KB, answers within the output cap
+    (next to the thinking allowance) and measured input ≤ ``JEV_MAX_INPUT_TOKENS``. A single
+    subject always forms a batch (an oversized one is refused at its hold, never sent)."""
+
     out: list[_Batch] = []
     current: list[Subject] = []
     for subject in ask.subjects:
-        if current and (len(current) >= MAX_QUESTIONS
-                        or _Batch(ask, release, [*current, subject]).size() > MAX_STATE_BYTES):
-            out.append(_Batch(ask, release, current))
-            current = []
+        if current:
+            grown = _Batch(ask, release, [*current, subject])
+            if (len(current) >= MAX_QUESTIONS or grown.size() > MAX_STATE_BYTES
+                    or grown.output_tokens() > JEV_MAX_OUTPUT_TOKENS or grown.input_tokens() > JEV_MAX_INPUT_TOKENS):
+                out.append(_Batch(ask, release, current))
+                current = []
         current.append(subject)
     out.append(_Batch(ask, release, current))
     return out
+
+
+def batch_estimate_micros(batch: _Batch, *, overhead_tokens: int = 0) -> int:
+    """The batch's worst case at the current prices (a hold never smaller than the gateway's check)."""
+
+    input_tokens = -(-batch.input_tokens() * 11 // 10) + ESTIMATE_MARGIN_TOKENS + overhead_tokens
+    return budget.worst_case_micros(batch.release.model_id, input_tokens=input_tokens,
+                                    max_output_tokens=JEV_MAX_OUTPUT_TOKENS)
+
+
+def max_batch_estimate_micros(model: str, *, overhead_tokens: int = 0) -> int:
+    """The worst case of a full-size batch (measured input at its bound)."""
+
+    input_tokens = -(-JEV_MAX_INPUT_TOKENS * 11 // 10) + ESTIMATE_MARGIN_TOKENS + overhead_tokens
+    return budget.worst_case_micros(model, input_tokens=input_tokens, max_output_tokens=JEV_MAX_OUTPUT_TOKENS)
 
 
 class JevSemanticPort:
@@ -100,29 +152,39 @@ class JevSemanticPort:
         if release is None:
             raise ValueError(f"unknown Jev purpose {ask.purpose}")
         blocking = effective_switches(db, ask.workspace_id).blocking(
-            ai_enabled=bool(getattr(self.settings, "ai_enabled", False)), provider="typesafe", purpose=ask.purpose)
+            ai_enabled=bool(getattr(self.settings, "ai_enabled", False)),
+            provider=provider_for(release.model_id) or "anthropic", purpose=ask.purpose)
         if blocking:  # "off is a switch, not a level": AI off, no call, no row (ADR 0008 §8)
             return DeterministicSemanticPort().resolve(db, ask)
         release_id = db.scalar(select(PromptRelease.id).where(
             PromptRelease.agent_key == release.agent_key, PromptRelease.version == release.version,
             PromptRelease.status == "released"))
         planned = batches(ask, release)
-        reservation, reserved_here = ask.budget, False
-        if reservation is None:
+        resolutions: list[Resolution] = []
+        if ask.budget is not None:  # the caller's hold covers every batch
+            for batch in planned:
+                resolutions += self._ask(db, ask, release, release_id, batch, ask.budget, validator)
+            return self._outcome(ask, resolutions, len(planned))
+        overhead = self._overhead_tokens(release)
+        asked = 0
+        for batch in planned:  # one hold per batch: a refused hold takes the rule for that batch only
             held = self.gateway.reserve(db, workspace_id=ask.workspace_id, project_id=ask.project_id,
                                         agent_run_id=ask.agent_run_id, run_kind="jev",
-                                        estimate_micros=BATCH_ESTIMATE_MICROS * len(planned))
+                                        estimate_micros=batch_estimate_micros(batch, overhead_tokens=overhead))
             if isinstance(held, Refusal):
-                return self._outcome(ask, [r for b in planned for r in self._unavailable(b, held.code)], 0)
-            reservation, reserved_here = held, True
-        resolutions: list[Resolution] = []
-        try:
-            for batch in planned:
-                resolutions += self._ask(db, ask, release, release_id, batch, reservation, validator)
-        finally:
-            if reserved_here:
-                self.gateway.release(db, reservation)
-        return self._outcome(ask, resolutions, len(planned))
+                resolutions += self._unavailable(batch, held.code)
+                continue
+            asked += 1
+            try:
+                resolutions += self._ask(db, ask, release, release_id, batch, held, validator)
+            finally:
+                self.gateway.release(db, held)
+        return self._outcome(ask, resolutions, asked)
+
+    def _overhead_tokens(self, release: JevRelease) -> int:
+        measure = getattr(self.gateway, "input_overhead_tokens", None)
+        provider = provider_for(release.model_id)
+        return int(measure(provider, SemanticAnswers)) if callable(measure) and provider else 0
 
     @staticmethod
     def _outcome(ask: SemanticAsk, resolutions: list[Resolution], calls: int) -> SemanticOutcome:

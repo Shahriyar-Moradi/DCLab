@@ -1644,6 +1644,15 @@
             "title": "Row Count",
             "type": "integer"
           },
+          "uploaded_by": {
+            "description": "Who uploaded the file: `connected_tool` (uploaded with a service token, i.e. by a connected tool or agent) or `person` (not uploaded with a service token: a person's own sign-in or own API token counts as the person, as do rows from before attribution existed and derived training datasets, which are never scoring files). Weekly scheduled scoring scores only files a person uploaded.",
+            "enum": [
+              "person",
+              "connected_tool"
+            ],
+            "title": "Uploaded By",
+            "type": "string"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -1664,6 +1673,7 @@
           "content_digest",
           "row_count",
           "column_count",
+          "uploaded_by",
           "created_at"
         ],
         "title": "DatasetListItem",
@@ -2223,6 +2233,15 @@
             "title": "Source Type",
             "type": "string"
           },
+          "uploaded_by": {
+            "description": "Who uploaded the file: `connected_tool` (uploaded with a service token, i.e. by a connected tool or agent) or `person` (not uploaded with a service token: a person's own sign-in or own API token counts as the person, as do rows from before attribution existed and derived training datasets, which are never scoring files). Weekly scheduled scoring scores only files a person uploaded.",
+            "enum": [
+              "person",
+              "connected_tool"
+            ],
+            "title": "Uploaded By",
+            "type": "string"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -2246,6 +2265,7 @@
           "size_bytes",
           "row_count",
           "column_count",
+          "uploaded_by",
           "created_at",
           "ingestion"
         ],
@@ -2313,6 +2333,15 @@
             "title": "Row Count",
             "type": "integer"
           },
+          "uploaded_by": {
+            "description": "Who uploaded the file: `connected_tool` (uploaded with a service token, i.e. by a connected tool or agent) or `person` (not uploaded with a service token: a person's own sign-in or own API token counts as the person, as do rows from before attribution existed and derived training datasets, which are never scoring files). Weekly scheduled scoring scores only files a person uploaded.",
+            "enum": [
+              "person",
+              "connected_tool"
+            ],
+            "title": "Uploaded By",
+            "type": "string"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -2333,6 +2362,7 @@
           "content_digest",
           "row_count",
           "column_count",
+          "uploaded_by",
           "created_at",
           "policy"
         ],
@@ -8596,6 +8626,148 @@
         "title": "NodeImpactRead",
         "type": "object"
       },
+      "NotificationPreferenceRead": {
+        "properties": {
+          "applies_to_you": {
+            "description": "Whether your role in this workspace receives this kind at all.",
+            "title": "Applies To You",
+            "type": "boolean"
+          },
+          "default": {
+            "description": "The default for this kind.",
+            "title": "Default",
+            "type": "boolean"
+          },
+          "email_enabled": {
+            "description": "Your choice (the default unless you changed it).",
+            "title": "Email Enabled",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "decision_needed",
+              "run_finished",
+              "run_failed",
+              "scheduled_scoring_result",
+              "drift_alert",
+              "quota_warning"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "email_enabled",
+          "default",
+          "applies_to_you"
+        ],
+        "title": "NotificationPreferenceRead",
+        "type": "object"
+      },
+      "NotificationPreferenceWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "email_enabled": {
+            "title": "Email Enabled",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "decision_needed",
+              "run_finished",
+              "run_failed",
+              "scheduled_scoring_result",
+              "drift_alert",
+              "quota_warning"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "email_enabled"
+        ],
+        "title": "NotificationPreferenceWrite",
+        "type": "object"
+      },
+      "NotificationPreferencesRead": {
+        "description": "``GET /v1/me/notification-preferences``: your email choices in the selected workspace.",
+        "properties": {
+          "email_delivery": {
+            "description": "`off`: EMAIL_PROVIDER=none (nothing is sent); `paused`: NOTIFICATIONS_ENABLED=false.",
+            "enum": [
+              "on",
+              "off",
+              "paused"
+            ],
+            "title": "Email Delivery",
+            "type": "string"
+          },
+          "email_verified": {
+            "description": "DCLab emails only people whose address is verified.",
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationPreferenceRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "email_delivery",
+          "email_verified",
+          "items"
+        ],
+        "title": "NotificationPreferencesRead",
+        "type": "object"
+      },
+      "NotificationPreferencesWrite": {
+        "additionalProperties": false,
+        "description": "``PUT /v1/me/notification-preferences``: set one or more kinds (others keep their value).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationPreferenceWrite"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "NotificationPreferencesWrite",
+        "type": "object"
+      },
       "OperatingConstraintInput": {
         "additionalProperties": false,
         "properties": {
@@ -12468,6 +12640,13 @@
             "title": "Id",
             "type": "string"
           },
+          "ignored_token_uploads": {
+            "default": 0,
+            "description": "Files uploaded for scoring by connected tools (with a service token) since the last scheduled run that scored a file (or since the schedule was created): never scored by the schedule. Uploads made with a person's own sign-in or own API token are the person's and are not counted here.",
+            "minimum": 0.0,
+            "title": "Ignored Token Uploads",
+            "type": "integer"
+          },
           "last_planned_for": {
             "anyOf": [
               {
@@ -12706,7 +12885,7 @@
         "description": "``GET``/``PUT /v1/projects/{id}/scoring-schedule``: the schedule (or null) and recent runs.",
         "properties": {
           "about": {
-            "default": "Every week on the chosen day and hour (UTC) DCLab scores the newest file you uploaded for scoring since the last run, with the model in use approved for scoring, as the person who last saved the schedule. It does not retrain, does not fetch data and scores only uploaded files; with no new file or no approved model it scores nothing and says so. The result is the week's list (download it from the prediction). Any file uploaded for scoring counts, also one an agent uploaded with a service token. DCLab's worker runs it between jobs: a worker busy or down for more than 24 hours skips that week.",
+            "default": "Every week on the chosen day and hour (UTC) DCLab scores the newest file you uploaded for scoring since the last run, with the model in use approved for scoring, as the person who last saved the schedule. It does not retrain, does not fetch data and scores only uploaded files; with no new file or no approved model it scores nothing and says so. The result is the week's list (download it from the prediction). Only files uploaded by a person are scored; files a connected tool uploaded with a service token are ignored. A file uploaded with a person's own sign-in or own API token counts as that person's. DCLab's worker runs it between jobs: a worker busy or down for more than 24 hours skips that week.",
             "description": "What scheduled scoring does and does not do.",
             "title": "About",
             "type": "string"
@@ -13373,6 +13552,50 @@
         "title": "SwitchesRead",
         "type": "object"
       },
+      "UnsubscribeRead": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "decision_needed",
+              "run_finished",
+              "run_failed",
+              "scheduled_scoring_result",
+              "drift_alert",
+              "quota_warning"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "unsubscribed": {
+            "const": true,
+            "default": true,
+            "title": "Unsubscribed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "UnsubscribeRead",
+        "type": "object"
+      },
+      "UnsubscribeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "The token from the email's unsubscribe link.",
+            "maxLength": 256,
+            "minLength": 20,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "UnsubscribeRequest",
+        "type": "object"
+      },
       "UsageDayRead": {
         "additionalProperties": false,
         "properties": {
@@ -13900,6 +14123,512 @@
           "created_at"
         ],
         "title": "VisualizationRead",
+        "type": "object"
+      },
+      "WebhookCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "enum": [
+                "decision_needed",
+                "run_finished",
+                "run_failed",
+                "scheduled_scoring_result",
+                "drift_alert",
+                "quota_warning"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "description": "https only, port 443 (or a port the platform allows), no user:password.",
+            "maxLength": 2048,
+            "minLength": 9,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url",
+          "events"
+        ],
+        "title": "WebhookCreate",
+        "type": "object"
+      },
+      "WebhookDeliveryRead": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery_id": {
+            "description": "The X-DCLab-Delivery value (the same on every retry).",
+            "format": "uuid",
+            "title": "Delivery Id",
+            "type": "string"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "delivered",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          }
+        },
+        "required": [
+          "id",
+          "delivery_id",
+          "event",
+          "attempt",
+          "outcome",
+          "duration_ms",
+          "created_at"
+        ],
+        "title": "WebhookDeliveryRead",
+        "type": "object"
+      },
+      "WebhookRead": {
+        "description": "A webhook endpoint. Never contains its signing secret.",
+        "properties": {
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_delivery_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivery At"
+          },
+          "last_delivery_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "delivered",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivery Outcome"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set after 5 failed deliveries in a row: deliveries wait until then, then one is tried.",
+            "title": "Paused Until"
+          },
+          "secret_rotated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Rotated At"
+          },
+          "secret_version": {
+            "title": "Secret Version",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "url",
+          "events",
+          "enabled",
+          "secret_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WebhookRead",
+        "type": "object"
+      },
+      "WebhookSecretRead": {
+        "properties": {
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_delivery_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivery At"
+          },
+          "last_delivery_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "delivered",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivery Outcome"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set after 5 failed deliveries in a row: deliveries wait until then, then one is tried.",
+            "title": "Paused Until"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The signing secret. Returned only by the create / rotate response; store it now. An Idempotency-Key replay returns null.",
+            "title": "Secret"
+          },
+          "secret_rotated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Rotated At"
+          },
+          "secret_version": {
+            "title": "Secret Version",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "url",
+          "events",
+          "enabled",
+          "secret_version",
+          "created_at",
+          "updated_at",
+          "secret"
+        ],
+        "title": "WebhookSecretRead",
+        "type": "object"
+      },
+      "WebhookTestRead": {
+        "properties": {
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "outbox_id": {
+            "format": "uuid",
+            "title": "Outbox Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outbox_id",
+          "status",
+          "note"
+        ],
+        "title": "WebhookTestRead",
+        "type": "object"
+      },
+      "WebhookUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "decision_needed",
+                    "run_finished",
+                    "run_failed",
+                    "scheduled_scoring_result",
+                    "drift_alert",
+                    "quota_warning"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 6,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 9,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "WebhookUpdate",
         "type": "object"
       },
       "WorkersRead": {
@@ -15409,7 +16138,7 @@
         ]
       },
       "post": {
-        "description": "Upload a file into a project: stored, structurally validated, ingested and\npublished for internal training (ADR 0005) through the Labs ingestion path.\nSynchronous; does not start training (that is ``POST /v1/experiments``).\n``purpose=scoring`` marks rows to score (no target; refused as a run source).\nRequires ``Idempotency-Key`` (bound to the file's sha256, filename, type,\nproject and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;\na structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its\nstorage limit: ``429 quota_exceeded`` (nothing is stored).",
+        "description": "Upload a file into a project: stored, structurally validated, ingested and\npublished for internal training (ADR 0005) through the Labs ingestion path.\nSynchronous; does not start training (that is ``POST /v1/experiments``).\n``purpose=scoring`` marks rows to score (no target; refused as a run source).\nA service token's upload is recorded as ``uploaded_by: connected_tool`` and is never picked\nup by weekly scheduled scoring; an upload made with the person's own session or own API token\nis ``person``. Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,\nproject and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;\na structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its\nstorage limit: ``429 quota_exceeded`` (nothing is stored).",
         "operationId": "create_dataset_v1_v1_datasets_post",
         "parameters": [
           {
@@ -19299,6 +20028,209 @@
         ]
       }
     },
+    "/v1/me/notification-preferences": {
+      "get": {
+        "description": "Your email choices for each notification kind in the selected workspace (defaults: decisions\nwaiting, failed runs, drift alerts and usage warnings on; finished runs and weekly scoring\nresults off), whether your role receives each kind at all, and whether this server sends email\n(`email_delivery`: `off` with EMAIL_PROVIDER=none, `paused` with the kill switch). Signed-in\nsessions only. Never cached.",
+        "operationId": "read_notification_preferences_v1_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Notification Preferences",
+        "tags": [
+          "v1"
+        ]
+      },
+      "put": {
+        "description": "Turn email on or off for one or more kinds (yours only; kinds not listed keep their value).\nIdempotent by state: an `Idempotency-Key` is validated and a replay changes nothing.",
+        "operationId": "save_notification_preferences_v1_me_notification_preferences_put",
+        "parameters": [
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferencesWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Save Notification Preferences",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
     "/v1/model-builds/{pipeline_run_id}": {
       "get": {
         "operationId": "read_model_build_v1_model_builds__pipeline_run_id__get",
@@ -20201,6 +21133,129 @@
           }
         },
         "summary": "Read Node Impact",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/notifications/unsubscribe": {
+      "post": {
+        "description": "One-click unsubscribe from an email link (`/unsubscribe#token=…`; the token travels in the\nURL fragment, never to a server log). No sign-in and no session needed: the signed token\n(30 days) can only turn off email of its one kind for the person and workspace it was made\nfor. Idempotent by state.",
+        "operationId": "unsubscribe_v1_v1_notifications_unsubscribe_post",
+        "parameters": [
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Unsubscribe V1",
         "tags": [
           "v1"
         ]
@@ -23103,7 +24158,7 @@
         ]
       },
       "put": {
-        "description": "Turn weekly scoring on or off, or change its day and hour (UTC). One schedule per\nproject; ``enabled=false`` turns it off and keeps it and its runs. Each week it scores the\nnewest file uploaded for scoring since the last run with the model in use approved for\nscoring, acting as you (re-checked every run). Writes an accepted\n``scoring_schedule_changed`` History entry (``rationale``: your reason). People with\nML-write only: a service token gets ``403 service_token_not_permitted``, any agent\n``403 human_session_required``, a viewer ``403 forbidden``. Requires ``Idempotency-Key``.",
+        "description": "Turn weekly scoring on or off, or change its day and hour (UTC). One schedule per\nproject; ``enabled=false`` turns it off and keeps it and its runs. Each week it scores the\nnewest file a person uploaded for scoring since the last run (files a connected tool uploaded\nwith a service token are ignored; your own sign-in or own API token counts as you) with the\nmodel in use approved for scoring, acting as you (re-checked every run). Writes an accepted\n``scoring_schedule_changed`` History entry (``rationale``: your reason). People with\nML-write only: a service token gets ``403 service_token_not_permitted``, any agent\n``403 human_session_required``, a viewer ``403 forbidden``. Requires ``Idempotency-Key``.",
         "operationId": "save_scoring_schedule_v1_projects__project_id__scoring_schedule_put",
         "parameters": [
           {
@@ -24771,6 +25826,768 @@
           }
         },
         "summary": "Read Workspace Usage",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks": {
+      "get": {
+        "description": "The workspace's webhook endpoints (at most 5) with their last delivery. Never a secret.\nOwners and administrators on a signed-in session only.",
+        "operationId": "read_webhooks_v1_workspaces__workspace_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookRead"
+                  },
+                  "title": "Response Read Webhooks V1 Workspaces  Workspace Id  Webhooks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Webhooks",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Add a webhook endpoint (https, port 443 unless the platform allows others; private and\nlocal destinations are refused when added and again at every delivery). `secret` (for the\n`X-DCLab-Signature` check) is returned by this response only; a replay of the\n`Idempotency-Key` returns `secret: null`. Requires `Idempotency-Key`. 409\n`webhooks_not_configured` when this server has no WEBHOOK_SECRET_KEY, `webhook_limit_reached`\nat 5 endpoints.",
+        "operationId": "create_webhook_v1_v1_workspaces__workspace_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSecretRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Create Webhook V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}": {
+      "patch": {
+        "description": "Change the name, URL or events, or turn the endpoint off / on (`enabled`; turning it on also\nclears a paused delivery breaker). Endpoints are turned off, never deleted (the delivery log and\nchange trail stay). Every URL, events, on / off change is recorded with who made it. Idempotent\nby state.",
+        "operationId": "update_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Update Webhook V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries": {
+      "get": {
+        "description": "The endpoint's newest 50 delivery attempts: event, attempt, HTTP status, a closed error code\nand the duration. Response bodies are never stored.",
+        "operationId": "read_webhook_deliveries_v1_workspaces__workspace_id__webhooks__webhook_id__deliveries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeliveryRead"
+                  },
+                  "title": "Response Read Webhook Deliveries V1 Workspaces  Workspace Id  Webhooks  Webhook Id  Deliveries Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Webhook Deliveries",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret": {
+      "post": {
+        "description": "Replace the signing secret now (the old one stops verifying at once); the new `secret` is\nreturned by this response only (a replay of the `Idempotency-Key` returns `secret: null` and\nrotates nothing). Requires `Idempotency-Key`.",
+        "operationId": "rotate_webhook_secret_v1_v1_workspaces__workspace_id__webhooks__webhook_id__rotate_secret_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSecretRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Rotate Webhook Secret V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test": {
+      "post": {
+        "description": "Queue a signed `ping` to the endpoint (at most one per minute, a repeat within the minute\nreturns the same one; at most 6 per hour: 409 `ping_limit_reached`). The worker tries it once;\nthe result appears in the delivery log.",
+        "operationId": "test_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookTestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Test Webhook V1",
         "tags": [
           "v1"
         ]

@@ -22,10 +22,11 @@ anything. ``UNIQUE (schedule_id, planned_for)`` backs the row lock, so a slot is
 across workers and restarts. One schedule's failure is recorded (``failed_to_queue``) and never
 blocks the others.
 
-Known limit (documented, accepted): uploads (``POST /v1/datasets``) record the acting person but
-not whether a service token made them, so a token with ``datasets:write`` can upload a scoring
-file that the next weekly run scores as the person who saved the schedule. The model in use and
-its approval stay a person's choice; only the input file can come from an agent.
+Only files a person uploaded are scored (0082): a dataset with ``uploaded_by_service_token_id``
+(a ``POST /v1/datasets`` call made with a service token) is never picked, so a token with
+``datasets:write`` cannot choose what a run scores as the person who saved the schedule. Such a
+week records ``skipped_no_new_file`` (the 0079 reason CHECK is not migrated for it) and the
+schedule read counts the ignored files (``ignored_token_uploads``).
 """
 
 from __future__ import annotations
@@ -247,6 +248,8 @@ def schedule_state(
     if schedule is None:
         return ScoringScheduleState(project_id=project_id, status="off")
     owner_ok = _owner(db, schedule) is not None
+    ignored = db.scalar(select(func.count()).select_from(Dataset).where(
+        *_new_scoring_files(db, schedule), Dataset.uploaded_by_service_token_id.is_not(None))) or 0
     paused = _pause_message()
     read = ScoringScheduleRead(
         id=schedule.id, weekday=schedule.weekday, weekday_name=WEEKDAY_NAMES[schedule.weekday],
@@ -256,7 +259,7 @@ def schedule_state(
         updated_at=utc(schedule.updated_at),
         created_by_user_id=None if agent else schedule.created_by_user_id,
         updated_by_user_id=None if agent else schedule.updated_by_user_id,
-        owner_can_score=owner_ok, warning=_warning(db, schedule, owner_ok),
+        owner_can_score=owner_ok, warning=_warning(db, schedule, owner_ok), ignored_token_uploads=ignored,
     )
     status = "off" if not schedule.enabled else ("paused_by_platform" if paused else "on")
     runs = db.scalars(_runs_query(schedule).limit(RECENT_RUNS)).all()
@@ -335,14 +338,32 @@ def _finish(db: Session, schedule: ScoringSchedule, slot: datetime, outcome: str
                              schedule_id=schedule.id, planned_for=slot, outcome=outcome, reason_code=reason, **ids)
     db.add(row)
     _advance(schedule, slot)
+    from app.services.notification_service import notify_schedule_outcome  # P8.8-A; never raises
+
+    notify_schedule_outcome(db, workspace_id=schedule.workspace_id, project_id=schedule.project_id,
+                            schedule_id=schedule.id, planned_for=slot, outcome=outcome)
     db.commit()
     return row
 
 
+def _new_scoring_files(db: Session, schedule: ScoringSchedule) -> tuple[Any, ...]:
+    """Filters for the project's stored files uploaded for scoring (``purpose=scoring``) since the
+    schedule was created and since its last queued run, whoever uploaded them."""
+
+    ws = schedule.workspace_id
+    last_queued = db.scalar(select(func.max(ScoringScheduleRun.created_at)).where(
+        ScoringScheduleRun.workspace_id == ws, ScoringScheduleRun.schedule_id == schedule.id,
+        ScoringScheduleRun.outcome == OUTCOME_QUEUED))
+    since = max(schedule.created_at, last_queued) if last_queued is not None else schedule.created_at
+    return (Dataset.workspace_id == ws, Dataset.project_id == schedule.project_id,
+            Dataset.purpose == DATASET_PURPOSE_SCORING, Dataset.artifact_id.is_not(None), Dataset.created_at > since)
+
+
 def _newest_new_file(db: Session, schedule: ScoringSchedule, model: ModelVersion) -> Dataset | None:
-    """The newest file uploaded for scoring (``purpose=scoring``, the "Score new data" upload)
-    since the schedule was created and since its last queued run, that this model never scored
-    and that is not the file the model was trained on (by id or identical content)."""
+    """The newest file a person uploaded for scoring (``purpose=scoring``, the "Score new data"
+    upload; never one a service token uploaded) since the schedule was created and since its last
+    queued run, that this model never scored and that is not the file the model was trained on (by
+    id or identical content)."""
 
     ws = schedule.workspace_id
     experiment = db.scalar(select(Experiment).where(
@@ -350,10 +371,6 @@ def _newest_new_file(db: Session, schedule: ScoringSchedule, model: ModelVersion
     source = None
     if experiment is not None and experiment.source_dataset_id is not None:
         source = db.scalar(select(Dataset).where(Dataset.id == experiment.source_dataset_id, Dataset.workspace_id == ws))
-    last_queued = db.scalar(select(func.max(ScoringScheduleRun.created_at)).where(
-        ScoringScheduleRun.workspace_id == ws, ScoringScheduleRun.schedule_id == schedule.id,
-        ScoringScheduleRun.outcome == OUTCOME_QUEUED))
-    since = max(schedule.created_at, last_queued) if last_queued is not None else schedule.created_at
     scored = select(BatchPrediction.id).where(
         BatchPrediction.workspace_id == ws, BatchPrediction.input_dataset_id == Dataset.id,
         BatchPrediction.model_version_id == model.id).exists()
@@ -361,9 +378,7 @@ def _newest_new_file(db: Session, schedule: ScoringSchedule, model: ModelVersion
         ScoringScheduleRun.workspace_id == ws, ScoringScheduleRun.schedule_id == schedule.id,
         ScoringScheduleRun.input_dataset_id == Dataset.id, ScoringScheduleRun.outcome == OUTCOME_QUEUED).exists()
     query = select(Dataset).where(
-        Dataset.workspace_id == ws, Dataset.project_id == schedule.project_id,
-        Dataset.purpose == DATASET_PURPOSE_SCORING, Dataset.artifact_id.is_not(None), Dataset.created_at > since,
-        ~scored, ~in_runs)
+        *_new_scoring_files(db, schedule), Dataset.uploaded_by_service_token_id.is_(None), ~scored, ~in_runs)
     if source is not None:
         query = query.where(Dataset.id != source.id)
         if source.content_digest:

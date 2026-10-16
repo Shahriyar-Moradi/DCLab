@@ -10,7 +10,7 @@ import pytest
 
 from app.agents.gateway.limits import GatewayLimits
 from app.agents.gateway.providers import ProviderError
-from app.agents.gateway.providers.openai import OpenAIProvider
+from app.agents.gateway.providers.anthropic import AnthropicProvider
 from app.agents.gateway.service import GatewayService
 from app.agents.prompt_releases import prompt_text
 from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, LlmInvocation, MlRunVerification
@@ -137,7 +137,7 @@ def test_verified_run_valid_luna_response_persists(auth_client, db_session, monk
     upload, ai = _attributed(auth_client, db_session, monkeypatch)
     attempt = request_pipeline_verification(db_session, upload.id, settings=_settings())
     assert attempt.llm_status == "completed"
-    assert attempt.llm_model == "gpt-6-luna"
+    assert attempt.llm_model == "claude-sonnet-5-5" and attempt.llm_provider == "anthropic"
     assert attempt.llm_report["overall_status"] == "VERIFIED"
     assert len(attempt.input_digest) == 64
     assert db_session.get(MlRunVerification, attempt.id) is not None
@@ -192,8 +192,9 @@ def test_ai_enabled_off_makes_no_gateway_call(db_session, monkeypatch):
 
 def test_missing_provider_key_fails_verifier_only(auth_client, db_session, monkeypatch):
     upload, ai = _attributed(auth_client, db_session, monkeypatch)
-    monkeypatch.delenv("DCLAB_OPENAI_API_KEY", raising=False)
-    gateway = GatewayService(providers={"openai": OpenAIProvider()}, limits=GatewayLimits(),
+    for name in ("DCLAB_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    gateway = GatewayService(providers={"anthropic": AnthropicProvider()}, limits=GatewayLimits(),
                              settings=lambda: SimpleNamespace(ai_enabled=True, dclab_env="test"))
     attempt = request_pipeline_verification(db_session, upload.id, settings=_settings(), gateway=gateway)
     assert (attempt.llm_status, attempt.error) == ("unavailable", "provider_error")
@@ -364,10 +365,10 @@ def test_multiple_attempts_coexist_and_deep_uses_sol(auth_client, db_session, mo
     attempts = list_verification_attempts(db_session, upload.id)
     assert {item.id for item in attempts} == {first.id, second.id}
     assert second.audit_mode == "deep"
-    assert [call.model for call in ai.fake.calls] == ["gpt-6-luna", "gpt-6.1-sol"]
-    assert second.llm_model == "gpt-6.1-sol"
+    assert [call.model for call in ai.fake.calls] == ["claude-sonnet-5-5", "claude-sonnet-5-5"]  # one model for both since 2026-10-16
+    assert second.llm_model == "claude-sonnet-5-5"
     deep_row = db_session.get(LlmInvocation, second.llm_invocation_id)
-    assert (deep_row.purpose, deep_row.model) == ("pipeline_audit_deep", "gpt-6.1-sol")
+    assert (deep_row.purpose, deep_row.model) == ("pipeline_audit_deep", "claude-sonnet-5-5")
 
 
 def test_reverification_does_not_mutate_ml_result_or_retrain(auth_client, db_session, monkeypatch):

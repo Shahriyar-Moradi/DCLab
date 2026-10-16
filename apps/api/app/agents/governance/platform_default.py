@@ -2,8 +2,16 @@
 
 Never editable at runtime: the default is seeded as the platform ``ai_policies``
 row (``change_kind = 'seed'``); CAPS bound every effective policy; the constants
-below are not policy at all. Founder decisions of 2026-10-04 are filled in
-(OpenAI ``gpt-6.1-sol`` / ``gpt-6-luna``, Jev ``jev-1.13.0``, budgets, no sample values).
+below are not policy at all. Founder decisions of 2026-10-04 are filled in (budgets, no
+sample values); on 2026-10-16 every role, Jev included, moved to Claude Sonnet 5.5
+(``claude-sonnet-5-5`` on Anthropic). LEGACY (kept for now): the OpenAI ``gpt-6.1-sol`` /
+``gpt-6-luna`` and TypeSafe ``jev-1.13.0`` ids are commented out below.
+
+Stored ``ai_policies`` rows that still name a legacy id need no data migration: the
+effective policy clamps every stored document into CAPS at read (``policy.narrow``: a
+role's ``allowed`` keeps only allowlisted ids, else CAPS' list; ``default`` / ``per_agent``
+entries outside it fall back to the CAPS role default / are dropped), a write naming one is
+refused (``cap_violations``), and a request naming one is refused ``model_not_allowed``.
 """
 
 from __future__ import annotations
@@ -146,23 +154,27 @@ class AiPolicyV1(_Strict):
     incidents: Incidents
 
 
-_SOL, _LUNA, _JEV = "gpt-6.1-sol", "gpt-6-luna", "jev-1.13.0"
+_SONNET = "claude-sonnet-5-5"  # every role since 2026-10-16 (founder)
+# LEGACY (switched to Anthropic 2026-10-16; kept for now):
+# _SOL, _LUNA, _JEV = "gpt-6.1-sol", "gpt-6-luna", "jev-1.13.0"
+# lead {_SOL; [_SOL, _LUNA]}, specialist {_SOL; [_SOL, _LUNA]; per_agent dataset_investigator: _LUNA},
+# legacy_decision {_LUNA; [_LUNA]}, verifier {_LUNA; [_LUNA, _SOL]}, jev {_JEV; [_JEV]}
 
 PLATFORM_DEFAULT = AiPolicyV1.model_validate(
     {
         "schema_version": 1,
         "models": {
             "roles": {
-                "lead": {"default": _SOL, "allowed": [_SOL, _LUNA], "fallback": "rule_path"},
+                "lead": {"default": _SONNET, "allowed": [_SONNET], "fallback": "rule_path"},
                 "specialist": {
-                    "default": _SOL,
-                    "allowed": [_SOL, _LUNA],
+                    "default": _SONNET,
+                    "allowed": [_SONNET],
                     "fallback": "rule_answer",
-                    "per_agent": {"dataset_investigator": _LUNA},
+                    "per_agent": {"dataset_investigator": _SONNET},
                 },
-                "legacy_decision": {"default": _LUNA, "allowed": [_LUNA], "fallback": "rule_answer"},
-                "verifier": {"default": _LUNA, "allowed": [_LUNA, _SOL], "fallback": "rule_answer"},
-                "jev": {"default": _JEV, "allowed": [_JEV], "fallback": "rule_answer"},
+                "legacy_decision": {"default": _SONNET, "allowed": [_SONNET], "fallback": "rule_answer"},
+                "verifier": {"default": _SONNET, "allowed": [_SONNET], "fallback": "rule_answer"},
+                "jev": {"default": _SONNET, "allowed": [_SONNET], "fallback": "rule_answer"},
             }
         },
         "data": {"max_class": "aggregates", "sample_values_per_column": 0, "user_text_to_jev": False,
@@ -188,6 +200,8 @@ PLATFORM_DEFAULT = AiPolicyV1.model_validate(
             "assistant_thread": {"steps": 40, "tokens": 300000, "wall_s": 900},
             "assistant_user": {"turns_per_hour": 60, "concurrent_turns": 2},
             "specialist": {"calls": 2, "tokens": 24000, "wall_s": 60},
+            # Not read at runtime: the code-owned releases.TIMEOUT_MS (30 s since 2026-10-16) and the token-
+            # packed batches (releases.JEV_MAX_*) apply. Left unchanged so stored documents stay comparable.
             "jev": {"timeout_ms": 1000, "batch": 50},
         },
         "proposals": {"ttl_days": 7},
@@ -201,7 +215,7 @@ PLATFORM_DEFAULT = AiPolicyV1.model_validate(
 # platform allowlist; limits and budgets <= these values (P8 ties budgets to plan
 # entitlements); auto_release false in the MVP; incidents only stricter.
 CAPS = PLATFORM_DEFAULT
-PLATFORM_MODEL_ALLOWLIST = frozenset({_SOL, _LUNA, _JEV})
+PLATFORM_MODEL_ALLOWLIST = frozenset({_SONNET})  # LEGACY (kept for now): {_SOL, _LUNA, _JEV}
 
 # Code constants, never policy.
 UNTRUSTED_TEXT_MARKING = True

@@ -7,11 +7,12 @@ not schema. Scientific tables are not duplicated here.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.data_plane import UPLOADED_BY_DESCRIPTION
 from app.domain.observability import LlmInvocationRead
 from app.domain.reproducibility import (
     ArtifactRead,
@@ -53,6 +54,7 @@ class DatasetListItem(BaseModel):
     row_count: int
     column_count: int
     purpose: str = "training"
+    uploaded_by: Literal["person", "connected_tool"] = Field(description=UPLOADED_BY_DESCRIPTION)
     created_at: datetime
 
 

@@ -299,7 +299,7 @@ def test_real_pipeline_events_llm_contract_and_tenant_apis(
     assert isinstance(attempt, MlRunVerification)
     assert audit_invocation.purpose == "pipeline_audit_deep"
     assert audit_invocation.mode == "completion"  # gateway rows; the audit mode is the purpose suffix
-    assert audit_invocation.model == "gpt-6.1-sol"
+    assert audit_invocation.model == "claude-sonnet-5-5"
     assert audit_invocation.purpose not in {
         "semantic_target",
         "semantic_missing_value",

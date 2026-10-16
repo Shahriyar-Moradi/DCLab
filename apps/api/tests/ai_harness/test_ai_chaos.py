@@ -122,8 +122,8 @@ def test_jev_decision_points_fall_back_to_the_rule(hk, kind):
     off = _ai_off_jev(hk)  # the AI-off run
     chaos = Chaos(kind, jev_script(), flip=flipper(hk.db, hk.ws_a), flip_at=2)
     provider = FakeProvider(handler=chaos.handler, environment="test")
-    service = hk.service(providers={"openai": hk.fake, "typesafe": provider})
-    _arm(chaos, service, hk.limits, provider="typesafe", workspace_id=hk.ws_a)
+    service = hk.service(providers={"anthropic": provider})  # Jev routes to Anthropic since 2026-10-16
+    _arm(chaos, service, hk.limits, provider="anthropic", workspace_id=hk.ws_a)
     if kind == "over_budget":
         Chaos.exhaust_budget(service, hk.db, hk.ws_a)
     values = run_jev(hk, provider, 2, service=service)  # L2: the control shows the answer would be applied
@@ -150,7 +150,7 @@ def test_a_critic_run_falls_back_to_no_review(ac, kind):
     provider = FakeProvider(handler=chaos.handler, environment="test")
     limits = GatewayLimits()
     gateway = gateway_for(provider, ON, limits=limits)
-    result = run_specialist(ac, critic.AGENT_KEY, gateway, **_arm(chaos, gateway, limits, provider="openai",
+    result = run_specialist(ac, critic.AGENT_KEY, gateway, **_arm(chaos, gateway, limits, provider="anthropic",
                                                                    workspace_id=g.ws))
     assert result.proposal_ids == () and result.status != "completed", result
     assert [p["refusal"] for p in _events(db, result, "llm_call_finished")] == [REFUSAL[kind]]
@@ -169,7 +169,7 @@ def test_an_assistant_turn_falls_back_to_a_template(lead, kind):
     chaos = Chaos(kind, ScriptedLeadDriver(lead_steps(g)), flip=flipper(db, g.ws), flip_at=2)  # read, propose, answer
     limits = GatewayLimits()
     gateway = gateway_for(lead.fake, lead.settings, limits=limits)
-    result = run_lead(lead, chaos.handler, gateway, **_arm(chaos, gateway, limits, provider="openai",
+    result = run_lead(lead, chaos.handler, gateway, **_arm(chaos, gateway, limits, provider="anthropic",
                                                            workspace_id=g.ws))
     [said] = _events(db, result, "assistant_message")
     # Both are deterministic templates without citations; the texts differ by design (AI off offers

@@ -26,7 +26,7 @@ from uuid import UUID
 from app.agents.gateway.contract import GatewayRefusal
 
 WORKSPACE_CALLS_PER_MINUTE = 60
-PROVIDER_REQUESTS_PER_SECOND = {"openai": 50, "typesafe": 80}
+PROVIDER_REQUESTS_PER_SECOND = {"anthropic": 50, "openai": 50, "typesafe": 80}  # openai / typesafe: LEGACY
 DEFAULT_PROVIDER_RPS = 20
 BREAKER_FAILURES = 5
 BREAKER_WINDOW_S = 60.0

@@ -1,5 +1,8 @@
 """TypeSafe Jev adapter: ``system_one`` through ``typesafe-sdk==0.7.2`` (ADR 0008 §5; ADR 0009 §9).
 
+LEGACY (switched to Anthropic 2026-10-16; kept for now): registered only with
+``AI_LEGACY_PROVIDERS_ENABLED=true`` and no model id routes here (see ``providers.default_providers``).
+
 The only DCLab module that imports ``typesafe_sdk`` (the optional ``agents`` extra), and
 only lazily: without it ``ready()`` is false and the semantic port stays deterministic.
 The key is read only from ``DCLAB_TYPESAFE_API_KEY`` and passed explicitly, as are the

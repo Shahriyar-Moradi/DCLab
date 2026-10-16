@@ -2,7 +2,8 @@
 
 /**
  * "Weekly scoring" (V7-B2b-UI): the project's weekly schedule on the Predictions screen. Each week DCLab scores the newest
- * file uploaded for scoring with the model in use if a person approved it; it never retrains, fetches data or switches models.
+ * file a person uploaded for scoring (never one a connected tool uploaded with a service token) with the model in use if a person approved it; it never
+ * retrains, fetches data or switches models.
  * Saving is a signed-in person's act with one confirm step. Every value comes from the schedule read; untrusted text is plain text.
  */
 import Link from "next/link";
@@ -16,7 +17,7 @@ import { useProjectRefs } from "@/lib/application/studio-hooks";
 import { modelLabel } from "@/lib/application/studio-releases";
 import { useProjectReleases } from "@/lib/application/studio-releases-hooks";
 import {
-  ABOUT_LINES, HOURS, REASON_MAX, WEEKDAYS, confirmWords, isConflict, localHint, mapScheduleError, modelUsed, nextRunText, ownerWarning, reasonToSend, runRows, savedText,
+  ABOUT_LINES, HOURS, REASON_MAX, WEEKDAYS, confirmWords, ignoredUploadsText, isConflict, localHint, mapScheduleError, modelUsed, nextRunText, ownerWarning, reasonToSend, runRows, savedText,
   scheduleAction, scheduleView, slotText, type Intent, type ScheduleLike,
 } from "@/lib/application/studio-schedule";
 import { saveScoringSchedule, useScheduleWrites, useScoringSchedule } from "@/lib/application/studio-schedule-hooks";
@@ -140,6 +141,7 @@ export function WeeklyScoring({ projectId }: { projectId: string }) {
         <>
           <p data-testid="weekly-slot">{slotText(schedule.weekday, schedule.hour_utc)}{hint ? <span className="muted"> · {hint}</span> : null}</p>
           {next ? <p data-testid="weekly-next">{next}</p> : null}
+          {ignoredUploadsText(schedule) ? <p className="muted" data-testid="weekly-ignored">{ignoredUploadsText(schedule)}</p> : null}
         </>
       ) : null}
       {warning && view.kind !== "on_idle" ? <Banner tone="warn">{warning}</Banner> : null}

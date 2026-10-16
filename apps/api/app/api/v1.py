@@ -96,7 +96,7 @@ from app.domain.errors import (
     TargetIntentConflictError,
     TargetNotInDatasetError,
 )
-from app.domain.data_plane import DATASET_PURPOSE_TRAINING, DATASET_PURPOSES
+from app.domain.data_plane import DATASET_PURPOSE_TRAINING, DATASET_PURPOSES, uploaded_by
 from app.domain.execution_requests import (
     REQUEST_NEEDS_INPUT,
     SERVER_OWNED_REQUEST_SPEC_KEYS,
@@ -875,7 +875,12 @@ def _dataset_upload_read(db: Session, dataset: Any) -> DatasetUploadRead:
     ).all()
     return DatasetUploadRead.model_validate(
         {
-            **{key: getattr(dataset, key) for key in DatasetUploadRead.model_fields if key not in ("ingestion", "columns")},
+            **{
+                key: getattr(dataset, key)
+                for key in DatasetUploadRead.model_fields
+                if key not in ("ingestion", "columns", "uploaded_by")
+            },
+            "uploaded_by": uploaded_by(dataset.uploaded_by_service_token_id),
             "ingestion": DatasetIngestionRead.model_validate(run, from_attributes=True),
             "columns": [
                 {"name": c.name, "dtype": c.physical_dtype, "missing_fraction": c.missing_fraction} for c in columns
@@ -902,7 +907,9 @@ async def create_dataset_v1(
     published for internal training (ADR 0005) through the Labs ingestion path.
     Synchronous; does not start training (that is ``POST /v1/experiments``).
     ``purpose=scoring`` marks rows to score (no target; refused as a run source).
-    Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
+    A service token's upload is recorded as ``uploaded_by: connected_tool`` and is never picked
+    up by weekly scheduled scoring; an upload made with the person's own session or own API token
+    is ``person``. Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
     project and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;
     a structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its
     storage limit: ``429 quota_exceeded`` (nothing is stored).
@@ -970,6 +977,7 @@ async def create_dataset_v1(
                 declared_mime=upload.content_type,
                 before_commit=lambda dataset: bind(dataset.id),
                 purpose=purpose,
+                uploaded_by_service_token_id=_service_token_id(request),
             ).dataset
 
         try:

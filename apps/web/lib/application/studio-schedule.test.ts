@@ -4,7 +4,7 @@ import { isUuid } from "./command-search.ts";
 import { whatWords } from "./studio-history.ts";
 import { failureError, historyRows } from "./studio-scoring.ts";
 import {
-  ABOUT_LINES, REASON_MAX, UNKNOWN_OUTCOME, WEEKDAYS, confirmWords, isConflict, localHint, mapScheduleError, modelUsed, nextOccurrence, nextRunText, ownerWarning, reasonToSend,
+  ABOUT_LINES, REASON_MAX, UNKNOWN_OUTCOME, WEEKDAYS, confirmWords, ignoredUploadsText, isConflict, localHint, mapScheduleError, modelUsed, nextOccurrence, nextRunText, ownerWarning, reasonToSend,
   runRows, runSentence, savedText, scheduleAction, scheduleView, slotText, utcWhen, type ScheduleLike, type ScheduleStateLike,
 } from "./studio-schedule.ts";
 import { ActionKeys } from "./studio-wizard.ts";
@@ -78,7 +78,7 @@ test("slot text, next run (also overdue) and the local-time hint always say UTC"
 test("each run outcome reads as one plain sentence; only failed_to_queue is a failure; an unknown code has a fixed fallback", () => {
   assert.match(runSentence("queued"), /^Started scoring the newest file/);
   assert.doesNotMatch(runSentence("queued"), /^Scored/);
-  assert.match(runSentence("skipped_no_new_file"), /no file was uploaded for scoring after weekly scoring was first set up/);
+  assert.match(runSentence("skipped_no_new_file"), /no person uploaded a file for scoring after weekly scoring was first set up/);
   assert.match(runSentence("skipped_no_approval"), /not approved for scoring/);
   assert.match(runSentence("skipped_owner_not_allowed"), /can no longer score/);
   assert.match(runSentence("skipped_missed"), /did not get to it within 24 hours/);
@@ -148,7 +148,8 @@ test("the confirm step says which file, what it replaces, what is paused, and wh
   assert.match(text, /This replaces: every Monday at 09:00 UTC\./);
   assert.match(text, /does not retrain, does not fetch data and does not switch models/);
   assert.match(text, /no approved model in use, nothing is scored/);
-  assert.match(text, /uploaded with an access token/);
+  assert.match(text, /Only files uploaded by a person are scored; files a connected tool uploaded with a service token are ignored\. A file uploaded with a person's own sign-in or own API token counts as that person's\./);
+  assert.doesNotMatch(text, /access token/);
   assert.match(text, /lose access to run ML work/);
   assert.match(text, /latest missed week within 24 hours/);
   assert.doesNotMatch(text, /paused/);
@@ -234,6 +235,17 @@ test("no sentence of any state or the static paragraph uses a banned word", () =
   for (const m of [APPROVED, WARNING, UNKNOWN]) assert.doesNotMatch(m.text, BANNED);
   assert.doesNotMatch(ABOUT_LINES.join(" "), BANNED);
   assert.match(ABOUT_LINES.join(" "), /Only one file is scored per week; older new files in the same week are not scored\./);
+  assert.match(ABOUT_LINES.join(" "), /Only files uploaded by a person are scored; files a connected tool uploaded with a service token are ignored\. A file uploaded with a person's own sign-in or own API token counts as that person's\./);
+  assert.doesNotMatch(ABOUT_LINES.join(" "), /access token/);
+  for (const n of [1, 3]) assert.doesNotMatch(ignoredUploadsText(sched({ ignored_token_uploads: n })) ?? "", BANNED);
+});
+
+test("files from connected tools that the schedule ignored are counted in plain words, never invented", () => {
+  assert.equal(ignoredUploadsText(sched({ ignored_token_uploads: 1 })), "1 file a connected tool uploaded with a service token was not scored. Only files uploaded by a person are scored.");
+  assert.equal(ignoredUploadsText(sched({ ignored_token_uploads: 4 })), "4 files connected tools uploaded with a service token were not scored. Only files uploaded by a person are scored.");
+  for (const bad of [0, -1, 1.5, undefined]) assert.equal(ignoredUploadsText(sched({ ignored_token_uploads: bad })), null);
+  assert.equal(ignoredUploadsText(sched({ ignored_token_uploads: "2" as unknown as number })), null);
+  assert.equal(ignoredUploadsText(null), null);
 });
 
 test("predictions: scheduled rows say so in UTC, name no fake file, and show why a scheduled scoring failed", () => {

@@ -124,7 +124,7 @@
       "payload": {
         "cache_hit": false,
         "call": 1,
-        "cost_micros": 4446,
+        "cost_micros": 6669,
         "invocation_id": "<id:1>",
         "ok": true,
         "output_digest": "<digest>",
@@ -148,8 +148,8 @@
     },
     {
       "payload": {
-        "cost_micros": 4446,
-        "freed_micros": 95554
+        "cost_micros": 6669,
+        "freed_micros": 93331
       },
       "type": "budget_settled"
     },
@@ -185,7 +185,7 @@
       "data_class": "metadata",
       "input_tokens": 1958,
       "llm_used": true,
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "outcome_scope": "none",
       "output_tokens": 53,
       "prompt_version": "experiment_planner:v1",
@@ -227,7 +227,7 @@
     "decision_point_key": "spec.objective",
     "error_code": null,
     "kind": "specialist",
-    "model": "gpt-6.1-sol",
+    "model": "claude-sonnet-5-5",
     "outcome_scope": "none",
     "purpose": "spec.objective",
     "runtime": "fake",

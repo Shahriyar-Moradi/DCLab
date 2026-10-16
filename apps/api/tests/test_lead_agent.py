@@ -74,8 +74,8 @@ def lead(db_session, g):  # noqa: F811
     ns = SimpleNamespace(db=db, g=g, driver=None,
                          settings=SimpleNamespace(ai_enabled=True, service_tokens_enabled=True, dclab_env="test"))
     ns.release = svc.released_prompt_id(db, lead_runtime.AGENT_KEY, lead_runtime.PROMPT_VERSION)
-    ns.fake = FakeProvider(handler=lambda call: ns.driver(call), resolved_model="gpt-6.1-sol", environment="test")
-    gateway = _Uncached(providers={"openai": ns.fake}, limits=GatewayLimits(), settings=lambda: ns.settings)
+    ns.fake = FakeProvider(handler=lambda call: ns.driver(call), resolved_model="claude-sonnet-5-5", environment="test")
+    gateway = _Uncached(providers={"anthropic": ns.fake}, limits=GatewayLimits(), settings=lambda: ns.settings)
     ns.service = lambda: AgentService(gateway=gateway, settings=lambda: ns.settings)
 
     def spec(**overrides):
@@ -149,7 +149,7 @@ def test_scripted_session_proposes_spec_and_run_compares_within_bounds(lead):
     assert [db.scalar(select(func.count()).select_from(model)) for model in (Experiment, ProblemSpec)] == counts
     run = db.get(AgentRun, result.run_id)
     assert run.usage["steps"] == 5 <= LIMITS["steps"] and run.usage["tool_calls"] == 5 <= LIMITS["tool_calls"]
-    assert 0 < run.cost_micros <= run.held_micros == LIMITS["cost_micros"] and run.model == "gpt-6.1-sol"
+    assert 0 < run.cost_micros <= run.held_micros == LIMITS["cost_micros"] and run.model == "claude-sonnet-5-5"
     ledger = list(db.scalars(select(LlmInvocation).where(LlmInvocation.agent_run_id == run.id)))
     assert len(ledger) == 5 and {(r.prompt_release_id, r.purpose) for r in ledger} == {(lead.release, "assistant.turn")}
     # The pending proposals reached the model as tool outcomes; no holdout value ever left the process.

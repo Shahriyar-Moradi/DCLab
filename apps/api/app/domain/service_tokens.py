@@ -171,6 +171,18 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("GET", "/v1/operator/overview"),
         ("GET", "/v1/operator/workspaces"),
         ("GET", "/v1/operator/failed-jobs"),
+        # P8.8-A: your notification preferences and the workspace's webhooks are for signed-in sessions
+        # (any bearer 403 session_required; webhooks need an owner or administrator).
+        ("GET", "/v1/me/notification-preferences"),
+        ("PUT", "/v1/me/notification-preferences"),
+        ("GET", "/v1/workspaces/{workspace_id}/webhooks"),
+        ("POST", "/v1/workspaces/{workspace_id}/webhooks"),
+        ("PATCH", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}"),
+        ("POST", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret"),
+        ("POST", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test"),
+        ("GET", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries"),
+        # No principal at all: the signed link from an email is the only authority (one kind, off only).
+        ("POST", "/v1/notifications/unsubscribe"),
     }
 )
 

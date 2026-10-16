@@ -946,7 +946,14 @@ def record(
         details=clean_json_object(details, label="details", caller_details=True),
         idempotency_key=key,
     )
-    return insert_record(db, row)
+    inserted = insert_record(db, row)
+    if state == STATE_PROPOSED:  # P8.8-A: a proposal now waits for a person; never raises
+        from app.services.notification_service import notify_decision_needed
+
+        notify_decision_needed(db, workspace_id=workspace_id, project_id=project_id, subject_kind="decision",
+                               subject_id=inserted.id, dedupe_key=f"decision:record:{inserted.id}",
+                               exclude_user_id=actor.user_id if actor.kind == "human" else None)
+    return inserted
 
 
 def propose(db: Session, **kwargs: Any) -> ProjectDecisionRecord:

@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { UsagePanel } from "@/app/components/studio-app/UsagePanel";
+import { TabPanel, Tabs } from "@/components/studio/Tabs";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
 import { PageGuide } from "@/components/studio/PageGuide";
@@ -17,18 +20,37 @@ export default function SettingsPage() {
   const members = useWorkspaceMembers(session.activeWorkspaceId, session.loaded && access.canSeeMembers);
   const refused = members.error instanceof ApiError && members.error.status === 403;
   const hidden = session.loaded && (!access.canSeeMembers || refused);
+  const [tab, setTab] = useState("people");
+  // Deep link: /settings?tab=usage (read after mount so the server and first client render agree).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "usage") setTab("usage");
+  }, []);
+  const chooseTab = (id: string) => {
+    setTab(id);
+    window.history.replaceState(null, "", id === "usage" ? "/settings?tab=usage" : "/settings");
+  };
   const roles = (members.data?.roles ?? []).map(roleRow);
 
   return (
     <>
-      <PageHead eyebrow="Admin" title="Settings" subtitle="Who is in this workspace and what each role can do." />
+      <PageHead eyebrow="Admin" title="Settings" subtitle="Who is in this workspace, what each role can do, and how much of your plan is used." />
       <PageGuide
-        purpose="See the people in your workspace and what each role is allowed to do."
-        howTo="Read the list of people, then the table of roles. To give an access token to your own code or tools, go to Connect."
+        purpose="See the people in your workspace, what each role is allowed to do, and how much of your plan is used."
+        howTo="Read the list of people, then the table of roles; open Usage & cost for limits and spend. To give an access token to your own code or tools, go to Connect."
         youGet="Names, emails, roles and join dates of the people in this workspace, and what each role can and cannot do. Nothing here changes anything."
         attention={hidden ? "Your role cannot see the list of people. Ask an owner or administrator." : undefined}
       />
 
+      <Tabs
+        idPrefix="settings"
+        label="Settings sections"
+        value={tab}
+        onChange={chooseTab}
+        items={[{ id: "people", label: "People and roles" }, { id: "usage", label: "Usage & cost" }]}
+      />
+
+      <TabPanel idPrefix="settings" id="usage" active={tab === "usage"}>{tab === "usage" ? <UsagePanel /> : null}</TabPanel>
+      <TabPanel idPrefix="settings" id="people" active={tab === "people"}>
       {!session.loaded ? <p role="status">Loading your access…</p> : null}
 
       {hidden ? (
@@ -93,6 +115,7 @@ export default function SettingsPage() {
         <p>Access tokens for your own code and connected tools are managed under <Link href="/agents">Connect</Link>.</p>
       </Card>
       <p className="small muted">{MORE_SETTINGS_TEXT}</p>
+      </TabPanel>
     </>
   );
 }

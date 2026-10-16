@@ -1,8 +1,8 @@
 """/v1 operator reads for DCLab platform staff (P8.5-A; the P8.5-UI ``/operator`` console).
 
 * Signed-in people only: any ``Authorization`` header (API bearer or service token) is ``403
-  human_session_required``; then the existing platform guard (``require_platform_read``: a
-  ``dclab_admin`` / ``dclab_developer`` platform role) — every workspace role is ``403``.
+  human_session_required``; then the platform ADMIN guard (``require_platform_admin``: the ``dclab_admin``
+  platform role only, founder decision 2026-10-16) — ``dclab_developer`` and every workspace role are ``403``.
 * Cross-tenant by design and read-only: ids, codes and counts. No customer rows, values, file
   names, prompts, job payloads or free-text failure reasons. Workspace names are customer text.
 * ``Cache-Control: private, no-store``. No MCP tool and no service-token scope (HUMAN_ONLY_ROUTES).
@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_platform_read
+from app.api.deps import get_current_user, require_platform_admin
 from app.api.v1_conventions import COMMON_ERROR_STATUSES, V1APIError, error_responses
 from app.db.models import User
 from app.db.session import get_db
@@ -29,7 +29,7 @@ def require_operator_session(request: Request, db: Session = Depends(get_db)) ->
     if (request.headers.get("Authorization") or "").strip():
         raise HTTPException(status_code=403, detail={
             "code": "human_session_required", "message": "the operator console is for signed-in platform staff"})
-    return require_platform_read(request, get_current_user(request, db), db)
+    return require_platform_admin(request, get_current_user(request, db), db)
 
 
 @router.get("/overview", response_model=OperatorOverviewRead)

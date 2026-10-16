@@ -3,9 +3,9 @@
   "case": "spec_turn",
   "exchanges": [
     {
-      "input_digest": "5c17f69ff97dd15669a1351a037ee81cd5f7e973bfa9b9255f4ad2611d19e9e6",
+      "input_digest": "e65c0d1bd67e2ed8d4865dd22b12cb1c1aa20b8e3fe3500aa0acfe03f62aac93",
       "instructions_digest": "93d9ca5529a526cceba8bd49bdddb022ff06ffc57e76cd463c561ab7dec15ac6",
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "output": {
         "kind": "tool_calls",
         "tool_calls": [
@@ -72,9 +72,9 @@
       "purpose": "assistant.turn"
     },
     {
-      "input_digest": "0f971eb692fbbb26df2ec96fec9ec9598d6542a18389877c4004dc4f9c8ca1e4",
+      "input_digest": "5a14366543185e52d26716db20a83f390de578628a4b1053fc4603b15b7288e2",
       "instructions_digest": "93d9ca5529a526cceba8bd49bdddb022ff06ffc57e76cd463c561ab7dec15ac6",
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "output": {
         "kind": "tool_calls",
         "tool_calls": [
@@ -173,9 +173,9 @@
       "purpose": "assistant.turn"
     },
     {
-      "input_digest": "8f6d2e694c86da2a557d6e4a166c9bf2528feca403b1d6adeb0dbf54962c0826",
+      "input_digest": "a3dbb06e8e46a7509258cb738f9d8dd5a2ab7751970e024a843d7be677baca43",
       "instructions_digest": "93d9ca5529a526cceba8bd49bdddb022ff06ffc57e76cd463c561ab7dec15ac6",
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "output": {
         "citations": [
           {

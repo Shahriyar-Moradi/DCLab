@@ -3,9 +3,9 @@
   "case": "wrong_at_l0",
   "exchanges": [
     {
-      "input_digest": "74f1dd88ade121665bbcb0655bf53a0a7b97406054170bcb3f80b165e423811e",
+      "input_digest": "bdccca9cc829a0643fa6e402f7d14accfef1f4e6e602725af4fb837699a04abe",
       "instructions_digest": "6caad87182c9abd8bcbeb0bb4036adfa7320a216648eb730488aaf7079c6c740",
-      "model": "jev-1.13.0",
+      "model": "claude-sonnet-5-5",
       "output": {
         "answers": [
           {
@@ -41,9 +41,9 @@
       "purpose": "column.is_identifier"
     },
     {
-      "input_digest": "9d406bd27ee530814ce2128ff3c36bc33f4702b989663a2d92868d5c1f07ac1f",
+      "input_digest": "8fca06fa20065646308f2156620a69d4b6fa77dd3b26194ff25ecee50e7b7cd4",
       "instructions_digest": "063d550d43de4db76cda7305f34e5df03d9e060255f25341ac3af13e622c2071",
-      "model": "jev-1.13.0",
+      "model": "claude-sonnet-5-5",
       "output": {
         "answers": [
           {
@@ -78,9 +78,9 @@
       "purpose": "column.semantic_role"
     },
     {
-      "input_digest": "86ac348f652cadd0297dd09a90fb21f0ad6b8700801e7a09f299e645f368d3f6",
+      "input_digest": "653007d1034e421cb8af4f98895e331f810340094522ad2f73a1100d57ac9d9d",
       "instructions_digest": "4b3af93cd08c93765a1e9c1476d36c739f7827cd96a1da8b97dae30488467e8d",
-      "model": "jev-1.13.0",
+      "model": "claude-sonnet-5-5",
       "output": {
         "answers": [
           {

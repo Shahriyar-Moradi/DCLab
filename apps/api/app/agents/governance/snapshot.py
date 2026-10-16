@@ -28,6 +28,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.gateway.router import provider_for
 from app.agents.governance.decision_points import LEGACY_PURPOSE_KEYS, REGISTRY
 from app.agents.governance.policy import PolicyUnavailable, effective_level, effective_policy
 from app.agents.governance.switches import effective_switches
@@ -109,7 +110,8 @@ def take_snapshot(db: Session, workspace_id: UUID, keys: tuple[str, ...], *, por
         }
         releases[key] = {"prompt_release_id": str(release_id) if release_id else None,
                          "release": f"{key}@{release.version}", "model_id": release.model_id}
-        blocking[key] = switches.blocking(ai_enabled=True, provider="typesafe", purpose=key)
+        blocking[key] = switches.blocking(ai_enabled=True, provider=provider_for(release.model_id) or "anthropic",
+                                          purpose=key)
     release_id, model_id = agent_release or (None, None)
     for key in agent_keys:
         point = REGISTRY[key]

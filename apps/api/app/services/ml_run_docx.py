@@ -474,7 +474,7 @@ def render_ml_run_report_docx(report: dict[str, Any]) -> bytes:
 
     attempt = dict(report.get("verification_attempt") or {})
     openai_audit = dict(report.get("openai_audit") or {})
-    _add_heading(document, "OpenAI Pipeline Auditor (Advisory)")
+    _add_heading(document, "AI Pipeline Auditor (Advisory)")
     _add_key_values(
         document,
         [
@@ -505,7 +505,7 @@ def render_ml_run_report_docx(report: dict[str, Any]) -> bytes:
             )
             for item in (openai_audit.get("stages") or [])
         ]
-        or [("—", attempt.get("llm_status", "not requested"), "No completed OpenAI audit", "—")],
+        or [("—", attempt.get("llm_status", "not requested"), "No completed AI audit", "—")],
         [1800, 1800, 3600, 2160],
     )
     _add_table(
@@ -516,7 +516,7 @@ def render_ml_run_report_docx(report: dict[str, Any]) -> bytes:
             *[("Warning", value) for value in (openai_audit.get("warnings") or [])],
             *[("Recommendation", value) for value in (openai_audit.get("recommendations") or [])],
         ]
-        or [("—", "No OpenAI advisory notes")],
+        or [("—", "No AI advisory notes")],
         [2200, 7160],
     )
 

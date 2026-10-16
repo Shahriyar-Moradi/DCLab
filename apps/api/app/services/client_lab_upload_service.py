@@ -129,8 +129,10 @@ def _persist_upload_dataset(
     size_bytes: int,
     location: str,
     purpose: str = DATASET_PURPOSE_TRAINING,
+    uploaded_by_service_token_id: UUID | None = None,
 ) -> Dataset:
-    """Persist the physical upload even when it is not yet training-ready."""
+    """Persist the physical upload even when it is not yet training-ready. A service token's
+    upload is attributed in the INSERT (dataset rows are immutable, never updated later)."""
 
     env = seed_dogfood(db, commit=False)
     from app.services.lineage_service import slugify
@@ -174,6 +176,7 @@ def _persist_upload_dataset(
         row_count=preview.record_count,
         column_count=len(schema.get("columns") or fields),
         purpose=purpose,
+        uploaded_by_service_token_id=uploaded_by_service_token_id,
     )
     db.add(dataset)
     db.flush()
@@ -398,6 +401,7 @@ def _ingest_and_publish(
     project_id: UUID,
     filename: str,
     purpose: str = DATASET_PURPOSE_TRAINING,
+    uploaded_by_service_token_id: UUID | None = None,
 ) -> IngestedUpload:
     """The one upload ingestion path: artifact → source → access → ingestion run →
     dataset → ADR 0005 publication. The caller owns commit."""
@@ -465,6 +469,7 @@ def _ingest_and_publish(
         size_bytes=put.size_bytes,
         location=staged.location,
         purpose=purpose,
+        uploaded_by_service_token_id=uploaded_by_service_token_id,
     )
     complete_ingestion_run(
         db,
@@ -542,8 +547,12 @@ def ingest_dataset(
     declared_mime: str | None = None,
     before_commit: Callable[[Dataset], None] | None = None,
     purpose: str = DATASET_PURPOSE_TRAINING,
+    uploaded_by_service_token_id: UUID | None = None,
 ) -> IngestedUpload:
     """``POST /v1/datasets``: the Labs ingestion path without the Labs run.
+
+    ``uploaded_by_service_token_id``: the authenticated service token of the request (None for a
+    signed-in person); recorded on the dataset so weekly scoring can ignore connected-tool uploads.
 
     Same storage, structural validation, lineage and ADR 0005 publication as
     ``save_upload``, but no ClientLabUpload, workflow/pipeline run, execution
@@ -566,7 +575,7 @@ def ingest_dataset(
     ) as staged:
         ingested = _ingest_and_publish(
             db, staged, user=user, workspace_id=workspace_id, project_id=project.id, filename=filename,
-            purpose=purpose,
+            purpose=purpose, uploaded_by_service_token_id=uploaded_by_service_token_id,
         )
         _append_ingest_event(
             db, staged, ingested, user=user, workspace_id=workspace_id, filename=filename

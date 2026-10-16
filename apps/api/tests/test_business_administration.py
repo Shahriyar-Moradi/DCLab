@@ -298,7 +298,7 @@ def test_prediction_download_and_deep_audit_cannot_bypass_capabilities(
     triggered = auth_client.post(deep_path, headers=admin_headers)
     assert triggered.status_code == 200, triggered.text
     assert triggered.json()["audit_mode"] == "deep"
-    assert triggered.json()["llm_model"] == "gpt-6.1-sol"  # the verifier role's deep model
+    assert triggered.json()["llm_model"] == "claude-sonnet-5-5"  # the verifier role's deep model (one model since 2026-10-16)
 
     audit_invocation = db_session.get(LlmInvocation, attempt.llm_invocation_id)
     assert audit_invocation.purpose == "pipeline_audit_deep"

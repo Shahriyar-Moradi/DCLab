@@ -37,6 +37,7 @@ from app.db.models import (
     Workspace,
 )
 from app.domain.errors import IdentityError
+from app.domain.data_plane import uploaded_by
 from app.domain.observability import LlmInvocationRead
 from app.services.audience_projection import artifact_read, code_snapshot_read, invocation_read, public_failure
 from app.domain.reproducibility import (
@@ -284,6 +285,7 @@ def _dataset_list_item(row: Dataset) -> DatasetListItem:
         row_count=row.row_count,
         column_count=row.column_count,
         purpose=row.purpose,
+        uploaded_by=uploaded_by(row.uploaded_by_service_token_id),
         created_at=row.created_at,
     )
 

@@ -124,6 +124,9 @@ class Dataset(BaseModel):
     row_count: int
     column_count: int
     purpose: str = "training"
+    # connected_tool = uploaded with a service token; person = not (own session / own API token). The
+    # default only keeps the SDK reading servers from before upload attribution (0082).
+    uploaded_by: str = "person"
     created_at: datetime
 
 
@@ -226,6 +229,7 @@ class DatasetUpload(_Versioned):
     row_count: int
     column_count: int
     purpose: str = "training"
+    uploaded_by: str = "person"  # connected_tool = service token; default for servers before 0082
     created_at: datetime
     ingestion: DatasetIngestion
 
@@ -1459,6 +1463,7 @@ class ScoringSchedule(BaseModel):
     updated_by_user_id: UUID | None = None
     owner_can_score: bool
     warning: str | None = None
+    ignored_token_uploads: int = 0  # scoring files uploaded with a service token (not scored); 0 before 0082
 
 
 class ScoringScheduleState(_Versioned):

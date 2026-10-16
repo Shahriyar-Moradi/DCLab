@@ -1191,6 +1191,61 @@
       "definition": "CHECK (((window_end = (window_start + '168:00:00'::interval)) AND (EXTRACT(isodow FROM (window_start AT TIME ZONE 'UTC'::text)) = (1)::numeric) AND (date_trunc('day'::text, (window_start AT TIME ZONE 'UTC'::text)) = (window_start AT TIME ZONE 'UTC'::text))))"
     },
     {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_attempts",
+      "definition": "CHECK (((attempts >= 0) AND (attempts <= 5)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_channel",
+      "definition": "CHECK (((channel)::text = ANY ((ARRAY['email'::character varying, 'webhook'::character varying])::text[])))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_dedupe_key",
+      "definition": "CHECK (((dedupe_key)::text ~ '^[a-z0-9][a-z0-9:._-]{0,199}$'::text))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_error_code",
+      "definition": "CHECK (((last_error_code IS NULL) OR ((last_error_code)::text = ANY ((ARRAY['not_configured'::character varying, 'recipient_unavailable'::character varying, 'endpoint_disabled'::character varying, 'expired'::character varying, 'destination_refused'::character varying, 'dns_failed'::character varying, 'connect_failed'::character varying, 'tls_failed'::character varying, 'timeout'::character varying, 'redirect_not_followed'::character varying, 'http_error'::character varying, 'invalid_response'::character varying, 'body_too_large'::character varying, 'auth_failed'::character varying, 'provider_rejected'::character varying, 'provider_unavailable'::character varying, 'internal_error'::character varying, 'email_unverified'::character varying, 'daily_limit'::character varying])::text[]))))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'ping'::character varying])::text[])))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_payload",
+      "definition": "CHECK (((jsonb_typeof(payload) = 'object'::text) AND (octet_length((payload)::text) <= 4096)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_ping",
+      "definition": "CHECK ((((kind)::text <> 'ping'::text) OR ((channel)::text = 'webhook'::text)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_recipient",
+      "definition": "CHECK (((((channel)::text = 'email'::text) AND (recipient_user_id IS NOT NULL) AND (webhook_endpoint_id IS NULL)) OR (((channel)::text = 'webhook'::text) AND (webhook_endpoint_id IS NOT NULL) AND (recipient_user_id IS NULL))))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_sent_at",
+      "definition": "CHECK ((((status)::text = 'sent'::text) = (sent_at IS NOT NULL)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sending'::character varying, 'sent'::character varying, 'failed'::character varying, 'skipped_disabled'::character varying, 'skipped_preference'::character varying, 'skipped_limit'::character varying, 'dead'::character varying])::text[])))"
+    },
+    {
+      "table": "notification_preferences",
+      "name": "ck_notification_preferences_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying])::text[])))"
+    },
+    {
       "table": "pipeline_stage_runs",
       "name": "ck_pipeline_stage_runs_status_valid",
       "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'skipped'::character varying])::text[])))"
@@ -1696,6 +1751,71 @@
       "definition": "CHECK (((visualization_type)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))"
     },
     {
+      "table": "webhook_changes",
+      "name": "ck_webhook_changes_action",
+      "definition": "CHECK (((action)::text = ANY ((ARRAY['create'::character varying, 'update_url'::character varying, 'update_events'::character varying, 'enable'::character varying, 'disable'::character varying, 'rotate'::character varying, 'delete'::character varying])::text[])))"
+    },
+    {
+      "table": "webhook_changes",
+      "name": "ck_webhook_changes_url_host",
+      "definition": "CHECK (((url_host IS NULL) OR ((url_host)::text ~ '^[a-z0-9.:-]{1,253}$'::text)))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_error_code",
+      "definition": "CHECK (((error_code IS NULL) OR ((error_code)::text = ANY ((ARRAY['not_configured'::character varying, 'recipient_unavailable'::character varying, 'endpoint_disabled'::character varying, 'expired'::character varying, 'destination_refused'::character varying, 'dns_failed'::character varying, 'connect_failed'::character varying, 'tls_failed'::character varying, 'timeout'::character varying, 'redirect_not_followed'::character varying, 'http_error'::character varying, 'invalid_response'::character varying, 'body_too_large'::character varying, 'auth_failed'::character varying, 'provider_rejected'::character varying, 'provider_unavailable'::character varying, 'internal_error'::character varying, 'email_unverified'::character varying, 'daily_limit'::character varying])::text[]))))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_event",
+      "definition": "CHECK (((event)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'ping'::character varying])::text[])))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_numbers",
+      "definition": "CHECK ((((attempt >= 1) AND (attempt <= 10)) AND ((duration_ms >= 0) AND (duration_ms <= 600000))))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['delivered'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_status_code",
+      "definition": "CHECK (((status_code IS NULL) OR ((status_code >= 100) AND (status_code <= 599))))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_consecutive_failures",
+      "definition": "CHECK ((consecutive_failures >= 0))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_events",
+      "definition": "CHECK (\nCASE\n    WHEN (jsonb_typeof(events) = 'array'::text) THEN (((jsonb_array_length(events) >= 1) AND (jsonb_array_length(events) <= 6)) AND (events <@ '[\"decision_needed\", \"run_finished\", \"run_failed\", \"scheduled_scoring_result\", \"drift_alert\", \"quota_warning\"]'::jsonb) AND (jsonb_array_length(events) = ((((((jsonb_exists(events, 'decision_needed'::text))::integer + (jsonb_exists(events, 'run_finished'::text))::integer) + (jsonb_exists(events, 'run_failed'::text))::integer) + (jsonb_exists(events, 'scheduled_scoring_result'::text))::integer) + (jsonb_exists(events, 'drift_alert'::text))::integer) + (jsonb_exists(events, 'quota_warning'::text))::integer)))\n    ELSE false\nEND)"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_name",
+      "definition": "CHECK (((char_length(btrim((name)::text)) >= 1) AND (char_length(btrim((name)::text)) <= 80)))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_secret_key_id",
+      "definition": "CHECK (((secret_key_id)::text ~ '^[a-z0-9_-]{1,16}$'::text))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_secret_version",
+      "definition": "CHECK ((secret_version >= 1))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_url",
+      "definition": "CHECK ((((char_length((url)::text) >= 9) AND (char_length((url)::text) <= 2048)) AND ((url)::text ~ '^https://[^@/?#[:space:]]+([/?#][^[:space:]]*)?$'::text)))"
+    },
+    {
       "table": "workflow_runs",
       "name": "ck_workflow_runs_initiated_by_type",
       "definition": "CHECK (((initiated_by_type IS NULL) OR ((initiated_by_type)::text = ANY ((ARRAY['human'::character varying, 'api'::character varying, 'system'::character varying, 'schedule'::character varying, 'agent'::character varying])::text[]))))"
@@ -2131,6 +2251,16 @@
       "table": "visualizations",
       "name": "visualizations_immutable",
       "definition": "CREATE TRIGGER visualizations_immutable BEFORE DELETE OR UPDATE ON public.visualizations FOR EACH ROW EXECUTE FUNCTION prevent_visualization_mutation()"
+    },
+    {
+      "table": "webhook_changes",
+      "name": "webhook_changes_append_only",
+      "definition": "CREATE TRIGGER webhook_changes_append_only BEFORE DELETE OR UPDATE ON public.webhook_changes FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "webhook_deliveries_append_only",
+      "definition": "CREATE TRIGGER webhook_deliveries_append_only BEFORE DELETE OR UPDATE ON public.webhook_deliveries FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "workflow_versions",

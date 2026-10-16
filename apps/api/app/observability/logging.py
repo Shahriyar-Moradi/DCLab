@@ -52,6 +52,7 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(rf"""(?i)(?<![\w.-])(["']?)({_KEYS})(?<!_id)\1(\s*:\s*)(?!\s*\[redacted\])(?:{_QUOTED}|[^,;&}}\]\r\n]+)"""),
      rf"\1\2\1\3{REDACTED}"),
     (re.compile(r"dclab_st_[A-Za-z0-9_-]+"), REDACTED),
+    (re.compile(r"dclab_(?:whsec|unsub)_[A-Za-z0-9_-]+"), REDACTED),  # P8.8-A webhook secrets, unsubscribe links
     (re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"), REDACTED),
     (re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*"), REDACTED),  # JWTs
     (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), EMAIL_MASK),

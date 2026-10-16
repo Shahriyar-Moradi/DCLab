@@ -33,7 +33,7 @@ from app.agents.governance.policy import (
 from app.agents.governance.policy import GovernanceError, GovernanceNotFound, accept_policy, propose_policy
 from app.agents.governance.switches import SwitchHeldByIncident, effective_switches, re_enable
 from app.agents.semantic.policy import apply
-from app.agents.semantic.releases import RELEASES, sync_jev_releases
+from app.agents.semantic.releases import JEV_MODEL_ID, RELEASES, sync_jev_releases
 from app.db.models import User, UserRole
 from app.services import r3_evaluation_service as r3
 from app.services.auth_service import create_user
@@ -404,16 +404,16 @@ def test_platform_promotion_needs_a_stored_live_run_the_rule_engine_and_two_admi
         r3.propose_promotion(db, run_id=UUID(second["run_id"]), key=IDENT, level=1, admin=gov.owner)
     with pytest.raises(GovernanceNotPermitted, match="platform_level_needs_r3_verification"):  # no direct path
         propose_level(db, actor=gov.platform_admin, workspace_id=None, key=IDENT, level=1, rationale="bypass",
-                      prompt_release_id=r3.current_pair(db, IDENT)[0], model_id="jev-1.13.0",
+                      prompt_release_id=r3.current_pair(db, IDENT)[0], model_id=JEV_MODEL_ID,
                       evidence=[{"kind": "r3_run", "id": second["run_id"]}])
     verified = policy_module.R3_VERIFIED
     with pytest.raises(GovernanceNotPermitted, match="platform_level_one_step"):  # the policy layer itself
         propose_level(db, actor=gov.platform_admin, workspace_id=None, key=ROLE, level=2, rationale="jump",
-                      prompt_release_id=gov.release, model_id="jev-1.13.0", evidence=[{"kind": "r3_run", "id": "x"}],
+                      prompt_release_id=gov.release, model_id=JEV_MODEL_ID, evidence=[{"kind": "r3_run", "id": "x"}],
                       verification=verified)
     with pytest.raises(GovernanceNotPermitted, match="platform_level_needs_r3_run"):
         propose_level(db, actor=gov.platform_admin, workspace_id=None, key=ROLE, level=1, rationale="bare",
-                      prompt_release_id=gov.release, model_id="jev-1.13.0", verification=verified)
+                      prompt_release_id=gov.release, model_id=JEV_MODEL_ID, verification=verified)
     proposal = r3.propose_promotion(db, run_id=UUID(second["run_id"]), key=IDENT, level=1, admin=gov.platform_admin)
     db.commit()
     assert (proposal.state, proposal.workspace_id, proposal.level) == ("proposed", None, 1)
@@ -425,17 +425,17 @@ def test_platform_promotion_needs_a_stored_live_run_the_rule_engine_and_two_admi
     # prompt release behind the evidence are all refused even for a second admin
     admin2 = _second_admin(db)
     bogus = propose_level(db, actor=gov.platform_admin, workspace_id=None, key=ROLE, level=1, rationale="x",
-                          prompt_release_id=gov.release, model_id="jev-1.13.0",
+                          prompt_release_id=gov.release, model_id=JEV_MODEL_ID,
                           evidence=[{"kind": "r3_run", "id": str(uuid4())}], verification=verified)
     with pytest.raises(GovernanceNotFound):
         accept_level(db, approver=admin2, workspace_id=None, proposal_id=bogus.id)
     failing = propose_level(db, actor=gov.platform_admin, workspace_id=None, key=IDENT, level=1, rationale="x",
-                            prompt_release_id=r3.current_pair(db, IDENT)[0], model_id="jev-1.13.0",
+                            prompt_release_id=r3.current_pair(db, IDENT)[0], model_id=JEV_MODEL_ID,
                             evidence=[{"kind": "r3_run", "id": weak["run_id"]}], verification=verified)
     with pytest.raises(GovernanceNotPermitted, match="promotion_evidence_insufficient"):
         accept_level(db, approver=admin2, workspace_id=None, proposal_id=failing.id)
     stale_release = propose_level(db, actor=gov.platform_admin, workspace_id=None, key=IDENT, level=1, rationale="x",
-                                  prompt_release_id=gov.release, model_id="jev-1.13.0",  # another purpose's release
+                                  prompt_release_id=gov.release, model_id=JEV_MODEL_ID,  # another purpose's release
                                   evidence=[{"kind": "r3_run", "id": second["run_id"]}], verification=verified)
     with pytest.raises(GovernanceNotPermitted, match="r3_pair_mismatch"):
         accept_level(db, approver=admin2, workspace_id=None, proposal_id=stale_release.id)
@@ -444,7 +444,7 @@ def test_platform_promotion_needs_a_stored_live_run_the_rule_engine_and_two_admi
     db.commit()
     head = _level_head(db, None, IDENT)
     assert head.id == row.id and head.level == 1 and head.decided_by_user_id == admin2.id
-    assert head.evidence == [{"kind": "r3_run", "id": second["run_id"]}] and head.model_id == "jev-1.13.0"
+    assert head.evidence == [{"kind": "r3_run", "id": second["run_id"]}] and head.model_id == JEV_MODEL_ID
 
 
 def test_a_stale_run_cannot_repromote_after_an_auto_demotion(db_session, gov, corpus):
@@ -485,7 +485,7 @@ def test_the_platform_level_is_keyed_by_the_evidence_pair(db_session, gov):
     sync_jev_releases(db)
     db.commit()
     release_id, model = r3.current_pair(db, ROLE)
-    assert (release_id, model) == (gov.release, "jev-1.13.0")
+    assert (release_id, model) == (gov.release, JEV_MODEL_ID) == (gov.release, "claude-sonnet-5-5")
     # head at L1 for an OLD pair (another model id): L0 for the current pair, so L2 is not one step away
     _platform_row(db, gov, workspace_id=None, level=1, actor_user_id=gov.platform_admin.id,
                   decided_by_user_id=gov.platform_admin.id, prompt_release_id=gov.release, model_id="jev-1.12.0")
@@ -510,7 +510,7 @@ def test_the_platform_level_is_keyed_by_the_evidence_pair(db_session, gov):
 
 def test_auto_demotion_from_planted_incidents_is_audited_and_human_reversible_only(db_session, gov):
     db = db_session
-    pair = {"prompt_release_id": gov.release, "model_id": "jev-1.13.0"}
+    pair = {"prompt_release_id": gov.release, "model_id": JEV_MODEL_ID}
     _platform_row(db, gov, workspace_id=None, level=2, actor_user_id=gov.platform_admin.id,
                   decided_by_user_id=gov.platform_admin.id, **pair)  # the platform row R3 + G6 would set
     _promote(db, gov, ROLE, 2, pair)
@@ -531,7 +531,7 @@ def test_auto_demotion_from_planted_incidents_is_audited_and_human_reversible_on
                                subject_key=ROLE, evidence={"finding_id": "f-0"})
     db.commit()
     assert _level_head(db, gov.ws_a, ROLE).level == 0 and safety.action == "switch_off"
-    assert effective_switches(db, gov.ws_a).blocking(ai_enabled=True, provider="typesafe", purpose=ROLE)
+    assert effective_switches(db, gov.ws_a).blocking(ai_enabled=True, provider="anthropic", purpose=ROLE)
     with pytest.raises(SwitchHeldByIncident):
         re_enable(db, workspace_id=gov.ws_a, switch_key=f"purpose:{ROLE}", reason="r", actor=gov.owner)
     db.rollback()
@@ -569,11 +569,11 @@ def test_auto_demotion_from_planted_incidents_is_audited_and_human_reversible_on
     whole = inc.open_incident(db, workspace_id=gov.ws_a, kind="data_exposure", subject_kind="workspace",
                               subject_key="redaction", evidence={"finding_id": "f-1"})
     prov = inc.open_incident(db, workspace_id=None, kind="data_exposure", subject_kind="provider",
-                             subject_key="typesafe", evidence={"finding_id": "f-2"})
+                             subject_key="anthropic", evidence={"finding_id": "f-2"})  # every role since 2026-10-16
     db.commit()
     assert (whole.action, prov.action) == ("switch_off", "switch_off")
-    assert effective_switches(db, gov.ws_a).blocking(ai_enabled=True, provider="openai", purpose=IDENT)
-    assert effective_switches(db, gov.ws_b).blocking(ai_enabled=True, provider="typesafe", purpose=IDENT)
+    assert effective_switches(db, gov.ws_a).blocking(ai_enabled=True, provider="anthropic", purpose=IDENT)
+    assert effective_switches(db, gov.ws_b).blocking(ai_enabled=True, provider="anthropic", purpose=IDENT)
     assert inc.open_incident_counts(db, gov.ws_a, IDENT).get("data_exposure") == 1  # the workspace incident counts
     assert inc.open_incident_counts(db, None, IDENT).get("data_exposure") == 1  # the provider-wide one too
     for subject_kind, subject_key in (("purpose", "Bad Key"), ("agent", "a.b"), ("provider", "x-y")):

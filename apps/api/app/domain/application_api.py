@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.data_plane import UPLOADED_BY_DESCRIPTION
 from app.domain.execution_requests import OPERATION_MODEL_BUILD
 from app.domain.observability import MlRunEventRead
 from app.domain.service_tokens import ServiceTokenPrincipalRead
@@ -145,6 +146,7 @@ class DatasetUploadRead(BaseModel):
     row_count: int
     column_count: int
     purpose: str = "training"
+    uploaded_by: Literal["person", "connected_tool"] = Field(description=UPLOADED_BY_DESCRIPTION)
     created_at: datetime
     ingestion: DatasetIngestionRead
     columns: list[DatasetColumnSummaryRead] = Field(

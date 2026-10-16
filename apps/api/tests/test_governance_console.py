@@ -555,7 +555,7 @@ def test_a_level_for_an_old_model_counts_as_l0_and_shows_no_verdict(gc):
 IDENT = "column.is_identifier"
 
 
-def _heads(gc, key, platform_level, workspace_level, *, workspace_model="jev-1.13.0"):
+def _heads(gc, key, platform_level, workspace_level, *, workspace_model="claude-sonnet-5-5"):  # the current pair
     """Platform L0 roots citing a live current run, then platform / workspace heads on the current pair."""
 
     run = _live_run(gc)

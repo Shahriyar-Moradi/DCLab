@@ -860,7 +860,13 @@ def propose_ref_move(
     )
     if champion is not None:
         row.details = {**row.details, DETAIL_SERVICE_ATTACHED_EVIDENCE: [champion[1]]}
-    return insert_record(db, row)
+    inserted = insert_record(db, row)
+    from app.services.notification_service import notify_decision_needed  # P8.8-A; never raises
+
+    notify_decision_needed(db, workspace_id=workspace_id, project_id=project_id, subject_kind="decision",
+                           subject_id=inserted.id, dedupe_key=f"decision:record:{inserted.id}",
+                           exclude_user_id=actor.user_id if actor.kind == "human" else None)
+    return inserted
 
 
 def move_ref(

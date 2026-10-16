@@ -69,7 +69,7 @@ def ai(db_session, setup, monkeypatch):  # noqa: F811
                          answers={dp.ROLE: {"*": ("numeric", 0.5)}, dp.IDENTIFIER: {"*": (0.5, None)},
                                   dp.LEAKAGE: {"*": (0.5, None)}})  # abstains
     ns.fake = jev(ns.answers)
-    service = GatewayService(providers={"typesafe": ns.fake}, limits=GatewayLimits(), settings=lambda: ON)
+    service = GatewayService(providers={"anthropic": ns.fake}, limits=GatewayLimits(), settings=lambda: ON)
     monkeypatch.setattr(dp, "semantic_port", lambda: JevSemanticPort(service, settings=ON))
     ns.level = {"value": 0}
     monkeypatch.setattr("app.agents.governance.snapshot.effective_level",

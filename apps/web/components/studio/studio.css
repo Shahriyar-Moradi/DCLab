@@ -317,3 +317,14 @@
 .studio .stage-note.ai { border-left-color: var(--ai); }
 .studio .stage-note.rule { border-left-color: var(--ok); }
 .studio .digest-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: .92rem; overflow-wrap: anywhere; }
+
+/* P8.4-UI: Settings -> Usage & cost */
+.studio .usage-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 20px; }
+.studio .usage-bars li { display: grid; gap: 6px; }
+.studio .usage-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
+.studio .usage-row strong { font-size: 1.05rem; }
+.studio .meter.over i { background: var(--crit, #b42318); }
+.studio .meter.warning i { background: var(--warn, #b54708); }
+.studio .usage-chart { width: 100%; height: auto; display: block; }
+.studio .usage-chart rect { fill: var(--accent); }
+.studio .usage-chart text { fill: var(--muted); font-size: 10px; }

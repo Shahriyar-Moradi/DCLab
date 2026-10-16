@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # apps/api/app/config.py → repository root
@@ -85,6 +85,17 @@ class Settings(BaseSettings):
     # decision agent and the advisory auditor run whenever AI_ENABLED is on, governed by
     # kill switches (``agent:<key>`` / ``purpose:<key>`` rows) and decision-point levels.
     ai_enabled: bool = False
+    # LEGACY (switched to Anthropic 2026-10-16; kept for now): also register the OpenAI and
+    # TypeSafe gateway adapters. Their model ids are out of the router, allowlist and prices,
+    # so this alone routes nothing to them. Never a key: keys stay out of Settings.
+    ai_legacy_providers_enabled: bool = False
+    # Jev (semantic decisions on Claude since 2026-10-16) is paid traffic on every pipeline run:
+    # it needs its own platform flag on top of AI_ENABLED and the switches. Default off.
+    jev_enabled: bool = False
+    # Operator-only (platform env, never per tenant): JSON {"model": [input, output]} micro-USD per
+    # 1M tokens. It can only RAISE the code's price table (gateway.budget.price); a lower or
+    # unknown entry is ignored.
+    ai_price_overrides: dict[str, tuple[int, int]] = Field(default_factory=dict)
     # P6.8-A: the one platform evaluation workspace a live R3 run may ask Jev inside
     # (benchmark datasets registered there); unset = no live R3 run anywhere.
     r3_eval_workspace_id: UUID | None = None
@@ -172,6 +183,30 @@ class Settings(BaseSettings):
     # P8.4-A plan limits refuse new runs, scorings and uploads with 429 quota_exceeded when reached.
     # false: limits are shown but never refuse work (a process restart applies a change).
     quotas_enforced: bool = True
+    # P8.8-A notifications. NOTIFICATIONS_ENABLED=false is the kill switch: nothing is enqueued or
+    # sent (read at process start). EMAIL_PROVIDER: none (default: rows are recorded
+    # skipped_disabled, nothing is sent) | smtp (STARTTLS required) | postmark (HTTPS API).
+    # Credentials come from the environment only, never the database, and are never logged.
+    notifications_enabled: bool = True
+    notifications_tick_seconds: float = 30.0
+    email_provider: str = "none"
+    email_from_address: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    postmark_server_token: SecretStr = SecretStr("")
+    # Links in emails and webhook payloads ("https://studio.example.com"); empty: no links.
+    public_base_url: str = ""
+    # Webhook signing secrets are derived from this key (>= 32 characters); empty: webhooks cannot
+    # be created or delivered (fail closed). Changing it changes every endpoint's secret.
+    webhook_secret_key: SecretStr = SecretStr("")
+    # Destination ports webhooks may use (comma-separated); 443 only by default.
+    webhook_allowed_ports: str = "443"
+    webhook_max_deliveries_per_minute: int = 60
+
+
+EMAIL_PROVIDERS = frozenset({"none", "smtp", "postmark"})
 
 
 def is_production_env(settings: Settings) -> bool:
@@ -260,6 +295,8 @@ def validate_runtime_settings(settings: Settings) -> None:
     same_site = settings.session_cookie_samesite.strip().lower()
     if same_site not in {"lax", "strict", "none"}:
         problems.append("SESSION_COOKIE_SAMESITE must be lax, strict, or none")
+    if settings.email_provider.strip().lower() not in EMAIL_PROVIDERS:
+        problems.append("EMAIL_PROVIDER must be none, smtp or postmark")
     if not is_production_env(settings):
         if problems:
             raise RuntimeError(

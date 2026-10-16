@@ -52,7 +52,9 @@ OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked fro
                   "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 SCHEDULE_NOTE = ("Read-only: only a person turns weekly scoring on or off, in DCLab Studio. Each week it scores the "
-                 "newest file uploaded for scoring with the model in use approved for scoring; it never retrains "
+                 "newest file a person uploaded for scoring with the model in use approved for scoring; files a "
+                 "connected tool uploaded with a service token (like this one) are never scored, while uploads "
+                 "made with a person's own sign-in or own API token count as that person's. It never retrains "
                  "and never fetches data.")
 MONITORING_NOTE = ("Read-only and deterministic: drift means the inputs look different from training, not that the "
                    "model is wrong; outcome metrics are real results of scored rows (never the final test set) and "

@@ -9,6 +9,7 @@ import {
   defaultProductRoute,
   isBusinessViewPath,
   isLegacyMarketingPath,
+  isOperatorPath,
   safeNextPath,
   safeWorkspaceSwitchDestination,
 } from "./capabilities.ts";
@@ -204,9 +205,40 @@ test("only the frozen marketing paths are gated by the marketing flag", () => {
   }
 });
 
+test("P8.5-UI: the operator console is for platform administrators only; they land there without a workspace", () => {
+  const base = { [CAPABILITIES.accountAccess]: true };
+  const platformAdmin = user({ ...base, [CAPABILITIES.platformRead]: true, [CAPABILITIES.platformWrite]: true });
+  const platformDeveloper = user({ ...base, [CAPABILITIES.platformRead]: true });
+  const adminInWorkspace = user({ ...base, [CAPABILITIES.platformRead]: true, [CAPABILITIES.platformWrite]: true, [CAPABILITIES.developmentAccess]: true });
+  const owner = user({ ...base, [CAPABILITIES.workspaceRead]: true, [CAPABILITIES.workspaceWrite]: true, [CAPABILITIES.workspaceManageMembers]: true, [CAPABILITIES.workspaceExecuteMl]: true, [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true, [CAPABILITIES.businessAccess]: true });
+  const viewer = user({ ...base, [CAPABILITIES.workspaceRead]: true, [CAPABILITIES.applicationAccess]: true });
+  const client = user({ ...base, [CAPABILITIES.applicationAccess]: true });
+  // A write capability alone (no platform read) is not enough either.
+  const writeOnly = user({ ...base, [CAPABILITIES.platformWrite]: true });
+
+  assert.equal(defaultProductRoute(platformAdmin), "/operator");
+  assert.equal(defaultProductRoute(platformDeveloper), "/admin/monitoring");
+  assert.equal(defaultProductRoute(adminInWorkspace), "/projects");
+  assert.equal(canAccessProductRoute(platformAdmin, "/operator"), true);
+  assert.equal(canAccessProductRoute(adminInWorkspace, "/operator"), true);
+  for (const who of [platformDeveloper, owner, viewer, client, writeOnly, user(base), null]) {
+    assert.equal(canAccessProductRoute(who, "/operator"), false);
+    assert.equal(safeNextPath(who, "/operator"), null);
+  }
+  // The old monitoring page stays reachable for platform staff.
+  assert.equal(canAccessProductRoute(platformAdmin, "/admin/monitoring"), true);
+  assert.equal(canAccessProductRoute(platformDeveloper, "/admin/monitoring"), true);
+  assert.equal(safeNextPath(platformAdmin, "/operator"), "/operator");
+  assert.equal(safeNextPath(platformAdmin, "/operator?tab=workspaces"), "/operator?tab=workspaces");
+  for (const path of ["/operator", "/operator/x"]) assert.equal(isOperatorPath(path), true, path);
+  for (const path of ["/operatorx", "/Operator", "/operators", "/admin/operator"]) assert.equal(isOperatorPath(path), false, path);
+  assert.equal(canAccessProductRoute(platformDeveloper, "/operator/x"), false);
+  assert.equal(safeWorkspaceSwitchDestination(platformAdmin, "/operator"), "/operator");
+});
+
 test("P7.6-A: the middleware runs on every gated Studio and Business view route", () => {
   const source = readFileSync(new URL("../../middleware.ts", import.meta.url), "utf8");
-  for (const prefix of ["/home", "/inbox", "/agents", "/settings", "/projects", "/outcomes", "/dev", "/app", "/business"]) {
+  for (const prefix of ["/home", "/inbox", "/agents", "/settings", "/projects", "/outcomes", "/operator", "/dev", "/app", "/business"]) {
     assert.ok(source.includes(`"${prefix}/:path*"`), prefix);
   }
 });

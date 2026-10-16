@@ -570,6 +570,11 @@ def _compute_window(db: Session, job: MlJob, on_heartbeat: Callable[[], None] | 
     db.add(MonitoringWindow(workspace_id=workspace_id, project_id=project_id, model_version_id=version_id,
                             window_start=start, revision=(latest.revision + 1) if latest is not None else 1,
                             **content))
+    if status == "alert":  # P8.8-A: once per window (deduped), in this transaction; never raises
+        from app.services.notification_service import notify_drift_alert
+
+        notify_drift_alert(db, workspace_id=workspace_id, project_id=project_id, model_version_id=version_id,
+                           window_start=start, code=code)
     db.commit()
 
 

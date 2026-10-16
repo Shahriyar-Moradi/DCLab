@@ -173,7 +173,7 @@ def test_ambiguous_target_consults_the_gateway_and_keeps_it_a_suggestion(auth_cl
     assert choice.validator_verdict == "accept" and choice.raw_llm_output["target"] == "measure_b"
     assert "semantic suggestion 'measure_b' recorded for confirmation" in choice.reason
     [call] = ai.fake.calls
-    assert call.model == "gpt-6-luna"  # the legacy_decision role's policy model
+    assert call.model == "claude-sonnet-5-5"  # the legacy_decision role's policy model
     evidence = sent(call)
     assert evidence["row_count"] == 100
     assert set(evidence) == {"row_count", "column_count", "columns"}  # sample values withheld (metadata only)

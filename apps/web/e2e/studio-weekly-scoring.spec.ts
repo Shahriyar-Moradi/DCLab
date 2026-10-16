@@ -43,7 +43,9 @@ test("turn weekly scoring on, change it, turn it off; a viewer cannot; refusals 
   await expect(confirm).toContainText("Every Wednesday at 14:00 UTC, DCLab will score the newest file uploaded for scoring after weekly scoring was first set up and after the last week it scored");
   await expect(confirm).toContainText("No approved model is in use");
   await expect(confirm).toContainText("does not retrain, does not fetch data and does not switch models");
-  await expect(confirm).toContainText("uploaded with an access token");
+  await expect(confirm).toContainText("Only files uploaded by a person are scored; files a connected tool uploaded with a service token are ignored.");
+  await expect(confirm).toContainText("A file uploaded with a person's own sign-in or own API token counts as that person's.");
+  await expect(confirm).not.toContainText("access token");
   await expect(confirm).toContainText("Only the latest missed week within 24 hours is considered");
   await expect(page.getByRole("button", { name: "Turn on weekly scoring" })).toHaveCount(0);
   await expect(confirm).toContainText("after weekly scoring was first set up and after the last week it scored");
@@ -198,7 +200,7 @@ test("paused by the platform, every run outcome, and what a queued week really d
   await expect(list).toContainText("Failed: This week was not scored. The person who set up this schedule can no longer score");
   await expect(list.getByRole("link", { name: "See the weekly list" })).toHaveCount(1);
   await expect(list).not.toContainText("Scored the newest file");
-  await expect(list).toContainText("Nothing scored: no file was uploaded for scoring after weekly scoring was first set up and after the last week it scored.");
+  await expect(list).toContainText("Nothing scored: no person uploaded a file for scoring after weekly scoring was first set up and after the last week it scored.");
   await expect(list).toContainText("Nothing scored: the model in use was not approved for scoring.");
   await expect(list).toContainText("the person who set up this schedule can no longer score in this workspace");
   await expect(list).toContainText("DCLab did not get to it within 24 hours");

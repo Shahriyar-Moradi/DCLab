@@ -255,7 +255,7 @@ def test_registry_check_catches_planted_tools(monkeypatch):
 
 
 def _critic(ac, provider):  # uncached: a repeated input reaches the provider again
-    return run_specialist(ac, CRITIC, _Uncached(providers={"openai": provider}, limits=GatewayLimits(),
+    return run_specialist(ac, CRITIC, _Uncached(providers={"anthropic": provider}, limits=GatewayLimits(),
                                                 settings=lambda: ON))
 
 

@@ -1,7 +1,8 @@
 """Provider adapters: the ONLY modules that import a model SDK, call a provider
 host or read a ``DCLAB_<PROVIDER>_API_KEY`` variable (ADR 0009 §1 CI rules a, e;
-enforced by ``tests/test_ai_gateway.py``). Adapters raise ``ProviderError`` and
-never retry; the gateway service owns retries, limits, budgets and the ledger.
+enforced by ``tests/test_ai_gateway.py``; the Anthropic adapter also falls back to
+the plain ``ANTHROPIC_API_KEY``, see its docstring). Adapters raise ``ProviderError``
+and never retry; the gateway service owns retries, limits, budgets and the ledger.
 """
 
 from __future__ import annotations
@@ -25,10 +26,20 @@ ProviderErrorKind = Literal[
 
 
 class ProviderError(Exception):
-    def __init__(self, kind: ProviderErrorKind, detail: str = "") -> None:
+    """A failed call. ``input_tokens`` / ``output_tokens``: usage the provider reported for a
+    reply that was billed but unusable (refusal, length stop, unparsable or invalid output);
+    ``billed_unknown``: the request left the process and may have been billed, but no usage
+    came back (a read timeout, a 5xx, a dropped or oversized reply): the gateway charges the
+    call's worst case then."""
+
+    def __init__(self, kind: ProviderErrorKind, detail: str = "", *, input_tokens: int = 0,
+                 output_tokens: int = 0, billed_unknown: bool = False) -> None:
         super().__init__(f"{kind}: {detail}" if detail else kind)
         self.kind = kind
         self.detail = detail[:200]
+        self.input_tokens = max(0, int(input_tokens))
+        self.output_tokens = max(0, int(output_tokens))
+        self.billed_unknown = bool(billed_unknown)
 
 
 @dataclass(frozen=True)
@@ -63,13 +74,27 @@ class Provider(Protocol):
     def complete(self, call: ProviderCall) -> ProviderResult: ...
 
 
-def default_providers() -> dict[str, Provider]:
-    """Production adapters (each imports its SDK lazily, at call time)."""
+def default_providers(settings: Any = None) -> dict[str, Provider]:
+    """Production adapters (each imports its SDK / HTTP client lazily, at call time).
 
-    from app.agents.gateway.providers.openai import OpenAIProvider
-    from app.agents.gateway.providers.typesafe_jev import TypeSafeJevProvider
+    Every model routes to Anthropic since 2026-10-16. LEGACY (switched to Anthropic
+    2026-10-16; kept for now): the OpenAI and TypeSafe adapters are registered only with
+    ``AI_LEGACY_PROVIDERS_ENABLED=true``; their model ids are commented out of the router,
+    the platform allowlist and the price table, so the switch alone routes nothing to them."""
 
-    return {"openai": OpenAIProvider(), "typesafe": TypeSafeJevProvider()}
+    from app.agents.gateway.providers.anthropic import AnthropicProvider
+
+    providers: dict[str, Provider] = {"anthropic": AnthropicProvider()}
+    if settings is None:
+        from app.config import get_settings
+
+        settings = get_settings()
+    if getattr(settings, "ai_legacy_providers_enabled", False) is True:
+        from app.agents.gateway.providers.openai import OpenAIProvider
+        from app.agents.gateway.providers.typesafe_jev import TypeSafeJevProvider
+
+        providers |= {"openai": OpenAIProvider(), "typesafe": TypeSafeJevProvider()}
+    return providers
 
 
 def ambient_provider_keys(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:

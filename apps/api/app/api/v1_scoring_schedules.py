@@ -94,8 +94,9 @@ def save_scoring_schedule(
 ) -> ScoringScheduleState:
     """Turn weekly scoring on or off, or change its day and hour (UTC). One schedule per
     project; ``enabled=false`` turns it off and keeps it and its runs. Each week it scores the
-    newest file uploaded for scoring since the last run with the model in use approved for
-    scoring, acting as you (re-checked every run). Writes an accepted
+    newest file a person uploaded for scoring since the last run (files a connected tool uploaded
+    with a service token are ignored; your own sign-in or own API token counts as you) with the
+    model in use approved for scoring, acting as you (re-checked every run). Writes an accepted
     ``scoring_schedule_changed`` History entry (``rationale``: your reason). People with
     ML-write only: a service token gets ``403 service_token_not_permitted``, any agent
     ``403 human_session_required``, a viewer ``403 forbidden``. Requires ``Idempotency-Key``."""
