@@ -647,10 +647,11 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
         split_assignment=_split_assignment(experiment, result),
         branch=_branch(experiment, result),
         decision_threshold=_decision_threshold(result),
+        holdout_sealed=experiment.evidence_mode == "sealed",
     )
-    spec.spec_digest = content_digest(
-        spec.model_dump(mode="json", exclude={"spec_digest", "stage_code"})
-    )
+    # A scored run's digest is unchanged by the sealed flag (it is hashed only when set).
+    excluded = {"spec_digest", "stage_code"} | (set() if spec.holdout_sealed else {"holdout_sealed"})
+    spec.spec_digest = content_digest(spec.model_dump(mode="json", exclude=excluded))
     return spec
 
 

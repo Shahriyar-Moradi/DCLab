@@ -37,6 +37,14 @@ PLAN_CAVEAT = (
     "Best of {n} tries on the same folds: the cross-validation number is a little optimistic, and each try "
     "also scored the final test set once, so no single number here is a fresh estimate."
 )
+# A sealed improve try (ADR 0007 §6.1) never scored the final test set.
+PLAN_CAVEAT_SEALED = (
+    "Best of {n} tries on the same folds: the cross-validation number is a little optimistic; this try did not "
+    "use the final test set."
+)
+# This try scored the final test set but the one compared with is a sealed try.
+PLAN_CAVEAT_MIXED = "Best of {n} tries on the same folds: the cross-validation number is a little optimistic."
+_CAVEATS = {"scored": PLAN_CAVEAT, "sealed": PLAN_CAVEAT_SEALED, "mixed": PLAN_CAVEAT_MIXED}
 LOOK_COUNTING = (
     "conservative: every experiment on this split plan that locked a winner, has a final-evaluation row, or "
     "recorded a final_test_started event (the evidence for a run that failed or was cancelled after its final "
@@ -63,7 +71,20 @@ REASON_MESSAGES = {
                           "not comparable.",
     "suspicious_result": "The result looks too good to be true (a trust check failed: target leakage or an "
                          "implausible score); check the trust checks first.",
+    # The goal verdict (P5.4-A1b): each model scored per fold at its own threshold for the goal.
+    "no_goal_curve": "One of the two models has no stored out-of-fold curve, so the goal cannot be scored per "
+                     "fold: not comparable on the goal.",
+    "goal_not_per_fold": "A cost-based goal is not scored per fold: not comparable on the goal.",
+    "no_folds": "The stored curves carry no per-fold counts: not comparable on the goal.",
+    "fold_counts_differ": "The two curves were not built on the same folds: not comparable.",
+    "fold_below_min_denominator": "On some fold fewer than 10 rows stand behind the goal's numbers at the chosen "
+                                  "threshold, too few to score it: not comparable on the goal.",
+    "too_few_positives": "Too few positive rows in the out-of-fold predictions to score the goal: not comparable.",
+    "too_few_negatives": "Too few negative rows in the out-of-fold predictions to score the goal: not comparable.",
+    "try_misses_rule": "This try's model cannot meet the rule on cross-validation while the other one can, so it "
+                       "does not beat it, however small its shortfall.",
 }
+GOAL_SHORTFALL = "constraint_shortfall"  # the per-fold score when a model cannot meet the rule
 
 
 class VerdictFoldRead(BaseModel):
@@ -81,6 +102,60 @@ class SplitPlanLooksRead(BaseModel):
     experiment_look: int | None = Field(default=None, description="This experiment is look k on the plan.")
     against_look: int | None = Field(default=None, description="The other experiment is look k on the plan.")
     counting: str = LOOK_COUNTING
+
+
+class GoalConstraintRead(BaseModel):
+    metric: str
+    op: Literal[">=", "<="]
+    value: float
+
+
+class GoalFoldRead(BaseModel):
+    fold: int = Field(description="Position of the fold (curve folds carry no fold number; the per-fold "
+                                  "class counts are identical on both sides).")
+    experiment: float = Field(description="This experiment's winner on the fold, at its own threshold.")
+    against: float = Field(description="The other experiment's winner on the fold, at its own threshold.")
+    difference: float = Field(description="experiment minus against.")
+
+
+class GoalVerdictRead(BaseModel):
+    """The §5 verdict on the goal (P5.4-A1b): the paired per-fold rule of the ranking verdict applied to
+    the goal metric. ``plain``: the goal is the ranking metric (the same numbers as the ranking verdict).
+    ``objective``: the goal a person set with an operating-point choice on the compared-against run BEFORE
+    this run was created (pre-registered; a goal chosen after the try is never used), maximise ``metric``
+    subject to ``constraints``, each run scored per fold at its own threshold solved on its out-of-fold
+    curve; when either run cannot meet the constraints the runs are compared by the per-fold constraint
+    shortfall (``scored_by: constraint_shortfall``, lower is better), and a try that misses the rule never
+    beats one that meets it (reason ``try_misses_rule``). δ_min = max(0.001, 1/n_min) of the smallest
+    per-fold denominator (basis ``fold_denominator``). Cross-validation only."""
+
+    kind: Literal["plain", "objective"]
+    source: Literal["ranking_metric", "operating_point_choice"]
+    choice_decision_id: UUID | None = Field(default=None, description="The operating-point choice the goal is from.")
+    metric: str = Field(description="The goal metric.")
+    constraints: list[GoalConstraintRead] = Field(default_factory=list)
+    scored_by: Literal["goal_metric", "constraint_shortfall"] = "goal_metric"
+    verdict: VerdictValue
+    reason: str | None = None
+    message: str
+    direction: Literal["higher_is_better", "lower_is_better"] | None = None
+    folds: int | None = None
+    mean_difference: float | None = None
+    margin: float | None = None
+    minimum_effect: float | None = None
+    minimum_effect_basis: str | None = None
+    standard_error: float | None = None
+    t_quantile: float | None = None
+    comparisons: int = 1
+    experiment_threshold: float | None = Field(default=None, description="This run's threshold for the goal (CV).")
+    against_threshold: float | None = Field(default=None, description="The other run's threshold for the goal (CV).")
+    experiment_meets_rule: bool | None = Field(default=None, description="Its threshold meets every constraint (CV).")
+    against_meets_rule: bool | None = None
+    experiment_curve_digest: str | None = None
+    against_curve_digest: str | None = None
+    fold_scores: list[GoalFoldRead] = Field(default_factory=list)
+    outcome_scope: Literal["cv"] = "cv"
+    basis: Literal["locked_cv_fold_evaluations", "out_of_fold_operating_curves"] = "locked_cv_fold_evaluations"
 
 
 class ExperimentVerdictRead(BaseModel):
@@ -135,6 +210,8 @@ class ExperimentVerdictRead(BaseModel):
     multiplicity_note: str = MULTIPLICITY_NOTE
     sign_convention: str = SIGN_CONVENTION
     fold_scores: list[VerdictFoldRead] = Field(default_factory=list)
+    goal: GoalVerdictRead | None = Field(
+        default=None, description="The same rule on the goal metric (null when the runs cannot be compared at all).")
     test_set_looks: SplitPlanLooksRead
     outcome_scope: Literal["cv"] = "cv"
     basis: Literal["locked_cv_fold_evaluations"] = "locked_cv_fold_evaluations"
@@ -152,17 +229,20 @@ def _tries(new_candidates: int) -> str:
 
 
 def metric_label(metric: str) -> str:
+    if metric == GOAL_SHORTFALL:
+        return "the shortfall from the rule"
     return METRIC_LABELS.get(metric, metric.replace("_", " "))
 
 
 def verdict_message(verdict: str, reason: str | None, *, metric: str | None, direction: str | None,
                     folds: int | None, mean_difference: float | None, margin: float | None,
-                    new_candidates: int = 0, comparisons_on_plan: int = 0) -> str:
+                    new_candidates: int = 0, comparisons_on_plan: int = 0, caveat_kind: str = "scored") -> str:
     """The plain sentences, built from the numbers only (the metric by its plain label); the
-    best-of-N caveat when more than two runs on the split plan picked a winner or are running."""
+    best-of-N caveat when more than two runs on the split plan picked a winner or are running
+    (``caveat_kind``: ``scored`` | ``sealed`` (this try is sealed) | ``mixed`` (the other one is))."""
 
-    caveat = f" {PLAN_CAVEAT.format(n=comparisons_on_plan)}" if comparisons_on_plan > 2 else ""
-    if verdict == "not_comparable":
+    caveat = f" {_CAVEATS[caveat_kind].format(n=comparisons_on_plan)}" if comparisons_on_plan > 2 else ""
+    if verdict == "not_comparable" or reason == "try_misses_rule":
         return REASON_MESSAGES.get(reason or "", "The two tries cannot be compared.") + caveat
     if reason == "no_change":
         return f"Both tries score the same on every one of the {folds} folds: no change.{caveat}"
@@ -183,3 +263,29 @@ def verdict_message(verdict: str, reason: str | None, *, metric: str | None, dir
         text = (f"{gap} ({lean}), inside the noise margin of {_fmt(margin)}: within the noise, no evidence that "
                 f"either model is better {scope}.")
     return text + _tries(new_candidates) + caveat
+
+
+def _bound(constraint: GoalConstraintRead) -> str:
+    word = "at least" if constraint.op == ">=" else "at most"
+    return f"{metric_label(constraint.metric)} {word} {_fmt(constraint.value)}"
+
+
+def goal_message(verdict: str, reason: str | None, *, kind: str, metric: str, constraints: list[GoalConstraintRead],
+                 scored_by: str, direction: str | None, folds: int | None, mean_difference: float | None,
+                 margin: float | None, new_candidates: int = 0, comparisons_on_plan: int = 0,
+                 caveat_kind: str = "scored") -> str:
+    """The goal verdict in plain words: the goal first, then the ranking verdict's sentences."""
+
+    if kind == "plain":
+        lead = f"Goal: the best {metric_label(metric)} (the ranking measure). "
+    else:
+        rule = " and ".join(_bound(item) for item in constraints)
+        lead = (f"Goal: the best {metric_label(metric)}" + (f" with {rule}" if rule else "")
+                + ", each model at its own threshold on cross-validation. ")
+        if scored_by == GOAL_SHORTFALL:
+            lead += ("One of the two models cannot meet the rule there, so they are compared by how far each "
+                     "falls short of it. ")
+    scored = GOAL_SHORTFALL if scored_by == GOAL_SHORTFALL else metric
+    return lead + verdict_message(verdict, reason, metric=scored, direction=direction, folds=folds,
+                                  mean_difference=mean_difference, margin=margin, new_candidates=new_candidates,
+                                  comparisons_on_plan=comparisons_on_plan, caveat_kind=caveat_kind)

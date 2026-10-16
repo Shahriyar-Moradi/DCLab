@@ -253,6 +253,9 @@ BEGIN
             RAISE EXCEPTION
                 'experiments.parent_pipeline_run_id, change_set and intent are insert-only';
         END IF;
+        IF NEW.evidence_mode IS DISTINCT FROM OLD.evidence_mode THEN
+            RAISE EXCEPTION 'experiments.evidence_mode is insert-only';
+        END IF;
         IF OLD.source_dataset_id IS NOT NULL
             AND NEW.source_dataset_id IS DISTINCT FROM OLD.source_dataset_id THEN
             RAISE EXCEPTION 'experiments.source_dataset_id is write-once';
@@ -296,7 +299,7 @@ $$ LANGUAGE plpgsql
 EXPERIMENTS_LINEAGE_GUARD_TRIGGER_SQL = """
 CREATE TRIGGER experiments_lineage_guard
 BEFORE INSERT OR UPDATE OF split_plan_id, parent_pipeline_run_id, change_set, intent,
-    source_dataset_id, project_id, workspace_id ON experiments
+    source_dataset_id, project_id, workspace_id, evidence_mode ON experiments
 FOR EACH ROW EXECUTE FUNCTION prevent_experiment_lineage_violation()
 """
 
@@ -1204,7 +1207,7 @@ UPLOAD_ATTEMPTS_TRIGGER_SQL = (
 
 
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0085
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0086
     install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements

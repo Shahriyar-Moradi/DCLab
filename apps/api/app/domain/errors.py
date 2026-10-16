@@ -258,10 +258,11 @@ class ExperimentNotBranchableError(Exception):
 
     status_code = 409
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, status_code: int = 409) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
         self.detail_message = message
+        self.status_code = status_code
 
     def public_detail(self) -> dict[str, str]:
         return {"code": self.code, "message": self.detail_message}

@@ -17,6 +17,13 @@ from sklearn.pipeline import Pipeline as SkPipeline
 
 from app.engine.experiments.stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
 from app.engine.data.quality import quality_report
+from app.engine.evaluation.comparability import (
+    FOLD_TOLERANCE,
+    RunEvidence,
+    SelectionMismatchError,
+    evidence_from_records,
+    selection_mismatch,
+)
 from app.engine.evaluation.metrics import (
     LOWER_IS_BETTER,
     aggregate_fold_metrics,
@@ -1204,8 +1211,16 @@ def _run_open_ingest_candidates(
     target_original: pd.Series | None = None,
     target_labels: Mapping[str, Any] | None = None,
     time_columns: Sequence[str] = (),
+    score_holdout: bool = True,
+    expected_selection: RunEvidence | None = None,
 ) -> dict[str, Any]:
     """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked.
+
+    ``expected_selection`` (a pinned final run, ADR 0007 §6.2): the selection must reproduce the
+    probe's evidence at the winner lock, else ``SelectionMismatchError`` before any final-test step.
+
+    ``score_holdout=False`` (a sealed improve try, ADR 0007 §6.1): the run ends after the
+    winner lock, its importance and curve -- no final fit, package, test score or prediction.
 
     ``target_original``: the binary target as given to the runner, by source row (P7.4-A
     monitoring reads the pool rows' label spellings from it); ``target_labels``: the uploaded
@@ -1683,6 +1698,13 @@ def _run_open_ingest_candidates(
 
     feature_importance: dict[str, Any] | None = None
     saved: dict[str, Any] = {}  # the model package bytes and its build-time verification summary
+    if expected_selection is not None:
+        # ADR 0007 §6.2: a pinned re-run aborts here (no checkpoint, no final fit, no look) unless it
+        # reproduced its probe: same winner, candidates, fingerprints, per-fold metrics and trials.
+        mismatch = selection_mismatch(
+            expected_selection, evidence_from_records(records, best_single["candidate_id"] if best_single else None))
+        if mismatch is not None:
+            raise SelectionMismatchError(mismatch)
     # Persist the CV-only selection checkpoint before the holdout is touched.
     if best_single is not None:
         best_single["locked"] = True
@@ -1717,6 +1739,9 @@ def _run_open_ingest_candidates(
         stage_timings.append(
             _timing("feature_importance", importance_started, importance_timer, status=feature_importance["status"])
         )
+
+    final_fit: dict[str, Any] = {}
+    if best_single is not None and score_holdout:  # a sealed try never fits on or touches the test rows
 
         def _save_package(fitted: Any) -> None:
             started, timer = datetime.now(UTC), time.perf_counter()
@@ -1824,7 +1849,7 @@ def _run_open_ingest_candidates(
         "selected_ids": selected_ids,
         "selection": selection,
         "final_test_evaluation": final_test_evaluation,
-        "final_fit": final_fit if best_single is not None else {},
+        "final_fit": final_fit,
         "stage_timings": stage_timings,
         "baseline_comparison": baseline_comparison,
         "decision_threshold": decision_threshold,
@@ -1851,6 +1876,8 @@ def _run_open_ingest_experiment(
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
     target_labels: Mapping[str, Any] | None = None,
+    score_holdout: bool = True,
+    expected_selection: RunEvidence | None = None,
 ) -> dict[str, Any]:
     """Leakage-safe open-ingest experiment with an early locked holdout."""
     profile = profile_frame(frame)
@@ -1989,6 +2016,8 @@ def _run_open_ingest_experiment(
         target_original=target_original,
         target_labels=target_labels,
         time_columns=[name for name in (holdout_plan.time_column,) if name],
+        score_holdout=score_holdout,
+        expected_selection=expected_selection,
     )
     funnel.update(outcome["funnel"])
     records = outcome["records"]
@@ -2095,6 +2124,11 @@ def _run_open_ingest_experiment(
         # V7 B4: what the worker checked on the model package before the final test (training rows only).
         "package_verification": outcome.get("package_verification"),
     }
+    if not score_holdout:  # ADR 0007 §6.1: the final test rows stay sealed for this improve try
+        result["holdout"] = {"scored": False, "reason": "improve_probe", "rows": split_meta.get("n_test")}
+    if expected_selection is not None:  # ADR 0007 §6.2: reached only when the pinned selection reproduced
+        result["pinned_selection"] = {"reproduced": True, "candidate_id": expected_selection.winner,
+                                      "tolerance": FOLD_TOLERANCE}
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")
     from app.engine.reporting.report import render_markdown
@@ -2119,8 +2153,13 @@ def run_experiment(
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
     target_labels: Mapping[str, Any] | None = None,
+    score_holdout: bool = True,
+    expected_selection: RunEvidence | None = None,
 ) -> dict[str, Any]:
     """Train, filter, select, and report. Returns a JSON-serializable result dict.
+
+    ``score_holdout`` is service-only (never a SearchConfig field): ``execute_experiment``
+    derives it from the run's insert-only ``evidence_mode`` (ADR 0007 §6.1).
 
     ``target_labels`` (binary): the uploaded spellings of 1 and 0 when the frame's target was
     coded before (auto-train cleaning); recorded in the monitoring reference only.
@@ -2160,6 +2199,8 @@ def run_experiment(
         outer_fold_assignment=outer_fold_assignment,
         holdout_partition=holdout_partition,
         target_labels=target_labels,
+        score_holdout=score_holdout,
+        expected_selection=expected_selection,
     )
 
 

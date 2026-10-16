@@ -87,6 +87,21 @@ def _chosen_head(db: Session, workspace_id: UUID, experiment_id: UUID) -> Projec
     )
 
 
+def choice_before(db: Session, workspace_id: UUID, experiment_id: UUID, moment: Any) -> ProjectDecisionRecord | None:
+    """The operating-point choice that was current on the run at ``moment`` (the newest accepted one
+    recorded before it): the pre-registered goal the verdict read scores (P5.4-A1b)."""
+
+    pdr = ProjectDecisionRecord
+    return db.scalar(
+        select(pdr)
+        .where(pdr.workspace_id == workspace_id, pdr.experiment_id == experiment_id,
+               pdr.decision_type == DECISION_OPERATING_POINT_CHOSEN, pdr.state == STATE_ACCEPTED,
+               pdr.recorded_at < moment)
+        .order_by(pdr.recorded_at.desc(), pdr.id.desc())
+        .limit(1)
+    )
+
+
 def _num(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 

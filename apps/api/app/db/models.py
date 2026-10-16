@@ -151,7 +151,9 @@ from app.domain.pipeline_run_branch import (
     CK_EXPERIMENTS_BRANCH_KEY,
     CK_EXPERIMENTS_BRANCH_REASON,
     CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
+    CK_EXPERIMENTS_EVIDENCE_MODE,
     CK_EXPERIMENTS_PARENT_NOT_SELF,
+    EVIDENCE_MODE_SCORED,
 )
 from app.domain.ai_governance import (
     CK_AI_POLICIES_ACTOR,
@@ -3853,6 +3855,7 @@ class Experiment(Base):
             CK_EXPERIMENTS_CHANGE_SET_REQUIRES_PARENT,
             name="ck_experiments_change_set_requires_parent",
         ),
+        CheckConstraint(CK_EXPERIMENTS_EVIDENCE_MODE, name="ck_experiments_evidence_mode"),
         Index(
             "ix_experiments_workspace_created_at",
             "workspace_id",
@@ -3947,6 +3950,11 @@ class Experiment(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # ADR 0007 §6.1: ``sealed`` = a CV-only improve try (no final test, no ModelVersion). Set at
+    # INSERT (``create_pipeline_run(evidence_mode=...)``); experiments_lineage_guard refuses a change.
+    evidence_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default=EVIDENCE_MODE_SCORED, server_default=EVIDENCE_MODE_SCORED
     )
 
     dataset: Mapped[Dataset] = relationship(

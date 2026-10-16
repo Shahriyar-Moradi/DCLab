@@ -147,7 +147,8 @@ def create_batch_prediction(
     if model_version is None:
         raise BatchPredictionError("not_found", "model version not found", status_code=404)
     experiment = _scoped(db, Experiment, workspace_id, model_version.pipeline_run_id)
-    if model_version.model_artifact_id is None or experiment is None or experiment.scientific_evidence_locked_at is None:
+    if (model_version.model_artifact_id is None or experiment is None or experiment.scientific_evidence_locked_at is None
+            or experiment.evidence_mode == "sealed"):  # ADR 0007 §6.1: defence in depth (no MV exists for one)
         raise BatchPredictionError(
             "model_not_scoreable", "this model version has no locked, stored model to score with", status_code=409
         )

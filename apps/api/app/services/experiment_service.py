@@ -105,6 +105,7 @@ from app.domain.model_card import (
     render_markdown,
 )
 from app.domain.ml_jobs import JOB_CANCELLED, JOB_COMPLETED, JOB_FAILED, JOB_QUEUED, JOB_RUNNING
+from app.domain.pipeline_run_branch import EVIDENCE_MODE_SEALED, SEALED_FINAL_TEST_NOTE
 from app.engine.evaluation.metrics import LOWER_IS_BETTER
 from app.engine.modeling.objective import DEFAULT_THRESHOLD
 from app.engine.serving.model_package import saved_format
@@ -472,6 +473,8 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
             256,
         ),
         intent=_intent(experiment),
+        evidence_mode=experiment.evidence_mode,
+        evidence_note=SEALED_FINAL_TEST_NOTE if experiment.evidence_mode == EVIDENCE_MODE_SEALED else None,
         lineage=ExperimentLineage(
             parent_experiment_id=experiment.parent_pipeline_run_id,
             split_plan_id=experiment.split_plan_id,
@@ -578,6 +581,7 @@ def list_experiments(
                 split_plan_id=row.split_plan_id,
                 source_dataset_id=row.source_dataset_id,
                 has_change_set=row.change_set is not None,
+                evidence_mode=row.evidence_mode,
                 intent=_intent(row),
             )
             for row, state in page

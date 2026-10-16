@@ -30,6 +30,7 @@ from app.db.models import (
     ModelVersion,
     PreprocessingStep,
 )
+from app.domain.pipeline_run_branch import EVIDENCE_MODE_SEALED
 from app.services.scientific_lineage_service import (
     latest_pipeline_run_feature_set_version,
 )
@@ -72,7 +73,9 @@ def _expected_fold_numbers(candidate: ExperimentCandidate) -> set[int]:
 
 
 def scientific_evidence_status(db: Session, experiment: Experiment) -> dict[str, bool]:
-    """Which pieces of canonical evidence this run has persisted."""
+    """Which pieces of canonical evidence this run has persisted. For a sealed run (ADR 0007
+    §6.1) ``final_holdout`` / ``model_version_links`` / ``reproducibility`` mean the holdout
+    pieces are absent (the sealed variant of ``reproducibility -> model_links -> holdout``)."""
 
     run_id = experiment.id
     candidates = list(
@@ -217,6 +220,35 @@ def scientific_evidence_status(db: Session, experiment: Experiment) -> dict[str,
         and selected_candidate is not None
         and str(selected_candidate.status).lower() == "trained"
     )
+    if experiment.evidence_mode == EVIDENCE_MODE_SEALED:
+        # ADR 0007 §6.1 (mirrors the sealed SQL predicate): the four holdout pieces must be
+        # ABSENT -- no final_holdout evaluation, test predictions, ModelVersion or model artifact.
+        holdout_absent = not any(
+            evaluation.evaluation_scope == FINAL_HOLDOUT_SCOPE for evaluation in evaluations
+        ) and not _exists(
+            db, select(ExperimentTestPrediction.id).where(ExperimentTestPrediction.experiment_id == run_id)
+        )
+        holdout_complete = selection_complete and holdout_absent
+        model_links_complete = holdout_complete and model_version is None
+        reproducibility_complete = (
+            model_links_complete
+            and has_dependency_lock
+            and has_feature_manifest
+            and not has_model_artifact
+            and (
+                not code_export_enabled
+                or (
+                    code_snapshot is not None
+                    and code_snapshot.candidate_id == selected_candidate.id
+                    and code_snapshot.dependency_lock_artifact_id is not None
+                )
+            )
+        )
+        return _status(
+            db, experiment, candidates, candidate_ids, parameter_candidates, folds_complete,
+            cv_metrics_complete, selection_complete, holdout_complete, model_links_complete,
+            reproducibility_complete, version, selected_candidate,
+        )
     holdout_complete = (
         holdout is not None
         and holdout.id in metric_evaluations
@@ -272,6 +304,20 @@ def scientific_evidence_status(db: Session, experiment: Experiment) -> dict[str,
             )
         )
     )
+    return _status(
+        db, experiment, candidates, candidate_ids, parameter_candidates, folds_complete,
+        cv_metrics_complete, selection_complete, holdout_complete, model_links_complete,
+        reproducibility_complete, version, selected_candidate,
+    )
+
+
+def _status(
+    db: Session, experiment: Experiment, candidates, candidate_ids, parameter_candidates,
+    folds_complete: bool, cv_metrics_complete: bool, selection_complete: bool,
+    holdout_complete: bool, model_links_complete: bool, reproducibility_complete: bool,
+    version, selected_candidate,
+) -> dict[str, bool]:
+    run_id = experiment.id
     features_not_applicable = (
         experiment.project_id is None
         and version is None

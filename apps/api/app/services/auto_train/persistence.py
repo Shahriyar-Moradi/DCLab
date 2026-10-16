@@ -20,6 +20,7 @@ from app.db.models import (
     ModelVersion,
     WorkflowRun,
 )
+from app.domain.pipeline_run_branch import EVIDENCE_MODE_SEALED
 from app.engine.lab.auto_prepare import ColumnRoles, MissingValuePlan
 from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan
@@ -117,6 +118,9 @@ def _investigation(inp: PersistenceInput, result: dict[str, Any], db: Any = None
 
     frame = inp.frame
     target = (result.get("task") or {}).get("target")
+    # ADR 0007 §6.1: a sealed try reads training rows only; the five test-partition checks
+    # report not_evaluated / holdout_sealed and never see a test row.
+    sealed = getattr(inp.experiment, "evidence_mode", None) == EVIDENCE_MODE_SEALED
 
     def plan_column(key: str, fallback: str | None = None) -> str | None:
         holdout = result.get("holdout_plan") if isinstance(result.get("holdout_plan"), dict) else {}
@@ -144,10 +148,14 @@ def _investigation(inp: PersistenceInput, result: dict[str, Any], db: Any = None
             name for name in (winner.get("features") or inp.modeled_cols)
             if name in frame.columns and name not in {SOURCE_ROW_COLUMN, target}
         ]
-        if not columns or train_rows is None or test_rows is None:
+        if not columns or train_rows is None or (test_rows is None and not sealed):
             return None
         source = frame[SOURCE_ROW_COLUMN] if SOURCE_ROW_COLUMN in frame.columns else frame.index.to_series()
-        train_mask, test_mask = source.isin(set(train_rows)).to_numpy(), source.isin(set(test_rows)).to_numpy()
+        train_mask = source.isin(set(train_rows)).to_numpy()
+        if sealed:
+            return SplitFeatures(train=frame.loc[train_mask, columns], test=None,
+                                 train_labels=frame.loc[train_mask, target] if target in frame.columns else None)
+        test_mask = source.isin(set(test_rows)).to_numpy()
         time_column, group_column = plan_column("time_column"), plan_column("group_column", inp.entity_column)
 
         def times(mask: Any) -> Any:
@@ -185,7 +193,7 @@ def _investigation(inp: PersistenceInput, result: dict[str, Any], db: Any = None
             raise parent_error
         return parent_value
 
-    return investigation_payload(investigate_result(result, split=split_features, parent=parent))
+    return investigation_payload(investigate_result(result, split=split_features, parent=parent, sealed=sealed))
 
 
 def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput:
@@ -376,7 +384,8 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
         link_candidates_to_feature_set_version(db, experiment)
         repro = persist_reproducibility(db, experiment, result)
         model_version = None
-        if workflow_run is not None:
+        # ADR 0007 §6.1: a sealed try never becomes a ModelVersion (no refs, no model artifact).
+        if workflow_run is not None and experiment.evidence_mode != EVIDENCE_MODE_SEALED:
             from app.services.lineage_service import (
                 create_model_asset,
                 create_model_version,

@@ -27,10 +27,11 @@ _LOCKED_MESSAGE = (
 # PostgreSQL validates the NULL -> timestamp transition too. Besides protecting
 # against a premature direct-SQL lock, this predicate lets the migration safely
 # backfill only historical runs whose complete evidence already exists.
-EVIDENCE_COMPLETE_SQL = """
-CREATE OR REPLACE FUNCTION pipeline_run_scientific_evidence_complete(wanted_run uuid)
-RETURNS boolean AS $$
-    SELECT EXISTS (
+#
+# The scored predicate (Alembic 0043; frozen copy in alembic_frozen.rev_0043_evidence_lock).
+# Since Alembic 0086 it is the scored branch of EVIDENCE_COMPLETE_SQL, byte-identical
+# (ADR 0007 §6.1 gate diff test).
+SCORED_EVIDENCE_PREDICATE = """    SELECT EXISTS (
         SELECT 1
         FROM experiments AS run
         JOIN model_selection_decisions AS selection
@@ -202,9 +203,154 @@ RETURNS boolean AS $$
                     )
                 )
           )
-    );
+    )"""
+
+# ADR 0007 §6.1: the sealed predicate is the scored one minus exactly these four holdout
+# clauses -- (c) the ModelVersion links, (a) the final_holdout evaluation, (b) the test
+# predictions, (d) the role=model artifact -- each replaced by NOT EXISTS (a stray holdout
+# row blocks a sealed lock). Every other clause is shared text.
+SEALED_CLAUSE_SWAPS: tuple[tuple[str, str], ...] = (
+    (
+        """          AND (
+              (
+                  run.workflow_run_id IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM model_versions AS unexpected_version
+                      WHERE unexpected_version.pipeline_run_id = run.id
+                  )
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM model_versions AS version_row
+                  WHERE version_row.pipeline_run_id = run.id
+                    AND version_row.selected_candidate_id = winner.id
+                    AND version_row.dataset_id = run.dataset_id
+                    AND version_row.feature_set_version_id = winner.feature_set_version_id
+                    AND version_row.runtime_environment_id IS NOT NULL
+                    AND version_row.model_artifact_id IS NOT NULL
+                    AND version_row.feature_manifest_artifact_id IS NOT NULL
+              )
+          )
+""",
+        """          AND NOT EXISTS (
+              SELECT 1
+              FROM model_versions AS unexpected_version
+              WHERE unexpected_version.pipeline_run_id = run.id
+          )
+""",
+    ),
+    (
+        """          AND EXISTS (
+              SELECT 1
+              FROM model_evaluations AS holdout
+              WHERE holdout.candidate_id = winner.id
+                AND holdout.evaluation_scope = 'final_holdout'
+                AND holdout.status = 'completed'
+                AND EXISTS (
+                    SELECT 1
+                    FROM evaluation_metrics AS metric
+                    WHERE metric.model_evaluation_id = holdout.id
+                )
+                AND (
+                    (
+                        run.workflow_run_id IS NULL
+                        AND holdout.model_version_id IS NULL
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM model_versions AS version_row
+                        WHERE version_row.pipeline_run_id = run.id
+                          AND version_row.selected_candidate_id = winner.id
+                          AND holdout.model_version_id = version_row.id
+                    )
+                )
+          )
+""",
+        """          AND NOT EXISTS (
+              SELECT 1
+              FROM model_evaluations AS holdout
+              JOIN experiment_candidates AS holdout_candidate
+                ON holdout_candidate.id = holdout.candidate_id
+              WHERE holdout_candidate.experiment_id = run.id
+                AND holdout.evaluation_scope = 'final_holdout'
+          )
+""",
+    ),
+    (
+        """          AND EXISTS (
+              SELECT 1
+              FROM experiment_test_predictions AS prediction
+""",
+        """          AND NOT EXISTS (
+              SELECT 1
+              FROM experiment_test_predictions AS prediction
+""",
+    ),
+    (
+        """          AND EXISTS (
+              SELECT 1
+              FROM artifacts AS artifact
+              WHERE artifact.pipeline_run_id = run.id
+                AND artifact.metadata->>'role' = 'model'
+""",
+        """          AND NOT EXISTS (
+              SELECT 1
+              FROM artifacts AS artifact
+              WHERE artifact.pipeline_run_id = run.id
+                AND artifact.metadata->>'role' = 'model'
+""",
+    ),
+)
+
+
+def sealed_predicate(scored: str) -> str:
+    """``scored`` with exactly the four holdout clauses swapped (each must occur once)."""
+
+    sealed = scored
+    for clause, replacement in SEALED_CLAUSE_SWAPS:
+        if sealed.count(clause) != 1:
+            raise RuntimeError("the scored evidence predicate changed; re-derive the sealed one")
+        sealed = sealed.replace(clause, replacement)
+    return sealed
+
+
+SEALED_EVIDENCE_PREDICATE = sealed_predicate(SCORED_EVIDENCE_PREDICATE)
+
+EVIDENCE_COMPLETE_SQL = f"""
+CREATE OR REPLACE FUNCTION pipeline_run_scientific_evidence_complete(wanted_run uuid)
+RETURNS boolean AS $$
+    SELECT CASE WHEN EXISTS (
+        SELECT 1 FROM experiments AS sealed_run
+        WHERE sealed_run.id = wanted_run AND sealed_run.evidence_mode = 'sealed'
+    ) THEN (
+{SEALED_EVIDENCE_PREDICATE}
+    ) ELSE (
+{SCORED_EVIDENCE_PREDICATE}
+    ) END;
 $$ LANGUAGE sql STABLE
 """
+
+# ADR 0007 §6.1: batch prediction accepts any locked run with an artifact, so a ModelVersion
+# of a sealed run is refused at INSERT (defence in depth; model_versions is insert-only).
+SEALED_MODEL_VERSION_GUARD_SQL = """
+CREATE OR REPLACE FUNCTION prevent_sealed_run_model_version()
+RETURNS trigger AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM experiments AS run
+        WHERE run.id = NEW.pipeline_run_id AND run.evidence_mode = 'sealed'
+    ) THEN
+        RAISE EXCEPTION 'model_versions cannot reference a sealed pipeline run (improve try)';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+SEALED_MODEL_VERSION_TRIGGER_SQL = (
+    "CREATE TRIGGER model_versions_refuse_sealed_run BEFORE INSERT ON model_versions "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_sealed_run_model_version()"
+)
 
 # --- ownership resolvers -----------------------------------------------------
 # Each answers "does this row belong to a run whose evidence is locked?". They
@@ -533,9 +679,16 @@ def _trigger_name(table: str) -> str:
 
 
 def evidence_lock_upgrade_statements() -> list[str]:
-    """Trigger DDL Alembic 0043 installs. Requires the lock column to exist."""
+    """Trigger DDL Alembic 0043 (+ the 0086 sealed predicate and model_versions guard) installs,
+    for create_all. Requires the lock and evidence_mode columns to exist."""
 
-    statements = [EVIDENCE_COMPLETE_SQL, *RESOLVER_SQL]
+    statements = [
+        EVIDENCE_COMPLETE_SQL,
+        *RESOLVER_SQL,
+        SEALED_MODEL_VERSION_GUARD_SQL,
+        "DROP TRIGGER IF EXISTS model_versions_refuse_sealed_run ON model_versions",
+        SEALED_MODEL_VERSION_TRIGGER_SQL,
+    ]
     for function, resolver in SINGLE_KEY_GUARDS.items():
         statements.append(_single_key_guard(function, resolver))
     statements.append(MODEL_EVALUATION_GUARD_SQL)
@@ -596,7 +749,9 @@ def evidence_lock_downgrade_statements() -> list[str]:
         f"DROP TRIGGER IF EXISTS {_trigger_name('pipeline_stage_runs')} ON pipeline_stage_runs"
     )
     statements.append("DROP TRIGGER IF EXISTS experiments_evidence_lock_stamp ON experiments")
+    statements.append("DROP TRIGGER IF EXISTS model_versions_refuse_sealed_run ON model_versions")
     for guard in (
+        "prevent_sealed_run_model_version",
         *SINGLE_KEY_GUARDS,
         "prevent_locked_evaluation_mutation",
         "prevent_locked_stage_run_mutation",

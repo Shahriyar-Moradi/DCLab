@@ -114,12 +114,17 @@ def paired_verdict(
     *,
     comparisons: int = 1,
     alpha: float = ALPHA,
+    lower_is_better: bool | None = None,
+    count_denominator: int | None = None,
 ) -> PairedVerdict:
-    """The §5 rule for one comparison (``comparisons`` = T, 1 for a single click)."""
+    """The §5 rule for one comparison (``comparisons`` = T, 1 for a single click).
+    ``lower_is_better`` overrides the metric's direction (e.g. a constraint shortfall);
+    ``count_denominator`` (the smallest per-fold denominator behind a count-based score, e.g. the
+    flagged rows behind precision) sets δ_min = max(0.001, 1/n_min) with basis ``fold_denominator``."""
 
     if comparisons < 1:
         raise ValueError("comparisons must be >= 1")
-    lower = metric in LOWER_IS_BETTER
+    lower = metric in LOWER_IS_BETTER if lower_is_better is None else lower_is_better
     direction = "lower_is_better" if lower else "higher_is_better"
     base = {"metric": metric, "direction": direction, "comparisons": comparisons}
     if set(experiment) != set(against):
@@ -147,6 +152,8 @@ def paired_verdict(
     class_rows = min(smallest) if len(smallest) == 2 * k and min(smallest) > 0 else None
     delta_min, basis = minimum_effect_with_basis(metric, [against[n].value for n in numbers],
                                                  min(rows) if rows else None, class_rows)
+    if count_denominator is not None and count_denominator > 0:
+        delta_min, basis = max(MIN_EFFECT_FLOOR, 1.0 / count_denominator), "fold_denominator"
     q = t_quantile(k, comparisons, alpha)
     se = sd_d * nb_factor(k)
     margin = q * se

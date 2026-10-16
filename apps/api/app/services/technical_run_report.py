@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ClientLabUpload, Experiment, LabDecisionRecord
+from app.domain.pipeline_run_branch import EVIDENCE_MODE_SEALED, SEALED_FINAL_TEST_NOTE
 from app.engine.serving.model_package import PACKAGE_FILENAME
 
 
@@ -52,6 +53,9 @@ def build_technical_run_report(
         )
     )
     stage_history = list(pipeline_log.get("stages") or [])
+    # ADR 0007 §6.1: a sealed improve try (the run's insert-only evidence_mode; the runner's marker).
+    sealed = (experiment is not None and experiment.evidence_mode == EVIDENCE_MODE_SEALED) or (
+        isinstance(result.get("holdout"), dict) and result["holdout"].get("scored") is False)
     return _jsonable(
         {
             "schema_version": 1,
@@ -97,16 +101,18 @@ def build_technical_run_report(
             "final_model": selected,
             "final_fit": result.get("final_fit") or {},
             "final_test_evaluation": result.get("final_test_evaluation") or {},
+            # ADR 0007 §6.1: only a sealed improve try carries {"scored": false, ...}, with the note.
+            **({"holdout": {**dict(result.get("holdout") or {}), "note": SEALED_FINAL_TEST_NOTE}} if sealed else {}),
             "predictions_summary": {
                 "count": len(predictions),
                 "artifact": "test_predictions.csv" if predictions else None,
             },
             "prediction_evidence": predictions,
-            "artifacts": {
+            "artifacts": {  # a sealed try writes no model package and no test predictions
                 "input": upload.stored_path,
-                "model": f"{artifact_root}/{PACKAGE_FILENAME}" if artifact_root else None,
+                "model": f"{artifact_root}/{PACKAGE_FILENAME}" if artifact_root and not sealed else None,
                 "result": f"{artifact_root}/result.json" if artifact_root else None,
-                "predictions": f"{artifact_root}/test_predictions.csv" if artifact_root else None,
+                "predictions": f"{artifact_root}/test_predictions.csv" if artifact_root and not sealed else None,
             },
             "stage_timings": pipeline_log.get("stage_timings") or [],
             "timing_semantics": {

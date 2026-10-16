@@ -36,6 +36,9 @@ def render_markdown(result: dict[str, Any]) -> str:
         "## Test metrics (held out)",
         "",
     ]
+    holdout = result.get("holdout") if isinstance(result.get("holdout"), dict) else {}
+    if holdout.get("scored") is False:  # a sealed improve try (ADR 0007 §6.1)
+        lines.append("- Final test set: not used (improve try).")
     for key, value in test.items():
         if isinstance(value, dict):
             lines.append(f"- {key}: {value}")

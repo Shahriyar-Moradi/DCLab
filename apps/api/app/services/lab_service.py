@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import subprocess
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import fields
+from dataclasses import fields, replace
+from typing import Any
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -27,6 +28,13 @@ from app.db.models import (
     WorkflowRun,
 )
 from app.domain.errors import ScientificEvidenceLockedError
+from app.domain.pipeline_run_branch import (
+    EVIDENCE_MODE_SCORED,
+    EVIDENCE_MODE_SEALED,
+    EVIDENCE_MODES,
+    ServiceOverrides,
+    strip_service_only,
+)
 from app.engine.data.loaders import infer_schema, load_table
 from app.engine.datasets.synthetic import make_synthetic_customers
 from app.engine.experiments.runner import run_experiment
@@ -150,8 +158,9 @@ def profile_dataset(db: Session, dataset: Dataset) -> DatasetProfile:
 
 
 def search_from_mapping(raw: dict | None, *, overrides: dict | None = None) -> SearchConfig:
-    payload = dict(raw or {})
-    payload.update({key: value for key, value in (overrides or {}).items() if value is not None})
+    # ADR 0007 §6.2: service-only keys never reach a SearchConfig, whatever their name.
+    payload = strip_service_only(raw)
+    payload.update({key: value for key, value in strip_service_only(overrides).items() if value is not None})
     allowed = {item.name for item in fields(SearchConfig)}
     return SearchConfig(**{key: value for key, value in payload.items() if key in allowed})
 
@@ -234,9 +243,12 @@ def create_experiment(
     split_plan_id: UUID | None = None,
     intent: str | None = None,
     change_set: dict | None = None,
+    evidence_mode: str = EVIDENCE_MODE_SCORED,
 ) -> Experiment:
     if workflow_run is not None and workflow_run.workspace_id != dataset.workspace_id:
         raise ValueError("workflow run and dataset belong to different workspaces")
+    if evidence_mode not in EVIDENCE_MODES:
+        raise ValueError(f"unknown evidence_mode {evidence_mode!r}")
     from app.services.lineage_service import resolve_pipeline_run_branch
 
     run_id = uuid4()
@@ -271,6 +283,7 @@ def create_experiment(
         source_dataset_id=source_dataset_id,
         split_plan_id=split_plan_id,
         intent=intent,
+        evidence_mode=evidence_mode,
         status="CREATED",
         config=cfg.to_dict(),
         seed=cfg.seed,
@@ -344,11 +357,19 @@ def execute_experiment(
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
     target_labels: Mapping[str, Any] | None = None,
+    service_overrides: ServiceOverrides | None = None,
 ) -> Experiment:
+    """``service_overrides`` (ADR 0007 §6.2, service-only): the pinned budget and the goal's
+    constraints apply to this execution's own copy of the configuration (never stored back into
+    ``config``); ``expected_selection`` aborts the run at the winner lock, before the final test,
+    unless the selection reproduces. ``evidence_mode`` was fixed at INSERT."""
+
     if experiment.scientific_evidence_locked_at is not None:
         # Re-running replaces preprocessing, findings, and stage facts. PostgreSQL
         # would reject that; fail before touching the run's status.
         raise ScientificEvidenceLockedError(experiment.id)
+    if service_overrides is not None and service_overrides.evidence_mode != experiment.evidence_mode:
+        raise ValueError("service overrides name another evidence mode than the run's own")
     dataset = db.get(Dataset, experiment.dataset_id)
     task_row = db.get(PredictionTask, experiment.task_id)
     if dataset is None or task_row is None:
@@ -358,6 +379,13 @@ def execute_experiment(
     if task_row.config_path and Path(task_row.config_path).exists():
         yaml_search = (yaml.safe_load(Path(task_row.config_path).read_text()) or {}).get("search") or {}
     cfg = search_from_mapping(yaml_search, overrides=experiment.config)
+    expected_selection = None
+    if service_overrides is not None:
+        updates: dict[str, Any] = {"objective": service_overrides.objective(cfg.objective)}
+        if service_overrides.max_training_seconds is not None:
+            updates["max_training_seconds"] = float(service_overrides.max_training_seconds)
+        cfg = replace(cfg, **updates)
+        expected_selection = service_overrides.expected_selection
     experiment.status = "QUEUED"
     experiment.started_at = datetime.now(timezone.utc)
     db.commit()
@@ -396,6 +424,9 @@ def execute_experiment(
             outer_fold_assignment=outer_fold_assignment,
             holdout_partition=holdout_partition,
             target_labels=target_labels,
+            # ADR 0007 §6.1: one source of truth -- the run's insert-only evidence_mode, never config.
+            score_holdout=experiment.evidence_mode != EVIDENCE_MODE_SEALED,
+            expected_selection=expected_selection,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)

@@ -34,7 +34,7 @@ from app.db.models import (
 from app.engine.types import SearchConfig
 from app.services.authorization_service import can_write_workspace
 from app.domain.execution_plane import CREATABLE_INITIATED_BY_TYPES
-from app.domain.pipeline_run_branch import BRANCH_REASON_MAX_CHARS
+from app.domain.pipeline_run_branch import BRANCH_REASON_MAX_CHARS, SERVICE_OVERRIDES_CONFIG_KEY
 
 DOMAIN_SEEDS = (
     ("labs", "Labs"),
@@ -482,8 +482,10 @@ def create_pipeline_run(
     split_plan_id: UUID | None = None,
     intent: str | None = None,
     change_set: dict | None = None,
+    evidence_mode: str = "scored",
 ) -> Experiment:
-    """``split_plan_id``/``intent``/``change_set`` are insert-only (ADR 0006 §4 lineage guard)."""
+    """``split_plan_id``/``intent``/``change_set`` are insert-only (ADR 0006 §4 lineage guard), and
+    so is ``evidence_mode`` (ADR 0007 §6.1: ``sealed`` = a CV-only improve try)."""
     if dataset.workspace_id != workflow_run.workspace_id:
         raise LineageError("pipeline dataset belongs to another workspace")
     parent_id, key, reason = resolve_pipeline_run_branch(
@@ -563,6 +565,7 @@ def create_pipeline_run(
         split_plan_id=split_plan_id,
         intent=intent,
         change_set=change_set,
+        evidence_mode=evidence_mode,
     )
 
 
@@ -626,7 +629,9 @@ def bind_pipeline_run(
     pipeline_run.environment_id = environment.id
     pipeline_run.dataset_id = dataset.id
     pipeline_run.task_id = task.id
-    pipeline_run.config = config.to_dict()
+    # ADR 0007 §6.2: the run's own service-only record (written at INSERT) survives the binding.
+    record = dict(pipeline_run.config or {}).get(SERVICE_OVERRIDES_CONFIG_KEY)
+    pipeline_run.config = {**config.to_dict(), **({SERVICE_OVERRIDES_CONFIG_KEY: record} if record else {})}
     pipeline_run.seed = config.seed
     pipeline_run.failure_reason = None
     db.commit()

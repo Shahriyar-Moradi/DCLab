@@ -4249,6 +4249,16 @@
             ],
             "title": "Decision Threshold"
           },
+          "evidence_mode": {
+            "default": "scored",
+            "description": "scored: an ordinary run (its locked winner is scored once on the final test set). sealed: an improve try scored on cross-validation only; the final test set was not used (ADR 0007). A sealed item has no final-test metrics.",
+            "enum": [
+              "scored",
+              "sealed"
+            ],
+            "title": "Evidence Mode",
+            "type": "string"
+          },
           "experiment_id": {
             "format": "uuid",
             "title": "Experiment Id",
@@ -4315,7 +4325,7 @@
         "type": "object"
       },
       "ExperimentComparisonRead": {
-        "description": "Side-by-side metrics of 2-10 experiments on one split plan (same holdout rows\nand outer folds). Never authoritative: rebuilt from ``evaluation_metrics``.",
+        "description": "Side-by-side metrics of 2-10 experiments on one split plan (same holdout rows\nand outer folds). Never authoritative: rebuilt from ``evaluation_metrics``. A sealed\nimprove try compares on CV only (empty ``holdout``).",
         "properties": {
           "authoritative": {
             "title": "Authoritative",
@@ -4495,6 +4505,28 @@
               }
             ],
             "title": "Ended At"
+          },
+          "evidence_mode": {
+            "default": "scored",
+            "description": "scored: an ordinary run (its locked winner is scored once on the final test set). sealed: an improve try scored on cross-validation only; the final test set was not used (ADR 0007).",
+            "enum": [
+              "scored",
+              "sealed"
+            ],
+            "title": "Evidence Mode",
+            "type": "string"
+          },
+          "evidence_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sealed runs: \"Final test set: not used (improve try).\" (never a value).",
+            "title": "Evidence Note"
           },
           "failure_reason": {
             "anyOf": [
@@ -4891,6 +4923,16 @@
             ],
             "title": "Ended At"
           },
+          "evidence_mode": {
+            "default": "scored",
+            "description": "scored: an ordinary run (its locked winner is scored once on the final test set). sealed: an improve try scored on cross-validation only; the final test set was not used (ADR 0007).",
+            "enum": [
+              "scored",
+              "sealed"
+            ],
+            "title": "Evidence Mode",
+            "type": "string"
+          },
           "has_change_set": {
             "default": false,
             "title": "Has Change Set",
@@ -5217,6 +5259,17 @@
             ],
             "description": "K, the paired folds.",
             "title": "Folds"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalVerdictRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The same rule on the goal metric (null when the runs cannot be compared at all)."
           },
           "margin": {
             "anyOf": [
@@ -6129,6 +6182,33 @@
         "title": "FlowPredictionsStep",
         "type": "object"
       },
+      "GoalConstraintRead": {
+        "properties": {
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              ">=",
+              "<="
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "op",
+          "value"
+        ],
+        "title": "GoalConstraintRead",
+        "type": "object"
+      },
       "GoalDecisionRowRead": {
         "properties": {
           "confirmed_by": {
@@ -6265,6 +6345,315 @@
           "items"
         ],
         "title": "GoalDecisionsRead",
+        "type": "object"
+      },
+      "GoalFoldRead": {
+        "properties": {
+          "against": {
+            "description": "The other experiment's winner on the fold, at its own threshold.",
+            "title": "Against",
+            "type": "number"
+          },
+          "difference": {
+            "description": "experiment minus against.",
+            "title": "Difference",
+            "type": "number"
+          },
+          "experiment": {
+            "description": "This experiment's winner on the fold, at its own threshold.",
+            "title": "Experiment",
+            "type": "number"
+          },
+          "fold": {
+            "description": "Position of the fold (curve folds carry no fold number; the per-fold class counts are identical on both sides).",
+            "title": "Fold",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fold",
+          "experiment",
+          "against",
+          "difference"
+        ],
+        "title": "GoalFoldRead",
+        "type": "object"
+      },
+      "GoalVerdictRead": {
+        "description": "The §5 verdict on the goal (P5.4-A1b): the paired per-fold rule of the ranking verdict applied to\nthe goal metric. ``plain``: the goal is the ranking metric (the same numbers as the ranking verdict).\n``objective``: the goal a person set with an operating-point choice on the compared-against run BEFORE\nthis run was created (pre-registered; a goal chosen after the try is never used), maximise ``metric``\nsubject to ``constraints``, each run scored per fold at its own threshold solved on its out-of-fold\ncurve; when either run cannot meet the constraints the runs are compared by the per-fold constraint\nshortfall (``scored_by: constraint_shortfall``, lower is better), and a try that misses the rule never\nbeats one that meets it (reason ``try_misses_rule``). δ_min = max(0.001, 1/n_min) of the smallest\nper-fold denominator (basis ``fold_denominator``). Cross-validation only.",
+        "properties": {
+          "against_curve_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Against Curve Digest"
+          },
+          "against_meets_rule": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Against Meets Rule"
+          },
+          "against_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The other run's threshold for the goal (CV).",
+            "title": "Against Threshold"
+          },
+          "basis": {
+            "default": "locked_cv_fold_evaluations",
+            "enum": [
+              "locked_cv_fold_evaluations",
+              "out_of_fold_operating_curves"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "choice_decision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The operating-point choice the goal is from.",
+            "title": "Choice Decision Id"
+          },
+          "comparisons": {
+            "default": 1,
+            "title": "Comparisons",
+            "type": "integer"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/components/schemas/GoalConstraintRead"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "higher_is_better",
+                  "lower_is_better"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "experiment_curve_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Curve Digest"
+          },
+          "experiment_meets_rule": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its threshold meets every constraint (CV).",
+            "title": "Experiment Meets Rule"
+          },
+          "experiment_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This run's threshold for the goal (CV).",
+            "title": "Experiment Threshold"
+          },
+          "fold_scores": {
+            "items": {
+              "$ref": "#/components/schemas/GoalFoldRead"
+            },
+            "title": "Fold Scores",
+            "type": "array"
+          },
+          "folds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folds"
+          },
+          "kind": {
+            "enum": [
+              "plain",
+              "objective"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin"
+          },
+          "mean_difference": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Difference"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "metric": {
+            "description": "The goal metric.",
+            "title": "Metric",
+            "type": "string"
+          },
+          "minimum_effect": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Effect"
+          },
+          "minimum_effect_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Effect Basis"
+          },
+          "outcome_scope": {
+            "const": "cv",
+            "default": "cv",
+            "title": "Outcome Scope",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "scored_by": {
+            "default": "goal_metric",
+            "enum": [
+              "goal_metric",
+              "constraint_shortfall"
+            ],
+            "title": "Scored By",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "ranking_metric",
+              "operating_point_choice"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "standard_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standard Error"
+          },
+          "t_quantile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Quantile"
+          },
+          "verdict": {
+            "enum": [
+              "beats_the_noise",
+              "within_the_noise",
+              "worse",
+              "not_comparable"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "metric",
+          "verdict",
+          "message"
+        ],
+        "title": "GoalVerdictRead",
         "type": "object"
       },
       "GovernanceRead": {

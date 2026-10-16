@@ -3896,6 +3896,13 @@ export interface components {
             /** Decision Threshold */
             decision_threshold?: number | null;
             /**
+             * Evidence Mode
+             * @description scored: an ordinary run (its locked winner is scored once on the final test set). sealed: an improve try scored on cross-validation only; the final test set was not used (ADR 0007). A sealed item has no final-test metrics.
+             * @default scored
+             * @enum {string}
+             */
+            evidence_mode: "scored" | "sealed";
+            /**
              * Experiment Id
              * Format: uuid
              */
@@ -3919,7 +3926,8 @@ export interface components {
         /**
          * ExperimentComparisonRead
          * @description Side-by-side metrics of 2-10 experiments on one split plan (same holdout rows
-         *     and outer folds). Never authoritative: rebuilt from ``evaluation_metrics``.
+         *     and outer folds). Never authoritative: rebuilt from ``evaluation_metrics``. A sealed
+         *     improve try compares on CV only (empty ``holdout``).
          */
         ExperimentComparisonRead: {
             /** Authoritative */
@@ -4005,6 +4013,18 @@ export interface components {
             } | null;
             /** Ended At */
             ended_at?: string | null;
+            /**
+             * Evidence Mode
+             * @description scored: an ordinary run (its locked winner is scored once on the final test set). sealed: an improve try scored on cross-validation only; the final test set was not used (ADR 0007).
+             * @default scored
+             * @enum {string}
+             */
+            evidence_mode: "scored" | "sealed";
+            /**
+             * Evidence Note
+             * @description Sealed runs: "Final test set: not used (improve try)." (never a value).
+             */
+            evidence_note?: string | null;
             /**
              * Failure Reason
              * @description Generic public text; quote the request id.
@@ -4153,6 +4173,13 @@ export interface components {
             /** Ended At */
             ended_at?: string | null;
             /**
+             * Evidence Mode
+             * @description scored: an ordinary run (its locked winner is scored once on the final test set). sealed: an improve try scored on cross-validation only; the final test set was not used (ADR 0007).
+             * @default scored
+             * @enum {string}
+             */
+            evidence_mode: "scored" | "sealed";
+            /**
              * Has Change Set
              * @default false
              */
@@ -4279,6 +4306,8 @@ export interface components {
              * @description K, the paired folds.
              */
             folds?: number | null;
+            /** @description The same rule on the goal metric (null when the runs cannot be compared at all). */
+            goal?: components["schemas"]["GoalVerdictRead"] | null;
             /**
              * Margin
              * @description t_{1-0.05/T, K-1} x se_NB (metric units).
@@ -4639,6 +4668,18 @@ export interface components {
              */
             state: "done" | "in_progress" | "alert" | "todo";
         };
+        /** GoalConstraintRead */
+        GoalConstraintRead: {
+            /** Metric */
+            metric: string;
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: ">=" | "<=";
+            /** Value */
+            value: number;
+        };
         /** GoalDecisionRowRead */
         GoalDecisionRowRead: {
             /**
@@ -4691,6 +4732,136 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+        };
+        /** GoalFoldRead */
+        GoalFoldRead: {
+            /**
+             * Against
+             * @description The other experiment's winner on the fold, at its own threshold.
+             */
+            against: number;
+            /**
+             * Difference
+             * @description experiment minus against.
+             */
+            difference: number;
+            /**
+             * Experiment
+             * @description This experiment's winner on the fold, at its own threshold.
+             */
+            experiment: number;
+            /**
+             * Fold
+             * @description Position of the fold (curve folds carry no fold number; the per-fold class counts are identical on both sides).
+             */
+            fold: number;
+        };
+        /**
+         * GoalVerdictRead
+         * @description The §5 verdict on the goal (P5.4-A1b): the paired per-fold rule of the ranking verdict applied to
+         *     the goal metric. ``plain``: the goal is the ranking metric (the same numbers as the ranking verdict).
+         *     ``objective``: the goal a person set with an operating-point choice on the compared-against run BEFORE
+         *     this run was created (pre-registered; a goal chosen after the try is never used), maximise ``metric``
+         *     subject to ``constraints``, each run scored per fold at its own threshold solved on its out-of-fold
+         *     curve; when either run cannot meet the constraints the runs are compared by the per-fold constraint
+         *     shortfall (``scored_by: constraint_shortfall``, lower is better), and a try that misses the rule never
+         *     beats one that meets it (reason ``try_misses_rule``). δ_min = max(0.001, 1/n_min) of the smallest
+         *     per-fold denominator (basis ``fold_denominator``). Cross-validation only.
+         */
+        GoalVerdictRead: {
+            /** Against Curve Digest */
+            against_curve_digest?: string | null;
+            /** Against Meets Rule */
+            against_meets_rule?: boolean | null;
+            /**
+             * Against Threshold
+             * @description The other run's threshold for the goal (CV).
+             */
+            against_threshold?: number | null;
+            /**
+             * Basis
+             * @default locked_cv_fold_evaluations
+             * @enum {string}
+             */
+            basis: "locked_cv_fold_evaluations" | "out_of_fold_operating_curves";
+            /**
+             * Choice Decision Id
+             * @description The operating-point choice the goal is from.
+             */
+            choice_decision_id?: string | null;
+            /**
+             * Comparisons
+             * @default 1
+             */
+            comparisons: number;
+            /** Constraints */
+            constraints?: components["schemas"]["GoalConstraintRead"][];
+            /** Direction */
+            direction?: ("higher_is_better" | "lower_is_better") | null;
+            /** Experiment Curve Digest */
+            experiment_curve_digest?: string | null;
+            /**
+             * Experiment Meets Rule
+             * @description Its threshold meets every constraint (CV).
+             */
+            experiment_meets_rule?: boolean | null;
+            /**
+             * Experiment Threshold
+             * @description This run's threshold for the goal (CV).
+             */
+            experiment_threshold?: number | null;
+            /** Fold Scores */
+            fold_scores?: components["schemas"]["GoalFoldRead"][];
+            /** Folds */
+            folds?: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "plain" | "objective";
+            /** Margin */
+            margin?: number | null;
+            /** Mean Difference */
+            mean_difference?: number | null;
+            /** Message */
+            message: string;
+            /**
+             * Metric
+             * @description The goal metric.
+             */
+            metric: string;
+            /** Minimum Effect */
+            minimum_effect?: number | null;
+            /** Minimum Effect Basis */
+            minimum_effect_basis?: string | null;
+            /**
+             * Outcome Scope
+             * @default cv
+             * @constant
+             */
+            outcome_scope: "cv";
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Scored By
+             * @default goal_metric
+             * @enum {string}
+             */
+            scored_by: "goal_metric" | "constraint_shortfall";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "ranking_metric" | "operating_point_choice";
+            /** Standard Error */
+            standard_error?: number | null;
+            /** T Quantile */
+            t_quantile?: number | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "beats_the_noise" | "within_the_noise" | "worse" | "not_comparable";
         };
         /** GovernanceRead */
         GovernanceRead: {

@@ -847,9 +847,22 @@ def _render_holdout_plan(spec: ModelBuildReproductionSpec) -> tuple[str, list[st
     return _join(lines), helpers, True
 
 
+_SEALED_NOTE = "# Final test set: not used (improve try). The winner is not refit and nothing is scored."
+# ADR 0007 §6.1: a sealed run renders these cells as the note above (no refit, no holdout eval).
+_SEALED_OMITTED_STAGES = frozenset({"final_refit", "final_holdout"})
+
+
 def _render_holdout_lock(spec: ModelBuildReproductionSpec) -> tuple[str, list[str], bool]:
     if spec.holdout_plan.strategy is None:
         return _join(_comment_missing("holdout lock")), [], False
+    if spec.holdout_sealed:  # ADR 0007 §6.1: the final test rows are dropped unread
+        lines = [
+            _SEALED_NOTE,
+            "X_train = train_frame.drop(columns=[TARGET_COLUMN])",
+            "y_train = train_frame[TARGET_COLUMN]",
+            "del holdout_frame  # sealed: never read in this run",
+        ]
+        return _join(lines), [], True
     lines = [
         "# Holdout rows stay unused until final holdout evaluation.",
         "X_train = train_frame.drop(columns=[TARGET_COLUMN])",
@@ -1273,7 +1286,8 @@ def _render_comparison(spec: ModelBuildReproductionSpec) -> tuple[str, list[str]
         return _join(_comment_missing("candidate comparison")), [], False
     lines = [
         "# Rank candidates from persisted CV aggregates only.",
-        "# Never read X_holdout or y_holdout in this stage.",
+        "# The final test rows are sealed and never read." if spec.holdout_sealed
+        else "# Never read X_holdout or y_holdout in this stage.",
         f"SELECTION_METRIC = {_py_literal(spec.winner.selection_metric)}",
         f"SELECTION_POLICY = {_py_literal(spec.winner.selection_policy)}",
         f"PERSISTED_CV_SCORES = {_py_literal({c.fingerprint: c.cv_score for c in spec.candidates})}",
@@ -1449,7 +1463,10 @@ def render_stage_code(spec: ModelBuildReproductionSpec) -> list[ModelBuildStageC
     rows: list[ModelBuildStageCode] = []
     for sequence, (key, title) in enumerate(STAGE_SPECS, start=1):
         renderer = _RENDERERS[key]
-        body, helpers, available = renderer(spec)
+        if spec.holdout_sealed and key in _SEALED_OMITTED_STAGES:
+            body, helpers, available = _SEALED_NOTE, [], True
+        else:
+            body, helpers, available = renderer(spec)
         unique_helpers = list(dict.fromkeys(helpers))
         source = _join([*_header(spec, key), "", body.rstrip()])
         status = "supported" if available else "not_available"

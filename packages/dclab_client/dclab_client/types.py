@@ -1134,6 +1134,52 @@ class SplitPlanLooks(BaseModel):
     counting: str | None = None
 
 
+class GoalConstraint(BaseModel):
+    metric: str
+    op: str
+    value: float
+
+
+class GoalFold(BaseModel):
+    fold: int
+    experiment: float
+    against: float
+    difference: float
+
+
+class GoalVerdict(BaseModel):
+    """The verdict on the goal (P5.4-A1b): ``plain`` (the ranking metric) or ``objective`` (an
+    operating-point choice's goal, each run per fold at its own threshold; CV only)."""
+
+    kind: str
+    source: str
+    choice_decision_id: UUID | None = None
+    metric: str
+    constraints: list[GoalConstraint] = Field(default_factory=list)
+    scored_by: str = "goal_metric"
+    verdict: str
+    reason: str | None = None
+    message: str
+    direction: str | None = None
+    folds: int | None = None
+    mean_difference: float | None = None
+    margin: float | None = None
+    minimum_effect: float | None = None
+    minimum_effect_basis: str | None = None
+    standard_error: float | None = None
+    t_quantile: float | None = None
+    comparisons: int = 1
+    experiment_threshold: float | None = None
+    against_threshold: float | None = None
+    experiment_meets_rule: bool | None = None
+    against_meets_rule: bool | None = None
+    experiment_curve_digest: str | None = None
+    against_curve_digest: str | None = None
+    fold_scores: list[GoalFold] = Field(default_factory=list)
+    outcome_scope: str = "cv"
+    basis: str = "locked_cv_fold_evaluations"
+
+
 class ExperimentVerdict(BaseModel):
     """Does an experiment beat another on the same folds beyond noise (P5.5-B-read)? From the locked
     per-fold CV scores (``outcome_scope`` ``cv``); differences in the metric's own units;
@@ -1163,6 +1209,7 @@ class ExperimentVerdict(BaseModel):
     multiplicity_note: str | None = None
     sign_convention: str | None = None
     fold_scores: list[VerdictFold] = Field(default_factory=list)
+    goal: GoalVerdict | None = None
     test_set_looks: SplitPlanLooks
     outcome_scope: str = "cv"
     basis: str = "locked_cv_fold_evaluations"
@@ -1218,6 +1265,8 @@ class Experiment(_Versioned):
     task_type: str | None = None
     target_column: str | None = None
     intent: str | None = None
+    evidence_mode: str = "scored"  # sealed: an improve try, the final test set not used
+    evidence_note: str | None = None
     lineage: ExperimentLineage
     change_set: dict[str, Any] | None = None
     metrics: ExperimentMetrics | None = None
@@ -1237,6 +1286,7 @@ class ExperimentListItem(BaseModel):
     split_plan_id: UUID | None = None
     source_dataset_id: UUID | None = None
     has_change_set: bool = False
+    evidence_mode: str = "scored"
     intent: str | None = None
     untrusted_fields: list[str] = Field(default_factory=list)
 
@@ -1250,6 +1300,7 @@ class ExperimentPage(BaseModel):
 class ExperimentComparisonItem(BaseModel):
     experiment_id: UUID
     parent_experiment_id: UUID | None = None
+    evidence_mode: str = "scored"
     candidate_id: str | None = None
     family: str | None = None
     selection_metric: str | None = None

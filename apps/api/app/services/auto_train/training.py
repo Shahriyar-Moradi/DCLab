@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.db.models import Experiment
 from app.domain.lab_run_stages import SPLITTING
+from app.domain.pipeline_run_branch import ServiceOverrides
 from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan
 from app.engine.models.registry import available_families
@@ -88,6 +89,8 @@ def run_training(ctx: RunContext, inp: TrainingInput) -> TrainingOutput:
             outer_fold_assignment=inp.outer_fold_assignment,
             holdout_partition=inp.holdout_partition,
             target_labels=inp.target_labels,
+            # ADR 0007 §6.2: only a run branch_experiment inserted with service overrides has a record.
+            service_overrides=ServiceOverrides.from_config(experiment.config),
         )
         if experiment.status != "COMPLETED":
             result = dict(experiment.result or {})

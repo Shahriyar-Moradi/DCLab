@@ -12,6 +12,7 @@ import typing
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import numpy as np
 import pytest
 from scipy.stats import t as student_t
 from sqlalchemy import select, text, update
@@ -27,8 +28,25 @@ from app.db.models import (
     ModelEvaluation,
     ModelSelectionDecision,
 )
-from app.domain.experiment_verdict import LOOK_COUNTING, SplitPlanLooksRead
+from app.domain.experiment_verdict import (
+    LOOK_COUNTING,
+    PLAN_CAVEAT_MIXED,
+    PLAN_CAVEAT_SEALED,
+    GoalVerdictRead,
+    SplitPlanLooksRead,
+)
+from app.domain.operating_points import OperatingPointChoiceRequest
+from app.engine.modeling.objective import MetricConstraint
+from app.engine.modeling.operating_points import (
+    GoalFoldScores,
+    PointObjective,
+    build_operating_curve,
+    curve_digest,
+    goal_fold_scores,
+    load_curve,
+)
 from app.services import experiment_verdict_service as service
+from app.services.operating_point_service import choose_operating_point
 from app.services.service_token_service import create_service_token
 from test_decision_record_service import _force_lock, setup  # noqa: F401 (fixture)
 from test_graph_service import _headers, _seed_graph, _split_plan
@@ -159,6 +177,16 @@ def test_branch_beats_its_parent_from_locked_folds(client, plan):
     assert "honest estimate" not in body["message"]
     assert body["test_set_looks"] == {"split_plan_id": str(g.plan.id), "looks_on_plan": 6, "experiment_look": 4,
                                       "against_look": 2, "counting": LOOK_COUNTING}
+    # Without a goal set by a person, the goal is the ranking metric: the same paired numbers.
+    goal = body["goal"]
+    assert set(goal) == GOAL_KEYS
+    assert (goal["kind"], goal["source"], goal["metric"], goal["verdict"], goal["scored_by"]) == (
+        "plain", "ranking_metric", "roc_auc", "beats_the_noise", "goal_metric")
+    assert goal["margin"] == body["margin"] and goal["folds"] == 5 and goal["choice_decision_id"] is None
+    assert [(f["fold"], f["difference"]) for f in goal["fold_scores"]] == [
+        (f["fold_number"], f["difference"]) for f in body["fold_scores"]]
+    assert goal["basis"] == "locked_cv_fold_evaluations" and goal["message"].startswith(
+        "Goal: the best ROC AUC (the ranking measure). This try's model scores ROC AUC higher by 0.03")
     reverse = _verdict(client, g, g.exp[0], against=str(g.exp[1])).json()
     assert reverse["verdict"] == "worse" and reverse["against_is_parent"] is False
     assert reverse["mean_difference"] == pytest.approx(-0.03)
@@ -285,6 +313,21 @@ def test_messages_are_plain_and_never_call_a_number_fresh():
                                                 comparisons_on_plan=plan_count))
                 if reason != "no_change":
                     assert "for this one comparison (evidence, not proof)" in messages[-1], messages[-1]
+    from app.domain.experiment_verdict import GoalConstraintRead, goal_message
+
+    rule = [GoalConstraintRead(metric="recall", op=">=", value=0.8),
+            GoalConstraintRead(metric="specificity", op="<=", value=0.99)]
+    for kind in ("scored", "sealed", "mixed"):
+        for reason in REASON_MESSAGES:
+            messages.append(goal_message("not_comparable", reason, kind="objective", metric="balanced_accuracy",
+                                         constraints=rule, scored_by="goal_metric", direction=None, folds=None,
+                                         mean_difference=None, margin=None, comparisons_on_plan=6, caveat_kind=kind))
+        for scored_by, direction in (("goal_metric", "higher_is_better"), ("constraint_shortfall", "lower_is_better")):
+            for verdict, reason, diff in (("beats_the_noise", None, -0.05), ("worse", None, 0.05),
+                                          ("within_the_noise", "inside_margin", 0.001)):
+                messages.append(goal_message(verdict, reason, kind="objective", metric="f1", constraints=rule,
+                                             scored_by=scored_by, direction=direction, folds=5, mean_difference=diff,
+                                             margin=0.01, new_candidates=1, comparisons_on_plan=6, caveat_kind=kind))
     for message in messages:
         assert not RAW_METRIC_KEY.search(message), message
         assert not FORBIDDEN_WORDS.search(message), message
@@ -326,3 +369,142 @@ def test_validation_tenancy_and_token_shaping(client, db_session, tmp_path, plan
     # Decision: tokens see the look counts (metadata, no outcome) and the CV verdict: the same body.
     assert as_token.json() == body and body["test_set_looks"]["looks_on_plan"] == 6
     assert not {k for k in _keys(body) if HOLDOUT.search(k)} and strip_holdout(body) == body
+
+
+GOAL_KEYS = set(GoalVerdictRead.model_fields)
+
+
+def _goal_curve(signal: float, seed: int, *, positives=(60, 60, 60, 60, 60), rows=200,
+                candidate="logistic_regression") -> dict:
+    """A stored out-of-fold curve whose folds hold fixed labels (identical class counts per fold)."""
+
+    rng = np.random.default_rng(seed)
+    folds = []
+    for count in positives:
+        y = np.array([1] * count + [0] * (rows - count))
+        folds.append((y, 1 / (1 + np.exp(-(signal * (2 * y - 1) + rng.normal(0, 1, len(y)))))))
+    return build_operating_curve(np.concatenate([y for y, _ in folds]), np.concatenate([s for _, s in folds]), folds,
+                                 oof_folds="all_folds", candidate_id=candidate)
+
+
+def _goal_setup(db, g, parent_curve, child_curve, constraints, *, before_try=True):
+    for run, curve in ((0, parent_curve), (1, child_curve)):
+        db.execute(update(Experiment).where(Experiment.id == g.exp[run]).values(
+            result={"task": {"task_type": "binary"}, "operating_curve": curve}))
+    db.commit()
+    request = OperatingPointChoiceRequest.model_validate(
+        {"objective": {"goal": "precision", "constraints": constraints}, "reason": "the improve goal"})
+    row = choose_operating_point(db, actor=g.actor, workspace_id=g.ws, experiment_id=g.exp[0], request=request)
+    db.commit()
+    if before_try:  # the goal was set on the model in use before the try was created (pre-registered)
+        db.execute(update(Experiment).where(Experiment.id == g.exp[1]).values(
+            created_at=datetime.now(UTC) + timedelta(hours=1)))
+        db.commit()
+    return row
+
+
+def test_goal_verdict_scores_each_run_at_its_own_threshold(client, db_session, plan, setup):  # noqa: F811
+    g, db = plan, db_session
+    parent_curve, child_curve = _goal_curve(0.6, seed=1), _goal_curve(1.4, seed=2)
+    rule = [{"metric": "recall", "op": ">=", "value": 0.6}]
+    choice = _goal_setup(db, g, parent_curve, child_curve, rule, before_try=False)
+    # A goal chosen after the try was created could be fitted to the try: it is never used.
+    assert _verdict(client, g, g.exp[1]).json()["goal"]["kind"] == "plain"
+    db.execute(update(Experiment).where(Experiment.id == g.exp[1]).values(
+        created_at=datetime.now(UTC) + timedelta(hours=1)))
+    db.commit()
+    body = _verdict(client, g, g.exp[1]).json()
+    assert body["verdict"] == "beats_the_noise" and body["metric"] == "roc_auc"  # the ranking verdict is unchanged
+    goal = body["goal"]
+    assert set(goal) == GOAL_KEYS
+    assert (goal["kind"], goal["source"], goal["choice_decision_id"], goal["metric"], goal["scored_by"]) == (
+        "objective", "operating_point_choice", str(choice.id), "precision", "goal_metric")
+    assert goal["constraints"] == rule and goal["basis"] == "out_of_fold_operating_curves"
+    objective = PointObjective(goal="precision", constraints=(MetricConstraint("recall", ">=", 0.6),))
+    own, other = (goal_fold_scores(load_curve(c), objective) for c in (child_curve, parent_curve))
+    assert [f["experiment"] for f in goal["fold_scores"]] == pytest.approx(list(own.values))
+    assert [f["against"] for f in goal["fold_scores"]] == pytest.approx(list(other.values))
+    assert [f["fold"] for f in goal["fold_scores"]] == [1, 2, 3, 4, 5]
+    assert (goal["experiment_threshold"], goal["against_threshold"]) == (own.threshold, other.threshold)
+    assert goal["experiment_meets_rule"] is True and goal["against_meets_rule"] is True
+    assert (goal["experiment_curve_digest"], goal["against_curve_digest"]) == (
+        curve_digest(child_curve), curve_digest(parent_curve))
+    diffs = [a - b for a, b in zip(own.values, other.values)]
+    sd = math.sqrt(sum((d - sum(diffs) / 5) ** 2 for d in diffs) / 4)
+    assert goal["mean_difference"] == pytest.approx(sum(diffs) / 5)
+    assert goal["margin"] == pytest.approx(float(student_t.ppf(0.95, 4)) * sd * NB_K5)
+    assert goal["minimum_effect_basis"] == "fold_denominator"  # the flagged rows behind precision
+    assert goal["minimum_effect"] == pytest.approx(max(0.001, 1 / min(own.denominators + other.denominators)))
+    assert goal["verdict"] == "beats_the_noise" and goal["message"].startswith(
+        "Goal: the best precision with recall at least 0.6, each model at its own threshold on cross-validation. "
+        "This try's model scores precision higher by")
+    # Tokens get the same body: cross-validation figures only.
+    token = create_service_token(db, creator=setup["alpha_admin"], workspace_id=setup["alpha"].id, name="g",
+                                 scopes=("read",), expires_in_days=1, current_password="test-password")[1]
+    db.commit()
+    as_token = client.get(f"/v1/experiments/{g.exp[1]}/verdict", headers={"Authorization": f"Bearer {token}"})
+    assert as_token.status_code == 200 and as_token.json() == body
+    assert not {k for k in _keys(body) if HOLDOUT.search(k)} and strip_holdout(body) == body
+
+
+def test_goal_verdict_compares_shortfalls_and_refuses_unpaired_curves(client, db_session, plan):
+    g, db = plan, db_session
+    rule = [{"metric": "recall", "op": ">=", "value": 0.6}, {"metric": "precision", "op": ">=", "value": 0.8}]
+    _goal_setup(db, g, _goal_curve(1.6, seed=3), _goal_curve(0.3, seed=4), rule)
+    goal = _verdict(client, g, g.exp[1]).json()["goal"]
+    # The try cannot meet the rule: both runs are compared by their per-fold shortfall (lower is better).
+    assert (goal["scored_by"], goal["direction"], goal["experiment_meets_rule"], goal["against_meets_rule"]) == (
+        "constraint_shortfall", "lower_is_better", False, True)
+    assert goal["verdict"] == "worse" and goal["mean_difference"] > 0
+    assert "compared by how far each falls short of it" in goal["message"]
+    assert "the shortfall from the rule" in goal["message"]
+    assert goal["minimum_effect_basis"] == "fold_denominator"  # counts behind the rule, not 0.001 x shortfall
+    # A curve built on other folds, a curve of another model and a missing curve are not comparable.
+    for child_curve, reason in ((_goal_curve(0.3, seed=4, positives=(61, 60, 60, 60, 59)), "fold_counts_differ"),
+                                (_goal_curve(0.3, seed=4, candidate="random_forest"), "no_goal_curve"),
+                                ({"status": "not_available"}, "no_goal_curve")):
+        db.execute(update(Experiment).where(Experiment.id == g.exp[1]).values(
+            result={"task": {"task_type": "binary"}, "operating_curve": child_curve}))
+        db.commit()
+        body = _verdict(client, g, g.exp[1]).json()
+        assert (body["goal"]["verdict"], body["goal"]["reason"]) == ("not_comparable", reason), reason
+        assert body["verdict"] == "beats_the_noise"  # the ranking verdict does not depend on the curves
+        assert body["goal"]["fold_scores"] == [] and body["goal"]["message"].startswith("Goal: the best precision")
+
+
+def test_a_try_that_misses_the_rule_never_beats_one_that_meets_it(client, db_session, plan, monkeypatch):
+    g, db = plan, db_session
+    _goal_setup(db, g, _goal_curve(1.6, seed=3), _goal_curve(1.6, seed=5),
+                [{"metric": "recall", "op": ">=", "value": 0.6}])
+    # Ten folds: the try misses the rule by a steady 0.01; the model in use meets it pooled but its folds
+    # swing around the bound, so its mean shortfall is larger and the paired rule alone would say "beats".
+    counts = ((60, 140),) * 10
+    crafted = iter([
+        GoalFoldScores("precision", 3, 0.4, False, counts, (0.5,) * 10, (100,) * 10, (0.01,) * 10, (100,) * 10),
+        GoalFoldScores("precision", 4, 0.5, True, counts, (0.6,) * 10, (100,) * 10, (0.2, 0.0) * 5, (100,) * 10),
+    ])
+    monkeypatch.setattr(service, "goal_fold_scores", lambda *_args, **_kwargs: next(crafted))
+    goal = _verdict(client, g, g.exp[1]).json()["goal"]
+    assert (goal["scored_by"], goal["experiment_meets_rule"], goal["against_meets_rule"]) == (
+        "constraint_shortfall", False, True)
+    assert goal["mean_difference"] == pytest.approx(0.01 - 0.1) and goal["margin"] < 0.09
+    assert (goal["verdict"], goal["reason"]) == ("within_the_noise", "try_misses_rule")
+    assert "cannot meet the rule on cross-validation while the other one can" in goal["message"]
+
+
+def test_sealed_runs_are_never_a_look_and_say_so(client, db_session, plan):
+    g, db = plan, db_session
+    db.execute(text("ALTER TABLE experiments DISABLE TRIGGER experiments_lineage_guard"))
+    db.execute(update(Experiment).where(Experiment.id.in_([g.exp[0], g.exp[1], g.exp[5]])).values(
+        evidence_mode="sealed"))
+    db.execute(text("ALTER TABLE experiments ENABLE TRIGGER experiments_lineage_guard"))
+    db.commit()
+    body = _verdict(client, g, g.exp[1]).json()
+    # e5 (a winner lock only) is no longer a look; e0 and e1 still are: each has a final-evaluation row.
+    assert body["test_set_looks"]["looks_on_plan"] == 5 and body["test_set_looks"]["experiment_look"] == 4
+    assert body["test_set_looks"]["against_look"] == 2 and body["comparisons_on_plan"] == 5
+    assert body["message"].endswith(PLAN_CAVEAT_SEALED.format(n=5)) and body["goal"]["message"].endswith(
+        PLAN_CAVEAT_SEALED.format(n=5))
+    # A scored try compared with a sealed one: neither caveat about scoring every try.
+    mixed = _verdict(client, g, g.exp[2]).json()
+    assert mixed["message"].endswith(" " + PLAN_CAVEAT_MIXED.format(n=5))

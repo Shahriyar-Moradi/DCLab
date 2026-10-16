@@ -470,6 +470,10 @@
               "parent": 0.4
             }
           },
+          "evidence_mode": {
+            "child": "scored",
+            "parent": "scored"
+          },
           "parent_experiment_id": "<id:5>",
           "schema_version": 1,
           "selection_metric": {
@@ -810,6 +814,10 @@
             "delta": 0.0,
             "parent": 0.4
           }
+        },
+        "evidence_mode": {
+          "child": "scored",
+          "parent": "scored"
         },
         "parent_experiment_id": "<id:5>",
         "schema_version": 1,

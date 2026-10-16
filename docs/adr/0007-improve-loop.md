@@ -1,9 +1,9 @@
 # ADR 0007 — The improve loop
 
-**Status:** Option **B chosen by the founder on 2026-10-12** (guided Improve over existing
-pieces, no loop engine: P5.5-B only). The technical design below is the design for
-option A, kept on file; it is built only if the founder later chooses A.  
-**Date:** 2026-10-08 (Revision 1: 2026-10-09; Revision 2: 2026-10-09)  
+**Status:** **Option A chosen by the founder on 2026-10-16** (Revision 3; supersedes the
+2026-10-12 choice of option B). The option-A design below is being built (P5.4-A1a first);
+the guided screen of option B stays as "Try one change yourself".  
+**Date:** 2026-10-08 (Revision 1: 2026-10-09; Revision 2: 2026-10-09; Revision 3: 2026-10-16)  
 **Prompt:** P5.3-A (design only; under option A: P5.4-A1a/A1b/A2/A3 implement,
 P6.5-A the optional agent proposer, P5.5-A / A5-A the UX and chat, R2-A the
 benchmark; under option B: P5.5-B only)  
@@ -56,6 +56,28 @@ trials), `apps/api/app/services/ml_job_service.py` (`process_next_job`,
 (`ImprovementActionProposal`).  
 **Consumed by:** P5.5-B (option B) or P5.4-A1a, P5.4-A1b, P5.4-A2, P5.4-A3,
 P6.5-A, R2-A, P5.5-A, A5-A (option A)
+
+### Revision 3 (2026-10-16): founder chose option A
+
+The founder answered "yes to all" on the revised recommendations: build the loop (goal +
+budget + same folds + stop rules, rule-table proposer, each try a branch run), **sealed
+tries** (the final test set is scored once, only for the accepted model), the per-fold
+goal-metric verdict of §5; keep the option-B guided screen as "Try one change yourself".
+"No retraining" means final-test rows are never used for training or selection and nothing
+is refit on them; the accepted try is re-run once with pinned selection as §6.2 designs.
+Migrations are renumbered after the live head: `0086_sealed_evidence` (P5.4-A1a) and
+`0087_improve_runs` (P5.4-A2) replace `0078` / `0079` below. Open questions answered:
+
+| Q | Answer (founder defaults) |
+| --- | --- |
+| 1 | **A** |
+| 2 | Acceptance is always a person (human session only; tokens and agents never accept) |
+| 3 | Keep 5 folds as the default; 10 only through `fresh_split` |
+| 4 | 6 tries, 2 h, $2 AI, patience 3, bound 30 (hard 60), 2 live loops per workspace, 14-day `waiting_user` expiry, 2 fresh splits, 5 token starts per hour |
+| 5 | Amendment 6 (all token runs CV-only) **not** adopted now: loop tries are sealed anyway; existing `/v1` token behaviour stays |
+| 6 | Demo tries use v1 actions only (operating point, another family); feature-add is shown nowhere |
+
+The "Option B wording rule" below applies only to the guided screen.
 
 ### Revision 2 (round-2 review fixes, 2026-10-09)
 

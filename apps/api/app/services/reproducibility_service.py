@@ -34,6 +34,7 @@ from app.db.models import (
     User,
 )
 from app.domain.errors import ArtifactNotFoundError, IdentityError
+from app.domain.pipeline_run_branch import EVIDENCE_MODE_SEALED
 from app.domain.reproducibility import ENGINE_ENTRYPOINT
 from app.services.artifact_service import (
     get_artifact,
@@ -306,7 +307,9 @@ def persist_reproducibility(
 
     package_path = artifact_dir / PACKAGE_FILENAME
     preprocessor_artifact = None
-    if experiment.artifact_dir and package_path.is_file():
+    # ADR 0007 §6.1: a sealed improve try stores no model artifact (only the feature manifest).
+    sealed = experiment.evidence_mode == EVIDENCE_MODE_SEALED
+    if not sealed and experiment.artifact_dir and package_path.is_file():
         # P7.1-A: the model package; its manifest is the feature manifest the version pins.
         model_artifact, preprocessor_artifact, feature_manifest_artifact = _store_model_package(
             db, experiment, package_path, result, feature_set_version_id
@@ -317,7 +320,7 @@ def persist_reproducibility(
         model_path = artifact_dir / "model.joblib"
         member_path = artifact_dir / "members" / f"{winner_key}.joblib" if winner_key else None
         model_file = member_path if member_path is not None and member_path.is_file() else model_path
-        model_artifact = _store_path_if_exists(
+        model_artifact = None if sealed else _store_path_if_exists(
             db,
             experiment,
             model_file,

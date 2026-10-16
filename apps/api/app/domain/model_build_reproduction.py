@@ -220,6 +220,8 @@ class ModelBuildReproductionSpec(BaseModel):
     split_assignment: ReproductionSplitAssignment | None = None
     branch: ReproductionBranch | None = None
     decision_threshold: float | None = None
+    # ADR 0007 §6.1: a sealed improve try -- no final refit, the final test set not used.
+    holdout_sealed: bool = False
     stage_code: list[ModelBuildStageCode] = Field(default_factory=list)
 
 

@@ -512,12 +512,13 @@ def investigate(ev: RunEvidence, *, train_features: pd.DataFrame | None = None,
                 partition: Callable[[], Partition] | None = None,
                 split: Callable[[], Any] | None = None,
                 time_travel: Callable[[], Any] | None = None,
-                parent: Callable[[], Any] | None = None) -> list[Finding]:
+                parent: Callable[[], Any] | None = None, sealed: bool = False) -> list[Finding]:
     """Every check in ``CHECK_ORDER``, each guarded (an error is ``not_evaluated``, reason
     ``check_error``). Lazy suppliers: ``partition`` -> (train features, test row hashes);
     ``split`` -> ``SplitFeatures`` (features only on the test side); ``time_travel`` ->
     ``TimeTravelProbe``; ``parent`` -> ``ParentEvidence``. Without ``partition`` the
-    duplicate check hashes ``split``'s test features."""
+    duplicate check hashes ``split``'s test features. ``sealed`` (an improve try, ADR 0007
+    §6.1): the ``TEST_PARTITION_CHECKS`` are ``not_evaluated`` / ``holdout_sealed`` unrun."""
 
     from app.engine.investigate import cv_checks, probe_checks, split_checks
 
@@ -556,12 +557,15 @@ def investigate(ev: RunEvidence, *, train_features: pd.DataFrame | None = None,
             ev, time_travel() if time_travel is not None and ev.time_column and ev.as_of_features else None),
         "new_feature": lambda: probe_checks.check_new_feature(ev, parent() if parent is not None else None),
     }
+    if sealed:
+        for check in TEST_PARTITION_CHECKS:
+            runs[check] = lambda check=check: _not_evaluated(check, "holdout_sealed", "holdout_sealed")
     return [_guarded(check, runs[check]) for check in CHECK_ORDER]
 
 
 def investigate_result(result: Mapping[str, Any], *, partition: Callable[[], Partition] | None = None,
                        split: Callable[[], Any] | None = None, time_travel: Callable[[], Any] | None = None,
-                       parent: Callable[[], Any] | None = None) -> list[Finding]:
+                       parent: Callable[[], Any] | None = None, sealed: bool = False) -> list[Finding]:
     """``investigate`` over a run result; unreadable evidence -> every check not_evaluated."""
 
     try:
@@ -569,4 +573,4 @@ def investigate_result(result: Mapping[str, Any], *, partition: Callable[[], Par
     except Exception as exc:  # noqa: BLE001
         logger.exception("trust check evidence could not be read")
         return [_check_error(check, exc) for check in CHECK_ORDER]
-    return investigate(ev, partition=partition, split=split, time_travel=time_travel, parent=parent)
+    return investigate(ev, partition=partition, split=split, time_travel=time_travel, parent=parent, sealed=sealed)
