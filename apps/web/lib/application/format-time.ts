@@ -7,3 +7,11 @@ export function utcWhen(iso: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return "—";
   return `${date.toLocaleString("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })} UTC`;
 }
+
+/** A day in UTC, marked as such: "5 Oct 2026 (UTC)"; "—" when it cannot be read. */
+export function utcDay(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${date.toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })} (UTC)`;
+}

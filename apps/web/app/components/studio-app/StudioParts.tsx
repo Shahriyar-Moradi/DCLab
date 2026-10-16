@@ -4,12 +4,14 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Banner } from "@/components/studio/Banner";
-import { FlowBar } from "@/components/studio/FlowBar";
+import { FlowBar, FlowTiles } from "@/components/studio/FlowBar";
 import { Pill, type PillTone } from "@/components/studio/Pill";
 import { useProjectExperiments, useProjectRefs, useStudioProject } from "@/lib/application";
 import { STUDIO_BACKEND_FEATURES } from "@/lib/application/studio-navigation";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
 import { buildFlow, flowRunStatuses, nextStepFor, projectModelId } from "@/lib/application/studio-flow";
+import { useProjectFlow } from "@/lib/application/studio-flow-hooks";
+import { flowTiles } from "@/lib/application/studio-flow-tiles";
 import { ApiError } from "@/lib/infrastructure/api-client";
 
 /** "No backend, no element": an explicit empty state that names the prompt that ships it. */
@@ -38,6 +40,7 @@ export function formatWhen(value: string | null | undefined): string {
 export const STATUS_TONE: Record<string, PillTone> = {
   completed: "ok", running: "ai", queued: "gray", cancelling: "warn", needs_input: "warn",
   failed: "crit", cancelled: "gray", skipped: "gray", accepted: "ok", proposed: "warn", rejected: "crit", superseded: "gray",
+  alert: "crit", // V7 UI-E: a drift alert in the Inbox
 };
 
 /** Pill tone of a run status; own keys only (a status such as `__proto__` is gray). */
@@ -71,6 +74,7 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
   const refs = useProjectRefs(projectId);
   const runs = useProjectExperiments(projectId);
   const graph = useProjectGraph(projectId);
+  const facts = useProjectFlow(projectId);
   const pathname = usePathname();
   const tab = useSearchParams().get("tab");
   if (project.isPending) return <p role="status">Loading project…</p>;
@@ -93,6 +97,8 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
     targets,
   });
   const next = nextStepFor({ projectId, pathname, available: NEXT_AVAILABLE, targets });
+  // V7 UI-B: eight tiles with a value and a note once the flow read is in; until then (or if it fails) the step names alone.
+  const tiles = facts.data ? flowTiles(facts.data, { projectId, pathname, tab, available: NEXT_AVAILABLE, targets }) : null;
   return (
     <>
       <section className="toolbar" aria-label="Project">
@@ -102,7 +108,8 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
         {champion ? <Pill tone="ok">A model is in use</Pill> : null}
         {refs.data?.refs_initialized && !champion ? <Pill tone="gray">No model in use yet</Pill> : null}
       </section>
-      <FlowBar steps={flow} />
+      {tiles ? <FlowTiles steps={tiles} /> : <FlowBar steps={flow} />}
+      {facts.isError ? <p className="muted v7-flow-note">The details of each step could not be loaded; the steps still open their pages.</p> : null}
       {items.length > 0 ? (
         <details className="ids">
           <summary>Versions in use (details)</summary>

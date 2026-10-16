@@ -575,3 +575,179 @@ export function goBackOffer(
     viewerText: `The previous approved model is ${previous.model}. A person who can change this workspace can go back to it if these differences mean the model in use should not be used for now.`,
   };
 }
+
+/* ---------- trends by week and "what the system does on its own" (V7 UI-E) ---------- */
+
+export type PsiPointLike = { window_start: string; psi?: number | null; status?: string | null };
+export type FeatureSeriesLike = { name?: unknown; kind?: unknown; points?: readonly PsiPointLike[] | null };
+export type WeekTick = { key: string; label: string };
+/** How a drawn value was judged: `chance` = above a line but the statistical test says chance (hollow dot); `not_judged` = too little data (left off the line). */
+export type TrendMark = "judged" | "chance" | "not_judged";
+export type TrendLine = { id: string; label: string; style: "s1" | "s2" | "ref"; values: Array<number | null>; marks?: Array<TrendMark | null>; raw?: Array<number | null> };
+export type TrendChart = {
+  weeks: WeekTick[]; lines: TrendLine[]; max: number; refs: Array<{ value: number; label: string; tone: "warn" | "crit" }>;
+  summary: string; headers: string[]; rows: string[][]; note: string | null;
+};
+export type TrendsWeek = WeekSummaryLike & { outcome_precision?: number | null; outcome_recall?: number | null };
+
+/** "5 Oct" (UTC) for a week's Monday; "—" when it cannot be read. */
+export function shortWeek(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
+}
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The weeks of the charts: oldest first, at most 12, only readable dates, each once. */
+export function weekTicks(windows: readonly WeekSummaryLike[]): WeekTick[] {
+  const keys = new Map<string, string>();
+  for (const w of windows) {
+    const key = weekKey(w.window_start);
+    if (key && !keys.has(key)) keys.set(key, w.window_start);
+  }
+  return [...keys.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-WEEKS_LISTED).map(([key, iso]) => ({ key, label: shortWeek(iso) }));
+}
+
+/** The columns the backend returned a weekly series for, in its order (largest change first); names are plain text, capped. */
+export function seriesColumns(series: readonly FeatureSeriesLike[] | null | undefined): Array<{ index: number; name: string }> {
+  return (series ?? []).flatMap((s, index) => (isObject(s) && Array.isArray(s.points) && s.kind !== "date"
+    ? [{ index, name: plainText(s.name, NAME_MAX) || "(unnamed column)" }] : []));
+}
+
+const cell = (v: number | null, digits = 2) => (v === null ? "—" : v.toFixed(digits));
+const MARK_WORDS: Record<TrendMark, string> = { judged: "", chance: " (within chance)", not_judged: " (not judged: too little data)" };
+/** A line's value for the table and the summary: the raw number with its judgement, like the weeks table. */
+export function trendCell(l: Pick<TrendLine, "values" | "marks" | "raw">, i: number): string {
+  const mark = l.marks?.[i] ?? null;
+  const v = mark === "not_judged" ? l.raw?.[i] ?? null : l.values[i];
+  return v === null ? "—" : `${v.toFixed(2)}${mark ? MARK_WORDS[mark] : ""}`;
+}
+/** The judgement of one value from its own status (and the week's): never "alarming" when the test said chance. */
+function markFor(psi: number | null, status: unknown, weekStatus: string | undefined, t: Pick<Thresholds, "psi_watch">): TrendMark | null {
+  if (psi === null) return null;
+  if (weekStatus === "not_enough_data") return "not_judged";
+  if (status === "ok" && psi >= t.psi_watch) return "chance";
+  return status === "watch" || status === "alert" || status === "ok" ? "judged" : null;
+}
+
+/**
+ * Input change (PSI) by week: one chosen column's line (from `feature_psi_series`) beside the largest change of any column
+ * (from each week's `max_psi`), with the read-only watch and alert lines. The axis stops at 3x the alert line like the bars.
+ * A week where the column was not among the shown columns is a gap, never a zero.
+ */
+export function psiTrend(windows: readonly WeekSummaryLike[], series: readonly FeatureSeriesLike[] | null | undefined, column: number | null, t: Pick<Thresholds, "psi_watch" | "psi_alert">): TrendChart {
+  const weeks = weekTicks(windows);
+  const byWeek = new Map<string, WeekSummaryLike>();
+  for (const w of windows) { const key = weekKey(w.window_start); if (key && !byWeek.has(key)) byWeek.set(key, w); }
+  const weekStatus = (key: string) => byWeek.get(key)?.status;
+  const lines: TrendLine[] = [];
+  const columns = seriesColumns(series);
+  const picked = columns.find((c) => c.index === column) ?? columns[0] ?? null;
+  const build = (id: string, label: string, style: TrendLine["style"], at: (key: string) => { psi: number | null; status: unknown }): TrendLine => {
+    const raw = weeks.map((w) => at(w.key).psi);
+    const marks = weeks.map((w, i) => markFor(raw[i], at(w.key).status, weekStatus(w.key), t));
+    return { id, label, style, raw, marks, values: raw.map((v, i) => (marks[i] === "not_judged" ? null : v)) };
+  };
+  if (picked) {
+    const points = new Map<string, { psi: number | null; status: unknown }>();
+    for (const p of (series as FeatureSeriesLike[])[picked.index].points ?? []) {
+      const key = isObject(p) ? weekKey(p.window_start) : null;
+      const psi = isObject(p) ? num(p.psi) : null;
+      if (key) points.set(key, { psi: psi !== null && psi >= 0 ? psi : null, status: isObject(p) ? p.status : null });
+    }
+    lines.push(build("column", picked.name, "s1", (key) => points.get(key) ?? { psi: null, status: null }));
+  }
+  // The largest change of a week is judged by the week's own status (an ok week passed no test, whatever its number).
+  lines.push(build("largest", "Largest change of any column", "ref", (key) => {
+    const w = byWeek.get(key);
+    const psi = w ? num(w.max_psi) : null;
+    return { psi: psi !== null && psi >= 0 ? psi : null, status: w?.status === "ok" ? "ok" : w?.status === "watch" || w?.status === "alert" ? w.status : null };
+  }));
+  const top = Math.max(0, ...lines.flatMap((l) => l.values.filter((v): v is number => v !== null)));
+  const max = Math.min(Math.max(top, t.psi_alert * 1.25, 0.01), t.psi_alert * AXIS_CAP);
+  const describe = (l: TrendLine) => `${l.label}: ${weeks.map((w, i) => `${w.label} ${trendCell(l, i)}`).join(", ")}`;
+  const clipped = lines.some((l) => l.values.some((v) => v !== null && v > max));
+  const chance = lines.some((l) => l.marks?.includes("chance"));
+  const notJudged = lines.some((l) => l.marks?.includes("not_judged"));
+  return {
+    weeks, lines, max,
+    refs: [{ value: t.psi_watch, label: `watch ${fixed(t.psi_watch)}`, tone: "warn" }, { value: t.psi_alert, label: `alert ${fixed(t.psi_alert)}`, tone: "crit" }],
+    summary: weeks.length ? `Input change (PSI) by week, oldest first. ${lines.map(describe).join(". ")}. Watch line ${fixed(t.psi_watch)}, alert line ${fixed(t.psi_alert)}; crossing a line counts only when the statistical test agrees.` : "No week has been checked yet.",
+    headers: ["Week (UTC)", ...lines.map((l) => l.label)],
+    rows: weeks.map((w, i) => [w.label, ...lines.map((l) => trendCell(l, i))]),
+    note: [
+      weeks.length === 1 ? "Only one week has been checked so far, so there is no trend yet." : null,
+      picked ? null : "No column has a weekly series yet (for example, the inputs could not be compared), so only the largest change is drawn.",
+      chance ? "A hollow dot is above a line but within what chance allows for that week's rows, so it is not marked." : null,
+      notJudged ? "A week with too little data is not judged and is left off the lines; the table has its number." : null,
+      clipped ? "A value above the top of the axis is drawn at the top; the table has the exact number." : null,
+    ].filter(Boolean).join(" ") || null,
+  };
+}
+
+/** Why there is no precision / recall line, from the weeks' outcome states; null when at least one week was measured. */
+export function realTrendEmpty(windows: readonly TrendsWeek[]): string | null {
+  if (windows.some((w) => num(w.outcome_precision) !== null || num(w.outcome_recall) !== null)) return null;
+  if (windows.some((w) => w.outcomes_status === "measured")) return "Real-world results were measured, but precision and recall by week are drawn only for yes/no goals. Open a week below for its results.";
+  if (windows.length && windows.every((w) => w.outcomes_status === "not_linked")) return "No outcomes file is linked yet, so there is nothing to draw. Link one below once the real results are known.";
+  const unjoinable = (w: TrendsWeek) => w.outcomes_status === "no_key_in_scores" || w.outcomes_status === "key_not_unique";
+  if (windows.some(unjoinable) && windows.every((w) => unjoinable(w) || w.outcomes_status === "not_linked")) {
+    return "The linked outcomes could not be joined to the scored rows (no ID column in the scored rows, or IDs that repeat), so there is nothing to draw. Open a week below for the reason.";
+  }
+  return "No week has enough rows with a real outcome yet. Outcomes usually arrive weeks after scoring, so the newest weeks fill in last.";
+}
+
+/** Real precision and recall by week (binary goals, outcomes measured), oldest first; a week without them is a gap. */
+export function realTrend(windows: readonly TrendsWeek[]): TrendChart {
+  const weeks = weekTicks(windows);
+  const by = new Map<string, TrendsWeek>();
+  for (const w of windows) { const key = weekKey(w.window_start); if (key && !by.has(key)) by.set(key, w); }
+  const pick = (f: (w: TrendsWeek) => unknown) => weeks.map((wk) => { const v = by.has(wk.key) ? num(f(by.get(wk.key)!)) : null; return v !== null && v >= 0 && v <= 1 ? v : null; });
+  const lines: TrendLine[] = [
+    { id: "precision", label: "Precision", style: "s1", values: pick((w) => w.outcome_precision) },
+    { id: "recall", label: "Recall", style: "s2", values: pick((w) => w.outcome_recall) },
+  ];
+  const labelled = weeks.map((wk) => (by.has(wk.key) ? num(by.get(wk.key)!.n_labelled) : null));
+  const missing = lines[0].values.filter((v) => v === null).length;
+  return {
+    weeks, lines, max: 1, refs: [],
+    summary: `Real precision and recall by week, oldest first. ${lines.map((l) => `${l.label}: ${weeks.map((w, i) => `${w.label} ${cell(l.values[i])}`).join(", ")}`).join(". ")}.`,
+    headers: ["Week (UTC)", "Precision", "Recall", "Rows with a real outcome"],
+    rows: weeks.map((w, i) => [w.label, cell(lines[0].values[i]), cell(lines[1].values[i]), labelled[i] === null ? "—" : count(labelled[i] as number)]),
+    note: missing ? `${missing} of ${weeks.length} ${weeks.length === 1 ? "week" : "weeks"} ${missing === 1 ? "has" : "have"} no result yet (no outcomes file, too few rows with a real outcome, or the IDs could not be matched); ${missing === 1 ? "it is" : "they are"} left as a gap.` : null,
+  };
+}
+export const REAL_TREND_NOTE = "Precision: of the rows the model flagged, the share that really had the outcome. Recall: of the rows that really had the outcome, the share the model flagged. Both use the model's own threshold, on rows with a real outcome only. Outcomes arrive late, so the input chart above is the early warning.";
+
+export type OwnStep = { key: string; title: string; who: string; state: "on" | "off" | "planned" | "yours"; pill: string; tone: Tone; text: string };
+/**
+ * "What the system does on its own", from what is real: weekly checks and the drift rule are live and say their state; the
+ * retrain steps are not built and say "Planned"; going back is always a person's choice. Nothing here claims an automatic action.
+ */
+export function ownSteps(o: OverviewLike | undefined, offer: GoBack): OwnStep[] {
+  const latest = o?.latest ?? null;
+  const week = latest ? weekLabel(latest.window_start) : null;
+  let check: Pick<OwnStep, "state" | "pill" | "tone" | "text">;
+  if (!o) check = { state: "off", pill: "Unknown", tone: "gray", text: "The monitoring status could not be read, so the state of this step is unknown." };
+  else if (o.status === "no_model_in_use") check = { state: "off", pill: "Waiting", tone: "gray", text: "No model is in use, so nothing is checked yet." };
+  else if (!o.enabled) check = { state: "off", pill: "Paused", tone: "gray", text: "Monitoring is switched off on this server, so no new week is checked." };
+  else if (!latest) check = { state: "on", pill: "On", tone: "ok", text: "On. The first week is checked after the model in use scores a file in it." };
+  else check = { state: "on", pill: "On", tone: "ok", text: `On. The latest check was the ${week}. A week is checked only after the model in use scores a file in it.` };
+  const status = o && latest && o.status !== "no_model_in_use" ? o.status : null;
+  const flag: Record<string, string> = {
+    alert: `Alert in the ${week}: the inputs or scores look different from training. It is also listed in the Inbox.`,
+    watch: `Watch in the ${week}: something moved somewhat. Nothing is listed in the Inbox for a watch.`,
+    ok: `Nothing flagged in the ${week}.`,
+    not_enough_data: `Not judged in the ${week}: not enough data.`,
+  };
+  const back = offer.kind === "offer"
+    ? `Available now: going back to ${offer.model} is offered above.`
+    : offer.kind === "none" ? "There is no earlier approved model to go back to." : "Always a person's choice. When an earlier approved model exists, it is offered here when the latest week of the model in use is an alert, and any time on Model → Approved for scoring.";
+  return [
+    { key: "check", title: "Check each week the model in use scores a file", who: "Automatic", ...check },
+    { key: "flag", title: "Flag drift", who: "A rule", state: status ? "on" : "off", pill: status ? statusWords(status).label : "Nothing yet", tone: status ? statusWords(status).tone : "gray", text: status ? own(flag, status) ?? "The latest week has a result this page does not recognise." : "Nothing to judge until a week is checked." },
+    { key: "retrain", title: "Train again on newer data", who: "Not built", state: "planned", pill: "Planned", tone: "gray", text: "Not built. DCLab never trains a model again on its own; to use a newer file, start a run on the Experiments screen." },
+    { key: "compare", title: "Show the new model beside the current one and ask you", who: "Not built", state: "planned", pill: "Planned", tone: "gray", text: "Not built. Today you compare runs on the Experiments screen and approve a model on Model → Approved for scoring." },
+    { key: "back", title: "Go back to the previous model", who: "You decide", state: "yours", pill: "Yours", tone: "gray", text: back },
+  ];
+}

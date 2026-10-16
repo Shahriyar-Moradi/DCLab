@@ -90,7 +90,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await expect(page.getByRole("img", { name: /cross-validation folds/ })).toBeVisible();
   await expect(page.getByText("Why this design?")).toBeVisible();
   await expect(page.getByText(/(Time-ordered|Grouped|Random)/).first()).toBeVisible();
-  await expect(page.getByText("Training rows", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Training rows: [\d,]+$/)).toBeVisible();
   await page.goto(hrefs[1]);
   await expect(page.getByRole("table", { name: "Features of this run" })).toContainText("tenure");
   await page.getByRole("button", { name: /^monthly_spend/ }).click();

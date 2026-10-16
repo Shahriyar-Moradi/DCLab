@@ -564,6 +564,12 @@ def project_summaries(db: Session, *, workspace_id: UUID, project_ids: list[UUID
             .where(Experiment.workspace_id == ws, Experiment.id.in_(latest))
         ).all()
     }
+    running = dict(db.execute(
+        select(Experiment.project_id, func.count())
+        .where(Experiment.workspace_id == ws, Experiment.project_id.in_(project_ids),
+               STATUS_SQL.in_(sorted(UNFINISHED_RUN_STATUSES)))
+        .group_by(Experiment.project_id)
+    ).all())
     unfinished = [run.experiment_id for run in runs.values() if run.status in UNFINISHED_RUN_STATUSES]
     progress = run_progress(db, ws, unfinished) if unfinished else {}
     for run in runs.values():
@@ -591,7 +597,8 @@ def project_summaries(db: Session, *, workspace_id: UUID, project_ids: list[UUID
     return {
         project: ProjectSummaryRead(goal=goals.get(project), champion=champions.get(project),
                                     latest_run=runs.get(project), stage=stage(project),
-                                    waiting_decisions=waiting.get(project, 0))
+                                    waiting_decisions=waiting.get(project, 0),
+                                    running_count=int(running.get(project, 0)))
         for project in project_ids
     }
 
@@ -617,5 +624,6 @@ def run_progress(db: Session, ws: UUID, experiment_ids: list[UUID]) -> dict[UUID
         fold_number = int(fold) if str(event_type).startswith("cv_fold_") and str(fold or "").isdigit() else None
         result[exp_id] = RunProgressRead(stage=code_value(stage), model_family=code_value(family),
                                          fold_number=fold_number, folds_planned=folds,
-                                         candidates_finished=int(count or 0), updated_at=at)
+                                         candidates_finished=int(count or 0), updated_at=at,
+                                         fold_completed=fold_number is not None and event_type == "cv_fold_completed")
     return result

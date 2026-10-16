@@ -38,6 +38,17 @@ async function shot(page: Page, name: string): Promise<void> {
   if (dir) await page.screenshot({ path: path.join(dir, `data-${name}.png`), fullPage: true });
 }
 
+/** A finished run moves the project's versions in use and writes its column facts just after its status turns completed. */
+async function settled(page: Page, projectId: string): Promise<void> {
+  await expect.poll(async () => {
+    const refs = (await (await page.request.get(`/api/backend/v1/projects/${projectId}/refs`)).json()) as { items?: Array<{ ref_kind: string; target: { id: string } }> };
+    const dataset = refs.items?.find((r) => r.ref_kind === "dataset")?.target.id;
+    if (!dataset || !refs.items?.some((r) => r.ref_kind === "champion_model")) return false;
+    const profile = (await (await page.request.get(`/api/backend/v1/datasets/${dataset}/profile`)).json()) as { columns?: Array<{ role_used?: string | null }> };
+    return Boolean(profile.columns?.some((c) => c.role_used));
+  }, { timeout: 60_000, intervals: [1_000] }).toBe(true);
+}
+
 test("Data page: names only before a split, training-row profile after the first run", async ({ page }) => {
   await login(page);
   await page.goto("/projects/new");
@@ -58,7 +69,7 @@ test("Data page: names only before a split, training-row profile after the first
   await expect(page.getByRole("table", { name: "Columns", exact: true })).toContainText("customer_code");
   const strip = page.getByRole("region", { name: "File summary" });
   await expect(strip).toContainText("300");
-  await expect(strip).not.toContainText("What we predict");
+  await expect(strip).not.toContainText("training period");
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "1-before-run");
 
@@ -77,6 +88,7 @@ test("Data page: names only before a split, training-row profile after the first
     const run = await page.request.get(`/api/backend/v1/experiments/${experimentId}`);
     return ((await run.json()) as { status: string }).status;
   }, { timeout: 150_000, intervals: [2_000] }).toBe("completed");
+  await settled(page, projectId!);
 
   // After the run: statistics over the split plan's training rows, rule role beside role used.
   await page.goto(`/projects/${projectId}/data`);
@@ -86,8 +98,8 @@ test("Data page: names only before a split, training-row profile after the first
   const table = page.getByRole("table", { name: "Columns", exact: true });
   await expect(table).toContainText("ID column, not a predictor");
   await expect(table).toContainText("This is what we predict");
-  await expect(page.getByRole("region", { name: "File summary" })).toContainText("What we predict");
-  await expect(page.getByRole("region", { name: "File summary" })).toContainText("Columns used");
+  await expect(page.getByRole("region", { name: "File summary" })).toContainText("in the training period");
+  await expect(page.getByRole("region", { name: "File summary" })).toContainText(/columns · \d+ used, \d+ left out/);
   await page.getByText("Technical details per column").click();
   const details = page.getByRole("table", { name: "Column details" });
   await expect(details).toContainText("identifier");

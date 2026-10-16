@@ -97,6 +97,12 @@ def test_uploader_problem_specs_and_split_plan_reads(client, db_session, st, tmp
     assert tool.status_code == 201, tool.text
     assert uploader(admin, tool.json()["id"]) == {"kind": "connected_tool", "is_you": False}
     assert str(_id(db, writer)) not in client.get("/v1/datasets", headers=admin).text  # no token id
+    # No recorded uploader (a removed user or an old row): `unknown`, never a guessed person.
+    from app.db.models import Dataset
+    row = db.get(Dataset, dataset.id)
+    row.asset.created_by = None
+    db.commit()
+    assert uploader(admin, dataset.id) == {"kind": "unknown", "is_you": False}
 
     # B6: goal versions, newest first, no user ids.
     specs_url = f"/v1/projects/{st.project.id}/problem-specs"

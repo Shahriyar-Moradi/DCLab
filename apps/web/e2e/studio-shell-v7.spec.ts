@@ -24,7 +24,7 @@ test("status tags open What's real today; sidebar, glossary and guide toggle", a
   await login(page);
   await page.goto("/home");
   const head = page.locator(".page-head");
-  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Good (morning|afternoon|evening)/, level: 1 })).toBeVisible();
   await expect(head.getByRole("link", { name: /Status of this screen: Working today/ })).toBeVisible();
 
   const sidebar = page.getByRole("navigation", { name: "Studio" });

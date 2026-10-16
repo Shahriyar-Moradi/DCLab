@@ -7650,6 +7650,12 @@ export interface components {
             goal?: components["schemas"]["ProjectGoalRead"] | null;
             latest_run?: components["schemas"]["LatestRunRead"] | null;
             /**
+             * Running Count
+             * @description Unfinished runs of the project (queued, running, stopping or waiting for an answer).
+             * @default 0
+             */
+            running_count: number;
+            /**
              * Stage
              * @description Furthest point reached: `model_in_use` (a champion ref), `running` (latest run unfinished), `runs_finished`, `goal_set`, `data_uploaded` (a training file), else `no_data`.
              * @default no_data
@@ -8109,6 +8115,12 @@ export interface components {
              * @default 0
              */
             candidates_finished: number;
+            /**
+             * Fold Completed
+             * @description The latest event is `cv_fold_completed`: fold `fold_number` is done.
+             * @default false
+             */
+            fold_completed: boolean;
             /**
              * Fold Number
              * @description 1-based CV fold of the latest `cv_fold_*` event.

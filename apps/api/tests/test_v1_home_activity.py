@@ -318,9 +318,10 @@ def test_project_list_summary_is_cv_only_and_bounded(client, db_session, h, test
     others = [s for pid, s in by_id.items() if pid != str(h.project.id)]
     assert len(others) == 5 and all(s["goal"]["version"] == 2 and s["goal"]["is_ref"] is False for s in others)
     assert all(s["champion"] is None and s["latest_run"] is None for s in others)
-    # projects + refs + goals + champions + latest runs + training uploads (stage) + the waiting-decisions
-    # count with its two visibility (membership) lookups (V7 BE-A); progress only for unfinished runs.
-    assert many == 9, many
+    # projects + refs + goals + champions + latest runs + unfinished-run counts + training uploads (stage) +
+    # the waiting-decisions count with its two visibility (membership) lookups (V7 BE-A); progress only for
+    # unfinished runs.
+    assert many == 10, many
 
 
 def test_champion_metrics_need_the_locked_winner(client, db_session, setup, tmp_path):
@@ -453,6 +454,7 @@ def test_summary_stage_progress_and_waiting_decisions(client, db_session, h, tmp
     assert first[str(data_only.id)]["stage"] == "data_uploaded" and first[str(empty.id)]["stage"] == "no_data"
     latest = first[str(h.project.id)]["latest_run"]
     assert (latest["run_number"], latest["progress"]) == (2, None)  # finished runs carry no progress
+    assert first[str(h.project.id)]["running_count"] == 0 and first[str(empty.id)]["running_count"] == 0
 
     drs.propose(db, workspace_id=h.ws, project_id=h.project.id, actor=DecisionActor.human(h.actor),
                 decision_type="experiment_accepted", subject_kind="experiment", subject_id=h.exp[1],
@@ -470,7 +472,13 @@ def test_summary_stage_progress_and_waiting_decisions(client, db_session, h, tmp
     progress = after["latest_run"]["progress"]
     assert {k: v for k, v in progress.items() if k != "updated_at"} == {
         "stage": "cross_validation", "model_family": "lightgbm", "fold_number": 3, "folds_planned": 5,
-        "candidates_finished": 1}
+        "candidates_finished": 1, "fold_completed": False}
+    assert after["running_count"] == 1
+    append_ml_run_event(db, workspace_id=h.ws, workflow_run_id=workflow_run, experiment_id=h.exp[1],
+                        stage="cross_validation", event_type="cv_fold_completed", status="completed",
+                        payload={"fold_number": 3})
+    done = summaries()[str(h.project.id)]["latest_run"]["progress"]
+    assert (done["fold_number"], done["fold_completed"]) == (3, True)
     _token, raw = create_service_token(db, creator=h.actor, workspace_id=h.ws, name="r", scopes=["read"],
                                        expires_in_days=1, current_password="test-password")
     db.commit()

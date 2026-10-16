@@ -4,6 +4,7 @@
  */
 import { safeInternalHref } from "../../components/studio/safe-href.ts";
 import { isUuid, plainText } from "./command-search.ts";
+import { weekKey, weekLabel } from "./studio-monitoring.ts";
 import { statusWords } from "./studio-runs.ts";
 import { envelope, mapWizardError, type PlainError } from "./studio-wizard.ts";
 
@@ -15,7 +16,7 @@ export function lookup<T>(table: Record<string, T>, key: string | null | undefin
 export type InboxTabId = "needs_decision" | "applied_automatically" | "done";
 
 export const INBOX_TABS: Array<{ id: InboxTabId; label: string; empty: string }> = [
-  { id: "needs_decision", label: "Needs your decision", empty: "Nothing is waiting for you. Suggestions from the rules, the assistant, connected tools and people, and runs that ask you a question, show up here." },
+  { id: "needs_decision", label: "Needs your decision", empty: "Nothing is waiting for you. Suggestions from the rules, the assistant, connected tools and people, runs that ask you a question, and drift alerts on the model in use show up here." },
   {
     id: "applied_automatically", label: "Applied automatically",
     empty: "Nothing listed here. Items applied on their own appear here; some can be undone.",
@@ -77,12 +78,14 @@ export type EvidenceLink = { key: string; label: string; href: string | null };
 
 const KIND_LABEL: Record<string, string> = {
   experiment: "Run", decision_record: "History entry", agent_run: "AI agent run", semantic_answer: "Column review answer", project: "Project",
+  model_version: "The model",
 };
 
 function evidenceHref(kind: string, id: string, projectId: string | null | undefined): string | null {
   if (!isUuid(projectId) || !isUuid(id)) return null;
   if (kind === "experiment") return safeInternalHref(`/projects/${projectId}/experiments/${id}`);
   if (kind === "decision_record") return safeInternalHref(`/projects/${projectId}/decisions?record=${id}`);
+  if (kind === "model_version") return safeInternalHref(`/projects/${projectId}/models/${id}`);
   return null;
 }
 
@@ -182,7 +185,8 @@ const PROPOSAL_QUESTION: Record<string, string> = {
 const RUN_WORDS: Record<string, string> = { completed: "finished", failed: "failed", cancelled: "was cancelled", skipped: "was skipped", ended: "ended" };
 
 /** The card's plain title. Run names come from the caller ("Run 3"); the server's fixed summaries are only matched, never shown. */
-export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { summary: string; decision_type?: string | null; proposal_type?: string | null; status: string }, runName?: string | null): string {
+export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { summary: string; decision_type?: string | null; proposal_type?: string | null; status: string; tab?: string | null }, runName?: string | null): string {
+  if (item.kind === "drift_alert") return item.tab === "done" ? "Drift alert on an earlier week or model" : "Drift alert on the model in use";
   if (item.kind === "decision_proposal") {
     return inboxQuestion(item.decision_type ?? "");
   }
@@ -200,7 +204,7 @@ export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { sum
 
 const OUTCOME_WORDS: Record<string, string> = {
   proposed: "waiting for your decision", accepted: "approved", rejected: "rejected", superseded: "corrected", applied: "applied", reverted: "undone",
-  expired: "expired", needs_input: "needs your answer",
+  expired: "expired", needs_input: "needs your answer", alert: "alert",
 };
 /** The state of an item in words (run states use the run words). */
 export function outcomeWords(status: string): string {
@@ -255,4 +259,62 @@ export function answerLines(answer: Record<string, unknown> | null | undefined):
     else text = plain(value);
     return { key: plain(key).replaceAll("_", " "), value: text || "empty" };
   });
+}
+
+/* ---------- V7 UI-E: drift alerts, agreement and who closed an item ---------- */
+
+export type InboxMonitoringLike = { window_start?: string | null; max_psi?: number | null; prediction_psi?: number | null };
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** The evidence stats of a drift alert, from the item's own aggregates only (no rows, no column names). */
+export function driftStats(m: InboxMonitoringLike | null | undefined): Array<{ label: string; value: string }> {
+  if (!m) return [];
+  const stats: Array<{ label: string; value: string }> = [];
+  if (weekKey(m.window_start)) stats.push({ label: "Week (UTC)", value: weekLabel(m.window_start).replace(/^week of /, "").replace(/ \(UTC\)$/, "") });
+  if (finite(m.max_psi)) stats.push({ label: "Largest input change of any column (PSI)", value: m.max_psi.toFixed(2) });
+  if (finite(m.prediction_psi)) stats.push({ label: "Score change (PSI)", value: m.prediction_psi.toFixed(2) });
+  return stats;
+}
+
+/** What a drift alert means, in fixed words; the newest week of the model in use waits for a person, earlier ones are done. */
+export function driftSentence(item: { tab: string; monitoring?: InboxMonitoringLike | null }): string {
+  const week = weekKey(item.monitoring?.window_start) ? `the ${weekLabel(item.monitoring?.window_start)}` : "a week";
+  const lead = `Weekly monitoring marked ${week} as alert: the inputs or the scores of this model look different from training.`;
+  const meaning = "That does not mean the model is wrong, and DCLab did not retrain or switch it.";
+  return item.tab === "done"
+    ? `${lead} ${meaning} This is an earlier week, or a model that is no longer in use; Monitoring has the latest status.`
+    : `${lead} ${meaning} Open Monitoring to see which columns moved, then decide what to do; going back to an earlier model is your choice.`;
+}
+
+/** Under the stats: the numbers are the week's largest changes; whether each column counts is decided on Monitoring. */
+export const DRIFT_STATS_NOTE = "These are the week's largest changes. Which columns count as changed (the statistical test, column by column) is on Monitoring.";
+
+export function monitoringHref(projectId: string | null | undefined): string | null {
+  return isUuid(projectId) ? safeInternalHref(`/projects/${projectId}/monitoring`) : null;
+}
+
+const AGREEMENT: Record<string, { label: string; tone: "ok" | "warn" | "gray" }> = {
+  agree: { label: "The rules and the AI agreed", tone: "ok" },
+  disagree: { label: "The rules and the AI disagreed", tone: "warn" },
+  abstain: { label: "The AI gave no answer", tone: "gray" },
+  unavailable: { label: "No AI answer was available", tone: "gray" },
+};
+/**
+ * "Both agreed" / "they disagreed: we asked you" from `agreement`, as recorded. Hidden whenever AI is known to be switched off
+ * (the AI parts of the Inbox are switched off with it) and for values this table does not know.
+ */
+export function agreementPill(agreement: string | null | undefined, tab: string, aiOff: boolean | null): { label: string; tone: "ok" | "warn" | "gray" } | null {
+  if (aiOff === true || !agreement) return null;
+  const found = lookup(AGREEMENT, agreement, null);
+  if (!found) return null;
+  return agreement === "disagree" && tab === "needs_decision" ? { ...found, label: "The rules and the AI disagreed: we asked you" } : found;
+}
+
+/** Who closed a Done item, without ids: you, a person, the rules, or an agent / connected tool. Nothing when it expired. */
+export function resolverPill(resolved: { kind: string; is_you?: boolean | null } | null | undefined, tab: string): string | null {
+  if (tab !== "done" || !resolved) return null;
+  if (resolved.kind === "person") return resolved.is_you === true ? "Decided by you" : "Decided by a person";
+  if (resolved.kind === "rule") return "Settled by the rules";
+  if (resolved.kind === "agent") return "Settled by an AI agent or a connected tool";
+  return null;
 }

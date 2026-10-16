@@ -43,6 +43,10 @@ const InboxItemSchema = z.object({
     body: z.record(z.string(), z.string()).optional(), allowed: z.boolean(),
   })).optional(),
   can_act: z.boolean(),
+  // V7 BE-A: Jev agreement, who closed a Done item, and a drift alert's aggregates.
+  agreement: nullableString,
+  resolved_by: z.object({ kind: z.string(), is_you: z.boolean().optional() }).nullable().optional(),
+  monitoring: z.object({ window_start: z.string(), model_version_id: z.string(), max_psi: z.number().nullable().optional(), prediction_psi: z.number().nullable().optional() }).nullable().optional(),
 });
 type RawInboxItem = z.infer<typeof InboxItemSchema>;
 /** The API omits empty lists; the UI always gets arrays and maps. */
@@ -113,7 +117,7 @@ export function decideProposal(input: { action: "accept" | "reject" | "revert"; 
 export function useInboxInvalidation() {
   const client = useQueryClient();
   return () => {
-    for (const name of ["inbox", "inbox-counts", "activity", "project-refs", "graph", "decisions", "experiments", "experiment", "model-version", "decision", "projects"]) {
+    for (const name of ["inbox", "inbox-counts", "activity", "project-refs", "graph", "decisions", "experiments", "experiment", "model-version", "project-model-versions", "decision", "projects"]) {
       void client.invalidateQueries({ queryKey: workspaceQueryKey("v1", name) });
     }
   };

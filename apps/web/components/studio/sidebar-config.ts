@@ -35,6 +35,8 @@ export type SidebarItemSpec = {
    * project). `href` holds `{target}`; without a valid id for it the item is left out instead of guessed.
    */
   target?: SidebarTarget;
+  /** Used instead of `href` when the target id is missing (the page then works without it); otherwise the item is left out. */
+  fallbackHref?: string;
 };
 
 /** `project_model`: any model of the project (the model in use when there is one); Predictions is listed as soon as the project has a model. */
@@ -60,7 +62,7 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
     label: "Project",
     items: [
       { id: "data", label: "Data", href: "data", icon: "▤", roles: WORK, feature: "data", phase: "P4.1-C" },
-      { id: "goal", label: "Goal & test design", href: "splits/{target}", target: "split_plan", icon: "◎", roles: WORK, feature: "goal", phase: "P4.3-A" },
+      { id: "goal", label: "Goal & test design", href: "splits/{target}", target: "split_plan", fallbackHref: "goal", icon: "◎", roles: WORK, feature: "goal", phase: "P4.3-A" },
       { id: "experiments", label: "Experiments", href: "experiments", icon: "⚗", roles: WORK, feature: "experiments", phase: "P4.1-A" },
       { id: "improve", label: "Improve", href: "improve", icon: "↗", roles: WORK, feature: "improve", phase: "P5.5-B" },
       { id: "models", label: "Model", href: "models", icon: "◆", roles: WORK, feature: "models", phase: "P4.11-UI" },
@@ -149,8 +151,9 @@ export function resolveSidebar(role: StudioRole, options: ResolveOptions = {}): 
       let path = item.href;
       if (item.target) {
         const id = targets[item.target];
-        if (!isUuid(id)) continue;
-        path = path.replace("{target}", id);
+        if (isUuid(id)) path = path.replace("{target}", id);
+        else if (item.fallbackHref) path = item.fallbackHref;
+        else continue;
       }
       const href = relative && projectBase !== undefined && base ? `${base === "/" ? "" : base}/${path}` : path;
       items.push({ id: item.id, label: item.label, href, icon: item.icon, available, phase: item.phase });

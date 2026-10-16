@@ -44,7 +44,7 @@ export default function InboxPage() {
     <>
       <PageHead eyebrow="Workspace" title="Inbox" subtitle="What waits for you, what was applied automatically, and what is finished, across every project." actions={<Link className="btn" href="/home">Home</Link>} />
       <PageGuide
-        purpose="One place for everything that needs your answer: decisions suggested by the rules, the assistant, connected tools or people, and runs that ask you a question."
+        purpose="One place for everything that needs your answer: decisions suggested by the rules, the assistant, connected tools or people, runs that ask you a question, and drift alerts on the model in use."
         howTo={<>Read the evidence and compare <Term definition="The answer the fixed rules give. It is always worked out, with or without AI.">what the rules say</Term> with what the AI says, then Approve or Reject with a reason. The decision is recorded in History and the item moves to Done.</>}
         youGet="Three lists: Needs your decision, Applied automatically, and Done. Nothing changes by opening this page."
         attention={waiting ? `${waiting} item${waiting === 1 ? " is" : "s are"} waiting for your decision.` : undefined}

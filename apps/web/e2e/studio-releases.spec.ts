@@ -190,13 +190,15 @@ test("approve a model for scoring, go back to the previous one, and refusals are
   await expect(page.getByText(/Yes, approved on/)).toBeVisible();
 
   // Predictions name the approved model that scored, following the scoring's status.
-  await page.goto(`/projects/${projectId}/predictions`);
+  await page.goto(`/projects/${projectId}/predictions?tab=score`);
   const rows = churnCsv().split("\n").map((line) => line.split(",").slice(0, 4).join(",")).join("\n");
   await page.getByLabel("Scoring file").setInputFiles({ name: "next-month.csv", mimeType: "text/csv", buffer: Buffer.from(rows) });
   await page.getByRole("button", { name: "Score this file" }).click();
-  await expect(page.getByText("done", { exact: true }).first()).toBeVisible({ timeout: 120_000 });
+  // UI-D: the hidden list tab also holds a "done" pill; look inside the Score a file tab.
+  await expect(page.getByRole("tabpanel", { name: "Score a file" }).getByText("done", { exact: true }).first()).toBeVisible({ timeout: 120_000 });
   await expect(page.getByTestId("scored-with").first()).toContainText(`Scored with: ${second.name} · approved`);
   const history = page.getByRole("table", { name: "Predictions run in this browser tab" });
+  await page.getByRole("tab", { name: "This week's list" }).click();
   await expect(history.getByRole("columnheader", { name: "Approval used" })).toBeVisible();
   await expect(history).toContainText("approved ");
   await checkA11y(page, "3-scored");
@@ -210,8 +212,9 @@ test("approve a model for scoring, go back to the previous one, and refusals are
   });
   await page.reload();
   // The table row now repeats the reason a failed scoring failed, so the sentence appears twice.
-  await expect(page.getByText("The saved model no longer matches the model that was approved").first()).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "Score a file" }).getByText("The saved model no longer matches the model that was approved").first()).toBeVisible();
   await expect(page.getByTestId("scored-with").first()).toHaveText(`Was to score with: ${second.name}.`);
+  await page.getByRole("tab", { name: "This week's list" }).click();
   await expect(page.getByRole("table", { name: "Predictions run in this browser tab" })).toContainText("none (nothing was scored)");
   await expect(page.locator("main")).not.toContainText(/digest|manifest|package|approve it again/i);
   await shot(page, "releases-3b-mismatch-light");

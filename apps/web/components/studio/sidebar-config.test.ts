@@ -58,11 +58,12 @@ test("v7 sidebar: grouped, in the v7 order and words", () => {
   ]);
 });
 
-test("Goal and Predictions need the id of the test design / model of the project, else they are left out", () => {
+test("Predictions needs the id of a model of the project, else it is left out; Goal falls back to the project-level page", () => {
   const without = resolveSidebar("developer", { capabilities: allOn, projectBase: "/projects/p1" });
-  assert.ok(!ids(without).includes("goal") && !ids(without).includes("predictions"));
+  assert.ok(!ids(without).includes("predictions"));
   const bad = resolveSidebar("developer", { capabilities: allOn, projectBase: "/projects/p1", targets: { split_plan: "../x", project_model: null } });
-  assert.ok(!ids(bad).includes("goal") && !ids(bad).includes("predictions"));
+  assert.ok(!ids(bad).includes("predictions"));
+  for (const groups of [without, bad]) assert.equal(Object.fromEntries(groups.flatMap((g) => g.items.map((i) => [i.id, i.href]))).goal, "/projects/p1/goal");
   const hrefs = Object.fromEntries(resolveSidebar("developer", { capabilities: allOn, projectBase: "/projects/p1", targets: { split_plan: SPLIT, project_model: MODEL } }).flatMap((g) => g.items.map((i) => [i.id, i.href])));
   assert.equal(hrefs.goal, `/projects/p1/splits/${SPLIT}`);
   assert.equal(hrefs.predictions, "/projects/p1/predictions");

@@ -292,7 +292,8 @@ def _dataset_list_item(row: Dataset, *, viewer_id: UUID | None = None) -> Datase
         uploader=creator_read(
             user_id=row.asset.created_by if row.asset is not None else None,
             service_token_id=row.uploaded_by_service_token_id, viewer_id=viewer_id,
-            kind="person",  # a dataset always comes from a person or a connected tool, never a rule
+            # A person or a connected tool, never a rule; no recorded uploader (removed user, old row) is `unknown`.
+            kind="person" if row.asset is not None and row.asset.created_by is not None else "unknown",
         ),
         created_at=row.created_at,
     )

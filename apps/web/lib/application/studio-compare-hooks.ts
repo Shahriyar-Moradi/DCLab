@@ -161,7 +161,7 @@ export function supersedeDecision(input: { decisionId: string; rationale: string
 export function useWriteInvalidation() {
   const client = useQueryClient();
   return () => {
-    for (const name of ["project-refs", "graph", "decisions", "experiments", "experiment", "experiment-detail", "model-version", "compare", "decision", "verdict", "releases"]) {
+    for (const name of ["project-refs", "graph", "decisions", "experiments", "experiment", "experiment-detail", "model-version", "project-model-versions", "compare", "decision", "verdict", "releases"]) {
       void client.invalidateQueries({ queryKey: workspaceQueryKey("v1", name) });
     }
   };

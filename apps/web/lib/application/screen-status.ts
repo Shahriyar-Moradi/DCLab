@@ -56,7 +56,7 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "home", name: "Home", group: "Workspace", href: "/home", feature: "home",
     tags: [{ kind: "working" }],
-    missing: "Nothing for the daily job. A running run shows its status, not yet which fold it is on.",
+    missing: "Nothing for the daily job. A running run shows the fold it is on; the things that need you have no evidence numbers yet, only who raised them and where.",
   },
   {
     id: "inbox", name: "Inbox", group: "Workspace", href: "/inbox", feature: "inbox",
@@ -66,7 +66,7 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "projects", name: "Projects", group: "Workspace", href: "/projects", feature: "projects",
     tags: [{ kind: "working" }],
-    missing: "Nothing. The list does not show each project's goal and best score yet; Home does.",
+    missing: "Nothing for the daily job. The score column is the cross-validation score of the model in use, not the best run's; the wizard keeps its four steps.",
   },
   {
     id: "data", name: "Data", group: "Project", href: null, feature: "data",
@@ -91,12 +91,12 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "model", name: "Model", group: "Project", href: null, feature: "models",
     tags: [{ kind: "working" }],
-    missing: "Approving a model for scoring and going back to an earlier one work. A table of right and wrong answers and the list of columns new data must have are not shown yet.",
+    missing: "Versions, the final test with its table of right and wrong answers, the saved file and its checks, and the columns new data must have are shown; approving and going back work. A chosen threshold is not applied to scoring without a new model version.",
   },
   {
     id: "predictions", name: "Predictions", group: "Project", href: null, feature: "predictions",
     tags: [{ kind: "working" }],
-    missing: "Scoring a file and weekly scoring work. The reasons for each row are in the downloaded file; a list of rows with their reasons on this screen is not built yet.",
+    missing: "Scoring a file, weekly scoring and the list with the top reasons for each row work. Only scorings from this browser tab and the weekly schedule are listed, and at most the first 10,000 rows of a list show on screen.",
   },
   {
     id: "monitoring", name: "Monitoring", group: "Project", href: null, feature: "monitoring",
@@ -194,7 +194,7 @@ const PROJECT_PAGE = new RegExp(`^/projects/${UUID}/([a-z]+)(?:/|$)`);
 
 /** Project route section -> screen. Own keys only. */
 const PROJECT_SECTION: Readonly<Record<string, ScreenId>> = {
-  data: "data", splits: "goal", experiments: "experiments", pipeline: "experiments", features: "experiments",
+  data: "data", splits: "goal", goal: "goal", experiments: "experiments", pipeline: "experiments", features: "experiments",
   improve: "improve", models: "model", predictions: "predictions", monitoring: "monitoring",
   decisions: "history", graph: "history", lab: "assistant",
 };

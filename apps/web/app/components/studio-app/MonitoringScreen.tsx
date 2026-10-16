@@ -11,6 +11,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmApproval } from "@/app/components/studio-app/ApprovedForScoring";
+import { OwnStepsCard, TrendsSection } from "@/app/components/studio-app/MonitoringTrends";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
 import { DataTable, type Column } from "@/components/studio/DataTable";
@@ -418,6 +419,7 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
       {o && weeks.length ? (
         <>
           <h2>Weekly checks</h2>
+          {thresholds ? <TrendsSection windows={o.windows} series={o.feature_psi_series} thresholds={thresholds} /> : null}
           <p className="muted">The last {weeks.length} {weeks.length === 1 ? "week" : "weeks"} of the model in use, newest first. Times are UTC. {TABLE_NOTE}</p>
           <DataTable caption="Weekly checks of the model in use, newest first" columns={columns} rows={weeks} rowKey={(r) => r.key} highlightRow={(r) => r.key === week} />
           <div id="week-detail" tabIndex={-1}>
@@ -425,6 +427,7 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
           </div>
         </>
       ) : null}
+      {o ? <OwnStepsCard overview={o} offer={offer} /> : null}
       {o && thresholds ? <LinkOutcomes projectId={projectId} canWrite={canWrite} enabled={o.enabled} status={o.status} thresholds={thresholds} /> : null}
     </>
   );

@@ -27,7 +27,7 @@ export function stepForPath(pathname: string, projectId: string, tab?: string | 
   const section = pathname.slice(prefix.length).split("/")[0];
   switch (section) {
     case "data": return "data";
-    case "splits": return "goal";
+    case "splits": case "goal": return "goal";
     case "experiments": case "pipeline": case "features": return "experiments";
     case "improve": return "improve";
     case "models": return tab === "score" ? "predictions" : "models";
@@ -55,7 +55,8 @@ export type FlowInput = {
 function hrefFor(id: FlowStepId, projectId: string, targets: FlowInput["targets"]): string | null {
   const base = `/projects/${projectId}`;
   switch (id) {
-    case "goal": return isUuid(targets.split_plan) ? safeInternalHref(`${base}/splits/${targets.split_plan}`) : null;
+    // Before the first test design exists the project-level Goal page shows the goal (V7 UI-C).
+    case "goal": return safeInternalHref(isUuid(targets.split_plan) ? `${base}/splits/${targets.split_plan}` : `${base}/goal`);
     case "predictions": return isUuid(targets.project_model) ? safeInternalHref(`${base}/predictions`) : null;
     default: return safeInternalHref(`${base}/${id}`);
   }
@@ -128,10 +129,17 @@ export function stepScreenForPath(pathname: string, projectId: string): StepScre
   if (parts.length !== 1) return null;
   switch (parts[0]) {
     case "data": case "experiments": case "improve": case "monitoring": case "predictions": return parts[0];
+    case "goal": return "goal";
     case "models": return "models";
     case "decisions": return "history";
     default: return null;
   }
+}
+
+/** The page of a step screen (History included); null for a non-UUID project or a step whose page needs an id the project lacks. */
+export function stepScreenHref(id: StepScreenId, projectId: string, targets: FlowInput["targets"]): string | null {
+  if (!isUuid(projectId)) return null;
+  return id === "history" ? safeInternalHref(`/projects/${projectId}/decisions`) : hrefFor(id, projectId, targets);
 }
 
 /**
@@ -144,7 +152,7 @@ export function nextStepFor(input: { projectId: string; pathname: string; availa
   const index = NEXT_STEP_ORDER.findIndex((step) => step.id === here);
   for (const step of NEXT_STEP_ORDER.slice(index + 1)) {
     if (!input.available.has(step.id)) continue;
-    const href = step.id === "history" ? safeInternalHref(`/projects/${input.projectId}/decisions`) : hrefFor(step.id, input.projectId, input.targets);
+    const href = stepScreenHref(step.id, input.projectId, input.targets);
     if (href) return { ...step, href };
   }
   return null;

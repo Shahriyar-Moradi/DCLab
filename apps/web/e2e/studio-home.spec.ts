@@ -8,7 +8,7 @@ test("home shows real numbers, projects, activity and the inbox preview", async 
   await proposeDecision(page, projectId, experimentId, "Home spec proposal");
 
   await page.goto("/home");
-  await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
   await expect(page.getByText(/Good (morning|afternoon|evening)/)).toBeVisible();
   // AI is off on this stack: said plainly, no AI health card, no spend.
   await expect(page.getByText("AI suggestions are switched off.")).toBeVisible();
@@ -33,7 +33,7 @@ test("home shows real numbers, projects, activity and the inbox preview", async 
   await expect(row).toContainText("churn");
   await expect(row).toContainText("Finished");
   await expect(row.getByRole("link", { name })).toHaveAttribute("href", `/projects/${projectId}/experiments`);
-  await expect(table.getByRole("columnheader", { name: "Model in use" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Model in use", exact: true })).toBeVisible();
 
   const feed = page.getByRole("list", { name: "Recent activity" });
   await expect(feed).toContainText(/Run \w+ (finished|was queued)|Waiting for your decision/);
@@ -55,7 +55,7 @@ test("home shows real numbers, projects, activity and the inbox preview", async 
   // A failed governance read says nothing about AI: no "switched off" claim, and the page still works.
   await page.route("**/api/backend/v1/governance", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "internal_error", message: "boom", retryable: false, details: {} } }) }));
   await page.goto("/home");
-  await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
   await expect(page.getByRole("list", { name: "Waiting for you" })).toBeVisible();
   await expect(page.getByText("AI suggestions are switched off.")).toHaveCount(0);
   expect(await page.locator("main").innerText()).not.toMatch(/AI is off|switched off|AI health/i);
@@ -83,7 +83,7 @@ test("home shows real numbers, projects, activity and the inbox preview", async 
   // Mobile: no horizontal page scroll.
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/home");
-  await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.setViewportSize({ width: 1280, height: 720 });
   // No holdout values on Home.

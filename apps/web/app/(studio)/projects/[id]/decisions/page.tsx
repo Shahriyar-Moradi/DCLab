@@ -9,13 +9,18 @@ import { PageGuide } from "@/components/studio/PageGuide";
 import Link from "next/link";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill, type PillTone } from "@/components/studio/Pill";
+import { TabPanel, Tabs } from "@/components/studio/Tabs";
 import { Term } from "@/components/studio/Term";
+import { LineageView, NewerFileBanner } from "@/app/components/studio-app/LineageView";
 import { QueryNotice, STATUS_TONE, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { plainText, projectHref } from "@/lib/application/command-search";
 import { useProjectDecisions, useProjectExperiments, useProjectRefs, useSession, type StudioDecisionItem } from "@/lib/application";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
 import { graphNodeNames } from "@/lib/application/studio-graph";
-import { correctionFor, evidenceHref, evidenceName, stateWords, subjectName, whatWords, whoWords } from "@/lib/application/studio-history";
+import {
+  approvalsHref, correctionFor, eventRow, evidenceHref, evidenceName, mergeLog, stateWords, subjectName, whatWords, whoWords, type EventRow, type LogRow,
+} from "@/lib/application/studio-history";
+import { useProjectActivity } from "@/lib/application/studio-history-hooks";
 import {
   acceptRefProposal, resolveDecision, supersedeDecision, useDecisionDetail, useWriteInvalidation, type StudioDecisionDetail,
 } from "@/lib/application/studio-compare-hooks";
@@ -36,6 +41,9 @@ const stateTone = (state: string): PillTone => (Object.hasOwn(STATUS_TONE, state
 
 type ListItem = StudioDecisionItem;
 type Mode = "accept" | "reject" | "supersede";
+type Row = LogRow<ListItem>;
+const EVENT_TONE: Record<EventRow["whoKind"], PillTone> = { rule: "det", agent: "ai", human: "gray" };
+const HISTORY_TABS = [{ id: "log", label: "Log" }, { id: "lineage", label: "Lineage" }];
 
 function DecisionDrawer({ projectId, summary, names, myUserId, canWrite, initialMode, onClose }: {
   projectId: string; summary: ListItem; names: ReadonlyMap<string, string>; myUserId: string | null; canWrite: boolean; initialMode: Mode | null; onClose: () => void;
@@ -141,6 +149,7 @@ function DecisionDrawer({ projectId, summary, names, myUserId, canWrite, initial
             </>
           ) : null}
           {note ? <p className="muted">{note.text}</p> : null}
+          {correction.kind === "approvals" ? <p className="muted">{correction.text} {approvalsHref(projectId) ? <Link href={approvalsHref(projectId) as string}>{correction.label}</Link> : correction.label}. That adds a new entry.</p> : null}
           {error ? <Banner tone="crit" actions={<button type="button" className="btn" onClick={() => { invalidate(); setError(null); }}>Reload</button>}><b>{error.title}.</b> {error.detail}</Banner> : null}
         </>
       ) : null}
@@ -156,60 +165,93 @@ function DecisionsPageInner() {
   const { user } = useSession();
   const canWrite = hasCapability(user, CAPABILITIES.workspaceExecuteMl);
   // `?record=<uuid>` (the Run evidence page's links) opens that entry; anything that is not a UUID is ignored.
-  const linked = parseRecordParam(useSearchParams().get("record"));
+  const params = useSearchParams();
+  const linked = parseRecordParam(params.get("record"));
+  const [tab, setTab] = useState(() => (params.get("tab") === "lineage" && !linked ? "lineage" : "log"));
+  const activity = useProjectActivity(id);
   const [open, setOpen] = useState<{ id: string; mode: Mode | null } | null>(linked ? { id: linked, mode: null } : null);
-  const items = decisions.data?.items ?? [];
+  const items = useMemo(() => decisions.data?.items ?? [], [decisions.data]);
   const names = useMemo(() => graphNodeNames(graph.data?.nodes ?? [], runs.data?.items ?? [], !!runs.data?.next_cursor || !runs.data, graph.data?.edges), [graph.data, runs.data]);
   const inList = items.find((d) => d.id === open?.id) ?? null;
   // An entry older than the newest 100 is read by id, and only shown when it belongs to this project.
   const older = useDecisionDetail(open && decisions.data && !inList ? open.id : null);
   const selected = inList ?? (older.data && older.data.id === open?.id && older.data.project_id === id ? older.data : null);
   const pending = items.filter((d) => d.effective_state === "proposed").length;
-  const lineage = projectHref(id, "graph");
-  const columns: Column<ListItem>[] = [
-    { key: "recorded", header: "When", sortValue: (d) => d.recorded_at, render: (d) => formatWhen(d.recorded_at) },
-    { key: "actor", header: "Who", render: (d) => <Pill tone={actorTone(d.actor.kind)}>{whoWords(d.actor, user?.id)}</Pill> },
+  const events = useMemo(() => (activity.data?.items ?? []).flatMap((e) => { const row = eventRow(e, id, names); return row ? [row] : []; }), [activity.data, id, names]);
+  const activityOldest = activity.data?.next_cursor ? activity.data.items.at(-1)?.occurred_at ?? null : null;
+  const log = useMemo(() => mergeLog(items, !!decisions.data?.next_cursor, events, activityOldest), [items, decisions.data, events, activityOldest]);
+  const approvals = approvalsHref(id);
+  const lineageHref = projectHref(id, "graph");
+  const columns: Column<Row>[] = [
+    { key: "recorded", header: "When", sortValue: (r) => r.at, render: (r) => formatWhen(r.at) },
+    { key: "actor", header: "Who", render: (r) => (r.type === "event" ? <Pill tone={EVENT_TONE[r.event.whoKind]}>{r.event.who}</Pill> : <Pill tone={actorTone(r.item.actor.kind)}>{whoWords(r.item.actor, user?.id)}</Pill>) },
     {
       key: "what", header: "What",
-      render: (d) => (
+      render: (r) => (r.type === "event" ? r.event.what : (
         <>
-          {whatWords(d.decision_type)}
-          <span className="muted block">About {subjectName(d.subject, names)}</span>
-          {d.effective_state !== "accepted" ? <Pill tone={stateTone(d.effective_state)}>{stateWords(d.effective_state)}</Pill> : null}
+          {whatWords(r.item.decision_type)}
+          <span className="muted block">About {subjectName(r.item.subject, names)}</span>
+          {r.item.effective_state !== "accepted" ? <Pill tone={stateTone(r.item.effective_state)}>{stateWords(r.item.effective_state)}</Pill> : null}
         </>
-      ),
+      )),
     },
-    { key: "evidence", header: "Evidence", render: (d) => <button type="button" className="btn" onClick={() => setOpen({ id: d.id, mode: null })}>Open<span className="sr-only"> the evidence for: {whatWords(d.decision_type)}, {formatWhen(d.recorded_at)}</span></button> },
     {
-      key: "undo", header: "Correct",
-      render: (d) => {
+      key: "evidence", header: "Evidence",
+      render: (r) => (r.type === "event"
+        ? (r.event.href ? <Link href={r.event.href}>{r.event.linkLabel}<span className="sr-only">: {r.event.what}, {formatWhen(r.at)}</span></Link> : <span className="muted">—</span>)
+        : <button type="button" className="btn" onClick={() => setOpen({ id: r.item.id, mode: null })}>Open<span className="sr-only"> the evidence for: {whatWords(r.item.decision_type)}, {formatWhen(r.at)}</span></button>),
+    },
+    {
+      key: "undo", header: "Undo or correct",
+      render: (r) => {
+        if (r.type === "event") return <span className="muted">{r.event.undo}</span>;
+        const d = r.item;
         const c = correctionFor(d.decision_type, d.effective_state);
         if ((c.kind === "answer" || c.kind === "correct") && !canWrite) return <span className="muted">Needs permission to change this workspace</span>;
         if (c.kind === "answer" || c.kind === "correct") {
           return <button type="button" className={c.kind === "answer" ? "btn primary" : "btn"} onClick={() => setOpen({ id: d.id, mode: c.kind === "correct" ? "supersede" : null })}>{c.label}<span className="sr-only">: {whatWords(d.decision_type)}, {formatWhen(d.recorded_at)}</span></button>;
         }
+        if (c.kind === "approvals") return <span className="muted">{c.text} {approvals ? <Link href={approvals}>{c.label}<span className="sr-only"> ({formatWhen(d.recorded_at)})</span></Link> : c.label}.</span>;
         return c.kind === "note" ? <span className="muted">{c.text}</span> : <span className="muted">—</span>;
       },
     },
   ];
   return (
     <>
-      <PageHead title="History" subtitle="A plain log of every change to this project: who made it (you, the rules, a connected tool or the assistant), what it was, and when. Corrections add a new entry; nothing is deleted." actions={lineage ? <Link className="btn" href={lineage}>Lineage</Link> : null} />
+      <PageHead title="History" subtitle="A plain log of every change to this project: who made it (you, the rules, a connected tool or the assistant), what it was, and when. Corrections add a new entry; nothing is deleted." />
       <PageGuide
         purpose="See how the project got to where it is, and answer suggestions that wait for you."
         howTo={<>Each row is one <Term definition="A saved note of a choice (for example putting a model in use), with who made it and the evidence. Corrections add a new entry; nothing is edited or deleted.">History entry</Term>. Open its evidence to see the reason and what it was based on. A suggestion waits for your answer: Accept or Reject it. An entry a person recorded can be corrected with a reason; for anything else the row says where it is changed.</>}
-        youGet="The newest 100 entries, newest first, with those made by the rules, by connected tools, by the assistant and by people marked separately."
+        youGet="The newest 100 entries, newest first, with uploads, final tests, drift alerts and weekly scorings beside them, and those made by the rules, by connected tools, by the assistant and by people marked separately. The Lineage tab shows what was built from what."
         attention={pending ? `${pending} suggestion${pending === 1 ? " is" : "s are"} waiting for your answer.` : undefined}
       />
-      {!canWrite && decisions.data ? <Banner tone="info">{NO_WRITE} You can still read every entry.</Banner> : null}
-      {decisions.isError ? <QueryNotice error={decisions.error} what="History" /> : null}
-      {decisions.isPending ? <p role="status">Loading History…</p> : null}
-      {decisions.data ? (
-        <div className={selected ? "grid cols-2" : undefined}>
-          <DataTable caption="History" columns={columns} rows={items} rowKey={(d) => d.id} highlightRow={(d) => d.id === open?.id} emptyMessage="Nothing has happened in this project yet." />
-          {selected ? <DecisionDrawer key={`${selected.id}:${open?.mode ?? ""}`} projectId={id} summary={selected} names={names} myUserId={user?.id ?? null} canWrite={canWrite} initialMode={open?.mode ?? null} onClose={() => setOpen(null)} /> : null}
-        </div>
-      ) : null}
+      <NewerFileBanner projectId={id} graph={graph.data} />
+      <Tabs idPrefix="history" label="History views" value={tab} onChange={setTab} items={HISTORY_TABS} />
+      <TabPanel idPrefix="history" id="log" active={tab === "log"}>
+        {tab === "log" ? (
+          <>
+            {!canWrite && decisions.data ? <Banner tone="info">{NO_WRITE} You can still read every entry.</Banner> : null}
+            {decisions.isError ? <QueryNotice error={decisions.error} what="History" /> : null}
+            {decisions.isPending ? <p role="status">Loading History…</p> : null}
+            {activity.isError && decisions.data ? <Banner tone="warn" actions={<button type="button" className="btn" onClick={() => void activity.refetch()}>Reload</button>}>Uploads, final tests, drift alerts and weekly scorings could not be loaded, so only History entries are listed.</Banner> : null}
+            {decisions.data ? (
+              <div className={selected ? "grid cols-2" : undefined}>
+                <DataTable caption="History" columns={columns} rows={log.rows} rowKey={(r) => r.key} highlightRow={(r) => r.type === "decision" && r.item.id === open?.id} emptyMessage="Nothing has happened in this project yet." />
+                {selected ? <DecisionDrawer key={`${selected.id}:${open?.mode ?? ""}`} projectId={id} summary={selected} names={names} myUserId={user?.id ?? null} canWrite={canWrite} initialMode={open?.mode ?? null} onClose={() => setOpen(null)} /> : null}
+              </div>
+            ) : null}
+            {decisions.data && log.note ? <p className="muted v7-history-event-note">{log.note}</p> : null}
+          </>
+        ) : null}
+      </TabPanel>
+      <TabPanel idPrefix="history" id="lineage" active={tab === "lineage"}>
+        {tab === "lineage" ? (
+          <>
+            <p className="muted">How the project&apos;s versions connect: data, test design, runs and models. ★ marks the versions in use. Select an item to see its details. {lineageHref ? <Link href={lineageHref}>Open Lineage on its own page</Link> : null}</p>
+            <LineageView projectId={id} />
+          </>
+        ) : null}
+      </TabPanel>
     </>
   );
 }

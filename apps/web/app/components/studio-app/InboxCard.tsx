@@ -13,7 +13,8 @@ import { acceptRefProposal, resolveDecision, supersedeDecision, useDecisionDetai
 import { proposedMoves } from "@/lib/application/studio-compare";
 import { decideProposal, useInboxInvalidation, useRunNamer, type StudioInboxItem } from "@/lib/application/studio-inbox-hooks";
 import {
-  actionRoute, answerLines, approvalNote, comparableRunIds, disabledReason, evidenceLinks, findAction, inboxCompareHref, inboxTitle, lookup, mapInboxError, outcomeWords, questionHref, refVersionsFor, subjectLink, suggestedBy,
+  DRIFT_STATS_NOTE, actionRoute, agreementPill, answerLines, approvalNote, comparableRunIds, disabledReason, driftSentence, driftStats, evidenceLinks, findAction, inboxCompareHref, inboxTitle, lookup,
+  mapInboxError, monitoringHref, outcomeWords, questionHref, refVersionsFor, resolverPill, subjectLink, suggestedBy,
 } from "@/lib/application/studio-inbox";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
@@ -135,7 +136,12 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
   const subject = subjectLink(item, runName);
   const evidence = evidenceLinks(item, runName);
   const title = inboxTitle(item, item.subject.kind === "experiment" && isUuid(item.subject.id) ? runName(item.subject.id) : null);
-  const by = suggestedBy(item.proposed_by, item.kind);
+  const drift = item.kind === "drift_alert";
+  const by = drift ? "Flagged by the weekly monitoring rule" : suggestedBy(item.proposed_by, item.kind);
+  const agreement = agreementPill(item.agreement, item.tab, aiOff);
+  const resolver = resolverPill(item.resolved_by, item.tab);
+  const stats = drift ? driftStats(item.monitoring) : [];
+  const monitoring = drift ? monitoringHref(item.project_id) : null;
   const auto = item.tab === "applied_automatically";
   // The AI panel is dropped only when AI is known off and nothing was recorded; a recorded AI answer is evidence and stays.
   const showAi = !(aiOff === true && !item.ai_answer);
@@ -160,12 +166,21 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
         {item.decision_point_key ? <> · about {plainText(item.decision_point_key.replaceAll("_", " "), 60)}</> : null}
         {item.expires_at ? <> · expires {formatWhen(item.expires_at)}</> : null}
       </p>
-      {by ? (
-        <p>
-          <Pill tone={item.proposed_by === "rule" ? "det" : item.proposed_by === "person" || item.proposed_by === "run" ? "gray" : "ai"}>{by}</Pill>
+      {by || agreement || resolver ? (
+        <p className="v7-inbox-pills">
+          {by ? <Pill tone={item.proposed_by === "rule" ? "det" : item.proposed_by === "person" || item.proposed_by === "run" ? "gray" : "ai"}>{by}</Pill> : null}
+          {agreement ? <span data-testid="inbox-agreement"><Pill tone={agreement.tone}>{agreement.label}</Pill></span> : null}
+          {resolver ? <span data-testid="inbox-resolver"><Pill tone={item.resolved_by?.kind === "rule" ? "det" : "gray"}>{resolver}</Pill></span> : null}
           {item.proposed_by === "agent" ? <span className="muted"> Its text is not verified.</span> : null}
         </p>
       ) : null}
+      {drift ? <p data-testid="drift-sentence">{driftSentence(item)}</p> : null}
+      {stats.length ? (
+        <dl className="v7-inbox-stats" aria-label="The week's numbers">
+          {stats.map((st) => <div key={st.label}><dt>{st.label}</dt><dd>{st.value}</dd></div>)}
+        </dl>
+      ) : null}
+      {stats.length ? <p className="muted">{DRIFT_STATS_NOTE}</p> : null}
       {auto ? <p role="note"><b>Applied automatically.</b> {item.status === "reverted" ? "It was undone." : canUndo ? "Nobody approved it first. Undo puts the previous value back." : "Nobody approved it first. No undo is offered for this one here."}</p> : null}
       {subject || evidence.length ? (
         <p>
@@ -195,6 +210,7 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
               );
             })}
             {answerHref ? <Link className="btn primary" href={answerHref}>Answer on the run page</Link> : null}
+            {monitoring ? <Link className={`btn ${item.tab === "needs_decision" ? "primary" : ""}`} href={monitoring}>Open Monitoring<span className="sr-only"> for {title}</span></Link> : null}
             <CompareLink item={item} title={title} />
           </div>
         </>

@@ -161,6 +161,9 @@ class RunProgressRead(BaseModel):
     fold_number: int | None = Field(default=None, description="1-based CV fold of the latest `cv_fold_*` event.")
     folds_planned: int | None = Field(default=None, description="CV folds of the run's split plan (as planned).")
     candidates_finished: int = Field(default=0, description="Candidates that finished training so far.")
+    fold_completed: bool = Field(
+        default=False, description="The latest event is `cv_fold_completed`: fold `fold_number` is done."
+    )
     updated_at: datetime | None = Field(default=None, description="Time of the latest event.")
 
 
@@ -188,6 +191,9 @@ class ProjectSummaryRead(BaseModel):
     )
     waiting_decisions: int = Field(
         default=0, description="Items in this caller's `needs_decision` inbox tab for the project."
+    )
+    running_count: int = Field(
+        default=0, description="Unfinished runs of the project (queued, running, stopping or waiting for an answer)."
     )
     untrusted_fields: list[str] = Field(
         default_factory=lambda: ["goal.objective", "goal.target_column", "goal.task_type", "goal.primary_metric"],

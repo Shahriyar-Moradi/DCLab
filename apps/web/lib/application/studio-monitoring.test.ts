@@ -5,6 +5,7 @@ import {
   DATES_LATER, DATES_NOT_JUDGED, MAY_DIFFER, NOTHING_AUTOMATIC, NOT_THE_MODEL, PAUSED_NOTE, REAL_NOT_TEST, REFUSED_SET, TABLE_NOTE, THRESHOLDS_READ_ONLY,
   THRESHOLDS_UNAVAILABLE, UNCONFIRMED, WEEK_DEFINITION, canAct, dateNote, dateSentence, driftBars, featureList, featureSentence, featureStatusWord, goBackOffer,
   headline, idCaveat, isLinkConflict, linkConfirmWords, linkedRows, looksLikeId, mapLinkError, mapUploadError, metricLabel, numberPair, outcomeCell, outcomeView,
+  REAL_TREND_NOTE, ownSteps, trendCell, psiTrend, realTrend, realTrendEmpty, seriesColumns, shortWeek, weekTicks,
   plainNumber, psiDefinition, scopeText, scoreSentences, statusWords, thresholdLines, weekKey, weekLabel, weekRows, weekSentence,
   type FeatureLike, type OverviewLike, type Thresholds, type WeekSummaryLike,
 } from "./studio-monitoring.ts";
@@ -361,11 +362,160 @@ test("S5: link refusals are fixed sentences by code, then status; never the serv
   assert.equal(mapUploadError(err(500, "__proto__")).title, "Could not confirm the upload");
 });
 
+test("UI-E trends: weeks oldest first and once each, at most 12; a missing week is a gap, never a zero", () => {
+  const ws = ["2026-09-21", "2026-10-05", "2026-09-28", "2026-10-05", "bad"].map((d, i) => week({ window_start: d === "bad" ? "not a date" : `${d}T00:00:00Z`, max_psi: 0.05 + i / 100 }));
+  assert.deepEqual(weekTicks(ws).map((w) => w.key), ["2026-09-21", "2026-09-28", "2026-10-05"]);
+  assert.equal(shortWeek("2026-10-05T00:00:00Z"), "5 Oct");
+  assert.equal(shortWeek("nope"), "—");
+  const many = Array.from({ length: 15 }, (_, i) => week({ window_start: new Date(Date.UTC(2026, 0, 5 + 7 * i)).toISOString() }));
+  assert.equal(weekTicks(many).length, 12);
+  assert.equal(weekTicks(many)[11].key, "2026-04-13");
+  const series = [{ name: "plan", kind: "categorical", points: [{ window_start: "2026-09-21T00:00:00Z", psi: 0.31, status: "alert" }, { window_start: "2026-09-28T00:00:00Z", psi: null }] }];
+  const chart = psiTrend(ws, series, null, T);
+  assert.deepEqual(chart.lines.map((l) => l.id), ["column", "largest"]);
+  assert.deepEqual(chart.lines[0].values, [0.31, null, null]);
+  assert.deepEqual(chart.lines[1].values.map((v) => v?.toFixed(2)), ["0.05", "0.07", "0.06"]); // the first entry of a repeated week wins (newest-first reads)
+  assert.deepEqual(chart.refs.map((r) => r.value), [0.1, 0.2]);
+  assert.deepEqual(chart.rows[1], ["28 Sep", "—", "0.07"]);
+  assert.match(keep(chart.summary), /^Input change \(PSI\) by week, oldest first\. plan: 21 Sep 0\.31, 28 Sep —, 5 Oct —\. Largest change of any column: /);
+  assert.match(keep(chart.summary), /Watch line 0\.10, alert line 0\.20; crossing a line counts only when the statistical test agrees\.$/);
+  assert.equal(chart.note, null);
+});
+
+test("UI-E trends: the axis stops at 3x the alert line and says so; one week has no trend; no series draws only the largest", () => {
+  const big = psiTrend([week({ max_psi: 2.5 })], [], null, T);
+  assert.equal(big.max, 0.6000000000000001);
+  assert.equal(big.lines.length, 1);
+  assert.match(keep(big.note ?? ""), /Only one week has been checked so far/);
+  assert.match(big.note ?? "", /No column has a weekly series yet/);
+  assert.match(big.note ?? "", /drawn at the top; the table has the exact number/);
+  assert.equal(psiTrend([], undefined, null, T).summary, keep("No week has been checked yet."));
+});
+
+test("UI-E trends: column names are untrusted plain text, capped; dates and broken entries are not columns; a bad choice falls back", () => {
+  const series = [
+    { name: "a\u202enasty\nname" + "x".repeat(90), kind: "numeric", points: [] },
+    { name: "signup_date", kind: "date", points: [] },
+    null as unknown as { name: string; points: [] },
+    { name: "__proto__", kind: "numeric", points: [{ window_start: MON, psi: -1 }] },
+  ];
+  const cols = seriesColumns(series);
+  assert.deepEqual(cols.map((c) => c.index), [0, 3]);
+  assert.ok(cols[0].name.length <= 60 && !/[\u202e\n]/.test(cols[0].name));
+  assert.equal(cols[1].name, "__proto__");
+  const chart = psiTrend([week()], series, 3, T);
+  assert.equal(chart.lines[0].label, "__proto__");
+  assert.deepEqual(chart.lines[0].values, [null]); // a negative PSI is not drawn
+  assert.equal(psiTrend([week()], series, 1, T).lines[0].label, cols[0].name); // a date column cannot be picked
+});
+
+test("UI-E real precision and recall: values only in 0..1, gaps for missing weeks, each empty reason distinct", () => {
+  const ws = [
+    { ...week({ window_start: "2026-10-05T00:00:00Z", outcomes_status: "not_enough_labels", n_labelled: 20 }) },
+    { ...week({ window_start: "2026-09-28T00:00:00Z", outcomes_status: "measured", n_labelled: 1400 }), outcome_precision: 0.48, outcome_recall: 0.8 },
+    { ...week({ window_start: "2026-09-21T00:00:00Z", outcomes_status: "measured", n_labelled: 900 }), outcome_precision: 1.4, outcome_recall: 0.79 },
+  ];
+  assert.equal(realTrendEmpty(ws), null);
+  const chart = realTrend(ws);
+  assert.deepEqual(chart.lines.map((l) => l.values), [[null, 0.48, null], [0.79, 0.8, null]]);
+  assert.deepEqual(chart.rows[1], ["28 Sep", "0.48", "0.80", "1,400"]);
+  assert.match(keep(chart.note ?? ""), /^2 of 3 weeks have no result yet/);
+  assert.match(realTrend(ws.slice(1)).note ?? "", /^1 of 2 weeks has no result yet; it is left as a gap|^1 of 2 weeks has no result yet/);
+  keep(chart.summary);
+  keep(REAL_TREND_NOTE);
+  const empties = [
+    realTrendEmpty([week({ outcomes_status: "measured" })]),
+    realTrendEmpty([week({ outcomes_status: "not_linked" })]),
+    realTrendEmpty([week({ outcomes_status: "not_enough_labels" })]),
+    realTrendEmpty([]),
+  ];
+  assert.equal(new Set(empties.slice(0, 3)).size, 3);
+  assert.match(empties[0] ?? "", /only for yes\/no goals/);
+  assert.match(empties[1] ?? "", /No outcomes file is linked yet/);
+  empties.forEach((e) => keep(e ?? ""));
+  assert.doesNotMatch(REAL_TREND_NOTE, /final test/i);
+});
+
+test("UI-E steps: weekly checks and the drift rule show their real state; retraining is Planned; going back is a person's", () => {
+  const offer = { kind: "offer" as const, modelVersionId: M_USE, model: "Model v2", text: "", viewerText: "" };
+  const alert = ownSteps(overview({ status: "alert", latest: week({ status: "alert" }) }), offer);
+  assert.deepEqual(alert.map((s) => s.state), ["on", "on", "planned", "planned", "yours"]);
+  assert.match(alert[0].text, /latest check was the week of Mon, 5 Oct 2026 \(UTC\)\. A week is checked only after the model in use scores a file in it\./);
+  assert.equal(alert[0].title, "Check each week the model in use scores a file");
+  // S1: the drift rule's pill follows the status tone (never green on alert / watch / not enough data).
+  assert.equal(alert[1].tone, "crit");
+  assert.equal(ownSteps(overview({ status: "watch", latest: week({ status: "watch" }) }), { kind: "hidden" })[1].tone, "warn");
+  assert.equal(ownSteps(overview({ status: "not_enough_data", latest: week({ status: "not_enough_data" }) }), { kind: "hidden" })[1].tone, "gray");
+  assert.equal(ownSteps(overview(), { kind: "hidden" })[1].tone, "ok");
+  assert.match(ownSteps(overview(), { kind: "hidden" })[4].text, /When an earlier approved model exists/);
+  assert.match(alert[1].text, /^Alert in the week of .*listed in the Inbox\.$/);
+  assert.equal(alert[2].pill, "Planned");
+  assert.match(alert[2].text, /never trains a model again on its own/);
+  assert.match(alert[4].text, /Model v2/);
+  const paused = ownSteps(overview({ enabled: false }), { kind: "hidden" });
+  assert.equal(paused[0].pill, "Paused");
+  const none = ownSteps(overview({ status: "no_model_in_use", latest: null, windows: [] }), { kind: "none", text: "" });
+  assert.equal(none[0].pill, "Waiting");
+  assert.equal(none[1].state, "off");
+  assert.match(none[4].text, /no earlier approved model/);
+  const fresh = ownSteps(overview({ status: "no_windows", latest: null, windows: [] }), { kind: "hidden" });
+  assert.match(fresh[0].text, /first week is checked/);
+  assert.equal(ownSteps(undefined, { kind: "hidden" })[0].pill, "Unknown");
+  const odd = ownSteps(overview({ status: "__proto__", latest: week({ status: "__proto__" }) }), { kind: "hidden" });
+  assert.match(odd[1].text, /does not recognise/);
+  for (const status of ["ok", "watch", "not_enough_data"]) {
+    const steps = ownSteps(overview({ status, latest: week({ status }) }), { kind: "hidden" });
+    assert.notEqual(steps[1].text, alert[1].text);
+    steps.forEach((s) => { keep(s.text); keep(s.title); keep(s.pill); keep(s.who); });
+  }
+  [...alert, ...paused, ...none, ...fresh, ...odd].forEach((s) => { keep(s.text); keep(s.title); keep(s.pill); keep(s.who); });
+  for (const s of [...alert, ...none]) assert.doesNotMatch(s.text, /\bautomatic(ally)? (retrain|switch)/i);
+});
+
+test("UI-E B1: the trend follows the statistical gate: an ok week or point above a line is within chance; a not-enough-data week is not judged", () => {
+  const ws = [
+    week({ window_start: "2026-09-14T00:00:00Z", status: "ok", max_psi: 0.35 }), // above the alert line, but the test said chance
+    week({ window_start: "2026-09-21T00:00:00Z", status: "not_enough_data", summary_code: "too_few_rows", max_psi: 0.9, n_rows: 12 }),
+    week({ window_start: "2026-09-28T00:00:00Z", status: "watch", max_psi: 0.14 }),
+    week({ window_start: "2026-10-05T00:00:00Z", status: "alert", max_psi: 0.31 }),
+  ];
+  const pts = (statuses: Array<[number | null, string | null]>) => ["2026-09-14", "2026-09-21", "2026-09-28", "2026-10-05"].map((d, i) => ({ window_start: `${d}T00:00:00Z`, psi: statuses[i][0], status: statuses[i][1] }));
+  const series = [{ name: "plan", kind: "categorical", points: pts([[0.15, "ok"], [0.9, null], [0.14, "watch"], [0.31, "alert"]]) }];
+  const chart = psiTrend(ws, series, null, T);
+  const [col, largest] = chart.lines;
+  assert.deepEqual(col.marks, ["chance", "not_judged", "judged", "judged"]);
+  assert.deepEqual(largest.marks, ["chance", "not_judged", "judged", "judged"]);
+  assert.deepEqual(largest.values, [0.35, null, 0.14, 0.31]); // the not-judged week is left off the line
+  assert.equal(trendCell(largest, 0), "0.35 (within chance)");
+  assert.equal(trendCell(largest, 1), "0.90 (not judged: too little data)");
+  assert.equal(trendCell(col, 0), "0.15 (within chance)");
+  assert.equal(trendCell(col, 3), "0.31");
+  assert.deepEqual(chart.rows[0], ["14 Sep", "0.15 (within chance)", "0.35 (within chance)"]);
+  assert.match(chart.summary, /14 Sep 0\.35 \(within chance\)/);
+  assert.match(chart.summary, /21 Sep 0\.90 \(not judged: too little data\)/);
+  assert.match(keep(chart.note ?? ""), /hollow dot is above a line but within what chance allows/);
+  assert.match(chart.note ?? "", /too little data is not judged and is left off the lines; the table has its number/);
+  // An ok point below the watch line is plain; a point without a status in a judged week has no mark.
+  const quiet = psiTrend([week({ status: "ok", max_psi: 0.04 })], [{ name: "x", points: [{ window_start: MON, psi: 0.04, status: null }] }], null, T);
+  assert.deepEqual(quiet.lines[0].marks, [null]);
+  assert.deepEqual(quiet.lines[1].marks, ["judged"]);
+  assert.equal(quiet.note, "Only one week has been checked so far, so there is no trend yet.");
+});
+
+test("UI-E S3: outcomes that cannot be joined say so, distinct from not linked and not enough rows", () => {
+  const msg = realTrendEmpty([week({ outcomes_status: "key_not_unique" }), week({ outcomes_status: "not_linked" }), week({ outcomes_status: "no_key_in_scores" })]);
+  assert.match(keep(msg ?? ""), /could not be joined to the scored rows/);
+  assert.notEqual(msg, realTrendEmpty([week({ outcomes_status: "not_linked" })]));
+  assert.notEqual(msg, realTrendEmpty([week({ outcomes_status: "key_not_unique" }), week({ outcomes_status: "not_enough_labels" })]));
+});
+
 test("banned words: no sentence template or aria label uses internal words", () => {
   const labels = ["Show: week of Mon, 5 Oct 2026 (UTC)", "Shown below: week of Mon, 5 Oct 2026 (UTC)", "Go back to the previous model: Model v2", "Judged columns in plain words, largest change first",
     "Date columns, shown but not judged", "Linked outcomes files, newest first", "Weekly checks of the model in use, newest first", "Outcomes file", "Watch and alert lines (read-only)",
     "Real-world results", "Largest input change (PSI)", "Score change (PSI)", "Link real outcomes", "Link this file", "Upload a new outcomes file (optional)",
-    "Only people who can run ML work in this workspace can link an outcomes file."];
+    "Only people who can run ML work in this workspace can link an outcomes file.",
+    "Input change by week", "Real precision and recall by week", "What the system does on its own", "and where it stops for you", "Lines in the chart", "The numbers as a table", "Column",
+    "Largest change of any column", "Nothing on this screen changes the model in use by itself. Switching models, or going back, is always done by a person and saved in History."];
   assert.ok(sentences.length > 80, `collected ${sentences.length}`);
   for (const s of [...sentences, ...labels]) assert.doesNotMatch(s, BANNED, s);
 });

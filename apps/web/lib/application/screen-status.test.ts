@@ -36,6 +36,8 @@ test("project sub-pages map to their step's screen; unknown paths have none", ()
   assert.equal(screenForPath(`/projects/${P}/pipeline/${ID}`), "experiments");
   assert.equal(screenForPath(`/projects/${P}/models/${ID}?tab=score`), "model");
   assert.equal(screenForPath(`/projects/${P}/graph`), "history");
+  assert.equal(screenForPath(`/projects/${P}/goal`), "goal");
+  assert.equal(screenForPath(`/projects/${P}/splits/${ID}`), "goal");
   assert.equal(screenForPath("/projects/new"), "projects");
   assert.equal(screenForPath("/settings/"), "settings");
   for (const path of ["/", "/real", "/projects/not-a-uuid/data", `/projects/${P}/nope`, `/projects/${P}/__proto__`, `/projects/${P}/constructor`, "/__proto__", "/toString"]) {

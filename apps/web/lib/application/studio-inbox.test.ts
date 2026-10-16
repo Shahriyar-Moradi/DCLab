@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DRIFT_STATS_NOTE, agreementPill, driftSentence, driftStats, monitoringHref, resolverPill,
   actionRoute, answerLines, approvalNote, badgeText, comparableRunIds, disabledReason, evidenceLinks, inboxCompareHref, inboxTitle, lookup, mapInboxError, outcomeWords, questionHref, refVersionsFor, subjectLink, suggestedBy, INBOX_TABS, PROPOSED_BY_LABEL, type InboxItemLike,
 } from "./studio-inbox.ts";
 
@@ -170,4 +171,55 @@ test("outcomes and approval notes say what happens, in plain words", () => {
 
 test("tabs use the v7 names", () => {
   assert.deepEqual(INBOX_TABS.map((x) => x.label), ["Needs your decision", "Applied automatically", "Done"]);
+});
+
+const BANNED = /\b(release|champion|ref|digest|holdout|manifest|package|slot|tick|revision|window|proposal)s?\b/i;
+
+test("UI-E drift alert: a plain title per tab, the week's numbers only, fixed sentences and a Monitoring link", () => {
+  const t = (tab: string) => inboxTitle({ kind: "drift_alert", subject: { kind: "model_version", id: A }, summary: "SERVER WORDS", status: "alert", tab });
+  assert.equal(t("needs_decision"), "Drift alert on the model in use");
+  assert.equal(t("done"), "Drift alert on an earlier week or model");
+  const m = { window_start: "2026-10-05T00:00:00Z", max_psi: 0.314, prediction_psi: 0.05 };
+  assert.deepEqual(driftStats(m), [
+    { label: "Week (UTC)", value: "Mon, 5 Oct 2026" }, { label: "Largest input change of any column (PSI)", value: "0.31" }, { label: "Score change (PSI)", value: "0.05" },
+  ]);
+  assert.deepEqual(driftStats({ window_start: "bad", max_psi: Number.NaN, prediction_psi: null }), []);
+  assert.deepEqual(driftStats(null), []);
+  const open = driftSentence({ tab: "needs_decision", monitoring: m });
+  const done = driftSentence({ tab: "done", monitoring: m });
+  assert.match(open, /^Weekly monitoring marked the week of Mon, 5 Oct 2026 \(UTC\) as alert/);
+  assert.match(open, /does not mean the model is wrong, and DCLab did not retrain or switch it/);
+  assert.notEqual(open, done);
+  assert.match(done, /an earlier week, or a model that is no longer in use/);
+  assert.equal(outcomeWords("alert"), "alert");
+  assert.match(DRIFT_STATS_NOTE, /column by column\) is on Monitoring/);
+  assert.match(driftSentence({ tab: "done", monitoring: null }), /^Weekly monitoring marked a week as alert/);
+  assert.equal(monitoringHref(P), `/projects/${P}/monitoring`);
+  assert.equal(monitoringHref("../x"), null);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "model_version", id: A }] }))[0].href, `/projects/${P}/models/${A}`);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "model_version", id: A }] }))[0].label, "The model");
+  for (const text of [t("needs_decision"), t("done"), open, done, ...driftStats(m).map((x) => x.label), DRIFT_STATS_NOTE]) assert.doesNotMatch(text, BANNED, text);
+});
+
+test("UI-E agreement pills: as recorded, 'we asked you' only while it waits, hidden when AI is off or unknown values", () => {
+  assert.deepEqual(agreementPill("agree", "done", false), { label: "The rules and the AI agreed", tone: "ok" });
+  assert.equal(agreementPill("disagree", "needs_decision", null)!.label, "The rules and the AI disagreed: we asked you");
+  assert.equal(agreementPill("disagree", "done", false)!.label, "The rules and the AI disagreed");
+  assert.equal(agreementPill("abstain", "done", false)!.tone, "gray");
+  assert.equal(agreementPill("unavailable", "done", false)!.label, "No AI answer was available");
+  assert.equal(agreementPill("agree", "done", true), null);
+  assert.equal(agreementPill("__proto__", "done", false), null);
+  assert.equal(agreementPill("constructor", "done", false), null);
+  assert.equal(agreementPill(null, "done", false), null);
+});
+
+test("UI-E who closed a Done item: you, a person, the rules or an agent; nothing outside Done or when it expired", () => {
+  assert.equal(resolverPill({ kind: "person", is_you: true }, "done"), "Decided by you");
+  assert.equal(resolverPill({ kind: "person", is_you: false }, "done"), "Decided by a person");
+  assert.equal(resolverPill({ kind: "person" }, "done"), "Decided by a person");
+  assert.equal(resolverPill({ kind: "rule" }, "done"), "Settled by the rules");
+  assert.equal(resolverPill({ kind: "agent" }, "done"), "Settled by an AI agent or a connected tool");
+  assert.equal(resolverPill({ kind: "person", is_you: true }, "needs_decision"), null);
+  assert.equal(resolverPill(null, "done"), null);
+  assert.equal(resolverPill({ kind: "__proto__" }, "done"), null);
 });

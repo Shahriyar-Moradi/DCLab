@@ -39,7 +39,7 @@ export function isOperatorPath(pathname: string): boolean {
 }
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const PROJECT_SECTIONS = "lab|pipeline|graph|data|experiments|improve|models|predictions|monitoring|decisions";
+const PROJECT_SECTIONS = "lab|pipeline|graph|data|goal|experiments|improve|models|predictions|monitoring|decisions";
 const STUDIO_ROUTE = new RegExp(
   `^/(?:home|inbox|agents|settings|real|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models|pipeline)/${UUID})?)?)$`,
 );

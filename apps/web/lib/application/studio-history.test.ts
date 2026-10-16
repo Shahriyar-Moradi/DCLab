@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { correctionFor, evidenceHref, evidenceName, stateWords, subjectName, whatWords, whoWords } from "./studio-history.ts";
+import {
+  APPROVALS_SHORTCUT, LOG_EVENT_KINDS, approvalsHref, correctionFor, eventRow, evidenceHref, evidenceName, mergeLog, newerFileText, stateWords, subjectName, whatWords, whoWords,
+  type ActivityEventLike, type EventRow,
+} from "./studio-history.ts";
 
 const ID = "00000000-0000-4000-8000-000000000001";
 
@@ -35,7 +38,7 @@ test("correction is offered only where the API allows it", () => {
   assert.deepEqual(correctionFor("experiment_accepted", "accepted"), { kind: "correct", label: "Correct" });
   assert.equal(correctionFor("experiment_accepted", "superseded").kind, "none");
   assert.equal(correctionFor("experiment_rejected", "rejected").kind, "none");
-  for (const type of ["winner_locked", "split_plan_created", "problem_spec_locked", "ref_moved", "champion_promoted", "ref_initialized", "operating_point_chosen", "proposal_accepted"]) {
+  for (const type of ["winner_locked", "split_plan_created", "problem_spec_locked", "ref_moved", "ref_initialized", "operating_point_chosen", "proposal_accepted"]) {
     assert.equal(correctionFor(type, "accepted").kind, "note", type);
   }
   assert.match((correctionFor("operating_point_chosen", "accepted") as { text: string }).text, /Threshold tab/);
@@ -71,4 +74,95 @@ test("evidence links: own pages only, UUIDs only", () => {
   assert.equal(evidenceHref(P, { kind: "__proto__", id: ID }), null);
   assert.equal(evidenceHref(P, { kind: "experiment", id: "../x" }), null);
   assert.equal(evidenceHref("nope", { kind: "experiment", id: ID }), null);
+});
+
+const BANNED = /\b(release|champion|ref|digest|holdout|manifest|package|slot|tick|revision|window|proposal|supersede)s?\b/i;
+const P = "00000000-0000-4000-8000-0000000000bb";
+const MV = "00000000-0000-4000-8000-0000000000aa";
+const ev = (over: Partial<ActivityEventLike>): ActivityEventLike => ({
+  id: `x:${ID}`, kind: "dataset_uploaded", occurred_at: "2026-10-05T09:00:00Z", status: "training", actor: { kind: "person", is_you: true },
+  subject: { kind: "dataset_version", id: ID }, link: { kind: "dataset_version", id: ID }, ...over,
+});
+
+test("UI-E: approving a model is undone from Model → Approved for scoring; other version changes keep their note", () => {
+  assert.deepEqual(correctionFor("champion_promoted", "accepted"), { ...APPROVALS_SHORTCUT });
+  // Only champion_promoted records an approval for scoring; the first versions in use and other moves keep their note.
+  assert.deepEqual(correctionFor("ref_initialized", "accepted"), { kind: "note", text: "Change the version in use again; that adds a new entry." });
+  assert.equal(correctionFor("ref_moved", "accepted").kind, "note");
+  assert.match(APPROVALS_SHORTCUT.text, /earlier approved model, when there is one/);
+  assert.equal(correctionFor("champion_promoted", "proposed").kind, "answer");
+  assert.equal(correctionFor("champion_promoted", "superseded").kind, "none");
+  assert.equal(approvalsHref(P), `/projects/${P}/models?tab=approved`);
+  assert.equal(approvalsHref("not-a-uuid"), null);
+});
+
+test("UI-E: the four event kinds become plain sentences with a link; anything else is not a log row", () => {
+  const names = new Map([[`experiment:${ID}`, "Run 3"], [`model_version:${MV}`, "Model v2"]]);
+  const up = eventRow(ev({}), P, names)!;
+  assert.deepEqual([up.who, up.whoKind, up.what], ["You", "human", "Uploaded a training file"]);
+  assert.equal(up.href, `/projects/${P}/data/${ID}`);
+  assert.equal(eventRow(ev({ status: "scoring", actor: { kind: "person", is_you: false } }), P, names)!.what, "Uploaded a file to score");
+  assert.equal(eventRow(ev({ status: "scoring", actor: { kind: "person" } }), P, names)!.who, "A person");
+  assert.equal(eventRow(ev({ actor: { kind: "agent" } }), P, names)!.who, "A connected tool (access token)");
+  assert.equal(eventRow(ev({ status: "__proto__" }), P, names)!.what, "Uploaded a file");
+  const ft = eventRow(ev({ kind: "final_test_run", status: null, actor: { kind: "rule" }, subject: { kind: "experiment", id: ID }, link: { kind: "experiment", id: ID } }), P, names)!;
+  assert.equal(ft.what, "Scored the final test set once for Run 3");
+  // A run the lineage does not name is "a run", never a short id.
+  const anon = eventRow(ev({ kind: "final_test_run", actor: { kind: "rule" }, subject: { kind: "experiment", id: MV }, link: { kind: "experiment", id: MV } }), P, names)!;
+  assert.equal(anon.what, "Scored the final test set once for a run");
+  assert.equal(anon.linkLabel, "Open the run");
+  assert.doesNotMatch(anon.what, /[0-9a-f]{8}/);
+  assert.equal(ft.undo, "Cannot be repeated for this run.");
+  assert.equal(ft.href, `/projects/${P}/experiments/${ID}`);
+  assert.doesNotMatch(ft.what, /\d\.\d/); // no final test value
+  const drift = eventRow(ev({ kind: "drift_alert", status: "alert", actor: { kind: "rule" }, subject: { kind: "model_version", id: MV }, link: { kind: "monitoring_window", id: ID } }), P, names)!;
+  assert.match(drift.what, /^Weekly monitoring marked a week as alert for Model v2/);
+  assert.equal(drift.href, `/projects/${P}/monitoring`);
+  assert.equal(drift.who, "The rules");
+  assert.match(eventRow(ev({ kind: "drift_alert", subject: { kind: "model_version", id: null } }), P, names)!.what, /for the model:/);
+  const sched = (status: string | null) => eventRow(ev({ kind: "scheduled_scoring", status, actor: { kind: "rule" }, link: { kind: "scoring_schedule_run", id: ID } }), P, names)!;
+  const words = ["queued", "failed_to_queue", "skipped_no_new_file", "skipped_no_model_in_use", "skipped_no_approval", "skipped_owner_not_allowed", "skipped_missed"].map((x) => sched(x).what);
+  assert.equal(new Set(words).size, 7);
+  assert.equal(sched("queued").what, "Weekly scoring started");
+  assert.equal(sched("__proto__").what, "Weekly scoring ran");
+  assert.equal(sched(null).href, `/projects/${P}/predictions`);
+  for (const kind of ["decision", "run_finished", "run_queued", "agent_run_started", "__proto__"]) assert.equal(eventRow(ev({ kind }), P, names), null, kind);
+  assert.equal(LOG_EVENT_KINDS.size, 4);
+  assert.equal(eventRow(ev({ actor: { kind: "robot" } }), P, names)!.who, "Someone else");
+  for (const row of [up, ft, drift, ...["queued", "failed_to_queue", "skipped_missed"].map(sched)]) {
+    for (const text of [row.what, row.undo, row.linkLabel ?? "", row.who]) assert.doesNotMatch(text, BANNED, text);
+  }
+  assert.equal(eventRow(ev({ link: { kind: "dataset_version", id: "../../x" } }), P, names)!.href, null);
+});
+
+test("UI-E: the merged log is newest first; a cut decision list hides older events; a cut activity read says from when", () => {
+  const e = (id: string, at: string): EventRow => ({ id, kind: "dataset_uploaded", at, who: "You", whoKind: "human", what: "Uploaded a training file", about: null, href: null, linkLabel: null, undo: "—" });
+  const ds = [{ id: "d1", recorded_at: "2026-10-05T10:00:00Z" }, { id: "d2", recorded_at: "2026-10-03T10:00:00Z" }];
+  const events = [e("e1", "2026-10-06T10:00:00Z"), e("e2", "2026-10-04T10:00:00Z"), e("e3", "2026-10-01T10:00:00Z")];
+  assert.deepEqual(mergeLog(ds, false, events, null).rows.map((r) => r.key), ["event:e1", "decision:d1", "event:e2", "decision:d2", "event:e3"]);
+  assert.deepEqual(mergeLog(ds, true, events, null).rows.map((r) => r.key), ["event:e1", "decision:d1", "event:e2", "decision:d2"]);
+  assert.equal(mergeLog(ds, false, events, null).note, null);
+  const note = mergeLog(ds, false, events, "2026-10-01T10:00:00Z").note ?? "";
+  assert.match(note, /listed from Thu, 1 Oct 2026, 10:00 UTC; older ones are not shown here\.$/);
+  assert.doesNotMatch(note, BANNED);
+  assert.equal(mergeLog([], true, events, "bad").note, null);
+  assert.equal(mergeLog([], true, events, null).rows.length, 3); // nothing to cut against
+});
+
+test("UI-E: the newer-file banner states what is true and nothing more", () => {
+  assert.equal(newerFileText(null), null);
+  assert.equal(newerFileText({ count: 0, newest_created_at: "2026-10-05T09:00:00Z", newest: { kind: "dataset_version", id: ID } }), null);
+  const one = newerFileText({ count: 1, newest_created_at: "2026-10-05T09:00:00Z", newest: { kind: "dataset_version", id: ID } }, true) ?? "";
+  // No model in use (or unknown): nothing is said about scoring or Monitoring.
+  for (const inUse of [false, null]) {
+    const none = newerFileText({ count: 1, newest_created_at: "2026-10-05T09:00:00Z", newest: { kind: "dataset_version", id: ID } }, inUse) ?? "";
+    assert.doesNotMatch(none, /keeps scoring|Monitoring/);
+    assert.match(none, /Nothing is marked built on an older version/);
+  }
+  assert.match(one, /^A training file newer than the one this project uses was uploaded on Mon, 5 Oct 2026, 09:00 UTC\./);
+  assert.match(one, /keeps scoring as before/);
+  assert.match(one, /Monitoring/);
+  const many = newerFileText({ count: 3, newest_created_at: "bad", newest: { kind: "dataset_version", id: ID } }) ?? "";
+  assert.match(many, /^3 training files newer than the one this project uses were uploaded; the newest\./);
+  for (const text of [one, many]) assert.doesNotMatch(text, /\b(stale|ref|wrong|retrain(ed)?)\b/i, text);
 });

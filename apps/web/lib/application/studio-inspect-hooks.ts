@@ -78,6 +78,15 @@ export const ModelVersionSchema = z.object({
   }),
   artifacts: z.array(z.object({ id: z.string(), role: z.string(), artifact_type: z.string(), content_digest: z.string(), size_bytes: z.number() })).optional(),
   metrics: z.object({ selection_metric: nullableString, selected_score: nullableNumber, cv: anyRecord.optional(), decision_threshold: nullableNumber, constraint_status: nullableString }).nullable().optional(),
+  /** P7.1-A / V7 B4 (UI-D "Saved file & checks"): how the model is saved and the checks stored when it was built. */
+  saved_format: z.enum(["package_v1", "legacy_quarantined"]).nullable().optional(),
+  package_verification: z.object({
+    status: z.string(),
+    checked_at: nullableString,
+    rows_compared: nullableNumber,
+    // Strings, not enums: a check code added later is skipped by the view model instead of failing the whole read.
+    checks: z.array(z.object({ check: z.string(), passed: z.boolean() })).optional(),
+  }).nullable().optional(),
 });
 export type StudioModelVersion = z.infer<typeof ModelVersionSchema>;
 

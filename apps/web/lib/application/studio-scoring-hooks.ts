@@ -31,6 +31,8 @@ export const PredictionSchema = z.object({
   /** Queued by the project's weekly schedule (false when a person scored it by hand). */
   scheduled: z.boolean().optional(),
   scheduled_for: nullableString,
+  /** V7 B5: a yes/no model's flagged rows at the locked threshold (null otherwise and for scorings before counts were kept). */
+  flagged: z.object({ count: z.number(), rows: z.number(), share: nullableNumber, decision_threshold: nullableNumber }).nullable().optional(),
   created_at: z.string(),
   completed_at: nullableString,
   output: z.object({ artifact_id: z.string(), content_digest: z.string(), download_path: z.string(), size_bytes: z.number(), mime_type: nullableString }).nullable(),

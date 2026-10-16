@@ -22,7 +22,7 @@ async function checkA11y(page: Page, name: string): Promise<void> {
 test("turn weekly scoring on, change it, turn it off; a viewer cannot; refusals and run outcomes are plain", async ({ page, browser }) => {
   await login(page);
   const { projectId } = await trainedProject(page, "Weekly");
-  await page.goto(`/projects/${projectId}/predictions`);
+  await page.goto(`/projects/${projectId}/predictions?tab=schedule`);
   const heading = page.getByRole("heading", { name: "Weekly scoring", exact: true });
   await expect(heading).toBeVisible();
   const status = page.getByTestId("weekly-status");
@@ -87,7 +87,7 @@ test("turn weekly scoring on, change it, turn it off; a viewer cannot; refusals 
   await viewer.getByLabel("Password").fill(PASSWORD);
   await viewer.getByRole("button", { name: "Sign in" }).click();
   await expect(viewer).not.toHaveURL(/\/login/);
-  await viewer.goto(`/projects/${projectId}/predictions`);
+  await viewer.goto(`/projects/${projectId}/predictions?tab=schedule`);
   await expect(viewer.getByTestId("weekly-slot")).toContainText("Every Friday at 08:00 UTC");
   await expect(viewer.getByText("Only people who can change this workspace can turn weekly scoring on, change it or turn it off.")).toBeVisible();
   await expect(viewer.getByRole("button", { name: /weekly scoring|Save change/ })).toHaveCount(0);
@@ -147,7 +147,7 @@ test("turn weekly scoring on, change it, turn it off; a viewer cannot; refusals 
 
   // 375 px: no horizontal scroll.
   await page.setViewportSize({ width: 375, height: 800 });
-  await page.goto(`/projects/${projectId}/predictions`);
+  await page.goto(`/projects/${projectId}/predictions?tab=schedule`);
   await expect(heading).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await shot(page, "weekly-4-mobile");
@@ -188,7 +188,7 @@ test("paused by the platform, every run outcome, and what a queued week really d
     run(3, "skipped_no_new_file"), run(4, "skipped_no_approval"), run(5, "skipped_owner_not_allowed"), run(6, "skipped_missed"),
     run(7, "failed_to_queue", { reason_code: "run_limit" }), run(8, "skipped_no_model_in_use"), run(9, "brand_new_code"),
   ]));
-  await page.goto(`/projects/${projectId}/predictions`);
+  await page.goto(`/projects/${projectId}/predictions?tab=schedule`);
   const status = page.getByTestId("weekly-status");
   await expect(status).toContainText("paused by the platform");
   await expect(page.getByTestId("weekly-next")).toContainText("none while it is paused by the platform");
@@ -208,6 +208,8 @@ test("paused by the platform, every run outcome, and what a queued week really d
   await expect(list).toContainText("this page does not recognise the result");
   await expect(list.getByText("failed", { exact: true })).toHaveCount(2);
   // The table labels the scheduled weeks in UTC, names no fake file and says why the failed one failed.
+  // UI-D: the table of scorings lives on the "This week's list" tab.
+  await page.getByRole("tab", { name: "This week's list" }).click();
   const table = page.getByRole("table", { name: "Predictions run in this browser tab and by the weekly schedule" });
   await expect(table).toContainText("Scheduled run for Sun, 11 Oct 2026, 09:00 UTC");
   await expect(table).toContainText("Scheduled run for Sat, 10 Oct 2026, 09:00 UTC");
@@ -222,7 +224,7 @@ test("off with an owner who cannot score, an overdue next run, and a failed read
   await login(page);
   const { projectId } = await trainedProject(page, "WeeklyStates");
   await stubSchedule(page, scheduleBody(projectId, "off", { enabled: false, owner_can_score: false }));
-  await page.goto(`/projects/${projectId}/predictions`);
+  await page.goto(`/projects/${projectId}/predictions?tab=schedule`);
   await expect(page.getByTestId("weekly-status")).toContainText("Weekly scoring is off.");
   await expect(page.getByText("can no longer score in this workspace")).toHaveCount(0);
   expect(await page.locator("main").innerText()).not.toMatch(BANNED);

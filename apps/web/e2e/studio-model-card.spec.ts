@@ -59,7 +59,7 @@ test("Model card: drivers, baseline, labelled final evaluation, risks, Markdown 
   // Models list: the version, the champion marker, a link to the card.
   await page.goto(`/projects/${projectId}/models`);
   await expect(page.getByRole("heading", { name: "Model", level: 1 })).toBeVisible();
-  const row = page.getByRole("table", { name: "Models" }).getByRole("row").nth(1);
+  const row = page.getByRole("table", { name: "Model versions" }).getByRole("row").nth(1);
   await expect(row).toContainText("In use");
   await expect(row).toContainText("Open card");
   await expect(row).toContainText("Run 1");

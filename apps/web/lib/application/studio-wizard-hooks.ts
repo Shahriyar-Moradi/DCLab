@@ -37,6 +37,8 @@ const DatasetItemSchema = z.object({
   content_digest: nullableString,
   purpose: z.string(),
   created_at: z.string(),
+  /** V7 BE-C: who uploaded it, for display (person with is_you, or connected_tool); no ids or names. */
+  uploader: z.object({ kind: z.string(), is_you: z.boolean().optional() }).optional(),
 });
 export type StudioDatasetItem = z.infer<typeof DatasetItemSchema>;
 

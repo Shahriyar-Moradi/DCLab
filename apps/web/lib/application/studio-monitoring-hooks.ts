@@ -44,8 +44,12 @@ const WeekSummarySchema = z.object({
   coverage: nullableNumber,
   outcome_metric: nullableString,
   outcome_metric_value: nullableNumber,
+  outcome_precision: nullableNumber,
+  outcome_recall: nullableNumber,
   computed_at: z.string(),
 });
+const PsiPointSchema = z.object({ window_start: z.string(), psi: z.number().nullable(), status: nullableString });
+const FeatureSeriesSchema = z.object({ name: z.string(), kind: nullableString, points: z.array(PsiPointSchema) });
 const OverviewSchema = z.object({
   project_id: z.string(),
   enabled: z.boolean(),
@@ -55,6 +59,8 @@ const OverviewSchema = z.object({
   status: z.string(),
   latest: WeekSummarySchema.nullable().optional(),
   windows: z.array(WeekSummarySchema),
+  // A malformed series must never blank the screen: a broken entry is dropped, a broken list reads as none.
+  feature_psi_series: z.array(z.unknown()).transform((items) => items.flatMap((item) => { const r = FeatureSeriesSchema.safeParse(item); return r.success ? [r.data] : []; })).optional().catch([]),
   finding: FindingSchema.nullable().optional(),
   thresholds: ThresholdsSchema,
   notes: z.array(z.string()),

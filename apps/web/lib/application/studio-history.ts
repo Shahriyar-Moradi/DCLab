@@ -4,6 +4,7 @@
  * not know is shown cleaned, never hidden and never called "a rule". Lookups are own-key checks (a type `__proto__` is just unknown).
  */
 import { plainText, projectHref } from "./command-search.ts";
+import { utcWhen } from "./format-time.ts";
 import { ENGINE_OWNED_TYPES } from "./studio-compare.ts";
 import { actorWords } from "./studio-goal.ts";
 import { shortId } from "./studio-graph.ts";
@@ -65,7 +66,15 @@ export type Correction =
   | { kind: "answer"; label: "Answer" }
   | { kind: "correct"; label: "Correct" }
   | { kind: "note"; text: string }
+  | { kind: "approvals"; text: string; label: string }
   | { kind: "none" };
+
+/** The shortcut for undoing an approval: the Model screen's "Approved for scoring" tab (going back there adds a new entry). */
+export const APPROVALS_SHORTCUT = { kind: "approvals", text: "To undo it, go back to an earlier approved model, when there is one, on", label: "Model → Approved for scoring" } as const;
+export function approvalsHref(projectId: string): string | null {
+  const href = projectHref(projectId, "models");
+  return href ? `${href}?tab=approved` : null;
+}
 
 const REF_MOVES = new Set(["ref_moved", "champion_promoted", "ref_initialized"]);
 /** Types a person may record and correct (mirrors the API's human-recordable types). Anything else is never offered a Correct button. */
@@ -80,6 +89,8 @@ const SUGGESTION_OUTCOMES = new Set(["proposal_accepted", "proposal_reverted", "
 export function correctionFor(type: string, state: string): Correction {
   if (state === "proposed") return { kind: "answer", label: "Answer" };
   if (state !== "accepted") return { kind: "none" };
+  // An approval for scoring (the only type that records one) is undone by going back on the Model screen.
+  if (type === "champion_promoted") return { ...APPROVALS_SHORTCUT };
   if (REF_MOVES.has(type)) return { kind: "note", text: "Change the version in use again; that adds a new entry." };
   if (type === "operating_point_chosen") return { kind: "note", text: "Change it from the model's Threshold tab." };
   if (type === "problem_spec_locked") return { kind: "note", text: "Change the goal by locking a new version of it." };
@@ -110,4 +121,96 @@ export function evidenceHref(projectId: string, ref: Subject): string | null {
   if (!page) return null;
   const href = projectHref(projectId, page, ref.id);
   return href && ref.kind === "decision_record" ? `${href.replace(`/decisions/${ref.id}`, "/decisions")}?record=${ref.id}` : href;
+}
+
+/* ---------- events from the activity read (V7 UI-E) ---------- */
+
+/** The activity kinds History adds to its log, beside the decision entries (decisions themselves come from the decision list). */
+export const LOG_EVENT_KINDS: ReadonlySet<string> = new Set(["dataset_uploaded", "final_test_run", "drift_alert", "scheduled_scoring"]);
+
+export type ActivityEventLike = {
+  id: string; kind: string; occurred_at: string; status?: string | null;
+  actor: { kind: string; is_you?: boolean | null }; subject: { kind: string; id?: string | null }; link: { kind: string; id: string };
+};
+export type EventRow = {
+  id: string; kind: string; at: string; who: string; whoKind: "rule" | "agent" | "human";
+  what: string; about: string | null; href: string | null; linkLabel: string | null; undo: string;
+};
+
+const SCHEDULE_WORDS: Record<string, string> = {
+  queued: "Weekly scoring started", failed_to_queue: "Weekly scoring could not start", skipped_no_new_file: "Weekly scoring skipped: no new file to score",
+  skipped_no_model_in_use: "Weekly scoring skipped: no model in use", skipped_no_approval: "Weekly scoring skipped: the model in use is not approved",
+  skipped_owner_not_allowed: "Weekly scoring skipped: the person who set it up can no longer run it", skipped_missed: "Weekly scoring skipped: the time was missed",
+};
+const UPLOAD_WORDS: Record<string, string> = { training: "Uploaded a training file", scoring: "Uploaded a file to score" };
+
+function eventWho(actor: ActivityEventLike["actor"]): Pick<EventRow, "who" | "whoKind"> {
+  if (actor.kind === "person") return { who: actor.is_you === true ? "You" : "A person", whoKind: "human" };
+  if (actor.kind === "agent") return { who: "A connected tool (access token)", whoKind: "agent" };
+  if (actor.kind === "rule") return { who: "The rules", whoKind: "rule" };
+  return { who: "Someone else", whoKind: "human" };
+}
+
+/**
+ * One activity event in a plain sentence, with where to look. Only the four log kinds are shown (null otherwise); a status
+ * this table does not know keeps a fixed sentence. Ids are UUID-checked through `projectHref`; nothing from the server's own
+ * summary is shown. No final test value is read: the final test event only says it ran once.
+ */
+export function eventRow(e: ActivityEventLike, projectId: string, names: ReadonlyMap<string, string>): EventRow | null {
+  if (!LOG_EVENT_KINDS.has(e.kind)) return null;
+  const base = { id: e.id, kind: e.kind, at: e.occurred_at, ...eventWho(e.actor) };
+  const subjectId = e.subject.id ?? "";
+  switch (e.kind) {
+    case "dataset_uploaded":
+      return { ...base, what: own(UPLOAD_WORDS, e.status ?? "") ?? "Uploaded a file", about: names.get(`dataset_version:${e.link.id}`) ?? null,
+        href: evidenceHref(projectId, { kind: "dataset_version", id: e.link.id }), linkLabel: "Open the file", undo: "Nothing to undo; a new upload adds a new file." };
+    case "final_test_run": {
+      // Named only when the lineage knows the run ("Run 3"); otherwise "a run" (its id stays behind the link).
+      const run = names.get(`experiment:${subjectId || e.link.id}`) ?? null;
+      return { ...base, what: `Scored the final test set once for ${run ?? "a run"}`, about: run,
+        href: evidenceHref(projectId, { kind: "experiment", id: e.link.id }), linkLabel: run ? `Open ${run}` : "Open the run", undo: "Cannot be repeated for this run." };
+    }
+    case "drift_alert": {
+      const model = names.get(`model_version:${subjectId}`) ?? "the model";
+      return { ...base, what: `Weekly monitoring marked a week as alert for ${model}: the inputs or scores look different from training`, about: model,
+        href: projectHref(projectId, "monitoring"), linkLabel: "Open Monitoring", undo: "Nothing to undo: it is a check. What to do about it is a person's choice." };
+    }
+    default:
+      return { ...base, what: own(SCHEDULE_WORDS, e.status ?? "") ?? "Weekly scoring ran", about: null,
+        href: projectHref(projectId, "predictions"), linkLabel: "Open Predictions", undo: "—" };
+  }
+}
+
+export type LogRow<D> = { type: "decision"; at: string; key: string; item: D } | { type: "event"; at: string; key: string; event: EventRow };
+/**
+ * The History log: every decision entry the list returned, plus the events, newest first. When the decision list was cut at
+ * 100, events older than its oldest entry are left out (so no stretch shows events without their decisions); when the
+ * activity read was cut, the note says from when events are listed.
+ */
+export function mergeLog<D extends { id: string; recorded_at: string }>(
+  decisions: readonly D[], decisionsCut: boolean, events: readonly EventRow[], activityOldest: string | null,
+): { rows: Array<LogRow<D>>; note: string | null } {
+  const oldestDecision = decisions.reduce<string | null>((min, d) => (min === null || d.recorded_at < min ? d.recorded_at : min), null);
+  const shown = events.filter((e) => !(decisionsCut && oldestDecision !== null && Date.parse(e.at) < Date.parse(oldestDecision)));
+  const rows: Array<LogRow<D>> = [
+    ...decisions.map((d) => ({ type: "decision" as const, at: d.recorded_at, key: `decision:${d.id}`, item: d })),
+    ...shown.map((e) => ({ type: "event" as const, at: e.at, key: `event:${e.id}`, event: e })),
+  ].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+  const note = activityOldest && utcWhen(activityOldest) !== "—"
+    ? `Uploads, final tests, drift alerts and weekly scorings are listed from ${utcWhen(activityOldest)}; older ones are not shown here.`
+    : null;
+  return { rows, note };
+}
+
+export type NewerFileLike = { count: number; newest_created_at: string; newest: { kind: string; id: string } };
+/** The "newer file exists" banner: a training file newer than the one the project uses (nothing is marked old by it). */
+export function newerFileText(n: NewerFileLike | null | undefined, modelInUse: boolean | null = null): string | null {
+  if (!n || typeof n.count !== "number" || n.count < 1) return null;
+  const when = utcWhen(n.newest_created_at);
+  const lead = n.count === 1
+    ? `A training file newer than the one this project uses was uploaded${when !== "—" ? ` on ${when}` : ""}.`
+    : `${n.count.toLocaleString("en-US")} training files newer than the one this project uses were uploaded; the newest${when !== "—" ? ` on ${when}` : ""}.`;
+  const scoring = modelInUse === true ? " The model in use keeps scoring as before." : "";
+  const monitoring = modelInUse === true ? " Monitoring shows whether the data the model in use scores now looks different from training." : "";
+  return `${lead}${scoring} Nothing is marked built on an older version until a person moves the project to a newer file.${monitoring}`;
 }

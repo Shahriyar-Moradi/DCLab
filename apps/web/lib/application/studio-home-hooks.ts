@@ -20,6 +20,10 @@ const ActivityItemSchema = z.object({
   status: nullableString,
   decision_type: nullableString,
   link: z.object({ kind: z.string(), id: z.string() }),
+  /** `run_finished` with locked evidence: the winner's family and CV score (never a final test set value). */
+  run_result: z.object({
+    model_family: nullableString, algorithm: nullableString, metric: z.string(), cv_score: z.number(), metric_scope: z.string().optional(),
+  }).nullable().optional(),
 });
 export type StudioActivityItem = z.infer<typeof ActivityItemSchema>;
 const ActivityPageSchema = z.object({ items: z.array(ActivityItemSchema), next_cursor: nullableString, limit: z.number() });

@@ -110,7 +110,9 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   assert.deepEqual(outside[0]!.items.map((i) => i.href), ["/home", "/inbox", "/projects"]);
   assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/settings", "/agents"]);
   const inside = studioNavigationForUser(developer, P1).find((g) => g.id === "project")!;
-  assert.deepEqual(inside.items.map((i) => i.id), ["data", "experiments", "improve", "models", "monitoring", "decisions"]);
+  // V7 UI-C: Goal is always listed (the project-level Goal page until a test design exists); Predictions needs a model.
+  assert.deepEqual(inside.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "monitoring", "decisions"]);
+  assert.equal(inside.items.find((i) => i.id === "goal")?.href, `/projects/${P1}/goal`);
   const T = "44444444-4444-4444-8444-444444444444";
   const withTargets = studioNavigationForUser(developer, P1, { split_plan: T, project_model: T }).find((g) => g.id === "project")!;
   assert.deepEqual(withTargets.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring", "decisions"]);

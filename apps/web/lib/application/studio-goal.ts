@@ -1,14 +1,13 @@
 /**
  * Goal & test design logic (V7-A2), pure so it runs under `npm run test:components`.
- * Everything is read from fields the API already returns (the run's model-build stages, the run detail,
- * the model card split and the decision records). A value the API did not return is omitted, never guessed.
+ * Everything is read from fields the API already returns (the problem spec and split plan reads, the run detail,
+ * the run's model-build stages and the decision records). A value the API did not return is omitted, never guessed.
  * No final test set value is read here: only the strategy, the fraction and row counts.
  */
-import { plainText } from "./command-search.ts";
+import { isUuid, plainText } from "./command-search.ts";
 import { stageConfig, type BuildLike } from "./studio-inspect.ts";
 
 const str = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
-const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 
 export type MetricInfo = { label: string; glossary?: "prauc" | "recall" | "precision"; about: string | null };
 const METRICS: Record<string, MetricInfo> = {
@@ -74,22 +73,86 @@ export function goalFacts(build: BuildLike | undefined, run: RunDetailLike): Goa
   };
 }
 
-// --- test design ------------------------------------------------------------------------
+// --- goal (V7 UI-C: from the problem spec read, GET /v1/projects/{id}/problem-specs) ----------------
 
-export type DesignKind = "time" | "group" | "random";
-export type SplitCardLike = {
-  evaluation_split_strategy?: string | null; evaluation_fraction?: number | null; evaluation_rows?: number | null; train_rows?: number | null;
-  group_column?: string | null; time_column?: string | null; stratified?: boolean | null; validation_folds?: number | null; validation_strategy?: string | null;
+export type SpecLike = {
+  target_column?: string | null; task_type?: string | null; primary_metric?: string | null; prediction_unit?: string | null;
+  prediction_horizon?: string | null; business_objective?: string | null; constraints?: Record<string, unknown> | null;
 } | null | undefined;
-export type TestDesign = {
-  /** How the cross-validation folds are cut (from the validation plan). */
-  kind: DesignKind | null;
-  /** How the final test set was set aside (from the holdout plan); it is planned separately and can differ. */
-  testKind: DesignKind | null; folds: number | null; trainRows: number | null; testRows: number | null; testShare: number | null;
-  groupColumn: string | null; timeColumn: string | null; stratified: boolean | null; lockedAt: string | null; locked: boolean;
+export type BusinessRule = { key: string; big: string; meaning: string };
+export type GoalCards = {
+  target: string | null; task: string | null; question: string | null; unitLine: string | null;
+  metric: MetricInfo | null; metricWhy: string | null; rules: BusinessRule[]; rulesKnown: boolean;
 };
 
-/** Time-ordered, grouped or random, from the recorded strategy names (final test set first, then the folds). */
+const RULE_LABEL: Record<string, string> = { recall: "Recall", precision: "Precision", specificity: "Specificity", f1: "F1", accuracy: "Accuracy", balanced_accuracy: "Balanced accuracy" };
+const share = (v: number) => `${Number((v * 100).toFixed(1))}%`;
+const fmtValue = (v: number) => {
+  const s = String(Number(v.toFixed(3)));
+  return s.includes(".") && s.split(".")[1].length === 1 ? `${s}0` : s;
+};
+
+/** One business rule in words: "Recall ≥ 0.80" and what it means; null for a malformed entry. */
+export function ruleWords(raw: unknown, index = 0): BusinessRule | null {
+  const item = raw as { metric?: unknown; op?: unknown; value?: unknown } | null;
+  const metric = typeof item?.metric === "string" ? item.metric.trim().toLowerCase() : "";
+  const op = item?.op === ">=" || item?.op === "<=" ? item.op : null;
+  const value = typeof item?.value === "number" && Number.isFinite(item.value) ? item.value : null;
+  if (!metric || !op || value === null) return null;
+  const label = Object.hasOwn(RULE_LABEL, metric) ? RULE_LABEL[metric] : metricInfo(metric)?.label ?? metric;
+  const fraction = value >= 0 && value <= 1 && op === ">=";
+  const meaning = fraction && metric === "recall" ? `Catch at least ${share(value)} of the rows that really are positive.`
+    : fraction && metric === "precision" ? `When the model flags a row, it is right at least ${share(value)} of the time.`
+      : fraction && metric === "specificity" ? `Leave alone at least ${share(value)} of the rows that really are negative.`
+        : `${label} must be ${op === ">=" ? "at least" : "at most"} ${fmtValue(value)} on cross-validation.`;
+  return { key: `${metric}${op}${index}`, big: `${label} ${op === ">=" ? "≥" : "≤"} ${fmtValue(value)}`, meaning };
+}
+
+/**
+ * The three goal cards: what we predict, how models are ranked and the business rule, from the problem spec (untrusted
+ * text is passed through `clean`); the run's recorded plan fills in a target or metric the spec does not name. The
+ * ranking reason is the one given with the goal, else a sentence from the training-rows positive share, else the general one.
+ */
+export function goalCards(spec: SpecLike, fallback: GoalFacts, ctx: { targetRate?: number | null; clean?: (v: string, max?: number) => string } = {}): GoalCards {
+  const clean = ctx.clean ?? ((v: string) => v);
+  const constraints = spec?.constraints && typeof spec.constraints === "object" ? spec.constraints : {};
+  const metricName = str(spec?.primary_metric);
+  const metric = metricInfo(metricName) ?? fallback.metric;
+  const unit = str(spec?.prediction_unit);
+  const horizon = str(spec?.prediction_horizon);
+  const given = str(constraints.primary_metric_reason);
+  const rate = typeof ctx.targetRate === "number" && ctx.targetRate > 0 && ctx.targetRate < 0.5 ? ctx.targetRate : null;
+  const rules = (Array.isArray(constraints.metric_constraints) ? constraints.metric_constraints : []).map((c, i) => ruleWords(c, i)).filter((r): r is BusinessRule => r !== null);
+  const cost = constraints.cost_matrix as { false_positive?: unknown; false_negative?: unknown } | undefined;
+  if (cost && typeof cost.false_positive === "number" && typeof cost.false_negative === "number") {
+    rules.push({ key: "cost", big: "Error costs", meaning: `A missed positive costs ${fmtValue(cost.false_negative)}; a false alarm costs ${fmtValue(cost.false_positive)}.` });
+  }
+  return {
+    target: str(spec?.target_column) ?? fallback.target,
+    task: taskLabel(str(spec?.task_type)) ?? fallback.task,
+    question: str(spec?.business_objective) ? clean(str(spec?.business_objective) ?? "", 300) : null,
+    unitLine: [unit ? `One answer per ${clean(unit, 60)}.` : "", horizon ? `Prediction horizon: ${clean(horizon, 40)}.` : ""].filter(Boolean).join(" ") || null,
+    metric,
+    metricWhy: given ? `Reason given: ${clean(given, 300)}`
+      : rate && metricName === "pr_auc" ? `Only about 1 in ${Math.round(1 / rate)} training rows has the answer the model treats as yes, and PR-AUC rewards finding them without flagging many others.`
+        : metric?.about ?? null,
+    rules,
+    rulesKnown: !!spec,
+  };
+}
+
+/** The test design the Goal page opens: the project's test design in use, else the newest one in the project graph; null = none yet. */
+export function newestSplitPlan(refTarget: string | null | undefined, nodes: ReadonlyArray<{ kind: string; id: string; created_at?: string | null }> | undefined): string | null {
+  if (isUuid(refTarget)) return refTarget;
+  const plans = (nodes ?? []).filter((n) => n.kind === "split_plan" && isUuid(n.id));
+  return plans.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))[0]?.id ?? null;
+}
+
+// --- test design (V7 UI-C: from GET /v1/split-plans/{id}; row counts only, never final-test dates or rates) ---
+
+export type DesignKind = "time" | "group" | "random";
+
+/** Time-ordered, grouped or random, from the recorded strategy names (the first known one wins). */
 export function designKind(...strategies: Array<string | null | undefined>): DesignKind | null {
   for (const raw of strategies) {
     const s = (raw ?? "").toLowerCase();
@@ -101,78 +164,108 @@ export function designKind(...strategies: Array<string | null | undefined>): Des
   return null;
 }
 
-export function testDesign(build: BuildLike | undefined, card: SplitCardLike): TestDesign {
-  const holdout = { ...stageConfig(build, "final_holdout_plan"), ...stageConfig(build, "holdout_lock") };
-  const validation = stageConfig(build, "validation_plan");
-  const trainRows = num(card?.train_rows);
-  const testRows = num(card?.evaluation_rows);
-  const fraction = num(holdout.test_size) ?? num(card?.evaluation_fraction);
-  const share = trainRows !== null && testRows !== null && trainRows + testRows > 0 ? testRows / (trainRows + testRows)
-    : fraction !== null ? (fraction > 1 ? fraction / 100 : fraction) : null;
+export type SplitPlanLike = {
+  row_count: number; train_row_count: number; evaluation_row_count: number; has_evaluation_set: boolean; evaluation_strategy: string;
+  validation_strategy: string; validation_folds: number; stratified: boolean; time_column: string | null; group_column: string | null;
+  folds_status: string; folds: Array<{ fold_number: number; train_row_count: number; validation_row_count: number }>;
+};
+export type FoldRows = { fold: number; learn: number; check: number };
+export type PlanDesign = {
+  /** How the cross-validation folds are cut; the final test set (`testKind`) is planned separately and can differ. */
+  kind: DesignKind | null; testKind: DesignKind | null; folds: number; trainRows: number; testRows: number; totalRows: number;
+  testShare: number | null; hasTest: boolean; timeColumn: string | null; groupColumn: string | null; stratified: boolean;
+  /** Per-fold rows, in fold order; empty when the row map could not be verified. */
+  perFold: FoldRows[];
+};
+
+const rows = (n: unknown): number | null => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : null);
+const fmt = (n: number) => n.toLocaleString("en-GB");
+
+export function planDesign(plan: SplitPlanLike): PlanDesign {
+  const trainRows = rows(plan.train_row_count) ?? 0;
+  const testRows = plan.has_evaluation_set ? rows(plan.evaluation_row_count) ?? 0 : 0;
+  const totalRows = Math.max(rows(plan.row_count) ?? 0, trainRows + testRows);
+  const perFold = plan.folds_status !== "computed" ? [] : plan.folds
+    .map((f) => ({ fold: rows(f.fold_number), learn: rows(f.train_row_count), check: rows(f.validation_row_count) }))
+    .filter((f): f is FoldRows => f.fold !== null && f.learn !== null && f.check !== null)
+    .sort((a, b) => a.fold - b.fold);
   return {
-    kind: designKind(str(validation.strategy), card?.validation_strategy),
-    testKind: designKind(str(holdout.strategy), card?.evaluation_split_strategy),
-    folds: num(validation.actual_folds) ?? num(card?.validation_folds) ?? num(validation.requested_folds),
-    trainRows, testRows, testShare: share !== null && share > 0 && share < 1 ? share : null,
-    groupColumn: str(holdout.group_column) ?? str(validation.group_column) ?? str(card?.group_column),
-    timeColumn: str(holdout.time_column) ?? str(validation.time_column) ?? str(card?.time_column),
-    stratified: typeof card?.stratified === "boolean" ? card.stratified : null,
-    locked: Boolean(stageConfig(build, "holdout_lock").locked),
-    lockedAt: str(stageConfig(build, "holdout_lock").locked_at),
+    kind: designKind(plan.validation_strategy), testKind: designKind(plan.evaluation_strategy), folds: rows(plan.validation_folds) ?? perFold.length,
+    trainRows, testRows, totalRows, testShare: totalRows > 0 && testRows > 0 ? testRows / totalRows : null, hasTest: plan.has_evaluation_set && testRows > 0,
+    timeColumn: str(plan.time_column), groupColumn: str(plan.group_column), stratified: plan.stratified === true, perFold,
   };
 }
 
-const PHRASE: Record<DesignKind, string> = { time: "time-ordered", group: "grouped", random: "random" };
+export type Seg = { x: number; w: number };
+export type TimelineRow = { fold: number; learn: Seg[]; check: Seg; learnRows: number; checkRows: number };
+/** Fractions (0..1) of all modelling rows: drawn to scale by row count. */
+export type Timeline = { trainEnd: number; rows: TimelineRow[]; test: Seg | null; capped: boolean };
+export const MAX_DRAWN_FOLDS = 10;
 
 /**
- * One sentence on why this design, from the strategies the plans recorded. The folds and the final test set are planned
- * separately: when they differ, both are named. Column names are passed through `clean`.
+ * The time line to scale. Time-ordered folds learn from the first rows (warm-up included) and check on the rows right after
+ * them. Other folds are spread through the training rows: each fold's check rows are drawn as one block, side by side.
+ * The final test set is the part after the training rows (its rows are counted, nothing else).
  */
-export function whyText(design: TestDesign, clean: (value: string) => string = (v) => v): string | null {
-  const { kind, testKind } = design;
-  if (kind && testKind && kind !== testKind) {
-    return `The cross-validation folds are ${PHRASE[kind]} and the final test set is ${PHRASE[testKind]}; the two are planned separately.`;
+export function timeline(d: PlanDesign): Timeline | null {
+  if (d.totalRows <= 0) return null;
+  const f = (n: number) => Math.min(1, Math.max(0, n / d.totalRows));
+  const trainEnd = f(d.trainRows);
+  let offset = 0;
+  const drawn = d.perFold.slice(0, MAX_DRAWN_FOLDS).map((fold): TimelineRow => {
+    const x = d.kind === "time" ? Math.min(f(fold.learn), trainEnd) : Math.min(f(offset), trainEnd);
+    const w = Math.min(f(fold.check), trainEnd - x);
+    offset += fold.check;
+    const learn = d.kind === "time" ? [{ x: 0, w: x }] : [{ x: 0, w: x }, { x: x + w, w: trainEnd - x - w }];
+    return { fold: fold.fold, learn: learn.filter((s) => s.w > 0), check: { x, w }, learnRows: fold.learn, checkRows: fold.check };
+  });
+  return { trainEnd, rows: drawn, test: d.hasTest ? { x: trainEnd, w: Math.min(f(d.testRows), 1 - trainEnd) } : null, capped: d.perFold.length > MAX_DRAWN_FOLDS };
+}
+
+const PHRASE: Record<DesignKind, string> = { time: "time-ordered", group: "grouped", random: "random" };
+const TEST_WHERE: Record<DesignKind, string> = { time: "the latest rows in time", group: "whole groups set aside", random: "picked at random" };
+
+/** The two chips under the time line: training rows with the folds, and the final test set's rows and share. */
+export function designChips(d: PlanDesign): Array<{ key: string; title: string; detail: string }> {
+  return [
+    { key: "train", title: `Training rows: ${fmt(d.trainRows)}`, detail: d.folds ? `${d.folds} ${d.kind ? `${PHRASE[d.kind]} ` : ""}cross-validation folds` : "Cross-validation folds are not recorded" },
+    d.hasTest
+      ? { key: "test", title: `Final test set: ${fmt(d.testRows)} rows${d.testShare ? ` (${share(d.testShare)})` : ""}`, detail: `${d.testKind ? `${TEST_WHERE[d.testKind]} · ` : ""}used once per run, at the end` }
+      : { key: "test", title: "No final test set", detail: "Every row of this test design is used for cross-validation." },
+  ];
+}
+
+/** "Why this design?" from the strategies and the row counts only (no dates, no rates). Column names pass through `clean`. */
+export function whyFromRows(d: PlanDesign, clean: (value: string) => string = (v) => v): string | null {
+  const first = d.perFold[0];
+  const last = d.perFold.at(-1);
+  const avg = d.perFold.length ? Math.round(d.perFold.reduce((sum, f) => sum + f.check, 0) / d.perFold.length) : null;
+  if (d.kind && d.testKind && d.kind !== d.testKind) {
+    return `The cross-validation folds are ${PHRASE[d.kind]} and the final test set is ${PHRASE[d.testKind]}; the two are planned separately.`;
   }
-  switch (kind ?? testKind) {
-    case "time":
-      return `Time-ordered${design.timeColumn ? ` by ${clean(design.timeColumn)}` : ""}: each fold learns from earlier rows and is checked on the rows right after them, and the final test set is the latest part. A shuffled split would let the model peek at the future.`;
+  switch (d.kind ?? d.testKind) {
+    case "time": {
+      const by = d.timeColumn ? ` by ${clean(d.timeColumn)}` : "";
+      const folds = first && last && d.kind === "time"
+        ? ` Fold ${first.fold} learns from the first ${fmt(first.learn)} rows and is checked on the next ${fmt(first.check)}; each later fold learns from more of the past, up to ${fmt(last.learn)} rows in fold ${last.fold}.`
+        : " Each fold learns from earlier rows and is checked on the rows right after them.";
+      const test = d.hasTest ? ` The final test set is the latest ${fmt(d.testRows)} rows${d.testShare ? ` (${share(d.testShare)})` : ""}.` : "";
+      return `Time-ordered${by}.${folds}${test} Shuffled rows would let the model peek at the future.`;
+    }
     case "group":
-      return `Grouped${design.groupColumn ? ` by ${clean(design.groupColumn)}` : ""}: all rows of the same group stay on one side of every split, so the model is never tested on a group it trained on.`;
+      return `Grouped${d.groupColumn ? ` by ${clean(d.groupColumn)}` : ""}: all rows of one group stay on the same side of every split${avg !== null ? `, so each of the ${d.perFold.length} folds is checked on about ${fmt(avg)} rows from groups it did not learn from` : ""}.`;
     case "random":
-      return `Random${design.stratified ? ", keeping the same class mix in every part" : ""}: rows are assigned by chance. The plan found no time order or repeated group to protect.`;
+      return `Random${d.stratified ? ", keeping the same class mix in every part" : ""}: rows are assigned by chance${avg !== null ? `; each of the ${d.perFold.length} folds is checked on about ${fmt(avg)} rows and learns from the rest of the ${fmt(d.trainRows)} training rows` : ""}.`;
     default:
       return null;
   }
 }
 
-export type Rect = { x: number; w: number };
-export type FoldBar = { fold: number; train: Rect[]; validation: Rect };
-export type DesignGraphic = { trainWidth: number; folds: FoldBar[]; capped: boolean };
-export const MAX_DRAWN_FOLDS = 10;
-
-/**
- * A schematic (widths in 0..100): the final test set on the right, the training period before it cut into folds.
- * Time-ordered folds grow from the start and validate on the block right after; others hold one block out in turn.
- * The share of the final test set uses the real row counts or fraction when known, else a fixed 20%.
- */
-export function designGraphic(kind: DesignKind | null, folds: number | null, testShare: number | null): DesignGraphic | null {
-  if (kind === null || folds === null || !Number.isInteger(folds) || folds < 2) return null;
-  const drawn = Math.min(folds, MAX_DRAWN_FOLDS);
-  const trainWidth = 100 * (1 - (testShare ?? 0.2));
-  const bars: FoldBar[] = [];
-  if (kind === "time") {
-    const block = trainWidth / (drawn + 1);
-    for (let i = 1; i <= drawn; i += 1) bars.push({ fold: i, train: [{ x: 0, w: i * block }], validation: { x: i * block, w: block } });
-  } else {
-    const block = trainWidth / drawn;
-    for (let i = 0; i < drawn; i += 1) {
-      const train: Rect[] = [];
-      if (i > 0) train.push({ x: 0, w: i * block });
-      if (i < drawn - 1) train.push({ x: (i + 1) * block, w: trainWidth - (i + 1) * block });
-      bars.push({ fold: i + 1, train, validation: { x: i * block, w: block } });
-    }
-  }
-  return { trainWidth, folds: bars, capped: folds > drawn };
+/** Screen-reader summary of the time line, from the same numbers. */
+export function timelineSummary(d: PlanDesign): string {
+  const folds = d.perFold.slice(0, MAX_DRAWN_FOLDS).map((f) => `fold ${f.fold} learns from ${fmt(f.learn)} rows and checks on ${fmt(f.check)}`).join("; ");
+  const test = d.hasTest ? `then a final test set of ${fmt(d.testRows)} rows, used once per run at the end` : "and no final test set";
+  return `Test design drawn to scale by rows: ${d.folds} ${d.kind ? `${PHRASE[d.kind]} ` : ""}cross-validation folds on ${fmt(d.trainRows)} training rows${folds ? ` (${folds})` : ""}, ${test}.`;
 }
 
 // --- who decided -------------------------------------------------------------------------

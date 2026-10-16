@@ -21,7 +21,19 @@ const ProjectSummarySchema = z.object({
     model_version_id: z.string(), version: z.string(), experiment_id: z.string(),
     selection_metric: nullableString, metric_scope: z.literal("cv_aggregate").optional(), cv_metrics: z.record(z.string(), z.number()).optional(),
   }).nullable().optional(),
-  latest_run: z.object({ experiment_id: z.string(), status: z.string(), created_at: z.string(), ended_at: nullableString }).nullable().optional(),
+  latest_run: z.object({
+    experiment_id: z.string(), status: z.string(), created_at: z.string(), ended_at: nullableString, run_number: z.number().nullable().optional(),
+    // V7 BE-A: where an unfinished run is, from its latest recorded event (never estimated).
+    progress: z.object({
+      stage: nullableString, model_family: nullableString, fold_number: z.number().nullable().optional(), folds_planned: z.number().nullable().optional(),
+      candidates_finished: z.number().optional(), updated_at: nullableString, fold_completed: z.boolean().optional(),
+    }).nullable().optional(),
+  }).nullable().optional(),
+  /** Furthest point reached and this caller's waiting decisions for the project (V7 BE-A). */
+  stage: z.string().optional(),
+  waiting_decisions: z.number().optional(),
+  /** Unfinished runs of the project, all of them (not only the latest). */
+  running_count: z.number().optional(),
 });
 export type StudioProjectSummary = z.infer<typeof ProjectSummarySchema>;
 
@@ -104,6 +116,13 @@ export function useStudioProjects() {
   return useQuery({
     queryKey: workspaceQueryKey("v1", "projects"),
     queryFn: ({ signal }) => v1Get("/v1/projects", z.array(StudioProjectListItemSchema), { signal }),
+    // Home's "Running now" shows each live run's fold: re-read every 10 s while any project has a run in progress;
+    // a failed read stops the polling (the page shows the error instead).
+    refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
+      const live = query.state.data?.some((p) => (p.summary?.running_count ?? 0) > 0 || LIVE.has(p.summary?.latest_run?.status ?? ""));
+      return live ? 10_000 : false;
+    },
   });
 }
 

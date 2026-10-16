@@ -32,14 +32,17 @@ test("steps whose page needs an id link only when the project has one", () => {
   assert.equal(href.goal, `/projects/${P}/splits/${SPLIT}`);
   assert.equal(href.predictions, `/projects/${P}/predictions`);
   assert.equal(href.data, `/projects/${P}/data`);
+  // V7 UI-C: without a test design Goal opens the project-level Goal page (the goal from the problem spec).
   const none = buildFlow({ ...base, targets: { split_plan: "not-a-uuid" } });
-  assert.equal(none.find((s) => s.id === "goal")?.href, null);
+  assert.equal(none.find((s) => s.id === "goal")?.href, `/projects/${P}/goal`);
   assert.equal(none.find((s) => s.id === "predictions")?.href, null);
 });
 
 test("routes map to steps; History and unknown paths belong to none", () => {
   assert.equal(stepForPath(`/projects/${P}/pipeline/abc`, P), "experiments");
   assert.equal(stepForPath(`/projects/${P}/splits/${SPLIT}`, P), "goal");
+  assert.equal(stepForPath(`/projects/${P}/goal`, P), "goal");
+  assert.equal(stepScreenForPath(`/projects/${P}/goal`, P), "goal");
   assert.equal(stepForPath(`/projects/${P}/models/${MODEL}`, P), "models");
   assert.equal(stepForPath(`/projects/${P}/predictions`, P), "predictions");
   assert.equal(stepForPath(`/projects/${P}/decisions`, P), null);
@@ -92,7 +95,8 @@ test("Next step is hidden on the last step and outside the step screens", () => 
 });
 
 test("Next step skips a step whose page does not exist yet (no test design, no model, not built)", () => {
-  assert.equal(next("data", { split_plan: null })?.id, "experiments");
+  assert.equal(next("data", { split_plan: null })?.href, `/projects/${P}/goal`);
+  assert.equal(next("goal", { split_plan: null })?.id, "experiments");
   assert.equal(next("models", { split_plan: SPLIT, project_model: null })?.id, "monitoring");
   assert.equal(next("experiments", undefined, new Set(["data", "experiments", "models", "history"]))?.id, "models");
   assert.equal(next("monitoring", undefined, new Set(["monitoring"])), null);
