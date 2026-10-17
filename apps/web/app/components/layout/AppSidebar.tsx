@@ -12,7 +12,8 @@ import { useSession } from "@/lib/application";
 import { displayName, roleLabel } from "@/lib/infrastructure/session";
 import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useSignOutToLogin } from "./use-sign-out";
 import { WorkspaceSelector } from "./WorkspaceSelector";
 
 type AppSidebarProps = {
@@ -70,18 +71,15 @@ export function AppSidebar({
   onNavigate,
 }: AppSidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, loaded, signOut } = useSession();
+  const { user, loaded } = useSession();
+  const signOutToLogin = useSignOutToLogin();
   const sections = navigationForUser(user);
   const active = activeNavigationItem(pathname, user);
   const iconOnly = collapsed && !mobile;
 
   function handleSignOut() {
     onNavigate?.();
-    void signOut().then(() => {
-      router.push("/login");
-      router.refresh();
-    });
+    signOutToLogin();
   }
 
   const accountName = user ? displayName(user) : "Loading account";

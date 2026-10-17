@@ -35,8 +35,12 @@ export default defineConfig({
   },
   webServer: [
     {
+      // The API plus two `dclab worker run` (same process group, so all stop together): training,
+      // scoring and weekly schedules run in workers as in production; an API process never loads a
+      // stored model (P7.1-A), and weekly scoring reports "paused" without the postgres dispatcher.
+      // Two workers keep a spec's runs from queueing behind jobs an earlier spec left running.
       command:
-        `cd ../.. && .venv/bin/uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port ${apiPort}`,
+        `cd ../.. && { .venv/bin/dclab worker run & .venv/bin/dclab worker run & } && exec .venv/bin/uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port ${apiPort}`,
       url: `${apiUrl}/health`,
       timeout: 120_000,
       reuseExistingServer: false,
@@ -47,13 +51,14 @@ export default defineConfig({
         AI_ENABLED: "false",
         // The existing specs cover the frozen Decision.ai pages (hidden by default since P4.1-A).
         LEGACY_DECISION_LAYER_ENABLED: "true",
-        ML_JOB_DISPATCHER: "thread",
+        ML_JOB_DISPATCHER: "postgres",
       },
     },
     {
       command: `npm run build && ./node_modules/.bin/next start -p ${webPort}`,
       url: `${webUrl}/login`,
-      timeout: 180_000,
+      // Includes the production build (about 2-3 minutes on a busy 4-core machine).
+      timeout: 420_000,
       reuseExistingServer: false,
       env: {
         NEXT_PUBLIC_API_URL: apiUrl,

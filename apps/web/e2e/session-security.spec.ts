@@ -116,7 +116,7 @@ test.describe("S0-P02B browser session security", () => {
     expect(me.headers()["cache-control"]).toMatch(/no-store/i);
     expect((await me.json()).email).toBe(EMAIL);
     await expect(page.getByLabel("Active workspace")).toBeVisible();
-    await expect(page.locator("#active-workspace")).toBeVisible();
+    await expect(page.getByLabel("Active workspace").getByRole("combobox", { name: "Workspace" })).toBeVisible();
     await page.goto("/app/opportunities/upload");
     await expect(page.getByTestId("active-workspace-notice")).toBeVisible();
     await page.goto("/app/insights");

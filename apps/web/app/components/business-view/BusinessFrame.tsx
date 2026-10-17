@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { WorkspaceSelector } from "@/app/components/layout/WorkspaceSelector";
+import { useSignOutToLogin } from "@/app/components/layout/use-sign-out";
 import { businessNavigationForUser } from "@/app/components/layout/app-navigation";
 import { Crumbs } from "@/components/studio/Crumbs";
 import { Shell } from "@/components/studio/Shell";
@@ -18,6 +19,7 @@ export function BusinessFrame({ children }: { children: ReactNode }) {
   const nav = businessNavigationForUser(user);
   // An admin who opened this view from a "View as" preview keeps the preview note here, with a way to end it.
   const viewAs = useViewAs(user);
+  const signOutToLogin = useSignOutToLogin();
 
   let body: ReactNode = children;
   if (!loaded) body = <p role="status">Loading your workspace…</p>;
@@ -30,6 +32,7 @@ export function BusinessFrame({ children }: { children: ReactNode }) {
       currentHref="/outcomes"
       workspace={activeWorkspace ? { name: activeWorkspace.name, detail: accountRoleLabel(user, activeWorkspace) } : undefined}
       user={user ? { name: displayName(user), detail: user.email } : undefined}
+      onSignOut={user ? signOutToLogin : undefined}
       crumbs={<Crumbs items={[{ label: activeWorkspace?.name ?? "Workspace" }, { label: "Business view" }]} />}
       topbarRight={
         user ? (

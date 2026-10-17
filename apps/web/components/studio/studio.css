@@ -80,6 +80,8 @@
 .studio .nav .user { margin-top: auto; border-top: 1px solid var(--line); padding: 14px 6px 2px; font-size: 0.85rem; display: grid; }
 .studio .nav .user b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .studio .nav .user small { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+.studio .nav .nav-signout { font: inherit; font-size: 0.85rem; font-weight: 500; color: var(--ink-2); background: none; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; cursor: pointer; text-align: left; }
+.studio .nav .nav-signout:hover { background: var(--surface-2); color: var(--ink); }
 .studio .main { min-width: 0; display: grid; grid-template-rows: auto 1fr; }
 .studio .topbar { display: flex; align-items: center; gap: 12px; padding: 12px 32px; /* opaque: text over scrolled content behind a see-through bar failed contrast */ background: var(--bg); position: sticky; top: 0; z-index: 5; min-width: 0; }
 .studio.embedded .topbar { position: static; }
@@ -118,6 +120,7 @@
   .studio .nav-groups { gap: 10px; }
   .studio .nav a, .studio .nav .nav-off { padding: 8px 10px; white-space: nowrap; }
   .studio .nav .cnt { margin-left: 4px; }
+  .studio .nav .nav-signout { flex: none; white-space: nowrap; margin-left: auto; }
   .studio .content { padding: 10px 16px 64px; gap: 16px; }
   .studio .topbar { padding: 10px 16px; flex-wrap: wrap; position: static; }
   .studio .topbar .right { flex-wrap: wrap; flex: 1 1 100%; min-width: 0; justify-content: flex-end; }
@@ -162,6 +165,7 @@
 .studio .sect-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface-3); border-color: var(--line); font-weight: 600; }
 .studio .sect-tabs .cnt { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-2); }
 .studio .sect-panel { display: grid; gap: 14px; padding: 18px 20px 20px; }
+.studio .sect-panel > .legacy-surface { min-width: 0; } /* the build record's step rail scrolls inside the panel instead of widening the page past its download buttons */
 
 .studio .tabs .cnt { margin-left: 7px; font-family: var(--font-mono); font-size: .68rem; color: var(--ink-2); background: var(--surface-3); padding: 1px 6px; border-radius: 999px; }
 

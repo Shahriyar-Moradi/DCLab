@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { WorkspaceSelector } from "@/app/components/layout/WorkspaceSelector";
+import { useSignOutToLogin } from "@/app/components/layout/use-sign-out";
 import { studioNavigationForUser } from "@/app/components/layout/app-navigation";
 import { AiSuggestions } from "@/app/components/studio-app/AiSuggestions";
 import { AssistantPanel } from "@/app/components/studio-app/AssistantPanel";
@@ -56,6 +57,7 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   const params = useParams<{ id?: string }>();
   const projectId = pathname.startsWith("/projects/") && isUuid(params.id) ? params.id : undefined;
   const { user, loaded, activeWorkspace, activeWorkspaceId, workspaceSwitching } = useSession();
+  const signOutToLogin = useSignOutToLogin();
   const project = useStudioProject(projectId);
   const refs = useProjectRefs(projectId);
   const graph = useProjectGraph(projectId);
@@ -120,6 +122,7 @@ export function StudioFrame({ children }: { children: ReactNode }) {
       badges={{ inbox: badgeText(counts.data?.needs_decision) }}
       workspace={activeWorkspace ? { name: activeWorkspace.name, detail: `${activeWorkspace.kind} workspace · ${accountRoleLabel(user, activeWorkspace)}` } : undefined}
       user={user ? { name: displayName(user), detail: user.email } : undefined}
+      onSignOut={user ? signOutToLogin : undefined}
       crumbs={<Crumbs items={crumbs} />}
       // Keyed by workspace: a switch drops results and aborts requests made for the old one.
       commandBar={user ? <StudioCommandBar key={activeWorkspaceId ?? "none"} projectId={projectId} /> : null}

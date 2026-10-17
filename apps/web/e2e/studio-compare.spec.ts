@@ -46,6 +46,8 @@ async function completed(page: Page, experimentId: string): Promise<void> {
 }
 
 test("branch, compare, accept: the champion decision appears", async ({ page }) => {
+  // Two training runs in the worker plus the whole compare/accept flow: more than the default 3 minutes on a busy runner.
+  test.setTimeout(360_000);
   await login(page);
   await page.goto("/projects/new");
   const name = `Compare ${Date.now()}`;

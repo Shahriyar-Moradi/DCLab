@@ -829,7 +829,10 @@ def test_the_probe_refuses_what_a_validator_misses(tmp_path):
                                                   _lgbm_payloads(lgbm_text)["lgbm left_child 1e0"].encode()))]
     results = _in_child(tmp_path, crashing + hanging, flags="no-validators,short-timeout")
     assert results == {label: "refused:unsupported_model" for label, _p, _m in crashing + hanging}
-    _in_child(tmp_path, crashing[:1], flags="no-validators,no-probe", expect_crash=True)
+    # The unprotected leg uses the LightGBM out-of-range feature index: it reads ~2e9 slots past
+    # the array and crashed the child in every local run. The XGBoost payload corrupts memory without always
+    # crashing (a later check then refuses it), which made this assertion flaky.
+    _in_child(tmp_path, crashing[1:], flags="no-validators,no-probe", expect_crash=True)
 
 
 def test_crafted_members_are_refused_in_a_child_process(tmp_path):

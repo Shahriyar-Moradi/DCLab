@@ -55,7 +55,7 @@ test("findings panel: severity, numbers, badge and a pre-filled Branch link", as
   await expect(page.getByLabel("Dataset in this project")).not.toHaveValue("");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Train" }).click();

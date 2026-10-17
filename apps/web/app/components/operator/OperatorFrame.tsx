@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import { operatorNavigationForUser } from "@/app/components/layout/app-navigation";
+import { useSignOutToLogin } from "@/app/components/layout/use-sign-out";
 import { Crumbs } from "@/components/studio/Crumbs";
 import { Shell } from "@/components/studio/Shell";
 import { useSession } from "@/lib/application";
@@ -12,6 +13,7 @@ import { displayName, roleLabel } from "@/lib/infrastructure/session";
 
 function Frame({ children }: { children: ReactNode }) {
   const { user, loaded } = useSession();
+  const signOutToLogin = useSignOutToLogin();
   const tab = tabFromQuery(useSearchParams().get("tab"));
   const nav = operatorNavigationForUser(user);
   const current = nav.flatMap((group) => group.items).find((item) => item.href === (tab === "overview" ? "/operator" : `/operator?tab=${tab}`));
@@ -26,6 +28,7 @@ function Frame({ children }: { children: ReactNode }) {
       nav={nav}
       currentHref={current?.href}
       user={user ? { name: displayName(user), detail: `${roleLabel(user.role)} · ${user.email}` } : undefined}
+      onSignOut={user ? signOutToLogin : undefined}
       crumbs={<Crumbs items={[{ label: "Operator console", href: "/operator" }, { label }]} />}
       topbarRight={user ? <a className="btn" href="/admin/monitoring">Platform admin pages</a> : null}
     >

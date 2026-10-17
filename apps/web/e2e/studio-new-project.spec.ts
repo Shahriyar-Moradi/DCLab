@@ -59,7 +59,7 @@ test("New project wizard: CSV to a trained experiment", async ({ page }) => {
 
   // 2 What to predict.
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
 
   // 3 What good looks like (optional): ranking metric and one business rule.
@@ -78,8 +78,9 @@ test("New project wizard: CSV to a trained experiment", async ({ page }) => {
   const projectId = page.url().split("/projects/")[1].split("/")[0];
 
   // Live progress to a finished run.
-  await expect(page.getByText("Experiment id")).toBeVisible();
-  await expect(page.getByText("completed", { exact: true }).first()).toBeVisible({ timeout: 150_000 });
+  await expect(page.getByText("Technical ids", { exact: true })).toBeVisible();
+  // "Compare with…" is offered only once the run has finished.
+  await expect(page.getByRole("link", { name: "Compare with…" })).toBeVisible({ timeout: 150_000 });
 
   await shot(page, "5-experiment");
   const listed = await page.request.get(`/api/backend/v1/experiments?project_id=${projectId}&limit=10`);

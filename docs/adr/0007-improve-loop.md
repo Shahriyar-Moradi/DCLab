@@ -121,7 +121,7 @@ The "Option B wording rule" below applies only to the guided screen.
 
 ### Revision 5 (2026-10-17): P5.4-A3 as built; `fresh_split` deferred
 
-- **`fresh_split` is deferred out of P5.4-A3** (founder to confirm). A loop on a fresh SplitPlan (§6.5)
+- **`fresh_split` is deferred out of P5.4-A3** (founder confirmed the deferral on 2026-10-17). A loop on a fresh SplitPlan (§6.5)
   needs engine work (a server-derived split seed and `validation_folds` carried through auto-train, the
   runner and the split planner, a sealed default-config root, and the loop starting once that root is
   locked) and its own ML-correctness review. Until then it fails closed: `POST /v1/improve-runs` with

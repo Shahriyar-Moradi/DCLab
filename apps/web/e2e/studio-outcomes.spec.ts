@@ -62,7 +62,7 @@ test("Business view: a business user reads the outcome, downloads the list and c
   await admin.getByLabel("Data file").setInputFiles({ name: "churn.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv(300)) });
   await admin.getByRole("button", { name: "Upload and continue" }).click();
   await admin.getByLabel("Task").selectOption("binary");
-  await admin.getByLabel("Target column").selectOption("churn");
+  await admin.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await admin.getByRole("button", { name: "Continue" }).click();
   await admin.getByRole("button", { name: "Continue" }).click();
   await admin.getByRole("button", { name: "Train" }).click();

@@ -48,7 +48,7 @@ test("pipeline evidence page for a completed run", async ({ page }) => {
   await page.getByLabel("Data file").setInputFiles({ name: "churn.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv()) });
   await page.getByRole("button", { name: "Upload and continue" }).click();
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Train" }).click();
