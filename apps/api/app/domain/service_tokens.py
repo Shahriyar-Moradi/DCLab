@@ -104,6 +104,10 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/projects/{project_id}/monitoring",
             "/v1/projects/{project_id}/monitoring/windows/{window_start}",
             "/v1/projects/{project_id}/monitoring/outcomes",
+            # D5a: the retrain policy and state (no user ids, never the comparison figures); starting a
+            # retrain and changing the policy stay with people.
+            "/v1/projects/{project_id}/retrain-policy",
+            "/v1/projects/{project_id}/retrain-status",
             # P7.6-A: the Business view; tokens get the final-test headline withheld (no person ids).
             "/v1/projects/{project_id}/outcomes",
             "/v1/outcomes/projects",  # id and name of projects with a model in use
@@ -179,6 +183,10 @@ HUMAN_ONLY_ROUTES = frozenset(
         # P7.4-A: linking real outcomes is a person's act (tokens: 403 service_token_not_permitted; the
         # route refuses any token again as human_session_required).
         ("POST", "/v1/projects/{project_id}/monitoring/outcomes"),
+        # D5a: starting a retrain (ML-write) and setting the retrain policy (owners and administrators)
+        # are a person's acts, even for a token with experiments:write (ADR 0012).
+        ("POST", "/v1/projects/{project_id}/retrain"),
+        ("PUT", "/v1/projects/{project_id}/retrain-policy"),
         # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required).
         ("GET", "/v1/assistant/threads"),
         ("POST", "/v1/assistant/threads"),

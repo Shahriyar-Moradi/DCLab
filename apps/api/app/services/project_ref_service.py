@@ -62,6 +62,8 @@ from app.db.models import (
 from app.domain.decision_records import (
     ACTOR_AGENT,
     ACTOR_HUMAN,
+    ACTOR_RULE,
+    RULES_PROPOSING_REF_MOVES,
     DECISION_CHAMPION_PROMOTED,
     DETAIL_SERVICE_ATTACHED_EVIDENCE,
     EVIDENCE_REFS_MAX,
@@ -829,9 +831,13 @@ def propose_ref_move(
     decision_type: str | None = None,
     idempotency_key: str | None = None,
 ) -> ProjectDecisionRecord:
-    """A proposed ``ref_moved``/``champion_promoted`` record; no ref changes."""
+    """A proposed ``ref_moved``/``champion_promoted`` record; no ref changes. Rule actors: only the
+    ``RULES_PROPOSING_REF_MOVES`` (D5a retrain challenger), with their own code-owned key."""
 
-    authorize_writer(db, actor, workspace_id=workspace_id, allow_agent=True, allow_rule=False)
+    rule_may_propose = actor.kind == ACTOR_RULE and actor.rule in RULES_PROPOSING_REF_MOVES
+    authorize_writer(db, actor, workspace_id=workspace_id, allow_agent=True, allow_rule=rule_may_propose)
+    if actor.kind == ACTOR_RULE and not idempotency_key:
+        raise InvalidDecisionRecordError("rule_key_required", "a rule's proposal carries its own idempotency key")
     refuse_agent_holdout(actor, evidence_refs, facts)
     load_project(db, workspace_id=workspace_id, project_id=project_id)
     items = _normalized_moves(moves)

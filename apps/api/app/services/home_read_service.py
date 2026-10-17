@@ -40,6 +40,8 @@ from app.db.models import (
     ProblemSpec,
     ProjectDecisionRecord,
     ProjectRef,
+    RetrainComparison,
+    RetrainRequest,
     ScoringScheduleRun,
     SplitPlan,
     User,
@@ -98,13 +100,14 @@ _DECISION_LABELS: dict[str, str] = {
     "test_design_confirmed": "Test design confirmed",
     "goal_metric_confirmed": "Ranking metric set",
     "goal_rule_confirmed": "Business rule set",
+    "retrain_policy_changed": "Retrain policy changed",
 }
 # Types whose label already says what happened; the others append the state.
 _SELF_DESCRIBING = frozenset(
     {"winner_locked", "split_plan_created", "ref_initialized", "problem_spec_locked", "proposal_accepted",
      "proposal_rejected", "decision_point_resolved", "proposal_reverted", "operating_point_chosen",
      "scoring_schedule_changed", "monitoring_outcomes_linked", "target_confirmed", "test_design_confirmed",
-     "goal_metric_confirmed", "goal_rule_confirmed"}
+     "goal_metric_confirmed", "goal_rule_confirmed", "retrain_policy_changed"}
 )
 _RUN_FINISHED = {
     "completed": "completed", "failed": "failed", "cancelled": "cancelled", "skipped": "skipped",
@@ -429,6 +432,39 @@ def _scheduled_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key
     return items
 
 
+_RETRAIN_REQUESTED = {"person": "Retrain on newest data started", "auto": "Retrain on newest data started "
+                      "automatically", "ask": "Retrain on newest data suggested"}
+
+
+def _retrain_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None, n: int,
+                   viewer_id: UUID | None) -> list[ActivityItemRead]:
+    """D5a: retrains asked, started (by a person or the rule) and compared (no figures)."""
+
+    rr, rc = RetrainRequest, RetrainComparison
+    items = []
+    for row_id, proj, at, origin, run, version, who in _page(
+            db, select(rr.id, rr.project_id, rr.created_at, rr.origin, rr.experiment_id, rr.incumbent_model_version_id,
+                       rr.requested_by_user_id).where(rr.workspace_id == ws),
+            "retrain_requested", rr.created_at, rr.id, rr.project_id, project_id, after, n):
+        actor = (ActivityActorRead(kind="person", is_you=viewer_id is not None and who == viewer_id)
+                 if origin == "person" else ActivityActorRead(kind="rule"))
+        items.append(ActivityItemRead(
+            id=f"retrain_requested:{row_id}", kind="retrain_requested", occurred_at=at, project_id=proj, actor=actor,
+            subject=_subject("experiment", run) if run else _subject("model_version", version),
+            summary=_RETRAIN_REQUESTED.get(str(origin), "Retrain on newest data"), status=code_value(origin),
+            link=ActivityLinkRead(kind="retrain_request", id=row_id)))
+    for row_id, proj, at, status, run in _page(
+            db, select(rc.id, rc.project_id, rc.created_at, rc.status, rc.experiment_id).where(rc.workspace_id == ws),
+            "retrain_compared", rc.created_at, rc.id, rc.project_id, project_id, after, n):
+        items.append(ActivityItemRead(
+            id=f"retrain_compared:{row_id}", kind="retrain_compared", occurred_at=at, project_id=proj,
+            actor=ActivityActorRead(kind="rule"), subject=_subject("experiment", run),
+            summary=("Retrained model compared with the model in use" if status == "compared"
+                     else "Retrained model is not comparable with the model in use"), status=code_value(status),
+            link=ActivityLinkRead(kind="retrain_comparison", id=row_id)))
+    return items
+
+
 def _key(item: ActivityItemRead) -> _Key:
     return item.occurred_at, ACTIVITY_KIND_RANK[item.kind], item.link.id
 
@@ -465,6 +501,7 @@ def list_activity(
         *_final_test_items(db, workspace_id, project_id, after, n),
         *_drift_items(db, workspace_id, project_id, after, n),
         *_scheduled_items(db, workspace_id, project_id, after, n),
+        *_retrain_items(db, workspace_id, project_id, after, n, viewer_id),
     ]
     candidates.sort(key=_key, reverse=True)
     page = candidates[:limit]

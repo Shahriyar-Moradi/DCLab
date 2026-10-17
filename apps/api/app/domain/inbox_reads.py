@@ -42,12 +42,15 @@ INBOX_EVIDENCE_MAX = 16
 
 InboxTab = Literal["needs_decision", "applied_automatically", "done"]
 INBOX_TABS: tuple[str, ...] = ("needs_decision", "applied_automatically", "done")
-InboxKind = Literal["decision_proposal", "agent_proposal", "question", "run_finished", "drift_alert"]
-# Tie-break rank inside one timestamp (part of the cursor; never reorder, only append).
+InboxKind = Literal["decision_proposal", "agent_proposal", "question", "run_finished", "drift_alert", "retrain_ask",
+                    "challenger_ready"]
+# Tie-break rank inside one timestamp (part of the cursor; never reorder, only append). D5a:
+# ``challenger_ready`` items come from the decision-proposal source, so they share its rank.
 INBOX_KIND_RANK: dict[str, int] = {"decision_proposal": 0, "agent_proposal": 1, "question": 2, "run_finished": 3,
-                                   "drift_alert": 4}
-InboxActionName = Literal["accept", "reject", "supersede", "revert", "answer"]
-InboxSourceKind = Literal["decision_record", "agent_proposal", "execution_request", "experiment", "monitoring_window"]
+                                   "drift_alert": 4, "retrain_ask": 5, "challenger_ready": 0}
+InboxActionName = Literal["accept", "reject", "supersede", "revert", "answer", "retrain"]
+InboxSourceKind = Literal["decision_record", "agent_proposal", "execution_request", "experiment", "monitoring_window",
+                          "retrain_request"]
 SemanticAgreement = Literal["agree", "disagree", "abstain", "unavailable"]
 
 

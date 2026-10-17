@@ -297,6 +297,10 @@ class MonitoringError(ExperimentRequestError):
     """An outcome file cannot be linked, or a monitoring window cannot be computed (P7.4-A)."""
 
 
+class RetrainError(ExperimentRequestError):
+    """A retrain on newest data cannot start or a retrain policy cannot change (D5a): stable ``code``."""
+
+
 class OperatingPointError(ExperimentRequestError):
     """An operating point cannot be chosen (P5.2-A): stable ``code``, 409/422, typed ``details``
     (e.g. the closest point of an infeasible objective)."""
@@ -308,6 +312,19 @@ class OperatingPointError(ExperimentRequestError):
 
     def public_detail(self) -> dict[str, object]:
         return {**self.details, "code": self.code, "message": self.detail_message}
+
+
+class ImproveRunError(Exception):
+    """An improve-loop request refused (ADR 0007 §4, §7): 404 / 409 / 422 / 429 with a closed code."""
+
+    def __init__(self, code: str, message: str, *, status_code: int = 409) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.detail_message = message
+        self.status_code = status_code
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message}
 
 
 class RunQuotaExceededError(Exception):

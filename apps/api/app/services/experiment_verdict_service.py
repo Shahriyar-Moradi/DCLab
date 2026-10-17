@@ -18,6 +18,7 @@ asserted and both curve digests reported). Sealed runs (ADR 0007 §6.1) never co
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -57,6 +58,8 @@ from app.engine.evaluation.paired_verdict import FoldScore, PairedVerdict, paire
 from app.engine.investigate.checks import DUMMY_FAMILIES
 from app.engine.modeling.objective import MetricConstraint
 from app.engine.modeling.operating_points import (
+    Curve,
+    GoalFoldScores,
     GoalScoreRefusal,
     PointObjective,
     curve_digest,
@@ -425,15 +428,44 @@ def _goal_verdict(db: Session, workspace_id: UUID, mine: tuple[Experiment, Model
     point_objective = PointObjective(goal=objective.goal, constraints=tuple(
         MetricConstraint(metric=item.metric, op=item.op, value=float(item.value)) for item in objective.constraints))
     try:
-        own = goal_fold_scores(curves[0], point_objective)
-        other = goal_fold_scores(curves[1], point_objective, fold_counts=own.fold_counts)
+        outcome = paired_goal_outcome(point_objective, curves[0], curves[1], comparisons=comparisons,
+                                      suspicious=suspicious)
     except GoalScoreRefusal as exc:
         return refuse(exc.reason)
+    own, other, result = outcome.own, outcome.other, outcome.result
     base.update(experiment_threshold=own.threshold, against_threshold=other.threshold,
                 experiment_meets_rule=own.feasible, against_meets_rule=other.feasible)
+    scored_by = GOAL_SHORTFALL if outcome.by_shortfall else "goal_metric"
+    message = goal_message(outcome.verdict, outcome.reason, kind="objective", metric=objective.goal,
+                           constraints=constraints, scored_by=scored_by, direction=result.direction,
+                           folds=result.folds, mean_difference=result.mean_difference, margin=result.margin, **texts)
+    return GoalVerdictRead(**base, scored_by=scored_by, verdict=outcome.verdict, reason=outcome.reason,
+                           message=message, **_numbers(result))
+
+
+@dataclass(frozen=True)
+class GoalOutcome:
+    verdict: str
+    reason: str | None
+    result: PairedVerdict
+    own: GoalFoldScores
+    other: GoalFoldScores
+    by_shortfall: bool
+
+
+def paired_goal_outcome(objective: PointObjective, curve: Curve, against_curve: Curve, *, comparisons: int,
+                        suspicious: bool) -> GoalOutcome:
+    """The §5 rule on a constrained goal (pure; the goal verdict and the improve loop share it): each run
+    scored per fold at its own solved threshold (``goal_fold_scores``, identical per-fold class counts
+    asserted); when either cannot meet the constraints, both are compared by the per-fold shortfall
+    (lower is better) and a run that misses the rule never beats one that meets it. Raises
+    ``GoalScoreRefusal``."""
+
+    own = goal_fold_scores(curve, objective)
+    other = goal_fold_scores(against_curve, objective, fold_counts=own.fold_counts)
     by_shortfall = not (own.feasible and other.feasible)
 
-    def folds(scores: Any) -> dict[int, FoldScore]:
+    def folds(scores: GoalFoldScores) -> dict[int, FoldScore]:
         return {n: FoldScore(value=scores.shortfalls[n - 1] if by_shortfall else scores.values[n - 1],
                              validation_rows=sum(scores.fold_counts[n - 1]))
                 for n in range(1, len(scores.values) + 1)}
@@ -449,9 +481,4 @@ def _goal_verdict(db: Session, workspace_id: UUID, mine: tuple[Experiment, Model
     if verdict == "beats_the_noise" and not own.feasible and other.feasible:
         # §5: a smaller mean shortfall never makes a try that misses the rule beat one that meets it.
         verdict, reason = "within_the_noise", "try_misses_rule"
-    scored_by = GOAL_SHORTFALL if by_shortfall else "goal_metric"
-    message = goal_message(verdict, reason, kind="objective", metric=objective.goal, constraints=constraints,
-                           scored_by=scored_by, direction=result.direction, folds=result.folds,
-                           mean_difference=result.mean_difference, margin=result.margin, **texts)
-    return GoalVerdictRead(**base, scored_by=scored_by, verdict=verdict, reason=reason, message=message,
-                           **_numbers(result))
+    return GoalOutcome(verdict, reason, result, own, other, by_shortfall)

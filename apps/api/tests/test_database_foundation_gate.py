@@ -64,6 +64,18 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_upload_attempts_workspace_project": "a",  # D3a (0085): NO ACTION, the upload log keeps its parents
     "fk_upload_attempts_service_token": "a",
     "fk_upload_attempts_workspace_dataset": "a",
+    # P5.4-A2 (0087): loops go with their project; graph pointers never cascade.
+    "fk_improve_runs_workspace_project": "c",
+    "fk_improve_runs_split_plan": "a",
+    "fk_improve_runs_start_experiment": "a",
+    "fk_improve_runs_incumbent_experiment": "a",
+    "fk_improve_runs_final_experiment": "a",
+    "fk_improve_runs_acceptance_record": "a",
+    "fk_improve_runs_continuation_job": "a",
+    "fk_improve_runs_service_token": "a",
+    "fk_improve_iterations_run": "c",
+    "fk_improve_iterations_experiment": "a",
+    "fk_improve_iterations_incumbent": "a",
     "fk_execution_requests_workspace_project": "n",
     "fk_execution_requests_workspace_parent": "n",
     "fk_execution_requests_workspace_workflow_run": "n",

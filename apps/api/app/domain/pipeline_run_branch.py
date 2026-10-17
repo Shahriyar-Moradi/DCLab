@@ -56,12 +56,16 @@ class ServiceOverrides:
     ``app.engine.evaluation.comparability.RunEvidence`` pinned from the probe, checked at the winner
     lock before the final test); ``max_training_seconds`` (the pinned budget); ``objective_constraints``
     (the goal's ``(metric, op, value)`` constraints: they replace the objective's constraints so the
-    lock solves under them; the primary metric and selection never change)."""
+    lock solves under them; the primary metric and selection never change); ``objective_goal`` (the
+    goal's metric to maximise: the threshold lock maximises it under those constraints, so the final
+    test is scored at the goal's operating point -- D4c gate 2; ``flagged_share`` is never a goal or
+    a constraint here)."""
 
     evidence_mode: str = EVIDENCE_MODE_SCORED
     expected_selection: Any = None
     max_training_seconds: float | None = None
     objective_constraints: tuple[tuple[str, str, float], ...] | None = None
+    objective_goal: str | None = None
 
     def __post_init__(self) -> None:
         from app.engine.evaluation.comparability import RunEvidence
@@ -83,6 +87,8 @@ class ServiceOverrides:
             if (metric not in THRESHOLD_METRICS or op not in _CONSTRAINT_OPS or isinstance(value, bool)
                     or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0):
                 raise ValueError(f"invalid goal constraint {item!r}")
+        if self.objective_goal is not None and self.objective_goal not in THRESHOLD_METRICS:
+            raise ValueError(f"invalid goal metric {self.objective_goal!r}")
 
     def objective(self, base: Mapping[str, Any] | None) -> dict[str, Any] | None:
         """The run's objective with the goal's constraints (unchanged without any)."""
@@ -99,6 +105,7 @@ class ServiceOverrides:
             "max_training_seconds": None if self.max_training_seconds is None else float(self.max_training_seconds),
             "objective_constraints": None if self.objective_constraints is None else [
                 {"metric": metric, "op": op, "value": float(value)} for metric, op, value in self.objective_constraints],
+            **({"objective_goal": self.objective_goal} if self.objective_goal is not None else {}),
         }
 
     @classmethod
@@ -118,4 +125,5 @@ class ServiceOverrides:
             max_training_seconds=record.get("max_training_seconds"),
             objective_constraints=None if constraints is None else tuple(
                 (str(item["metric"]), str(item["op"]), float(item["value"])) for item in constraints),
+            objective_goal=record.get("objective_goal"),
         )

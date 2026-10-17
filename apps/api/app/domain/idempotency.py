@@ -29,7 +29,12 @@ REQUEST_DIGEST_SPEC_KEY = "request_digest"
 # Key namespaces owned by internal surfaces (they replay by key alone); a /v1
 # caller can never claim them, so it can never plant a row they would adopt.
 LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX = "legacy_labs_upload:"
-RESERVED_IDEMPOTENCY_KEY_PREFIXES = (LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX,)
+# P5.4-A2 (ADR 0007 §7, §8): improve probes (``improve:<run>:<seq>``), the acceptance record
+# (``improve:<run>:accept``) and final runs (``improve-final:<run>:<attempt>``).
+IMPROVE_KEY_PREFIX = "improve:"
+IMPROVE_FINAL_KEY_PREFIX = "improve-final:"
+RESERVED_IDEMPOTENCY_KEY_PREFIXES = (LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX, IMPROVE_KEY_PREFIX,
+                                     IMPROVE_FINAL_KEY_PREFIX)
 
 
 def is_reserved_idempotency_key(key: str) -> bool:

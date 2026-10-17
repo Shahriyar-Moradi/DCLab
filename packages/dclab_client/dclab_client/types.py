@@ -1632,6 +1632,37 @@ class ScoringScheduleState(_Versioned):
     recent_runs: list[ScoringScheduleRun] = Field(default_factory=list)
 
 
+class RetrainPolicy(_Versioned):
+    """D5a: ``policy`` off (default), ask or auto; ``etag`` (the version) is ``set_policy``'s If-Match."""
+
+    project_id: UUID
+    policy: str
+    version: int
+    updated_at: datetime | None = None
+    updated_by_user_id: UUID | None = None  # never shown to service tokens
+    owner_can_start: bool | None = None
+
+
+class RetrainStatus(BaseModel):
+    """D5a: ``state`` idle, drift_found, retraining, ready_to_compare, waiting_for_you, switched or kept.
+    ``comparison`` (same kind of test, latest months) is never given to service tokens."""
+
+    project_id: UUID
+    policy: str
+    state: str
+    model_in_use_id: UUID | None = None
+    latest_window_start: datetime | None = None
+    latest_window_status: str | None = None
+    newer_dataset_id: UUID | None = None
+    request: dict[str, Any] | None = None
+    comparison: dict[str, Any] | None = None
+    comparison_withheld: bool = False
+    real_outcomes: dict[str, Any] | None = None
+    proposal_id: UUID | None = None
+    proposal_state: str | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
 class ScoringScheduleRunPage(BaseModel):
     project_id: UUID
     items: list[ScoringScheduleRun] = Field(default_factory=list)

@@ -43,6 +43,7 @@ DECISION_TYPES = (
     "test_design_confirmed",
     "goal_metric_confirmed",
     "goal_rule_confirmed",
+    "retrain_policy_changed",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
 DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
@@ -76,9 +77,12 @@ GOAL_CONFIRMATION_DECISION_TYPES = {
     "metric": "goal_metric_confirmed",
     "rule": "goal_rule_confirmed",
 }
+# D5a (ADR 0012): an owner or administrator changing the project's retrain policy: written only by
+# ``retrain_service.set_policy``, never recorded or corrected generically.
+DECISION_RETRAIN_POLICY_CHANGED = "retrain_policy_changed"
 RESERVED_DECISION_TYPES = frozenset(
     {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted",
-     DECISION_SCORING_SCHEDULE_CHANGED, DECISION_MONITORING_OUTCOMES_LINKED,
+     DECISION_SCORING_SCHEDULE_CHANGED, DECISION_MONITORING_OUTCOMES_LINKED, DECISION_RETRAIN_POLICY_CHANGED,
      *GOAL_CONFIRMATION_DECISION_TYPES.values()}
 )
 # Accepted rows of these types exist only together with their ref move
@@ -125,7 +129,12 @@ RULE_WINNER_LOCKED_BACKFILL = "selection.cv_winner.backfill.v1"
 RULE_REFS_BOOTSTRAP = "refs.bootstrap.v1"
 RULE_HOLDOUT_PLANNER_PREFIX = "holdout.planner"
 REFS_BOOTSTRAP_RATIONALE = "first locked model; not a comparison"
-CODE_OWNED_RULES = frozenset({RULE_WINNER_LOCKED, RULE_WINNER_LOCKED_BACKFILL, RULE_REFS_BOOTSTRAP})
+# D5a (ADR 0012): the retrain rule proposes switching to a retrained model (never moves a ref).
+RULE_RETRAIN_CHALLENGER = "retrain.challenger.v1"
+CODE_OWNED_RULES = frozenset(
+    {RULE_WINNER_LOCKED, RULE_WINNER_LOCKED_BACKFILL, RULE_REFS_BOOTSTRAP, RULE_RETRAIN_CHALLENGER})
+# The only rules ``propose_ref_move`` accepts; accepting or rejecting stays a person's act.
+RULES_PROPOSING_REF_MOVES = frozenset({RULE_RETRAIN_CHALLENGER})
 _HOLDOUT_PLANNER_RULE = re.compile(r"^holdout\.planner\.v[A-Za-z0-9_]{1,32}$")
 # ADR 0008 §7: a decision point's deterministic policy (``decision_point.<registry key>.v1``)
 # is the actor of its ``decision_point_resolved`` record, also when a Jev value is applied.
@@ -200,7 +209,9 @@ DETAIL_CARRIED_FROM_AGENT = "carried_from_agent_proposal"
 DETAIL_SERVICE_ATTACHED_EVIDENCE = "service_attached_evidence"
 RULE_CHAMPION_FINAL_EVALUATION = "champion.final_evaluation.v1"
 RESERVED_DETAIL_KEYS = frozenset(
-    {DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, DETAIL_SERVICE_ATTACHED_EVIDENCE, "skipped_refs"}
+    # improve_run_id: only the improve service writes an acceptance record that names a loop
+    # (ADR 0007 §7); readers trust ``improve_runs.acceptance_record_id`` alone.
+    {DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, DETAIL_SERVICE_ATTACHED_EVIDENCE, "skipped_refs", "improve_run_id"}
 )
 
 # /v1 read bounds.
@@ -354,6 +365,7 @@ DecisionType = Literal[
     "test_design_confirmed",
     "goal_metric_confirmed",
     "goal_rule_confirmed",
+    "retrain_policy_changed",
 ]
 
 _UNTRUSTED = (

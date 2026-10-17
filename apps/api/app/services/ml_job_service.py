@@ -656,6 +656,7 @@ def execute_job(
         _record_cancelled_run(db, current)
         db.commit()
         db.refresh(current)
+        _after_terminal(db, current)
         return current
     except UnknownJobHandlerError as exc:
         db.rollback()
@@ -665,6 +666,7 @@ def execute_job(
         fail_or_retry_job(db, current, str(exc), now=_now())
         db.commit()
         db.refresh(current)
+        _after_terminal(db, current)
         return current
     except Exception as exc:  # noqa: BLE001
         db.rollback()
@@ -674,6 +676,7 @@ def execute_job(
         fail_or_retry_job(db, current, str(exc), now=_now(), failure_class=exception_failure_class(exc))
         db.commit()
         db.refresh(current)
+        _after_terminal(db, current)
         return current
 
     current = db.get(MlJob, job_id)
@@ -713,16 +716,25 @@ def execute_job(
 
             enqueue_auto_train(target_id)
         else:
+            from app.engine.evaluation.comparability import NONDETERMINISTIC_RERUN
+
             reason = ""
             if upload is not None and isinstance(upload.pipeline_log, dict):
                 reason = str(upload.pipeline_log.get("reason") or "")
-            fail_or_retry_job(
-                db,
-                current,
-                reason or f"auto-train ended with status {status or 'missing'}",
-                now=terminal_at,
-                failure_class=_auto_train_failure_class(upload),
-            )
+            if reason.startswith(f"{NONDETERMINISTIC_RERUN}:"):
+                # ADR 0007 §6.2 (D4c gate 3): a pinned final run that did not reproduce its probe is a
+                # deterministic refusal before the final test; a retry could only spend the look on a
+                # run already shown not to reproduce. The person decides (the loop is waiting_user).
+                _fail_job_terminally(db, current, reason, now=terminal_at,
+                                     failure_class=_auto_train_failure_class(upload))
+            else:
+                fail_or_retry_job(
+                    db,
+                    current,
+                    reason or f"auto-train ended with status {status or 'missing'}",
+                    now=terminal_at,
+                    failure_class=_auto_train_failure_class(upload),
+                )
     elif handler_key == HANDLER_MODELS_BATCH_PREDICT:
         from app.services.batch_prediction_service import prediction_failure_code
 
@@ -739,7 +751,24 @@ def execute_job(
     _notify_terminal(db, current)
     db.commit()
     db.refresh(current)
+    _after_terminal(db, current)
     return current
+
+
+def _after_terminal(db: Session, job: MlJob) -> None:
+    """P5.4-A2 (ADR 0007 §8): after ``job``'s terminal commit, in its own transaction and best-effort,
+    an improve loop whose probe or final run this was is stepped now (its watchdog pulled forward);
+    never touches ``job`` itself. Any error is logged; the watchdog still steps the loop."""
+
+    if job.status not in (JOB_COMPLETED, JOB_FAILED, JOB_CANCELLED):
+        return
+    try:
+        from app.services.improve.loop_handler import on_job_terminal
+
+        on_job_terminal(db, job)
+    except Exception:  # noqa: BLE001 - best-effort; the watchdog covers it
+        logging.getLogger("dclab.ml_jobs").exception("improve terminal hook failed for job %s", job.id)
+        db.rollback()
 
 
 def _end_abandoned_assistant_turns(db: Session) -> None:
@@ -768,10 +797,12 @@ def process_next_job(
 
     # Import side effect: register shipped handlers before dispatch.
     registered_handler_keys()
-    recover_abandoned_jobs(
+    recovered = recover_abandoned_jobs(
         db, now=now, heartbeat_timeout_seconds=heartbeat_timeout_seconds
     )
     db.commit()
+    for lost in recovered:
+        _after_terminal(db, lost)
     _end_abandoned_assistant_turns(db)
     job = claim_next_queued_job(db, now=now, job_id=job_id, claimed_by=claimed_by)
     if job is None:

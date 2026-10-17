@@ -88,7 +88,8 @@
                   "target_confirmed",
                   "test_design_confirmed",
                   "goal_metric_confirmed",
-                  "goal_rule_confirmed"
+                  "goal_rule_confirmed",
+                  "retrain_policy_changed"
                 ],
                 "type": "string"
               },
@@ -113,7 +114,9 @@
               "dataset_uploaded",
               "final_test_run",
               "drift_alert",
-              "scheduled_scoring"
+              "scheduled_scoring",
+              "retrain_requested",
+              "retrain_compared"
             ],
             "title": "Kind",
             "type": "string"
@@ -196,7 +199,9 @@
               "agent_run",
               "dataset_version",
               "monitoring_window",
-              "scoring_schedule_run"
+              "scoring_schedule_run",
+              "retrain_request",
+              "retrain_comparison"
             ],
             "title": "Kind",
             "type": "string"
@@ -3104,7 +3109,8 @@
               "target_confirmed",
               "test_design_confirmed",
               "goal_metric_confirmed",
-              "goal_rule_confirmed"
+              "goal_rule_confirmed",
+              "retrain_policy_changed"
             ],
             "title": "Decision Type",
             "type": "string"
@@ -7095,7 +7101,8 @@
               "reject",
               "supersede",
               "revert",
-              "answer"
+              "answer",
+              "retrain"
             ],
             "title": "Name",
             "type": "string"
@@ -7249,7 +7256,9 @@
               "agent_proposal",
               "question",
               "run_finished",
-              "drift_alert"
+              "drift_alert",
+              "retrain_ask",
+              "challenger_ready"
             ],
             "title": "Kind",
             "type": "string"
@@ -15330,6 +15339,628 @@
           "argument_digest"
         ],
         "title": "ReplayToolRead",
+        "type": "object"
+      },
+      "RetrainComparisonRead": {
+        "properties": {
+          "challenger": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrainSideRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The retrained model's own final test."
+          },
+          "computed_at": {
+            "format": "date-time",
+            "title": "Computed At",
+            "type": "string"
+          },
+          "final_test_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Test Rows"
+          },
+          "final_test_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Test Start"
+          },
+          "incumbent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrainSideRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model in use on the same rows."
+          },
+          "incumbent_training_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incumbent Training End"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "proposal_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why no switch proposal was opened.",
+            "title": "Proposal Refusal"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "status": {
+            "enum": [
+              "compared",
+              "not_comparable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "time_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Column"
+          },
+          "wording": {
+            "default": "same kind of test, latest months",
+            "title": "Wording",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "computed_at"
+        ],
+        "title": "RetrainComparisonRead",
+        "type": "object"
+      },
+      "RetrainPolicyRead": {
+        "properties": {
+          "auto_paused_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`auto`: a plan limit refused the last automatic start; none before this time.",
+            "title": "Auto Paused Until"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "owner_can_start": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`auto`: the person who set it can still start runs (automatic starts act as them).",
+            "title": "Owner Can Start"
+          },
+          "policy": {
+            "description": "`off` (default), `ask` (Inbox question) or `auto` (starts it).",
+            "enum": [
+              "off",
+              "ask",
+              "auto"
+            ],
+            "title": "Policy",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Never shown to service tokens.",
+            "title": "Updated By User Id"
+          },
+          "version": {
+            "description": "0 when never set; send `If-Match: \"<version>\"` to change it.",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "policy",
+          "version",
+          "etag"
+        ],
+        "title": "RetrainPolicyRead",
+        "type": "object"
+      },
+      "RetrainPolicyWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "enum": [
+              "off",
+              "ask",
+              "auto"
+            ],
+            "title": "Policy",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Your reason (History).",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy",
+          "rationale"
+        ],
+        "title": "RetrainPolicyWrite",
+        "type": "object"
+      },
+      "RetrainRealOutcomesRead": {
+        "properties": {
+          "label": {
+            "const": "not the same data",
+            "default": "not the same data",
+            "title": "Label",
+            "type": "string"
+          },
+          "n_labelled": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Labelled"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "recall": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start"
+        ],
+        "title": "RetrainRealOutcomesRead",
+        "type": "object"
+      },
+      "RetrainRequestRead": {
+        "properties": {
+          "carried": {
+            "description": "Settings of the model in use the retrain uses (target, goal).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Carried",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "experiment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Id"
+          },
+          "experiment_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Status"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "incumbent_model_version_id": {
+            "format": "uuid",
+            "title": "Incumbent Model Version Id",
+            "type": "string"
+          },
+          "not_carried": {
+            "description": "Branch settings of the model in use a new root run re-decides.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Carried",
+            "type": "array"
+          },
+          "origin": {
+            "enum": [
+              "person",
+              "ask",
+              "auto"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "id",
+          "origin",
+          "created_at",
+          "incumbent_model_version_id",
+          "dataset_id",
+          "carried",
+          "not_carried"
+        ],
+        "title": "RetrainRequestRead",
+        "type": "object"
+      },
+      "RetrainSideRead": {
+        "properties": {
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This model's own locked threshold.",
+            "title": "Decision Threshold"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "metric_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Value"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "n_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Final-test rows the figures are measured on.",
+            "title": "N Rows"
+          }
+        },
+        "title": "RetrainSideRead",
+        "type": "object"
+      },
+      "RetrainStartRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "dataset_id": {
+            "description": "A labelled file uploaded into this project, newer than the training file of the model in use.",
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "RetrainStartRequest",
+        "type": "object"
+      },
+      "RetrainStatusRead": {
+        "properties": {
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrainComparisonRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison_withheld": {
+            "default": false,
+            "description": "Service tokens never get final-test figures.",
+            "title": "Comparison Withheld",
+            "type": "boolean"
+          },
+          "latest_window_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Window Start"
+          },
+          "latest_window_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Window Status"
+          },
+          "model_in_use_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model In Use Id"
+          },
+          "newer_dataset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Newest labelled file a person uploaded after the training file of the model in use.",
+            "title": "Newer Dataset Id"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "policy": {
+            "enum": [
+              "off",
+              "ask",
+              "auto"
+            ],
+            "title": "Policy",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "proposal_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Id"
+          },
+          "proposal_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "proposed",
+                  "accepted",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal State"
+          },
+          "real_outcomes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrainRealOutcomesRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrainRequestRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "drift_found",
+              "retraining",
+              "ready_to_compare",
+              "waiting_for_you",
+              "switched",
+              "kept"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "policy",
+          "state"
+        ],
+        "title": "RetrainStatusRead",
         "type": "object"
       },
       "RunProgressRead": {
@@ -26183,7 +26814,8 @@
                     "target_confirmed",
                     "test_design_confirmed",
                     "goal_metric_confirmed",
-                    "goal_rule_confirmed"
+                    "goal_rule_confirmed",
+                    "retrain_policy_changed"
                   ],
                   "type": "string"
                 },
@@ -28501,6 +29133,549 @@
           }
         },
         "summary": "Read Project Releases",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/retrain": {
+      "post": {
+        "description": "Retrain the model in use on a newer labelled file: a new root run with the same target and\ngoal (metric and constraints), its own new final test. One retrain per project at a time\n(``409 retrain_in_progress``); the file must be uploaded into this project after the training\nfile of the model in use (``409 dataset_not_newer``); plan limits apply (``429``). When it\nfinishes, the worker compares it with the model in use and opens a switch proposal: nothing\nswitches until a person accepts it. People with ML-write only (service tokens 403). Requires\n``Idempotency-Key``.",
+        "operationId": "start_retrain_v1_v1_projects__project_id__retrain_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrainStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrainStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "description": "URL of the retrain run.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too many requests (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Start Retrain V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/retrain-policy": {
+      "get": {
+        "description": "The project's retrain policy: ``off`` (default), ``ask`` (an Inbox question \"Retrain on\nnewest data?\" when the model in use drifts and a newer labelled file exists) or ``auto`` (the\nretrain starts by itself, acting as the person who chose it; it never switches the model).\n``ETag`` is its version. Service tokens may read it (no user ids).",
+        "operationId": "read_retrain_policy_v1_projects__project_id__retrain_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrainPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Retrain Policy",
+        "tags": [
+          "v1"
+        ]
+      },
+      "put": {
+        "description": "Set the retrain policy with your reason (``rationale``); writes an accepted\n``retrain_policy_changed`` History entry. Workspace owners and administrators only (others\n``403``; service tokens and agents ``403``). Requires ``Idempotency-Key`` and ``If-Match``\n(the policy's ETag; ``\"0\"`` when never set): a stale one is ``412``, none ``428``.",
+        "operationId": "set_retrain_policy_v1_projects__project_id__retrain_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrainPolicyWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrainPolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition failed (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition required (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Set Retrain Policy",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/retrain-status": {
+      "get": {
+        "description": "What the system does on its own, for the Monitoring card: the policy, the state (``idle``,\n``drift_found``, ``retraining``, ``ready_to_compare``, ``waiting_for_you``, ``switched``,\n``kept``), the newest retrain, its comparison with the model in use (same kind of test, latest\nmonths; or why it is not comparable), the switch proposal and the real outcomes of the model in\nuse beside it (not the same data). Service tokens get the state without the comparison figures.",
+        "operationId": "read_retrain_status_v1_projects__project_id__retrain_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrainStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Retrain Status",
         "tags": [
           "v1"
         ]

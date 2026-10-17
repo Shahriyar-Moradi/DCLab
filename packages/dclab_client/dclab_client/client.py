@@ -65,6 +65,8 @@ from dclab_client.types import (
     MonitoringWindow,
     OutcomeSet,
     OutcomeSetList,
+    RetrainPolicy,
+    RetrainStatus,
     ScoringScheduleRunPage,
     ScoringScheduleState,
     SplitPlan,
@@ -980,6 +982,48 @@ class MonitoringClient:
         return _versioned(OutcomeSet, payload, headers)
 
 
+class RetrainClient:
+    """Retrain on newest data (D5a). Any token reads the policy and the state; ``start`` (ML-write)
+    and ``set_policy`` (owners and administrators, with a reason and If-Match) are a person's acts
+    (a user token): service tokens get 403 ``service_token_not_permitted``. Automatic retraining only
+    starts a retrain; switching the model in use is always a person accepting the proposal."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def status(self, project_id: UUID | str, *, request_id: str | None = None) -> RetrainStatus:
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/retrain-status",
+                                          request_id=request_id)
+        return RetrainStatus.model_validate(payload)
+
+    def policy(self, project_id: UUID | str, *, request_id: str | None = None) -> RetrainPolicy:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/projects/{_id(project_id)}/retrain-policy", request_id=request_id)
+        return _versioned(RetrainPolicy, payload, headers)
+
+    def set_policy(
+        self, project_id: UUID | str, *, policy: str, rationale: str, if_match: str,
+        idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> RetrainPolicy:
+        """``policy``: off, ask or auto; ``if_match``: the policy's ``etag`` (``'"0"'`` when never set)."""
+
+        payload, headers = self._transport.request_with_headers(
+            "PUT", f"/v1/projects/{_id(project_id)}/retrain-policy", json={"policy": policy, "rationale": rationale},
+            request_id=request_id, idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(RetrainPolicy, payload, headers)
+
+    def start(
+        self, project_id: UUID | str, *, dataset_id: UUID | str, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> RetrainStatus:
+        """Retrain the model in use on a newer labelled file of the project (a new root run)."""
+
+        payload = self._transport.request(
+            "POST", f"/v1/projects/{_id(project_id)}/retrain", json={"dataset_id": _id(dataset_id)},
+            request_id=request_id, idempotency_key=idempotency_key)
+        return RetrainStatus.model_validate(payload)
+
+
 class NodesClient:
     def __init__(self, transport: V1Transport) -> None:
         self._transport = transport
@@ -1590,6 +1634,7 @@ class DCLabClient:
         self.releases = ReleasesClient(self._transport)
         self.scoring_schedules = ScoringSchedulesClient(self._transport)
         self.monitoring = MonitoringClient(self._transport)
+        self.retrain = RetrainClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)

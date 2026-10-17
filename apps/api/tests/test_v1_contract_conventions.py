@@ -99,6 +99,10 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"dataset_id": UUID_ZERO}
         elif path.endswith("/operating-point"):
             body = {"threshold": 0.5, "reason": "x"}
+        elif path.endswith("/retrain"):
+            body = {"dataset_id": UUID_ZERO}
+        elif path.endswith("/retrain-policy"):
+            body = {"policy": "off", "rationale": "x"}
         elif path.endswith("/monitoring/outcomes"):
             body = {"dataset_id": UUID_ZERO, "key_column": "id", "outcome_column": "y"}
         kwargs.setdefault("json", body)
@@ -238,6 +242,11 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/datasets/{dataset_id}/target-by-period",
         "GET /v1/projects/{project_id}/upload-attempts",
         "GET /v1/projects/{project_id}/goal/decisions",
+        # D5a: retrain on newest data.
+        "POST /v1/projects/{project_id}/retrain",
+        "GET /v1/projects/{project_id}/retrain-policy",
+        "PUT /v1/projects/{project_id}/retrain-policy",
+        "GET /v1/projects/{project_id}/retrain-status",
     }
 
 

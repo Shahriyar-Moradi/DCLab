@@ -94,7 +94,11 @@ from app.engine.modeling.validation_planner import (
 from app.engine.schema.profiler import profile_frame
 from app.engine.search.generator import DUMMY_FAMILIES, assemble_candidates
 from app.engine.types import Candidate, ExperimentStatus, SearchConfig, TaskSpec, is_classification
-from app.engine.validation.split_assignment import folds_for_pool
+from app.engine.validation.split_assignment import (
+    POOL_ORDER_SOURCE_ROW,
+    canonical_pool_order,
+    folds_for_pool,
+)
 from app.engine.validation.splits import (
     SOURCE_ROW_COLUMN,
     split_holdout_by_assignment,
@@ -538,6 +542,7 @@ def _lock_decision_threshold(
     *,
     primary_metric: str | None = None,
     last_fold_only: bool = False,
+    goal_metric: str | None = None,
 ) -> dict[str, Any]:
     """Choose the winner's decision threshold from its out-of-fold CV scores only.
 
@@ -551,7 +556,8 @@ def _lock_decision_threshold(
     if task_type == "binary":
         scores = np.concatenate(fold_scores) if fold_scores else np.asarray([], dtype=float)
         decision = select_decision_threshold(
-            y_pool[index], scores, objective, cv_metrics=cv_metrics, primary_metric=primary_metric
+            y_pool[index], scores, objective, cv_metrics=cv_metrics, primary_metric=primary_metric,
+            goal_metric=goal_metric,
         )
         decision["oof_folds"] = "last_fold" if last_fold_only else "all_folds"
         all_folds = list(zip(oof[0], oof[1])) if oof else []
@@ -1213,6 +1219,7 @@ def _run_open_ingest_candidates(
     time_columns: Sequence[str] = (),
     score_holdout: bool = True,
     expected_selection: RunEvidence | None = None,
+    threshold_goal: str | None = None,
 ) -> dict[str, Any]:
     """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked.
 
@@ -1236,6 +1243,11 @@ def _run_open_ingest_candidates(
     selection_metric = primary_metric or task.evaluation_metric
     # Val is empty for the 80/20 holdout path; never concatenate test.
     pool = pd.concat([train, val], ignore_index=True) if len(val) else train
+    pool_order: str | None = None
+    if outer_fold_assignment is not None and SOURCE_ROW_COLUMN in pool.columns:
+        # ADR 0007 §5 (D4c): one canonical pool order whichever path partitioned the rows; recorded
+        # so reproduction applies the same helper (and only to runs that fitted it).
+        pool, pool_order = canonical_pool_order(pool), POOL_ORDER_SOURCE_ROW
     y_pool = pool[task.target].to_numpy()
     fold_splits = (
         folds_for_pool(validation_plan, pool, outer_fold_assignment)
@@ -1673,6 +1685,7 @@ def _run_open_ingest_candidates(
             parsed_objective,
             primary_metric=selection_metric,
             last_fold_only=validation_plan.strategy == _TIME_SERIES_SPLIT,
+            goal_metric=threshold_goal,
         )
         if decision_threshold.get("value") is not None:
             threshold = float(decision_threshold["value"])
@@ -1857,6 +1870,7 @@ def _run_open_ingest_candidates(
         "oof_evidence": oof_summary,
         "operating_curve": operating_curve,
         "package_verification": saved.get("verification"),
+        "pool_order": pool_order,
     }
 
 
@@ -1878,6 +1892,7 @@ def _run_open_ingest_experiment(
     target_labels: Mapping[str, Any] | None = None,
     score_holdout: bool = True,
     expected_selection: RunEvidence | None = None,
+    threshold_goal: str | None = None,
 ) -> dict[str, Any]:
     """Leakage-safe open-ingest experiment with an early locked holdout."""
     profile = profile_frame(frame)
@@ -2018,8 +2033,11 @@ def _run_open_ingest_experiment(
         time_columns=[name for name in (holdout_plan.time_column,) if name],
         score_holdout=score_holdout,
         expected_selection=expected_selection,
+        threshold_goal=threshold_goal,
     )
     funnel.update(outcome["funnel"])
+    if outcome.get("pool_order"):
+        split_meta["pool_order"] = outcome["pool_order"]
     records = outcome["records"]
     best_single = outcome["best_single"]
     feature_report = dict(task.feature_engineering or {})
@@ -2155,6 +2173,7 @@ def run_experiment(
     target_labels: Mapping[str, Any] | None = None,
     score_holdout: bool = True,
     expected_selection: RunEvidence | None = None,
+    threshold_goal: str | None = None,
 ) -> dict[str, Any]:
     """Train, filter, select, and report. Returns a JSON-serializable result dict.
 
@@ -2201,6 +2220,7 @@ def run_experiment(
         target_labels=target_labels,
         score_holdout=score_holdout,
         expected_selection=expected_selection,
+        threshold_goal=threshold_goal,
     )
 
 

@@ -34,6 +34,8 @@ from app.db.models import (
     Experiment,
     MonitoringWindow,
     ProjectDecisionRecord,
+    ProjectRef,
+    RetrainRequest,
     SemanticDecisionAnswer,
     User,
 )
@@ -44,6 +46,7 @@ from app.domain.decision_records import (
     EVIDENCE_REF_KINDS,
     REF_HISTORY_DECISION_TYPES,
     REF_MOVE_DECISION_TYPES,
+    RULE_RETRAIN_CHALLENGER,
     SERVICE_ONLY_DECISION_TYPES,
     STATE_ACCEPTED,
     STATE_PROPOSED,
@@ -93,6 +96,7 @@ OP_PROPOSAL_REJECT = "POST /v1/proposals/{proposal_id}/reject"
 OP_PROPOSAL_REVERT = "POST /v1/proposals/{proposal_id}/revert"
 OP_TARGET_ANSWER = "POST /v1/execution-requests/{request_id}/target-confirmation"
 OP_SPLIT_ANSWER = "POST /v1/execution-requests/{request_id}/split-confirmation"
+OP_RETRAIN = "POST /v1/projects/{project_id}/retrain"
 
 _PROPOSAL_LABELS = {
     "ExperimentPlanProposal": "Experiment plan",
@@ -201,12 +205,29 @@ def _drift_alerts(ctx: _Ctx, current: bool) -> tuple[Any, Any, Any, Any]:
     return _scoped(stmt, mw.workspace_id, mw.project_id, ctx), mw.computed_at, mw.id, mw.project_id
 
 
+def _retrain_asks(ctx: _Ctx, current: bool) -> tuple[Any, Any, Any, Any]:
+    """D5a: the rule's "Retrain on newest data?" questions; open while it is the project's newest retrain
+    row and its model is still the model in use (a person's answer is a retrain they start)."""
+
+    rr, newer = RetrainRequest, aliased(RetrainRequest)
+    open_ = and_(
+        ~exists().where(newer.workspace_id == rr.workspace_id, newer.project_id == rr.project_id,
+                        newer.created_at > rr.created_at),
+        exists().where(ProjectRef.workspace_id == rr.workspace_id, ProjectRef.project_id == rr.project_id,
+                       ProjectRef.ref_kind == "champion_model",
+                       ProjectRef.model_version_id == rr.incumbent_model_version_id))
+    stmt = select(rr.id, rr.project_id, rr.created_at, rr.dataset_id, rr.incumbent_model_version_id).where(
+        rr.origin == "ask", open_ if current else not_(open_))
+    return _scoped(stmt, rr.workspace_id, rr.project_id, ctx), rr.created_at, rr.id, rr.project_id
+
+
 _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
     "needs_decision": (
         ("decision_proposal", _decisions_open),
         ("agent_proposal", lambda c: _proposals(c, "needs_decision")),
         ("question", _questions),
         ("drift_alert", lambda c: _drift_alerts(c, True)),
+        ("retrain_ask", lambda c: _retrain_asks(c, True)),
     ),
     "applied_automatically": (("agent_proposal", lambda c: _proposals(c, "applied_automatically")),),
     "done": (
@@ -214,6 +235,7 @@ _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
         ("agent_proposal", lambda c: _proposals(c, "done")),
         ("run_finished", _runs_finished),
         ("drift_alert", lambda c: _drift_alerts(c, False)),
+        ("retrain_ask", lambda c: _retrain_asks(c, False)),
     ),
 }
 
@@ -306,9 +328,15 @@ def _decision_item(ctx: _Ctx, tab: str, row: ProjectDecisionRecord, at: datetime
                 and row.decision_type not in REF_HISTORY_DECISION_TYPES):
             actions.append(_action("supersede", OP_DECISION_SUPERSEDE, can, decision_id=resolution_id))
     proposed_by = {ACTOR_RULE: "rule", ACTOR_AGENT: "agent"}.get(row.actor_kind, "person")
+    kind, summary = "decision_proposal", decision_summary(row.decision_type, status)
+    if row.actor_kind == ACTOR_RULE and row.actor_rule == RULE_RETRAIN_CHALLENGER:  # D5a: switch or keep
+        kind = "challenger_ready"
+        summary = {STATE_PROPOSED: "Retrained model ready: switch or keep the model in use",
+                   STATE_ACCEPTED: "Switched to the retrained model", "rejected": "Kept the model in use"}.get(
+            status, "Retrained model proposal " + status)
     return _item(
-        id=f"decision_proposal:{row.id}", kind="decision_proposal", tab=tab, occurred_at=at,
-        project_id=row.project_id, summary=decision_summary(row.decision_type, status), status=status,
+        id=f"{kind}:{row.id}", kind=kind, tab=tab, occurred_at=at,
+        project_id=row.project_id, summary=summary, status=status,
         source=InboxRefRead(kind="decision_record", id=row.id), subject=_subject(row.subject_kind, subject_id),
         proposed_by=proposed_by, decision_type=row.decision_type,
         resolution_record_id=resolution[0] if resolution else None, evidence_refs=_refs(*evidence), actions=actions,
@@ -410,6 +438,20 @@ def _drift_item(tab: str, window_id: UUID, project_id: UUID, version_id: UUID, s
     )
 
 
+def _ask_item(ctx: _Ctx, tab: str, request_id: UUID, project_id: UUID, at: datetime, dataset_id: UUID,
+              version_id: UUID) -> InboxItemRead:
+    current = tab == "needs_decision"
+    actions = [_action("retrain", OP_RETRAIN, ctx.can_decide, {"dataset_id": str(dataset_id)}, project_id=project_id)]
+    return _item(
+        id=f"retrain_ask:{request_id}", kind="retrain_ask", tab=tab, occurred_at=at, project_id=project_id,
+        summary="Retrain on newest data?" if current else "Retrain on newest data? (answered or no longer current)",
+        status="asked" if current else "closed", source=InboxRefRead(kind="retrain_request", id=request_id),
+        subject=_subject("model_version", version_id), proposed_by="rule",
+        evidence_refs=_refs(_ref("dataset_version", dataset_id), _ref("model_version", version_id)),
+        actions=actions if current else [],
+    )
+
+
 def _items(ctx: _Ctx, tab: str, kind: str, source: Any, after: _Key | None, n: int) -> list[InboxItemRead]:
     stmt, at_column, id_column, _project = source(ctx)
     cut = keyset_before(after, kind, at_column, id_column, INBOX_KIND_RANK)
@@ -426,6 +468,8 @@ def _items(ctx: _Ctx, tab: str, kind: str, source: Any, after: _Key | None, n: i
         return [_question_item(ctx, r[0], r[1], r[2], r[3], r[4]) for r in rows]
     if kind == "drift_alert":
         return [_drift_item(tab, *r) for r in rows]
+    if kind == "retrain_ask":
+        return [_ask_item(ctx, tab, *r) for r in rows]
     return [_run_item(*r) for r in rows]
 
 

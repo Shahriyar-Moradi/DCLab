@@ -27,10 +27,12 @@ from app.engine.validation.splits import (
 )
 
 __all__ = [
+    "POOL_ORDER_SOURCE_ROW",
     "SPLIT_ASSIGNMENT_MISMATCH",
     "SplitAssignment",
     "SplitAssignmentMismatchError",
     "build_split_assignment",
+    "canonical_pool_order",
     "folds_for_pool",
     "parse_split_assignment",
 ]
@@ -38,6 +40,9 @@ __all__ = [
 SPLIT_ASSIGNMENT_HEADER = "source_row,partition,fold"
 PARTITION_TRAIN = "train"
 PARTITION_HOLDOUT = "holdout"
+# Recorded as result["split"]["pool_order"] by a run that fitted canonical_pool_order (ADR 0007 §5);
+# runs trained before it kept their partition's row order and record nothing.
+POOL_ORDER_SOURCE_ROW = "source_row"
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,19 @@ def parse_split_assignment(payload: bytes) -> SplitAssignment:
     if parsed.to_csv_bytes() != payload:
         raise SplitAssignmentMismatchError("assignment is not in canonical form")
     return parsed
+
+
+# The runner applies this to its training pool whenever the folds come from a stored map, and
+# model_build_codegen emits its source verbatim into reproduction scripts (one definition): keep
+# it self-contained (SOURCE_ROW_COLUMN and pandas methods only).
+def canonical_pool_order(pool: pd.DataFrame) -> pd.DataFrame:
+    """The training pool in its one canonical row order: ascending source row (ADR 0007, s. 5).
+
+    A root re-splits its holdout (shuffled rows) while a branch keeps frame order; on this order
+    order-sensitive learners (forests, boosters, inner tuning splits) fit the same rows in the
+    same order on the same folds.
+    """
+    return pool.sort_values(SOURCE_ROW_COLUMN, kind="mergesort").reset_index(drop=True)
 
 
 def folds_for_pool(

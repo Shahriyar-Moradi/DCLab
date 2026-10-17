@@ -356,3 +356,32 @@ def test_pinned_final_run_reproduces_its_probe_and_a_mismatch_aborts_before_the_
             "/v1/experiments", headers={"Idempotency-Key": f"root-{sorted(extra)[0]}"},
             json={"project_id": str(parent.project_id), "dataset_id": str(parent.source_dataset_id), **extra})
         assert response.status_code == 422, response.text
+
+
+def test_root_and_its_family_include_branch_score_shared_candidates_identically(
+    engineer_client, db_session, engineer_user, monkeypatch
+):
+    """D4c gate 1 (ADR 0007 §5): a root re-splits its holdout while a branch partitions by the stored
+    map, so the two training pools used to come in different row orders and order-sensitive learners
+    (forests, boosters) scored differently on the same folds: never comparable. One canonical pool
+    order (by source row) on both paths: every shared candidate's per-fold metrics are identical."""
+
+    db = db_session
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
+    _upload, probe = _run_branch(db, engineer_user, parent, ServiceOverrides(evidence_mode="sealed"))
+    root, branch = (locked_run_evidence(db, run.workspace_id, run.id) for run in (parent, probe))
+    shared = sorted(set(root.trained) & set(branch.trained))
+    # The order-sensitive learners and the nested-CV tuned variant (inner tuning split) are among them.
+    assert len(shared) >= 4 and {"majority", "random_forest"} <= set(shared)
+    assert any(key.endswith("__tuned") for key in shared), shared
+    for key in shared:
+        assert root.trained[key].fingerprint == branch.trained[key].fingerprint, key
+        assert set(root.trained[key].folds) == set(branch.trained[key].folds) == {1, 2, 3, 4, 5}, key
+        for number, metrics in root.trained[key].folds.items():
+            other = branch.trained[key].folds[number]
+            assert set(metrics) == set(other), (key, number)
+            for name, value in metrics.items():
+                assert abs(value - other[name]) <= 1e-9, (key, number, name, value, other[name])
+    verdict = comparability(root, branch)
+    assert verdict.comparable, verdict
+    assert set(verdict.new_candidates) == set(branch.trained) - set(root.trained) and "extra_trees" in verdict.new_candidates

@@ -442,15 +442,16 @@ def constraint_report(curve: Curve, index: int, constraints: tuple[MetricConstra
     return report
 
 
-def solve_lock(curve: Curve, objective: Objective | None, primary_metric: str | None) -> float:
+def solve_lock(curve: Curve, objective: Objective | None, primary_metric: str | None,
+               goal_metric: str | None = None) -> float:
     """The threshold ``select_decision_threshold`` locks for this objective, re-solved on
     the stored curve (same goal, same constraints, same search)."""
 
     objective = objective or Objective()
     tunable = [item for item in objective.constraints if item.metric in THRESHOLD_METRICS]
-    if not (tunable or objective.has_cost_matrix or primary_metric in THRESHOLD_METRICS):
+    if not (tunable or objective.has_cost_matrix or primary_metric in THRESHOLD_METRICS or goal_metric):
         return DEFAULT_THRESHOLD
     rates = curve.rates()
-    goal, _metric, _source, _cost = lock_goal(rates, objective, primary_metric)
+    goal, _metric, _source, _cost = lock_goal(rates, objective, primary_metric, goal_metric)
     index, _feasible, _shortfall = select_index(curve.thresholds, rates, tunable, goal)
     return float(curve.thresholds[index])

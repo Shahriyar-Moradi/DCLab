@@ -3,7 +3,7 @@
 **Status:** **Option A chosen by the founder on 2026-10-16** (Revision 3; supersedes the
 2026-10-12 choice of option B). The option-A design below is being built (P5.4-A1a first);
 the guided screen of option B stays as "Try one change yourself".  
-**Date:** 2026-10-08 (Revision 1: 2026-10-09; Revision 2: 2026-10-09; Revision 3: 2026-10-16)  
+**Date:** 2026-10-08 (Revision 1: 2026-10-09; Revision 2: 2026-10-09; Revision 3: 2026-10-16; Revision 4: 2026-10-17)  
 **Prompt:** P5.3-A (design only; under option A: P5.4-A1a/A1b/A2/A3 implement,
 P6.5-A the optional agent proposer, P5.5-A / A5-A the UX and chat, R2-A the
 benchmark; under option B: P5.5-B only)  
@@ -66,7 +66,7 @@ goal-metric verdict of §5; keep the option-B guided screen as "Try one change y
 "No retraining" means final-test rows are never used for training or selection and nothing
 is refit on them; the accepted try is re-run once with pinned selection as §6.2 designs.
 Migrations are renumbered after the live head: `0086_sealed_evidence` (P5.4-A1a) and
-`0087_improve_runs` (P5.4-A2) replace `0078` / `0079` below. Open questions answered:
+`0088_improve_runs` (P5.4-A2, after D5a's `0087_retrain_policy`) replace `0078` / `0079` below. Open questions answered:
 
 | Q | Answer (founder defaults) |
 | --- | --- |
@@ -78,6 +78,46 @@ Migrations are renumbered after the live head: `0086_sealed_evidence` (P5.4-A1a)
 | 6 | Demo tries use v1 actions only (operating point, another family); feature-add is shown nowhere |
 
 The "Option B wording rule" below applies only to the guided screen.
+
+### Revision 4 (2026-10-17): P5.4-A2 gates and as-built notes
+
+- **Gate 1 (comparability, code fixed).** A root re-splits its holdout (shuffled rows) while a branch
+  partitions by the stored map (frame order), so order-sensitive learners (forests, boosters, the
+  inner tuning split) scored shared candidates differently on the same folds: a root and its branch
+  were never comparable. The runner now fits on one canonical pool order (by source row) whenever the
+  folds come from a stored SplitPlan; a test checks per-fold equality of every shared candidate of a
+  root and its `family_include` branch. Runs trained before this change stay `not_comparable`
+  (`engine_or_data_drift`) against their branches: the safe direction.
+- **Gate 2 (the final run's threshold, code fixed).** The lock maximised the expected cost, a
+  threshold-dependent primary metric or F1 under the goal's constraints, not the goal's metric. The
+  final run's `service_overrides` now also carry the goal's metric (`objective_goal`): the lock
+  maximises it under the goal's constraints (`decision_threshold.source = improve_goal`), so the final
+  test is scored at the operating point the try was judged at. `flagged_share` is neither a goal nor a
+  constraint of a loop (422 `goal_constraint_unsupported`; the lock takes threshold metrics only).
+- **Gate 3 (code fixed).** A `nondeterministic_rerun` abort fails its job terminally (no `ml_jobs`
+  retry, which could only spend the look on a run already shown not to reproduce); the person retries
+  (at most twice). A probe that trained candidates the plan did not count in T is `not_comparable`
+  (`unplanned_candidates`). The curve digest is recorded in each comparison; pinning it before the
+  final look is left to a later prompt (the pinned per-fold metrics of every candidate already guard it).
+- **Error rate (§5, corrected).** The NB-corrected t is calibrated at ρ = 1/K, so each comparison
+  accepts at ≈ α/T (with equicorrelated Gaussian deltas at ρ = 1/K, mean_d / se_NB is exactly
+  t_{K−1}) and the loop sits close to the Bonferroni bound: simulated per-loop false acceptance
+  ≈ 4.5 % (K = 5, T = 6 as two tries of 3, best-of-k selection), up to ≈ 4.9 % with single-candidate
+  tries; i.i.d. folds ≈ 1.1 %; ρ = 2/K ≈ 12 %. The bound α = 5 % holds only for ρ ≤ 1/K and with
+  little slack; test (15) runs 20 000 loops (2 000 cannot put the Wilson upper bound under 5 % at a
+  true rate near 4.5 %).
+- **As built.** `max_iterations` counts retraining tries (OP is free); a try branches from the current
+  incumbent, so probes stay strict supersets after an acceptance (the plan's `k_i`, computed against
+  the start, is then an upper bound: conservative); a token-started loop may branch its own sealed
+  incumbent (a sealed child scores nothing; a scored branch of a sealed parent stays human-only);
+  terminal hooks find their loop from the job's experiment (filtered by the job's workspace) and only
+  pull the continuation forward; the continuation also carries `waiting_user` (it fires at the 14-day
+  expiry) and `finalizing`; a probe cancelled while queued has its run envelope marked cancelled after
+  the loop's transaction; a drift against the unchanged incumbent stops the loop at once
+  (`proposer_exhausted`, detail `engine_or_data_drift`) and any stop with no try compared ends
+  `nothing_comparable`; loops start only from open-ingest runs. `fresh_split`, the `/v1` routes, token
+  clamps, the rate limit and the generic experiment cancel refusing tokens on loop runs come with
+  P5.4-A3; Inbox notices with P5.5-A; pinning the curve digest in `expected_selection` is open.
 
 ### Revision 2 (round-2 review fixes, 2026-10-09)
 
@@ -337,8 +377,8 @@ trained) and stops `blocked`.
 
 Plus an optional `target = {metric, value}`. The goal never changes the run's
 spec or primary metric; for a constrained goal the **final run** receives the
-goal's constraints as its `SearchConfig.objective` (§6.2) so the locked
-threshold is the goal's operating point.
+goal's constraints as its `SearchConfig.objective` and the goal's metric as the lock's goal
+(`objective_goal`, §6.2; Revision 4) so the locked threshold is the goal's operating point.
 
 #### 1c. Later actions (each needs its own ADR amendment with tests)
 
@@ -485,10 +525,11 @@ accept   ⇔ mean_d > margin  AND  mean_d ≥ δ_min  AND  not rejected_suspicio
 ```
 
 **Error rate.** Family-wise over the loop at α = 0.05 under the NB model
-(fold-score correlation ρ ≤ 1/K): simulated per-loop false acceptance ≈ 2.4 %
-(K = 5, T = 6); i.i.d. folds would give 0.6 % (the rule is conservative there);
-ρ = 2/K gives 6.5 % — the rule assumes ρ ≤ 1/K, which the symmetric null of
-§10 checks. q: (K = 5, T = 6) 3.96; (5, 10) 4.60; (5, 11) 4.70; (10, 6) 2.93;
+(fold-score correlation ρ ≤ 1/K): simulated per-loop false acceptance ≈ 4.5 %
+(K = 5, T = 6; Revision 4 corrects the earlier ≈ 2.4 %), up to ≈ 4.9 % with
+single-candidate tries; i.i.d. folds give ≈ 1.1 % (the rule is conservative
+there); ρ = 2/K gives ≈ 12 % — the rule assumes ρ ≤ 1/K, which the symmetric
+null of §10 checks. q: (K = 5, T = 6) 3.96; (5, 10) 4.60; (5, 11) 4.70; (10, 6) 2.93;
 (10, 10) 3.25.
 
 **Power (NB-correlated folds), per true per-fold gain in fold-delta SDs:**
@@ -586,8 +627,9 @@ person accepts.**
    `evidence_mode = scored`, `expected_selection = {candidate_id, trained_ids,
    fingerprints, per-fold metrics, trials per fold}` (pinned from the probe),
    `max_training_seconds` = a generous cap (3 × the probe's realised time; any
-   binding cap aborts before the look), and `objective` = the goal's
-   constraints (so `solve_lock` locks the goal's threshold; the spec's
+   binding cap aborts before the look), `objective` = the goal's
+   constraints and `objective_goal` = the goal's metric (so the lock maximises
+   the goal's metric under them: the goal's threshold, Revision 4; the spec's
    primary metric and selection are unchanged). **All service-only fields are
    stripped whenever `config` is copied** (`branch_experiment`,
    `search_from_mapping`); a manual branch of a final run is an ordinary run

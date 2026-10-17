@@ -956,6 +956,66 @@
       "definition": "CHECK (((response_status >= 200) AND (response_status <= 299)))"
     },
     {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_agent",
+      "definition": "CHECK (((agent)::text = ANY ((ARRAY['off'::character varying, 'agree'::character varying, 'disagree'::character varying, 'abstain'::character varying, 'unavailable'::character varying, 'late'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['operating_point'::character varying, 'family_include'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_shape",
+      "definition": "CHECK (((seq >= 0) AND (plan_index >= 0) AND (planned_new_candidates >= 0) AND (jsonb_typeof(action) = 'object'::text) AND ((comparison IS NULL) OR (jsonb_typeof(comparison) = 'object'::text)) AND (((kind)::text = 'operating_point'::text) = ((status)::text = 'recorded'::text)) AND (((status)::text <> ALL ((ARRAY['running'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'not_comparable'::character varying])::text[])) OR (experiment_id IS NOT NULL))))"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['planned'::character varying, 'running'::character varying, 'recorded'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'not_comparable'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_acceptance",
+      "definition": "CHECK ((((final_experiment_id IS NULL) OR ((accepted_by_user_id IS NOT NULL) AND (acceptance_record_id IS NOT NULL) AND (accepted_iteration_seq IS NOT NULL))) AND (((status)::text <> 'finalizing'::text) OR (final_experiment_id IS NOT NULL))))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_counts",
+      "definition": "CHECK (((planned_comparisons >= 1) AND (validation_folds >= 5) AND ((final_attempts >= 0) AND (final_attempts <= 3)) AND (step_errors >= 0) AND (training_seconds_spent >= (0)::double precision) AND (llm_micros_spent >= 0) AND (looks_before >= 0)))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_goal",
+      "definition": "CHECK (((jsonb_typeof(goal) = 'object'::text) AND (octet_length((goal)::text) <= 4096) AND (jsonb_typeof(budget) = 'object'::text) AND (jsonb_typeof(plan) = 'array'::text)))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_outcome",
+      "definition": "CHECK (((outcome IS NULL) OR ((outcome)::text = ANY ((ARRAY['improved'::character varying, 'kept_current'::character varying, 'goal_met'::character varying, 'blocked'::character varying, 'nothing_comparable'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[]))))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_sealed_set_label",
+      "definition": "CHECK (((sealed_set_label)::text = ANY ((ARRAY['clean'::character varying, 'carried_over'::character varying, 'reported_before'::character varying, 'reused'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_shape",
+      "definition": "CHECK (((((status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])) = ((outcome IS NOT NULL) AND (finished_at IS NOT NULL))) AND (((status)::text <> 'waiting_user'::text) OR (waiting_user_expires_at IS NOT NULL))))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'waiting_user'::character varying, 'finalizing'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_stop_reason",
+      "definition": "CHECK (((stop_reason IS NULL) OR ((stop_reason)::text = ANY ((ARRAY['cancelled'::character varying, 'failed'::character varying, 'blocking_finding'::character varying, 'goal_met'::character varying, 'no_improvement'::character varying, 'unstable_evidence'::character varying, 'comparison_bound'::character varying, 'budget_iterations'::character varying, 'budget_wall'::character varying, 'budget_compute'::character varying, 'proposer_exhausted'::character varying])::text[]))))"
+    },
+    {
       "table": "ingestion_publication_events",
       "name": "ck_ingestion_publication_events_actor",
       "definition": "CHECK (((actor_type)::text = ANY ((ARRAY['user'::character varying, 'system'::character varying, 'operator'::character varying])::text[])))"
@@ -1484,6 +1544,51 @@
       "table": "r3_runs",
       "name": "ck_r3_runs_report",
       "definition": "CHECK (((jsonb_typeof(report) = 'object'::text) AND (octet_length((report)::text) <= 524288)))"
+    },
+    {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_reason",
+      "definition": "CHECK ((((status)::text = 'compared'::text) = (reason_code IS NULL)))"
+    },
+    {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_reason_code",
+      "definition": "CHECK (((reason_code IS NULL) OR ((reason_code)::text = ANY ((ARRAY['final_test_overlaps_training'::character varying, 'no_time_column'::character varying, 'time_missing'::character varying, 'time_kinds_differ'::character varying, 'data_unavailable'::character varying, 'incumbent_cannot_score'::character varying, 'target_coding_differs'::character varying, 'challenger_not_scored'::character varying, 'not_enough_labels'::character varying, 'comparison_failed'::character varying, 'challenger_test_not_latest'::character varying, 'task_differs'::character varying])::text[]))))"
+    },
+    {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_result",
+      "definition": "CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 16384)))"
+    },
+    {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['compared'::character varying, 'not_comparable'::character varying])::text[])))"
+    },
+    {
+      "table": "retrain_policies",
+      "name": "ck_retrain_policies_policy",
+      "definition": "CHECK (((policy)::text = ANY ((ARRAY['off'::character varying, 'ask'::character varying, 'auto'::character varying])::text[])))"
+    },
+    {
+      "table": "retrain_policies",
+      "name": "ck_retrain_policies_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "ck_retrain_requests_origin",
+      "definition": "CHECK (((origin)::text = ANY ((ARRAY['person'::character varying, 'ask'::character varying, 'auto'::character varying])::text[])))"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "ck_retrain_requests_run",
+      "definition": "CHECK ((((origin)::text = 'ask'::text) = (experiment_id IS NULL)))"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "ck_retrain_requests_window",
+      "definition": "CHECK (((((origin)::text = 'person'::text) = (window_start IS NULL)) AND (((origin)::text = 'person'::text) = (monitoring_window_id IS NULL))))"
     },
     {
       "table": "scoring_schedule_runs",
@@ -2118,6 +2223,16 @@
       "definition": "CREATE TRIGGER idempotency_keys_no_update BEFORE UPDATE ON public.idempotency_keys FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
+      "table": "improve_iterations",
+      "name": "improve_iterations_guard",
+      "definition": "CREATE TRIGGER improve_iterations_guard BEFORE UPDATE ON public.improve_iterations FOR EACH ROW EXECUTE FUNCTION guard_improve_iteration_update()"
+    },
+    {
+      "table": "improve_runs",
+      "name": "improve_runs_guard",
+      "definition": "CREATE TRIGGER improve_runs_guard BEFORE UPDATE ON public.improve_runs FOR EACH ROW EXECUTE FUNCTION guard_improve_run_update()"
+    },
+    {
       "table": "ingestion_publication_events",
       "name": "ingestion_publication_events_immutable",
       "definition": "CREATE TRIGGER ingestion_publication_events_immutable BEFORE DELETE OR UPDATE ON public.ingestion_publication_events FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
@@ -2273,6 +2388,16 @@
       "definition": "CREATE TRIGGER r3_runs_append_only BEFORE DELETE OR UPDATE ON public.r3_runs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
+      "table": "retrain_comparisons",
+      "name": "retrain_comparisons_append_only",
+      "definition": "CREATE TRIGGER retrain_comparisons_append_only BEFORE DELETE OR UPDATE ON public.retrain_comparisons FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "retrain_requests_append_only",
+      "definition": "CREATE TRIGGER retrain_requests_append_only BEFORE DELETE OR UPDATE ON public.retrain_requests FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "runtime_environments",
       "name": "runtime_environments_immutable",
       "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
@@ -2392,6 +2517,14 @@
     {
       "name": "guard_agent_run_lifecycle",
       "definition": "CREATE OR REPLACE FUNCTION public.guard_agent_run_lifecycle()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF OLD.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.status IS DISTINCT FROM OLD.status THEN\n        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;\n    END IF;\n    IF OLD.budget_released_at IS NOT NULL\n        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN\n        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';\n    END IF;\n    IF OLD.status IN ('queued', 'running', 'waiting_user') AND NEW.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.budget_released_at IS NULL THEN\n        RAISE EXCEPTION 'agent_runs: a run ends only through the budget release (budget_released_at)';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "guard_improve_iteration_update",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_improve_iteration_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF ROW(NEW.workspace_id, NEW.project_id, NEW.improve_run_id, NEW.seq, NEW.plan_index, NEW.kind, NEW.action,\n           NEW.incumbent_experiment_id, NEW.planned_new_candidates, NEW.planned_candidate_ids,\n           NEW.idempotency_key, NEW.created_at)\n       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.improve_run_id, OLD.seq, OLD.plan_index, OLD.kind,\n           OLD.action, OLD.incumbent_experiment_id, OLD.planned_new_candidates, OLD.planned_candidate_ids,\n           OLD.idempotency_key, OLD.created_at) THEN\n        RAISE EXCEPTION 'improve_iterations: the planned try is frozen';\n    END IF;\n    IF (OLD.experiment_id IS NOT NULL AND NEW.experiment_id IS DISTINCT FROM OLD.experiment_id)\n       OR (OLD.comparison IS NOT NULL AND NEW.comparison IS DISTINCT FROM OLD.comparison)\n       OR (OLD.comparisons_before IS NOT NULL AND NEW.comparisons_before IS DISTINCT FROM OLD.comparisons_before) THEN\n        RAISE EXCEPTION 'improve_iterations: experiment, comparison and N are set once';\n    END IF;\n    IF OLD.status NOT IN ('planned', 'running') THEN\n        RAISE EXCEPTION 'improve_iterations: a finished try is final';\n    END IF;\n    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (\n        (OLD.status = 'planned' AND NEW.status IN ('running', 'failed', 'cancelled'))\n        OR (OLD.status = 'running' AND NEW.status IN ('accepted', 'rejected', 'not_comparable', 'failed', 'cancelled'))\n    ) THEN\n        RAISE EXCEPTION 'improve_iterations: % -> % is not a try transition', OLD.status, NEW.status;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "guard_improve_run_update",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_improve_run_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF ROW(NEW.workspace_id, NEW.project_id, NEW.split_plan_id, NEW.start_experiment_id, NEW.goal, NEW.budget,\n           NEW.plan, NEW.planned_comparisons, NEW.validation_folds, NEW.looks_before, NEW.sealed_set_label,\n           NEW.created_by_user_id, NEW.created_by_service_token_id, NEW.created_at)\n       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.split_plan_id, OLD.start_experiment_id, OLD.goal,\n           OLD.budget, OLD.plan, OLD.planned_comparisons, OLD.validation_folds, OLD.looks_before,\n           OLD.sealed_set_label, OLD.created_by_user_id, OLD.created_by_service_token_id, OLD.created_at) THEN\n        RAISE EXCEPTION 'improve_runs: goal, budget, plan and lineage are frozen';\n    END IF;\n    IF (OLD.accepted_iteration_seq IS NOT NULL AND NEW.accepted_iteration_seq IS DISTINCT FROM OLD.accepted_iteration_seq)\n       OR (OLD.accepted_by_user_id IS NOT NULL AND NEW.accepted_by_user_id IS DISTINCT FROM OLD.accepted_by_user_id)\n       OR (OLD.acceptance_record_id IS NOT NULL AND NEW.acceptance_record_id IS DISTINCT FROM OLD.acceptance_record_id) THEN\n        RAISE EXCEPTION 'improve_runs: the acceptance is write-once';\n    END IF;\n    IF OLD.status IN ('completed', 'failed', 'cancelled') THEN\n        RAISE EXCEPTION 'improve_runs: a finished loop is final';\n    END IF;\n    IF OLD.sealed_set_consulted AND NOT NEW.sealed_set_consulted THEN\n        RAISE EXCEPTION 'improve_runs: a consulted final test set stays consulted';\n    END IF;\n    IF NEW.final_attempts < OLD.final_attempts\n       OR (OLD.final_experiment_id IS NOT NULL AND NEW.final_experiment_id IS NULL)\n       OR (NEW.final_experiment_id IS DISTINCT FROM OLD.final_experiment_id\n           AND NEW.final_attempts <> OLD.final_attempts + 1) THEN\n        RAISE EXCEPTION 'improve_runs: a final run changes only with a new attempt';\n    END IF;\n    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (\n        (OLD.status = 'queued' AND NEW.status IN ('running', 'completed', 'failed', 'cancelled'))\n        OR (OLD.status = 'running' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))\n        OR (OLD.status = 'waiting_user' AND NEW.status IN ('finalizing', 'completed', 'failed', 'cancelled'))\n        OR (OLD.status = 'finalizing' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))\n    ) THEN\n        RAISE EXCEPTION 'improve_runs: % -> % is not a loop transition', OLD.status, NEW.status;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "guard_llm_invocation_ledger",

@@ -147,6 +147,20 @@ from app.domain.ml_jobs import (
     CK_ML_JOB_STATUS,
     CK_ML_JOB_TYPE,
 )
+from app.domain.improve import (
+    CK_IMPROVE_ITERATIONS_AGENT,
+    CK_IMPROVE_ITERATIONS_KIND,
+    CK_IMPROVE_ITERATIONS_SHAPE,
+    CK_IMPROVE_ITERATIONS_STATUS,
+    CK_IMPROVE_RUNS_ACCEPTANCE,
+    CK_IMPROVE_RUNS_COUNTS,
+    CK_IMPROVE_RUNS_GOAL,
+    CK_IMPROVE_RUNS_LABEL,
+    CK_IMPROVE_RUNS_OUTCOME,
+    CK_IMPROVE_RUNS_SHAPE,
+    CK_IMPROVE_RUNS_STATUS,
+    CK_IMPROVE_RUNS_STOP_REASON,
+)
 from app.domain.pipeline_run_branch import (
     CK_EXPERIMENTS_BRANCH_KEY,
     CK_EXPERIMENTS_BRANCH_REASON,
@@ -329,6 +343,17 @@ from app.domain.scoring_schedules import (
     CK_SCORING_SCHEDULE_RUNS_RELEASE_VERSION,
     CK_SCORING_SCHEDULES_HOUR,
     CK_SCORING_SCHEDULES_WEEKDAY,
+)
+from app.domain.retrain import (
+    CK_COMPARISON_REASON,
+    CK_COMPARISON_REASON_CODE,
+    CK_COMPARISON_RESULT,
+    CK_COMPARISON_STATUS,
+    CK_RETRAIN_ORIGIN,
+    CK_RETRAIN_POLICY,
+    CK_RETRAIN_POLICY_VERSION,
+    CK_RETRAIN_RUN,
+    CK_RETRAIN_WINDOW,
 )
 from app.domain.monitoring import (
     CK_MONITORING_OUTCOME_SETS_COLUMNS,
@@ -1862,6 +1887,146 @@ class MlJobAttempt(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     failure_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class ImproveRun(Base):
+    """P5.4-A2 (0087, ADR 0007 option A): one improve loop on one split plan. A re-enqueued state
+    machine on ``ml_jobs`` (``labs.improve``): ``continuation_job_id`` is the only job allowed to step
+    it. Every try is a sealed branch (``improve_iterations``); the final test set is scored once, by
+    the final run a person accepts. Goal, budget, plan and T are frozen at INSERT (DB trigger)."""
+
+    __tablename__ = "improve_runs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_improve_runs_workspace_project_id"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_improve_runs_workspace_project", ondelete="CASCADE"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "split_plan_id"],
+                             ["split_plans.workspace_id", "split_plans.project_id", "split_plans.id"],
+                             name="fk_improve_runs_split_plan"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "start_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_runs_start_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "incumbent_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_runs_incumbent_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "final_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_runs_final_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "acceptance_record_id"],
+                             ["project_decision_records.workspace_id", "project_decision_records.project_id",
+                              "project_decision_records.id"], name="fk_improve_runs_acceptance_record"),
+        ForeignKeyConstraint(["workspace_id", "continuation_job_id"], ["ml_jobs.workspace_id", "ml_jobs.id"],
+                             name="fk_improve_runs_continuation_job"),
+        ForeignKeyConstraint(["workspace_id", "created_by_service_token_id"],
+                             ["service_tokens.workspace_id", "service_tokens.id"],
+                             name="fk_improve_runs_service_token"),
+        CheckConstraint(CK_IMPROVE_RUNS_STATUS, name="ck_improve_runs_status"),
+        CheckConstraint(CK_IMPROVE_RUNS_OUTCOME, name="ck_improve_runs_outcome"),
+        CheckConstraint(CK_IMPROVE_RUNS_STOP_REASON, name="ck_improve_runs_stop_reason"),
+        CheckConstraint(CK_IMPROVE_RUNS_LABEL, name="ck_improve_runs_sealed_set_label"),
+        CheckConstraint(CK_IMPROVE_RUNS_GOAL, name="ck_improve_runs_goal"),
+        CheckConstraint(CK_IMPROVE_RUNS_COUNTS, name="ck_improve_runs_counts"),
+        CheckConstraint(CK_IMPROVE_RUNS_SHAPE, name="ck_improve_runs_shape"),
+        CheckConstraint(CK_IMPROVE_RUNS_ACCEPTANCE, name="ck_improve_runs_acceptance"),
+        Index("uq_improve_runs_live_split_plan", "split_plan_id", unique=True,
+              postgresql_where=text("status IN ('queued', 'running', 'waiting_user', 'finalizing')")),
+        Index("ix_improve_runs_workspace_status", "workspace_id", "status"),
+        Index("ix_improve_runs_service_token", "workspace_id", "created_by_service_token_id", "created_at",
+              postgresql_where=text("created_by_service_token_id IS NOT NULL")),
+        Index("ix_improve_runs_final_experiment", "workspace_id", "final_experiment_id",
+              postgresql_where=text("final_experiment_id IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    split_plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    start_experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    incumbent_experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    final_experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    stop_detail: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    goal: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    budget: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    plan: Mapped[list] = mapped_column(JSONB, nullable=False)
+    planned_comparisons: Mapped[int] = mapped_column(Integer, nullable=False)
+    validation_folds: Mapped[int] = mapped_column(Integer, nullable=False)
+    looks_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    sealed_set_label: Mapped[str] = mapped_column(String(16), nullable=False)
+    sealed_set_consulted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    continuation_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    accepted_iteration_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    accepted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    acceptance_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    final_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    step_errors: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    training_seconds_spent: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    llm_micros_spent: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waiting_user_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ImproveIteration(Base):
+    """P5.4-A2 (0087): one try of an improve loop -- iteration 0 the operating point (recorded, no
+    retrain), then one sealed ``family_include`` branch per try. ``experiment_id`` and the frozen
+    ``comparison`` are set once; a terminal status is final (DB trigger); one live try per loop."""
+
+    __tablename__ = "improve_iterations"
+    __table_args__ = (
+        UniqueConstraint("improve_run_id", "seq", name="uq_improve_iterations_run_seq"),
+        UniqueConstraint("workspace_id", "idempotency_key", name="uq_improve_iterations_workspace_key"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "improve_run_id"],
+                             ["improve_runs.workspace_id", "improve_runs.project_id", "improve_runs.id"],
+                             name="fk_improve_iterations_run", ondelete="CASCADE"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_iterations_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "incumbent_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_iterations_incumbent"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_KIND, name="ck_improve_iterations_kind"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_STATUS, name="ck_improve_iterations_status"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_AGENT, name="ck_improve_iterations_agent"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_SHAPE, name="ck_improve_iterations_shape"),
+        Index("uq_improve_iterations_live", "improve_run_id", unique=True,
+              postgresql_where=text("status IN ('planned', 'running')")),
+        Index("ix_improve_iterations_experiment", "workspace_id", "experiment_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    improve_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    plan_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    action: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    incumbent_experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    planned_new_candidates: Mapped[int] = mapped_column(Integer, nullable=False)
+    planned_candidate_ids: Mapped[list] = mapped_column(JSONB, nullable=False)
+    comparisons_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comparison: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    agent: Mapped[str] = mapped_column(String(16), nullable=False, server_default="off")
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    training_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ExecutionRequest(Base):
@@ -6994,6 +7159,146 @@ class ScoringScheduleRun(Base):
     )
 
 
+class RetrainPolicy(Base):
+    """D5a: a project's retrain policy (off | ask | auto; no row = off). Mutable config with an
+    optimistic ``version`` (the PUT's If-Match); automatic starts act as ``updated_by_user_id``."""
+
+    __tablename__ = "retrain_policies"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_retrain_policies_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", name="uq_retrain_policies_project"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_retrain_policies_workspace_project"),
+        CheckConstraint(CK_RETRAIN_POLICY, name="ck_retrain_policies_policy"),
+        CheckConstraint(CK_RETRAIN_POLICY_VERSION, name="ck_retrain_policies_version"),
+        Index("ix_retrain_policies_updated_by_user_id", "updated_by_user_id"),
+        Index("ix_retrain_policies_active", "policy", postgresql_where=text("policy <> 'off'")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    policy: Mapped[str] = mapped_column(String(8), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # An automatic start refused by a plan limit pauses the rule here until then (a save clears it).
+    auto_paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class RetrainRequest(Base):
+    """D5a: one retrain of a project, append-only (DB trigger): a person's start, the rule's question
+    (``ask``, no run) or its automatic start, with the model in use and the newer labelled file.
+    Rule rows name the alert week (one per week and model: ``uq_retrain_requests_rule_window``)."""
+
+    __tablename__ = "retrain_requests"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_retrain_requests_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_retrain_requests_workspace_project_id"),
+        UniqueConstraint("experiment_id", name="uq_retrain_requests_experiment"),
+        UniqueConstraint("workspace_id", "project_id", "id", "experiment_id",
+                         name="uq_retrain_requests_workspace_project_id_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_retrain_requests_workspace_project"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "incumbent_model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_retrain_requests_workspace_project_incumbent"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "dataset_id"], ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_retrain_requests_workspace_project_dataset"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "experiment_id"],
+            ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+            name="fk_retrain_requests_workspace_project_experiment"),
+        ForeignKeyConstraint(
+            ["workspace_id", "monitoring_window_id"], ["monitoring_windows.workspace_id", "monitoring_windows.id"],
+            name="fk_retrain_requests_workspace_window"),
+        CheckConstraint(CK_RETRAIN_ORIGIN, name="ck_retrain_requests_origin"),
+        CheckConstraint(CK_RETRAIN_RUN, name="ck_retrain_requests_run"),
+        CheckConstraint(CK_RETRAIN_WINDOW, name="ck_retrain_requests_window"),
+        Index("ix_retrain_requests_project_created", "project_id", "created_at"),
+        Index("uq_retrain_requests_rule_window", "project_id", "incumbent_model_version_id", "window_start",
+              unique=True, postgresql_where=text("origin <> 'person'")),
+        Index("ix_retrain_requests_requested_by_user_id", "requested_by_user_id"),
+        Index("ix_retrain_requests_workspace_dataset", "workspace_id", "dataset_id"),
+        Index("ix_retrain_requests_workspace_incumbent", "workspace_id", "incumbent_model_version_id"),
+        Index("ix_retrain_requests_workspace_window", "workspace_id", "monitoring_window_id",
+              postgresql_where=text("monitoring_window_id IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    origin: Mapped[str] = mapped_column(String(8), nullable=False)
+    incumbent_model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    monitoring_window_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class RetrainComparison(Base):
+    """D5a: the stored comparison of one started retrain (append-only, one per request) and the
+    challenger proposal it opened. ``result`` holds aggregate metrics only, never rows."""
+
+    __tablename__ = "retrain_comparisons"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_retrain_comparisons_workspace_id"),
+        UniqueConstraint("retrain_request_id", name="uq_retrain_comparisons_request"),
+        ForeignKeyConstraint(  # the comparison's run is the request's run
+            ["workspace_id", "project_id", "retrain_request_id", "experiment_id"],
+            ["retrain_requests.workspace_id", "retrain_requests.project_id", "retrain_requests.id",
+             "retrain_requests.experiment_id"],
+            name="fk_retrain_comparisons_workspace_project_request"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "experiment_id"],
+            ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+            name="fk_retrain_comparisons_workspace_project_experiment"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "proposal_record_id"],
+            ["project_decision_records.workspace_id", "project_decision_records.project_id",
+             "project_decision_records.id"],
+            name="fk_retrain_comparisons_workspace_project_proposal"),
+        CheckConstraint(CK_COMPARISON_STATUS, name="ck_retrain_comparisons_status"),
+        CheckConstraint(CK_COMPARISON_REASON, name="ck_retrain_comparisons_reason"),
+        CheckConstraint(CK_COMPARISON_REASON_CODE, name="ck_retrain_comparisons_reason_code"),
+        CheckConstraint(CK_COMPARISON_RESULT, name="ck_retrain_comparisons_result"),
+        Index("ix_retrain_comparisons_project_created", "project_id", "created_at"),
+        Index("ix_retrain_comparisons_workspace_experiment", "workspace_id", "experiment_id"),
+        Index("ix_retrain_comparisons_workspace_proposal", "workspace_id", "proposal_record_id",
+              postgresql_where=text("proposal_record_id IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    retrain_request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    proposal_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
 class UsageRecord(Base):
     """P8.4-A: one measured quantity of a workspace for one UTC day, derived from existing ledgers.
     Append-only (DB trigger). A recompute that changes the number adds a row with a new
@@ -8251,3 +8556,9 @@ def _protect_append_only_semantic_answer(
 @event.listens_for(IdempotencyKey, "before_update")
 def _protect_immutable_idempotency_key(_mapper, _connection, _target: IdempotencyKey) -> None:
     raise ValueError("IdempotencyKey rows are immutable")
+
+
+@event.listens_for(RetrainRequest, "before_update")
+@event.listens_for(RetrainComparison, "before_update")
+def _protect_append_only_retrain_rows(_mapper, _connection, _target: object) -> None:
+    raise ValueError("retrain requests and comparisons are append-only")

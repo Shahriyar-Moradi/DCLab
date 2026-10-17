@@ -427,6 +427,7 @@ def execute_experiment(
             # ADR 0007 §6.1: one source of truth -- the run's insert-only evidence_mode, never config.
             score_holdout=experiment.evidence_mode != EVIDENCE_MODE_SEALED,
             expected_selection=expected_selection,
+            threshold_goal=service_overrides.objective_goal if service_overrides is not None else None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("lab experiment %s failed before completion", experiment.id)

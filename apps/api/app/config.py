@@ -176,6 +176,11 @@ class Settings(BaseSettings):
     # platform kill switch: schedules still save, every run waits ("paused by the platform").
     scoring_schedule_enabled: bool = True
     scoring_schedule_tick_seconds: float = 60.0
+    # D5a retrain on newest data: the worker compares finished retrains and applies each project's
+    # retrain policy (ask / auto) every tick. false is the kill switch: no question, no automatic
+    # start, no comparison (a person can still start a retrain; it compares when switched back on).
+    retrain_enabled: bool = True
+    retrain_tick_seconds: float = 60.0
     # P8.4-A usage metering: the worker aggregates usage_records from the existing ledgers every
     # tick (false: no new records; reads still answer, limits are still measured live).
     usage_metering_enabled: bool = True

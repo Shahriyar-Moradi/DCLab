@@ -11,12 +11,14 @@ from __future__ import annotations
 from app.domain.data_plane import sql_in_clause
 
 # Shipped types. Not a closed database enum — see CK_ML_JOB_TYPE.
-ML_JOB_TYPES = ("auto_train", "auth_cleanup", "batch_predict", "agent_run", "monitoring")
+ML_JOB_TYPES = ("auto_train", "auth_cleanup", "batch_predict", "agent_run", "monitoring", "improve")
 JOB_TYPE_AUTO_TRAIN = "auto_train"
 JOB_TYPE_AUTH_CLEANUP = "auth_cleanup"
 JOB_TYPE_BATCH_PREDICT = "batch_predict"
 JOB_TYPE_AGENT_RUN = "agent_run"
 JOB_TYPE_MONITORING = "monitoring"
+# P5.4-A2 (ADR 0007 §8): one step of an improve loop; never counted by ensure_run_capacity.
+JOB_TYPE_IMPROVE = "improve"
 
 HANDLER_LABS_AUTO_TRAIN = "labs.auto_train"
 HANDLER_VERSION_LABS_AUTO_TRAIN = "1"
@@ -32,6 +34,10 @@ HANDLER_VERSION_AGENTS_RUN = "1"
 # stored files only; never loads a model.
 HANDLER_MONITORING_COMPUTE_WINDOW = "monitoring.compute_window"
 HANDLER_VERSION_MONITORING_COMPUTE_WINDOW = "1"
+# P5.4-A2: one step of an improve loop (payload: {"improve_run_id"} only; acts only when it is the
+# run's continuation job).
+HANDLER_LABS_IMPROVE = "labs.improve"
+HANDLER_VERSION_LABS_IMPROVE = "1"
 
 ML_JOB_STATUSES = (
     "queued",

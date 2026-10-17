@@ -2184,6 +2184,116 @@
         "successSchema": "ModelReleaseList"
       }
     },
+    "/v1/projects/{project_id}/retrain": {
+      "POST": {
+        "operationId": "start_retrain_v1_v1_projects__project_id__retrain_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "RetrainStartRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "RetrainStatusRead"
+      }
+    },
+    "/v1/projects/{project_id}/retrain-policy": {
+      "GET": {
+        "operationId": "read_retrain_policy_v1_projects__project_id__retrain_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "RetrainPolicyRead"
+      },
+      "PUT": {
+        "operationId": "set_retrain_policy_v1_projects__project_id__retrain_policy_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "RetrainPolicyWrite",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "RetrainPolicyRead"
+      }
+    },
+    "/v1/projects/{project_id}/retrain-status": {
+      "GET": {
+        "operationId": "read_retrain_status_v1_projects__project_id__retrain_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "RetrainStatusRead"
+      }
+    },
     "/v1/projects/{project_id}/scoring-schedule": {
       "GET": {
         "operationId": "read_scoring_schedule_v1_projects__project_id__scoring_schedule_get",

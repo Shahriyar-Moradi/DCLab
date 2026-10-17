@@ -757,9 +757,12 @@ def branch_experiment(
     """
 
     ctx = load_parent_context(db, actor=actor, workspace_id=workspace_id, parent_id=parent_id)
-    if initiated_by_service_token_id is not None and ctx.experiment.evidence_mode == EVIDENCE_MODE_SEALED:
-        # ADR 0007 §6.1: branching a sealed improve try is a person's act -- a token must not
-        # score a probe's holdout by branching it.
+    sealed_child = service_overrides is not None and service_overrides.evidence_mode == EVIDENCE_MODE_SEALED
+    if (initiated_by_service_token_id is not None and ctx.experiment.evidence_mode == EVIDENCE_MODE_SEALED
+            and not sealed_child):
+        # ADR 0007 §6.1: branching a sealed improve try into a scored run is a person's act -- a token
+        # must not score a probe's holdout by branching it. A token-started loop's next sealed try
+        # (service-only overrides, never a request field) scores nothing and stays allowed.
         raise ExperimentNotBranchableError(
             "sealed_parent_human_only", "only a person can branch a sealed improve try", status_code=403
         )

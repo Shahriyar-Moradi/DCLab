@@ -182,6 +182,9 @@ class ReproductionSplitAssignment(BaseModel):
     # holdout_plan_resplit: the run re-split with its HoldoutPlan (verified equal
     # to the map) and the pool keeps that split's row order.
     partitioned_by: Literal["split_plan_assignment", "holdout_plan_resplit"]
+    # "source_row": the run then fitted its pool in canonical_pool_order (ADR 0007 §5), whichever
+    # way it partitioned. None (runs before it): the partition's row order above. Hashed only when set.
+    pool_order: Literal["source_row"] | None = None
 
 
 class ReproductionBranch(BaseModel):

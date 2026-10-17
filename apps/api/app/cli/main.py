@@ -184,6 +184,39 @@ def cmd_usage_set_plan(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_improve_start(args: argparse.Namespace) -> int:
+    """P5.4-A2 (local runs): start an improve loop as a named person (their own ML-write authority is
+    checked); the worker steps it. Acceptance stays a person's act through the API (P5.4-A3)."""
+
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.db.models import User
+    from app.domain.errors import ExperimentNotFoundError, ImproveRunError
+    from app.services.improve.service import start_improve_run
+
+    db = _session()
+    try:
+        user = db.scalar(select(User).where(func.lower(User.email) == args.user.strip().lower()))
+        if user is None:
+            print(json.dumps({"error": "unknown user"}))
+            return 2
+        try:
+            run = start_improve_run(db, actor=user, workspace_id=UUID(args.workspace),
+                                    start_experiment_id=UUID(args.experiment), goal=json.loads(args.goal),
+                                    budget=json.loads(args.budget) if args.budget else None)
+        except (ImproveRunError, ExperimentNotFoundError) as exc:
+            db.rollback()
+            print(json.dumps({"error": getattr(exc, "code", "experiment_not_found"), "message": str(exc)}))
+            return 2
+        print(json.dumps({"improve_run_id": str(run.id), "status": run.status, "plan": run.plan,
+                          "planned_comparisons": run.planned_comparisons}))
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_agents_sync_prompts(args: argparse.Namespace) -> int:
     """Create prompt_releases rows from app/agents/prompts (ADR 0009 §2.8); --check only verifies."""
 
@@ -544,6 +577,7 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     from app.observability.setup import setup as setup_observability
     from app.services.ml_job_service import process_next_job
     from app.services.notification_service import run_notification_tick
+    from app.services.retrain_service import run_retrain_tick
     from app.services.scoring_schedule_service import run_scoring_schedule_tick
     from app.services.system_health_service import mark_worker_connections
     from app.services.upload_attempt_service import PURGE_TICK_SECONDS, purge_expired_upload_attempts
@@ -567,6 +601,7 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     next_usage_tick = 0.0
     next_notification_tick = 0.0
     next_purge_tick = 0.0
+    next_retrain_tick = 0.0
     while True:
         if time.monotonic() >= next_purge_tick:  # D3a: the 90-day upload log retention (bounded, idempotent)
             next_purge_tick = time.monotonic() + PURGE_TICK_SECONDS
@@ -608,6 +643,16 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
                     tick.labels = {"runs_queued": queued, "runs_skipped": len(runs) - queued}
             except Exception as exc:  # noqa: BLE001 - never stops job processing
                 print(json.dumps({"error": f"scoring schedule tick: {exc}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
+        if time.monotonic() >= next_retrain_tick:  # D5a: compare finished retrains, apply retrain policies
+            next_retrain_tick = time.monotonic() + max(1.0, float(settings.retrain_tick_seconds))
+            db = _session()
+            try:
+                run_retrain_tick(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"retrain tick: {type(exc).__name__}"}), file=sys.stderr)
                 db.rollback()
             finally:
                 db.close()
@@ -696,6 +741,16 @@ def build_parser() -> argparse.ArgumentParser:
     for flag in ("--compute-seconds-month", "--storage-bytes", "--runs-per-day"):
         set_plan.add_argument(flag, default=None, help="whole number, 'unlimited' or 'default'")
     set_plan.set_defaults(func=cmd_usage_set_plan)
+
+    improve = sub.add_parser("improve", help="P5.4-A2 improve loops (local runs)")
+    improve_sub = improve.add_subparsers(dest="improve_cmd", required=True)
+    improve_start = improve_sub.add_parser("start", help="start a loop on a completed scored run")
+    improve_start.add_argument("--user", required=True, help="email of the person starting the loop")
+    improve_start.add_argument("--workspace", required=True, help="workspace id")
+    improve_start.add_argument("--experiment", required=True, help="the start experiment id")
+    improve_start.add_argument("--goal", required=True, help='JSON, e.g. {"plain": {"metric": "pr_auc"}}')
+    improve_start.add_argument("--budget", default=None, help='JSON, e.g. {"max_iterations": 3}')
+    improve_start.set_defaults(func=cmd_improve_start)
 
     agents = sub.add_parser("agents")
     agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)

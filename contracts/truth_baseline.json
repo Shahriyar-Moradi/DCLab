@@ -1,11 +1,11 @@
 {
   "alembic_heads": [
-    "0086_sealed_evidence"
+    "0088_improve_runs"
   ],
-  "alembic_revision_count": 86,
+  "alembic_revision_count": 88,
   "inventory": {
-    "backend_python_file_count": 731,
-    "backend_test_file_count": 201,
+    "backend_python_file_count": 748,
+    "backend_test_file_count": 205,
     "extension_counts": {
       ".api": 1,
       ".css": 13,
@@ -19,11 +19,11 @@
       ".json": 55,
       ".lock": 3,
       ".mako": 1,
-      ".md": 187,
+      ".md": 188,
       ".mdc": 1,
       ".mjs": 3,
       ".pdf": 2,
-      ".py": 801,
+      ".py": 818,
       ".toml": 3,
       ".ts": 190,
       ".tsx": 228,
@@ -40,17 +40,17 @@
       "dclab_client",
       "dclab_mcp"
     ],
-    "python_file_count": 801,
-    "python_line_count": 229712,
-    "repository_file_count": 1907,
+    "python_file_count": 818,
+    "python_line_count": 235665,
+    "repository_file_count": 1925,
     "sdk_test_file_count": 3,
-    "test_file_count": 242,
+    "test_file_count": 246,
     "ts_tsx_file_count": 418,
-    "ts_tsx_line_count": 69828,
+    "ts_tsx_line_count": 70513,
     "web_e2e_file_count": 37
   },
-  "openapi_operation_count": 257,
-  "openapi_path_count": 238,
-  "sqlalchemy_table_count": 98,
-  "v1_operation_count": 102
+  "openapi_operation_count": 261,
+  "openapi_path_count": 241,
+  "sqlalchemy_table_count": 103,
+  "v1_operation_count": 106
 }

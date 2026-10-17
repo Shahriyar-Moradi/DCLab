@@ -1205,9 +1205,101 @@ UPLOAD_ATTEMPTS_TRIGGER_SQL = (
     "FOR EACH ROW EXECUTE FUNCTION force_created_at_now()",
 )
 
+# 0087 (D5a): the retrain log and its stored comparisons are append-only (identical literals in 0087).
+RETRAIN_APPEND_ONLY_TRIGGER_SQL = tuple(
+    f"CREATE TRIGGER {table}_append_only BEFORE UPDATE OR DELETE ON {table} "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    for table in ("retrain_requests", "retrain_comparisons")
+)
+
+
+# 0087 (P5.4-A2, ADR 0007 §9): improve loops. Goal, budget, plan and T frozen at INSERT; acceptance
+# write-once; status moves only along the loop's transitions; a finished loop is final. A try's
+# experiment and frozen comparison are set once (null -> value); a finished try is final.
+# Identical literals in 0088_improve_runs.
+GUARD_IMPROVE_RUN_SQL = """
+CREATE OR REPLACE FUNCTION guard_improve_run_update()
+RETURNS trigger AS $$
+BEGIN
+    IF ROW(NEW.workspace_id, NEW.project_id, NEW.split_plan_id, NEW.start_experiment_id, NEW.goal, NEW.budget,
+           NEW.plan, NEW.planned_comparisons, NEW.validation_folds, NEW.looks_before, NEW.sealed_set_label,
+           NEW.created_by_user_id, NEW.created_by_service_token_id, NEW.created_at)
+       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.split_plan_id, OLD.start_experiment_id, OLD.goal,
+           OLD.budget, OLD.plan, OLD.planned_comparisons, OLD.validation_folds, OLD.looks_before,
+           OLD.sealed_set_label, OLD.created_by_user_id, OLD.created_by_service_token_id, OLD.created_at) THEN
+        RAISE EXCEPTION 'improve_runs: goal, budget, plan and lineage are frozen';
+    END IF;
+    IF (OLD.accepted_iteration_seq IS NOT NULL AND NEW.accepted_iteration_seq IS DISTINCT FROM OLD.accepted_iteration_seq)
+       OR (OLD.accepted_by_user_id IS NOT NULL AND NEW.accepted_by_user_id IS DISTINCT FROM OLD.accepted_by_user_id)
+       OR (OLD.acceptance_record_id IS NOT NULL AND NEW.acceptance_record_id IS DISTINCT FROM OLD.acceptance_record_id) THEN
+        RAISE EXCEPTION 'improve_runs: the acceptance is write-once';
+    END IF;
+    IF OLD.status IN ('completed', 'failed', 'cancelled') THEN
+        RAISE EXCEPTION 'improve_runs: a finished loop is final';
+    END IF;
+    IF OLD.sealed_set_consulted AND NOT NEW.sealed_set_consulted THEN
+        RAISE EXCEPTION 'improve_runs: a consulted final test set stays consulted';
+    END IF;
+    IF NEW.final_attempts < OLD.final_attempts
+       OR (OLD.final_experiment_id IS NOT NULL AND NEW.final_experiment_id IS NULL)
+       OR (NEW.final_experiment_id IS DISTINCT FROM OLD.final_experiment_id
+           AND NEW.final_attempts <> OLD.final_attempts + 1) THEN
+        RAISE EXCEPTION 'improve_runs: a final run changes only with a new attempt';
+    END IF;
+    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+        (OLD.status = 'queued' AND NEW.status IN ('running', 'completed', 'failed', 'cancelled'))
+        OR (OLD.status = 'running' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))
+        OR (OLD.status = 'waiting_user' AND NEW.status IN ('finalizing', 'completed', 'failed', 'cancelled'))
+        OR (OLD.status = 'finalizing' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))
+    ) THEN
+        RAISE EXCEPTION 'improve_runs: % -> % is not a loop transition', OLD.status, NEW.status;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+GUARD_IMPROVE_ITERATION_SQL = """
+CREATE OR REPLACE FUNCTION guard_improve_iteration_update()
+RETURNS trigger AS $$
+BEGIN
+    IF ROW(NEW.workspace_id, NEW.project_id, NEW.improve_run_id, NEW.seq, NEW.plan_index, NEW.kind, NEW.action,
+           NEW.incumbent_experiment_id, NEW.planned_new_candidates, NEW.planned_candidate_ids,
+           NEW.idempotency_key, NEW.created_at)
+       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.improve_run_id, OLD.seq, OLD.plan_index, OLD.kind,
+           OLD.action, OLD.incumbent_experiment_id, OLD.planned_new_candidates, OLD.planned_candidate_ids,
+           OLD.idempotency_key, OLD.created_at) THEN
+        RAISE EXCEPTION 'improve_iterations: the planned try is frozen';
+    END IF;
+    IF (OLD.experiment_id IS NOT NULL AND NEW.experiment_id IS DISTINCT FROM OLD.experiment_id)
+       OR (OLD.comparison IS NOT NULL AND NEW.comparison IS DISTINCT FROM OLD.comparison)
+       OR (OLD.comparisons_before IS NOT NULL AND NEW.comparisons_before IS DISTINCT FROM OLD.comparisons_before) THEN
+        RAISE EXCEPTION 'improve_iterations: experiment, comparison and N are set once';
+    END IF;
+    IF OLD.status NOT IN ('planned', 'running') THEN
+        RAISE EXCEPTION 'improve_iterations: a finished try is final';
+    END IF;
+    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+        (OLD.status = 'planned' AND NEW.status IN ('running', 'failed', 'cancelled'))
+        OR (OLD.status = 'running' AND NEW.status IN ('accepted', 'rejected', 'not_comparable', 'failed', 'cancelled'))
+    ) THEN
+        RAISE EXCEPTION 'improve_iterations: % -> % is not a try transition', OLD.status, NEW.status;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+IMPROVE_TRIGGER_SQL = (
+    GUARD_IMPROVE_RUN_SQL,
+    GUARD_IMPROVE_ITERATION_SQL,
+    "CREATE TRIGGER improve_runs_guard BEFORE UPDATE ON improve_runs "
+    "FOR EACH ROW EXECUTE FUNCTION guard_improve_run_update()",
+    "CREATE TRIGGER improve_iterations_guard BEFORE UPDATE ON improve_iterations "
+    "FOR EACH ROW EXECUTE FUNCTION guard_improve_iteration_update()",
+)
+
 
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0086
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0087
     install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
@@ -1239,6 +1331,8 @@ def install_immutability_triggers(connection) -> None:
     for statement in WEBHOOK_APPEND_ONLY_TRIGGER_SQL:
         connection.execute(text(statement))
     connection.execute(text(ML_JOB_ATTEMPTS_FINAL_TRIGGER_SQL))
+    for statement in RETRAIN_APPEND_ONLY_TRIGGER_SQL:
+        connection.execute(text(statement))
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():
@@ -1264,6 +1358,8 @@ def install_immutability_triggers(connection) -> None:
     for statement in agent_run_release_trigger_statements():
         connection.execute(text(statement))
     for statement in UPLOAD_ATTEMPTS_TRIGGER_SQL:  # after the 0071 functions it uses
+        connection.execute(text(statement))
+    for statement in IMPROVE_TRIGGER_SQL:
         connection.execute(text(statement))
 
 

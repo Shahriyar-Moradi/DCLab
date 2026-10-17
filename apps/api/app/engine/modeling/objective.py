@@ -284,12 +284,21 @@ def constraint_status(rows: list[dict[str, Any]], key: str = "oof_satisfied") ->
     return "satisfied"
 
 
+GOAL_LOCK_SOURCE = "improve_goal"
+
+
 def lock_goal(
-    rates: dict[str, np.ndarray], objective: Objective, primary_metric: str | None
+    rates: dict[str, np.ndarray], objective: Objective, primary_metric: str | None, goal_metric: str | None = None
 ) -> tuple[np.ndarray, str, str, np.ndarray | None]:
     """(goal to maximise, goal metric, source, total cost or None) of the threshold lock:
-    the expected cost with a cost matrix, else a threshold-dependent primary metric, else F1."""
+    the expected cost with a cost matrix, else a threshold-dependent primary metric, else F1.
+    ``goal_metric`` (service-only, an accepted improve try's final run, ADR 0007 §6.2): the goal's
+    metric itself, so the lock is the goal's operating point (source ``improve_goal``)."""
 
+    if goal_metric is not None:
+        if goal_metric not in THRESHOLD_METRICS:
+            raise ObjectiveError(f"{goal_metric!r} is not a threshold metric")
+        return rates[goal_metric], goal_metric, GOAL_LOCK_SOURCE, None
     tunable = any(item.metric in THRESHOLD_METRICS for item in objective.constraints)
     if objective.has_cost_matrix:
         cost = rates["fp"] * float(objective.cost_false_positive) + rates["fn"] * float(
@@ -334,6 +343,7 @@ def select_decision_threshold(
     *,
     cv_metrics: dict[str, Any] | None = None,
     primary_metric: str | None = None,
+    goal_metric: str | None = None,
 ) -> dict[str, Any]:
     """Choose the binary decision threshold from out-of-fold predictions only.
 
@@ -342,14 +352,14 @@ def select_decision_threshold(
     otherwise F1. Only thresholds meeting every threshold-tunable constraint are
     eligible; ties go to the threshold closest to 0.5. When none is eligible, the
     one with the smallest total shortfall is used and the decision says so.
-    Nothing requested keeps 0.5.
+    Nothing requested keeps 0.5. ``goal_metric``: see ``lock_goal``.
     """
     objective = objective or Objective()
     y = np.asarray(y_oof, dtype=int)
     scores = np.asarray(scores_oof, dtype=float)
     tunable = [item for item in objective.constraints if item.metric in THRESHOLD_METRICS]
     primary_tunable = primary_metric in THRESHOLD_METRICS
-    requested = bool(tunable) or objective.has_cost_matrix or primary_tunable
+    requested = bool(tunable) or objective.has_cost_matrix or primary_tunable or goal_metric is not None
     decision: dict[str, Any] = {
         "version": THRESHOLD_VERSION,
         "value": DEFAULT_THRESHOLD,
@@ -367,7 +377,7 @@ def select_decision_threshold(
     if requested and len(y) and len(np.unique(y)) == 2:
         thresholds = _candidate_thresholds(scores)
         rates = _rates_at(y, scores, thresholds)
-        goal, goal_metric, source, cost = lock_goal(rates, objective, primary_metric)
+        goal, goal_metric, source, cost = lock_goal(rates, objective, primary_metric, goal_metric)
         index, any_feasible, _shortfall = select_index(thresholds, rates, tunable, goal)
         if any_feasible:
             threshold_status = "satisfied" if tunable else "not_requested"

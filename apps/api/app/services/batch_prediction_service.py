@@ -511,39 +511,21 @@ def _recheck_scheduled(db: Session, row: BatchPrediction) -> None:
         raise ScoringError(SCHEDULE_OWNER_NOT_ALLOWED, "the person who set up this schedule can no longer score")
 
 
-def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] | None) -> tuple[Any, Any, int, str]:
-    """(ScoredFrame, ScoringSpec, rows_in, saved format) for this row. Raises ``ScoringError``."""
+def load_version_for_scoring(db: Session, model_version: ModelVersion | None) -> tuple[Any, Any]:
+    """(LoadedModel, ScoringSpec) of a locked model version: the stored package checked against its
+    digests and its recorded feature contract (worker only, P7.1-A). Raises ``ScoringError``. Also
+    used by the D5a retrain comparison (``retrain_comparison``) to score the model in use."""
 
-    from app.engine.data.loaders import load_table
-    from app.engine.serving.batch_scoring import ScoringError, score_frame, scoring_spec
-    from app.engine.serving.model_package import (
-        PACKAGE_MAX_BYTES,
-        ModelPackageError,
-        check_manifest_contract,
-        saved_format,
-    )
+    from app.engine.serving.batch_scoring import ScoringError, scoring_spec
+    from app.engine.serving.model_package import PACKAGE_MAX_BYTES, ModelPackageError, check_manifest_contract
     from app.engine.serving.package_loader import load_model  # worker only (P7.1-A)
-    from app.services.dataset_materialization import materialize_dataset
 
-    workspace_id = row.workspace_id
-    model_version = _scoped(db, ModelVersion, workspace_id, row.model_version_id)
+    workspace_id = model_version.workspace_id if model_version is not None else None
     experiment = model_version and _scoped(db, Experiment, workspace_id, model_version.pipeline_run_id)
     candidate = model_version and _scoped(db, ExperimentCandidate, workspace_id, model_version.selected_candidate_id)
     artifact = model_version and _scoped(db, Artifact, workspace_id, model_version.model_artifact_id)
-    message = "this model version's stored pipeline cannot be used for batch scoring"
     manifest = model_version and _scoped(db, Artifact, workspace_id, model_version.feature_manifest_artifact_id)
-    release = None
-    mismatch = "the stored model no longer matches the version approved for scoring"
-    if row.model_release_id is not None:
-        # P7.2-A, no TOCTOU: the approval this scoring was queued with must still name this
-        # version and pin exactly the package manifest AND the saved format (the loader branches
-        # on the artifact's package format) the worker is about to load.
-        release = _scoped(db, ModelRelease, workspace_id, row.model_release_id)
-        if (model_version is None or release is None or release.model_version_id != model_version.id
-                or manifest is None or manifest.content_digest != release.package_manifest_digest
-                or artifact is None or saved_format(artifact.extra_metadata) != release.saved_format):
-            raise ScoringError(RELEASE_MISMATCH, mismatch)
-    _recheck_scheduled(db, row)
+    message = "this model version's stored pipeline cannot be used for batch scoring"
     if experiment is None or candidate is None or artifact is None or artifact.artifact_type != "model":
         raise ScoringError(UNSUPPORTED_MODEL, message)
     result = experiment.result if isinstance(experiment.result, dict) else {}
@@ -567,6 +549,40 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
         package_format=(artifact.extra_metadata or {}).get("package_format"),
         manifest_digest=manifest.content_digest if manifest else None,
     )
+    spec = scoring_spec(result, loaded.pipeline)
+    if loaded.manifest is not None:
+        try:
+            check_manifest_contract(loaded.manifest, spec)
+        except ModelPackageError as exc:
+            raise ScoringError(UNSUPPORTED_MODEL, "the stored model does not match its recorded feature contract") from exc
+    return loaded, spec
+
+
+def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] | None) -> tuple[Any, Any, int, str]:
+    """(ScoredFrame, ScoringSpec, rows_in, saved format) for this row. Raises ``ScoringError``."""
+
+    from app.engine.data.loaders import load_table
+    from app.engine.serving.batch_scoring import ScoringError, score_frame
+    from app.engine.serving.model_package import saved_format
+    from app.services.dataset_materialization import materialize_dataset
+
+    workspace_id = row.workspace_id
+    model_version = _scoped(db, ModelVersion, workspace_id, row.model_version_id)
+    artifact = model_version and _scoped(db, Artifact, workspace_id, model_version.model_artifact_id)
+    manifest = model_version and _scoped(db, Artifact, workspace_id, model_version.feature_manifest_artifact_id)
+    release = None
+    mismatch = "the stored model no longer matches the version approved for scoring"
+    if row.model_release_id is not None:
+        # P7.2-A, no TOCTOU: the approval this scoring was queued with must still name this
+        # version and pin exactly the package manifest AND the saved format (the loader branches
+        # on the artifact's package format) the worker is about to load.
+        release = _scoped(db, ModelRelease, workspace_id, row.model_release_id)
+        if (model_version is None or release is None or release.model_version_id != model_version.id
+                or manifest is None or manifest.content_digest != release.package_manifest_digest
+                or artifact is None or saved_format(artifact.extra_metadata) != release.saved_format):
+            raise ScoringError(RELEASE_MISMATCH, mismatch)
+    _recheck_scheduled(db, row)
+    loaded, spec = load_version_for_scoring(db, model_version)
     if release is not None and loaded.saved_format != release.saved_format:
         raise ScoringError(RELEASE_MISMATCH, mismatch)  # what was loaded is not what was approved
     if loaded.saved_format != "package_v1":
@@ -575,12 +591,6 @@ def _score(db: Session, row: BatchPrediction, on_heartbeat: Callable[[], None] |
             "format because LEGACY_PICKLE_MODELS_ENABLED allows it; train the model again to replace it",
             row.id, model_version.id, workspace_id,
         )
-    spec = scoring_spec(result, loaded.pipeline)
-    if loaded.manifest is not None:
-        try:
-            check_manifest_contract(loaded.manifest, spec)
-        except ModelPackageError as exc:
-            raise ScoringError(UNSUPPORTED_MODEL, "the stored model does not match its recorded feature contract") from exc
     # Re-check at run time: the dataset may have been unpublished or removed since it was queued.
     from app.services.experiment_service import ExperimentRequestError, uploaded_dataset
 

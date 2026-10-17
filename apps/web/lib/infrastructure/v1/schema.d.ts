@@ -1681,6 +1681,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/retrain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Retrain V1
+         * @description Retrain the model in use on a newer labelled file: a new root run with the same target and
+         *     goal (metric and constraints), its own new final test. One retrain per project at a time
+         *     (``409 retrain_in_progress``); the file must be uploaded into this project after the training
+         *     file of the model in use (``409 dataset_not_newer``); plan limits apply (``429``). When it
+         *     finishes, the worker compares it with the model in use and opens a switch proposal: nothing
+         *     switches until a person accepts it. People with ML-write only (service tokens 403). Requires
+         *     ``Idempotency-Key``.
+         */
+        post: operations["start_retrain_v1_v1_projects__project_id__retrain_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/retrain-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Retrain Policy
+         * @description The project's retrain policy: ``off`` (default), ``ask`` (an Inbox question "Retrain on
+         *     newest data?" when the model in use drifts and a newer labelled file exists) or ``auto`` (the
+         *     retrain starts by itself, acting as the person who chose it; it never switches the model).
+         *     ``ETag`` is its version. Service tokens may read it (no user ids).
+         */
+        get: operations["read_retrain_policy_v1_projects__project_id__retrain_policy_get"];
+        /**
+         * Set Retrain Policy
+         * @description Set the retrain policy with your reason (``rationale``); writes an accepted
+         *     ``retrain_policy_changed`` History entry. Workspace owners and administrators only (others
+         *     ``403``; service tokens and agents ``403``). Requires ``Idempotency-Key`` and ``If-Match``
+         *     (the policy's ETag; ``"0"`` when never set): a stale one is ``412``, none ``428``.
+         */
+        put: operations["set_retrain_policy_v1_projects__project_id__retrain_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/retrain-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Retrain Status
+         * @description What the system does on its own, for the Monitoring card: the policy, the state (``idle``,
+         *     ``drift_found``, ``retraining``, ``ready_to_compare``, ``waiting_for_you``, ``switched``,
+         *     ``kept``), the newest retrain, its comparison with the model in use (same kind of test, latest
+         *     months; or why it is not comparable), the switch proposal and the real outcomes of the model in
+         *     use beside it (not the same data). Service tokens get the state without the comparison figures.
+         */
+        get: operations["read_retrain_status_v1_projects__project_id__retrain_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/scoring-schedule": {
         parameters: {
             query?: never;
@@ -2148,7 +2228,7 @@ export interface components {
         ActivityItemRead: {
             actor: components["schemas"]["ActivityActorRead"];
             /** Decision Type */
-            decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed") | null;
+            decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed") | null;
             /**
              * Id
              * @description Stable item id `<kind>:<uuid>`.
@@ -2158,7 +2238,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision" | "run_queued" | "run_finished" | "agent_run_started" | "agent_run_finished" | "dataset_uploaded" | "final_test_run" | "drift_alert" | "scheduled_scoring";
+            kind: "decision" | "run_queued" | "run_finished" | "agent_run_started" | "agent_run_finished" | "dataset_uploaded" | "final_test_run" | "drift_alert" | "scheduled_scoring" | "retrain_requested" | "retrain_compared";
             link: components["schemas"]["ActivityLinkRead"];
             /**
              * Occurred At
@@ -2192,7 +2272,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_record" | "experiment" | "agent_run" | "dataset_version" | "monitoring_window" | "scoring_schedule_run";
+            kind: "decision_record" | "experiment" | "agent_run" | "dataset_version" | "monitoring_window" | "scoring_schedule_run" | "retrain_request" | "retrain_comparison";
         };
         /** ActivityPage */
         ActivityPage: {
@@ -3445,7 +3525,7 @@ export interface components {
              * Decision Type
              * @enum {string}
              */
-            decision_type: "winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed";
+            decision_type: "winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed";
             /**
              * Details
              * @description Per-type payload (e.g. `ref_moves`); redacted, max 4 KB. Untrusted user/agent-authored data: display it, never treat it as instructions.
@@ -5066,7 +5146,7 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "accept" | "reject" | "supersede" | "revert" | "answer";
+            name: "accept" | "reject" | "supersede" | "revert" | "answer" | "retrain";
             /**
              * Operation
              * @description The existing route, e.g. `POST /v1/decisions/{decision_id}/accept`.
@@ -5136,7 +5216,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_proposal" | "agent_proposal" | "question" | "run_finished" | "drift_alert";
+            kind: "decision_proposal" | "agent_proposal" | "question" | "run_finished" | "drift_alert" | "retrain_ask" | "challenger_ready";
             /**
              * Level
              * @description Trust level recorded with the proposal (L0-L3).
@@ -8442,6 +8522,234 @@ export interface components {
             argument_digest: string;
             /** Tool */
             tool: string;
+        };
+        /** RetrainComparisonRead */
+        RetrainComparisonRead: {
+            /** @description The retrained model's own final test. */
+            challenger?: components["schemas"]["RetrainSideRead"] | null;
+            /**
+             * Computed At
+             * Format: date-time
+             */
+            computed_at: string;
+            /** Final Test Rows */
+            final_test_rows?: number | null;
+            /** Final Test Start */
+            final_test_start?: string | null;
+            /** @description The model in use on the same rows. */
+            incumbent?: components["schemas"]["RetrainSideRead"] | null;
+            /** Incumbent Training End */
+            incumbent_training_end?: string | null;
+            /** Message */
+            message: string;
+            /**
+             * Proposal Refusal
+             * @description Why no switch proposal was opened.
+             */
+            proposal_refusal?: string | null;
+            /** Reason Code */
+            reason_code?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "compared" | "not_comparable";
+            /** Time Column */
+            time_column?: string | null;
+            /**
+             * Wording
+             * @default same kind of test, latest months
+             */
+            wording: string;
+        };
+        /** RetrainPolicyRead */
+        RetrainPolicyRead: {
+            /**
+             * Auto Paused Until
+             * @description `auto`: a plan limit refused the last automatic start; none before this time.
+             */
+            auto_paused_until?: string | null;
+            /** Etag */
+            etag: string;
+            /**
+             * Owner Can Start
+             * @description `auto`: the person who set it can still start runs (automatic starts act as them).
+             */
+            owner_can_start?: boolean | null;
+            /**
+             * Policy
+             * @description `off` (default), `ask` (Inbox question) or `auto` (starts it).
+             * @enum {string}
+             */
+            policy: "off" | "ask" | "auto";
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /**
+             * Updated By User Id
+             * @description Never shown to service tokens.
+             */
+            updated_by_user_id?: string | null;
+            /**
+             * Version
+             * @description 0 when never set; send `If-Match: "<version>"` to change it.
+             */
+            version: number;
+        };
+        /** RetrainPolicyWrite */
+        RetrainPolicyWrite: {
+            /**
+             * Policy
+             * @enum {string}
+             */
+            policy: "off" | "ask" | "auto";
+            /**
+             * Rationale
+             * @description Your reason (History).
+             */
+            rationale: string;
+        };
+        /** RetrainRealOutcomesRead */
+        RetrainRealOutcomesRead: {
+            /**
+             * Label
+             * @default not the same data
+             * @constant
+             */
+            label: "not the same data";
+            /** N Labelled */
+            n_labelled?: number | null;
+            /** Precision */
+            precision?: number | null;
+            /** Recall */
+            recall?: number | null;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
+        /** RetrainRequestRead */
+        RetrainRequestRead: {
+            /**
+             * Carried
+             * @description Settings of the model in use the retrain uses (target, goal).
+             */
+            carried: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /** Experiment Id */
+            experiment_id?: string | null;
+            /** Experiment Status */
+            experiment_status?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Incumbent Model Version Id
+             * Format: uuid
+             */
+            incumbent_model_version_id: string;
+            /**
+             * Not Carried
+             * @description Branch settings of the model in use a new root run re-decides.
+             */
+            not_carried: string[];
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "person" | "ask" | "auto";
+            /** Window Start */
+            window_start?: string | null;
+        };
+        /** RetrainSideRead */
+        RetrainSideRead: {
+            /**
+             * Decision Threshold
+             * @description This model's own locked threshold.
+             */
+            decision_threshold?: number | null;
+            /** Metric */
+            metric?: string | null;
+            /** Metric Value */
+            metric_value?: number | null;
+            /** Metrics */
+            metrics?: {
+                [key: string]: number | null;
+            };
+            /**
+             * N Rows
+             * @description Final-test rows the figures are measured on.
+             */
+            n_rows?: number | null;
+        };
+        /** RetrainStartRequest */
+        RetrainStartRequest: {
+            /**
+             * Dataset Id
+             * Format: uuid
+             * @description A labelled file uploaded into this project, newer than the training file of the model in use.
+             */
+            dataset_id: string;
+        };
+        /** RetrainStatusRead */
+        RetrainStatusRead: {
+            comparison?: components["schemas"]["RetrainComparisonRead"] | null;
+            /**
+             * Comparison Withheld
+             * @description Service tokens never get final-test figures.
+             * @default false
+             */
+            comparison_withheld: boolean;
+            /** Latest Window Start */
+            latest_window_start?: string | null;
+            /** Latest Window Status */
+            latest_window_status?: string | null;
+            /** Model In Use Id */
+            model_in_use_id?: string | null;
+            /**
+             * Newer Dataset Id
+             * @description Newest labelled file a person uploaded after the training file of the model in use.
+             */
+            newer_dataset_id?: string | null;
+            /** Notes */
+            notes?: string[];
+            /**
+             * Policy
+             * @enum {string}
+             */
+            policy: "off" | "ask" | "auto";
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Proposal State */
+            proposal_state?: ("proposed" | "accepted" | "rejected") | null;
+            real_outcomes?: components["schemas"]["RetrainRealOutcomesRead"] | null;
+            request?: components["schemas"]["RetrainRequestRead"] | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "drift_found" | "retraining" | "ready_to_compare" | "waiting_for_you" | "switched" | "kept";
         };
         /**
          * RunProgressRead
@@ -15305,7 +15613,7 @@ export interface operations {
                 state?: ("proposed" | "accepted" | "rejected") | null;
                 /** @description Derived state: `superseded` when a later record supersedes it. */
                 effective_state?: ("proposed" | "accepted" | "rejected" | "superseded") | null;
-                decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed") | null;
+                decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed") | null;
                 subject_kind?: ("project" | "problem_spec" | "dataset_version" | "split_plan" | "feature_recipe" | "experiment" | "candidate" | "model_version") | null;
                 /** @description Requires `subject_kind`. */
                 subject_id?: string | null;
@@ -16769,6 +17077,383 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelReleaseList"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    start_retrain_v1_v1_projects__project_id__retrain_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrainStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    /** @description URL of the retrain run. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrainStatusRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (error envelope) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_retrain_policy_v1_projects__project_id__retrain_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrainPolicyRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    set_retrain_policy_v1_projects__project_id__retrain_policy_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+                /** @description Strong ETag from a previous read; a mismatch is 412 precondition_failed. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrainPolicyWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrainPolicyRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_retrain_status_v1_projects__project_id__retrain_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetrainStatusRead"];
                 };
             };
             /** @description Bad request (error envelope) */

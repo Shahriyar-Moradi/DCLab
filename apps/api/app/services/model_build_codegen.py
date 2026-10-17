@@ -14,6 +14,7 @@ ones. Runs without a SplitPlan keep re-deriving folds with the planned splitter.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import math
 from collections import OrderedDict
 from typing import Any, Callable
@@ -38,6 +39,7 @@ from app.engine.modeling.validation_planner import (
     TIME_SERIES_SPLIT,
 )
 from app.engine.search.generator import DUMMY_FAMILIES
+from app.engine.validation.split_assignment import POOL_ORDER_SOURCE_ROW, canonical_pool_order
 
 STAGE_SPECS: tuple[tuple[str, str], ...] = (
     ("ingestion", "Ingestion"),
@@ -778,7 +780,30 @@ def _assignment_partition_lines(spec: ModelBuildReproductionSpec) -> tuple[list[
             "train_frame = frame.loc[~in_holdout].copy()",
             "holdout_frame = frame.loc[in_holdout].copy()",
         ]
-    return lines, helpers
+    return [*lines, *_pool_order_lines(spec)], helpers
+
+
+# ADR 0007 §5: the runner's own helper, emitted verbatim (one definition, no mirror).
+CANONICAL_POOL_ORDER_SOURCE = inspect.getsource(canonical_pool_order).rstrip()
+
+
+def _pool_order_lines(spec: ModelBuildReproductionSpec) -> list[str]:
+    """The run's training-pool order: canonical (by source row) only when the run recorded it."""
+
+    split = spec.split_assignment
+    if split is None or split.pool_order != POOL_ORDER_SOURCE_ROW:
+        return []
+    return [
+        "",
+        "# The run fitted its training pool in source-row order (POOL_ORDER), whichever way the",
+        "# holdout was partitioned: the same rows in the same order on the same folds.",
+        f"POOL_ORDER = {_py_literal(split.pool_order)}",
+        "",
+        CANONICAL_POOL_ORDER_SOURCE,
+        "",
+        "",
+        "train_frame = canonical_pool_order(train_frame)",
+    ]
 
 
 def _render_holdout_plan(spec: ModelBuildReproductionSpec) -> tuple[str, list[str], bool]:
@@ -802,6 +827,8 @@ def _render_holdout_plan(spec: ModelBuildReproductionSpec) -> tuple[str, list[st
         partition, partition_helpers = _assignment_partition_lines(spec)
         helpers.extend(partition_helpers)
         imports = ["import hashlib", "import os", "from pathlib import Path", "", "import numpy as np"]
+        if any("canonical_pool_order(" in line for line in partition):
+            imports.append("import pandas as pd")
         if any("train_test_split(" in line for line in partition):
             imports.append("from sklearn.model_selection import train_test_split")
         return _join([*imports, "", *lines, *partition]), helpers, True
