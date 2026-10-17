@@ -37,6 +37,8 @@ ActivityKind = Literal[
     "dataset_uploaded", "final_test_run", "drift_alert", "scheduled_scoring",
     # D5a: retrain on newest data (asked, started by a person or automatically; compared).
     "retrain_requested", "retrain_compared",
+    # D7a: business-view questions (people only; never for service tokens; no text).
+    "question_asked", "question_replied", "question_closed",
 ]
 # Tie-break rank inside one timestamp (part of the cursor; never reorder, only append).
 ACTIVITY_KIND_RANK: dict[str, int] = {
@@ -51,11 +53,14 @@ ACTIVITY_KIND_RANK: dict[str, int] = {
     "scheduled_scoring": 8,
     "retrain_requested": 9,
     "retrain_compared": 10,
+    "question_asked": 11,
+    "question_replied": 12,
+    "question_closed": 13,
 }
 ActivityActorKind = Literal["rule", "agent", "person"]
 ActivityLinkKind = Literal[
     "decision_record", "experiment", "agent_run", "dataset_version", "monitoring_window", "scoring_schedule_run",
-    "retrain_request", "retrain_comparison",
+    "retrain_request", "retrain_comparison", "business_question",
 ]
 ProjectStage = Literal["no_data", "data_uploaded", "goal_set", "running", "runs_finished", "model_in_use"]
 FlowStepState = Literal["done", "in_progress", "alert", "todo"]
@@ -104,7 +109,8 @@ class ActivityItemRead(BaseModel):
         default=None,
         description=(
             "Decision state; the run's status on `*_finished` items; the file's purpose (`training` | `scoring`) "
-            "on `dataset_uploaded`; the window status on `drift_alert`; the schedule outcome on `scheduled_scoring`."
+            "on `dataset_uploaded`; the window status on `drift_alert`; the schedule outcome on `scheduled_scoring`; "
+            "the reply's side (`business` | `data_team`) on `question_replied`."
         ),
     )
     decision_type: DecisionType | None = None

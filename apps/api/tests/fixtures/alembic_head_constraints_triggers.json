@@ -481,6 +481,41 @@
       "definition": "CHECK (((decision_threshold IS NULL) OR ((decision_threshold >= (0)::double precision) AND (decision_threshold <= (1)::double precision))))"
     },
     {
+      "table": "business_question_replies",
+      "name": "ck_business_question_replies_side",
+      "definition": "CHECK (((author_side)::text = ANY ((ARRAY['business'::character varying, 'data_team'::character varying])::text[])))"
+    },
+    {
+      "table": "business_question_replies",
+      "name": "ck_business_question_replies_text",
+      "definition": "CHECK ((((char_length(btrim((text)::text, ' \t\n'::text)) >= 1) AND (char_length(btrim((text)::text, ' \t\n'::text)) <= 2000)) AND ((text)::text !~ '[\\x01-\\x08\\x0b-\\x1f\\x7f-\\x9f]'::text)))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_closed",
+      "definition": "CHECK (((((status)::text = 'closed'::text) = (closed_at IS NOT NULL)) AND ((closed_at IS NULL) = (closed_by_user_id IS NULL))))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'answered'::character varying, 'closed'::character varying])::text[])))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_subject",
+      "definition": "CHECK ((num_nonnulls(model_version_id, batch_prediction_id, monitoring_window_id) <= 1))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_text",
+      "definition": "CHECK ((((char_length(btrim((text)::text, ' \t\n'::text)) >= 1) AND (char_length(btrim((text)::text, ' \t\n'::text)) <= 2000)) AND ((text)::text !~ '[\\x01-\\x08\\x0b-\\x1f\\x7f-\\x9f]'::text)))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
       "table": "client_lab_uploads",
       "name": "ck_client_lab_uploads_client_status",
       "definition": "CHECK (((client_status)::text = ANY ((ARRAY['queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying, 'needs_input'::character varying])::text[])))"
@@ -1313,7 +1348,7 @@
     {
       "table": "notification_outbox",
       "name": "ck_notification_outbox_kind",
-      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'ping'::character varying])::text[])))"
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'question_asked'::character varying, 'question_answered'::character varying, 'ping'::character varying])::text[])))"
     },
     {
       "table": "notification_outbox",
@@ -1343,7 +1378,7 @@
     {
       "table": "notification_preferences",
       "name": "ck_notification_preferences_kind",
-      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying])::text[])))"
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'question_asked'::character varying, 'question_answered'::character varying])::text[])))"
     },
     {
       "table": "pipeline_stage_runs",
@@ -2138,6 +2173,21 @@
       "definition": "CREATE TRIGGER batch_predictions_terminal_immutable BEFORE UPDATE ON public.batch_predictions FOR EACH ROW WHEN (((old.status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying])::text[]))) EXECUTE FUNCTION prevent_canonical_column_mutation('id,workspace_id,project_id,model_version_id,model_release_id,input_dataset_id,execution_request_id,ml_job_id,initiated_by_service_token_id,status,output_format,rows_in,rows_out,contract_check,decision_threshold,output_artifact_id,error_code,error_message,created_at,started_at,completed_at')"
     },
     {
+      "table": "business_question_replies",
+      "name": "business_question_replies_append_only",
+      "definition": "CREATE TRIGGER business_question_replies_append_only BEFORE DELETE OR UPDATE ON public.business_question_replies FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "business_question_replies",
+      "name": "business_question_replies_created_at_now",
+      "definition": "CREATE TRIGGER business_question_replies_created_at_now BEFORE INSERT ON public.business_question_replies FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
+    },
+    {
+      "table": "business_questions",
+      "name": "business_questions_guard",
+      "definition": "CREATE TRIGGER business_questions_guard BEFORE UPDATE ON public.business_questions FOR EACH ROW EXECUTE FUNCTION guard_business_question_update()"
+    },
+    {
       "table": "code_snapshots",
       "name": "code_snapshots_immutable",
       "definition": "CREATE TRIGGER code_snapshots_immutable BEFORE DELETE OR UPDATE ON public.code_snapshots FOR EACH ROW EXECUTE FUNCTION prevent_code_snapshot_mutation()"
@@ -2537,6 +2587,10 @@
     {
       "name": "guard_agent_run_lifecycle",
       "definition": "CREATE OR REPLACE FUNCTION public.guard_agent_run_lifecycle()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF OLD.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.status IS DISTINCT FROM OLD.status THEN\n        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;\n    END IF;\n    IF OLD.budget_released_at IS NOT NULL\n        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN\n        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';\n    END IF;\n    IF OLD.status IN ('queued', 'running', 'waiting_user') AND NEW.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.budget_released_at IS NULL THEN\n        RAISE EXCEPTION 'agent_runs: a run ends only through the budget release (budget_released_at)';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "guard_business_question_update",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_business_question_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF ROW(NEW.id, NEW.workspace_id, NEW.project_id, NEW.asked_by_user_id, NEW.model_version_id,\n           NEW.batch_prediction_id, NEW.monitoring_window_id, NEW.text, NEW.created_at)\n       IS DISTINCT FROM ROW(OLD.id, OLD.workspace_id, OLD.project_id, OLD.asked_by_user_id, OLD.model_version_id,\n           OLD.batch_prediction_id, OLD.monitoring_window_id, OLD.text, OLD.created_at) THEN\n        RAISE EXCEPTION 'business_questions: the question is frozen';\n    END IF;\n    IF OLD.status = 'closed' THEN\n        RAISE EXCEPTION 'business_questions: a closed question is final';\n    END IF;\n    IF NEW.version <> OLD.version + 1 THEN\n        RAISE EXCEPTION 'business_questions: every change takes the next version';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "guard_improve_iteration_update",

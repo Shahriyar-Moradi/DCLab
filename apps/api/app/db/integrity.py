@@ -1305,8 +1305,42 @@ IMPROVE_TRIGGER_SQL = (
 )
 
 
+# 0090 (D7a): a business question's text, asker, project, link and created_at are frozen and a closed
+# question is final; replies are append-only and retention-aware (the 0071 functions: DELETE only under
+# the retention / workspace-deletion guard; created_at forced on insert). Identical literals in 0090.
+GUARD_BUSINESS_QUESTION_SQL = """
+CREATE OR REPLACE FUNCTION guard_business_question_update()
+RETURNS trigger AS $$
+BEGIN
+    IF ROW(NEW.id, NEW.workspace_id, NEW.project_id, NEW.asked_by_user_id, NEW.model_version_id,
+           NEW.batch_prediction_id, NEW.monitoring_window_id, NEW.text, NEW.created_at)
+       IS DISTINCT FROM ROW(OLD.id, OLD.workspace_id, OLD.project_id, OLD.asked_by_user_id, OLD.model_version_id,
+           OLD.batch_prediction_id, OLD.monitoring_window_id, OLD.text, OLD.created_at) THEN
+        RAISE EXCEPTION 'business_questions: the question is frozen';
+    END IF;
+    IF OLD.status = 'closed' THEN
+        RAISE EXCEPTION 'business_questions: a closed question is final';
+    END IF;
+    IF NEW.version <> OLD.version + 1 THEN
+        RAISE EXCEPTION 'business_questions: every change takes the next version';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+BUSINESS_QUESTIONS_TRIGGER_SQL = (
+    GUARD_BUSINESS_QUESTION_SQL,
+    "CREATE TRIGGER business_questions_guard BEFORE UPDATE ON business_questions "
+    "FOR EACH ROW EXECUTE FUNCTION guard_business_question_update()",
+    "CREATE TRIGGER business_question_replies_append_only BEFORE UPDATE OR DELETE ON business_question_replies "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()",
+    "CREATE TRIGGER business_question_replies_created_at_now BEFORE INSERT ON business_question_replies "
+    "FOR EACH ROW EXECUTE FUNCTION force_created_at_now()",
+)
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0089
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0090
     install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
@@ -1368,6 +1402,8 @@ def install_immutability_triggers(connection) -> None:
     for statement in UPLOAD_ATTEMPTS_TRIGGER_SQL:  # after the 0071 functions it uses
         connection.execute(text(statement))
     for statement in IMPROVE_TRIGGER_SQL:
+        connection.execute(text(statement))
+    for statement in BUSINESS_QUESTIONS_TRIGGER_SQL:  # after the 0071 functions it uses
         connection.execute(text(statement))
 
 

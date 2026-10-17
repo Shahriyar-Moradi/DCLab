@@ -26,6 +26,8 @@ from sqlalchemy.orm import Session, aliased
 
 from app.db.models import (
     AgentRun,
+    BusinessQuestion,
+    BusinessQuestionReply,
     Dataset,
     DatasetAsset,
     EvaluationMetric,
@@ -466,8 +468,43 @@ def _retrain_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key |
     return items
 
 
+def _question_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None, n: int,
+                    viewer_id: UUID) -> list[ActivityItemRead]:
+    """D7a, people only: questions asked, replied to (by a business user or the data team) and closed."""
+
+    q, r = BusinessQuestion, BusinessQuestionReply
+
+    def item(kind: str, row_id: UUID, question_id: UUID, proj: UUID, at: datetime, who: UUID | None,
+             summary: str, side: str | None = None) -> ActivityItemRead:
+        return ActivityItemRead(
+            id=f"{kind}:{row_id}", kind=kind, occurred_at=at, project_id=proj, status=side,
+            actor=ActivityActorRead(kind="person", is_you=who == viewer_id), subject=_subject("project", proj),
+            summary=summary, link=ActivityLinkRead(kind="business_question", id=question_id))
+
+    items = [item("question_asked", qid, qid, proj, at, who, "Question asked to the business")
+             for qid, proj, at, who in _page(db, select(q.id, q.project_id, q.created_at, q.asked_by_user_id).where(
+                 q.workspace_id == ws), "question_asked", q.created_at, q.id, q.project_id, project_id, after, n)]
+    items += [item("question_closed", qid, qid, proj, at, who, "Question to the business closed")
+              for qid, proj, at, who in _page(db, select(q.id, q.project_id, q.closed_at, q.closed_by_user_id).where(
+                  q.workspace_id == ws, q.closed_at.is_not(None)), "question_closed", q.closed_at, q.id, q.project_id,
+                  project_id, after, n)]
+    replies = (select(r.id, r.question_id, q.project_id, r.created_at, r.author_user_id, r.author_side)
+               .join(q, and_(q.workspace_id == r.workspace_id, q.id == r.question_id)).where(r.workspace_id == ws))
+    items += [item("question_replied", rid, qid, proj, at, who, "A business user replied to a question"
+                   if side == "business" else "The data team added a follow-up to a question", side)
+              for rid, qid, proj, at, who, side in _page(db, replies, "question_replied", r.created_at, r.id,
+                                                          q.project_id, project_id, after, n)]
+    return items
+
+
 def _key(item: ActivityItemRead) -> _Key:
-    return item.occurred_at, ACTIVITY_KIND_RANK[item.kind], item.link.id
+    return item.occurred_at, ACTIVITY_KIND_RANK[item.kind], _link_key(item)
+
+
+def _link_key(item: ActivityItemRead) -> UUID:
+    """The keyset id: the item's own row (a reply's id, not its question's)."""
+
+    return UUID(item.id.rsplit(":", 1)[1]) if item.kind == "question_replied" else item.link.id
 
 
 def list_activity(
@@ -503,6 +540,7 @@ def list_activity(
         *_drift_items(db, workspace_id, project_id, after, n),
         *_scheduled_items(db, workspace_id, project_id, after, n),
         *_retrain_items(db, workspace_id, project_id, after, n, viewer_id),
+        *(_question_items(db, workspace_id, project_id, after, n, viewer_id) if viewer_id is not None else []),
     ]
     candidates.sort(key=_key, reverse=True)
     page = candidates[:limit]

@@ -17,7 +17,7 @@ export type ScreenId =
   | "home" | "inbox" | "projects"
   | "data" | "goal" | "experiments" | "improve" | "model" | "predictions" | "monitoring" | "history"
   | "settings" | "usage" | "notifications" | "webhooks" | "connect" | "aiSettings" | "assistant"
-  | "business" | "console";
+  | "questions" | "business" | "console";
 
 export type ScreenGroup = "Workspace" | "Project" | "Admin" | "Other views";
 
@@ -60,8 +60,8 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   },
   {
     id: "inbox", name: "Inbox", group: "Workspace", href: "/inbox", feature: "inbox",
-    tags: [{ kind: "working" }, { kind: "off", part: "Items from the assistant" }],
-    missing: "Suggestions from the assistant appear here only after AI is switched on.",
+    tags: [{ kind: "working" }, { kind: "partly", short: "Beta: items from the assistant" }],
+    missing: "Suggestions from the assistant appear here only where the assistant beta and AI are switched on.",
   },
   {
     id: "projects", name: "Projects", group: "Workspace", href: "/projects", feature: "projects",
@@ -109,6 +109,11 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
     missing: "Nothing.",
   },
   {
+    id: "questions", name: "Ask the business", group: "Project", href: null, feature: "questions",
+    tags: [{ kind: "working" }],
+    missing: "A question links to the model in use or the latest prediction list; a monitoring week cannot be linked from this screen yet. People are shown as you, a business user or a person on the data team.",
+  },
+  {
     id: "settings", name: "Settings", group: "Admin", href: "/settings", feature: "settings",
     tags: [{ kind: "partly", short: "notifications have no screen yet" }],
     missing: "People and roles, and usage and cost work. Adding people, notifications and integrations have no screen yet.",
@@ -134,19 +139,19 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
     missing: "Nothing.",
   },
   {
-    id: "aiSettings", name: "AI settings", group: "Admin", href: null, feature: "governance",
-    tags: [{ kind: "off" }, { kind: "planned", phase: 4, part: "Screen" }],
-    missing: "The rules for what AI may do exist on the server; the screen to read and change them is not built, so it is not in the menu.",
+    id: "aiSettings", name: "AI settings", group: "Admin", href: "/governance", feature: "governance",
+    tags: [{ kind: "partly", short: "Beta" }],
+    missing: "Read-mostly during the beta: what AI may do per kind of decision cannot be changed here, and \"Automatic\" stays locked until it is earned on tested cases.",
   },
   {
     id: "assistant", name: "Assistant", group: "Admin", href: null, feature: "assistant",
-    tags: [{ kind: "off" }],
-    missing: "Shown to people only after it passes testing. Everything works without it: every action is also a button.",
+    tags: [{ kind: "partly", short: "Beta" }],
+    missing: "Shown only where DCLab switched the beta on and AI is on; the model and its budget are not confirmed yet. Everything works without it: every action is also a button.",
   },
   {
     id: "business", name: "Business view", group: "Other views", href: "/outcomes", feature: "client_outcomes",
     tags: [{ kind: "working" }],
-    missing: "Questions from your data team and asking questions in plain words are not built yet.",
+    missing: "Questions from your data team, with a reply box, work. Asking questions in plain words is not built yet.",
   },
   {
     id: "console", name: "Platform console (DCLab staff only)", group: "Other views", href: null, feature: "operator_overview",
@@ -159,7 +164,7 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
 export const REAL_SUMMARY =
   "The whole project flow works today: data, goal and test design, experiments with trust checks, guided improve, the model and approving it for scoring, " +
   "predictions for one file or every week, monitoring and history, plus the business view, usage and the platform console. " +
-  "The assistant and AI settings are built and switched off. Notifications and integrations work on the server but have no screen yet.";
+  "The assistant and AI settings are a beta: AI is off by default, and the assistant shows only where DCLab switched its beta on. Notifications and integrations work on the server but have no screen yet.";
 
 /** Words of the `/real` page. */
 export const REAL_PAGE_WORDS = {
@@ -195,7 +200,7 @@ const PROJECT_PAGE = new RegExp(`^/projects/${UUID}/([a-z]+)(?:/|$)`);
 const PROJECT_SECTION: Readonly<Record<string, ScreenId>> = {
   data: "data", splits: "goal", goal: "goal", experiments: "experiments", pipeline: "experiments", features: "experiments",
   improve: "improve", models: "model", predictions: "predictions", monitoring: "monitoring",
-  decisions: "history", graph: "history", lab: "assistant",
+  decisions: "history", graph: "history", lab: "assistant", questions: "questions",
 };
 
 const WORKSPACE_PAGE: Readonly<Record<string, ScreenId>> = {

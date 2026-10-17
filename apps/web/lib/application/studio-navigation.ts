@@ -15,7 +15,7 @@ export const STUDIO_BACKEND_FEATURES: StudioCapabilities = {
   home: true, // GET /v1/projects (summaries), GET /v1/activity
   projects: true, // GET /v1/projects
   inbox: true, // GET /v1/inbox, /v1/inbox/counts
-  governance: false, // page arrives with P6.11-UI
+  governance: true, // D6b: AI settings (/governance, Beta): GET /v1/governance and its switch / policy / problem-report commands
   agents: true, // Connect + Service tokens (/v1/service-tokens); tool registry and runs arrive with A2-UI
   settings: true, // GET /v1/workspaces/{id}/members (owners and administrators; others get an explanation)
   lab: false, // assistant chat arrives with A3-UI
@@ -29,10 +29,11 @@ export const STUDIO_BACKEND_FEATURES: StudioCapabilities = {
   predictions: true, // score-new-data tab of the model in use; listed only once the project has one
   monitoring: true, // GET /v1/projects/{id}/monitoring (P7.4-A) + the Monitoring screen (P7.5-A)
   decisions: true, // GET /v1/projects/{id}/decisions
-  assistant: false, // assistant panel (A3-UI): slot only
+  assistant: true, // D6b: assistant panel (Beta); its top-bar toggle shows only where the workspace has the beta and AI is on
   client_outcomes: true, // GET /v1/projects/{id}/outcomes (P7.6-A Business view)
   client_predictions: false, // the latest list is a section of /outcomes, not its own page
-  client_questions: false, // questions from the data team and plain-language Q&A wait for checkpoint G6
+  client_questions: true, // D7: questions from the data team, a section of /outcomes (GET /v1/questions; replies there)
+  questions: true, // D7: "Ask the business" project page (GET/POST /v1/projects/{id}/questions)
   business_view: true, // Studio link to /outcomes (P7.6-A), only for people who may open it (application_access)
   real: true, // "What's real today" (/real, V7 UI-A): static list from lib/application/screen-status.ts
 };

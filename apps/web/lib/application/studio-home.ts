@@ -5,6 +5,7 @@
 import { safeInternalHref } from "../../components/studio/safe-href.ts";
 import { isUuid, plainText } from "./command-search.ts";
 import { lowerIsBetter } from "./studio-compare.ts";
+import { questionEventWords, studioQuestionHref } from "./business-questions.ts";
 import { inboxQuestion, inboxTitle, lookup, questionHref, suggestedBy } from "./studio-inbox.ts";
 import { metricInfo } from "./studio-goal.ts";
 import { familyLabel, stageWords, statusWords } from "./studio-runs.ts";
@@ -29,6 +30,7 @@ export function activityHref(item: ActivityLike): string | null {
   if (!isUuid(item.project_id) || !isUuid(item.link.id)) return null;
   if (item.link.kind === "decision_record") return safeInternalHref(`/projects/${item.project_id}/decisions?record=${item.link.id}`);
   if (item.link.kind === "experiment") return safeInternalHref(`/projects/${item.project_id}/experiments/${item.link.id}`);
+  if (item.link.kind === "business_question") return studioQuestionHref(item.project_id, item.link.id);
   return null;
 }
 
@@ -71,6 +73,8 @@ export function activitySentence(item: ActivityText, runName: string | null): st
   // D5c: retrain events (the status is the origin, or the comparison's outcome); no figures.
   if (item.kind === "retrain_requested") return lookup(RETRAIN_REQUESTED, item.status ?? "", "Retrain on newest data");
   if (item.kind === "retrain_compared") return item.status === "compared" ? "The retrained model was put beside the model in use (same kind of test, latest months)" : "The retrained model could not be compared with the model in use";
+  const question = questionEventWords(item.kind, item.status);
+  if (question) return question;
   return plainText(item.summary, 120);
 }
 

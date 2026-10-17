@@ -24,12 +24,13 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, exists, func, not_, or_, select, union_all
+from sqlalchemy import and_, exists, false, func, not_, or_, select, true, union_all
 from sqlalchemy.orm import Session, aliased
 
 from app.agents.tools.shaping import holdout_scoped
 from app.db.models import (
     AgentProposal,
+    BusinessQuestion,
     ExecutionRequest,
     Experiment,
     ImproveRun,
@@ -42,6 +43,7 @@ from app.db.models import (
     User,
 )
 from app.domain.agent_records import AGENT_SUBJECT_COLUMNS, SEMANTIC_AGREEMENTS
+from app.domain.business_questions import STATUS_ANSWERED, STATUS_OPEN
 from app.domain.improve import RUN_WAITING_USER
 from app.domain.decision_records import (
     ACTOR_AGENT,
@@ -77,7 +79,12 @@ from app.domain.inbox_reads import (
 from app.domain.state_graph import REF_KINDS, node_key
 from app.services import proposal_review_service as prs
 from app.services.audience_projection import public_diagnostic
-from app.services.authorization_service import can_approve_ai_policy, can_execute_workspace_ml, can_read_workspace
+from app.services.authorization_service import (
+    can_approve_ai_policy,
+    can_execute_workspace_ml,
+    can_read_workspace,
+    is_compatibility_client,
+)
 from app.services.cursor_codec import open_cursor, scope_digest, sign_cursor
 from app.services.experiment_service import STATUS_SQL
 from app.services.home_read_service import (
@@ -128,6 +135,7 @@ class _Ctx:
     can_decide: bool
     approver: bool
     visible: Any  # ToolCallProposal visibility (None: no restriction)
+    business: bool = False  # D7a: a business user (client account) reading as a person
 
 
 # --- sources: (statement, occurred_at column, id column, project column) ---------------------------
@@ -240,6 +248,20 @@ def _improve_runs(ctx: _Ctx, waiting: bool) -> tuple[Any, Any, Any, Any]:
     return _scoped(stmt, ir.workspace_id, ir.project_id, ctx), at, ir.id, ir.project_id
 
 
+def _business_questions(ctx: _Ctx, answered: bool) -> tuple[Any, Any, Any, Any]:
+    """D7a, people only: open questions for business users; answered questions for their asker."""
+
+    q = BusinessQuestion
+    if answered:
+        who = and_(q.status == STATUS_ANSWERED, q.asked_by_user_id == ctx.viewer.id)
+    else:
+        who = and_(q.status == STATUS_OPEN, true() if ctx.business else false())
+    if ctx.agent:
+        who = false()
+    stmt = select(q.id, q.project_id, q.updated_at, q.status).where(who)
+    return _scoped(stmt, q.workspace_id, q.project_id, ctx), q.updated_at, q.id, q.project_id
+
+
 _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
     "needs_decision": (
         ("decision_proposal", _decisions_open),
@@ -248,6 +270,8 @@ _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
         ("drift_alert", lambda c: _drift_alerts(c, True)),
         ("retrain_ask", lambda c: _retrain_asks(c, True)),
         ("improve_run", lambda c: _improve_runs(c, True)),
+        ("question_asked", lambda c: _business_questions(c, False)),
+        ("question_answered", lambda c: _business_questions(c, True)),
     ),
     "applied_automatically": (("agent_proposal", lambda c: _proposals(c, "applied_automatically")),),
     "done": (
@@ -489,6 +513,18 @@ def _improve_item(tab: str, run_id: UUID, project_id: UUID, at: datetime, status
     )
 
 
+_QUESTION_SUMMARY = {"question_asked": "A question from the data team is waiting for your reply",
+                     "question_answered": "A business user answered your question"}
+
+
+def _business_question_item(kind: str, question_id: UUID, project_id: UUID, at: datetime, status: str) -> InboxItemRead:
+    return _item(
+        id=f"{kind}:{question_id}", kind=kind, tab="needs_decision", occurred_at=at, project_id=project_id,
+        summary=_QUESTION_SUMMARY[kind], status=status, source=InboxRefRead(kind="business_question", id=question_id),
+        subject=_subject("project", project_id), proposed_by="person", actions=[],
+    )
+
+
 def _items(ctx: _Ctx, tab: str, kind: str, source: Any, after: _Key | None, n: int) -> list[InboxItemRead]:
     stmt, at_column, id_column, _project = source(ctx)
     cut = keyset_before(after, kind, at_column, id_column, INBOX_KIND_RANK)
@@ -509,6 +545,8 @@ def _items(ctx: _Ctx, tab: str, kind: str, source: Any, after: _Key | None, n: i
         return [_ask_item(ctx, tab, *r) for r in rows]
     if kind == "improve_run":
         return [_improve_item(tab, *r) for r in rows]
+    if kind in _QUESTION_SUMMARY:
+        return [_business_question_item(kind, *r) for r in rows]
     return [_run_item(*r) for r in rows]
 
 
@@ -525,6 +563,7 @@ def _context(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID |
         db=db, ws=workspace_id, project_id=project_id, viewer=actor, agent=agent,
         can_decide=not agent and can_execute_workspace_ml(db, actor, workspace_id), approver=approver,
         visible=prs.visibility_clause(db, workspace_id=workspace_id, viewer=None if agent else actor, agent=agent),
+        business=not agent and is_compatibility_client(actor),
     )
 
 
@@ -614,7 +653,8 @@ def needs_decision_by_project(db: Session, *, actor: User, workspace_id: UUID, p
     ctx = _Ctx(db=db, ws=workspace_id, project_id=None, viewer=actor, agent=viewer_is_agent, can_decide=False,
                approver=False, visible=prs.visibility_clause(db, workspace_id=workspace_id,
                                                              viewer=None if viewer_is_agent else actor,
-                                                             agent=viewer_is_agent))
+                                                             agent=viewer_is_agent),
+               business=not viewer_is_agent and is_compatibility_client(actor))
     parts = []
     for _kind, source in _SOURCES["needs_decision"]:
         stmt, _at, _id, project_column = source(ctx)

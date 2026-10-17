@@ -114,10 +114,11 @@ test("Business view: a business user reads the outcome, downloads the list and c
   const text = await main.innerText();
   expect(text).not.toMatch(BANNED);
   expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
-  // Only the Business view in the sidebar: no developer item.
+  // Only the Business view in the sidebar (its outcomes and, D7b, the questions from the data team): no developer item.
   const nav = page.getByRole("navigation", { name: "Studio" });
-  await expect(nav.getByRole("link")).toHaveCount(1);
-  await expect(nav.getByRole("link")).toContainText("Outcomes");
+  await expect(nav.getByRole("link")).toHaveCount(2);
+  await expect(nav.getByRole("link", { name: "Outcomes" })).toHaveAttribute("href", "/outcomes");
+  await expect(nav.getByRole("link", { name: "Questions from the data team" })).toHaveAttribute("href", "/outcomes#questions");
   const [download] = await Promise.all([page.waitForEvent("download"), list.getByRole("button", { name: "Download the list" }).click()]);
   const file = fs.readFileSync((await download.path())!, "utf8");
   expect(file.trim().split("\n")).toHaveLength(41);

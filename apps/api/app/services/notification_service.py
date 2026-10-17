@@ -82,7 +82,9 @@ _ROLES = {
     n.AUDIENCE_ADMINS: frozenset({WorkspaceRole.WORKSPACE_OWNER, WorkspaceRole.WORKSPACE_ADMIN}),
 }
 _ROLES[n.AUDIENCE_REQUESTER] = _ROLES[n.AUDIENCE_ML_WRITE]  # who can start runs at all
-_LINK_RE = re.compile(r"^/[A-Za-z0-9/_-]{0,200}$")
+# App-relative paths; D7b: at most one `?name=<uuid>` query (a question's own page).
+_LINK_RE = re.compile(
+    r"^/[A-Za-z0-9/_-]{0,200}(?:\?[a-z_]{1,32}=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$")
 
 
 class NotificationError(Exception):
@@ -128,19 +130,26 @@ def _member_rows(db: Session, workspace_id: UUID, *, user_id: UUID | None = None
     return db.execute(query).all()
 
 
+def _in_audience(membership_role: str, account_role: str, audience: str) -> bool:
+    """D7a: the business audience is exactly the client (business user) accounts; every other audience
+    is a canonical role set, which never includes a client account (``recipient_role``)."""
+
+    if audience == n.AUDIENCE_BUSINESS:
+        return account_role == UserRole.CLIENT_USER.value
+    return recipient_role(membership_role, account_role) in _ROLES[audience]
+
+
 def audience_members(db: Session, workspace_id: UUID, audience: str) -> list[UUID]:
     """People of the workspace in ``audience`` who may receive email: explicit unsuspended
     memberships of active users with a VERIFIED email address."""
 
-    wanted = _ROLES[audience]
     return sorted({user_id for user_id, role, account_role, verified in _member_rows(db, workspace_id)
-                   if verified is not None and recipient_role(role, account_role) in wanted}, key=str)
+                   if verified is not None and _in_audience(role, account_role, audience)}, key=str)
 
 
 def _applies(db: Session, user: User, workspace_id: UUID) -> dict[str, bool]:
     rows = _member_rows(db, workspace_id, user_id=user.id)
-    role = recipient_role(rows[0][1], rows[0][2]) if rows else None
-    return {kind: role in _ROLES[n.AUDIENCE[kind]] for kind in n.KINDS}
+    return {kind: bool(rows) and _in_audience(rows[0][1], rows[0][2], n.AUDIENCE[kind]) for kind in n.KINDS}
 
 
 # --- enqueue ------------------------------------------------------------------------------------
@@ -229,7 +238,7 @@ def enqueue_notification(db: Session, *, kind: str, workspace_id: UUID, dedupe_k
     people.discard(exclude_user_id)
     endpoints = db.scalars(select(WebhookEndpoint.id).where(
         WebhookEndpoint.workspace_id == workspace_id, WebhookEndpoint.enabled.is_(True),
-        WebhookEndpoint.events.contains([kind]))).all()
+        WebhookEndpoint.events.contains([kind]))).all() if kind in n.WEBHOOK_KINDS else []
     payload = _payload(db, kind=kind, workspace_id=workspace_id, project_id=project_id, subject_kind=subject_kind,
                        subject_id=subject_id, code=code, link=link)
     return insert_outbox(db, kind=kind, workspace_id=workspace_id, dedupe_key=dedupe_key, payload=payload,
@@ -323,6 +332,22 @@ def notify_schedule_outcome(db: Session, *, workspace_id: UUID, project_id: UUID
         dedupe_key=f"schedule:{schedule_id}:{int(_aware(planned_for).timestamp())}", audience=n.AUDIENCE_ML_WRITE,
         project_id=project_id, subject_kind="scoring_schedule", subject_id=schedule_id, code=outcome,
         link=f"/projects/{project_id}/predictions")
+
+
+def notify_question(db: Session, *, question: Any, reply_id: UUID | None, business_reply: bool) -> int:
+    """D7a: a new question or a data-team follow-up -> the business users; a business user's reply -> the
+    asker. Ids and closed codes only (never the text); the writer is never notified of their own act."""
+
+    key = f"question:{question.id}:" + (f"reply:{reply_id}" if reply_id else "asked")
+    common = {"workspace_id": question.workspace_id, "dedupe_key": key, "project_id": question.project_id,
+              "subject_kind": "business_question", "subject_id": question.id}
+    if business_reply:
+        return enqueue_notification(db, kind=n.KIND_QUESTION_ANSWERED, recipients=[question.asked_by_user_id],
+                                    code="question_answered",
+                                    link=f"/projects/{question.project_id}/questions?question={question.id}", **common)
+    return enqueue_notification(db, kind=n.KIND_QUESTION_ASKED, audience=n.AUDIENCE_BUSINESS,
+                                code="question_follow_up" if reply_id else "question_asked", link="/outcomes",
+                                **common)
 
 
 def notify_drift_alert(db: Session, *, workspace_id: UUID, project_id: UUID, model_version_id: UUID,
@@ -471,7 +496,8 @@ def unsubscribe(db: Session, token: str) -> str:
 _SUBJECTS = {
     n.KIND_DECISION_NEEDED: "Decision waiting", n.KIND_RUN_FINISHED: "Run finished", n.KIND_RUN_FAILED: "Run failed",
     n.KIND_SCHEDULED_SCORING: "Weekly scoring result", n.KIND_DRIFT_ALERT: "Drift alert",
-    n.KIND_QUOTA_WARNING: "Usage warning",
+    n.KIND_QUOTA_WARNING: "Usage warning", n.KIND_QUESTION_ASKED: "Question from the data team",
+    n.KIND_QUESTION_ANSWERED: "Your question was answered",
 }
 _HEADLINES = {
     "waiting_for_a_person": "Something in this workspace is waiting for a person to decide (an agent proposal "
@@ -481,6 +507,11 @@ _HEADLINES = {
     "scoring_completed": "A scoring you started finished; its predictions are ready.",
     "drift_alert": "Weekly monitoring found an alert-level change in the inputs or predictions of the model in "
                    "use. DCLab did not change or retrain anything.",
+    "question_asked": "The data team asked the business users of this workspace a question about a project. "
+                      "Open DCLab to read it and reply.",
+    "question_follow_up": "The data team added a follow-up to a question for the business users of this "
+                          "workspace. Open DCLab to read it and reply.",
+    "question_answered": "A business user replied to a question you asked. Open DCLab to read the reply.",
     "below_floor": "Real outcomes fell below a floor set for this project (precision or recall of the model in "
                    "use). DCLab did not change or retrain anything.",
 }

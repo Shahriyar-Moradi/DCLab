@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { WorkspaceSelector } from "@/app/components/layout/WorkspaceSelector";
-import { STUDIO_BACKEND_FEATURES, studioNavigationForUser } from "@/app/components/layout/app-navigation";
+import { studioNavigationForUser } from "@/app/components/layout/app-navigation";
+import { AiSuggestions } from "@/app/components/studio-app/AiSuggestions";
+import { AssistantPanel } from "@/app/components/studio-app/AssistantPanel";
+import { Pill } from "@/components/studio/Pill";
+import { useGovernance } from "@/lib/application/studio-home-hooks";
+import { BETA_LABEL, SUGGESTIONS_FLAG, assistantGate, readFlag, writeFlag } from "@/lib/application/studio-assistant";
 import { CommandBar } from "@/components/studio/CommandBar";
 import { Crumbs, type Crumb } from "@/components/studio/Crumbs";
 import { GlossaryDialog } from "@/components/studio/GlossaryDialog";
@@ -73,6 +78,24 @@ export function StudioFrame({ children }: { children: ReactNode }) {
     .filter(({ item, path }) => item.href.includes("?") ? false : projectId && !projectItems.has(item.id) ? pathname === path : pathname === path || pathname.startsWith(`${path}/`))
     .sort((a, b) => b.path.length - a.path.length)[0]?.item;
 
+  // Assistant (Beta, D6b): the toggle exists only when the governance read says AI is available AND the workspace has the beta.
+  const governance = useGovernance(!!user && !preview);
+  const assistantShown = !preview && assistantGate(governance.data) === "available";
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const assistantToggle = useRef<HTMLButtonElement>(null);
+  // Closing (button, Escape) returns focus to the toggle.
+  const closeAssistant = () => {
+    setAssistantOpen(false);
+    requestAnimationFrame(() => assistantToggle.current?.focus());
+  };
+  // Per-screen AI suggestions (item 21): off by default, a per-person choice kept in this browser when storage allows.
+  const [suggestionsOn, setSuggestionsOn] = useState(false);
+  useEffect(() => setSuggestionsOn(readFlag(() => window.localStorage, SUGGESTIONS_FLAG)), []);
+  const toggleSuggestions = () => {
+    writeFlag(() => window.localStorage, SUGGESTIONS_FLAG, !suggestionsOn);
+    setSuggestionsOn(!suggestionsOn);
+  };
+
   const crumbs: Crumb[] = [{ label: activeWorkspace?.name ?? "Workspace", href: "/home" }];
   if (projectId) {
     crumbs.push({ label: "Projects", href: "/projects" });
@@ -100,12 +123,18 @@ export function StudioFrame({ children }: { children: ReactNode }) {
       crumbs={<Crumbs items={crumbs} />}
       // Keyed by workspace: a switch drops results and aborts requests made for the old one.
       commandBar={user ? <StudioCommandBar key={activeWorkspaceId ?? "none"} projectId={projectId} /> : null}
-      topbarRight={user ? <>{viewAs.allowed ? <ViewAsControl role={preview} onChange={viewAs.choose} /> : null}<GlossaryDialog /><WorkspaceSelector inputId="studio-workspace" /></> : null}
-      // Assistant panel (A3-UI) slot: the capability stays false until the assistant ships.
-      assistant={STUDIO_BACKEND_FEATURES.assistant ? <p>Assistant</p> : undefined}
+      topbarRight={user ? (
+        <>
+          {projectId && !preview ? <button type="button" className="btn" aria-pressed={suggestionsOn} onClick={toggleSuggestions}>AI suggestions</button> : null}
+          {assistantShown ? <button ref={assistantToggle} type="button" className="btn" aria-pressed={assistantOpen} onClick={() => (assistantOpen ? closeAssistant() : setAssistantOpen(true))}>Assistant <Pill tone="ai">{BETA_LABEL}</Pill></button> : null}
+          {viewAs.allowed ? <ViewAsControl role={preview} onChange={viewAs.choose} /> : null}<GlossaryDialog /><WorkspaceSelector inputId="studio-workspace" />
+        </>
+      ) : null}
+      assistant={assistantShown && assistantOpen ? <AssistantPanel key={activeWorkspaceId ?? "none"} pathname={pathname} onClose={closeAssistant} /> : undefined}
     >
       <div key={activeWorkspaceId ?? "no-workspace"} className="contents">
         {preview ? <ViewAsBanner role={preview} onStop={() => viewAs.choose(null)} /> : null}
+        {projectId && !preview && suggestionsOn && loaded && user ? <AiSuggestions pathname={pathname} /> : null}
         <PreviewRoleContext.Provider value={preview}>{body}</PreviewRoleContext.Provider>
       </div>
     </Shell>

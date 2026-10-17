@@ -156,13 +156,22 @@ def test_migration_literals_match_the_domain_and_the_checks_hold(db_session, ws)
         "m0083", REPO / "apps/api/alembic/versions/0083_notifications.py")
     mig = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mig)
+    # D7a: 0090 widened the two kind CHECKs (question_asked / question_answered; webhooks unchanged).
+    spec90 = importlib.util.spec_from_file_location(
+        "m0090", REPO / "apps/api/alembic/versions/0090_business_questions.py")
+    mig90 = importlib.util.module_from_spec(spec90)
+    spec90.loader.exec_module(mig90)
+    assert {name: new for _table, name, new, _old in mig90._KIND_CHECKS} == {
+        "ck_notification_preferences_kind": n.CK_NOTIFICATION_PREFERENCES_KIND,
+        "ck_notification_outbox_kind": n.CK_NOTIFICATION_OUTBOX_KIND}
+    assert [old for *_rest, old in mig90._KIND_CHECKS] == [mig._CK_PREFERENCES_KIND, mig._CK_OUTBOX_KIND]
     pairs = {
-        "_CK_PREFERENCES_KIND": n.CK_NOTIFICATION_PREFERENCES_KIND, "_CK_ENDPOINTS_NAME": n.CK_WEBHOOK_ENDPOINTS_NAME,
+        "_CK_ENDPOINTS_NAME": n.CK_WEBHOOK_ENDPOINTS_NAME,
         "_CK_ENDPOINTS_URL": n.CK_WEBHOOK_ENDPOINTS_URL, "_CK_ENDPOINTS_EVENTS": n.CK_WEBHOOK_ENDPOINTS_EVENTS,
         "_CK_ENDPOINTS_SECRET_VERSION": n.CK_WEBHOOK_ENDPOINTS_SECRET_VERSION,
         "_CK_ENDPOINTS_SECRET_KEY_ID": n.CK_WEBHOOK_ENDPOINTS_SECRET_KEY_ID,
         "_CK_ENDPOINTS_FAILURES": n.CK_WEBHOOK_ENDPOINTS_FAILURES,
-        "_CK_OUTBOX_CHANNEL": n.CK_NOTIFICATION_OUTBOX_CHANNEL, "_CK_OUTBOX_KIND": n.CK_NOTIFICATION_OUTBOX_KIND,
+        "_CK_OUTBOX_CHANNEL": n.CK_NOTIFICATION_OUTBOX_CHANNEL,
         "_CK_OUTBOX_STATUS": n.CK_NOTIFICATION_OUTBOX_STATUS, "_CK_OUTBOX_ERROR": n.CK_NOTIFICATION_OUTBOX_ERROR,
         "_CK_OUTBOX_RECIPIENT": n.CK_NOTIFICATION_OUTBOX_RECIPIENT, "_CK_OUTBOX_PING": n.CK_NOTIFICATION_OUTBOX_PING,
         "_CK_OUTBOX_DEDUPE": n.CK_NOTIFICATION_OUTBOX_DEDUPE, "_CK_OUTBOX_PAYLOAD": n.CK_NOTIFICATION_OUTBOX_PAYLOAD,

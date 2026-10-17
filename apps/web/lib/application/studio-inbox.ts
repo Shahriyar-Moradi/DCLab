@@ -4,6 +4,7 @@
  */
 import { safeInternalHref } from "../../components/studio/safe-href.ts";
 import { isUuid, plainText } from "./command-search.ts";
+import { BUSINESS_QUESTIONS_HREF, studioQuestionHref } from "./business-questions.ts";
 import { improveNoticeHref } from "./studio-improve-loop.ts";
 import { weekKey, weekLabel } from "./studio-monitoring.ts";
 import { statusWords } from "./studio-runs.ts";
@@ -155,7 +156,7 @@ export function badgeText(count: number | undefined): string | null {
 
 /** Who suggested an item. Access-token tools are never "the assistant"; the AI reviewer is its own label. */
 export const PROPOSED_BY_LABEL: Record<string, string> = {
-  agent: "connected tool (access token)", assistant: "the assistant", jev: "AI reviewer", rule: "the rules", person: "a person", run: "the run",
+  agent: "connected tool (access token)", assistant: "the assistant (Beta)", jev: "AI reviewer", rule: "the rules", person: "a person", run: "the run",
 };
 
 /**
@@ -195,6 +196,8 @@ export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { sum
   if (item.kind === "retrain_ask") return item.tab === "done" || item.status === "closed" ? "Retrain on newest data? (answered or no longer current)" : "Retrain on newest data?";
   if (item.kind === "challenger_ready") return lookup(CHALLENGER_TITLE, item.status, "Retrained model: decided");
   if (item.kind === "improve_run") return lookup(IMPROVE_TITLE, item.status, "Improvement loop stopped");
+  if (item.kind === "question_asked") return "A question from the data team";
+  if (item.kind === "question_answered") return "A business user replied to your question";
   if (item.kind === "decision_proposal") {
     return inboxQuestion(item.decision_type ?? "");
   }
@@ -218,7 +221,7 @@ const CHALLENGER_TITLE: Record<string, string> = { proposed: "Retrained model re
 const OUTCOME_WORDS: Record<string, string> = {
   proposed: "waiting for your decision", accepted: "approved", rejected: "rejected", superseded: "corrected", applied: "applied", reverted: "undone",
   expired: "expired", needs_input: "needs your answer", alert: "alert", asked: "waiting for your answer", closed: "closed",
-  waiting_user: "waiting for your decision", blocked: "blocked",
+  waiting_user: "waiting for your decision", blocked: "blocked", open: "waiting for a reply", answered: "answered",
 };
 /** The state of an item in words (run states use the run words). */
 export function outcomeWords(status: string): string {
@@ -326,6 +329,31 @@ export function improveItemSentence(item: { kind: string; status: string }): str
 }
 export function improveItemHref(item: { kind?: unknown; project_id?: unknown; source?: { kind?: unknown; id?: unknown } | null }): string | null {
   return improveNoticeHref(item);
+}
+
+/**
+ * D7b: questions to the business, person to person. Fixed words only (the question text stays on its page).
+ * Note: the API gives `question_asked` items to business users, who cannot open the Studio Inbox today (it needs
+ * development access); they see open questions in the Business view. The card is kept for when they can.
+ */
+export function businessQuestionSentence(item: { kind: string }): string | null {
+  if (item.kind === "question_asked") return "The data team asked the business users of this workspace a question about this project. Open it to read it and reply.";
+  if (item.kind === "question_answered") return "A business user replied to a question you asked. Open it to read the reply, add a follow-up or close it.";
+  return null;
+}
+/** Who raised a question card, in fixed words. */
+export function businessQuestionBy(kind: string): string | null {
+  return kind === "question_asked" ? "Asked by a person on the data team" : kind === "question_answered" ? "Replied by a business user" : null;
+}
+/**
+ * Where a question card opens: the Business view's questions for `question_asked` (business users reply there), the
+ * project's "Ask the business" page for `question_answered`. Only when the source is a business question with UUIDs.
+ */
+export function businessQuestionHref(item: { kind?: unknown; project_id?: unknown; source?: { kind?: unknown; id?: unknown } | null }): string | null {
+  if (item.source?.kind !== "business_question" || !isUuid(item.source.id) || !isUuid(item.project_id)) return null;
+  if (item.kind === "question_asked") return safeInternalHref(BUSINESS_QUESTIONS_HREF);
+  if (item.kind === "question_answered") return studioQuestionHref(item.project_id, item.source.id);
+  return null;
 }
 
 /** Under the stats: the numbers are the week's largest changes; whether each column counts is decided on Monitoring. */

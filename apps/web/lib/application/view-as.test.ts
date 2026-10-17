@@ -41,7 +41,7 @@ test("previewed sidebars: data scientists and analysts see the Studio, business 
     assert.ok(!nav.includes("op-overview"));
   }
   const business = previewNavigation("business_user", PROJECT);
-  assert.deepEqual(ids(business), ["client-outcomes"]);
+  assert.deepEqual(ids(business), ["client-outcomes", "client-questions"]);
   assert.equal(business[0].items[0].href, "/outcomes");
 });
 

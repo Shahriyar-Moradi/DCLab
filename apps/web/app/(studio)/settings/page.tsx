@@ -6,12 +6,10 @@ import { UsagePanel } from "@/app/components/studio-app/UsagePanel";
 import { TabPanel, Tabs } from "@/components/studio/Tabs";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
-import { ComingNext } from "@/components/studio/ComingNext";
 import { PageGuide } from "@/components/studio/PageGuide";
 import { PageHead } from "@/components/studio/PageHead";
 import { Pill } from "@/components/studio/Pill";
 import { useSession } from "@/lib/application";
-import { COMING_NEXT } from "@/lib/application/coming-next";
 import { ADDING_PEOPLE_TEXT, MORE_SETTINGS_TEXT, memberRow, membersCountText, myAccess, roleRow } from "@/lib/application/studio-settings";
 import { useWorkspaceMembers } from "@/lib/application/studio-settings-hooks";
 import { ApiError } from "@/lib/infrastructure/api-client";
@@ -132,7 +130,9 @@ export default function SettingsPage() {
       <Card title="Access tokens">
         <p>Access tokens for your own code and connected tools are managed under <Link href="/agents">Connect</Link>.</p>
       </Card>
-      <ComingNext entry={COMING_NEXT.earnedAutonomy} />
+      <Card title="AI settings">
+        <p>Whether AI is on, what the assistant beta may do, its model, spend and problem reports are under <Link href="/governance">AI settings</Link>.</p>
+      </Card>
       <p className="small muted">{MORE_SETTINGS_TEXT}</p>
       </TabPanel>
     </>

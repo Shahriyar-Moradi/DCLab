@@ -3,6 +3,7 @@
  * `npm run test:components`. Everything restates fields the decision list or read already returned; a type or kind this table does
  * not know is shown cleaned, never hidden and never called "a rule". Lookups are own-key checks (a type `__proto__` is just unknown).
  */
+import { questionEventWords, studioQuestionHref } from "./business-questions.ts";
 import { plainText, projectHref } from "./command-search.ts";
 import { utcWhen } from "./format-time.ts";
 import { ENGINE_OWNED_TYPES } from "./studio-compare.ts";
@@ -129,7 +130,10 @@ export function evidenceHref(projectId: string, ref: Subject): string | null {
 /* ---------- events from the activity read (V7 UI-E) ---------- */
 
 /** The activity kinds History adds to its log, beside the decision entries (decisions themselves come from the decision list). */
-export const LOG_EVENT_KINDS: ReadonlySet<string> = new Set(["dataset_uploaded", "final_test_run", "drift_alert", "scheduled_scoring", "retrain_requested", "retrain_compared"]);
+export const LOG_EVENT_KINDS: ReadonlySet<string> = new Set([
+  "dataset_uploaded", "final_test_run", "drift_alert", "scheduled_scoring", "retrain_requested", "retrain_compared",
+  "question_asked", "question_replied", "question_closed",
+]);
 
 export type ActivityEventLike = {
   id: string; kind: string; occurred_at: string; status?: string | null;
@@ -191,6 +195,12 @@ export function eventRow(e: ActivityEventLike, projectId: string, names: Readonl
     case "retrain_compared":
       return { ...base, what: e.status === "compared" ? "Put the retrained model beside the model in use (same kind of test, latest months)" : "Could not compare the retrained model with the model in use", about: null,
         href: projectHref(projectId, "monitoring"), linkLabel: "Open Monitoring", undo: "Nothing to undo: it is evidence for a person's decision." };
+    case "question_asked":
+    case "question_replied":
+    case "question_closed":
+      return { ...base, what: questionEventWords(e.kind, e.status) ?? "A question to the business", about: null,
+        href: e.link.kind === "business_question" ? studioQuestionHref(projectId, e.link.id) : null, linkLabel: "Open the question",
+        undo: e.kind === "question_closed" ? "Closing is final; ask a new question to continue." : "Questions and replies are kept as written; nothing is edited." };
     default:
       return { ...base, what: own(SCHEDULE_WORDS, e.status ?? "") ?? "Weekly scoring ran", about: null,
         href: projectHref(projectId, "predictions"), linkLabel: "Open Predictions", undo: "—" };
@@ -213,7 +223,7 @@ export function mergeLog<D extends { id: string; recorded_at: string }>(
     ...shown.map((e) => ({ type: "event" as const, at: e.at, key: `event:${e.id}`, event: e })),
   ].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
   const note = activityOldest && utcWhen(activityOldest) !== "—"
-    ? `Uploads, final tests, alerts, weekly scorings and retrains are listed from ${utcWhen(activityOldest)}; older ones are not shown here.`
+    ? `Uploads, final tests, alerts, weekly scorings, retrains and questions to the business are listed from ${utcWhen(activityOldest)}; older ones are not shown here.`
     : null;
   return { rows, note };
 }

@@ -580,3 +580,19 @@
 .studio .loop-final { font-size: 1.4rem; margin: 4px 0; }
 .studio .loop-cancel { display: grid; gap: 8px; }
 .studio .loop-cancel .toolbar span { white-space: normal; }
+
+/* D6b: assistant panel (Beta), AI settings */
+.studio .btn.danger { color: var(--crit-text); border-color: var(--crit); background: var(--crit-soft); }
+.studio .assistant { border-left: 1px solid var(--line); background: var(--surface-2); position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.studio .asst { display: grid; gap: 14px; padding: 16px; align-content: start; }
+.studio .asst-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.studio .asst-pick { flex: 1 1 180px; min-width: 0; }
+.studio .asst-log { gap: 12px; }
+.studio .asst .msg { padding: 10px 12px; font-size: 0.9rem; }
+.studio .asst .composer { grid-template-columns: 1fr; }
+.studio .asst-card { padding: 12px; gap: 8px; }
+@media (max-width: 860px) {
+  /* One column: the panel stacks under the page (the three-column rule above out-ranks the shell's 860px rule). */
+  .studio.shell:has(> .assistant) { grid-template-columns: minmax(0, 1fr); }
+  .studio .assistant { position: static; height: auto; border-left: none; border-top: 1px solid var(--line); }
+}

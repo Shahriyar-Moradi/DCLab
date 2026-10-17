@@ -69,11 +69,12 @@ test("Predictions needs the id of a model of the project, else it is left out; G
   assert.equal(hrefs.predictions, "/projects/p1/predictions");
 });
 
-test("pages that are not built (AI settings) stay hidden; Monitoring and Settings (members and roles) are shown with the default capabilities", async () => {
+test("pages that are not built (lab) stay hidden; AI settings (Beta), Monitoring and Settings (members and roles) are shown with the default capabilities", async () => {
   const { STUDIO_BACKEND_FEATURES } = await import("../../lib/application/studio-navigation.ts");
   const shown = ids(resolveSidebar("developer", { capabilities: STUDIO_BACKEND_FEATURES, projectBase: "/projects/p1", targets: { split_plan: SPLIT, project_model: MODEL } }));
-  for (const hidden of ["governance", "lab", "pipeline", "graph"]) assert.ok(!shown.includes(hidden), hidden);
+  for (const hidden of ["lab", "pipeline", "graph"]) assert.ok(!shown.includes(hidden), hidden);
   assert.ok(shown.includes("settings"));
+  assert.ok(shown.includes("governance")); // D6b: "AI settings" (Beta)
   assert.ok(shown.includes("monitoring"));
 });
 
@@ -87,8 +88,9 @@ test("v7 UI-A: What's real today is listed last for Studio users; the Business v
   assert.deepEqual(labels(devWithBusiness).find(([label]) => label === "Other views"), ["Other views", ["Business view"]]);
   const hrefs = studioNavigationForUser(devWithBusiness).flatMap((g) => g.items.map((i) => i.href));
   assert.ok(hrefs.includes("/real") && hrefs.includes("/outcomes"));
-  // The assistant and AI settings stay hidden.
-  assert.ok(!hrefs.includes("/governance") && !studioNavigationForUser(devWithBusiness).some((g) => g.items.some((i) => i.id === "lab")));
+  // D6b: AI settings is listed (Beta); the assistant is a top-bar toggle, never a menu item; the lab page stays hidden.
+  assert.ok(hrefs.includes("/governance") && !studioNavigationForUser(devWithBusiness).some((g) => g.items.some((i) => i.id === "lab" || i.id === "assistant")));
+  assert.equal(studioNavigationForUser(devWithBusiness).flatMap((g) => g.items).find((i) => i.href === "/governance")?.label, "AI settings");
   // A platform administrator's console link sits above Help.
   const admin = { capabilities: { development_access: true, platform_read: true, platform_write: true } };
   assert.deepEqual(studioNavigationForUser(admin).slice(-2).map((g) => g.id), ["platform", "help"]);

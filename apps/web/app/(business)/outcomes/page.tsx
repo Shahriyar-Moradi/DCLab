@@ -3,10 +3,12 @@
 /**
  * Business view (P7.6-A): what the model in use does, in plain words, for business users. Every outcome sentence
  * comes from `GET /v1/projects/{id}/outcomes` (built there from numbers); names and sentences render as plain text.
- * Sections: outcome, how it was built, the latest list (existing authorized download), limits, boundary.
+ * Sections: outcome, how it was built, the latest list (existing authorized download), limits, boundary, and (D7b) the
+ * questions from the data team with a reply box (`BusinessQuestions`; their text is untrusted plain text).
  */
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
+import { BusinessQuestions } from "@/app/components/business-view/BusinessQuestions";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
 import { PageGuide } from "@/components/studio/PageGuide";
@@ -158,6 +160,7 @@ function OutcomesInner() {
           {view.boundary}
         </Banner>
       ) : null}
+      <BusinessQuestions enabled={!!user} />
       <p className="muted">{WORDS.planned}</p>
     </>
   );

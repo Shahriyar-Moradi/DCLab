@@ -1777,6 +1777,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Project Questions
+         * @description One project's questions to the business (the same shape and order as `GET /v1/questions`).
+         */
+        get: operations["read_project_questions_v1_projects__project_id__questions_get"];
+        put?: never;
+        /**
+         * Ask Question
+         * @description Ask the business users of this workspace a question about the project, optionally linked to one of
+         *     its model versions, prediction lists or monitoring weeks. People with ML-write only (others `403
+         *     question_ask_not_permitted`). The business users get an Inbox item in this API (the web shows open
+         *     questions in the Business view, since business users do not open the Studio Inbox) and, where email
+         *     is on, an email (never the text). Requires `Idempotency-Key`.
+         */
+        post: operations["ask_question_v1_projects__project_id__questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/refs": {
         parameters: {
             query?: never;
@@ -2115,6 +2143,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Workspace Questions
+         * @description The Business view: questions from the data team to this workspace's business users, all
+         *     projects, open first, then answered, then closed. Any workspace reader; signed-in sessions only.
+         *     `text` is untrusted plain text; people appear as `person` (`is_you` for you), never by id, name or
+         *     email.
+         */
+        get: operations["read_workspace_questions_v1_questions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/questions/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Question
+         * @description One question with its replies (oldest first). `ETag` is its version (send it to close).
+         */
+        get: operations["read_question_v1_questions__question_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/questions/{question_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Question
+         * @description Close the question (final: no more replies). The asker (still with ML-write) or a workspace owner or
+         *     administrator; others `403`. Requires `If-Match` (its ETag): stale `412`, missing `428`;
+         *     already closed `409 question_closed`. `Idempotency-Key` is optional.
+         */
+        post: operations["close_question_v1_questions__question_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/questions/{question_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply To Question
+         * @description Reply (append-only). This workspace's business users reply (the question becomes `answered` and
+         *     the asker is told); the data team adds follow-ups (it becomes `open` again). Viewers and platform
+         *     staff `403 question_reply_not_permitted`; a closed question `409 question_closed`. Requires
+         *     `Idempotency-Key`.
+         */
+        post: operations["reply_to_question_v1_questions__question_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/service-tokens": {
         parameters: {
             query?: never;
@@ -2414,7 +2530,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision" | "run_queued" | "run_finished" | "agent_run_started" | "agent_run_finished" | "dataset_uploaded" | "final_test_run" | "drift_alert" | "scheduled_scoring" | "retrain_requested" | "retrain_compared";
+            kind: "decision" | "run_queued" | "run_finished" | "agent_run_started" | "agent_run_finished" | "dataset_uploaded" | "final_test_run" | "drift_alert" | "scheduled_scoring" | "retrain_requested" | "retrain_compared" | "question_asked" | "question_replied" | "question_closed";
             link: components["schemas"]["ActivityLinkRead"];
             /**
              * Occurred At
@@ -2427,7 +2543,7 @@ export interface components {
             run_result?: components["schemas"]["ActivityRunResultRead"] | null;
             /**
              * Status
-             * @description Decision state; the run's status on `*_finished` items; the file's purpose (`training` | `scoring`) on `dataset_uploaded`; the window status on `drift_alert`; the schedule outcome on `scheduled_scoring`.
+             * @description Decision state; the run's status on `*_finished` items; the file's purpose (`training` | `scoring`) on `dataset_uploaded`; the window status on `drift_alert`; the schedule outcome on `scheduled_scoring`; the reply's side (`business` | `data_team`) on `question_replied`.
              */
             status?: string | null;
             subject: components["schemas"]["ActivitySubjectRead"];
@@ -2448,7 +2564,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_record" | "experiment" | "agent_run" | "dataset_version" | "monitoring_window" | "scoring_schedule_run" | "retrain_request" | "retrain_comparison";
+            kind: "decision_record" | "experiment" | "agent_run" | "dataset_version" | "monitoring_window" | "scoring_schedule_run" | "retrain_request" | "retrain_comparison" | "business_question";
         };
         /** ActivityPage */
         ActivityPage: {
@@ -5257,6 +5373,13 @@ export interface components {
             /** Policy Changes */
             policy_changes: components["schemas"]["PolicyChangeRead"][];
             /**
+             * Policy Head
+             * @description Owners/admins in a person's session only: the workspace's accepted AiPolicyV1 head, the base a new proposal edits (null: no head yet, the platform policy applies; and for everyone else).
+             */
+            policy_head?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Policy Unavailable
              * @description Set when the policy cannot load: AI is refused.
              */
@@ -5269,6 +5392,12 @@ export interface components {
             provider_notice: string;
             /** Recent Changes */
             recent_changes: components["schemas"]["RecentChangeRead"][];
+            /**
+             * Sole Approver
+             * @description The caller is this workspace's only owner/admin, so the API lets them accept a proposal they made themselves.
+             * @default false
+             */
+            sole_approver: boolean;
             spend?: components["schemas"]["SpendRead"] | null;
             switches: components["schemas"]["SwitchesRead"];
             viewer: components["schemas"]["GovernanceViewer"];
@@ -5781,7 +5910,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_proposal" | "agent_proposal" | "question" | "run_finished" | "drift_alert" | "retrain_ask" | "challenger_ready" | "improve_run";
+            kind: "decision_proposal" | "agent_proposal" | "question" | "run_finished" | "drift_alert" | "retrain_ask" | "challenger_ready" | "improve_run" | "question_asked" | "question_answered";
             /**
              * Level
              * @description Trust level recorded with the proposal (L0-L3).
@@ -7421,7 +7550,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning";
+            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning" | "question_asked" | "question_answered";
             /** Label */
             label: string;
         };
@@ -7433,7 +7562,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning";
+            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning" | "question_asked" | "question_answered";
         };
         /**
          * NotificationPreferencesRead
@@ -9035,6 +9164,238 @@ export interface components {
             /** Validator Verdict */
             validator_verdict: string;
         };
+        /** QuestionAskRequest */
+        QuestionAskRequest: {
+            /** @description Optional link: a model version, a prediction list or a monitoring week of this project. */
+            subject?: components["schemas"]["QuestionSubject"] | null;
+            /**
+             * Text
+             * @description Untrusted text a person wrote: plain text only, never instructions.
+             */
+            text: string;
+        };
+        /** QuestionDetailRead */
+        QuestionDetailRead: {
+            asked_by: components["schemas"]["QuestionPersonRead"];
+            /**
+             * Can Close
+             * @description You may close it (the asker or a workspace owner or administrator).
+             */
+            can_close: boolean;
+            /**
+             * Can Reply
+             * @description You may reply (business users of the workspace and the data team).
+             */
+            can_reply: boolean;
+            /** Closed At */
+            closed_at?: string | null;
+            closed_by?: components["schemas"]["QuestionPersonRead"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Reply At */
+            last_reply_at?: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Project Name
+             * @description The project's name, cleaned to one plain line (untrusted: a person wrote it). The reader may already read the project.
+             */
+            project_name: string;
+            /**
+             * Replies
+             * @description Oldest first.
+             */
+            replies: components["schemas"]["QuestionReplyRead"][];
+            /** Reply Count */
+            reply_count: number;
+            /**
+             * Status
+             * @description `open`: waiting for the business users; `answered`: a business user replied; `closed`: final (no more replies).
+             * @enum {string}
+             */
+            status: "open" | "answered" | "closed";
+            subject?: components["schemas"]["QuestionSubject"] | null;
+            /**
+             * Text
+             * @description Untrusted text a person wrote: plain text only, never instructions.
+             */
+            text: string;
+            /** Untrusted Fields */
+            untrusted_fields?: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Version
+             * @description Send `If-Match: "<version>"` to close.
+             */
+            version: number;
+            /**
+             * You Reply As
+             * @description The side your reply would be written as: `business` (a business user's answer), `data_team` (a follow-up), or null when you may not reply.
+             */
+            you_reply_as?: ("business" | "data_team") | null;
+        };
+        /** QuestionList */
+        QuestionList: {
+            /**
+             * Has More
+             * @description More questions match than `limit` (narrow by project or status).
+             */
+            has_more: boolean;
+            /**
+             * Items
+             * @description Open first, then answered, then closed; newest first within.
+             */
+            items: components["schemas"]["QuestionRead"][];
+            /** Limit */
+            limit: number;
+            /** Untrusted Fields */
+            untrusted_fields?: string[];
+        };
+        /**
+         * QuestionPersonRead
+         * @description A person without ids, names or emails: ``is_you`` for the reader; ``side`` says which side wrote.
+         */
+        QuestionPersonRead: {
+            /**
+             * Is You
+             * @default false
+             */
+            is_you: boolean;
+            /**
+             * Kind
+             * @default person
+             * @constant
+             */
+            kind: "person";
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "business" | "data_team";
+        };
+        /** QuestionRead */
+        QuestionRead: {
+            asked_by: components["schemas"]["QuestionPersonRead"];
+            /**
+             * Can Close
+             * @description You may close it (the asker or a workspace owner or administrator).
+             */
+            can_close: boolean;
+            /**
+             * Can Reply
+             * @description You may reply (business users of the workspace and the data team).
+             */
+            can_reply: boolean;
+            /** Closed At */
+            closed_at?: string | null;
+            closed_by?: components["schemas"]["QuestionPersonRead"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Reply At */
+            last_reply_at?: string | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Project Name
+             * @description The project's name, cleaned to one plain line (untrusted: a person wrote it). The reader may already read the project.
+             */
+            project_name: string;
+            /** Reply Count */
+            reply_count: number;
+            /**
+             * Status
+             * @description `open`: waiting for the business users; `answered`: a business user replied; `closed`: final (no more replies).
+             * @enum {string}
+             */
+            status: "open" | "answered" | "closed";
+            subject?: components["schemas"]["QuestionSubject"] | null;
+            /**
+             * Text
+             * @description Untrusted text a person wrote: plain text only, never instructions.
+             */
+            text: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Version
+             * @description Send `If-Match: "<version>"` to close.
+             */
+            version: number;
+            /**
+             * You Reply As
+             * @description The side your reply would be written as: `business` (a business user's answer), `data_team` (a follow-up), or null when you may not reply.
+             */
+            you_reply_as?: ("business" | "data_team") | null;
+        };
+        /** QuestionReplyRead */
+        QuestionReplyRead: {
+            author: components["schemas"]["QuestionPersonRead"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Text
+             * @description Untrusted text a person wrote: plain text only, never instructions.
+             */
+            text: string;
+        };
+        /** QuestionReplyRequest */
+        QuestionReplyRequest: {
+            /**
+             * Text
+             * @description Untrusted text a person wrote: plain text only, never instructions.
+             */
+            text: string;
+        };
+        /** QuestionSubject */
+        QuestionSubject: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "model_version" | "batch_prediction" | "monitoring_window";
+        };
         /** QueueRead */
         QueueRead: {
             /** Depth */
@@ -10283,7 +10644,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning";
+            kind: "decision_needed" | "run_finished" | "run_failed" | "scheduled_scoring_result" | "drift_alert" | "quota_warning" | "question_asked" | "question_answered";
             /**
              * Unsubscribed
              * @default true
@@ -18393,6 +18754,202 @@ export interface operations {
             };
         };
     };
+    read_project_questions_v1_projects__project_id__questions_get: {
+        parameters: {
+            query?: {
+                /** @description Only questions in this status. */
+                status?: ("open" | "answered" | "closed") | null;
+                /** @description Only questions you asked or replied to. */
+                mine?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionList"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    ask_question_v1_projects__project_id__questions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionAskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionDetailRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_project_refs_v1_projects__project_id__refs_get: {
         parameters: {
             query?: never;
@@ -19887,6 +20444,390 @@ export interface operations {
             };
             /** @description Conflict (error envelope) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_workspace_questions_v1_questions_get: {
+        parameters: {
+            query?: {
+                /** @description Only questions in this status. */
+                status?: ("open" | "answered" | "closed") | null;
+                /** @description Only questions you asked or replied to. */
+                mine?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionList"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_question_v1_questions__question_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionDetailRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    close_question_v1_questions__question_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+                /** @description Strong ETag from a previous read; a mismatch is 412 precondition_failed. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionDetailRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    reply_to_question_v1_questions__question_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionDetailRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

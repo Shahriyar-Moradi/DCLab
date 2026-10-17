@@ -64,13 +64,13 @@ test("Studio routes need the development workspace role", () => {
 
 test("Studio paths: known sections and UUID ids only; a project opens on Experiments", () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  for (const ok of ["/home", "/inbox", "/agents", "/settings", "/real", "/projects", "/projects/new", `/projects/${id}/predictions`, `/projects/${id}/goal`, `/projects/${id}/experiments/new`, `/projects/${id}/experiments/compare`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
+  for (const ok of ["/home", "/inbox", "/agents", "/settings", "/governance", "/real", "/projects", "/projects/new", `/projects/${id}/predictions`, `/projects/${id}/goal`, `/projects/${id}/experiments/new`, `/projects/${id}/experiments/compare`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
     ...["data", "splits", "features", "models", "pipeline", "improve"].map((section) => `/projects/${id}/${section}/${id}`)]) {
     assert.equal(studioRoute(ok), "ok", ok);
   }
   assert.deepEqual(studioRoute(`/projects/${id}`), { redirect: `/projects/${id}/experiments` });
   for (const bad of ["/projects/x/graph", `/projects/${id}/nope`, `/projects/${id}/constructor`, `/projects/${id}/graph/x`,
-    `/projects/${id}/experiments/x`, "/home/x", "/agents/x", "/agents/", "/settings/x", "/settings/", "/real/x", "/realx", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`,
+    `/projects/${id}/experiments/x`, "/home/x", "/agents/x", "/agents/", "/settings/x", "/settings/", "/governance/x", "/governance/", "/governancex", "/real/x", "/realx", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`,
     `/projects/${id}/predictions/x`, `/projects/${id}/predictions/${id}`, `/projects/${id}/data/x`, `/projects/${id}/pipeline/x`, `/projects/${id}/pipeline/${id}/x`, `/projects/${id}/splits/${id}/x`, `/projects/${id}/goal/${id}`, `/projects/${id}/features`, `/projects/${id}/graph/${id}`, `/projects/${id}/improve/x`, `/projects/${id}/improve/${id}/x`, `/projects/${id}/improve/new`]) {
     assert.equal(studioRoute(bad), "not_found", bad);
   }
@@ -94,7 +94,7 @@ test("P7.6-A: the Business view is for workspace readers; business users never r
   assert.equal(canAccessProductRoute(user({ [CAPABILITIES.accountAccess]: true }), "/outcomes"), false);
   assert.equal(canAccessProductRoute(null, "/outcomes"), false);
   assert.equal(canAccessProductRoute(client, "/outcomes/x"), false);
-  for (const path of ["/projects", "/home", "/inbox", "/settings", "/agents", "/projects/new", "/dev/studio-kit", "/development"]) {
+  for (const path of ["/projects", "/home", "/inbox", "/settings", "/governance", "/agents", "/projects/new", "/dev/studio-kit", "/development"]) {
     assert.equal(canAccessProductRoute(client, path), false, path);
   }
   assert.equal(safeNextPath(client, "/outcomes"), "/outcomes");

@@ -127,7 +127,7 @@ test("UI-E + D5c: the six event kinds become plain sentences with a link; anythi
   assert.equal(sched("__proto__").what, "Weekly scoring ran");
   assert.equal(sched(null).href, `/projects/${P}/predictions`);
   for (const kind of ["decision", "run_finished", "run_queued", "agent_run_started", "__proto__"]) assert.equal(eventRow(ev({ kind }), P, names), null, kind);
-  assert.equal(LOG_EVENT_KINDS.size, 6);
+  assert.equal(LOG_EVENT_KINDS.size, 9); // D7b adds question_asked, question_replied, question_closed
   // D5c: retrain events: who started it (a person, the rule's question, Automatic) and the comparison outcome, never figures.
   const rr = (status: string | null, subject = { kind: "experiment", id: ID }) => eventRow(ev({ kind: "retrain_requested", status, actor: { kind: status === "person" ? "person" : "rule", is_you: true }, subject, link: { kind: "retrain_request", id: MV } }), P, names)!;
   assert.deepEqual([rr("person").what, rr("person").who, rr("person").href, rr("person").linkLabel], ["Started a retrain on newest data", "You", `/projects/${P}/experiments/${ID}`, "Open Run 3"]);

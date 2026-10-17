@@ -22,7 +22,7 @@ export type ComingNextEntry = {
   rows: ReadonlyArray<readonly [string, string]>;
 };
 
-export const COMING_NEXT: Readonly<Record<"backups" | "earnedAutonomy", ComingNextEntry>> = {
+export const COMING_NEXT: Readonly<Record<"backups", ComingNextEntry>> = {
   backups: {
     id: "backups",
     title: "Backups",
@@ -31,14 +31,6 @@ export const COMING_NEXT: Readonly<Record<"backups" | "earnedAutonomy", ComingNe
     today: "No backup read exists in the console today, so nothing about backups is shown as a fact here.",
     pictureLabel: "An example tile with a last backup time, its result and the next backup time. The values are made up.",
     rows: [["Last backup", "Sunday 03:00, worked"], ["Next backup", "Sunday 03:00"], ["Kept for", "30 days"]],
-  },
-  earnedAutonomy: {
-    id: "earnedAutonomy",
-    title: "What AI may do on its own",
-    text: "Not built yet. Once the assistant is out of testing, this card will list each kind of decision, whether the assistant must ask first or may act on its own and let you undo it, and how it earned that.",
-    today: "AI is off by default and nothing here lets AI act on its own; people decide with a button or a form, and connected tools act only through the access tokens you give them.",
-    pictureLabel: "An example table of kinds of decision, the setting for each and how it was earned. The values are made up.",
-    rows: [["Leave out ID-like columns", "On its own, you can undo"], ["Fill missing values", "Ask first"], ["Change the test design", "Always ask"]],
   },
 };
 

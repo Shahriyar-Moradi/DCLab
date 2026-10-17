@@ -589,6 +589,9 @@ SDK_EXEMPT_V1_PATHS = frozenset({
     "/v1/me/notification-preferences", "/v1/notifications/unsubscribe", "/v1/workspaces/{}/webhooks",
     "/v1/workspaces/{}/webhooks/{}", "/v1/workspaces/{}/webhooks/{}/rotate-secret",
     "/v1/workspaces/{}/webhooks/{}/test", "/v1/workspaces/{}/webhooks/{}/deliveries",
+    # D7a: business-view questions are person to person, signed-in sessions only (403 session_required).
+    "/v1/questions", "/v1/projects/{}/questions", "/v1/questions/{}", "/v1/questions/{}/replies",
+    "/v1/questions/{}/close",
 })
 
 

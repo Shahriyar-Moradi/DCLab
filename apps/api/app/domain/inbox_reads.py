@@ -11,6 +11,9 @@
 * ``drift_alert`` (V7 BE-A): a weekly monitoring window at ``alert`` (highest revision). The newest
   week of the model in use waits in ``needs_decision`` (no inbox action: Monitoring has the next
   steps); earlier weeks and other models' alerts are ``done``.
+* ``question_asked`` / ``question_answered`` (D7a; people only, never tokens): an open question from the
+  data team, for the workspace's business users; a question a business user answered, for its asker.
+  Ids and a fixed summary only (the question text stays behind ``GET /v1/questions/{id}``).
 
 Tabs: ``needs_decision`` (open decision proposals, open agent proposals, open questions),
 ``applied_automatically`` (agent proposals an agent applied at level 2 or above, with Revert where the
@@ -43,14 +46,15 @@ INBOX_EVIDENCE_MAX = 16
 InboxTab = Literal["needs_decision", "applied_automatically", "done"]
 INBOX_TABS: tuple[str, ...] = ("needs_decision", "applied_automatically", "done")
 InboxKind = Literal["decision_proposal", "agent_proposal", "question", "run_finished", "drift_alert", "retrain_ask",
-                    "challenger_ready", "improve_run"]
+                    "challenger_ready", "improve_run", "question_asked", "question_answered"]
 # Tie-break rank inside one timestamp (part of the cursor; never reorder, only append). D5a:
 # ``challenger_ready`` items come from the decision-proposal source, so they share its rank.
 INBOX_KIND_RANK: dict[str, int] = {"decision_proposal": 0, "agent_proposal": 1, "question": 2, "run_finished": 3,
-                                   "drift_alert": 4, "retrain_ask": 5, "challenger_ready": 0, "improve_run": 6}
+                                   "drift_alert": 4, "retrain_ask": 5, "challenger_ready": 0, "improve_run": 6,
+                                   "question_asked": 7, "question_answered": 8}
 InboxActionName = Literal["accept", "reject", "supersede", "revert", "answer", "retrain"]
 InboxSourceKind = Literal["decision_record", "agent_proposal", "execution_request", "experiment", "monitoring_window",
-                          "retrain_request", "improve_run"]
+                          "retrain_request", "improve_run", "business_question"]
 SemanticAgreement = Literal["agree", "disagree", "abstain", "unavailable"]
 
 

@@ -8,7 +8,7 @@
  * Runtime validation stays with the caller's zod schema, as everywhere else.
  */
 import type { ZodType } from "zod";
-import { apiDownload, apiGet, apiGetTagged, apiPost, apiPostForm, apiPut, newIdempotencyKey } from "../api-client";
+import { apiDownload, apiGet, apiGetTagged, apiPost, apiPostForm, apiPostStream, apiPut, newIdempotencyKey } from "../api-client";
 import type { components, paths } from "./schema";
 
 export { newIdempotencyKey };
@@ -138,6 +138,15 @@ export function v1Post<P extends V1Path<"post">, T>(
   ...[options]: OptionsArg<P, CommandOptions>
 ): Promise<T> {
   return apiPost(v1Path(path, options?.params), schema, body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers));
+}
+
+/** A /v1 command answered with Server-Sent Events: the raw `Response` (status already checked). */
+export function v1PostStream<P extends V1Path<"post">>(
+  path: P,
+  body: V1RequestBody<P, "post">,
+  ...[options]: OptionsArg<P, CommandOptions & { signal?: AbortSignal }>
+): Promise<Response> {
+  return apiPostStream(v1Path(path, options?.params), body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers), options?.signal);
 }
 
 export function v1Put<P extends V1Path<"put">, T>(

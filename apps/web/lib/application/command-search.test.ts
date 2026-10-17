@@ -108,18 +108,18 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   const outside = studioNavigationForUser(developer);
   assert.deepEqual(outside.map((g) => g.id), ["workspace", "admin", "help"]);
   assert.deepEqual(outside[0]!.items.map((i) => i.href), ["/home", "/inbox", "/projects"]);
-  assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/settings", "/agents"]);
+  assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/settings", "/governance", "/agents"]);
   const inside = studioNavigationForUser(developer, P1).find((g) => g.id === "project")!;
   // V7 UI-C: Goal is always listed (the project-level Goal page until a test design exists); Predictions needs a model.
-  assert.deepEqual(inside.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "monitoring", "decisions"]);
+  assert.deepEqual(inside.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "monitoring", "decisions", "questions"]);
   assert.equal(inside.items.find((i) => i.id === "goal")?.href, `/projects/${P1}/goal`);
   const T = "44444444-4444-4444-8444-444444444444";
   const withTargets = studioNavigationForUser(developer, P1, { split_plan: T, project_model: T }).find((g) => g.id === "project")!;
-  assert.deepEqual(withTargets.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring", "decisions"]);
+  assert.deepEqual(withTargets.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring", "decisions", "questions"]);
   assert.ok(inside.items.every((i) => i.href.startsWith(`/projects/${P1}/`)));
   assert.equal(STUDIO_BACKEND_FEATURES.lab, false);
   assert.equal(STUDIO_BACKEND_FEATURES.monitoring, true);
   assert.equal(STUDIO_BACKEND_FEATURES.improve, true);
-  assert.equal(STUDIO_BACKEND_FEATURES.assistant, false);
+  assert.equal(STUDIO_BACKEND_FEATURES.assistant, true); // D6b: the panel exists; its toggle is gated per workspace at run time (assistantGate)
   assert.deepEqual(studioNavigationForUser(developer, "../../evil?x=1").map((g) => g.id), ["workspace", "admin", "help"]);
 });

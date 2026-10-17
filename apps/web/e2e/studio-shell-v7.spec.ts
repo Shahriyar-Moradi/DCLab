@@ -30,7 +30,9 @@ test("status tags open What's real today; sidebar, glossary and guide toggle", a
   const sidebar = page.getByRole("navigation", { name: "Studio" });
   await expect(sidebar.getByRole("link", { name: "What's real today" })).toHaveAttribute("href", "/real");
   await expect(sidebar.getByRole("link", { name: "Business view" })).toHaveAttribute("href", "/outcomes");
-  for (const hidden of ["AI settings", "Assistant", "Open the assistant", "Governance"]) await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
+  // D6b: AI settings (Beta) is in the menu; the assistant is a top-bar toggle, never a menu item.
+  await expect(sidebar.getByRole("link", { name: "AI settings" })).toHaveAttribute("href", "/governance");
+  for (const hidden of ["Assistant", "Open the assistant", "Governance"]) await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
 
   await head.getByRole("link", { name: /Status of this screen/ }).click();
   await expect(page).toHaveURL(/\/real$/);
@@ -45,8 +47,8 @@ test("status tags open What's real today; sidebar, glossary and guide toggle", a
   await expect(row("Usage & cost (in Settings)")).toContainText("Working today");
   await expect(row("Notifications (email)")).toContainText("Partly working · no screen yet");
   await expect(row("Integrations (webhooks)")).toContainText("Partly working · no screen yet");
-  await expect(row("Assistant")).toContainText("Built, switched off");
-  await expect(row("AI settings")).toContainText("Screen: Planned");
+  await expect(row("Assistant")).toContainText("Partly working · Beta");
+  await expect(row("AI settings")).toContainText("Partly working · Beta");
   await expect(table.getByRole("link", { name: "Business view" })).toHaveAttribute("href", "/outcomes");
   await expect(page.locator(".page-head .status-tag")).toHaveCount(0); // the list itself has no tag
   await shot(page, "shell-1-real");

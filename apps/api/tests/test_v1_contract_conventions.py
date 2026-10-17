@@ -50,7 +50,10 @@ SESSION_ONLY = {"/v1/service-tokens": "session_required", "/v1/service-tokens/{t
                     "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}",
                     "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret",
                     "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test",
-                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries")}}
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries",
+                    # D7a: business-view questions (person to person).
+                    "/v1/questions", "/v1/projects/{project_id}/questions", "/v1/questions/{question_id}",
+                    "/v1/questions/{question_id}/replies", "/v1/questions/{question_id}/close")}}
 # No principal at all (P8.8-A one-click unsubscribe: the signed link is the only authority).
 PUBLIC = {"/v1/notifications/unsubscribe"}
 
@@ -262,6 +265,13 @@ def test_inventory_covers_every_current_v1_operation():
         # D5b: editable monitoring thresholds.
         "GET /v1/projects/{project_id}/monitoring-thresholds",
         "PUT /v1/projects/{project_id}/monitoring-thresholds",
+        # D7a: business-view questions.
+        "GET /v1/questions",
+        "GET /v1/projects/{project_id}/questions",
+        "POST /v1/projects/{project_id}/questions",
+        "GET /v1/questions/{question_id}",
+        "POST /v1/questions/{question_id}/replies",
+        "POST /v1/questions/{question_id}/close",
     }
 
 

@@ -99,7 +99,7 @@ def _changed(db: Session, row: WebhookEndpoint, actor: User, action: str, host: 
 
 
 def _events(events: list[str]) -> list[str]:
-    return [kind for kind in n.KINDS if kind in set(events)]
+    return [kind for kind in n.WEBHOOK_KINDS if kind in set(events)]
 
 
 def _name(name: str) -> str:

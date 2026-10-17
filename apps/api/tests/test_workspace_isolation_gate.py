@@ -33,7 +33,10 @@ SESSION_ONLY_GETS = {"/v1/service-tokens": "session_required", "/v1/assistant/th
                      # P8.8-A: notification preferences and webhooks.
                      **{path: "session_required" for path in (
                          "/v1/me/notification-preferences", "/v1/workspaces/{workspace_id}/webhooks",
-                         "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries")}}
+                         "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries")},
+                     # D7: business-view questions are for signed-in people only.
+                     **{path: "session_required" for path in (
+                         "/v1/questions", "/v1/projects/{project_id}/questions", "/v1/questions/{question_id}")}}
 
 
 def _owner_and_workspaces(db_session):

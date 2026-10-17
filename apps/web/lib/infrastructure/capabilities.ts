@@ -22,7 +22,7 @@ export const CAPABILITIES = {
 } as const;
 
 /** Developer Studio routes (STUDIO_DESIGN section 3): development workspace role only. */
-const STUDIO_PREFIXES = ["/home", "/inbox", "/agents", "/settings", "/real", "/projects"] as const;
+const STUDIO_PREFIXES = ["/home", "/inbox", "/agents", "/settings", "/governance", "/real", "/projects"] as const;
 
 export function isStudioPath(pathname: string): boolean {
   return STUDIO_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -39,9 +39,9 @@ export function isOperatorPath(pathname: string): boolean {
 }
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const PROJECT_SECTIONS = "lab|pipeline|graph|data|goal|experiments|improve|models|predictions|monitoring|decisions";
+const PROJECT_SECTIONS = "lab|pipeline|graph|data|goal|experiments|improve|models|predictions|monitoring|decisions|questions";
 const STUDIO_ROUTE = new RegExp(
-  `^/(?:home|inbox|agents|settings|real|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models|pipeline|improve)/${UUID})?)?)$`,
+  `^/(?:home|inbox|agents|settings|governance|real|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models|pipeline|improve)/${UUID})?)?)$`,
 );
 
 /**
@@ -166,6 +166,7 @@ const WORKSPACE_SWITCH_STABLE_ROUTES = new Set([
   "/home",
   "/inbox",
   "/agents",
+  "/governance",
   "/real",
   "/projects",
 ]);

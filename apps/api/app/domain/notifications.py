@@ -25,26 +25,35 @@ KIND_RUN_FAILED = "run_failed"
 KIND_SCHEDULED_SCORING = "scheduled_scoring_result"
 KIND_DRIFT_ALERT = "drift_alert"
 KIND_QUOTA_WARNING = "quota_warning"
-KINDS = (KIND_DECISION_NEEDED, KIND_RUN_FINISHED, KIND_RUN_FAILED, KIND_SCHEDULED_SCORING, KIND_DRIFT_ALERT,
-         KIND_QUOTA_WARNING)
+# D7a: business-view questions, person to person (email only: never sent to webhooks / customer systems).
+KIND_QUESTION_ASKED = "question_asked"
+KIND_QUESTION_ANSWERED = "question_answered"
+WEBHOOK_KINDS = (KIND_DECISION_NEEDED, KIND_RUN_FINISHED, KIND_RUN_FAILED, KIND_SCHEDULED_SCORING, KIND_DRIFT_ALERT,
+                 KIND_QUOTA_WARNING)
+KINDS = (*WEBHOOK_KINDS, KIND_QUESTION_ASKED, KIND_QUESTION_ANSWERED)  # append only (unsubscribe links index it)
 EVENT_PING = "ping"  # webhook test deliveries only
 OUTBOX_KINDS = (*KINDS, EVENT_PING)
+WebhookKind = Literal["decision_needed", "run_finished", "run_failed", "scheduled_scoring_result",
+                      "drift_alert", "quota_warning"]
 NotificationKind = Literal["decision_needed", "run_finished", "run_failed", "scheduled_scoring_result",
-                           "drift_alert", "quota_warning"]
+                           "drift_alert", "quota_warning", "question_asked", "question_answered"]
 
 # Email defaults (rows in notification_preferences exist only for overrides).
 DEFAULT_EMAIL: dict[str, bool] = {
     KIND_DECISION_NEEDED: True, KIND_RUN_FINISHED: False, KIND_RUN_FAILED: True,
     KIND_SCHEDULED_SCORING: False, KIND_DRIFT_ALERT: True, KIND_QUOTA_WARNING: True,
+    KIND_QUESTION_ASKED: True, KIND_QUESTION_ANSWERED: True,
 }
 # Who receives each kind by email (people only; never service tokens or agents).
 AUDIENCE_ML_WRITE = "ml_write"  # owners, administrators, ML engineers
 AUDIENCE_ADMINS = "admins"  # owners and administrators
 AUDIENCE_REQUESTER = "requester"  # the person who started the run (runs a service token started: nobody)
+AUDIENCE_BUSINESS = "business"  # D7a: the workspace's business users (client accounts) only
 AUDIENCE: dict[str, str] = {
     KIND_DECISION_NEEDED: AUDIENCE_ML_WRITE, KIND_RUN_FINISHED: AUDIENCE_REQUESTER,
     KIND_RUN_FAILED: AUDIENCE_REQUESTER, KIND_SCHEDULED_SCORING: AUDIENCE_ML_WRITE,
     KIND_DRIFT_ALERT: AUDIENCE_ML_WRITE, KIND_QUOTA_WARNING: AUDIENCE_ADMINS,
+    KIND_QUESTION_ASKED: AUDIENCE_BUSINESS, KIND_QUESTION_ANSWERED: AUDIENCE_REQUESTER,
 }
 LABELS: dict[str, str] = {
     KIND_DECISION_NEEDED: "A decision is waiting for a person",
@@ -53,6 +62,8 @@ LABELS: dict[str, str] = {
     KIND_SCHEDULED_SCORING: "Weekly scheduled scoring result",
     KIND_DRIFT_ALERT: "Drift alert on the model in use",
     KIND_QUOTA_WARNING: "Usage at 80% or 100% of a plan limit",
+    KIND_QUESTION_ASKED: "The data team asked the business a question",
+    KIND_QUESTION_ANSWERED: "A business user replied to your question",
 }
 # Footer: "You get this because <reason>; change this in Settings."
 REASONS: dict[str, str] = {
@@ -62,6 +73,8 @@ REASONS: dict[str, str] = {
     KIND_SCHEDULED_SCORING: "you can score with this project's model and turned on weekly scoring emails",
     KIND_DRIFT_ALERT: "you work on models in this workspace",
     KIND_QUOTA_WARNING: "you administer this workspace",
+    KIND_QUESTION_ASKED: "you are a business user of this workspace",
+    KIND_QUESTION_ANSWERED: "you asked this question",
 }
 
 CHANNEL_EMAIL = "email"
@@ -119,7 +132,7 @@ DEDUPE_KEY_MAX = 200
 DEDUPE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9:._-]{0,199}$")
 CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
 SUBJECT_KINDS = ("proposal", "decision", "agent_run", "experiment", "batch_prediction", "scoring_schedule",
-                 "model_version", "webhook_endpoint", "workspace")
+                 "model_version", "webhook_endpoint", "workspace", "business_question")
 
 # Webhooks
 WEBHOOKS_PER_WORKSPACE_MAX = 5
@@ -196,7 +209,7 @@ CK_NOTIFICATION_OUTBOX_PAYLOAD = (
 CK_NOTIFICATION_OUTBOX_ATTEMPTS = f"attempts BETWEEN 0 AND {MAX_ATTEMPTS}"
 CK_NOTIFICATION_OUTBOX_SENT = "(status = 'sent') = (sent_at IS NOT NULL)"
 CK_WEBHOOK_DELIVERIES_OUTCOME = sql_in_clause("outcome", DELIVERY_OUTCOMES)
-CK_WEBHOOK_DELIVERIES_EVENT = sql_in_clause("event", OUTBOX_KINDS)
+CK_WEBHOOK_DELIVERIES_EVENT = sql_in_clause("event", (*WEBHOOK_KINDS, EVENT_PING))
 CK_WEBHOOK_DELIVERIES_ERROR = "error_code IS NULL OR " + sql_in_clause("error_code", ERROR_CODES)
 CK_WEBHOOK_DELIVERIES_STATUS_CODE = "status_code IS NULL OR status_code BETWEEN 100 AND 599"
 CK_WEBHOOK_DELIVERIES_NUMBERS = "attempt BETWEEN 1 AND 10 AND duration_ms BETWEEN 0 AND 600000"
@@ -263,7 +276,7 @@ class WebhookCreate(BaseModel):
     name: str = Field(min_length=1, max_length=WEBHOOK_NAME_MAX)
     url: str = Field(min_length=9, max_length=WEBHOOK_URL_MAX,
                      description="https only, port 443 (or a port the platform allows), no user:password.")
-    events: list[NotificationKind] = Field(min_length=1, max_length=len(KINDS))
+    events: list[WebhookKind] = Field(min_length=1, max_length=len(WEBHOOK_KINDS))
     enabled: bool = True
 
 
@@ -272,7 +285,7 @@ class WebhookUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=WEBHOOK_NAME_MAX)
     url: str | None = Field(None, min_length=9, max_length=WEBHOOK_URL_MAX)
-    events: list[NotificationKind] | None = Field(None, min_length=1, max_length=len(KINDS))
+    events: list[WebhookKind] | None = Field(None, min_length=1, max_length=len(WEBHOOK_KINDS))
     enabled: bool | None = None
 
 

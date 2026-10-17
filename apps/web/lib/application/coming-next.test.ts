@@ -7,8 +7,9 @@ import { STUDIO_BACKEND_FEATURES } from "./studio-navigation.ts";
 const BANNED = /\b(holdout|champion|digest|refs?|releases?|manifest|L[0-3]|jev|nooa|governance|tenant|harness|P\d+\.\d+)\b/i;
 const openapi = JSON.parse(readFileSync(new URL("../infrastructure/v1/openapi.json", import.meta.url), "utf8")) as { paths: Record<string, unknown> };
 
-test("coming next is only for the two unbuilt pieces, each says so and marks its picture as an example", () => {
-  assert.deepEqual(Object.keys(COMING_NEXT).sort(), ["backups", "earnedAutonomy"]);
+test("coming next is only for the unbuilt piece, it says so and marks its picture as an example", () => {
+  // D6b: the AI settings screen (Beta) replaced the earned-autonomy card with the real, read-only table.
+  assert.deepEqual(Object.keys(COMING_NEXT).sort(), ["backups"]);
   assert.equal(EXAMPLE_MARK, "Example, not your data");
   for (const entry of Object.values(COMING_NEXT)) {
     assert.match(entry.text, /^Not built yet\./);
@@ -18,11 +19,10 @@ test("coming next is only for the two unbuilt pieces, each says so and marks its
   }
 });
 
-test("the cards stay honest: no backup read exists, and the assistant and AI settings are still switched off", () => {
+test("the cards stay honest: no backup read exists; the AI settings screen exists, so its card is gone", () => {
   assert.deepEqual(Object.keys(openapi.paths).filter((p) => /backup/i.test(p)), []);
-  // When the assistant beta lands (or the AI settings screen), delete the earned-autonomy card.
-  assert.equal(STUDIO_BACKEND_FEATURES.assistant, false);
-  assert.equal(STUDIO_BACKEND_FEATURES.governance, false);
+  assert.equal(STUDIO_BACKEND_FEATURES.governance, true);
+  assert.equal(comingNext("earnedAutonomy"), null);
 });
 
 test("lookups use own keys only", () => {

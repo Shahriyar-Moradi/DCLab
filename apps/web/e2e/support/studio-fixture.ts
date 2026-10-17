@@ -33,6 +33,26 @@ export async function axeViolations(page: Page): Promise<string[]> {
   });
 }
 
+/**
+ * Axe (serious/critical, WCAG 2 A/AA) in light and dark at 1280px and 375px, and no horizontal page scroll at either width.
+ * Leaves the page at 1280px in light.
+ */
+export async function axeLightDarkAt1280And375(page: Page, label: string): Promise<void> {
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      expect(await axeViolations(page), `${label}: axe ${scheme} at ${width}px`).toEqual([]);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+        `${label}: no horizontal scroll at ${width}px (${scheme})`,
+      ).toBe(true);
+    }
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 1280, height: 900 });
+}
+
 export async function shot(page: Page, name: string): Promise<void> {
   const dir = process.env.DCLAB_E2E_SHOTS;
   if (dir) await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });

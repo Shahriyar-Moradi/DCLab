@@ -238,6 +238,12 @@ class GovernanceRead(_Wire):
     incidents: list[IncidentRead] = Field(default_factory=list,
                                           description="Open and resolved incidents, newest first (at most 50).")
     provider_notice: str = Field(default="", description="Fixed text: where assistant chat text goes.")
+    # D6b (AI settings budget form): what an approver edits and whether they may accept their own proposal.
+    policy_head: dict[str, Any] | None = Field(
+        default=None, description="Owners/admins in a person's session only: the workspace's accepted AiPolicyV1 head, "
+        "the base a new proposal edits (null: no head yet, the platform policy applies; and for everyone else).")
+    sole_approver: bool = Field(default=False, description="The caller is this workspace's only owner/admin, so the "
+                                "API lets them accept a proposal they made themselves.")
 
 
 # --- commands -------------------------------------------------------------------------------------

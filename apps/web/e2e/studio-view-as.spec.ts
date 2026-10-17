@@ -36,7 +36,7 @@ test("an admin previews each role's sidebar and screens; nothing changes and a r
   // Business user: only the Business view entry point; Studio screens say they are not open to this role.
   await viewAs.selectOption("business_user");
   await expect(page.getByText(NOTE)).toBeVisible();
-  await expect(sidebar.getByRole("link")).toHaveCount(1);
+  await expect(sidebar.getByRole("link")).toHaveCount(2); // Outcomes and (D7b) the questions from the data team
   await expect(sidebar.getByRole("link", { name: "Outcomes" })).toHaveAttribute("href", "/outcomes");
   await expect(page.getByRole("heading", { name: "This screen is not open to the Business user role", level: 2 })).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: "Open the Business view" })).toHaveAttribute("href", "/outcomes");

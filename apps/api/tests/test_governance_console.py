@@ -168,6 +168,20 @@ def test_policy_applies_only_on_acceptance_by_another_approver(gc):
     assert [c["state"] for c in after["policy_changes"]][:1] == ["accepted"]
 
 
+def test_d6b_policy_head_and_sole_approver_are_for_approvers_only(gc):
+    owner = gc.get(gc.owner).json()
+    assert owner["policy_head"] is None and owner["sole_approver"] is False  # no head yet; owner and admin approve
+    assert all(lv["effective_level"] <= 1 for lv in owner["levels"])  # the beta: nothing is automatic today
+    assert gc.get(gc.solo, ws=gc.solo_ws).json()["sole_approver"] is True
+    done = gc.accept(gc.propose(gc.eng).json(), gc.owner)
+    assert done.status_code == 200, done.text
+    head = gc.get(gc.owner).json()["policy_head"]
+    assert head is not None and head["budgets"]["workspace_month_micros"] == 5_000_000
+    for who in (gc.eng, gc.staff):  # proposers and platform staff never get the head document or the flag
+        body = gc.get(who).json()
+        assert body["policy_head"] is None and body["sole_approver"] is False
+
+
 def test_a_sole_approver_may_accept_their_own_proposal_flagged(gc):
     proposed = gc.propose(gc.solo, ws=gc.solo_ws).json()
     done = gc.accept(proposed, gc.solo, gc.solo_ws)

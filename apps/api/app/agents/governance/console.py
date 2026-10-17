@@ -75,6 +75,7 @@ from app.domain.governance_console import (
 from app.services.authorization_service import (
     can_approve_ai_policy,
     can_read_workspace,
+    count_ai_policy_approvers,
     PlatformRole,
     explicit_workspace_role,
     is_ml_write_role,
@@ -429,6 +430,7 @@ def agent_view(g: GovernanceRead) -> GovernanceRead:
         "switches": g.switches.model_copy(update={"workspace": [
             s.model_copy(update={"reason": "", "changed_by": "withheld"}) for s in g.switches.workspace]}),
         "open_incidents": [_bare(i) for i in g.open_incidents], "incidents": [_bare(i) for i in g.incidents],
+        "policy_head": None, "sole_approver": False,
         "policy_changes": [c.model_copy(update={"rationale": "", "proposed_by": None, "decided_by": None,
                                                 "document": None, "diff_vs_head": None, "diff_vs_effective": None})
                            for c in g.policy_changes],
@@ -473,6 +475,10 @@ def console_read(db: Session, *, actor: User, workspace_id: UUID, agent: bool = 
                                         price_is_upper_bound=model in PRICE_UNVERIFIED_MODELS) if model else None,
         month_spend=_month_spend(db, workspace_id), incidents=_incidents(db, workspace_id, actors, open_only=False),
         provider_notice=provider_notice(provider))
+    if viewer.can_approve and not agent:
+        head = _accepted_head(db, workspace_id)
+        view = view.model_copy(update={"policy_head": head.policy if head is not None else None,
+                                       "sole_approver": count_ai_policy_approvers(db, workspace_id) == 1})
     return agent_view(view) if agent else view
 
 

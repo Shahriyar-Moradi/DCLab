@@ -12,7 +12,7 @@ export type StudioRole = "developer" | "admin" | "client" | "operator";
 export type StudioFeature =
   | "home" | "projects" | "inbox" | "governance" | "agents" | "settings" | "assistant"
   | "lab" | "pipeline" | "graph" | "data" | "goal" | "experiments" | "improve" | "models" | "predictions" | "monitoring" | "decisions"
-  | "client_outcomes" | "client_predictions" | "client_questions" | "business_view" | "real"
+  | "client_outcomes" | "client_predictions" | "client_questions" | "questions" | "business_view" | "real"
   | "operator_overview" | "operator_workspaces" | "operator_jobs" | "operator_quarantine" | "operator_caps" | "operator_gates";
 
 /** Backend availability per feature. Missing key = not available. */
@@ -69,6 +69,7 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
       { id: "predictions", label: "Predictions", href: "predictions", target: "project_model", icon: "▸", roles: WORK, feature: "predictions", phase: "P4.9-UI" },
       { id: "monitoring", label: "Monitoring", href: "monitoring", icon: "∿", roles: WORK, feature: "monitoring", phase: "P7.5-A" },
       { id: "decisions", label: "History", href: "decisions", icon: "✓", roles: WORK, feature: "decisions", phase: "P4.4-A" },
+      { id: "questions", label: "Ask the business", href: "questions", icon: "✉", roles: WORK, feature: "questions", phase: "D7" },
     ],
   },
   {
@@ -102,7 +103,7 @@ export const SIDEBAR_CONFIG: SidebarGroupSpec[] = [
     items: [
       { id: "client-outcomes", label: "Outcomes", href: "/outcomes", icon: "◉", roles: ["client"], feature: "client_outcomes", phase: "P4.13" },
       { id: "client-predictions", label: "Prediction list", href: "/outcomes#predictions", icon: "▤", roles: ["client"], feature: "client_predictions", phase: "P4.13" },
-      { id: "client-questions", label: "Questions & reports", href: "/outcomes#questions", icon: "✉", roles: ["client"], feature: "client_questions", phase: "P4.13" },
+      { id: "client-questions", label: "Questions from the data team", href: "/outcomes#questions", icon: "✉", roles: ["client"], feature: "client_questions", phase: "P4.13" },
     ],
   },
   {

@@ -139,6 +139,8 @@ export const config = {
     "/projects/:path*",
     // Studio Settings (P4.14): developer role only, like the other Studio routes (P7.6-A found it unmatched).
     "/settings/:path*",
+    // AI settings (D6b, Beta): a Studio page, same role as the other Studio routes.
+    "/governance/:path*",
     // What's real today (V7 UI-A): a Studio page, same role as the other Studio routes.
     "/real/:path*",
     // Business view (P7.6-A).

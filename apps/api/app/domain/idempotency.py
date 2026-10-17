@@ -97,6 +97,8 @@ RESOURCE_DECISION_RECORD = "decision_record"
 RESOURCE_SERVICE_TOKEN = "service_token"
 RESOURCE_BATCH_PREDICTION = "batch_prediction"
 RESOURCE_IMPROVE_RUN = "improve_run"  # P5.4-A3: a loop start or an acceptance
+RESOURCE_BUSINESS_QUESTION = "business_question"  # D7a: asking or closing a question
+RESOURCE_BUSINESS_QUESTION_REPLY = "business_question_reply"  # D7a: one reply
 
 CK_IDEMPOTENCY_KEYS_PRINCIPAL_KIND = "principal_kind IN ('user', 'service_token')"
 CK_IDEMPOTENCY_KEYS_OPERATION = (

@@ -11,8 +11,8 @@ import { safeDownloadId } from "./studio-scoring.ts";
 export const WORDS = {
   eyebrow: "Business view",
   guidePurpose: "What the model in use does for your business, in plain words.",
-  guideHowTo: "Read the outcome first, then download the latest list.",
-  guideYouGet: "How well it did when it was tested, how it was built, the latest list and what it cannot do.",
+  guideHowTo: "Read the outcome first, then download the latest list. Reply to your data team's questions at the end of the page.",
+  guideYouGet: "How well it did when it was tested, how it was built, the latest list, what it cannot do and the questions from your data team.",
   outcomeTitle: "What it does for you",
   builtTitle: "How it was built",
   listTitle: "The latest list",
@@ -29,7 +29,7 @@ export const WORDS = {
   noProjects: "No project in this workspace has a model in use yet. A data scientist in your workspace can put one in use.",
   downloadFailed: "The list could not be downloaded. Try again in a moment.",
   badLink: "The download link was not a DCLab address, so it was not opened.",
-  planned: "Planned, not available yet: questions from your data team, and asking questions in plain words.",
+  planned: "Planned, not available yet: asking questions in plain words.",
   boundaryLabel: "Boundary",
 } as const;
 

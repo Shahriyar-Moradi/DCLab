@@ -156,8 +156,9 @@ def assistant_route(policy: Any) -> tuple[str | None, str | None]:
 
 def provider_notice(provider: str | None) -> str:
     name = PROVIDER_NAMES.get(provider or "", "the AI provider")
-    return (f"What you type to the assistant is sent to {name} to answer it, under this workspace's AI data "
-            "rules; anything you paste is sent with it.")
+    return (f"What you type to the assistant is sent to {name} to answer it, with the project details it reads "
+            "(names, column summaries, cross-validation scores; never raw rows or final-test numbers), under this "
+            "workspace's AI data rules; anything you paste is sent with it.")
 
 
 def _thread_calls(thread: AgentRun) -> tuple[Any, ...]:

@@ -103,7 +103,7 @@ test("428 ref_versions_required, owner_only (generic) and prototype-key lookups"
   assert.match(mapInboxError(err(428, "ref_versions_required")).detail, /versions currently in use/);
   assert.doesNotMatch(mapInboxError(err(403, "owner_only")).detail, /accept/);
   assert.equal(lookup(PROPOSED_BY_LABEL, "agent", "x"), "connected tool (access token)");
-  assert.equal(lookup(PROPOSED_BY_LABEL, "assistant", "x"), "the assistant");
+  assert.equal(lookup(PROPOSED_BY_LABEL, "assistant", "x"), "the assistant (Beta)");
   assert.equal(lookup(PROPOSED_BY_LABEL, "jev", "x"), "AI reviewer");
   for (const key of ["__proto__", "constructor", "toString", "hasOwnProperty"]) assert.equal(lookup(PROPOSED_BY_LABEL, key, "fallback"), "fallback", key);
   assert.equal(lookup(PROPOSED_BY_LABEL, null, "fallback"), "fallback");
@@ -123,7 +123,7 @@ test("who suggested it: honest labels, access-token tools are never the assistan
   assert.equal(suggestedBy("agent", "decision_proposal"), "Suggested by connected tool (access token)");
   // A typed suggestion from an agent run: who started the run is unknown, so it is never "access token" nor "the assistant".
   assert.equal(suggestedBy("agent", "agent_proposal"), "Suggested by an AI agent (review run)");
-  assert.equal(suggestedBy("assistant"), "Suggested by the assistant");
+  assert.equal(suggestedBy("assistant"), "Suggested by the assistant (Beta)"); // D6b: the assistant is a labelled beta
   assert.equal(suggestedBy("jev"), "Suggested by AI reviewer");
   assert.equal(suggestedBy("person"), "Suggested by a person");
   assert.equal(suggestedBy("run"), "Raised by the run");

@@ -13,7 +13,7 @@ import { acceptRefProposal, resolveDecision, supersedeDecision, useDecisionDetai
 import { proposedMoves } from "@/lib/application/studio-compare";
 import { decideProposal, useInboxInvalidation, useRunNamer, type StudioInboxItem } from "@/lib/application/studio-inbox-hooks";
 import {
-  DRIFT_STATS_NOTE, actionRoute, agreementPill, answerLines, approvalNote, comparableRunIds, disabledReason, driftSentence, driftStats, evidenceLinks, findAction, inboxCompareHref, inboxTitle, lookup,
+  DRIFT_STATS_NOTE, actionRoute, businessQuestionBy, businessQuestionHref, businessQuestionSentence, agreementPill, answerLines, approvalNote, comparableRunIds, disabledReason, driftSentence, driftStats, evidenceLinks, findAction, inboxCompareHref, inboxTitle, lookup,
   improveItemHref, improveItemSentence, mapInboxError, monitoringHref, outcomeWords, questionHref, refVersionsFor, resolverPill, retrainItemSentence, subjectLink, suggestedBy,
 } from "@/lib/application/studio-inbox";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
@@ -142,7 +142,9 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
   const retrainText = retrainItemSentence(item);
   const improveText = improveItemSentence(item);
   const loopHref = improveItemHref(item);
-  const by = drift ? "Flagged by the weekly monitoring rule" : suggestedBy(item.proposed_by, item.kind);
+  const questionText = businessQuestionSentence(item);
+  const questionLink = businessQuestionHref(item);
+  const by = drift ? "Flagged by the weekly monitoring rule" : businessQuestionBy(item.kind) ?? suggestedBy(item.proposed_by, item.kind);
   const agreement = agreementPill(item.agreement, item.tab, aiOff);
   const resolver = resolverPill(item.resolved_by, item.tab);
   const stats = drift ? driftStats(item.monitoring) : [];
@@ -182,6 +184,7 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
       {drift ? <p data-testid="drift-sentence">{driftSentence(item)}</p> : null}
       {retrainText ? <p data-testid="retrain-sentence">{retrainText}</p> : null}
       {improveText ? <p data-testid="improve-sentence">{improveText}</p> : null}
+      {questionText ? <p data-testid="question-sentence">{questionText}</p> : null}
       {stats.length ? (
         <dl className="v7-inbox-stats" aria-label="The week's numbers">
           {stats.map((st) => <div key={st.label}><dt>{st.label}</dt><dd>{st.value}</dd></div>)}
@@ -219,6 +222,7 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
             {answerHref ? <Link className="btn primary" href={answerHref}>Answer on the run page</Link> : null}
             {monitoring ? <Link className={`btn ${item.tab === "needs_decision" && item.kind !== "challenger_ready" ? "primary" : ""}`} href={monitoring}>Open Monitoring<span className="sr-only"> for {title}</span></Link> : null}
             {loopHref ? <Link className={`btn ${item.status === "waiting_user" ? "primary" : ""}`} href={loopHref}>Open the loop<span className="sr-only"> for {title}</span></Link> : null}
+            {questionLink ? <Link className="btn primary" href={questionLink}>{item.kind === "question_asked" ? "Open the Business view" : "Open the question"}<span className="sr-only"> for {title}</span></Link> : null}
             <CompareLink item={item} title={title} />
           </div>
         </>

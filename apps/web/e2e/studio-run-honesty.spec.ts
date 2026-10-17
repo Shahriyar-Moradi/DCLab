@@ -107,17 +107,11 @@ test("a trained run: 15 checks in registry order, the real timeline with times, 
   await fresh.close();
 });
 
-test("Coming next: a picture marked as an example, with nothing to click, and no internal plan ids", async ({ page }) => {
+test("Settings: the earned-autonomy example card is gone; AI settings (Beta) shows the real, locked table instead", async ({ page }) => {
   await login(page);
   await page.goto("/settings");
-  const card = page.locator("[data-coming-next='earnedAutonomy']");
-  await expect(card.getByRole("heading", { name: /What AI may do on its own/ })).toBeVisible();
-  await expect(card).toContainText("Coming next");
-  await expect(card).toContainText("Not built yet.");
-  await expect(card).toContainText("connected tools act only through the access tokens you give them");
-  const picture = card.getByRole("img", { name: /^Example, not your data\./ });
-  await expect(picture).toBeVisible();
-  await expect(picture.locator("a, button, input, select, textarea, [tabindex]")).toHaveCount(0);
+  await expect(page.locator("[data-coming-next='earnedAutonomy']")).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("link", { name: "AI settings" })).toHaveAttribute("href", "/governance");
   expect(await page.locator("main").innerText()).not.toMatch(/\bP\d+\.\d+\b|Planned in/);
   await shot(page, "d2b-settings-coming-next");
   await axeEverywhere(page, "settings");

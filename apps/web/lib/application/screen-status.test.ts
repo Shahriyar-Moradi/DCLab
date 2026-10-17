@@ -52,18 +52,19 @@ test("lookups use own keys only", () => {
 
 test("statuses agree with the feature flags that gate the sidebar (no screen claims more than is built)", () => {
   for (const entry of SCREEN_STATUS) assert.ok(agreesWithFeatureFlag(entry), `${entry.id} disagrees with ${entry.feature}`);
-  assert.equal(agreesWithFeatureFlag({ ...screenStatus("aiSettings")!, tags: [{ kind: "working" }] }), false);
+  assert.equal(agreesWithFeatureFlag({ ...screenStatus("aiSettings")!, tags: [{ kind: "off" }] }), false);
   assert.equal(agreesWithFeatureFlag({ ...screenStatus("monitoring")!, tags: [{ kind: "planned", phase: 7 }] }), false);
 });
 
 test("the registry reflects the real state today, not the demo's older tags", () => {
   const main = (id: string) => screenStatus(id)!.tags[0].kind;
   for (const id of ["improve", "monitoring", "business", "usage", "model", "predictions", "history", "connect"]) assert.equal(main(id), "working", id);
-  for (const id of ["notifications", "webhooks", "settings", "console"]) assert.equal(main(id), "partly", id);
-  for (const id of ["assistant", "aiSettings"]) assert.equal(main(id), "off", id);
+  for (const id of ["notifications", "webhooks", "settings", "console", "assistant", "aiSettings"]) assert.equal(main(id), "partly", id);
   assert.match(screenStatus("improve")!.missing, /Guided/);
-  assert.deepEqual(screenStatus("inbox")!.tags.map(tagLabel), ["Working today", "Items from the assistant: Built, switched off"]);
-  assert.deepEqual(screenStatus("aiSettings")!.tags.map(tagLabel), ["Built, switched off", "Screen: Planned"]);
+  assert.deepEqual(screenStatus("inbox")!.tags.map(tagLabel), ["Working today", "Partly working · Beta: items from the assistant"]);
+  // D6b: both are a labelled beta, never "Working today".
+  assert.deepEqual(screenStatus("aiSettings")!.tags.map(tagLabel), ["Partly working · Beta"]);
+  assert.deepEqual(screenStatus("assistant")!.tags.map(tagLabel), ["Partly working · Beta"]);
 });
 
 test("ids are unique, every entry has a one-line plain sentence, and partly / planned tags say what or when", () => {

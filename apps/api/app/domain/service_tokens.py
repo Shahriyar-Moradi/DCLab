@@ -222,6 +222,14 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret"),
         ("POST", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test"),
         ("GET", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries"),
+        # D7a: business-view questions are person to person (signed-in sessions only: any bearer 403
+        # session_required; no agent tool, no MCP, no SDK).
+        ("GET", "/v1/questions"),
+        ("GET", "/v1/projects/{project_id}/questions"),
+        ("POST", "/v1/projects/{project_id}/questions"),
+        ("GET", "/v1/questions/{question_id}"),
+        ("POST", "/v1/questions/{question_id}/replies"),
+        ("POST", "/v1/questions/{question_id}/close"),
         # No principal at all: the signed link from an email is the only authority (one kind, off only).
         ("POST", "/v1/notifications/unsubscribe"),
     }

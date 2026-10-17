@@ -381,6 +381,16 @@ from app.domain.data_goal import (
     CK_UPLOAD_ATTEMPTS_SIZE,
     CK_UPLOAD_ATTEMPTS_SOURCE,
 )
+from app.domain.business_questions import (
+    CK_BUSINESS_QUESTION_REPLIES_SIDE,
+    CK_BUSINESS_QUESTION_REPLIES_TEXT,
+    CK_BUSINESS_QUESTIONS_CLOSED,
+    CK_BUSINESS_QUESTIONS_STATUS,
+    CK_BUSINESS_QUESTIONS_SUBJECT,
+    CK_BUSINESS_QUESTIONS_TEXT,
+    CK_BUSINESS_QUESTIONS_VERSION,
+    STATUS_OPEN as BQ_STATUS_OPEN,
+)
 from app.domain.notifications import (
     CK_NOTIFICATION_OUTBOX_ATTEMPTS,
     CK_NOTIFICATION_OUTBOX_CHANNEL,
@@ -6862,6 +6872,85 @@ class MonitoringThresholdSet(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
     )
+
+
+def _business_question_tenant_fk(column: str, table: str) -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(["workspace_id", column], [f"{table}.workspace_id", f"{table}.id"],
+                                name=f"fk_business_questions_{column}")
+
+
+class BusinessQuestion(Base):
+    """D7a: a data-team question to the workspace's business users about a project (optionally one of
+    its model versions, prediction lists or monitoring weeks). Text, asker, project, link and
+    ``created_at`` are frozen and ``closed`` is final (``guard_business_question_update``); only
+    ``business_question_service`` writes it."""
+
+    __tablename__ = "business_questions"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_business_questions_workspace_id"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_business_questions_workspace_project"),
+        _business_question_tenant_fk("model_version_id", "model_versions"),
+        _business_question_tenant_fk("batch_prediction_id", "batch_predictions"),
+        _business_question_tenant_fk("monitoring_window_id", "monitoring_windows"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_TEXT, name="ck_business_questions_text"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_STATUS, name="ck_business_questions_status"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_CLOSED, name="ck_business_questions_closed"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_SUBJECT, name="ck_business_questions_subject"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_VERSION, name="ck_business_questions_version"),
+        Index("ix_business_questions_project_created_at", "workspace_id", "project_id", desc("created_at")),
+        Index("ix_business_questions_status_updated_at", "workspace_id", "status", desc("updated_at")),
+        Index("ix_business_questions_asked_by_user_id", "asked_by_user_id"),
+        _partial_index("ix_business_questions_closed_by_user_id", "closed_by_user_id"),
+        _partial_index("ix_business_questions_model_version_id", "workspace_id", "model_version_id"),
+        _partial_index("ix_business_questions_batch_prediction_id", "workspace_id", "batch_prediction_id"),
+        _partial_index("ix_business_questions_monitoring_window_id", "workspace_id", "monitoring_window_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    asked_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    batch_prediction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    monitoring_window_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    text: Mapped[str] = mapped_column(String(2000), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=BQ_STATUS_OPEN)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class BusinessQuestionReply(Base):
+    """D7a: one reply to a business question. Append-only: UPDATE is refused and DELETE only under the
+    retention / workspace-deletion guard (the 0071 functions); ``created_at`` is forced on insert."""
+
+    __tablename__ = "business_question_replies"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_business_question_replies_workspace_id"),
+        ForeignKeyConstraint(["workspace_id", "question_id"],
+                             ["business_questions.workspace_id", "business_questions.id"],
+                             name="fk_business_question_replies_workspace_question"),
+        CheckConstraint(CK_BUSINESS_QUESTION_REPLIES_TEXT, name="ck_business_question_replies_text"),
+        CheckConstraint(CK_BUSINESS_QUESTION_REPLIES_SIDE, name="ck_business_question_replies_side"),
+        Index("ix_business_question_replies_question_created_at", "workspace_id", "question_id", "created_at"),
+        Index("ix_business_question_replies_author_user_id", "author_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    author_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    author_side: Mapped[str] = mapped_column(String(16), nullable=False)
+    text: Mapped[str] = mapped_column(String(2000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class IdempotencyKey(Base):
